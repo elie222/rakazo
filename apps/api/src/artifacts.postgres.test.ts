@@ -1,7 +1,7 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { createDb, IsolationError } from "@rakazo/db";
+import { asSystem, createDb, IsolationError, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createOwnedArtifact } from "./artifacts.js";
 
@@ -34,45 +34,49 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     },
   } as unknown as ArtifactStore;
   let prisma: PrismaClient;
+  let system: PrismaClient;
   let close: () => Promise<void>;
   let botId: string;
   let otherBotId: string;
   const upload = (clientNonce: string | undefined, target: { botId: string; groupId?: string }) =>
-    createOwnedArtifact({ prisma, artifacts }, actor, {
-      ...target,
-      name: "notes.txt",
-      mimeType: "text/plain",
-      contentBase64: Buffer.from("hello").toString("base64"),
-      clientNonce,
-    });
+    runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        ...target,
+        name: "notes.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.from("hello").toString("base64"),
+        clientNonce,
+      }),
+    );
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
     prisma = db.prisma;
+    system = asSystem(prisma);
     close = async () => {
       await db.prisma.$disconnect();
       await db.pool.end();
     };
-    await prisma.user.create({
+    await system.user.create({
       data: { id: userId, name: userId, email: `${userId}@rakazo.test`, emailVerified: false },
     });
-    await prisma.organization.create({
+    await system.organization.create({
       data: { id: organizationId, name: "Nonce Org", slug: organizationId, createdAt: new Date() },
     });
-    await prisma.space.create({
+    await system.space.create({
       data: { id: spaceId, organizationId, name: "General", isDefault: true },
     });
-    botId = (await prisma.bot.create({ data: { spaceId, userId, name: "Chief", color: "blue" } }))
+    botId = (await system.bot.create({ data: { spaceId, userId, name: "Chief", color: "blue" } }))
       .id;
     otherBotId = (
-      await prisma.bot.create({ data: { spaceId, userId, name: "Scout", color: "green" } })
+      await system.bot.create({ data: { spaceId, userId, name: "Scout", color: "green" } })
     ).id;
   });
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.organization.deleteMany({ where: { id: organizationId } });
-    await prisma.user.deleteMany({ where: { id: userId } });
+    await system.organization.deleteMany({ where: { id: organizationId } });
+    await system.user.deleteMany({ where: { id: userId } });
     await close();
   });
 
@@ -80,7 +84,7 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     const first = await upload("send-1:0", { botId });
     const retry = await upload("send-1:0", { botId });
     expect(retry).toEqual(first);
-    expect(await prisma.artifact.count({ where: { spaceId, clientNonce: "send-1:0" } })).toBe(1);
+    expect(await system.artifact.count({ where: { spaceId, clientNonce: "send-1:0" } })).toBe(1);
     expect(stored.size).toBe(1);
   });
 
@@ -90,19 +94,19 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
       upload("send-2:0", { botId }),
     ]);
     expect(a.id).toBe(b.id);
-    expect(await prisma.artifact.count({ where: { spaceId, clientNonce: "send-2:0" } })).toBe(1);
+    expect(await system.artifact.count({ where: { spaceId, clientNonce: "send-2:0" } })).toBe(1);
     expect(stored.size).toBe(2);
   });
 
   it("replays one artifact when retries of a group upload race under different member bots", async () => {
-    const group = await prisma.chatGroup.create({ data: { spaceId, userId, name: "Race" } });
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Race" } });
     const uploads = await Promise.all(
       [botId, otherBotId, botId, otherBotId].map((member) =>
         upload("send-5:0", { botId: member, groupId: group.id }),
       ),
     );
     expect(new Set(uploads.map((artifact) => artifact.id)).size).toBe(1);
-    expect(await prisma.artifact.count({ where: { spaceId, clientNonce: "send-5:0" } })).toBe(1);
+    expect(await system.artifact.count({ where: { spaceId, clientNonce: "send-5:0" } })).toBe(1);
   });
 
   it("refuses a nonce reused for another chat", async () => {

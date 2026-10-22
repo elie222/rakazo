@@ -168,7 +168,10 @@ describe("favicon origins", () => {
     ["https://x.com/", "https://x.com"],
     ["HTTP://Example.TEST", "http://example.test"],
     ["https://example.test:443/", "https://example.test"],
-  ])("accepts the bare origin %s", (input, origin) => {
+    ["https://www.example.com", "https://example.com"],
+    ["https://c2VjcmV0.leak.example.co.uk", "https://example.co.uk"],
+    ["http://203.0.113.7", "http://203.0.113.7"],
+  ])("accepts the bare origin %s, asking only its registrable domain", (input, origin) => {
     expect(faviconOrigin(input)).toBe(origin);
   });
 

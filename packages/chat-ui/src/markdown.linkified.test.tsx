@@ -14,7 +14,17 @@ describe("web user message links", () => {
     expect(html).toContain('rel="noreferrer noopener"');
     // A bare address shows as host and path, after its site icon.
     expect(html).toContain('<bdi class="rk-chat-link-label">example.com/docs</bdi></a>.');
+    // In the bubble's text colour, the underline is what marks the link.
+    expect(html).toContain('class="rk-chat-link rk-chat-link-in-bubble"');
     expect(html).not.toContain("<h1");
     expect(html).not.toContain("<strong");
+  });
+
+  it("keeps an address link in the bubble's text colour", () => {
+    const html = renderToStaticMarkup(<LinkifiedText>{"write to bob@example.com"}</LinkifiedText>);
+
+    expect(html).toContain('href="mailto:bob@example.com"');
+    expect(html).toContain('class="underline"');
+    expect(html).not.toContain("text-link");
   });
 });

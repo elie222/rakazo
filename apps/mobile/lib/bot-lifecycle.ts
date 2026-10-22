@@ -1,4 +1,5 @@
 import { Alert } from "react-native";
+import type { ApiRequestContext } from "./api";
 import { rpc } from "./api";
 import { t } from "./i18n";
 import { errorText } from "./user-error";
@@ -8,10 +9,19 @@ export function confirmDeleteBot(
   onDeleted: () => void,
   // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
   current: () => boolean = () => true,
+  requestContext?: ApiRequestContext,
 ) {
   const remove = async (deleteMemories: boolean) => {
     try {
-      await rpc("bots/remove", { botId: bot.id, deleteMemories });
+      if (requestContext) {
+        await rpc(
+          "bots/remove",
+          { botId: bot.id, deleteMemories },
+          { requestContext, skipSpaceAuthRecovery: true },
+        );
+      } else {
+        await rpc("bots/remove", { botId: bot.id, deleteMemories });
+      }
       onDeleted();
     } catch (error) {
       if (current()) Alert.alert(t("Could not delete bot"), errorText(error, t("Try again.")));

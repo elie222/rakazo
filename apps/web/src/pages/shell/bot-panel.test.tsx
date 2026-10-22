@@ -3,6 +3,7 @@
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot } from "@rakazo/contracts";
+import { BOT_SETTINGS_ADVANCED_ORDER } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -72,8 +73,10 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
-vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
-vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
+vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => <div>Open work</div> }));
+vi.mock("../KnowledgeSection", () => ({
+  KnowledgeSection: () => <div>Memory / Shared skills</div>,
+}));
 
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { rpc } from "../../lib/rpc";
@@ -193,6 +196,57 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("keeps advanced controls inside the disclosure in the shared order", async () => {
+  vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
+    { id: "fixture-voice", label: "Fixture voice" },
+  ]);
+  await render();
+  const advanced = container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
+  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
+    "false",
+  );
+  await act(async () => {
+    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click();
+  });
+  const labels = {
+    instructions: "Instructions",
+    computer: "Computer",
+    model: "Model",
+    readAloud: "Read replies aloud",
+    voice: "Voice",
+    fleetManagement: "Manage the bots it creates",
+    scratchpad: "Open work",
+    knowledge: "Memory / Shared skills",
+    disabledTools: "Disabled tools",
+  };
+  const controls = [...container.querySelectorAll("div, span, label")].filter((node) =>
+    [...node.childNodes].some(
+      (child) =>
+        child.nodeType === Node.TEXT_NODE &&
+        Object.values(labels).some((label) => child.textContent === label),
+    ),
+  );
+  expect(controls).toHaveLength(Object.keys(labels).length);
+  for (const control of controls)
+    expect(control.closest('[data-testid="bot-settings-advanced"]')).toBe(advanced);
+  for (const control of controls.filter(
+    (node) => !["Open work", "Memory / Shared skills"].includes(node.textContent ?? ""),
+  )) {
+    expect(control.classList.contains("text-[14px]")).toBe(true);
+    expect(control.classList.contains("text-muted-foreground")).toBe(true);
+  }
+  expect(
+    controls.map(
+      (node) =>
+        Object.entries(labels).find(([, label]) =>
+          [...node.childNodes].some(
+            (child) => child.nodeType === Node.TEXT_NODE && child.textContent === label,
+          ),
+        )![0],
+    ),
+  ).toEqual(BOT_SETTINGS_ADVANCED_ORDER.filter((key) => key in labels));
+});
+
 describe("BotSettings model choices", () => {
   it("submits DeepSeek API ids and does not offer a display label", async () => {
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
@@ -282,7 +336,7 @@ describe("BotSettings thinking options", () => {
   });
 });
 
-describe("BotSettings fleet management saves", () => {
+describe("BotSettings bot management saves", () => {
   it("cannot restore a stale enabled value when another session disables it", async () => {
     await render("Billing", { fleetManagement: true });
     await render("Billing", { fleetManagement: false });
@@ -301,7 +355,7 @@ describe("BotSettings fleet management saves", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
-  it.each([false, true])("saves only the fleet toggle from %s", async (enabled) => {
+  it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
     await render("Billing", { fleetManagement: enabled });
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");

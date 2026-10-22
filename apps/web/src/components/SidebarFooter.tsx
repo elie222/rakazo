@@ -1,5 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button, buttonVariants, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
+import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
+import {
+  AppMarkStack,
+  Button,
+  buttonVariants,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@rakazo/ui-web";
 import {
   BookOpen,
   Download,
@@ -13,6 +21,7 @@ import {
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useSidebarUpdate } from "./DesktopUpdates";
+import { IconTooltip } from "./IconTooltip";
 
 type Props = {
   name: string;
@@ -32,9 +41,9 @@ type Props = {
   logOutError: string | null;
 };
 
-// Marks are 24px wide, overlap by 6px, and need 2px for the outer ring.
+// Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
 export function sidebarMarkCount(availableWidth: number) {
-  return Math.max(0, Math.min(3, Math.floor((availableWidth - 26) / 18) + 1));
+  return Math.max(0, Math.min(3, Math.floor((availableWidth - 26) / 22) + 1));
 }
 
 export function SidebarFooter({
@@ -57,7 +66,6 @@ export function SidebarFooter({
   const { t } = useLingui();
   const update = useSidebarUpdate();
   const [failedImage, setFailedImage] = useState<string | null>(null);
-  const [failedLogos, setFailedLogos] = useState<string[]>([]);
   const pillRef = useRef<HTMLButtonElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [markCount, setMarkCount] = useState(3);
@@ -131,11 +139,7 @@ export function SidebarFooter({
             </Button>
             <a
               className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-              href={
-                /Android/i.test(navigator.userAgent)
-                  ? "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk"
-                  : "https://apps.apple.com/app/rakazo/id6801531099"
-              }
+              href={/Android/i.test(navigator.userAgent) ? ANDROID_APK_URL : IOS_APP_STORE_URL}
               target="_blank"
               rel="noreferrer"
             >
@@ -200,42 +204,25 @@ export function SidebarFooter({
         variant="outline"
         ref={pillRef}
         onClick={onIntegrations}
-        className="h-9 min-w-0 flex-1 justify-between rounded-full bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent"
+        className="h-9 min-w-0 flex-1 justify-between rounded-full bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
       >
         <span ref={labelRef} className="min-w-0 truncate">
           <Trans>Connect apps</Trans>
         </span>
-        <span aria-hidden="true" className="flex shrink-0 items-center -space-x-1.5">
-          {logos.slice(0, markCount).map((app) => (
-            <span
-              key={app.name}
-              className="grid size-6 shrink-0 place-items-center overflow-hidden rounded-full border border-border bg-muted text-xs font-medium text-foreground ring-2 ring-sidebar-accent dark:border-foreground/15 dark:bg-sidebar-accent dark:bg-linear-to-b dark:from-foreground/10 dark:to-foreground/10"
-            >
-              {app.logo && !failedLogos.includes(app.logo) ? (
-                <img
-                  src={app.logo}
-                  alt=""
-                  className="size-full object-contain"
-                  onError={() => setFailedLogos((failed) => [...failed, app.logo!])}
-                />
-              ) : (
-                app.name[0]
-              )}
-            </span>
-          ))}
-        </span>
+        <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
       </Button>
       {update.available ? (
-        <Button
-          size="icon-lg"
-          className="rounded-full"
-          aria-label={t`Install update`}
-          title={t`Install update`}
-          disabled={update.busy}
-          onClick={update.install}
-        >
-          <Download aria-hidden="true" />
-        </Button>
+        <IconTooltip label={t`Install update`}>
+          <Button
+            size="icon-lg"
+            className="rounded-full"
+            aria-label={t`Install update`}
+            disabled={update.busy}
+            onClick={update.install}
+          >
+            <Download aria-hidden="true" />
+          </Button>
+        </IconTooltip>
       ) : null}
     </div>
   );

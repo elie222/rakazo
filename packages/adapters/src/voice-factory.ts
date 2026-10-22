@@ -68,7 +68,10 @@ export function isVoiceProviderId(value: string): value is VoiceProviderId {
 }
 
 /** Construct the provider adapter selected by a persisted voice credential. */
-export function createVoiceProvider(kind: string): VoiceProvider {
+export function createVoiceProvider(
+  kind: string,
+  options: { allowPrivateEndpoint?: boolean } = {},
+): VoiceProvider {
   switch (kind) {
     case "elevenlabs":
       return new ElevenLabsVoiceProvider();
@@ -79,7 +82,9 @@ export function createVoiceProvider(kind: string): VoiceProvider {
     case "fish-audio":
       return new FishAudioVoiceProvider();
     case OPENAI_COMPATIBLE_VOICE_PROVIDER_ID:
-      return new OpenAiCompatibleVoiceProvider();
+      return new OpenAiCompatibleVoiceProvider({
+        allowPrivateEndpoint: options.allowPrivateEndpoint,
+      });
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();

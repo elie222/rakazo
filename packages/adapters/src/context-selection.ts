@@ -470,7 +470,11 @@ export function selectContext<T extends ContextMessage>(
   }
   const lastUser = messages.findLastIndex((message) => message.role === "user");
   if (lastUser >= 0) protectedIndexes.add(lastUser);
-  // Keep the latest tool group intact. Earlier complete groups can be omitted.
+  // Keep the unread tool step intact even when user messages follow its results.
+  const latestContent = messages[latestAssistant]?.content;
+  if (Array.isArray(latestContent) && latestContent.some((part) => part?.type === "toolCall"))
+    protectedIndexes.add(latestAssistant);
+  // Keep the final group intact. Earlier complete groups can be omitted.
   for (const index of groups.at(-1)?.indexes ?? []) protectedIndexes.add(index);
   for (const index of protectedIndexes) {
     if (!Number.isInteger(index) || index < 0 || index >= messages.length)

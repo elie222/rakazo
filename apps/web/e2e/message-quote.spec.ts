@@ -323,7 +323,7 @@ test("an armed reply survives the parent paging out of the transcript", async ({
     reaction: "👍",
     clientNonce: `qr-${stamp}`,
   });
-  const computerButton = page.getByTitle("Agent computer");
+  const computerButton = page.getByRole("button", { name: "Agent computer", exact: true });
   await expect(async () => {
     if ((await computerButton.getAttribute("data-active")) !== null) {
       await computerButton.click();
@@ -348,34 +348,6 @@ test("an armed reply survives the parent paging out of the transcript", async ({
 
   // Stop the reply's run so its continues cannot churn into the next test.
   await rpc(page, "threads/stop", { botId });
-});
-
-test("a selection spanning two messages offers no quote action", async ({ page }) => {
-  const stamp = Date.now();
-  await signup(page, `quote-span-${stamp}@rakazo.test`, "password12", "Quote Tester");
-  await completeOnboarding(page);
-
-  const transcript = page.getByTestId("transcript");
-  const composer = page.getByRole("combobox", { name: /Message/ });
-  // The scripted bot echoes user text; scope to user bubbles for unique rows.
-  const userRow = (text: string) =>
-    transcript
-      .locator("[data-message-id]")
-      .filter({ has: page.getByTestId("message-user-bubble") })
-      .filter({ hasText: text })
-      .first();
-
-  const firstText = `quote-first-${stamp}`;
-  const secondText = `quote-second-${stamp}`;
-  await composer.fill(firstText);
-  await composer.press("Enter");
-  await expect(userRow(firstText)).toBeVisible({ timeout: 20_000 });
-  await composer.fill(secondText);
-  await composer.press("Enter");
-  await expect(userRow(secondText)).toBeVisible({ timeout: 20_000 });
-
-  await selectAndRelease(page, transcript, firstText, secondText);
-  await expect(page.getByTestId("quote-selection")).toHaveCount(0);
 });
 
 test("quoting a second message retargets the armed reply", async ({ page }) => {

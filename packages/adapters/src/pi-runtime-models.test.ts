@@ -1,6 +1,6 @@
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, normalizeContext } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
 import { defaultCatalogModelId, isCatalogModelChoice } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
@@ -10,7 +10,9 @@ import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.j
 import { modelsForRequest, resolveRuntimeModel } from "./pi-runtime.js";
 
 function requestModel(id: string, baseUrl: string): Pick<AgentRunRequest, "model"> {
-  return { model: { provider: OPENAI_COMPATIBLE_PROVIDER_ID, id, baseUrl } };
+  return {
+    model: { provider: OPENAI_COMPATIBLE_PROVIDER_ID, id, baseUrl, allowPrivateEndpoint: true },
+  };
 }
 
 describe("request model catalogs", () => {
@@ -39,6 +41,36 @@ describe("request model catalogs", () => {
     }
   });
 
+  it.each([undefined, false, true])(
+    "sends a run to a private endpoint only when the request allows it (%s)",
+    async (allowPrivateEndpoint) => {
+      const fetchImpl = vi.fn(
+        async () =>
+          new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } }),
+      );
+      const models = modelsForRequest(
+        {
+          model: {
+            provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+            id: "local-model",
+            baseUrl: "http://127.0.0.1:11434/v1",
+            allowPrivateEndpoint,
+          },
+        },
+        OPENAI_COMPATIBLE_PROVIDER_ID,
+      );
+      const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "local-model")!;
+      await models
+        .getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!
+        .streamSimple(model, normalizeContext({ messages: [] }), {
+          apiKey: "fake-api-key",
+          fetch: fetchImpl,
+        })
+        .result();
+      expect(fetchImpl).toHaveBeenCalledTimes(allowPrivateEndpoint ? 1 : 0);
+    },
+  );
+
   it("isolates concurrent OpenAI-compatible endpoint registrations", () => {
     const first = modelsForRequest(
       requestModel("first-model", "http://127.0.0.1:8001/v1"),
@@ -66,6 +98,7 @@ describe("request model catalogs", () => {
           provider: OPENAI_COMPATIBLE_PROVIDER_ID,
           id: "vision-model",
           baseUrl: "http://127.0.0.1:8000/v1",
+          allowPrivateEndpoint: true,
           acceptsImages: true,
         },
       },
@@ -81,12 +114,16 @@ describe("request model catalogs", () => {
 it.each([true, false, undefined])(
   "keeps saved capability %s consistent between metadata and runtime",
   async (reasoning) => {
-    const plaintext = buildModelConnectPlaintext({
-      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-      modelId: "same-model",
-      baseUrl: "http://localhost:8000/v1",
-      reasoning,
-    });
+    const plaintext = buildModelConnectPlaintext(
+      {
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId: "same-model",
+        baseUrl: "http://localhost:8000/v1",
+        reasoning,
+      },
+      undefined,
+      { allowPrivateEndpoint: true },
+    );
     const auth = await resolveModelAuth(plaintext, OPENAI_COMPATIBLE_PROVIDER_ID);
     expect(auth.secret.kind).toBe("openai_compatible");
     if (auth.secret.kind !== "openai_compatible") throw new Error("Wrong credential type");
@@ -96,6 +133,7 @@ it.each([true, false, undefined])(
           provider: OPENAI_COMPATIBLE_PROVIDER_ID,
           id: "same-model",
           baseUrl: auth.secret.baseUrl,
+          allowPrivateEndpoint: true,
           reasoning: auth.secret.reasoning,
         },
       },

@@ -797,6 +797,13 @@ describe("sanitizeUtf16ForJson", () => {
     });
   });
 
+  it("replaces NUL characters that Postgres json columns reject", () => {
+    expect(sanitizeJsonValue({ output: "a\u0000b", "k\u0000": ["\u0000"] })).toEqual({
+      output: "a\uFFFDb",
+      "k\uFFFD": ["\uFFFD"],
+    });
+  });
+
   it("sanitizes nested object keys and disambiguates collisions after replacement", () => {
     expect(
       sanitizeJsonValue({

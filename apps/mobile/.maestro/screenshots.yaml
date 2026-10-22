@@ -36,6 +36,9 @@ tags:
 
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn:
+    text: "Use password"
+    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard
@@ -80,7 +83,7 @@ tags:
 - takeScreenshot: "07-new-bot"
 
 - openLink: "rakazo:///new-group"
-- assertVisible: "Name this group"
+- assertVisible: "Search bots"
 - takeScreenshot: "08-new-group"
 
 - openLink: "rakazo:///new-space"
@@ -150,7 +153,19 @@ tags:
 - assertVisible: "Keyboard visibility check"
 - assertVisible: "Send"
 - takeScreenshot: "15d-thread-keyboard"
-- eraseText
+- pressKey: Enter
+- inputText: "Second line"
+- assertVisible: 'Keyboard visibility check\nSecond line'
+- hideKeyboard
+- assertVisible: 'Keyboard visibility check\nSecond line'
+- tapOn: "Message Researcher"
+- assertVisible: 'Keyboard visibility check\nSecond line'
+- assertVisible: "Send"
+- takeScreenshot: "15g-thread-keyboard-reopened"
+- longPressOn: "Message Researcher"
+- tapOn: "Select all"
+- eraseText: 1
+- assertNotVisible: 'Keyboard visibility check\nSecond line'
 - hideKeyboard
 # Holding a message opens the reaction row and grouped actions next to it.
 - longPressOn: "The fixture workspace is ready."
@@ -236,7 +251,7 @@ tags:
 - takeScreenshot: "23-new-bot-dark"
 
 - openLink: "rakazo:///new-group"
-- assertVisible: "Name this group"
+- assertVisible: "Search bots"
 - takeScreenshot: "24-new-group-dark"
 
 - openLink: "rakazo:///new-space"

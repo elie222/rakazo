@@ -162,6 +162,8 @@ export async function startModelEmulator(options: {
     provider: "openai-compatible",
     id: modelId,
     baseUrl,
+    // The emulator listens on loopback, as an owner-run local model server would.
+    allowPrivateEndpoint: true,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}),
   };
   return {

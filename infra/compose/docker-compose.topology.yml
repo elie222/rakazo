@@ -45,6 +45,7 @@ services:
       RAKAZO_COMPUTER_CPUS: ${RAKAZO_COMPUTER_CPUS:-2}
       RAKAZO_COMPUTER_PIDS_LIMIT: ${RAKAZO_COMPUTER_PIDS_LIMIT:-2048}
       SANDBOX_SCREEN_NETWORK: isolated
+      # Test stack: CI runners do not install the host egress ruleset.
       SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-open}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       LOG_LEVEL: info
@@ -68,20 +69,25 @@ services:
 
   api:
     image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
+    # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
+    # process before its graceful shutdown finishes in-flight requests and jobs.
+    working_dir: /app/apps/api
     command:
       - bash
       - -lc
-      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+      # The owner URL lives only in this command, so neither process environment holds it.
+      - DATABASE_MIGRATION_URL=postgres://rakazo:topology-only-password@postgres:5432/rakazo pnpm db:deploy && exec node --enable-source-maps dist/index.js
     environment: &app-environment
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
-      DATABASE_URL: postgres://rakazo:topology-only-password@postgres:5432/rakazo
+      DATABASE_URL: postgres://rakazo_app:topology-only-runtime-password@postgres:5432/rakazo
       DATA_DIR: /data
       BETTER_AUTH_SECRET: topology-only-auth-secret-at-least-32-characters
       SCREEN_PROXY_SECRET: topology-only-screen-proxy-secret-at-least-32-characters
       BETTER_AUTH_URL: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       WEB_ORIGIN: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       ENCRYPTION_KEY: topology-only-encryption-key-at-least-32-characters
+      CONTENT_ENCRYPTION: "on"
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token-at-least-32-characters
       SIGNUPS_ENABLED: "true"
@@ -100,6 +106,9 @@ services:
       no_proxy: ${no_proxy:-${NO_PROXY:-}}
       API_PORT: "3100"
       API_HOST: "0.0.0.0"
+      # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
+      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      TRUSTED_PROXIES:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
@@ -131,7 +140,9 @@ services:
 
   web:
     image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
-    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/web
+    command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       NODE_ENV: production
       API_PROXY_TARGET: http://api:3100
@@ -152,7 +163,9 @@ services:
 
   worker:
     image: ${TOPOLOGY_APP_IMAGE:-rakazo/app:topology}
-    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/worker
+    command: ["node", "--enable-source-maps", "dist/index.js"]
     environment: *app-environment
     volumes:
       - appdata:/data

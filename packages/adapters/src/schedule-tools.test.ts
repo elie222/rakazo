@@ -205,6 +205,37 @@ describe("isOneShotRoutineCron", () => {
 });
 
 describe("schedule tool persistence", () => {
+  it.each([{ cron: "0 9 * * *" }, { watch: { kind: "files", paths: ["inbox"] } }])(
+    "rejects an invalid timezone before persisting %j",
+    async (schedule) => {
+      const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+        id: "routine-1",
+        ...args.data,
+      }));
+      const enqueue = vi.fn(async () => undefined);
+      const deps = {
+        prisma: {
+          routine: { create },
+          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+        },
+        events: { append: vi.fn() },
+        jobs: { enqueue },
+      } as unknown as Parameters<typeof createScheduleFromTool>[0];
+      const result = await createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Daily",
+        prompt: "Check",
+        timezone: "Mars/Olympus_Mons",
+        schedule,
+      });
+      expect(result).toEqual({ error: "Unknown timezone" });
+      expect(create).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
   it("creates routines with routine.created and enqueues wakeup", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
@@ -450,7 +481,7 @@ describe("schedule tool persistence", () => {
     const findFirst = vi.fn(async () => null);
     const deps = {
       prisma: {
-        routine: { findMany, findFirst, delete: vi.fn(async () => undefined) },
+        routine: { findMany, findFirst, deleteMany: vi.fn(async () => ({ count: 1 })) },
       },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
@@ -627,6 +658,49 @@ describe("schedule_create with a watch", () => {
       await createScheduleFromTool(d, { ...base, schedule: { watch: { kind: "files" } } }),
     ).toHaveProperty("error");
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("cancelScheduleFromTool", () => {
+  it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
+    const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    const cancel = vi.fn(async () => undefined);
+    const deps = {
+      prisma: { routine: { findFirst, deleteMany } },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue: vi.fn(async () => undefined), cancel },
+    } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
+    const input = {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "group-thread-1",
+      name: "Daily",
+    };
+
+    await expect(cancelScheduleFromTool(deps, input)).resolves.toEqual({
+      ok: true,
+      routineId: "routine-1",
+      name: "Daily",
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "group-thread-1",
+        id: "routine-1",
+      },
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+
+    deleteMany.mockResolvedValueOnce({ count: 0 });
+    cancel.mockClear();
+    await expect(cancelScheduleFromTool(deps, input)).resolves.toEqual({
+      error: "Schedule not found.",
+    });
+    expect(cancel).not.toHaveBeenCalled();
   });
 });
 

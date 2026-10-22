@@ -34,6 +34,7 @@ import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
 
@@ -60,6 +61,7 @@ export default function SignIn() {
   const [usePassword, setUsePassword] = useState(false);
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [passkeys, setPasskeys] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -92,6 +94,17 @@ export default function SignIn() {
       active = false;
     };
   }, [apiBase, capabilityAttempt]);
+
+  useEffect(() => {
+    let active = true;
+    setPasskeys(false);
+    void passkeysAvailable(reset).then((available) => {
+      if (active) setPasskeys(available);
+    });
+    return () => {
+      active = false;
+    };
+  }, [reset]);
 
   useEffect(() => {
     if (resetSent || codeSent) AccessibilityInfo.announceForAccessibility(t("Check your email"));
@@ -183,11 +196,11 @@ export default function SignIn() {
     }
   }
 
-  async function sso() {
+  async function externalSignIn(run: () => Promise<boolean>) {
     setPending(true);
     setError(null);
     try {
-      if (await continueWithSso()) router.replace("/");
+      if (await run()) router.replace("/");
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -270,7 +283,7 @@ export default function SignIn() {
                     <NativeActionButton
                       label={t("Continue with {name}", { name: reset.sso.name })}
                       disabled={pending}
-                      onPress={() => void sso()}
+                      onPress={() => void externalSignIn(continueWithSso)}
                       style={{ marginTop: 16 }}
                     />
                   ) : null}
@@ -405,6 +418,15 @@ export default function SignIn() {
                         onPress={() => void submit()}
                         style={{ marginTop: 16 }}
                       />
+                      {passkeys && mode === "in" && !codeSent ? (
+                        <NativeActionButton
+                          label={t("Sign in with passkey")}
+                          prominence="quiet"
+                          disabled={pending}
+                          onPress={() => void externalSignIn(signInWithPasskey)}
+                          style={{ alignSelf: "center", marginTop: 16 }}
+                        />
+                      ) : null}
                       {codeFlow ? (
                         <NativeActionButton
                           label={usingCode ? t("Use password") : t("Use email code")}
@@ -422,7 +444,7 @@ export default function SignIn() {
                           label={t("Continue with {name}", { name: reset.sso.name })}
                           prominence="quiet"
                           disabled={pending}
-                          onPress={() => void sso()}
+                          onPress={() => void externalSignIn(continueWithSso)}
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}

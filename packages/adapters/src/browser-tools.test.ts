@@ -514,6 +514,72 @@ describe("browser tools", () => {
     });
   });
 
+  it.each(["ftp://example.test", "https://example:fake-password@example.test"])(
+    "omits the desktop fallback for a rejected page-only URL: %s",
+    async (url) => {
+      const browser = new FakeBrowserProvider();
+      const navigate = vi.spyOn(browser, "navigate");
+      const result = await browserNavigateFromTool(
+        browser,
+        computer,
+        context,
+        { url },
+        { desktopTools: false },
+      );
+      expect(result).toMatchObject({ error: expect.stringContaining("HTTP(S)") });
+      expect(result).not.toHaveProperty("fallback");
+      expect(JSON.stringify(result)).not.toContain("computer_act");
+      expect(navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("asks a run without desktop tools to look again instead of pointing at computer_act", async () => {
+    const browser = new FakeBrowserProvider();
+    browser.forceFallback = "CDP not ready on port 9222";
+    const pageOnly = { desktopTools: false };
+    const results = [
+      await browserNavigateFromTool(
+        browser,
+        computer,
+        context,
+        { url: "https://example.test" },
+        pageOnly,
+      ),
+      await browserSnapshotFromTool(browser, computer, context, {}, pageOnly),
+      await browserActFromTool(
+        browser,
+        computer,
+        context,
+        { actions: [{ kind: "click", ref: "e1" }] },
+        pageOnly,
+      ),
+    ];
+    vi.spyOn(browser, "snapshot").mockRejectedValueOnce(new Error("socket closed"));
+    results.push(await browserSnapshotFromTool(browser, computer, context, {}, pageOnly));
+    // A URL refused before the browser is asked gets the same treatment.
+    results.push(
+      await browserNavigateFromTool(
+        browser,
+        computer,
+        context,
+        { url: "ftp://example.test" },
+        pageOnly,
+      ),
+    );
+    for (const result of results) {
+      expect(result).toMatchObject({
+        error: expect.any(String),
+        note: expect.stringContaining("may still be starting, so call browser_snapshot again"),
+      });
+      expect(result).not.toHaveProperty("fallback");
+      expect(JSON.stringify(result)).not.toContain("computer_act");
+    }
+    // A run that has the desktop tools keeps its fallback.
+    expect(
+      await browserSnapshotFromTool(browser, computer, context, {}, { desktopTools: true }),
+    ).toMatchObject({ fallback: "computer_act", note: expect.stringContaining("computer_act") });
+  });
+
   it("hides page browser tools when the computer is not graphical", () => {
     const tools = [...PAGE_BROWSER_TOOL_NAMES].map((name) => ({ name }));
     expect(filterPageBrowserTools(tools, true)).toHaveLength(3);

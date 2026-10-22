@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-for (const platform of ["darwin", "win32", "linux"]) {
+// win32 shares the non-darwin "this computer" branch with linux.
+for (const platform of ["darwin", "linux"]) {
   test(`host computer choice explains file access on ${platform}`, async ({ page }, testInfo) => {
     await signup(
       page,

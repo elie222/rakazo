@@ -22,6 +22,7 @@ import {
   resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
+import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
@@ -33,6 +34,7 @@ import {
   createThreadMessageInTransaction,
   RunHistoryWriteError,
 } from "./messages.js";
+import { recordSecurityEvent } from "./security-events.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 const EVENT_BATCH_SIZE = 200;
@@ -219,7 +221,13 @@ export interface AnswerRunInput {
   clientNonce?: string;
   /** Only for a login card; `answer` carries its password. */
   username?: string;
+  /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
+  dismiss?: boolean;
 }
+
+/** What request_secret returns to the bot once the user dismissed its card. */
+const DISMISSED_SECRET_RESULT = { ok: false, dismissed: true } as const;
+const DISMISSED_SECRET_PROMPT = "The user dismissed this request.";
 
 export interface SendUserMessageInput {
   spaceId: string;
@@ -658,7 +666,11 @@ async function commitAnswerRunInput(
   tx: Prisma.TransactionClient,
   input: AnswerRunInput,
   runSecretWriter?: RunSecretWriter,
-): Promise<{ threadId: string; seq: number } | null> {
+): Promise<{
+  threadId: string;
+  seq: number;
+  approval?: { decision: string; effectKind: string };
+} | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
@@ -696,16 +708,31 @@ async function commitAnswerRunInput(
   const secretAsk = isSecretAskBlock(pendingAsk);
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
-  if (secretAsk && !runSecretWriter) return null;
+  const dismissed = Boolean(input.dismiss);
+  // Only the run's user can turn down a secret request; every other card needs an answer.
+  if (dismissed && (!secretAsk || run.userId !== input.answeredByUserId || input.answer))
+    return null;
+  const secretRequest = {
+    runId: input.runId,
+    spaceId: input.spaceId,
+    kind: "request_secret",
+    status: "intended",
+  };
+  if (
+    dismissed &&
+    !(await tx.externalEffect.findFirst({ where: secretRequest, select: { id: true } }))
+  )
+    return null;
+  if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
-  const loginAsk = secretAsk && pendingAsk.credential?.auth.type === "login";
+  const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   // A username belongs only to a login card, which cannot be saved without one.
   if (loginAsk !== Boolean(input.username?.trim())) return null;
   const login = loginAsk
     ? LoginSecretValue.safeParse({ username: input.username!.trim(), password: input.answer })
     : undefined;
   if (login && !login.success) return null;
-  let approvalEffect: { id: string; kind: string } | null = null;
+  let approvalEffect: { id: string; kind: string; request: Prisma.JsonValue } | null = null;
   let editedInstructions: string | undefined;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
@@ -820,27 +847,34 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    if (input.answer === "always") {
+    // "Always" on a fetch card allows that site, never every site the tool can reach.
+    const site = alwaysAllowedSite(approvalEffect!);
+    if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
+      const rule = {
+        spaceId: input.spaceId,
+        createdByUserId: approvalUserId!,
+        effect: "always_allow",
+        matchKind: site ? "site" : "tool",
+        matchValue: site ?? approvalEffect!.kind,
+      };
       await tx.actionApprovalRule.upsert({
-        where: {
-          spaceId_createdByUserId_effect_matchKind_matchValue: {
-            spaceId: input.spaceId,
-            createdByUserId: approvalUserId!,
-            effect: "always_allow",
-            matchKind: "tool",
-            matchValue: approvalEffect!.kind,
-          },
-        },
-        create: {
-          spaceId: input.spaceId,
-          createdByUserId: approvalUserId!,
-          effect: "always_allow",
-          matchKind: "tool",
-          matchValue: approvalEffect!.kind,
-        },
+        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
+        create: rule,
         update: {},
       });
     }
+  } else if (dismissed) {
+    // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed
+    // run is told why.
+    await tx.externalEffect.updateMany({
+      where: secretRequest,
+      data: { status: "completed", result: DISMISSED_SECRET_RESULT },
+    });
+    const task = await tx.task.updateMany({
+      where: { runs: { some: { id: input.runId } } },
+      data: { prompt: resumePrompt(run, pendingAsk.text, DISMISSED_SECRET_PROMPT) },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
     await runSecretWriter!.store({
       botId: run.botId,
@@ -886,6 +920,7 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(dismissed ? { dismissed: true as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
@@ -908,7 +943,13 @@ async function commitAnswerRunInput(
     runId: input.runId,
     payload: { messageId: message.id, role: "bot", blocks },
   });
-  return { threadId: updated.threadId, seq: updated.seq };
+  return {
+    threadId: updated.threadId,
+    seq: updated.seq,
+    ...(approvalEffect
+      ? { approval: { decision: approvalAnswer, effectKind: approvalEffect.kind } }
+      : {}),
+  };
 }
 
 export async function answerRunInput(
@@ -921,11 +962,25 @@ export async function answerRunInput(
     prisma.$transaction(async (tx: Prisma.TransactionClient) =>
       commitAnswerRunInput(tx, input, writer),
     );
-  const committed = runSecretWriter?.withPrepared
-    ? await runSecretWriter.withPrepared(prisma, input, commit)
-    : await commit();
+  // A dismissal has no secret to prepare.
+  const committed =
+    runSecretWriter?.withPrepared && !input.dismiss
+      ? await runSecretWriter.withPrepared(prisma, input, commit)
+      : await commit();
 
   if (!committed) return false;
+  if (committed.approval) {
+    await recordSecurityEvent({
+      type: "approval.decided",
+      userId: input.answeredByUserId,
+      spaceId: input.spaceId,
+      metadata: {
+        decision: committed.approval.decision,
+        effectKind: committed.approval.effectKind,
+        runId: input.runId,
+      },
+    });
+  }
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return true;
 }
@@ -1905,4 +1960,13 @@ async function captureRunAnalytics(
     // Measurement must never turn a committed run into a failed request or worker job.
     getLogger().warn("Run analytics unavailable.");
   }
+}
+
+function alwaysAllowedSite(effect: {
+  kind: string;
+  request: Prisma.JsonValue;
+}): string | undefined {
+  if (effect.kind !== "web_fetch") return undefined;
+  const request = effect.request as { url?: unknown } | null;
+  return typeof request?.url === "string" ? urlSite(request.url) : undefined;
 }

@@ -8,6 +8,7 @@ import {
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { PasskeySignIn } from "../components/PasskeySignIn";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
@@ -309,7 +310,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Input
                     id="email"
                     name="email"
-                    autoComplete="username"
+                    autoComplete={mode === "in" ? "username webauthn" : "username"}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder={t`Your email address`}
@@ -369,6 +370,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Create account</Trans>
                 )}
               </Button>
+              {mode === "in" && !codeStep ? (
+                <PasskeySignIn
+                  disabled={pending}
+                  className={submitClass}
+                  onSignedIn={enterApp}
+                  onError={setError}
+                />
+              ) : null}
               {useCode ? (
                 <Button
                   type="button"

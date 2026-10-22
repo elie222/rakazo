@@ -2,8 +2,15 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
 import type { AppContract, ProductEvent } from "@rakazo/contracts";
-import { LOCAL_SETTINGS_PAGE, LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
+import {
+  CLIENT_BUILD_HEADER,
+  formatClientBuild,
+  LOCAL_SETTINGS_PAGE,
+  LOCAL_SETTINGS_RPC,
+} from "@rakazo/contracts";
 import { displayIdentityEvent, displayIdentityResult } from "@rakazo/core";
+import { authClient } from "./auth";
+import { CLIENT_BUILD } from "./client-build";
 import { desktopBridge } from "./desktop";
 import { i18n } from "./i18n";
 import { identityLabels } from "./identity-display";
@@ -54,6 +61,16 @@ export function withSpaceHeaders(
   return headers;
 }
 
+const responseListeners = new Set<(response: Response) => void>();
+
+/** Every API reply, for the build handshake; RPC callers still get their own result. */
+export function onRpcResponse(listener: (response: Response) => void): () => void {
+  responseListeners.add(listener);
+  return () => {
+    responseListeners.delete(listener);
+  };
+}
+
 const link = new RPCLink<RpcClientContext>({
   url: () =>
     typeof window === "undefined"
@@ -72,14 +89,28 @@ const link = new RPCLink<RpcClientContext>({
     }
     const spaceId =
       options.context.spaceId === undefined ? selectedSpaceId() : options.context.spaceId;
-    return fetch(request, {
-      headers: withSpaceHeaders(request.headers, spaceId),
+    const headers = withSpaceHeaders(request.headers, spaceId);
+    if (CLIENT_BUILD) headers.set(CLIENT_BUILD_HEADER, formatClientBuild("web", CLIENT_BUILD));
+    const response = await fetch(request, {
+      headers,
       credentials: "include",
       // Keep cancellation attached directly to fetch rather than only a cloned Request.
       signal: options.signal,
     });
+    recheckSessionOnUnauthorized(response.status);
+    for (const listener of responseListeners) listener(response);
+    return response;
   },
 });
+
+/**
+ * A 401 means the session behind the app's last known user may be gone, but Better Auth only
+ * rechecks it on focus or a timer, so a backgrounded window would keep its stale user (and every
+ * screen that polls) indefinitely. Recheck now: a signed-out answer routes to sign-in.
+ */
+export function recheckSessionOnUnauthorized(status: number): void {
+  if (status === 401) authClient.$store.notify("$sessionSignal");
+}
 
 export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;
 

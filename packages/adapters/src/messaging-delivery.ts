@@ -8,7 +8,11 @@ import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
@@ -191,6 +195,32 @@ async function mirrorChannelRun(
       NOT: { identityId: identity.id },
     },
   });
+  // Peer bots belong to other members, usually in other Spaces.
+  await runAsSystem("fan a group post out to peer bots in other Spaces", () =>
+    fanOutToPeers(deps, { identity, channel, channelBlock, fromLabel, hop, peers, messages }),
+  );
+}
+
+async function fanOutToPeers(
+  deps: MessagingDeliveryDeps,
+  {
+    identity,
+    channel,
+    channelBlock,
+    fromLabel,
+    hop,
+    peers,
+    messages,
+  }: {
+    identity: { provider: string; address: string };
+    channel: { id: string; name: string | null };
+    channelBlock: Extract<MessageBlock, { kind: "channel_message" }>;
+    fromLabel: string;
+    hop: number;
+    peers: Array<{ identityId: string | null }>;
+    messages: Array<{ message: { id: string }; text: string }>;
+  },
+): Promise<void> {
   for (const { message, text } of messages) {
     for (const peer of peers) {
       const peerIdentity = await deps.prisma.messagingIdentity.findUnique({

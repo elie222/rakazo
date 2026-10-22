@@ -10,6 +10,12 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
 } from "./openai-compatible-voice.js";
 
+/** Fixtures save as the deployment owner, who may use local speech servers. */
+const serializeAsOwner = (
+  input: Parameters<typeof serializeOpenAiCompatibleVoiceSecret>[0],
+  previous?: string,
+) => serializeOpenAiCompatibleVoiceSecret(input, previous, { allowPrivate: true });
+
 const ctx = {
   operationId: "voice",
   traceId: "voice",
@@ -18,8 +24,8 @@ const ctx = {
   signal: new AbortController().signal,
 };
 
-const keyless = serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://100.64.0.10:8810" });
-const keyed = serializeOpenAiCompatibleVoiceSecret({
+const keyless = serializeAsOwner({ baseUrl: "http://100.64.0.10:8810" });
+const keyed = serializeAsOwner({
   baseUrl: "http://192.168.1.20:8880/v1",
   apiKey: "local-test-key",
   ttsModel: "kokoro",
@@ -27,7 +33,10 @@ const keyed = serializeOpenAiCompatibleVoiceSecret({
 });
 
 function provider(fetchMock: ReturnType<typeof vi.fn>) {
-  return new OpenAiCompatibleVoiceProvider({ fetch: fetchMock as unknown as typeof fetch });
+  return new OpenAiCompatibleVoiceProvider({
+    fetch: fetchMock as unknown as typeof fetch,
+    allowPrivateEndpoint: true,
+  });
 }
 
 function calledUrl(fetchMock: ReturnType<typeof vi.fn>, call = 0) {
@@ -43,6 +52,20 @@ afterEach(() => {
 });
 
 describe("serializeOpenAiCompatibleVoiceSecret", () => {
+  it("refuses a private speech server unless private endpoints are allowed", async () => {
+    expect(() =>
+      serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
+    ).toThrow("Private model endpoints are limited to the deployment owner.");
+    const fetchMock = vi.fn();
+    const denied = new OpenAiCompatibleVoiceProvider({
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await expect(
+      denied.synthesize({ text: "hi", voiceId: "af_heart", apiKey: keyed }, ctx),
+    ).rejects.toThrow("Private model endpoints are limited to the deployment owner.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("adds /v1 and fills the Kokoro and Whisper model defaults", () => {
     expect(parseOpenAiCompatibleVoiceSecret(keyless)).toEqual({
       kind: "openai_compatible",
@@ -58,15 +81,13 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
   });
 
   it("blocks public hosts, metadata hosts, and cleartext keys to public servers", () => {
-    expect(() =>
-      serializeOpenAiCompatibleVoiceSecret({ baseUrl: "https://speech.example.com" }),
-    ).toThrow(/Public model endpoints are blocked/);
-    expect(() =>
-      serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://169.254.169.254" }),
-    ).toThrow(/blocked/);
+    expect(() => serializeAsOwner({ baseUrl: "https://speech.example.com" })).toThrow(
+      /Public model endpoints are blocked/,
+    );
+    expect(() => serializeAsOwner({ baseUrl: "http://169.254.169.254" })).toThrow(/blocked/);
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
     expect(() =>
-      serializeOpenAiCompatibleVoiceSecret({
+      serializeAsOwner({
         baseUrl: "http://speech.example.com",
         apiKey: "local-test-key",
       }),
@@ -75,7 +96,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
 
   it("rejects model ids that are not plain identifiers", () => {
     expect(() =>
-      serializeOpenAiCompatibleVoiceSecret({
+      serializeAsOwner({
         baseUrl: "http://127.0.0.1:8810",
         ttsModel: "kokoro\nx-injected: 1",
       }),
@@ -84,7 +105,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
 
   it("keeps the saved key and models on reconnect to the same server only", () => {
     const again = parseOpenAiCompatibleVoiceSecret(
-      serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }, keyed),
+      serializeAsOwner({ baseUrl: "http://192.168.1.20:8880" }, keyed),
     );
     expect(again).toMatchObject({
       apiKey: "local-test-key",
@@ -92,7 +113,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
       sttModel: "whisper-1",
     });
     const moved = parseOpenAiCompatibleVoiceSecret(
-      serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.21:8880" }, keyed),
+      serializeAsOwner({ baseUrl: "http://192.168.1.21:8880" }, keyed),
     );
     expect(moved.apiKey).toBeUndefined();
     expect(moved.ttsModel).toBe(DEFAULT_COMPATIBLE_TTS_MODEL);
@@ -100,7 +121,7 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
 
   it("rejects a key that could break the Authorization header", () => {
     expect(() =>
-      serializeOpenAiCompatibleVoiceSecret({
+      serializeAsOwner({
         baseUrl: "http://127.0.0.1:8810",
         apiKey: "abc\r\nx-injected: 1",
       }),
@@ -303,6 +324,20 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     await expect(
       provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyless }, ctx),
     ).rejects.toThrow("speaking failed: Model not found");
+  });
+
+  it("reads an insufficient_quota 429 as spent credit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "No credits", code: "insufficient_quota" } }),
+          { status: 429 },
+        ),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyless }, ctx),
+    ).rejects.toMatchObject({ code: "VOICE_OUT_OF_CREDIT" });
   });
 
   it("asks for OpenAI JSON transcripts and names iPhone recordings as m4a", async () => {

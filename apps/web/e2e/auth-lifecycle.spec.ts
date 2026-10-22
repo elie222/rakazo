@@ -1,5 +1,12 @@
+import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, showPasswordForm, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  showPasswordForm,
+  signup,
+  signupThroughForm,
+} from "./helpers";
 
 for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
   test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
@@ -95,7 +102,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
     "new-password",
   );
 
-  await signup(page, email, password, userName);
+  await signupThroughForm(page, email, password, userName);
   await completeOnboarding(page);
 
   await page.waitForURL(/\/app\/[^/]+$/);
@@ -137,17 +144,17 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  // Sign-out usually overlaps a bot refresh that the server rejects; when it does, wait
-  // for it so an unhandled rejection would surface before the assertion.
-  const refreshRejected = page
-    .waitForResponse(
-      (response) => response.url().includes("/rpc/spaces/list") && response.status() === 401,
-      { timeout: 5_000 },
-    )
-    .catch(() => undefined);
+  // Sign-out usually overlaps a bot refresh that the server rejects; wait for every
+  // refresh that started so an unhandled rejection would surface before the assertion.
+  const refreshes: Promise<unknown>[] = [];
+  const trackRefresh = (request: Request) => {
+    if (request.url().includes("/rpc/spaces/list")) refreshes.push(request.response());
+  };
+  page.on("request", trackRefresh);
   await page.getByRole("button", { name: "Log out" }).click();
-  await refreshRejected;
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  page.off("request", trackRefresh);
+  await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
   await page.goto("/");
@@ -164,7 +171,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
+  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
   await showPasswordForm(page);
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",

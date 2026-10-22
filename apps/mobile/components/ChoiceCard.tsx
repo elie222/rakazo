@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -43,8 +44,8 @@ const styles = StyleSheet.create({
   },
   optionLabel: { flex: 1, fontSize: 15 },
   options: { gap: 8 },
-  question: { fontSize: 15.5 },
-  subtitle: { fontSize: 13 },
+  question: typeScale.cardTitle,
+  subtitle: typeScale.secondary,
 });
 
 export function ChoiceCard({

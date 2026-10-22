@@ -206,7 +206,9 @@ describe("Pi model catalog", () => {
       ),
     ).resolves.toEqual(ids);
     await expect(
-      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl, undefined, {
+        allowPrivate: true,
+      }),
     ).rejects.toThrow(/too large/i);
   });
 

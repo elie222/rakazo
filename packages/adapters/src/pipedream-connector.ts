@@ -390,6 +390,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     );
   }
 
+  /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
       .update(`${context.spaceId}:${context.userId}`)

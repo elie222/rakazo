@@ -18,6 +18,9 @@ name: Auth
 - takeScreenshot: 02-sign-in
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn:
+    text: "Use password"
+    optional: true
 - tapOn: "Password"
 - inputText: "wrong-password"
 - hideKeyboard

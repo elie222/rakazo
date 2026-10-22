@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
+  McpStdioLaunchError,
   secureFetch,
   validateUrl,
   withEndpointOriginFallback,
@@ -52,6 +53,48 @@ describe("MCP transport seam", () => {
     ).rejects.toThrow("allowlist");
     await session.close();
     assert.ok(true);
+  });
+
+  it("explains a stdio process that exits with the tail of its stderr", async () => {
+    const session = new McpSession();
+    const error = await session
+      .connectStdio({
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.stderr.write('\\u001b[31mnoise\\u001b[0m\\n'.repeat(500)); console.error('sh: gmail-mcp: not found'); process.exit(127)",
+        ],
+        allowedCommands: [process.execPath],
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(McpStdioLaunchError);
+    const launch = error as McpStdioLaunchError;
+    expect(launch.message).toMatch(
+      /Connection closed[\s\S]*stderr: [\s\S]*sh: gmail-mcp: not found$/,
+    );
+    expect(launch.stderr).not.toContain("\u001b");
+    expect(launch.stderr.length).toBeLessThanOrEqual(4_096);
+    await session.close();
+  });
+
+  it("launches only package bins that Rakazo installed", async () => {
+    const session = new McpSession();
+    await expect(
+      session.connectStdio({
+        command: "npx",
+        allowedCommands: ["npx"],
+        installedBin: { binPath: process.execPath },
+      }),
+    ).rejects.toThrow("not installed by Rakazo");
+    // The launcher itself must still be allowlisted.
+    await expect(
+      session.connectStdio({
+        command: "npx",
+        allowedCommands: [],
+        installedBin: { binPath: process.execPath },
+      }),
+    ).rejects.toThrow("allowlist");
+    await session.close();
   });
 
   it("rejects remote endpoints that resolve to a private address", async () => {

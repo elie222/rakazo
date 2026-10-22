@@ -62,6 +62,10 @@
   list-style: decimal;
 }
 
+.rk-chat-markdown li::marker {
+  color: var(--faint-foreground);
+}
+
 .rk-chat-markdown li + li {
   margin-top: 0.25em;
 }
@@ -145,7 +149,7 @@
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 0.75em;
-  background: var(--card);
+  background: var(--secondary);
   padding: 0.8em 0.9em;
   direction: ltr;
   unicode-bidi: isolate;
@@ -210,7 +214,7 @@
 }
 
 .rk-chat-markdown blockquote {
-  border-left: 3px solid var(--border);
+  border-left: 3px solid var(--faint-foreground);
   padding-left: 0.85em;
   color: var(--muted-foreground);
 }
@@ -225,7 +229,7 @@
 
 .rk-chat-markdown th,
 .rk-chat-markdown td {
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   padding: 0.4em 0.6em;
   text-align: left;
   /* Not the container's `anywhere`: its break opportunities count toward
@@ -233,8 +237,11 @@
   overflow-wrap: break-word;
 }
 
+.rk-chat-markdown td {
+  color: var(--muted-foreground);
+}
+
 .rk-chat-markdown th {
-  background: var(--muted);
   color: var(--foreground);
   font-weight: 600;
 }
@@ -332,9 +339,14 @@ a.rk-chat-link .rk-chat-link-tile > svg {
 .rk-chat-link-label {
   white-space: normal;
   text-decoration: underline;
-  text-decoration-color: var(--muted-foreground);
+  text-decoration-color: var(--input);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
+}
+
+/* In a user bubble the link is the bubble's text colour, so its underline is what marks it. */
+a.rk-chat-link-in-bubble .rk-chat-link-label {
+  text-decoration-color: currentColor;
 }
 
 a.rk-chat-link:hover .rk-chat-link-label {

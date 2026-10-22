@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
 import { passwordResetCapabilities, rpc, sendSignInCode, signInWithCode } from "./api";
 import type { NativeActionButtonProps } from "./native-controls";
+import { passkeysAvailable, signInWithPasskey } from "./passkey";
 
 const route = vi.hoisted(() => ({ mode: "in" }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
@@ -112,6 +113,7 @@ vi.mock("./api", () => ({
   signUp: vi.fn(),
 }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
+vi.mock("./passkey", () => ({ passkeysAvailable: vi.fn(), signInWithPasskey: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
 
 const capabilities = {
@@ -129,6 +131,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(passwordResetCapabilities).mockResolvedValue(capabilities);
+  vi.mocked(passkeysAvailable).mockReset().mockResolvedValue(false);
+  vi.mocked(signInWithPasskey).mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -337,4 +341,34 @@ it("opens integration setup after a code sign-in from the sign-in form", async (
   expect(signInWithCode).toHaveBeenCalledWith("ada@example.test", "123456", undefined);
   expect(rpc).toHaveBeenCalledWith("integrationSetup/get");
   expect(router.replace).toHaveBeenCalledWith("/integration-setup");
+});
+
+function buttonNamed(label: string) {
+  return [...host.querySelectorAll("button")].find((button) => button.textContent === label);
+}
+
+it("offers a quiet passkey sign-in only in sign-in mode on a supported server", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({
+    ...capabilities,
+    passkeyRpId: "example.invalid",
+  });
+  vi.mocked(passkeysAvailable).mockResolvedValue(true);
+  vi.mocked(signInWithPasskey).mockResolvedValue(false);
+  await render();
+  const passkey = buttonNamed("Sign in with passkey")!;
+  expect(passkeysAvailable).toHaveBeenLastCalledWith(
+    expect.objectContaining({ passkeyRpId: "example.invalid" }),
+  );
+  expect(passkey.dataset.prominence).toBe("quiet");
+  expectBefore(host.querySelector('button[data-prominence="primary"]')!, passkey);
+  await act(async () => passkey.click());
+  expect(signInWithPasskey).toHaveBeenCalledOnce();
+
+  act(() => buttonNamed("Sign up")!.click());
+  expect(buttonNamed("Sign in with passkey")).toBeUndefined();
+});
+
+it("hides passkey sign-in where the device or server cannot use it", async () => {
+  await render();
+  expect(buttonNamed("Sign in with passkey")).toBeUndefined();
 });

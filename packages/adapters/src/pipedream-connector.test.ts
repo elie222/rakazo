@@ -393,7 +393,9 @@ describe("PipedreamConnector", () => {
     const accountUrl = requests.find((request) => request.url.includes("/accounts?"))?.url;
     const connectRequest = requests.find((request) => request.url.endsWith("/tokens"));
     const externalId = new URL(accountUrl!).searchParams.get("external_user_id");
-    expect(externalId).toMatch(/^rkz_[a-f0-9]{64}$/);
+    // Pipedream owns accounts by this ID and nothing stores it locally, so a
+    // different derivation would orphan every existing connected account.
+    expect(externalId).toBe("rkz_cf501546987d67cc9c570cd2cd628794ae730be9ab0bae106da4408a0401bf3f");
     expect(externalId).not.toContain(context.userId);
     expect(externalId).not.toContain(context.spaceId);
     expect(JSON.parse(String(connectRequest?.init?.body))).toEqual(

@@ -1,7 +1,7 @@
 import { expect, type Route, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CHANNEL } from "../src/lib/mcp-oauth-channel";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expandAdvancedSection, signup } from "./helpers";
 
 test("connects an MCP server through the OAuth popup callback", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -21,11 +21,14 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     command: null,
     args: [],
     envKeys: [],
+    fileKeys: [],
     headerKeys: [],
     hasSecret,
     oauthStatus,
+    oauthClientId: null,
     enabled: true,
     revision: 1,
+    health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
     createdAt: "2026-08-24T00:00:00.000Z",
     updatedAt: "2026-08-24T00:00:00.000Z",
   };
@@ -84,9 +87,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await page.getByTestId("integrations-advanced").evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
   await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
   await expect(page.getByText("Linear MCP", { exact: true })).toBeVisible();
@@ -120,4 +121,74 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
   }, MCP_OAUTH_CHANNEL);
   await expect(page.getByText("OAuth expired", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "mcp-oauth-expired");
+});
+
+test("adds an MCP server with a pre-registered OAuth client", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-oauth-client-${stamp}@rakazo.test`, "password12", "MCP OAuth");
+  await completeOnboarding(page);
+
+  const browserOrigin = new URL(page.url()).origin;
+  const servers: McpServer[] = [];
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: servers }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/servers/create", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: Record<string, unknown> };
+    expect(json).toMatchObject({
+      transport: "streamable_http",
+      endpoint: "https://gmailmcp.example.test/mcp/v1",
+      oauthClient: { clientId: "client-1.apps.example.test", clientSecret: "client-secret" },
+    });
+    const created: McpServer = {
+      id: "mcp-oauth-client-server",
+      spaceId: "mcp-oauth-workspace",
+      slug: "gmail",
+      name: "Gmail",
+      description: "",
+      transport: "streamable_http",
+      endpoint: "https://gmailmcp.example.test/mcp/v1",
+      command: null,
+      args: [],
+      envKeys: [],
+      fileKeys: [],
+      headerKeys: [],
+      hasSecret: true,
+      oauthStatus: "none",
+      oauthClientId: "client-1.apps.example.test",
+      enabled: true,
+      revision: 1,
+      health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+    };
+    servers.push(created);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: created }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
+  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
+
+  await page.getByLabel("Server name").fill("Gmail");
+  await page.getByLabel("Server URL").fill("https://gmailmcp.example.test/mcp/v1");
+  await page.getByText("Advanced", { exact: true }).click();
+  await expect(page.getByLabel("Redirect URI")).toBeHidden();
+  await page.getByLabel("OAuth client ID (optional)").fill("client-1.apps.example.test");
+  await page.getByLabel("OAuth client secret (optional)").fill("client-secret");
+  await expect(page.getByLabel("Redirect URI")).toHaveValue(`${browserOrigin}/mcp/oauth/callback`);
+  await captureScreenshot(page, testInfo, "mcp-oauth-client-form");
+
+  await page.getByRole("button", { name: "Add server", exact: true }).click();
+  await expect(page.getByText("Gmail", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeVisible();
+  await expect(page.getByLabel("OAuth client ID (optional)")).toHaveValue("");
+  await expect(page.getByLabel("OAuth client secret (optional)")).toHaveValue("");
 });

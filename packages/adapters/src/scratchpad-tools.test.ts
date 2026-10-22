@@ -87,12 +87,12 @@ describe("scratchpad tools store", () => {
   it("updates, completes, and removes scoped items", async () => {
     const existing = row({ id: "item-1", title: "Draft", status: "open" });
     const findFirst = vi.fn(async () => existing);
-    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+    const updateManyAndReturn = vi.fn(async ({ data }: { data: Record<string, unknown> }) => [
       row({ ...existing, ...data, status: String(data.status ?? existing.status) }),
-    );
-    const del = vi.fn(async () => existing);
+    ]);
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
     const prisma = {
-      scratchpadItem: { findFirst, update, delete: del },
+      scratchpadItem: { findFirst, updateManyAndReturn, deleteMany },
     };
 
     const updated = await updateScratchpadItemFromTool(
@@ -123,14 +123,28 @@ describe("scratchpad tools store", () => {
       { spaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" },
     );
     expect(removed).toEqual({ ok: true, itemId: "item-1", title: "Draft" });
-    expect(findFirst).toHaveBeenCalledWith({
-      where: {
-        id: "item-1",
-        spaceId: "ws",
-        botId: "bot",
-        userId: "user",
+    const scope = { id: "item-1", spaceId: "ws", botId: "bot", userId: "user" };
+    expect(findFirst).toHaveBeenCalledWith({ where: scope });
+    expect(updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({ where: scope }));
+    expect(deleteMany).toHaveBeenCalledWith({ where: scope });
+  });
+
+  it("reports not found when the item leaves the scope before the write", async () => {
+    const existing = row({ id: "item-1", title: "Draft", status: "open" });
+    const prisma = {
+      scratchpadItem: {
+        findFirst: vi.fn(async () => existing),
+        updateManyAndReturn: vi.fn(async () => []),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
       },
-    });
+    };
+    const input = { spaceId: "ws", botId: "bot", userId: "user", itemId: "item-1" };
+    await expect(
+      updateScratchpadItemFromTool({ prisma: prisma as never }, { ...input, title: "x" }),
+    ).resolves.toEqual({ error: "Scratchpad item not found." });
+    await expect(removeScratchpadItemFromTool({ prisma: prisma as never }, input)).resolves.toEqual(
+      { error: "Scratchpad item not found." },
+    );
   });
 
   it("returns not found when item is outside the bot scope", async () => {

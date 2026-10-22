@@ -1,0 +1,41 @@
+name: Review bot
+
+# Greptile reviews PRs by default. A PR labeled review:coderabbit goes to
+# CodeRabbit instead (.coderabbit.yaml opts it in, greptile.json opts it out).
+# The label is added when Greptile replies that it can no longer review, or,
+# while the CODERABBIT_UNTIL repository variable holds a later date
+# (YYYY-MM-DD), to every new PR.
+#
+# pull_request_target so fork PRs can be labeled on open; this workflow never
+# checks out or runs PR code.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      (github.event_name == 'pull_request_target' && vars.CODERABBIT_UNTIL != '') ||
+      (github.event.review.user.login == 'greptile-apps[bot]' &&
+        contains(github.event.review.body, 'Reactivate Greptile'))
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Hand the PR to CodeRabbit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+          UNTIL: ${{ vars.CODERABBIT_UNTIL }}
+        run: |
+          if [[ "$EVENT" == pull_request_review || "$(date -u +%F)" < "$UNTIL" ]]; then
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+          fi

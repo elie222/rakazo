@@ -40,6 +40,11 @@ vi.mock("@rakazo/ui-web", () => {
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
     parseBotAvatar: () => ({ color: undefined }),
     resolvePersonaColorDef: () => ({ hex: "#000000" }),
+    ToggleGroup: Container,
+    ToggleGroupItem: Container,
+    Tooltip: Container,
+    TooltipContent: () => null,
+    TooltipTrigger: ({ render }: { render: ReactNode }) => render,
   };
 });
 

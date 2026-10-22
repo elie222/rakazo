@@ -1,6 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
+  actorMayUsePrivateEndpoint,
   createVoiceProvider,
   isFishSpeechModelId,
   isVoiceProviderId,
@@ -13,7 +15,7 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
-import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
+import type { Actor, VoiceAccountErrorCode, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
@@ -23,6 +25,7 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
+  runAsTenant,
   selectSpaceVoicePreference,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -33,6 +36,27 @@ import { withSerializableRetry } from "./serializable-retry.js";
 export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: SecretStore;
+  /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
+  env?: { mcpAllowPrivateEndpoint?: boolean };
+}
+
+/** A self-hosted speech server on a private address is limited like model endpoints. */
+async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, actor: Actor, provider: string) {
+  return (
+    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
+    actorMayUsePrivateEndpoint(
+      deps.prisma,
+      actor.userId,
+      deps.env?.mcpAllowPrivateEndpoint === true,
+    )
+  );
+}
+
+/** The voice adapter for a credential, with the actor's private-endpoint decision. */
+export async function voiceProviderFor(deps: VoiceDeps, actor: Actor, provider: string) {
+  return createVoiceProvider(provider, {
+    allowPrivateEndpoint: await voiceMayUsePrivateEndpoint(deps, actor, provider),
+  });
 }
 
 export { listVoiceCatalog };
@@ -133,6 +157,7 @@ export function voiceCredentialPlaintext(input: {
   sttModel?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
+  allowPrivateEndpoint?: boolean;
 }): string {
   if (input.provider !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
     if (input.plaintext.trim().length < 8) {
@@ -149,6 +174,7 @@ export function voiceCredentialPlaintext(input: {
         sttModel: input.sttModel,
       },
       input.previousPlaintext,
+      { allowPrivate: input.allowPrivateEndpoint },
     );
   } catch (error) {
     throw new ORPCError("BAD_REQUEST", {
@@ -228,7 +254,12 @@ export async function persistVoiceCredential(
       ? // An unreadable old secret only means nothing is inherited; the form must be complete.
         await loadVoiceCredential(deps, actor, input.provider).catch(() => null)
       : null;
-  const plaintext = voiceCredentialPlaintext({ ...input, previousPlaintext: previous?.apiKey });
+  const allowPrivateEndpoint = await voiceMayUsePrivateEndpoint(deps, actor, input.provider);
+  const plaintext = voiceCredentialPlaintext({
+    ...input,
+    previousPlaintext: previous?.apiKey,
+    allowPrivateEndpoint,
+  });
   const server =
     input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID
       ? openAiCompatibleVoiceServer(plaintext)
@@ -238,7 +269,7 @@ export async function persistVoiceCredential(
     input.provider === FISH_AUDIO_PROVIDER && input.speechModel !== undefined
       ? fishSpeechModelValue(input.speechModel)
       : undefined;
-  const provider = createVoiceProvider(input.provider);
+  const provider = createVoiceProvider(input.provider, { allowPrivateEndpoint });
   const verified = await provider.verify(plaintext, voiceContext(actor, input.signal));
   if (!verified.ok) {
     throw new ORPCError("BAD_REQUEST", { message: verified.message ?? "That key was rejected." });
@@ -459,7 +490,7 @@ export async function synthesizeVoice(
   if (text.length > MAX_SPEAK_CHARS) {
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
-  const provider = createVoiceProvider(target.cred.provider);
+  const provider = await voiceProviderFor(deps, actor, target.cred.provider);
   return provider.synthesize(
     {
       text,
@@ -479,7 +510,7 @@ export async function transcribeVoice(
 ) {
   const loaded = await loadDefaultVoiceCredential(deps, actor);
   if (!loaded) throw new NoVoiceConfigured("key");
-  const provider = createVoiceProvider(loaded.cred.provider);
+  const provider = await voiceProviderFor(deps, actor, loaded.cred.provider);
   if (!provider.transcribe) {
     throw new ORPCError("BAD_REQUEST", {
       message: "This voice provider does not transcribe audio. Use on-device dictation instead.",
@@ -512,16 +543,18 @@ export function mountVoiceHttpRoutes(
     if (raw === null) return c.json({ error: "Request body is too large." }, 413);
     const body = parseVoiceRequestBody(raw);
     try {
-      const clip = await synthesizeVoice(deps, actor, {
-        text: String((body as { text?: unknown }).text ?? ""),
-        voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
-        botId: optionalString((body as { botId?: unknown }).botId),
-        signal: AbortSignal.any(
-          [c.req.raw.signal, AbortSignal.timeout(SPEAK_TIMEOUT_MS)].filter(
-            Boolean,
-          ) as AbortSignal[],
-        ),
-      });
+      const clip = await runAsTenant(actor, () =>
+        synthesizeVoice(deps, actor, {
+          text: String((body as { text?: unknown }).text ?? ""),
+          voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
+          botId: optionalString((body as { botId?: unknown }).botId),
+          signal: AbortSignal.any(
+            [c.req.raw.signal, AbortSignal.timeout(SPEAK_TIMEOUT_MS)].filter(
+              Boolean,
+            ) as AbortSignal[],
+          ),
+        }),
+      );
       // Copy into a fresh ArrayBuffer-backed view: DOM-lib BodyInit rejects
       // Uint8Array<ArrayBufferLike> since TS 5.7.
       return new Response(new Uint8Array(clip.bytes), {
@@ -545,12 +578,14 @@ export function mountVoiceHttpRoutes(
     const language = optionalString((body as { language?: unknown }).language);
     try {
       const audio = decodeAudioBase64(audioBase64);
-      const result = await transcribeVoice(deps, actor, {
-        audio,
-        mimeType: String((body as { mimeType?: unknown }).mimeType ?? "audio/webm"),
-        language,
-        signal: c.req.raw.signal,
-      });
+      const result = await runAsTenant(actor, () =>
+        transcribeVoice(deps, actor, {
+          audio,
+          mimeType: String((body as { mimeType?: unknown }).mimeType ?? "audio/webm"),
+          language,
+          signal: c.req.raw.signal,
+        }),
+      );
       return c.json({ text: result.text });
     } catch (error) {
       return voiceHttpError(c, error);
@@ -582,6 +617,11 @@ function decodeAudioBase64(value: string): Uint8Array {
   }
 }
 
+/** Spent credit is 402; a rejected key is 403, never 401, which clients read as a lost session. */
+export function voiceAccountErrorStatus(code: VoiceAccountErrorCode) {
+  return code === "VOICE_OUT_OF_CREDIT" ? 402 : 403;
+}
+
 function voiceHttpError(c: Context, error: unknown) {
   if (error instanceof IsolationError) {
     return c.json({ error: "Resource not found" }, 404);
@@ -594,6 +634,13 @@ function voiceHttpError(c: Context, error: unknown) {
     const status =
       code === "UNAUTHORIZED" ? 401 : code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
     return c.json({ error: error.message }, status);
+  }
+  if (error instanceof VoiceAccountError) {
+    getLogger().warn("voice provider account rejected the request", {
+      route: c.req.path,
+      reason: error.code,
+    });
+    return c.json({ error: error.message, code: error.code }, voiceAccountErrorStatus(error.code));
   }
   const message = error instanceof Error ? error.message : "Voice request failed.";
   // Message only: request bodies, keys and audio never reach the log.

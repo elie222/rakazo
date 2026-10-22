@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, signup } from "./helpers";
 
-test("onboarding uses compact model selects without misleading latest labels", async ({
+test("onboarding requires a model and uses compact model selects without misleading latest labels", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/me", async (route) => {
@@ -25,6 +25,17 @@ test("onboarding uses compact model selects without misleading latest labels", a
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
     timeout: 20_000,
   });
+
+  // A deployment without a model cannot skip setup or continue without a usable key.
+  await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("   ");
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  await expect(continueButton).toBeEnabled();
+  await page.getByLabel("API key", { exact: true }).fill("");
+  await captureScreenshot(page, testInfo, "onboarding-model-required");
 
   const provider = page.getByRole("combobox", { name: "Provider" });
   await expect(provider).toContainText("OpenRouter");

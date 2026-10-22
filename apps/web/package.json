@@ -14,6 +14,7 @@
     "intl:compile": "lingui compile"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.11",
     "@lingui/core": "6.6.0",
     "@lingui/react": "6.6.0",
     "@orpc/client": "1.15.7",
@@ -24,6 +25,7 @@
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@sentry/react": "11.8.0",
+    "@simplewebauthn/browser": "13.3.0",
     "better-auth": "1.7.11",
     "lucide-react": "1.60.0",
     "react": "19.2.3",

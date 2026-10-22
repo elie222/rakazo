@@ -2,17 +2,15 @@ import { I18nProvider } from "@lingui/react";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { isToolActivityBlock, withLiveStreamingProgress } from "@rakazo/core";
-import { DEFAULT_GROK_BOT_COLOR } from "@rakazo/ui-web";
+import { DEFAULT_BOT_AVATAR_COLOR } from "@rakazo/ui-web";
 import { createRoot } from "react-dom/client";
 import { ActiveBotGlyph } from "../../src/components/ai/CollaborationMarker";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import { setResponseStreamingPreference } from "../../src/lib/response-streaming";
 import { reduceThreadSnapshot } from "../../src/lib/thread-events";
-import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
-const view = params.get("view") === "settings" ? "settings" : "thread";
 const streamResponses = params.get("stream") !== "off";
 const phase = params.get("phase") === "done" ? "done" : "live";
 
@@ -95,9 +93,6 @@ function reduceComparableTurn(stream: boolean, turn: "live" | "done"): ThreadSna
 }
 
 function fixtureNote(): string {
-  if (view === "settings") {
-    return `Fixture: Settings overlay · Stream replies ${streamResponses ? "on" : "off"}`;
-  }
   if (!streamResponses && phase === "live") {
     return "Fixture: thread reducer · Stream replies off · mid-turn (no live tokens)";
   }
@@ -184,7 +179,7 @@ function ThreadFixture({ snapshot }: { snapshot: ThreadSnapshot }) {
         ))}
         {running && !hasLiveProgressText ? (
           <ActiveBotGlyph
-            bots={[{ botId: "bot-1", name: "Chief", color: DEFAULT_GROK_BOT_COLOR }]}
+            bots={[{ botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR }]}
             label="Chief is working"
           />
         ) : null}
@@ -193,34 +188,11 @@ function ThreadFixture({ snapshot }: { snapshot: ThreadSnapshot }) {
   );
 }
 
-function SettingsFixture() {
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <p data-testid="fixture-note" className="px-4 py-3 text-[12.5px] text-muted-foreground/80">
-        {fixtureNote()}
-      </p>
-      <SettingsOverlay
-        email="owner@example.test"
-        name="Owner"
-        avatarStyle="robot"
-        onAvatarStyleChange={() => Promise.resolve()}
-        memoryConfig={null}
-        onMemoryConfigChange={() => {}}
-        onClose={() => {}}
-      />
-    </main>
-  );
-}
-
 void bootstrapI18n("en").then(() => {
   setResponseStreamingPreference(streamResponses ? "on" : "off");
   createRoot(document.getElementById("root")!).render(
     <I18nProvider i18n={i18n}>
-      {view === "settings" ? (
-        <SettingsFixture />
-      ) : (
-        <ThreadFixture snapshot={reduceComparableTurn(streamResponses, phase)} />
-      )}
+      <ThreadFixture snapshot={reduceComparableTurn(streamResponses, phase)} />
     </I18nProvider>,
   );
 });

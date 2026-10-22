@@ -196,7 +196,7 @@ function createStyles() {
       padding: 16,
       color: tokens.foreground,
     },
-    placeholder: { color: tokens.mutedForeground },
+    placeholder: { color: tokens.faintForeground },
     error: { color: tokens.destructive, fontSize: 13 },
   });
 }

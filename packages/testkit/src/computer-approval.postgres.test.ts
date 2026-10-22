@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator, FakeSandboxProvider } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rakazo/adapters";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 import { type ModelEmulatorStep, startModelEmulator } from "./model-emulator.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
@@ -104,10 +105,11 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           agentRuntime: "pi",
           wakeupDriver: "memory",
           signupsEnabled: "true",
-          composio: new ComposioEmulator(),
+          composio: new ComposioConnector({ client: new FakeComposioClient() }),
           encryptionKey: "offline-computer-fixture-encryption-key",
         });
         stop = handles.stop;
+        const db = asSystem(handles.prisma);
         expect(handles.sandbox).toBeInstanceOf(FakeSandboxProvider);
         sandbox = handles.sandbox as FakeSandboxProvider;
         // Keep the real fake-provider implementation; observe calls and its state
@@ -145,8 +147,8 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           modelProvider: model.model.provider,
           modelId: model.model.id,
         });
-        const storedBot = await handles.prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
-        await handles.prisma.actionApprovalRule.create({
+        const storedBot = await db.bot.findUniqueOrThrow({ where: { id: bot.id } });
+        await db.actionApprovalRule.create({
           data: {
             spaceId: storedBot.spaceId,
             createdByUserId: storedBot.userId,
@@ -163,7 +165,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           await expect
             .poll(
               async () => {
-                const run = await handles.prisma.run.findUniqueOrThrow({
+                const run = await db.run.findUniqueOrThrow({
                   where: { id: sent.runId },
                 });
                 if (run.status === "failed") model.assertComplete();
@@ -176,7 +178,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
         await waitForRun("waiting_input");
         expect(model.requests).toHaveLength(1);
         expect(act).not.toHaveBeenCalled();
-        const effects = await handles.prisma.externalEffect.findMany({
+        const effects = await db.externalEffect.findMany({
           where: { runId: sent.runId },
         });
         expect(effects).toHaveLength(1);
@@ -185,7 +187,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           status: "intended",
           request: approvedArgs,
         });
-        const card = await handles.prisma.message.findFirstOrThrow({
+        const card = await db.message.findFirstOrThrow({
           where: { runId: sent.runId, role: "bot" },
           orderBy: { seq: "desc" },
         });
@@ -210,7 +212,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
             settleMs: 0,
           });
         }
-        const settledEffects = await handles.prisma.externalEffect.findMany({
+        const settledEffects = await db.externalEffect.findMany({
           where: { runId: sent.runId },
         });
         expect(settledEffects).toHaveLength(1);

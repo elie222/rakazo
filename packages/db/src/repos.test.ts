@@ -42,6 +42,7 @@ function reposFor(memoryScope: string | null) {
     run: {
       findMany: vi.fn(async () => []),
     },
+    $queryRaw: vi.fn(async () => []),
   };
   return createRepos(prisma as unknown as PrismaClient);
 }
@@ -54,7 +55,10 @@ describe("createRepos.listBots", () => {
         thread: { ...baseBot.thread, runs: [{ id: "run-failed", status: "failed" }] },
       },
     ]);
-    const repos = createRepos({ bot: { findMany } } as unknown as PrismaClient);
+    const repos = createRepos({
+      bot: { findMany },
+      $queryRaw: vi.fn(async () => []),
+    } as unknown as PrismaClient);
 
     const failed = await repos.listBots(actor);
     expect(failed[0]).toMatchObject({ status: "idle", runErrorId: "run-failed" });
@@ -93,15 +97,20 @@ describe("createRepos.listBots", () => {
           ["one", "two"].map((id) => ({
             ...baseBot,
             id,
-            thread: {
-              ...baseBot.thread,
-              id: `thread-${id}`,
-              messages: [{ runId: `run-${id}`, blocks: [{ kind: "text", text: `Answer ${id}` }] }],
-            },
+            thread: { ...baseBot.thread, id: `thread-${id}`, messages: [] },
           })),
         ),
       },
       run: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () =>
+        ["one", "two"].map((id, seq) => ({
+          threadId: `thread-${id}`,
+          seq,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          runId: `run-${id}`,
+          blocks: [{ kind: "text", text: `Answer ${id}` }],
+        })),
+      ),
     };
 
     const bots = await createRepos(prisma as unknown as PrismaClient).listBots(actor);
@@ -119,12 +128,7 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: {
-              ...baseBot.thread,
-              messages: [
-                { seq: 30, runId: "peer-new", blocks: [{ kind: "text", text: "Hidden" }] },
-              ],
-            },
+            thread: { ...baseBot.thread, messages: [] },
           },
         ]),
       },
@@ -134,6 +138,15 @@ describe("createRepos.listBots", () => {
           .mockResolvedValueOnce([{ id: "peer-new" }])
           .mockResolvedValueOnce([{ id: "peer-old" }]),
       },
+      $queryRaw: vi.fn(async () => [
+        {
+          threadId: "thread-1",
+          seq: 30,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          runId: "peer-new",
+          blocks: [{ kind: "text", text: "Hidden" }],
+        },
+      ]),
       message: {
         findMany: vi
           .fn()
@@ -166,27 +179,7 @@ describe("createRepos.listBots", () => {
     const findMany = vi.fn(async () => [
       {
         ...baseBot,
-        thread: {
-          ...baseBot.thread,
-          messages: [
-            {
-              runId: "run-peer",
-              blocks: [{ kind: "text", text: "Echoed peer reply" }],
-            },
-            {
-              runId: "run-peer",
-              blocks: [
-                {
-                  kind: "bot_message_received",
-                  fromBotId: "bot-2",
-                  fromBotName: "Coder",
-                  text: "Peer result",
-                },
-              ],
-            },
-            { runId: "run-user", blocks: [{ kind: "text", text: "Visible answer" }] },
-          ],
-        },
+        thread: { ...baseBot.thread, messages: [] },
       },
     ]);
     const prisma = {
@@ -196,22 +189,41 @@ describe("createRepos.listBots", () => {
       run: {
         findMany: vi.fn(async () => [{ id: "run-peer" }]),
       },
+      $queryRaw: vi.fn(async () => [
+        {
+          threadId: "thread-1",
+          seq: 3,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          runId: "run-peer",
+          blocks: [{ kind: "text", text: "Echoed peer reply" }],
+        },
+        {
+          threadId: "thread-1",
+          seq: 2,
+          createdAt: new Date("2026-08-19T00:00:00.000Z"),
+          runId: "run-peer",
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "bot-2",
+              fromBotName: "Coder",
+              text: "Peer result",
+            },
+          ],
+        },
+        {
+          threadId: "thread-1",
+          seq: 1,
+          createdAt: new Date("2026-08-18T00:00:00.000Z"),
+          runId: "run-user",
+          blocks: [{ kind: "text", text: "Visible answer" }],
+        },
+      ]),
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
       expect.objectContaining({ preview: "Visible answer" }),
     ]);
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({
-          thread: {
-            include: expect.objectContaining({
-              messages: { orderBy: { seq: "desc" }, take: 16 },
-            }),
-          },
-        }),
-      }),
-    );
   });
 
   it("skips a peer-run preview tail when the receipt is outside the window", async () => {
@@ -220,22 +232,29 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: {
-              ...baseBot.thread,
-              messages: [
-                {
-                  runId: "run-peer",
-                  blocks: [{ kind: "text", text: "Echoed peer reply" }],
-                },
-                { runId: "run-user", blocks: [{ kind: "text", text: "Visible answer" }] },
-              ],
-            },
+            thread: { ...baseBot.thread, messages: [] },
           },
         ]),
       },
       run: {
         findMany: vi.fn(async () => [{ id: "run-peer" }]),
       },
+      $queryRaw: vi.fn(async () => [
+        {
+          threadId: "thread-1",
+          seq: 2,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          runId: "run-peer",
+          blocks: [{ kind: "text", text: "Echoed peer reply" }],
+        },
+        {
+          threadId: "thread-1",
+          seq: 1,
+          createdAt: new Date("2026-08-19T00:00:00.000Z"),
+          runId: "run-user",
+          blocks: [{ kind: "text", text: "Visible answer" }],
+        },
+      ]),
       message: {
         findMany: vi.fn(async () => []),
       },
@@ -255,22 +274,22 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: {
-              ...baseBot.thread,
-              messages: [
-                {
-                  seq: 20,
-                  runId: "run-peer",
-                  blocks: [{ kind: "text", text: "Echoed peer reply" }],
-                },
-              ],
-            },
+            thread: { ...baseBot.thread, messages: [] },
           },
         ]),
       },
       run: {
         findMany: vi.fn(async () => [{ id: "run-peer" }]),
       },
+      $queryRaw: vi.fn(async () => [
+        {
+          threadId: "thread-1",
+          seq: 20,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          runId: "run-peer",
+          blocks: [{ kind: "text", text: "Echoed peer reply" }],
+        },
+      ]),
       message: {
         findMany: messageFindMany,
       },
@@ -304,16 +323,20 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [
           {
             ...baseBot,
-            thread: {
-              ...baseBot.thread,
-              messages: peerWindows[0],
-            },
+            thread: { ...baseBot.thread, messages: [] },
           },
         ]),
       },
       run: {
         findMany: vi.fn(async () => [{ id: "run-peer" }]),
       },
+      $queryRaw: vi.fn(async () =>
+        (peerWindows[0] ?? []).map((message) => ({
+          threadId: "thread-1",
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          ...message,
+        })),
+      ),
       message: {
         findMany: messageFindMany,
       },
@@ -332,25 +355,25 @@ describe("createRepos.listBots", () => {
           {
             ...baseBot,
             updatedAt: new Date("2026-08-21T09:00:00.000Z"),
-            thread: {
-              ...baseBot.thread,
-              messages: [
-                {
-                  seq: 2,
-                  createdAt: new Date("2026-08-20T10:30:00.000Z"),
-                  blocks: [{ kind: "text", text: "Latest answer" }],
-                },
-                {
-                  seq: 1,
-                  createdAt: new Date("2026-08-20T10:00:00.000Z"),
-                  blocks: [{ kind: "text", text: "Question" }],
-                },
-              ],
-            },
+            thread: { ...baseBot.thread, messages: [] },
           },
         ]),
       },
       run: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () => [
+        {
+          threadId: "thread-1",
+          seq: 2,
+          createdAt: new Date("2026-08-20T10:30:00.000Z"),
+          blocks: [{ kind: "text", text: "Latest answer" }],
+        },
+        {
+          threadId: "thread-1",
+          seq: 1,
+          createdAt: new Date("2026-08-20T10:00:00.000Z"),
+          blocks: [{ kind: "text", text: "Question" }],
+        },
+      ]),
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
@@ -491,6 +514,7 @@ it("finds incoming calls independently of the sidebar message window", async () 
       ]),
     },
     message: { findMany: messageQuery },
+    $queryRaw: vi.fn(async () => []),
   } as unknown as PrismaClient;
   const now = Date.now();
   const bots = await createRepos(prisma, {

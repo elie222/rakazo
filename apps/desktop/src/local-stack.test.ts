@@ -62,12 +62,13 @@ describe("resolveImageTag", () => {
 });
 
 describe("renderStackEnv", () => {
-  it("fills the five secrets and drops the image tag lines of the shipped template", async () => {
+  it("fills the generated secrets and drops the image tag lines of the shipped template", async () => {
     const template = await readFile(path.join(COMPOSE_DIR, STACK_ENV_TEMPLATE), "utf8");
     const rendered = renderStackEnv(template, fakeHex);
     const lines = rendered.split("\n");
 
     expect(lines).toContain(`POSTGRES_PASSWORD=${"ab".repeat(16)}`);
+    expect(lines).toContain(`POSTGRES_APP_PASSWORD=${"ab".repeat(16)}`);
     for (const name of [
       "BETTER_AUTH_SECRET",
       "ENCRYPTION_KEY",
@@ -108,10 +109,14 @@ describe("ensureStackEnv", () => {
     if (process.platform !== "win32") expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 
-  it("never touches an existing .env", async () => {
-    await writeFile(path.join(dir, STACK_ENV_FILE), "sentinel\n", "utf8");
+  it("keeps an existing .env, appending only secrets added since it was created", async () => {
+    await writeFile(path.join(dir, STACK_ENV_FILE), "sentinel", "utf8");
     await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
-    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe("sentinel\n");
+    const updated = `sentinel\nPOSTGRES_APP_PASSWORD=${"ab".repeat(16)}\n`;
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
+
+    await expect(ensureStackEnv(dir, "POSTGRES_PASSWORD=\n", fakeHex)).resolves.toBe("kept");
+    await expect(readFile(path.join(dir, STACK_ENV_FILE), "utf8")).resolves.toBe(updated);
   });
 
   it.runIf(process.platform !== "win32")(
@@ -356,6 +361,9 @@ describe("LocalStackController", () => {
     for (const call of compose) {
       expect(call.env.SANDBOX_HOST_URL).toBe(hostComputer.url);
       expect(call.env.SANDBOX_HOST_TOKEN).toBe(hostComputer.token);
+      expect(call.env.SANDBOX_COMPUTER_EGRESS).toBe("open");
+      // The laptop's disk encryption covers content; a lost key must not lose it.
+      expect(call.env.CONTENT_ENCRYPTION).toBe("off");
     }
     expect(
       await controller({

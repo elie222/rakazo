@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useMobileTokens } from "../lib/native";
 import { runErrorExplanation } from "../lib/run-error-presentation";
 import { NativeSymbol } from "./native-symbol";
 import { RunErrorActions } from "./run-error-actions";
@@ -23,7 +23,6 @@ export function ThreadErrorNotice({
 }) {
   const { t, locale } = useI18n();
   const tokens = useMobileTokens();
-  const dark = useResolvedAppearance() === "dark";
   const { fontScale } = useWindowDimensions();
   if (!error && !summary) return null;
   const explanation = runErrorExplanation(t, !!onConnection, !!onModel);
@@ -48,13 +47,7 @@ export function ThreadErrorNotice({
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
-      style={[
-        styles.card,
-        {
-          backgroundColor: tokens.card,
-          borderColor: dark ? tokens.mutedForeground : tokens.border,
-        },
-      ]}
+      style={[styles.card, { backgroundColor: tokens.card }]}
     >
       <View style={styles.header}>
         <View
@@ -104,7 +97,8 @@ export function ThreadErrorNotice({
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 12, borderWidth: 1, padding: 16, marginTop: 12, gap: 6 },
+  // Fill only: cards in the thread read by tone, without an outline.
+  card: { borderRadius: 12, padding: 16, marginTop: 12, gap: 6 },
   header: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   headline: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: "600" },
   body: { marginLeft: 26, gap: 12 },

@@ -25,6 +25,7 @@ import {
   settleReleasedTakeoverCards,
 } from "./events.js";
 import { RunHistoryWriteError } from "./messages.js";
+import { installSecurityEventStore } from "./security-events.js";
 
 class TestFanout implements RealtimeFanout {
   subscriber: ((payload: string) => void) | undefined;
@@ -1916,7 +1917,9 @@ describe("answerRunInput", () => {
       },
       task: { updateMany: vi.fn() },
       externalEffect: {
-        findFirst: vi.fn().mockResolvedValue({ id: "effect-1", status: "intended" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "effect-1", kind: "connector_write", status: "intended" }),
         update: vi.fn().mockResolvedValue({ id: "effect-1" }),
       },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
@@ -1930,6 +1933,8 @@ describe("answerRunInput", () => {
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
+    const audit = { securityEvent: { create: vi.fn(async () => ({})) } };
+    installSecurityEventStore(audit as never);
 
     await expect(
       answerRunInput(
@@ -1946,6 +1951,16 @@ describe("answerRunInput", () => {
       ),
     ).resolves.toBe(true);
 
+    installSecurityEventStore(undefined);
+    expect(audit.securityEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "approval.decided",
+        userId: "user-1",
+        spaceId: "workspace-1",
+        metadata: { decision: "allow", effectKind: "connector_write", runId: "run-1" },
+      }),
+    });
+
     expect(tx.task.updateMany).not.toHaveBeenCalled();
     expect(tx.externalEffect.findFirst).toHaveBeenCalledWith({
       where: {
@@ -1961,96 +1976,102 @@ describe("answerRunInput", () => {
     });
   });
 
-  it("approves and upserts always-allow without overwriting the task prompt", async () => {
-    const fanout = new TestFanout();
-    const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-      message: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "message-1",
-          blocks: [
-            {
-              kind: "ask",
-              approvalEffectId: "effect-1",
-              text: "Review before writing",
-              status: "pending",
-              actions: [
-                { id: "allow", label: "Allow once" },
-                { id: "always", label: "Always allow" },
-                { id: "deny", label: "Deny" },
-              ],
-            },
-          ],
-        }),
-        update: vi.fn().mockResolvedValue({ id: "message-1" }),
-      },
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ userId: "user-1", status: "queued" }),
-      },
-      task: { updateMany: vi.fn() },
-      externalEffect: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ id: "effect-1", status: "intended", kind: "destination.write" }),
-        update: vi.fn().mockResolvedValue({ id: "effect-1" }),
-      },
-      actionApprovalRule: {
-        upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
-      },
-      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
-      event: {
-        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
-          ...event(data.seq),
-          type: data.type,
-        })),
-      },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-
-    await expect(
-      answerRunInput(
-        prisma,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          runId: "run-1",
-          messageId: "message-1",
-          answeredByUserId: "user-1",
-          answer: "always",
+  it.each([
+    ["destination.write", {}, "tool", "destination.write"],
+    ["web_fetch", { url: "https://docs.example.com/a?b=c" }, "site", "example.com"],
+  ])(
+    "approves %s and upserts always-allow without overwriting the task prompt",
+    async (kind, request, matchKind, matchValue) => {
+      const fanout = new TestFanout();
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        message: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "message-1",
+            blocks: [
+              {
+                kind: "ask",
+                approvalEffectId: "effect-1",
+                text: "Review before writing",
+                status: "pending",
+                actions: [
+                  { id: "allow", label: "Allow once" },
+                  { id: "always", label: "Always allow" },
+                  { id: "deny", label: "Deny" },
+                ],
+              },
+            ],
+          }),
+          update: vi.fn().mockResolvedValue({ id: "message-1" }),
         },
-        fanout,
-      ),
-    ).resolves.toBe(true);
+        run: {
+          findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ userId: "user-1", status: "queued" }),
+        },
+        task: { updateMany: vi.fn() },
+        externalEffect: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ id: "effect-1", status: "intended", kind, request }),
+          update: vi.fn().mockResolvedValue({ id: "effect-1" }),
+        },
+        actionApprovalRule: {
+          upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
+        },
+        thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+        event: {
+          create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+            ...event(data.seq),
+            type: data.type,
+          })),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
 
-    expect(tx.task.updateMany).not.toHaveBeenCalled();
-    expect(tx.externalEffect.update).toHaveBeenCalledWith({
-      where: { id: "effect-1" },
-      data: { status: "approved" },
-    });
-    expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
-      where: {
-        spaceId_createdByUserId_effect_matchKind_matchValue: {
+      await expect(
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "user-1",
+            answer: "always",
+          },
+          fanout,
+        ),
+      ).resolves.toBe(true);
+
+      expect(tx.task.updateMany).not.toHaveBeenCalled();
+      expect(tx.externalEffect.update).toHaveBeenCalledWith({
+        where: { id: "effect-1" },
+        data: { status: "approved" },
+      });
+      expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
+        where: {
+          spaceId_createdByUserId_effect_matchKind_matchValue: {
+            spaceId: "workspace-1",
+            createdByUserId: "user-1",
+            effect: "always_allow",
+            matchKind,
+            matchValue,
+          },
+        },
+        create: {
           spaceId: "workspace-1",
           createdByUserId: "user-1",
           effect: "always_allow",
-          matchKind: "tool",
-          matchValue: "destination.write",
+          matchKind,
+          matchValue,
         },
-      },
-      create: {
-        spaceId: "workspace-1",
-        createdByUserId: "user-1",
-        effect: "always_allow",
-        matchKind: "tool",
-        matchValue: "destination.write",
-      },
-      update: {},
-    });
-  });
+        update: {},
+      });
+    },
+  );
 
   it("does not let another workspace member create an always-allow rule for the run owner", async () => {
     const tx = {
@@ -2370,6 +2391,195 @@ describe("answerRunInput", () => {
     ).toBe(false);
     expect(store).not.toHaveBeenCalled();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe("dismissing a secret request", () => {
+    const login = {
+      name: "example_login",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+    };
+
+    function setup(options: {
+      block?: Record<string, unknown>;
+      ownerId?: string;
+      trigger?: string;
+      effect?: { id: string } | null;
+    }) {
+      const block = options.block ?? {
+        kind: "ask",
+        text: "Example sign-in",
+        input: "secret",
+        purpose: "password",
+        credential: login,
+        status: "pending",
+      };
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        message: {
+          findFirst: vi.fn().mockResolvedValue({ id: "message-1", blocks: [block] }),
+          update: vi.fn().mockResolvedValue({ id: "message-1" }),
+        },
+        run: {
+          findFirst: vi.fn().mockResolvedValue({
+            botId: "bot-1",
+            userId: options.ownerId ?? "user-1",
+            trigger: options.trigger ?? "message",
+            task: { prompt: "Sign in to the example site" },
+          }),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        externalEffect: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue(options.effect === undefined ? { id: "effect-1" } : options.effect),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+        event: {
+          create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+            ...event(data.seq),
+            type: data.type,
+          })),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const writer = { store: vi.fn(), withPrepared: vi.fn() };
+      const dismiss = (input: Record<string, unknown> = {}) =>
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "user-1",
+            answer: "",
+            dismiss: true,
+            ...input,
+          },
+          new TestFanout(),
+          writer,
+        );
+      return { tx, writer, dismiss, block };
+    }
+
+    it.each([
+      ["a login card", undefined],
+      [
+        "a connector code card",
+        { kind: "ask", text: "Enter the code", input: "secret", purpose: "otp", status: "pending" },
+      ],
+    ])("resumes the run with the dismissal and stores nothing for %s", async (_name, block) => {
+      const h = setup({ block });
+
+      await expect(h.dismiss()).resolves.toBe(true);
+
+      expect(h.writer.withPrepared).not.toHaveBeenCalled();
+      expect(h.writer.store).not.toHaveBeenCalled();
+      expect(h.tx.run.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "run-1",
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          status: "waiting_input",
+        },
+        data: { status: "queued" },
+      });
+      const request = {
+        runId: "run-1",
+        spaceId: "workspace-1",
+        kind: "request_secret",
+        status: "intended",
+      };
+      expect(h.tx.externalEffect.updateMany).toHaveBeenCalledWith({
+        where: request,
+        data: { status: "completed", result: { ok: false, dismissed: true } },
+      });
+      expect(h.tx.task.updateMany).toHaveBeenCalledWith({
+        where: { runs: { some: { id: "run-1" } } },
+        data: { prompt: "The user dismissed this request." },
+      });
+      expect(h.tx.message.update).toHaveBeenCalledWith({
+        where: { id: "message-1" },
+        data: { blocks: [{ ...h.block, status: "answered", answer: "", dismissed: true }] },
+      });
+    });
+
+    it("keeps a background run's instructions in the resumed prompt", async () => {
+      const h = setup({ trigger: "routine" });
+      await expect(h.dismiss()).resolves.toBe(true);
+      expect(h.tx.task.updateMany).toHaveBeenCalledWith({
+        where: { runs: { some: { id: "run-1" } } },
+        data: {
+          prompt:
+            "Sign in to the example site\n\nExample sign-in\nAnswer: The user dismissed this request.",
+        },
+      });
+    });
+
+    it.each([
+      ["another member of the space", { ownerId: "owner" }, {}],
+      [
+        "another member, for a connector code",
+        {
+          ownerId: "owner",
+          block: { kind: "ask", text: "Enter the code", input: "secret", status: "pending" },
+        },
+        {},
+      ],
+      [
+        "a question card",
+        {
+          block: { kind: "ask", text: "Which city?", status: "pending" },
+        },
+        {},
+      ],
+      [
+        "an approval card",
+        {
+          block: {
+            kind: "ask",
+            text: "Review before writing",
+            input: "secret",
+            approvalEffectId: "effect-1",
+            status: "pending",
+            actions: [{ id: "allow", label: "Allow once" }],
+          },
+        },
+        {},
+      ],
+      [
+        "an answered card",
+        {
+          block: {
+            kind: "ask",
+            text: "Example sign-in",
+            input: "secret",
+            credential: login,
+            status: "answered",
+            answer: "",
+          },
+        },
+        {},
+      ],
+      ["a card without a pending request", { effect: null }, {}],
+      ["a dismissal that carries a value", {}, { answer: "example-password" }],
+      ["a dismissal that carries a username", {}, { username: "ada" }],
+    ])("rejects a dismissal from %s", async (_name, options, input) => {
+      const h = setup(options);
+
+      await expect(h.dismiss(input)).resolves.toBe(false);
+
+      expect(h.tx.run.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.externalEffect.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.message.update).not.toHaveBeenCalled();
+      expect(h.writer.store).not.toHaveBeenCalled();
+    });
   });
 
   describe("login cards", () => {

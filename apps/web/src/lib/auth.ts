@@ -1,9 +1,15 @@
+import { passkeyClient } from "@better-auth/passkey/client";
+import type { OrganizationClientOptions } from "better-auth/client/plugins";
 import { emailOTPClient, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient, type ReactAuthClient } from "better-auth/react";
 
-// organizationClient's type resolves to `any`, which would erase the other plugin's methods.
 export const authClient: ReactAuthClient<{
-  plugins: [ReturnType<typeof emailOTPClient>];
+  // An uninstantiated generic resolves to `any`, which would erase every plugin's actions.
+  plugins: [
+    ReturnType<typeof organizationClient<OrganizationClientOptions>>,
+    ReturnType<typeof emailOTPClient>,
+    ReturnType<typeof passkeyClient>,
+  ];
 }> = createAuthClient({
-  plugins: [organizationClient(), emailOTPClient()],
+  plugins: [organizationClient(), emailOTPClient(), passkeyClient()],
 });

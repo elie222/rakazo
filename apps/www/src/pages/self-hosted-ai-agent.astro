@@ -159,7 +159,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
       <p>Use this path to develop Rakazo. The published images above are enough to run it.</p>
       <pre><code>{SOURCE_CHECKOUT}</code></pre>
       <p>
-        Set <code>POSTGRES_PASSWORD</code> to a URI-safe random value (for example <code>openssl rand -hex 16</code>) and put the same value in <code>DATABASE_URL</code>. Set <code>BETTER_AUTH_SECRET</code>, <code>ENCRYPTION_KEY</code>, and <code>SCREEN_PROXY_SECRET</code> to independent long random values. Docker sandboxes also need
+        Set <code>POSTGRES_PASSWORD</code> and <code>POSTGRES_APP_PASSWORD</code> to two URI-safe random values (for example <code>openssl rand -hex 16</code>) and put them in <code>DATABASE_MIGRATION_URL</code> and <code>DATABASE_URL</code>. Set <code>BETTER_AUTH_SECRET</code>, <code>ENCRYPTION_KEY</code>, and <code>SCREEN_PROXY_SECRET</code> to independent long random values. Docker sandboxes also need
         a dedicated <code>SANDBOX_SUPERVISOR_TOKEN</code>. Keep these in <code>.env</code>, not in git.
       </p>
       <p>

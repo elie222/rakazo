@@ -364,6 +364,9 @@ export interface SemanticMemoryResult {
 
 export interface SemanticMemoryForgetRequest {
   id: string;
+  /** Same scope as recall: providers delete only facts inside these namespaces. */
+  scope: DurableMemoryScope;
+  botId: string;
   reason?: string;
   /** Entity/namespace from a prior recall citation, when the backend scopes deletes. */
   entity?: string;
@@ -428,6 +431,8 @@ export interface AgentRunModel {
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
+  allowPrivateEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
   reasoning?: boolean;
   /** Whether this custom connection accepts image input. */
@@ -924,6 +929,8 @@ export interface BrowserSnapshotResult {
   /** Compact accessibility-style tree for the model. */
   tree: string;
   elements: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when it was captured. */
+  loading?: boolean;
   fallback?: "computer_act";
   error?: string;
 }
@@ -960,6 +967,8 @@ export interface BrowserActResult {
   /** Snapshot after the actions when available. */
   tree?: string;
   elements?: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when that snapshot was taken. */
+  loading?: boolean;
   fallback?: "computer_act";
   error?: string;
 }
@@ -1047,6 +1056,12 @@ export interface AutoReviewRequest {
   userTask: string;
   botDescription: string;
   matchingRules: AutoReviewMatchingRule[];
+  /**
+   * A web_fetch to a site the run was not given. `args` is then only the full URL, and
+   * `userTask` only the owner's own words (their message or the routine's instructions), never
+   * tool results or inbound messages, so injected text cannot argue for the site.
+   */
+  newSite?: boolean;
 }
 
 export interface AutoReviewResult {

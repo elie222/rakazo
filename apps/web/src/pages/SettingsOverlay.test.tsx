@@ -6,7 +6,10 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray) => strings.join(""),
+    i18n: { locale: "en" },
+  }),
 }));
 
 vi.mock("@rakazo/ui-web", () => ({
@@ -27,6 +30,34 @@ vi.mock("@rakazo/ui-web", () => ({
     "children"
   >) => <div {...props}>{children}</div>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
+  OptionSelect: ({
+    options,
+    value,
+    onValueChange,
+    "data-testid": testId,
+  }: {
+    options: readonly { value: string; label: string }[];
+    value: string;
+    onValueChange: (value: string) => void;
+    "data-testid"?: string;
+  }) => (
+    <div>
+      <button type="button" data-testid={testId}>
+        {options.find((option) => option.value === value)?.label}
+      </button>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="option"
+          aria-selected={option.value === value}
+          onClick={() => onValueChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("./AccountSettingsOverlay", () => ({

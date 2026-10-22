@@ -1,4 +1,17 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Update required": "Update erforderlich",
+  Update: "Aktualisieren",
+  Provider: "Anbieter",
+  "No matching providers": "Keine passenden Anbieter",
+  "To:": "An:",
+  Next: "Weiter",
+  "Ex: Project Falcon": "Z. B. Projekt Falcon",
+  "Search bots": "Bots suchen",
+  "About {label}": "Über {label}",
+  "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
+  "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
+    "Ordne die Seitenleiste und bearbeite Bots. Änderungen an Gruppen, Anweisungen, Modellen und Routinen brauchen deine Zustimmung.",
+
   Resets: "Zurückgesetzt",
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
@@ -24,8 +37,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{name} asked": "{name} fragt",
   Close: "Schließen",
   Link: "Link",
-  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
-    "Erlaubt diesem Bot, die von ihm erstellten Bots zu organisieren, anzupassen und zu planen. Du genehmigst jede Änderung.",
   "Too many attempts. Try again in a few minutes.":
     "Zu viele Versuche. Versuche es in ein paar Minuten erneut.",
   "The server had a problem. Try again in a moment.":
@@ -340,9 +351,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Members: "Mitglieder",
   // app/new-group.tsx
   "Could not create group": "Gruppe konnte nicht erstellt werden",
-  "Create group": "Gruppe erstellen",
   "Creating…": "Wird erstellt…",
-  "Name this group": "Gruppe benennen",
   // app/new-space.tsx
   "Could not create space": "Space konnte nicht erstellt werden",
   "Create space": "Space erstellen",
@@ -371,7 +380,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Get notified when this Bot finishes or needs input":
     "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht",
   // app/computer.tsx
-  "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",
   "Close computer": "Computer schließen",
   "Computer keyboard": "Computertastatur",
@@ -406,7 +414,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
-  "Connected · {label}": "Verbunden · {label}",
   "Connected. Its tools are available from your next message.":
     "Verbunden. Seine Tools sind ab deiner nächsten Nachricht verfügbar.",
   "Context limit": "Kontextlimit",
@@ -479,7 +486,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add MCP server": "MCP-Server hinzufügen",
   "Add OpenAPI": "OpenAPI hinzufügen",
   "Add Treg": "Treg hinzufügen",
-  "Add another": "Weiteres Konto hinzufügen",
+  "Add another": "Weitere hinzufügen",
   "Add another {name}": "Weiteres {name}-Konto hinzufügen",
   "Add {name}": "{name} hinzufügen",
   Added: "Hinzugefügt",
@@ -655,6 +662,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Save section name": "Abschnittsnamen speichern",
   "Section name": "Abschnittsname",
   "Silence notifications": "Benachrichtigungen stummschalten",
+  Pinned: "Angeheftet",
   Unassigned: "Nicht zugewiesen",
   Unpin: "Lösen",
   // components/computer-maintenance-actions.tsx
@@ -768,25 +776,21 @@ export const DE_MESSAGES: Record<string, string> = {
   "Android blocked notifications.": "Android hat Benachrichtigungen blockiert.",
   // lib/user-error.ts
   "Could not reach the server": "Server konnte nicht erreicht werden",
+  "Request timed out": "Zeitüberschreitung der Anfrage",
   "Enter a password": "Gib ein Passwort ein",
   "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
   "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/(settings)/models.tsx
-  "Add connected model": "Verbundenes Modell hinzufügen",
-  "Add connected models to use them as backups.":
-    "Füge verbundene Modelle hinzu, um sie als Backups zu verwenden.",
+  "Add backup model": "Backup-Modell hinzufügen",
+  "Move down": "Nach unten",
+  "Move up": "Nach oben",
+  "Tried in order if the active model fails.":
+    "Werden der Reihe nach versucht, wenn das aktive Modell ausfällt.",
   "Backup models": "Backup-Modelle",
-  "Backup models saved.": "Backup-Modelle gespeichert.",
-  "Connect a provider to add backups.": "Verbinde einen Anbieter, um Backups hinzuzufügen.",
   "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
   "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
-  "Maximum of 10 backup models.": "Maximal 10 Backup-Modelle.",
-  "Move {model} down": "{model} nach unten verschieben",
-  "Move {model} up": "{model} nach oben verschieben",
-  "Remove {model}": "{model} entfernen",
-  "Save backups": "Backups speichern",
   "Space changed. Reload Models to refresh backup models.":
     "Der Space wurde gewechselt. Lade Modelle neu, um die Backups zu aktualisieren.",
   "Space changed. Reload Models before saving backups.":
@@ -795,10 +799,10 @@ export const DE_MESSAGES: Record<string, string> = {
     "Eine Anmeldeseite wurde geöffnet — gib dort diesen Code ein:",
   "All providers": "Alle Anbieter",
   Copied: "Kopiert",
+  "Copy code": "Code kopieren",
   "Could not disconnect this provider": "Anbieter konnte nicht getrennt werden",
   "Default ({level})": "Standard ({level})",
   "Disconnected {provider}.": "{provider} getrennt.",
-  "Save limits": "Limits speichern",
   "Sign in again": "Erneut anmelden",
   "Thinking: {level}": "Denkmodus: {level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -899,7 +903,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Remove photo": "Foto entfernen",
   Shape: "Form",
   "Shape {number}": "Form {number}",
-  "Fleet management": "Flottenverwaltung",
   "Try again": "Erneut versuchen",
   "Your session expired": "Deine Sitzung ist abgelaufen",
   "The server had a problem": "Auf dem Server ist ein Problem aufgetreten",
@@ -927,4 +930,15 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die Antwort dieses Bots stoppte am Monatslimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
   "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
     "Die Antwort dieses Bots stoppte am Nutzungslimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
+  "Sign in with passkey": "Mit Passkey anmelden",
+  Passkeys: "Passkeys",
+  Passkey: "Passkey",
+  "Add passkey": "Passkey hinzufügen",
+  Rename: "Umbenennen",
+  "Add a passkey for faster sign-in?": "Passkey für schnellere Anmeldung hinzufügen?",
+  "Couldn't start the computer": "Der Computer konnte nicht gestartet werden",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "Beim Starten ist etwas schiefgelaufen. Versuche es in einem Moment erneut.",
+  "Your voice provider is out of credit.": "Dein Stimmanbieter hat kein Guthaben mehr.",
+  "Your voice provider key was rejected.": "Der Schlüssel deines Stimmanbieters wurde abgelehnt.",
 };

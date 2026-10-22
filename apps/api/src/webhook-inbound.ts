@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { inboundRoutineModelPin } from "@rakazo/adapters";
-import { escapePromptData } from "@rakazo/core";
+import { escapePromptData, inboundRoutineBlock } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -280,9 +280,7 @@ export async function deliverWebhookEvent(
   const promptText =
     input.routines.length > 0
       ? [
-          ...input.routines.map(
-            (routine) => `Run routine "${routine.name}":\n${routine.prompt.trim()}`,
-          ),
+          ...input.routines.map(inboundRoutineBlock),
           "",
           input.source === "github"
             ? "Inbound GitHub event metadata:"

@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -408,4 +415,32 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
   await group.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit Profile", exact: true }).click();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "group-settings");
+});
+
+test("built-in sidebar headings follow the language without renaming custom sections", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `section-locale-${Date.now()}@rakazo.test`, "password12", "Locale QA");
+  await completeOnboarding(page);
+  const sidebar = page.locator("aside").first();
+  const bot = sidebar.getByRole("button", { name: /^Chief/ });
+  await bot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Move to", exact: true }).hover();
+  await page.getByRole("menu", { name: "Move to", exact: true }).getByText("New section").click();
+  const dialog = page.getByRole("dialog", { name: "New section" });
+  await dialog.getByLabel("Name").fill("Pinned");
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await bot.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+  const settings = await openUserSettings(page);
+  await settings.getByTestId("ui-locale-select").click();
+  await page.getByRole("option", { name: "Deutsch", exact: true }).click();
+  await page.getByRole("button", { name: "Benutzereinstellungen schließen", exact: true }).click();
+  await expect(settings).not.toBeVisible();
+  await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toContainText("Angeheftet");
+  await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText(
+    "Nicht zugewiesen",
+  );
+  await expect(sidebar.locator('[data-sidebar-group^="section:"]')).toContainText("Pinned");
+  await captureScreenshot(page, testInfo, "localized-sidebar-headings-de");
 });
