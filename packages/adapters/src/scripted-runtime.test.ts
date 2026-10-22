@@ -313,3 +313,83 @@ describe("inferScript save_shared_memory", () => {
     ]);
   });
 });
+
+describe("ScriptedAgentRuntime steering", () => {
+  const request = (
+    prompt: string,
+    claimSteering?: (seenIds: string[]) => Promise<{ text: string }[]>,
+    resumeFromCheckpoint?: string,
+  ) => ({
+    botId: "bot-1",
+    threadId: "thread-1",
+    runId: `run-${prompt}`,
+    prompt,
+    instructions: "",
+    history: [],
+    tools: [],
+    model: { provider: "scripted", id: "scripted" },
+    resumeFromCheckpoint,
+    claimSteering: claimSteering
+      ? async (seenIds: string[]) =>
+          (await claimSteering(seenIds)).map((item, index) => ({
+            id: `steer-${index}`,
+            messageId: `message-${index}`,
+            ...item,
+          }))
+      : undefined,
+  });
+  const collect = async (input: ReturnType<typeof request>) => {
+    const events: AgentRuntimeEvent[] = [];
+    for await (const event of new ScriptedAgentRuntime().run(input)) events.push(event);
+    return events;
+  };
+
+  it("finishes timed work on its own", async () => {
+    const events = await collect(request("work for 0 seconds"));
+    expect(events.at(-1)).toEqual({ type: "done", text: "done." });
+  });
+
+  it("does not hang the bot that asks another bot to keep working", async () => {
+    const events = await collect(request("message the bot named Researcher saying keep working"));
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "message_bot" }));
+  });
+
+  it("answers a waiting message as the run's prompt", async () => {
+    const events = await collect(
+      request("Respond to the user's steering context.", async () => [
+        { text: "remember the plan" },
+      ]),
+    );
+    expect(events).toContainEqual({ type: "text", text: "noted — i will keep that in memory." });
+  });
+
+  it("passes what it already claimed and keeps a resume checkpoint for a steered script", async () => {
+    const seen: string[][] = [];
+    const events = await collect(
+      request(
+        "keep working",
+        async (seenIds) => {
+          seen.push(seenIds);
+          return seen.length === 1 ? [{ text: "take over the browser" }] : [];
+        },
+        "takeover",
+      ),
+    );
+    expect(seen).toEqual([[]]);
+    // The takeover checkpoint resumes the steered script past its takeover instead of asking again.
+    expect(events.some((event) => event.type === "takeover")).toBe(false);
+    expect(events).toContainEqual({
+      type: "text",
+      text: inferScript("", "takeover")[0]?.assistant,
+    });
+  });
+
+  it("turns a message steered into a working run into its next turn", async () => {
+    let claims = 0;
+    const events = await collect(
+      request("keep working", async () => (++claims === 2 ? [{ text: "remember the plan" }] : [])),
+    );
+    expect(events).toContainEqual({ type: "text", text: "noted — i will keep that in memory." });
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+});
