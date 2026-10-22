@@ -1,4 +1,5 @@
-import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { typeScale } from "@rakazo/ui-tokens";
+import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -37,9 +38,22 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
           />
         </View>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text selectable style={styles.text}>
-            {text}
-          </Text>
+          {Platform.OS === "ios" ? (
+            // iOS selectable Text only copies the whole message; a read-only text
+            // view gets the native handles and edit menu. The sheet scrolls, not
+            // the text view, which would open scrolled toward its caret.
+            <TextInput
+              value={text ?? ""}
+              editable={false}
+              multiline
+              scrollEnabled={false}
+              style={[styles.text, styles.iosTextInput]}
+            />
+          ) : (
+            <Text selectable style={styles.text}>
+              {text}
+            </Text>
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -52,6 +66,7 @@ function createStyles() {
     sheet: { flex: 1, backgroundColor: tokens.background },
     header: { flexDirection: "row", justifyContent: "flex-end", padding: 16 },
     content: { paddingHorizontal: 20, paddingBottom: 40 },
-    text: { color: tokens.foreground, fontSize: 16, lineHeight: 24 },
+    text: { color: tokens.foreground, ...typeScale.body },
+    iosTextInput: { paddingTop: 0, paddingBottom: 0 },
   });
 }

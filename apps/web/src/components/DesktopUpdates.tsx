@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { DesktopUpdateState } from "@rakazo/contracts";
-import { Button } from "@rakazo/ui-web";
+import { Button, toast } from "@rakazo/ui-web";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { desktopBridge } from "../lib/desktop";
 
@@ -79,52 +79,73 @@ function useDesktopUpdates() {
 
 const UpdatesContext = createContext<ReturnType<typeof useDesktopUpdates> | null>(null);
 
+const DESKTOP_UPDATE_TOAST = "desktop-update";
+
 export function DesktopUpdatesProvider({ children }: { children: ReactNode }) {
-  const { t } = useLingui();
   const updates = useDesktopUpdates();
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const { state, busy, error, act } = updates;
+  const { state, error } = updates;
   useEffect(() => {
     if (error) setDismissed(null);
   }, [error]);
-  return (
-    <UpdatesContext.Provider value={updates}>
-      {children}
-      {state &&
+  const prompt = Boolean(
+    state &&
       (state.phase === "ready" || (error && state.availableVersion)) &&
-      dismissed !== state.availableVersion ? (
-        <aside
-          aria-label={t`Desktop update`}
-          aria-live="polite"
-          className="fixed bottom-4 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card p-3 text-card-foreground shadow-lg"
+      dismissed !== state.availableVersion,
+  );
+  // Keep the toast up while a retry runs, so a quick failure reuses it instead of racing
+  // its dismissal.
+  const [shown, setShown] = useState(false);
+  const visible = prompt || (shown && updates.busy);
+  useEffect(() => {
+    setShown(visible);
+  }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
+    // The app's Toaster renders inside this provider, so the toast reads live state from context.
+    toast.custom(() => <DesktopUpdatePrompt onLater={setDismissed} />, {
+      id: DESKTOP_UPDATE_TOAST,
+      duration: Number.POSITIVE_INFINITY,
+      dismissible: false,
+    });
+    return () => {
+      toast.dismiss(DESKTOP_UPDATE_TOAST);
+    };
+  }, [visible]);
+  return <UpdatesContext.Provider value={updates}>{children}</UpdatesContext.Provider>;
+}
+
+function DesktopUpdatePrompt({ onLater }: { onLater: (version: string | null) => void }) {
+  const { t } = useLingui();
+  const updates = useContext(UpdatesContext);
+  if (!updates?.state) return null;
+  const { state, busy, error, act } = updates;
+  return (
+    <aside
+      aria-label={t`Desktop update`}
+      className="w-full rounded-xl border border-border bg-card p-3 text-card-foreground shadow-lg"
+    >
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={busy}
+          onClick={() => void act(state.phase === "ready" ? "install" : "check")}
         >
-          <div className="flex items-center gap-2">
-            <Button
-              disabled={busy}
-              onClick={() => void act(state.phase === "ready" ? "install" : "check")}
-            >
-              {state.phase === "ready" ? (
-                <Trans>Restart to update</Trans>
-              ) : (
-                <Trans>Check for updates</Trans>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setDismissed(state.availableVersion)}
-            >
-              <Trans>Later</Trans>
-            </Button>
-          </div>
-          {error || state.message ? (
-            <p role="status" className="mt-2 text-sm">
-              {error ?? state.message}
-            </p>
-          ) : null}
-        </aside>
+          {state.phase === "ready" ? (
+            <Trans>Restart to update</Trans>
+          ) : (
+            <Trans>Check for updates</Trans>
+          )}
+        </Button>
+        <Button variant="ghost" disabled={busy} onClick={() => onLater(state.availableVersion)}>
+          <Trans>Later</Trans>
+        </Button>
+      </div>
+      {error || state.message ? (
+        <p role="status" className="mt-2 text-sm">
+          {error ?? state.message}
+        </p>
       ) : null}
-    </UpdatesContext.Provider>
+    </aside>
   );
 }
 

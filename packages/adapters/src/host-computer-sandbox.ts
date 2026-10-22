@@ -9,7 +9,7 @@ import type {
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { describeDesktopSandbox } from "./desktop-sandbox.js";
 import type {
   HostComputerEnvironment,
   HostComputerFrame,
@@ -28,7 +28,7 @@ export class HostComputerSandbox implements SandboxProvider {
     private readonly token: string,
   ) {}
   describe() {
-    return new DesktopSandboxProvider().describe();
+    return describeDesktopSandbox();
   }
 
   private async *request<T>(input: HostComputerRequest, context: AdapterContext): AsyncIterable<T> {

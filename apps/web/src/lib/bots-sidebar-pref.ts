@@ -29,5 +29,47 @@ export function writeBotsSidebarCollapsed(
   }
 }
 
-/** Drag distance (px) before the edge handle commits expand/collapse. */
-export const BOTS_SIDEBAR_EDGE_DRAG_PX = 40;
+export const BOTS_SIDEBAR_MINI_WIDTH = 72;
+export const BOTS_SIDEBAR_DEFAULT_WIDTH = 316;
+export const BOTS_SIDEBAR_MIN_WIDTH = 240;
+export const BOTS_SIDEBAR_MAX_WIDTH = 480;
+export const BOTS_SIDEBAR_SNAP_WIDTH = 160;
+const MIN_CHAT_WIDTH = 320;
+
+export function botsSidebarWidthStorageKey(userId: string | null | undefined): string | null {
+  return userId ? `rakazo:bots-sidebar-width:${userId}` : null;
+}
+
+export function maximumBotsSidebarWidth(viewportWidth: number): number {
+  return Math.max(
+    BOTS_SIDEBAR_MIN_WIDTH,
+    Math.min(BOTS_SIDEBAR_MAX_WIDTH, viewportWidth - MIN_CHAT_WIDTH),
+  );
+}
+
+export function clampBotsSidebarWidth(width: number, viewportWidth = Number.POSITIVE_INFINITY) {
+  return Math.max(BOTS_SIDEBAR_MIN_WIDTH, Math.min(maximumBotsSidebarWidth(viewportWidth), width));
+}
+
+export function readBotsSidebarWidth(userId: string | null | undefined): number {
+  const key = botsSidebarWidthStorageKey(userId);
+  if (!key) return BOTS_SIDEBAR_DEFAULT_WIDTH;
+  try {
+    const saved = Number(window.localStorage.getItem(key));
+    return Number.isFinite(saved) && saved >= BOTS_SIDEBAR_MIN_WIDTH
+      ? clampBotsSidebarWidth(saved)
+      : BOTS_SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return BOTS_SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+export function writeBotsSidebarWidth(userId: string | null | undefined, width: number): void {
+  const key = botsSidebarWidthStorageKey(userId);
+  if (!key || !Number.isFinite(width)) return;
+  try {
+    window.localStorage.setItem(key, String(clampBotsSidebarWidth(width)));
+  } catch {
+    // Keep resizing usable when storage is unavailable.
+  }
+}

@@ -49,10 +49,23 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Checkbox, Label, Popover, PopoverContent, PopoverTrigger } =
-    await importOriginal<UiWebModule>();
+  const actual = await importOriginal<UiWebModule>();
+  const {
+    Checkbox,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+    Label,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+  } = actual;
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    ...actual,
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
       open ? <div>{children}</div> : null,
     AlertDialogAction: ({
@@ -92,6 +105,12 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Dialog: Pass,
     DialogClose: Pass,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
     DialogContent: Pass,
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p data-testid="model-description">{children}</p>
@@ -234,6 +253,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
@@ -469,65 +489,6 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
-  }
-});
-
-it("warns only on text-only models in the picker", async () => {
-  models.list.mockResolvedValue([
-    { ...deepseekEntry, images: false },
-    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision", images: true },
-    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
-  ]);
-  const view = await renderSettings();
-  try {
-    const describedAs = (element: Element) =>
-      (element.getAttribute("aria-describedby") ?? "")
-        .split(" ")
-        .map((id) => (id ? document.getElementById(id)?.textContent : null))
-        .filter(Boolean)
-        .join(" ");
-    const marked = (element: Element) =>
-      Boolean(element.querySelector(`[title="Can't read images"]`));
-    const trigger = view.container.querySelector('button[role="combobox"]');
-    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    const options = [...document.querySelectorAll('[role="option"]')];
-    // The label stays the model name; the icon is for eyes, the description for screen readers.
-    expect(
-      options.map((option) => [option.textContent, marked(option), describedAs(option)]),
-    ).toEqual([
-      ["DeepSeek Chat", true, "Can't read images"],
-      ["DeepSeek Vision", false, ""],
-      ["DeepSeek Unknown", false, ""],
-    ]);
-    await act(async () => {
-      (options[1] as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Vision",
-      false,
-      "",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    await act(async () => {
-      (document.querySelector('[role="option"]') as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-  } finally {
-    await view.unmount();
   }
 });
 

@@ -1,7 +1,12 @@
-import type { ComputerRef } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import type { MessageBlock } from "@rakazo/contracts";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+
+const sink = createTestSink();
 
 const provisionComputer = vi.hoisted(() => vi.fn());
 
@@ -19,17 +24,29 @@ const COMPUTER: ComputerRef = {
   providerRef: "sandbox-1",
 };
 
-type ExecuteTool = (
-  name: string,
-  args: Record<string, unknown>,
-  executionId: string,
-) => Promise<unknown>;
-
 /** A routine run whose model makes the given tool calls, then answers. */
 async function runRoutine(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
-  options: { takeover?: boolean; native?: boolean; nativeUnavailable?: boolean } = {},
+  options: {
+    takeover?: boolean;
+    native?: boolean;
+    nativeUnavailable?: boolean;
+    toolFailure?: "abort" | "recover";
+    attachments?: "file" | "image";
+    steering?: boolean;
+    steeringAfterFirst?: boolean;
+    copyFailureOnce?: boolean;
+    parallel?: boolean;
+    priorSetupFailures?: number;
+  } = {},
 ) {
+  const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
+    kind: options.attachments ?? "file",
+    artifactId: "artifact-1",
+    name: "private-upload.png",
+    mimeType: options.attachments === "image" ? "image/png" : "text/plain",
+    size: 4,
+  };
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -38,16 +55,31 @@ async function runRoutine(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "routine",
+    trigger: options.attachments && !options.steering ? "user" : "routine",
+    sourceMessageId: options.attachments && !options.steering ? "message-1" : null,
     routineId: "routine-1",
     retryOfRunId: null,
     leaseFence: 0,
   };
   const toolResults: unknown[] = [];
-  const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
-    for (const [index, call] of toolCalls.entries()) {
-      toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
+  const steeringInputs: unknown[] = [];
+  const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
+    if (options.steering && !options.steeringAfterFirst) {
+      steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
     }
+    const execute = async (call: (typeof toolCalls)[number], index: number) => {
+      try {
+        toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
+      } catch (error) {
+        if (!options.toolFailure) throw error;
+      }
+      if (index === 0 && options.steeringAfterFirst) {
+        steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
+      }
+      if (options.toolFailure === "abort") throw new DOMException("Aborted", "AbortError");
+    };
+    if (options.parallel) await Promise.all(toolCalls.map(execute));
+    else for (const [index, call] of toolCalls.entries()) await execute(call, index);
     if (options.takeover) {
       yield { type: "takeover" as const, reason: "Sign in to the inbox." };
       return;
@@ -89,10 +121,17 @@ async function runRoutine(
           homeKey: "home-1",
         },
       })),
+      findUnique: vi.fn(async () => ({ name: "Assistant" })),
       findMany: vi.fn(async () => []),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
+      findMany: vi.fn(async () =>
+        Array.from({ length: options.priorSetupFailures ?? 0 }, () => ({
+          status: "setup_failed",
+          error: "Run setup failed; retrying",
+        })),
+      ),
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
@@ -106,8 +145,21 @@ async function runRoutine(
       })),
     },
     message: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async () =>
+        options.attachments && !options.steering
+          ? [
+              {
+                id: "message-1",
+                role: "user",
+                runId: run.id,
+                seq: 1,
+                blocks: [attachment],
+              },
+            ]
+          : [],
+      ),
       findUnique: vi.fn(async () => null),
+      findFirst: vi.fn(async () => null),
       count: vi.fn(async () => 0),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
@@ -129,7 +181,21 @@ async function runRoutine(
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
-    artifact: { findMany: vi.fn(async () => []) },
+    artifact: {
+      findMany: vi.fn(async () =>
+        options.attachments
+          ? [
+              {
+                id: "artifact-1",
+                storageKey: "private-storage-key",
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                size: 4,
+              },
+            ]
+          : [],
+      ),
+    },
   };
   const sandbox = {
     describe: () => ({ id: "e2b", capabilities: { graphical: false } }),
@@ -146,6 +212,8 @@ async function runRoutine(
       yield* [];
     },
   };
+  if (options.copyFailureOnce)
+    sandbox.writeFile.mockRejectedValueOnce(new Error("temporary copy failure"));
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async () => undefined);
   const executor = createRunExecutor({
@@ -156,9 +224,12 @@ async function runRoutine(
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
-    artifacts: { get: vi.fn() },
+    artifacts: { get: vi.fn(async () => new Uint8Array([1, 2, 3, 4])) },
     events: {
       append: vi.fn(async () => undefined),
+      claimSteering: vi.fn(async () => [
+        { id: "steering-1", messageId: "message-2", text: "Look at this", blocks: [attachment] },
+      ]),
       finalizeRun,
       pauseRunForTakeover: vi.fn(async () => false),
     },
@@ -171,16 +242,28 @@ async function runRoutine(
   const sleepJobs = enqueue.mock.calls
     .map((call) => (call as unknown[])[0] as { name: string })
     .filter((job) => job.name === "computer.sleep");
-  return { finalizeRun, sandbox, sleepJobs, toolResults };
+  return {
+    finalizeRun,
+    sandbox,
+    sleepJobs,
+    toolResults,
+    enqueue,
+    runtimeRun,
+    steeringInputs,
+    prisma,
+  };
 }
 
 beforeEach(() => {
+  sink.events.length = 0;
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
   provisionComputer.mockReset();
   provisionComputer.mockResolvedValue(COMPUTER);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+  installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
 });
 
 describe("run computer provisioning", () => {
@@ -191,6 +274,118 @@ describe("run computer provisioning", () => {
     expect(provisionComputer).not.toHaveBeenCalled();
     expect(sandbox.releaseScreen).not.toHaveBeenCalled();
     expect(sleepJobs).toEqual([]);
+  });
+
+  it.each(["file", "image"] as const)(
+    "keeps %s attachments lazy and images available to the model",
+    async (attachments) => {
+      const { finalizeRun, sandbox, runtimeRun } = await runRoutine([], { attachments });
+      expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+      expect(provisionComputer).not.toHaveBeenCalled();
+      expect(sandbox.writeFile).not.toHaveBeenCalled();
+      if (attachments === "image") {
+        expect(runtimeRun.mock.calls[0]?.[0].currentTurnImages).toEqual([
+          expect.objectContaining({ mimeType: "image/png", data: new Uint8Array([1, 2, 3, 4]) }),
+        ]);
+      }
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ message: "run.computer", reason: "none", ready: false }),
+      );
+      expect(JSON.stringify(sink.events)).not.toContain("private-upload");
+      expect(JSON.stringify(sink.events)).not.toContain("private-storage-key");
+    },
+  );
+
+  it.each([false, true])(
+    "copies pending attachments before the first tool, including steering: %s",
+    async (steering) => {
+      const { finalizeRun, sandbox } = await runRoutine(
+        [
+          { name: "list_files", args: { path: "" } },
+          { name: "list_files", args: { path: "" } },
+        ],
+        { attachments: "file", steering },
+      );
+      expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+      expect(provisionComputer).toHaveBeenCalledOnce();
+      expect(sandbox.writeFile).toHaveBeenCalledOnce();
+      expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(
+        sandbox.listFiles.mock.invocationCallOrder[0]!,
+      );
+      expect(sink.events.filter((event) => event.message === "computer.requested")).toEqual([
+        expect.objectContaining({ reason: "tool", tool: "list_files" }),
+      ]);
+    },
+  );
+
+  it("shares provisioning and copies attachments once across parallel tools", async () => {
+    const { sandbox, finalizeRun } = await runRoutine(
+      [
+        { name: "list_files", args: { path: "" } },
+        { name: "list_files", args: { path: "" } },
+      ],
+      { attachments: "file", parallel: true },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).toHaveBeenCalledOnce();
+    expect(sandbox.listFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient attachment copy before a later tool without reprovisioning", async () => {
+    const { sandbox, finalizeRun } = await runRoutine(
+      [
+        { name: "list_files", args: { path: "" } },
+        { name: "list_files", args: { path: "" } },
+      ],
+      { attachments: "file", copyFailureOnce: true, toolFailure: "recover" },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).toHaveBeenCalledTimes(2);
+    expect(sandbox.listFiles).toHaveBeenCalledOnce();
+  });
+
+  it("delivers steering text and inline images without copying onto an already-started computer", async () => {
+    const { sandbox, finalizeRun, steeringInputs } = await runRoutine(
+      [{ name: "list_files", args: { path: "" } }],
+      { attachments: "image", steering: true, steeringAfterFirst: true, copyFailureOnce: true },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).not.toHaveBeenCalled();
+    expect(steeringInputs).toEqual([
+      expect.objectContaining({
+        historyText: "Look at this",
+        images: [
+          expect.objectContaining({ mimeType: "image/png", data: new Uint8Array([1, 2, 3, 4]) }),
+        ],
+      }),
+    ]);
+  });
+
+  it("copies steering attachments onto an already-started computer before the next tool", async () => {
+    const { sandbox, finalizeRun } = await runRoutine(
+      [
+        { name: "list_files", args: { path: "" } },
+        { name: "list_files", args: { path: "" } },
+      ],
+      { attachments: "file", steering: true, steeringAfterFirst: true },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeGreaterThan(
+      sandbox.listFiles.mock.invocationCallOrder[0]!,
+    );
+    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(
+      sandbox.listFiles.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("does not boot for a steering attachment without computer tools", async () => {
+    await runRoutine([], { attachments: "image", steering: true });
+    expect(provisionComputer).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
@@ -241,6 +436,45 @@ describe("run computer provisioning", () => {
     );
     expect(provisionComputer).toHaveBeenCalledOnce();
   });
+
+  it("fails the run instead of retrying once setup has failed too many times in a row", async () => {
+    provisionComputer.mockRejectedValue(new Error("provider unavailable"));
+
+    const { finalizeRun, enqueue, prisma } = await runRoutine(
+      [{ name: "list_files", args: { path: "" } }],
+      { priorSetupFailures: 7 },
+    );
+
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "failed", error: "provider unavailable" }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    // Busy-computer and database waits between failures neither count nor reset the streak.
+    expect(prisma.attempt.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ NOT: { status: "setup_failed", error: null } }),
+      }),
+    );
+  });
+
+  it.each([undefined, "abort", "recover"] as const)(
+    "finishes rate-limited runs without retrying when the model handles tool failure as %s",
+    async (toolFailure) => {
+      const error = new SandboxRateLimitError({ cause: new Error("Provider account limit") });
+      provisionComputer.mockRejectedValue(error);
+
+      const { finalizeRun, enqueue } = await runRoutine(
+        [{ name: "list_files", args: { path: "" } }],
+        { toolFailure },
+      );
+
+      expect(provisionComputer).toHaveBeenCalledOnce();
+      expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ outcome: "failed", error: error.message }),
+      );
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
 });
 
 /** Models the run reads but these tests do not care about behave as empty tables. */

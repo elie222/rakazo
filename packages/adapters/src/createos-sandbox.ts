@@ -21,7 +21,7 @@ import {
   DEFAULT_DESKTOP_ENV,
   quiesceBrowserProfilesCommand,
 } from "@rakazo/core/node/desktop-runtime";
-import { sandboxIdleMs } from "./computer-idle.js";
+import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
 import { screenSessionKey } from "./computer-screens.js";
 import {
   boundedComputerActions,
@@ -36,6 +36,7 @@ import {
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { shellExportScript } from "./sandbox-shell-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
@@ -69,20 +70,13 @@ const MAX_ERROR_BODY_CHARS = 2_000;
 const CREATEOS_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
 const CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-const BROWSER_PROFILE_DIR = ".browser-profiles";
-const BROWSER_PROFILE_CACHE_DIRS = new Set([
-  "Cache",
-  "Code Cache",
-  "CacheStorage",
-  "GPUCache",
-  "GrShaderCache",
-  "ShaderCache",
-  "Crashpad",
-  "component_crx_cache",
-  "startup_cache",
-  "cache2",
-]);
-const TRANSITIONAL_CREATEOS_STATUSES = new Set(["pausing", "resuming"]);
+/** Statuses CreateOS moves out of on its own. */
+const TRANSITIONAL_CREATEOS_STATUSES = new Set(["creating", "pausing", "resuming", "forking"]);
+/** Statuses from which a sandbox never runs again. */
+const GONE_CREATEOS_STATUSES = new Set(["destroying", "destroyed", "failed"]);
+const MAX_CREATEOS_AUTO_PAUSE_SECONDS = 86_400;
+/** Sandbox id and the sub-resource after it, from a control-plane path. */
+const CREATEOS_SANDBOX_PATH = /^\/v1\/sandboxes\/([^/?]+)([^?]*)/;
 /**
  * Shared by the API and worker. Screen ids are claimed under a file lock so two
  * processes cannot assign the same session to different displays.
@@ -418,23 +412,26 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
+    const autoPause = createosAutoPauseSeconds();
     if (request.providerRef && request.providerKind === "createos") {
+      const id = request.providerRef;
       try {
-        const existing = await this.waitUntilSettled(request.providerRef, context);
-        if (existing.status === "destroyed" || existing.status === "failed") {
-          throw new Error(`CreateOS sandbox is ${existing.status}`);
-        }
-        if (existing.status === "paused" || existing.status === "error") {
-          await this.postJson(
-            `/v1/sandboxes/${encodeURIComponent(existing.id)}/resume`,
-            undefined,
-            context,
-          );
-        }
-        if (existing.status !== "running") await this.waitUntilRunning(existing.id, context);
-        return this.ref(existing.id, request.botId, false);
+        await this.ensureRunning(id, context);
+        // Sandboxes created under earlier idle settings keep their old auto-pause otherwise.
+        // Best-effort: a running sandbox stays usable without it.
+        await this.requestJson(
+          "PATCH",
+          `/v1/sandboxes/${encodeURIComponent(id)}`,
+          autoPause === undefined
+            ? { disable_auto_pause: true }
+            : { auto_pause_after_seconds: autoPause },
+          context,
+        ).catch((error: unknown) => {
+          if (isCreateOSSandboxGone(error)) throw error;
+        });
+        return this.ref(id, request.botId, false);
       } catch (error) {
-        if (!isUnrecoverableCreateOSError(error)) throw error;
+        if (!isCreateOSSandboxGone(error)) throw error;
       }
     }
 
@@ -444,15 +441,16 @@ export class CreateOSSandboxProvider implements SandboxProvider {
         shape: this.shape,
         rootfs: this.rootfs,
         ingress_enabled: true,
-        auto_pause_after_seconds: Math.max(60, Math.ceil(sandboxIdleMs() / 1_000)),
+        ...(autoPause === undefined ? {} : { auto_pause_after_seconds: autoPause }),
       },
       context,
     );
     if (!created?.id) throw new Error("CreateOS did not return a sandbox id");
     try {
-      await this.waitUntilRunning(created.id, context);
+      const settled = await this.waitUntilSettled(created.id, context);
+      if (settled.status !== "running") throw new Error(`CreateOS sandbox is ${settled.status}`);
     } catch (error) {
-      await this.abandonCreatedSandbox(created.id);
+      await this.abandonSandbox(created.id);
       throw error;
     }
     return this.ref(created.id, request.botId, true);
@@ -710,10 +708,12 @@ print(json.dumps(out))
       userId: "createos",
       signal: AbortSignal.timeout(15_000),
     };
-    await this.runCommand(computer, { argv: ["true"] }, context, 10_000).catch(() => undefined);
+    await this.runCommand(computer, { argv: ["true"] }, context, 10_000);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    // Releasing a screen must not resume a stopped sandbox. Its assignment stays for reuse.
+    if ((await this.getSandbox(computer.providerRef, context)).status !== "running") return;
     const screenKey = screenSessionKey(context);
     const gateKey = this.screenGateKey(computer.providerRef, screenKey);
     const screenId = await this.withScreenGate(gateKey, async () => {
@@ -749,11 +749,21 @@ print(json.dumps(out))
 
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
     this.forget(computer.providerRef);
-    await this.postJson(
-      `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/pause`,
-      undefined,
-      context,
-    ).catch(ignoreMissingCreateOSResource);
+    const id = computer.providerRef;
+    try {
+      await this.postJson(`/v1/sandboxes/${encodeURIComponent(id)}/pause`, undefined, context);
+    } catch (error) {
+      if (isCreateOSSandboxGone(error)) return;
+      // Pause is only valid while running; CreateOS may already be pausing it on its own.
+      if (!(error instanceof CreateOSHttpError && error.status === 409)) throw error;
+      const current = await this.waitUntilSettled(id, context).catch((settleError: unknown) => {
+        if (isCreateOSSandboxGone(settleError)) return undefined;
+        throw settleError;
+      });
+      if (current && current.status !== "paused" && !GONE_CREATEOS_STATUSES.has(current.status)) {
+        throw error;
+      }
+    }
   }
 
   async destroy(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -761,7 +771,6 @@ print(json.dumps(out))
     await this.request(
       "DELETE",
       `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}`,
-      undefined,
       context,
     ).catch(ignoreMissingCreateOSResource);
   }
@@ -793,7 +802,7 @@ print(json.dumps(out))
         `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}/connect`,
         context,
       ).catch((error) => {
-        if (!isUnrecoverableCreateOSError(error)) throw error;
+        if (!isMissingCreateOSResource(error)) throw error;
         missed = true;
         return null;
       });
@@ -832,7 +841,7 @@ print(json.dumps(out))
       try {
         return await this.connectAssignedScreen(computer, request, context, attempt + 1);
       } catch (error) {
-        if (isUnrecoverableCreateOSError(error)) return emptyScreenSession();
+        if (isMissingCreateOSResource(error)) return emptyScreenSession();
         throw error;
       }
     }
@@ -977,7 +986,6 @@ print(json.dumps(out))
     await this.request(
       "DELETE",
       `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/computer/screens/${encodeURIComponent(screenId)}`,
-      undefined,
       context,
     ).catch(ignoreMissingCreateOSResource);
   }
@@ -1029,7 +1037,8 @@ print(json.dumps(out))
     return (result.result?.stdout ?? "").trim();
   }
 
-  private async abandonCreatedSandbox(id: string): Promise<void> {
+  /** Best-effort delete so a sandbox that will not run stops counting against the quota. */
+  private async abandonSandbox(id: string): Promise<void> {
     const context: AdapterContext = {
       operationId: "createos.abandon",
       traceId: "createos.abandon",
@@ -1037,12 +1046,9 @@ print(json.dumps(out))
       userId: "createos",
       signal: AbortSignal.timeout(10_000),
     };
-    await this.request(
-      "DELETE",
-      `/v1/sandboxes/${encodeURIComponent(id)}`,
-      undefined,
-      context,
-    ).catch(() => undefined);
+    await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context).catch(
+      () => undefined,
+    );
   }
 
   private async applyAction(
@@ -1336,9 +1342,8 @@ raise SystemExit(1)
     await this.request(
       "PUT",
       `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/files?path=${encodeURIComponent(target)}`,
-      toArrayBuffer(file.content),
       context,
-      "application/octet-stream",
+      { body: toArrayBuffer(file.content), contentType: "application/octet-stream" },
     );
     if (file.executable) {
       await this.executeChecked(computer, ["chmod", "700", target], context);
@@ -1398,20 +1403,23 @@ raise SystemExit(1)
     timeoutMs: number,
   ): Promise<CreateOSExecResponse> {
     const cwd = createosCwd(request.cwd);
-    const env = request.env
-      ? Object.entries(request.env)
-          .map(([key, value]) => `${key}=${shellQuote(value)}`)
-          .join(" ")
-      : "";
+    // Exec's env field only takes names declared when the sandbox was created, and command text
+    // shows in `ps`, so the env travels on stdin. Loading it leaves `argv` with an empty stdin.
+    const environment = shellExportScript(request.env ?? {});
     const command = [
       `mkdir -p ${shellQuote(cwd)}`,
       `cd ${shellQuote(cwd)}`,
-      `${env ? `${env} ` : ""}${sandboxCommandArgv(request).map(shellQuote).join(" ")}`,
+      ...(environment ? ['eval "$(cat)"'] : []),
+      sandboxCommandArgv(request).map(shellQuote).join(" "),
     ].join(" && ");
     const seconds = Math.max(1, Math.ceil(timeoutMs / 1_000));
     return this.postJson<CreateOSExecResponse>(
       `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/exec`,
-      { cmd: "timeout", args: [`${seconds}s`, "bash", "-lc", command] },
+      {
+        cmd: "timeout",
+        args: [`${seconds}s`, "bash", "-lc", command],
+        ...(environment ? { stdin: environment } : {}),
+      },
       context,
       timeoutMs + 5_000,
     );
@@ -1422,8 +1430,8 @@ raise SystemExit(1)
   }
 
   /**
-   * stop() returns while the control plane still reports "pausing". Resume is only
-   * valid once that transition finishes, so settle first and act on the final status.
+   * Create, pause, and resume return while the control plane is still transitioning.
+   * Wait for a status CreateOS will not leave on its own and let the caller act on it.
    */
   private async waitUntilSettled(id: string, context: AdapterContext): Promise<CreateOSView> {
     for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -1434,16 +1442,33 @@ raise SystemExit(1)
     throw new Error("CreateOS sandbox did not settle");
   }
 
-  private async waitUntilRunning(id: string, context: AdapterContext): Promise<void> {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const current = await this.pollSandbox(id, context);
-      if (current?.status === "running") return;
-      if (current?.status === "destroyed" || current?.status === "failed") {
-        throw new Error(`CreateOS sandbox is ${current.status}`);
+  /**
+   * Bring an existing sandbox back to running, resuming it when paused or errored. Throws
+   * SandboxNotFoundError when it can never run again, so the lifecycle replaces it from the
+   * last checkpoint. A failed sandbox, or one whose resume ends in error, is deleted first:
+   * it would otherwise keep counting against the account's sandbox cap.
+   */
+  private async ensureRunning(id: string, context: AdapterContext): Promise<void> {
+    let current = await this.waitUntilSettled(id, context);
+    if (current.status === "paused" || current.status === "error") {
+      await this.postJson(
+        `/v1/sandboxes/${encodeURIComponent(id)}/resume`,
+        undefined,
+        context,
+      ).catch((error: unknown) => {
+        // Another caller resumed it first.
+        if (!(error instanceof CreateOSHttpError && error.status === 409)) throw error;
+      });
+      current = await this.waitUntilSettled(id, context);
+      if (current.status === "error") {
+        await this.abandonSandbox(id);
+        throw createosSandboxGone(id, "resume failed");
       }
-      await delay(1_000, undefined, { signal: context.signal });
     }
-    throw new Error("CreateOS sandbox did not become running");
+    if (current.status === "running") return;
+    if (current.status === "failed") await this.abandonSandbox(id);
+    if (GONE_CREATEOS_STATUSES.has(current.status)) throw createosSandboxGone(id, current.status);
+    throw new Error(`CreateOS sandbox is ${current.status}`);
   }
 
   /** Returns undefined for a transient control-plane failure so the caller keeps polling. */
@@ -1488,10 +1513,10 @@ raise SystemExit(1)
     const response = await this.request(
       method,
       path,
-      body === undefined ? undefined : JSON.stringify(body),
       context,
-      body === undefined ? undefined : "application/json",
-      timeoutMs,
+      body === undefined
+        ? { timeoutMs }
+        : { body: JSON.stringify(body), contentType: "application/json", timeoutMs },
     );
     const payload = await readCreateOSJson<{ status?: string; data?: T; message?: string }>(
       response,
@@ -1521,15 +1546,7 @@ raise SystemExit(1)
   ): Promise<Uint8Array> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const response = await this.request(
-          "GET",
-          path,
-          undefined,
-          context,
-          undefined,
-          undefined,
-          accept,
-        );
+        const response = await this.request("GET", path, context, { accept });
         return await readCreateOSBody(response, maxBytes, context.signal);
       } catch (error) {
         if (
@@ -1545,14 +1562,44 @@ raise SystemExit(1)
     throw new Error("CreateOS byte request failed");
   }
 
+  /**
+   * CreateOS answers 404 both for a sandbox that no longer exists and for one that is
+   * paused or still starting. On a 404 inside a sandbox, look the sandbox up: resume it and
+   * retry once, or report it gone only when that lookup also 404s.
+   */
   private async request(
     method: string,
     path: string,
-    body: BodyInit | undefined,
     context: AdapterContext,
-    contentType?: string,
-    timeoutMs = 30_000,
-    accept?: string,
+    init: CreateOSRequestInit = {},
+  ): Promise<Response> {
+    try {
+      return await this.send(method, path, context, init);
+    } catch (error) {
+      const sandbox = isMissingCreateOSResource(error) ? CREATEOS_SANDBOX_PATH.exec(path) : null;
+      if (!sandbox) throw error;
+      const id = decodeURIComponent(sandbox[1] ?? "");
+      const resource = sandbox[2] ?? "";
+      if (!resource || resource === "/pause" || resource === "/resume") {
+        throw createosSandboxGone(id, "not found", error);
+      }
+      await this.ensureRunning(id, context);
+      try {
+        return await this.send(method, path, context, init);
+      } catch (retryError) {
+        if (!isMissingCreateOSResource(retryError)) throw retryError;
+        // The sandbox runs, so this is not sandbox loss. Keep CreateOS's "sandbox not found
+        // or not running" wording out of the message, where shared gone checks would match it.
+        throw new CreateOSHttpError(404, `${resource} is missing`, retryError.code, retryError);
+      }
+    }
+  }
+
+  private async send(
+    method: string,
+    path: string,
+    context: AdapterContext,
+    { body, contentType, timeoutMs = 30_000, accept }: CreateOSRequestInit,
   ): Promise<Response> {
     const url = new URL(path, `${this.baseUrl}/`);
     const headers = new Headers({
@@ -1564,30 +1611,88 @@ raise SystemExit(1)
     const signal = AbortSignal.any([context.signal, timeout]);
     const response = await this.fetchImpl(url, { method, headers, body, signal });
     if (!response.ok) {
-      const message = await readCreateOSErrorMessage(response, signal);
-      throw new CreateOSHttpError(response.status, message || response.statusText);
+      const failure = parseCreateOSFailure(await readCreateOSErrorBody(response, signal));
+      throw new CreateOSHttpError(
+        response.status,
+        failure.detail || response.statusText,
+        failure.code,
+      );
     }
     return response;
   }
 }
 
-export function isUnrecoverableCreateOSError(error: unknown): boolean {
-  if (error instanceof CreateOSHttpError && error.status === 404) return true;
-  return (
-    error instanceof Error &&
-    /not found|does not exist|404|not_found|sandbox not found|sandbox is destroyed|sandbox is failed/i.test(
-      error.message,
-    )
-  );
+interface CreateOSRequestInit {
+  body?: BodyInit;
+  contentType?: string;
+  timeoutMs?: number;
+  accept?: string;
 }
 
-class CreateOSHttpError extends Error {
+/** A non-2xx control-plane response. `code` is the stable `data.code` of a JSend fail. */
+export class CreateOSHttpError extends Error {
+  override readonly name = "CreateOSHttpError";
+
   constructor(
     readonly status: number,
-    message: string,
+    detail: string,
+    readonly code?: string,
+    cause?: unknown,
   ) {
-    super(message || `CreateOS request failed (${status})`);
+    super(`CreateOS request failed (${status})${detail ? `: ${detail}` : ""}`, { cause });
   }
+}
+
+/** Named so the shared isSandboxGoneError lets the lifecycle replace the sandbox. */
+function createosSandboxGone(id: string, reason: string, cause?: unknown): Error {
+  return Object.assign(new Error(`CreateOS sandbox ${id} is gone (${reason})`, { cause }), {
+    name: "SandboxNotFoundError",
+  });
+}
+
+function isCreateOSSandboxGone(error: unknown): boolean {
+  return error instanceof Error && error.name === "SandboxNotFoundError";
+}
+
+/**
+ * CreateOS auto-pause is only a backstop: our sleep job checkpoints before it pauses, so
+ * CreateOS must fire clearly after that job. Off when idle sleep is disabled, or when that
+ * margin does not fit under CreateOS's maximum.
+ */
+function createosAutoPauseSeconds(): number | undefined {
+  if (!computerIdleSleepEnabled()) return undefined;
+  const idleSeconds = Math.ceil(sandboxIdleMs() / 1_000);
+  const seconds = idleSeconds + Math.max(idleSeconds, 600);
+  return seconds <= MAX_CREATEOS_AUTO_PAUSE_SECONDS ? seconds : undefined;
+}
+
+/**
+ * CreateOS fails with a JSend envelope: `{"status":"fail","data":{...}}` for client errors,
+ * where `data.code` is stable, and `{"status":"error","message":...}` for server faults.
+ */
+function parseCreateOSFailure(text: string): { detail: string; code?: string } {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(text);
+  } catch {
+    return { detail: text.trim() };
+  }
+  const { status, data, message } = (envelope ?? {}) as {
+    status?: unknown;
+    data?: unknown;
+    message?: unknown;
+  };
+  if (status === "error") return { detail: typeof message === "string" ? message : "" };
+  if (status !== "fail") return { detail: "" };
+  if (typeof data === "string") return { detail: data };
+  if (!data || typeof data !== "object") return { detail: "" };
+  const code = (data as { code?: unknown }).code;
+  return {
+    detail: Object.entries(data)
+      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .join(", "),
+    ...(typeof code === "string" && code ? { code } : {}),
+  };
 }
 
 function assertSecureCreateOSBaseUrl(baseUrl: string): void {
@@ -1626,7 +1731,7 @@ async function readCreateOSBody(
   }
 }
 
-async function readCreateOSErrorMessage(response: Response, signal: AbortSignal): Promise<string> {
+async function readCreateOSErrorBody(response: Response, signal: AbortSignal): Promise<string> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_CREATEOS_ERROR_RESPONSE_BYTES) {
     cancelCreateOSResponseBody(response);
@@ -1652,12 +1757,13 @@ function cancelCreateOSResponseBody(response: Response): void {
   }
 }
 
-function isMissingCreateOSResource(error: unknown): boolean {
+/** Once request() has ruled out a stopped sandbox, a 404 means a screen or file inside it is missing. */
+function isMissingCreateOSResource(error: unknown): error is CreateOSHttpError {
   return error instanceof CreateOSHttpError && error.status === 404;
 }
 
 function ignoreMissingCreateOSResource(error: unknown): void {
-  if (!isMissingCreateOSResource(error)) throw error;
+  if (!isMissingCreateOSResource(error) && !isCreateOSSandboxGone(error)) throw error;
 }
 
 function isTimeoutAbort(error: unknown): boolean {
@@ -1670,12 +1776,6 @@ function isTransientCreateOSHttpStatus(status: number): boolean {
 
 function shouldSkipCreateOSWorkspaceFile(relative: string): boolean {
   if (relative === ".rakazo" || relative.startsWith(".rakazo/")) return true;
-  if (
-    relative.startsWith(`${BROWSER_PROFILE_DIR}/`) &&
-    relative.split("/").some((segment) => BROWSER_PROFILE_CACHE_DIRS.has(segment))
-  ) {
-    return true;
-  }
   return shouldSkipPortableWorkspaceFile(relative);
 }
 

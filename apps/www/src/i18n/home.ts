@@ -33,12 +33,17 @@ export type HomeCopy = {
     copyFailed: string;
   };
   selfHost: {
-    eyebrow: string;
     heading: string;
     copy: string;
     worksWith: string;
     mock: { model: string; weekdays: string; approval: string; approve: string; deny: string };
     features: Array<{ title: string; body: string }>;
+  };
+  platforms: {
+    heading: string;
+    web: string;
+    desktop: string;
+    mobile: string;
   };
   roster: {
     eyebrow: string;
@@ -61,11 +66,8 @@ export type HomeCopy = {
     copy: string;
     starOnGithub: string;
     readTheDocs: string;
-    openClawAlternative: string;
     cloudTitle: string;
     cloudBadge: string;
-    cloudMeta: string;
-    tryCloud: string;
   };
   cta: {
     heading: string;
@@ -367,8 +369,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "Copy failed. Try again.",
     },
     selfHost: {
-      eyebrow: "Self-hosted",
-      heading: "Run it on your computer",
+      heading: "Self-hosted",
       copy: "Your machine, your models, your control.",
       worksWith: "Works with",
       mock: { model: "Model", weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
@@ -378,6 +379,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "You set the limits", body: "Decide which actions need your approval." },
       ],
     },
+    platforms: {
+      heading: "Wherever you are",
+      web: "Web",
+      desktop: "Desktop",
+      mobile: "Mobile",
+    },
     roster: {
       eyebrow: "Your bot team",
       heading: "Give each bot a job",
@@ -385,7 +392,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: EN_ROSTER,
     },
     testimonials: {
-      heading: "Testimonials",
+      heading: "People love it",
       pause: "Pause",
       play: "Play",
       items: TESTIMONIALS,
@@ -411,11 +418,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. Run it, change it, make it yours.",
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
-      openClawAlternative: "OpenClaw alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Beta",
-      cloudMeta: "Bring your own keys, we run the computers",
-      tryCloud: "Try Rakazo Cloud",
     },
     cta: {
       heading: "Meet your first bot",
@@ -485,8 +489,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "Kopieren fehlgeschlagen. Erneut versuchen.",
     },
     selfHost: {
-      eyebrow: "Self-hosted",
-      heading: "Läuft auf deinem Computer",
+      heading: "Self-hosted",
       copy: "Deine Maschine, deine Modelle, deine Kontrolle.",
       worksWith: "Funktioniert mit",
       mock: { model: "Modell", weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
@@ -496,6 +499,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "Du setzt die Grenzen", body: "Bestimme, welche Aktionen deine Freigabe brauchen." },
       ],
     },
+    platforms: {
+      heading: "Überall, wo du bist",
+      web: "Web",
+      desktop: "Desktop",
+      mobile: "Mobil",
+    },
     roster: {
       eyebrow: "Dein Bot-Team",
       heading: "Gib jedem Bot eine Aufgabe",
@@ -503,7 +512,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: DE_ROSTER,
     },
     testimonials: {
-      heading: "Kundenstimmen",
+      heading: "Die Leute lieben es",
       pause: "Pause",
       play: "Weiter",
       items: TESTIMONIALS,
@@ -533,11 +542,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. Selbst betreiben, ändern und anpassen.",
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
-      openClawAlternative: "OpenClaw-Alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Beta",
-      cloudMeta: "Deine Keys, wir betreiben die Computer",
-      tryCloud: "Rakazo Cloud ausprobieren",
     },
     cta: {
       heading: "Triff deinen ersten Bot",
@@ -606,8 +612,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "복사 실패. 다시 시도하세요.",
     },
     selfHost: {
-      eyebrow: "셀프 호스트",
-      heading: "내 컴퓨터에서 실행",
+      heading: "셀프 호스트",
       copy: "컴퓨터도, 모델도, 제어권도 내 손에.",
       worksWith: "지원 모델·서비스",
       mock: { model: "모델", weekdays: "평일 9:00", approval: "승인 필요", approve: "승인", deny: "거부" },
@@ -617,6 +622,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "내가 정하는 권한", body: "승인이 필요한 작업을 정하세요." },
       ],
     },
+    platforms: {
+      heading: "어디서든",
+      web: "웹",
+      desktop: "데스크톱",
+      mobile: "모바일",
+    },
     roster: {
       eyebrow: "나만의 봇 팀",
       heading: "봇마다 역할을 주세요",
@@ -624,7 +635,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: KO_ROSTER,
     },
     testimonials: {
-      heading: "후기",
+      heading: "다들 좋아해요",
       pause: "일시정지",
       play: "재생",
       items: TESTIMONIALS,
@@ -654,11 +665,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. 직접 실행하고 원하는 대로 수정하세요.",
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
-      openClawAlternative: "OpenClaw 대안",
       cloudTitle: "Cloud",
       cloudBadge: "베타",
-      cloudMeta: "키는 당신 것, 컴퓨터는 우리가 운영",
-      tryCloud: "Rakazo Cloud 사용해 보기",
     },
     cta: {
       heading: "첫 봇을 만나보세요",
@@ -727,8 +735,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "复制失败。请重试。",
     },
     selfHost: {
-      eyebrow: "自托管",
-      heading: "在你的电脑上运行",
+      heading: "自托管",
       copy: "电脑、模型、控制权，都归你。",
       worksWith: "支持",
       mock: { model: "模型", weekdays: "工作日 9:00", approval: "需要审批", approve: "批准", deny: "拒绝" },
@@ -738,6 +745,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "由你设定权限", body: "决定哪些操作需要你批准。" },
       ],
     },
+    platforms: {
+      heading: "随时随地",
+      web: "网页版",
+      desktop: "桌面端",
+      mobile: "移动端",
+    },
     roster: {
       eyebrow: "你的 Bot 团队",
       heading: "给每个 Bot 分配工作",
@@ -745,7 +758,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: ZH_ROSTER,
     },
     testimonials: {
-      heading: "用户评价",
+      heading: "大家都爱它",
       pause: "暂停",
       play: "播放",
       items: TESTIMONIALS,
@@ -775,11 +788,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0。自由运行、修改，按需定制。",
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
-      openClawAlternative: "OpenClaw 替代方案",
       cloudTitle: "云端",
       cloudBadge: "测试版",
-      cloudMeta: "密钥归你，电脑由我们运行",
-      tryCloud: "试用 Rakazo Cloud",
     },
     cta: {
       heading: "认识你的第一个 Bot",

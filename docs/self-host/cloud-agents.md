@@ -32,6 +32,6 @@ The stored credential binding fails closed if the key or provider changes. Cance
 
 ## Offline verification
 
-`CLOUD_AGENT_PROVIDER=emulator` is an in-process provider for development and web E2E. It is not durable across separate processes.
+`CLOUD_AGENT_PROVIDER=emulator` runs the real Cursor adapter against an in-process Cursor HTTP emulator for development and web E2E. It is not durable across separate processes.
 
-The Cursor HTTP emulator also tests the real adapter without network calls. The same conformance suite covers both providers, and `pnpm test:integration` exercises the database lifecycle against the Cursor emulator: lost responses, stale run metadata, queue outages, ownership boundaries, cleared chats, worker restart, overlapping polls, and cancellation races.
+The emulator models run creation, unknown run statuses, archived or expired agents, removed agents and runs, rejected keys, and rate limits without network calls. The conformance suite runs against it, and `pnpm test:integration` exercises the database lifecycle against the Cursor emulator: lost responses, stale run metadata, queue outages, ownership boundaries, cleared chats, worker restart, overlapping polls, and cancellation races.

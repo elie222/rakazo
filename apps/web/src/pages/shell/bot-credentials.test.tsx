@@ -125,10 +125,20 @@ describe("BotCredentialsSection", () => {
     expect(container.querySelectorAll("input")).toHaveLength(0);
   });
 
-  it("shows an empty state", async () => {
+  it("keeps the explanation and add action when no credentials are saved", async () => {
     botSecrets.list.mockResolvedValue([]);
     await render();
-    expect(byTestId("bot-credentials-empty").textContent).toContain("No credentials saved");
+    const add = byTestId("credential-add");
+    expect(add.getAttribute("aria-label")).toBe("Add credential");
+    expect(add.textContent).toBe("");
+    expect(add.querySelector("svg")).not.toBeNull();
+    expect(container.querySelector("h3")?.textContent).toBe("Credentials");
+    const card = byTestId("bot-credentials-card");
+    expect(card.textContent).toBe("Encrypted and never shown again");
+    expect(card.contains(add)).toBe(false);
+    expect(container.querySelector('[data-testid="credential-add-form"]')).toBeNull();
+    await click("credential-add");
+    expect(card.querySelector('[data-testid="credential-add-form"]')).not.toBeNull();
   });
 
   it("adds a header credential and clears the value, then refetches", async () => {
@@ -215,6 +225,13 @@ describe("BotCredentialsSection", () => {
   it("replaces a value on the same destination", async () => {
     botSecrets.put.mockResolvedValue(rows[2]);
     await render();
+    const replace = byTestId<HTMLButtonElement>("credential-replace-router");
+    expect(replace.getAttribute("aria-label")).toBe("Replace value");
+    expect(replace.textContent).toBe("");
+    expect(replace.querySelector("svg")).not.toBeNull();
+    const remove = byTestId<HTMLButtonElement>("credential-remove-router");
+    expect(remove.getAttribute("aria-label")).toBe("Remove");
+    expect(remove.textContent).toBe("");
     await click("credential-replace-router");
     await type("credential-replace-value", FAKE_VALUE);
     await click("credential-replace-save");

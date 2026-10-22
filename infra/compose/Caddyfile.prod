@@ -1,9 +1,30 @@
+# JSON access logs on stdout. Caddy already masks Authorization and Cookie; these filters also
+# drop them, Set-Cookie, Referer (a page URL can hold a reset token), and the one-time tokens
+# and screen capabilities the app carries in URLs.
+(access_log) {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Proxy-Authorization delete
+			request>headers>Cookie delete
+			request>headers>Referer delete
+			resp_headers>Set-Cookie delete
+			# Native sign-in redirects carry the session cookie in the app callback URL.
+			resp_headers>Location delete
+			request>uri regexp "(/reset-password/|/novnc/session/[a-z]+/)[^/?#&]*|([?&](?:token|_token|code|state|ticket|access_token|id_token|hub\.verify_token|path)=)[^&#]*" "${1}${2}REDACTED"
+		}
+	}
+}
+
 (deploy_retry) {
 	lb_try_duration 10s
 	lb_try_interval 250ms
 }
 
 {$RAKAZO_HOST:app.example.com} {
+	import access_log
 	encode zstd gzip
 
 	# A localhost trial must not pin HTTPS onto every local dev server.
@@ -24,13 +45,14 @@
 	handle /api/* {
 		reverse_proxy api:3100 {
 			import deploy_retry
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 
 	handle /rpc/* {
 		reverse_proxy api:3100 {
 			import deploy_retry
+			header_up X-Forwarded-For {client_ip}
 		}
 	}
 

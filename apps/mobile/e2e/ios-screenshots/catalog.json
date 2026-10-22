@@ -20,6 +20,11 @@
     "flow": "flows/thread.yaml"
   },
   {
+    "id": "thread-errors",
+    "title": "Thread error recovery",
+    "flow": "flows/thread-errors.yaml"
+  },
+  {
     "id": "search",
     "title": "Search",
     "flow": "flows/search.yaml"

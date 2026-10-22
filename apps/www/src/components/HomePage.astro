@@ -3,9 +3,19 @@ import Button from "./Button.astro";
 import Footer from "./Footer.astro";
 import GetStartedActions from "./GetStartedActions.astro";
 import Header from "./Header.astro";
+import { LandingBotAvatar } from "./LandingBotAvatar";
+import PhoneMockup from "./PhoneMockup.astro";
 import { ProductDemo } from "./ProductDemo";
 import FeatureIllustration from "./FeatureIllustration.astro";
+import RepoCard from "./RepoCard.astro";
+import RosterBotAvatar from "./RosterBotAvatar.astro";
 import type { Locale } from "../i18n/locales";
+import chatgptLogo from "./provider-logos/chatgpt.svg?raw";
+import claudeLogo from "./provider-logos/claude.svg?raw";
+import grokLogo from "./provider-logos/grok.svg?raw";
+import lmStudioLogo from "./provider-logos/lmstudio.svg?raw";
+import ollamaLogo from "./provider-logos/ollama.svg?raw";
+import openRouterLogo from "./provider-logos/openrouter.svg?raw";
 import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
 import {
   DEFAULT_LOCALE,
@@ -14,23 +24,26 @@ import {
   isLocale,
   localeHomePath,
 } from "../i18n/locales";
-import { fetchDesktopDownloads, fetchGithubStars, formatStarCount } from "../github";
+import {
+  availableDesktopPlatforms,
+  desktopDownloadHref,
+  fetchDesktopDownloads,
+  fetchGithubStars,
+  fetchRecentChanges,
+  formatStarCount,
+} from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
 import {
+  ANDROID_APK_URL,
   APP_URL,
   GITHUB_URL,
-  OPENCLAW_ALTERNATIVE_PATH,
+  IOS_APP_URL,
   SELF_HOST_GUIDE_PATH,
   SETUP_PROMPT_URL,
   SITE_URL,
 } from "../site";
 
-function testimonialInitials(attribution: string): string {
-  const name = attribution.startsWith("@") ? attribution.slice(1) : attribution;
-  const letters = name.replace(/[^a-z]/gi, "");
-  return (letters.slice(0, 2) || name.slice(0, 2)).toUpperCase();
-}
 
 const locale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
@@ -42,9 +55,23 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const [stars, desktopDownloads] = await Promise.all([fetchGithubStars(), fetchDesktopDownloads()]);
+const [stars, desktopDownloads, recentChanges] = await Promise.all([
+  fetchGithubStars(),
+  fetchDesktopDownloads(),
+  fetchRecentChanges(5),
+]);
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
+const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
+const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
+const PROVIDER_LOGOS: Record<string, string> = {
+  Claude: claudeLogo,
+  ChatGPT: chatgptLogo,
+  OpenRouter: openRouterLogo,
+  Grok: grokLogo,
+  Ollama: ollamaLogo,
+  "LM Studio": lmStudioLogo,
+};
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = homeStructuredData({
@@ -100,12 +127,18 @@ const structuredData = homeStructuredData({
       </script>
 
       <section class="hero">
-        <div class="eyebrow hero__eyebrow">{copy.hero.eyebrow}</div>
+        {/* Hidden while the headline already says open source. */}
+        {/* <a class="hero__pill" href="#open-source">{copy.hero.eyebrow}</a> */}
         <h1>{copy.hero.heading}</h1>
         <p class="lead">
           {copy.hero.lead}
         </p>
-        <GetStartedActions class="hero__actions" copy={copy.hero} downloads={desktopDownloads} />
+        <GetStartedActions
+          class="hero__actions"
+          copy={copy.hero}
+          placement="hero"
+          githubLabel={copy.openSource.starOnGithub}
+        />
         <div class="hero__agent-setup">
           <button
             class="setup-copy"
@@ -139,9 +172,9 @@ const structuredData = homeStructuredData({
         </div>
         <div class="card-grid-4">
           {
-            copy.roster.bots.map((bot, index) => (
+            copy.roster.bots.map((bot) => (
               <article class="roster-card">
-                <FeatureIllustration kind="job" job={index} labels={copy.selfHost.mock} />
+                <RosterBotAvatar color={bot.color} name={bot.name} />
                 <h3>{bot.name}</h3>
                 <p>{bot.desc}</p>
               </article>
@@ -156,11 +189,14 @@ const structuredData = homeStructuredData({
           <button
             class="testimonial-pause"
             type="button"
+            aria-label={copy.testimonials.pause}
+            title={copy.testimonials.pause}
             data-testimonial-pause
             data-pause-label={copy.testimonials.pause}
             data-play-label={copy.testimonials.play}
           >
-            {copy.testimonials.pause}
+            <svg class="testimonial-pause__pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.5" height="10" rx="1" /><rect x="9.5" y="3" width="2.5" height="10" rx="1" /></svg>
+            <svg class="testimonial-pause__play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.4v9.2a.8.8 0 0 0 1.2.7l7.4-4.6a.8.8 0 0 0 0-1.4L6.2 2.7A.8.8 0 0 0 5 3.4Z" /></svg>
           </button>
         </div>
         <div
@@ -179,15 +215,19 @@ const structuredData = homeStructuredData({
                   inert={clone ? true : undefined}
                   data-testimonial-clone={clone ? "" : undefined}
                 >
-                  {copy.testimonials.items.map((item) => (
+                  {copy.testimonials.items.map((item, index) => (
                     <figure class="testimonial-card" lang="en">
-                      <figcaption>
-                        <span class="testimonial-avatar" aria-hidden="true">{testimonialInitials(item.attribution)}</span>
-                        <span>{item.attribution}</span>
-                      </figcaption>
                       <blockquote>
                         <p>{item.quote}</p>
                       </blockquote>
+                      <figcaption>
+                        <LandingBotAvatar
+                          color={copy.roster.bots[index % copy.roster.bots.length].color}
+                          size={32}
+                          className="testimonial-avatar"
+                        />
+                        <span>{item.attribution}</span>
+                      </figcaption>
                     </figure>
                   ))}
                 </div>
@@ -198,20 +238,14 @@ const structuredData = homeStructuredData({
       </section>
 
       <section id="selfhost" class="section">
-        <div class="section-intro">
-          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
-          <h2 class="section-heading">{copy.selfHost.heading}</h2>
-          <p class="section-copy">
-            {copy.selfHost.copy}
-          </p>
-        </div>
-        <div class="works-with">
-          <span>{copy.selfHost.worksWith}</span>
-          {HOME_MODEL_PROVIDERS.map((name) => <span class="provider-chip">{name}</span>)}
-        </div>
-        <div class="selfhost-cta">
+        <div class="selfhost__intro">
+          <div class="section-intro">
+            <h2 class="section-heading">{copy.selfHost.heading}</h2>
+            <p class="section-copy">
+              {copy.selfHost.copy}
+            </p>
+          </div>
           <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
         </div>
         <div class="card-grid-3">
           {
@@ -224,28 +258,79 @@ const structuredData = homeStructuredData({
             ))
           }
         </div>
+        <div class="works-with">
+          <span>{copy.selfHost.worksWith}</span>
+          {HOME_MODEL_PROVIDERS.map((name) => (
+            <span class="provider-chip">
+              <Fragment set:html={PROVIDER_LOGOS[name]} />
+              {name}
+            </span>
+          ))}
+        </div>
       </section>
 
-      <section id="open-source" class="section">
+      <section id="platforms" class="section platforms">
         <div class="section-intro">
+          <h2 class="section-heading">{copy.platforms.heading}</h2>
+          <div class="platforms__cards">
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="5" y="9" width="38" height="30" rx="4" />
+                <path d="M5 17h38" />
+                <circle cx="10.5" cy="13" r="1" />
+                <circle cx="14.5" cy="13" r="1" />
+                <circle cx="18.5" cy="13" r="1" />
+              </svg>
+              <h3>{copy.platforms.web}</h3>
+              <div class="platform-card__links">
+                <a href={APP_URL}>{copy.hero.getStarted}</a>
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="9" y="10" width="30" height="21" rx="3" />
+                <path d="M4 36h40l-3 3H7z" />
+              </svg>
+              <h3>{copy.platforms.desktop}</h3>
+              <div class="platform-card__links">
+                {desktopPlatforms.map((platform) => (
+                  <a href={desktopDownloadHref(platform)}>{PLATFORM_NAMES[platform]}</a>
+                ))}
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="14" y="5" width="20" height="38" rx="5" />
+                <path d="M21 9.5h6" />
+              </svg>
+              <h3>{copy.platforms.mobile}</h3>
+              <div class="platform-card__links">
+                <a href={IOS_APP_URL}>iOS</a>
+                <a href={ANDROID_APK_URL}>Android</a>
+              </div>
+            </article>
+          </div>
+        </div>
+        <PhoneMockup locale={locale} />
+      </section>
+
+      <section id="open-source" class:list={["section", recentChanges.length > 0 && "open-source"]}>
+        <div>
           <h2 class="section-heading">{copy.openSource.heading}</h2>
           <p class="section-copy">
             {copy.openSource.copy}
           </p>
+          <div class="source-links">
+            <Button href={GITHUB_URL} external data-attr="open-source-github">
+              {copy.openSource.starOnGithub}
+            </Button>
+          </div>
         </div>
-        <div class="source-links">
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.openSource.starOnGithub}</Button>
-          <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">{copy.openSource.readTheDocs}</Button>
-          <Button href={OPENCLAW_ALTERNATIVE_PATH} variant="secondary">{copy.openSource.openClawAlternative}</Button>
-        </div>
-        <div class="cloud-preview">
-          <span class="cloud-label">
-            {copy.openSource.cloudTitle}
-            <span class="cloud-badge">{copy.openSource.cloudBadge}</span>
-          </span>
-          <span>{copy.openSource.cloudMeta}</span>
-          <a class="cloud-link" href={APP_URL}>{copy.openSource.tryCloud} <span aria-hidden="true">→</span></a>
-        </div>
+        {
+          recentChanges.length > 0 && (
+            <RepoCard locale={locale} starsLabel={stars === null ? null : starsLabel} changes={recentChanges} />
+          )
+        }
       </section>
 
       <section id="faq" class="section" aria-labelledby="faq-heading">
@@ -268,7 +353,12 @@ const structuredData = homeStructuredData({
         <div>
           <h2>{copy.cta.heading}</h2>
           <p>{copy.cta.copy}</p>
-          <GetStartedActions class="cta-actions" copy={copy.hero} downloads={desktopDownloads} />
+          <GetStartedActions
+            class="cta-actions"
+            copy={copy.hero}
+            downloads={desktopDownloads}
+            placement="cta"
+          />
         </div>
         <div class="stats-grid">
           {
@@ -328,7 +418,7 @@ const structuredData = homeStructuredData({
   const marqueeGroup = marquee?.querySelector<HTMLElement>(".testimonial-group");
   if (marquee && marqueeGroup) {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const pixelsPerSecond = 36;
+    const pixelsPerSecond = 18;
     let frame = 0;
     let last = 0;
     let offset = 0;
@@ -430,7 +520,8 @@ const structuredData = homeStructuredData({
     pauseButton?.addEventListener("click", () => {
       held = !held;
       pauseButton.classList.toggle("is-paused", held);
-      pauseButton.textContent = held ? playLabel : pauseLabel;
+      pauseButton.setAttribute("aria-label", held ? playLabel : pauseLabel);
+      pauseButton.title = held ? playLabel : pauseLabel;
       if (held) stop();
       else resume();
     });

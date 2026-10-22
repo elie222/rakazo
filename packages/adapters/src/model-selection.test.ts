@@ -22,6 +22,7 @@ import {
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
+import { providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
@@ -396,6 +397,72 @@ describe("space catalog auth", () => {
       (entry) => entry.provider === "openai-codex" && entry.id === spark,
     );
   }
+
+  it.each(["credits", "byok"])("keeps saved keys while selecting %s funding", async (mode) => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
+    try {
+      const { prisma } = authPrisma({
+        credentials: [
+          {
+            ...storedCredential("personal", "personal-secret", "2026-01-01T00:00:00.000Z"),
+            provider: "openrouter",
+          },
+        ],
+        preferences: [],
+        secrets: [{ id: "personal-secret", ciphertext: "fixture-ciphertext" }],
+      });
+      Object.assign(prisma, {
+        space: {
+          findFirst: vi.fn().mockResolvedValue({ organization: { modelCredits: { mode } } }),
+        },
+      });
+      const load = vi.fn().mockResolvedValue("fixture-personal-key");
+      const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope, "openrouter");
+      expect(auth.byProvider.openrouter).toBe("api_key");
+      if (mode === "credits") {
+        expect(auth.managedProvider).toBe("openrouter");
+        expect(auth.secretIdByProvider?.openrouter).toBeUndefined();
+        expect(load).not.toHaveBeenCalled();
+      } else {
+        expect(auth.managedProvider).toBeUndefined();
+        expect(auth.secretIdByProvider?.openrouter).toBe("personal-secret");
+        expect(load).toHaveBeenCalledOnce();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("retains hosted catalog access alongside a saved personal connection", async () => {
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
+    try {
+      const { prisma } = authPrisma({
+        credentials: [storedCredential("cred-oauth", "secret-oauth", "2026-01-01T00:00:00.000Z")],
+        preferences: [],
+        secrets: [{ id: "secret-oauth", ciphertext: "cipher-oauth" }],
+      });
+      Object.assign(prisma, {
+        space: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ organization: { modelCredits: { mode: "credits" } } }),
+        },
+      });
+      const auth = await modelCredentialAuthKindsForSpace(
+        prisma,
+        { load: vi.fn().mockResolvedValue(oauth) },
+        scope,
+        "openrouter",
+      );
+      expect(auth.managedProvider).toBe("openrouter");
+      expect(auth.byProvider.openrouter).toBe("api_key");
+      expect(auth.byProvider["openai-codex"]).toBe("oauth");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   it("uses the space preference instead of a newer account credential", async () => {
     const { prisma, preferenceFindMany } = authPrisma({
@@ -1094,6 +1161,7 @@ describe("connected model validation", () => {
 
   it("accepts catalog and saved free-form models but rejects unavailable choices", async () => {
     const catalogPrisma = {
+      secret: { findFirst: async () => null },
       spaceModelPreference: { findFirst: async () => null },
       userModelCredential: {
         findMany: vi.fn(async () => []),
@@ -1471,5 +1539,81 @@ describe("bot model change validation", () => {
     await expect(
       validateBotModelChange(changeDeps({}), { ...scope, provider: null, model: null }),
     ).resolves.toEqual({ ok: true, provider: null, model: null, thinkingLevel: null });
+  });
+});
+
+describe("live-only catalog validation", () => {
+  it("uses the selected user's credential and shared cache for bot, routine, backup and run pins", async () => {
+    const model = "gpt-future-live-chat";
+    const selected = credential("openai", null);
+    const savedBots = vi.fn(async () => [{ modelProvider: "openai", modelId: model }]);
+    const prisma = {
+      bot: { findMany: savedBots },
+      routine: { findMany: async () => [] },
+      spaceBackupModel: { findMany: async () => [] },
+      deploymentSettings: { findFirst: async () => null },
+      spaceModelPreference: { findFirst: async () => null, findMany: async () => [] },
+      userModelCredential: { findMany: async () => [selected], findFirst: async () => selected },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: selected.secretId, ciphertext: "fake-ciphertext" })),
+      },
+    } as unknown as PrismaClient;
+    const secretStore = { load: vi.fn(async () => "fake-api-key") };
+    const enabled = vi.spyOn(providerCatalogCache, "enabled", "get").mockReturnValue(true);
+    const read = vi.spyOn(providerCatalogCache, "read").mockResolvedValue([model]);
+    const actor = { userId: "user-1", spaceId: "space-1" };
+    try {
+      expect(
+        await validateConnectedModelChoice(prisma, secretStore, actor, "openai", model),
+      ).toBeUndefined();
+      expect(
+        await validateBotModelChange(
+          {
+            prisma,
+            secretStore,
+            refreshExpiredCredential: () => {},
+            defaultModel: async () => ({ provider: null, model: null }),
+          },
+          { ...actor, provider: "openai", model },
+        ),
+      ).toMatchObject({ ok: true });
+      expect(
+        pinnedModelCredentialError(
+          { modelProvider: "openai", modelId: model, thinkingLevel: null },
+          selected,
+        ),
+      ).toBeUndefined();
+      expect(read).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openai",
+          secretId: selected.secretId,
+          version: expect.any(String),
+        }),
+      );
+      expect(prisma.secret.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: selected.secretId, userId: actor.userId, spaceId: null },
+        }),
+      );
+      read.mockResolvedValue(
+        listPiCatalog()
+          .filter((entry) => entry.provider === "openai")
+          .map((entry) => entry.id),
+      );
+      expect(
+        await validateConnectedModelChoice(prisma, secretStore, actor, "openai", model),
+      ).toBeUndefined();
+      savedBots.mockResolvedValue([]);
+      expect(await validateConnectedModelChoice(prisma, secretStore, actor, "openai", model)).toBe(
+        "Unknown model for that provider",
+      );
+      read.mockResolvedValue(undefined);
+      expect(await validateConnectedModelChoice(prisma, secretStore, actor, "openai", model)).toBe(
+        "Unknown model for that provider",
+      );
+    } finally {
+      read.mockRestore();
+      enabled.mockRestore();
+    }
   });
 });

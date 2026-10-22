@@ -1,9 +1,9 @@
 import { ResponseError } from "@boatdev/sdk";
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
-import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatSandboxProvider } from "./boat-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -59,7 +59,7 @@ describe("Boat API errors", () => {
     );
     const gone = await provider.keepAlive(computer).catch((error: unknown) => error);
     expect(isSandboxGoneError(gone)).toBe(true);
-    expect(isUnrecoverableBoatError(gone)).toBe(true);
+    expect((gone as Error).name).toBe("SandboxNotFoundError");
 
     vi.stubGlobal(
       "fetch",
@@ -91,13 +91,15 @@ describe("Boat API errors", () => {
     expect(lookups[0]?.aborted).toBe(true);
   });
 
-  it("preserves 404 recovery and does not retry failed commands", async () => {
+  it("keeps the HTTP status and Boat's error code and does not retry failed commands", async () => {
     const call = vi.fn(async () => {
-      throw new ResponseError(Response.json({ message: "Boat not found" }, { status: 404 }));
+      throw new ResponseError(
+        Response.json({ code: "not_found", message: "Boat not found" }, { status: 404 }),
+      );
     });
     const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
-    expect(error).toBeInstanceOf(ResponseError);
-    expect(isUnrecoverableBoatError(error)).toBe(true);
+    expect(error).toBeInstanceOf(BoatApiError);
+    expect(error).toMatchObject({ code: "not_found", response: { status: 404 } });
     expect(call).toHaveBeenCalledTimes(1);
   });
 
@@ -114,6 +116,21 @@ describe("Boat API errors", () => {
     expect(error).toBeInstanceOf(SandboxRateLimitError);
     expect((error as Error).cause).toBeInstanceOf(ResponseError);
     expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
+  });
+
+  it("stops waiting to retry an unsent request once the caller cancels", async () => {
+    const controller = new AbortController();
+    const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
+      controller.abort();
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect refused"), { code: "ECONNREFUSED" }),
+      });
+    });
+    const wrapped = wrapBoatCall(call, "fake-key", true);
+    await expect(wrapped({}, { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(call).toHaveBeenCalledOnce();
   });
 
   it("does not replace cancellation and network errors", async () => {

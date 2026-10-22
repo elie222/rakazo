@@ -17,12 +17,15 @@ export function AudioAttachment({
   artifactId,
   name,
   mimeType,
+  labelColor,
   pressableProps,
 }: {
   target: MobileArtifactTarget;
   artifactId: string;
   name: string;
   mimeType: string;
+  /** Text and icon colour inside the user's bubble; bot cards keep the card text colours. */
+  labelColor?: string;
   pressableProps?: Omit<PressableProps, "onPress" | "children" | "style">;
 }) {
   const { t } = useI18n();
@@ -55,10 +58,8 @@ export function AudioAttachment({
       style={{
         gap: 6,
         padding: 12,
-        borderWidth: 1,
-        borderColor: tokens.border,
         borderRadius: 12,
-        backgroundColor: tokens.card,
+        backgroundColor: tokens.secondary,
       }}
     >
       <Text
@@ -66,28 +67,30 @@ export function AudioAttachment({
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
         numberOfLines={1}
-        style={{ color: tokens.foreground, fontSize: 15 }}
+        style={{ color: labelColor ?? tokens.foreground, fontSize: 15 }}
       >
         {name}
       </Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
         {state.loading ? (
-          <ActivityIndicator color={tokens.mutedForeground} />
+          <ActivityIndicator color={labelColor ?? tokens.mutedForeground} />
         ) : (
           <GlassIconButton
             accessibilityLabel={state.playing ? t("Pause") : t("Play")}
             ios={state.playing ? "pause.fill" : "play.fill"}
             android={state.playing ? "pause" : "play"}
+            color={labelColor}
             onPress={() => void player.current?.toggle()}
           />
         )}
-        <Text style={{ flex: 1, color: tokens.mutedForeground, fontSize: 13 }}>
+        <Text style={{ flex: 1, color: labelColor ?? tokens.mutedForeground, fontSize: 13 }}>
           {playbackTime(state.currentTime)} / {playbackTime(state.duration)}
         </Text>
         <GlassIconButton
           accessibilityLabel={t("Share {name}", { name })}
           ios="square.and.arrow.up"
           android="share-social-outline"
+          color={labelColor}
           onPress={() =>
             void openMobileArtifact(target, artifactId, name, mimeType).catch((error) =>
               Alert.alert(t("Could not share file"), errorText(error, t("Try again."))),
@@ -96,7 +99,10 @@ export function AudioAttachment({
         />
       </View>
       {state.error ? (
-        <Text accessibilityRole="alert" style={{ color: tokens.destructive, fontSize: 13 }}>
+        <Text
+          accessibilityRole="alert"
+          style={{ color: labelColor ?? tokens.destructive, fontSize: 13 }}
+        >
           {t("Could not play that clip.")}
         </Text>
       ) : null}

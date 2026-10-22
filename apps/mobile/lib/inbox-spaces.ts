@@ -9,6 +9,7 @@ import {
   selectedSpaceId,
   selectSpace,
 } from "./api";
+import { t } from "./i18n";
 
 export type InboxSpace = Pick<
   MobileSpace,
@@ -82,6 +83,7 @@ export function spaceInboxItems(
     }
     for (const group of groupBotsForSidebar(chats, space.botSections, {
       includeEmptySections: true,
+      labels: { pinned: t("Pinned"), unassigned: t("Unassigned") },
     })) {
       if (group.title) {
         const key = `${space.id}:${group.key}`;

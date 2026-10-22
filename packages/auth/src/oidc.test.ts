@@ -1,10 +1,11 @@
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import type * as Db from "@rakazo/db";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, AuthEnv } from "./index.js";
 import { createAuth } from "./index.js";
 import { isCurrentOidcAccount, oidcAccountSubject } from "./oidc.js";
+import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
 const state = vi.hoisted(() => ({ db: {} as Record<string, Record<string, unknown>[]> }));
 vi.mock("better-auth/adapters/prisma", () => ({ prismaAdapter: () => memoryAdapter(state.db) }));
@@ -15,6 +16,7 @@ vi.mock("@rakazo/db", async (original) => ({
 
 const issuer = "https://identity.example.test";
 const origin = "https://rakazo.example.test";
+const secret = "offline-test-secret-with-at-least-32-characters";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = { ...publicKey.export({ format: "jwk" }), kid: "test-key", alg: "RS256", use: "sig" };
 let auth: Auth;
@@ -63,13 +65,14 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
     },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
+    passkey: { deleteMany: vi.fn(async () => ({})) },
     organization: { deleteMany: vi.fn(async () => ({})) },
   };
   prisma.$transaction = vi.fn(async (operations: (tx: unknown) => Promise<unknown>) =>
     operations(prisma),
   );
   auth = createAuth(prisma as never, {
-    secret: "offline-test-secret-with-at-least-32-characters",
+    secret,
     baseURL: origin,
     webOrigin: origin,
     signupsEnabled: "true",
@@ -97,6 +100,12 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
   });
 }
 
+/** Signs a stored session token the way the session cookie and `set-auth-token` do. */
+function signedBearer(token: string) {
+  if (token.includes(".")) return token;
+  return `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
+}
+
 async function request(
   path: string,
   body?: unknown,
@@ -107,7 +116,7 @@ async function request(
     origin,
     "content-type": "application/json",
     ...(cookies ? { cookie: cookies } : {}),
-    ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+    ...(bearer ? { authorization: `Bearer ${signedBearer(bearer)}` } : {}),
   });
   for (const [key, value] of Object.entries(overrides)) {
     if (value === null) headers.delete(key);
@@ -178,6 +187,8 @@ async function signIn(claims?: Record<string, unknown>) {
   return request(await start(claims));
 }
 const rows = (model: string) => state.db[model] ?? [];
+const hashedIdentifier = (identifier: string) =>
+  createHash("sha256").update(identifier).digest("base64url");
 
 function expireOidcProofs() {
   for (const value of rows("verification")) {
@@ -316,6 +327,89 @@ describe("OIDC callbacks", () => {
       expect(rows("account")[0]?.providerId).toBe("credential");
     },
   );
+  it("stores provider tokens encrypted and still reads them", async () => {
+    setup();
+    await signIn();
+    const stored = () => rows("account").find((account) => account.providerId === "oidc")!;
+    const first = { ...stored() };
+    expect(first.accessToken).toEqual(expect.any(String));
+    expect(first.accessToken).not.toBe("fake-access-token");
+    expect(String(first.idToken)).not.toContain(".");
+    expect(await openIdToken(secret, String(first.idToken))).toMatch(/^ey/);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    const tokens = await request("/get-access-token", { accountId: String(first.id) });
+    expect(tokens.status, await tokens.clone().text()).toBe(200);
+    expect(await tokens.json()).toMatchObject({
+      accessToken: "fake-access-token",
+      idToken: await openIdToken(secret, String(first.idToken)),
+    });
+    cookies = "";
+    const again = await signIn();
+    expect(again.headers.get("location")).toBe(`${origin}/app`);
+    expect(String(stored().idToken)).not.toContain(".");
+    expect(await openIdToken(secret, String(stored().idToken))).toMatch(/^ey/);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+  });
+  it("keeps accounts stored before token encryption working, then encrypts them", async () => {
+    setup();
+    await signIn();
+    const account = rows("account").find((row) => row.providerId === "oidc")!;
+    const idToken = jwt({ sub: "subject-1", email: "sso@example.test" });
+    Object.assign(account, {
+      accessToken: "legacy-access-token",
+      refreshToken: "legacy-refresh-token",
+      idToken,
+    });
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    const prisma = {
+      account: {
+        findMany: vi.fn(async () => rows("account").map((row) => ({ ...row }))),
+        updateMany: vi.fn(
+          async ({ where, data }: { where: Record<string, unknown>; data: object }) => {
+            const row = rows("account").find((item) =>
+              Object.entries(where).every(([key, value]) => (item[key] ?? null) === value),
+            );
+            if (row) Object.assign(row, data);
+            return { count: row ? 1 : 0 };
+          },
+        ),
+      },
+    };
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(1);
+    expect(account.accessToken).not.toBe("legacy-access-token");
+    expect(account.refreshToken).not.toBe("legacy-refresh-token");
+    expect(await openIdToken(secret, String(account.idToken))).toBe(idToken);
+    expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: true });
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(0);
+
+    // A sign-in that refreshes the row after the upgrade read it must win.
+    account.accessToken = "legacy-access-token";
+    prisma.account.findMany.mockImplementationOnce(async () => {
+      const read = rows("account").map((row) => ({ ...row }));
+      account.accessToken = "refreshed-access-token";
+      return read;
+    });
+    expect(await encryptStoredOAuthTokens(prisma as never, secret)).toBe(0);
+    expect(account.accessToken).toBe("refreshed-access-token");
+  });
+  it("stores deletion codes hashed and accepts one stored before hashing", async () => {
+    setup();
+    await signIn();
+    await request("/request-account-deletion", {});
+    const code = sentCodes.at(-1)!.match(/\b[a-f0-9]{32}\b/)![0];
+    expect(rows("verification").some((row) => String(row.identifier).includes(code))).toBe(false);
+    rows("verification").push({
+      id: "legacy-deletion-code",
+      identifier: "delete-account-legacy-code",
+      value: rows("user")[0]!.id,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const deleted = await request("/delete-user", { token: "legacy-code" });
+    expect(deleted.status, await deleted.clone().text()).toBe(200);
+    expect(rows("user")).toHaveLength(0);
+  });
   it("does not reuse identities after changing the configured issuer", async () => {
     setup();
     await signIn();
@@ -582,6 +676,8 @@ describe("OIDC callbacks", () => {
       "/sign-up/email",
       "/request-password-reset",
       "/set-password",
+      "/email-otp/send-verification-otp",
+      "/sign-in/email-otp",
     ]) {
       expect(
         (await request(path, { email: "local@example.test", password: "test-password-123" }))
@@ -1109,6 +1205,12 @@ describe("SSO-only account deletion", () => {
     const sessionToken = String(rows("session")[0]!.token);
     expireOidcProofs();
     cookies = "";
+    // A token copied from the session table is not a session.
+    const raw = { authorization: `Bearer ${sessionToken}` };
+    expect((await request("/request-account-deletion", {}, undefined, raw)).status).toBe(401);
+    expect((await request("/delete-user", {}, undefined, raw)).status).toBe(401);
+    const reauth = { provider: "oidc", additionalData: { reauthenticate: true } };
+    expect((await request("/sign-in/social", reauth, undefined, raw)).status).toBe(401);
     expect((await request("/delete-user", { token: "wrong-code" }, sessionToken)).status).not.toBe(
       200,
     );
@@ -1155,8 +1257,8 @@ describe("SSO-only account deletion", () => {
     await signIn();
     await request("/request-account-deletion", {});
     const code = sentCodes.at(-1)!.match(/\b[a-f0-9]{32}\b/)![0];
-    const verification = rows("verification").find((value) =>
-      String(value.identifier).includes(code),
+    const verification = rows("verification").find(
+      (value) => value.identifier === hashedIdentifier(`delete-account-${code}`),
     )!;
     verification.expiresAt = new Date(0);
     expect((await request("/delete-user", { token: code })).status).not.toBe(200);
@@ -1199,17 +1301,30 @@ describe("SSO-only account deletion", () => {
   );
 });
 
-it("counts only stored OIDC subjects bound to the current issuer", () => {
+it("counts only stored OIDC subjects bound to the current issuer", async () => {
   const account = {
     providerId: "oidc",
     accountId: oidcAccountSubject(issuer, "subject-1"),
     idToken: jwt({ sub: "subject-1" }),
   };
-  expect(isCurrentOidcAccount(account, issuer)).toBe(true);
-  expect(isCurrentOidcAccount(account, undefined)).toBe(false);
-  expect(isCurrentOidcAccount(account, "https://replacement.example.test")).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, providerId: "credential" }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, accountId: "unbound" }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, idToken: null }, issuer)).toBe(false);
-  expect(isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer)).toBe(false);
+  const sealed = { ...account, idToken: await sealIdToken(secret, account.idToken) };
+  expect(await isCurrentOidcAccount(account, issuer, secret)).toBe(true);
+  expect(await isCurrentOidcAccount(sealed, issuer, secret)).toBe(true);
+  expect(await isCurrentOidcAccount(sealed, issuer, "another-secret-with-32-characters!")).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount(account, undefined, secret)).toBe(false);
+  expect(await isCurrentOidcAccount(account, "https://replacement.example.test", secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, providerId: "credential" }, issuer, secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, accountId: "unbound" }, issuer, secret)).toBe(
+    false,
+  );
+  expect(await isCurrentOidcAccount({ ...account, idToken: null }, issuer, secret)).toBe(false);
+  expect(await isCurrentOidcAccount({ ...account, idToken: "malformed" }, issuer, secret)).toBe(
+    false,
+  );
 });

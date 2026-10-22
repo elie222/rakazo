@@ -12,27 +12,29 @@ overwrite an existing `.env` without an explicit backup and operator consent.**
 
 | Key | Installer fill | Role |
 | --- | --- | --- |
-| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | Postgres role password inside Compose |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 16` | Postgres owner password inside Compose (migrations) |
+| `POSTGRES_APP_PASSWORD` | `openssl rand -hex 16` | Password of the app's `rakazo_app` login, which row-level security applies to |
 | `BETTER_AUTH_SECRET` | `openssl rand -hex 32` | Auth/session signing |
 | `ENCRYPTION_KEY` | `openssl rand -hex 32` | Encrypts stored credentials at rest |
 | `SCREEN_PROXY_SECRET` | `openssl rand -hex 32` | Signs short-lived `/novnc/*` screen capabilities |
 | `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | API ↔ sandbox supervisor auth |
 
-Re-runs **preserve** an existing `.env` (they do not rotate secrets). Empty
+Re-runs **preserve** an existing `.env` (they do not rotate secrets); they only append
+`POSTGRES_APP_PASSWORD` when an older `.env` lacks it. Empty
 required keys still fail closed at Compose validate time
 (`${VAR:?Set … in .env}`).
 
 Manual generation (same shapes the installer uses):
 
 ```bash
-openssl rand -hex 16   # POSTGRES_PASSWORD
+openssl rand -hex 16   # POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD
 openssl rand -hex 32   # BETTER_AUTH_SECRET, ENCRYPTION_KEY, SCREEN_PROXY_SECRET, SANDBOX_SUPERVISOR_TOKEN
 ```
 
-Source-checkout `.env.example` also requires `POSTGRES_PASSWORD` (same
-`openssl rand -hex 16` shape) for `infra/compose/docker-compose.yml`. Put the
-same value in host-side `DATABASE_URL` when using the optional
-`docker-compose.postgres-host.yml` overlay. Keep the password URI-safe: Compose
+Source-checkout `.env.example` also requires `POSTGRES_PASSWORD` and
+`POSTGRES_APP_PASSWORD` (same `openssl rand -hex 16` shape) for
+`infra/compose/docker-compose.yml`. Put them in host-side `DATABASE_MIGRATION_URL`
+and `DATABASE_URL` when using the optional `docker-compose.postgres-host.yml` overlay. Keep the password URI-safe: Compose
 interpolates it into `DATABASE_URL` the same way the images stack does. Hex from
 `openssl rand` is safe; characters such as `@ : / ? # %` are not.
 
@@ -63,6 +65,13 @@ Rotating `ENCRYPTION_KEY` after credentials were stored makes old ciphertext
 unreadable. Keep the original key for an existing deployment unless you
 intentionally wipe encrypted material.
 
+`ENCRYPTION_KEY` also derives the default master key for chat, memory and file
+encryption, so changing it also makes that content unreadable. To move content
+off it, set `ENCRYPTION_MASTER_KEYS` and run the rotation in
+[content-encryption.md](content-encryption.md), which re-wraps the space keys
+without stranding content. Keep `ENCRYPTION_KEY` unchanged afterwards: stored
+credentials still depend on it.
+
 ## Optional keys (leave blank if unused)
 
 From `.env.images.example` (images installer). Leave blank if unused:
@@ -74,6 +83,7 @@ From `.env.images.example` (images installer). Leave blank if unused:
 | `COMPOSIO_API_KEY` | Composio managed catalog |
 | `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY` | Remote computers when `SANDBOX_PROVIDER` is not `docker` |
 | `SMTP_URL` / `EMAIL_FROM` | Password-recovery email |
+| `EXPO_ACCESS_TOKEN` | Mobile push when the Expo project enables enhanced push security |
 | Messaging tokens (Slack, Telegram, …) | Only if you enable those surfaces |
 
 Blank optional keys are normal for a minimal published-images boot. Pipedream

@@ -1,16 +1,24 @@
 import { createServer } from "node:http";
-import { Sandbox, SandboxError, SandboxNotFoundError, TimeoutError } from "@e2b/desktop";
-import { describe, expect, it, vi } from "vitest";
-import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
-import type { E2BSandboxSdk } from "./e2b-sandbox.js";
+import type { CommandResult, EntryInfo, Sandbox } from "@e2b/desktop";
 import {
-  E2BSandboxProvider,
-  e2bCreateOptions,
-  isSandboxGoneError,
-  keepingAwake,
-} from "./e2b-sandbox.js";
+  AuthenticationError,
+  CommandExitError,
+  FileNotFoundError,
+  FileType,
+  RateLimitError,
+  SandboxError,
+  SandboxNotFoundError,
+  TimeoutError,
+} from "@e2b/desktop";
+import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { describe, expect, it, vi } from "vitest";
+import { sandboxIdleMs } from "./computer-idle.js";
+import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
+import type { E2BDesktop, E2BSandboxSdk } from "./e2b-sandbox.js";
+import { E2BSandboxProvider, e2bCreateOptions, keepingAwake } from "./e2b-sandbox.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 const context = {
   operationId: "e2b-test",
@@ -149,6 +157,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ sandboxId: "existing" }),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
@@ -172,6 +181,7 @@ describe("E2B computer backend", () => {
       create: vi.fn().mockResolvedValue({ sandboxId: "fresh" }),
       connect: vi.fn(),
       pause: vi.fn(),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
@@ -193,6 +203,7 @@ describe("E2B computer backend", () => {
       create: vi.fn().mockRejectedValueOnce(missing).mockResolvedValue({ sandboxId: "stock" }),
       connect: vi.fn(),
       pause: vi.fn(),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
@@ -212,6 +223,7 @@ describe("E2B computer backend", () => {
       create: vi.fn().mockRejectedValue(limited),
       connect: vi.fn(),
       pause: vi.fn(),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
 
@@ -230,6 +242,7 @@ describe("E2B computer backend", () => {
         }),
       ),
       pause: vi.fn(),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
     await expect(
@@ -246,9 +259,15 @@ describe("E2B computer backend", () => {
     expect(sdk.create).toHaveBeenCalledOnce();
   });
 
-  it.each([404, 503])(
-    "uses SDK deletion semantics for a cached handle receiving %s",
-    async (status) => {
+  it.each([
+    { method: "destroy", status: 404, outcome: "resolves" },
+    { method: "destroy", status: 503, outcome: "rejects" },
+    { method: "stop", status: 409, outcome: "resolves" },
+    { method: "stop", status: 429, outcome: "rejects" },
+    { method: "stop", status: 404, outcome: "gone" },
+  ] as const)(
+    "$method maps a real SDK $status without resuming the sandbox",
+    async ({ method, status, outcome }) => {
       const requests: string[] = [];
       const server = createServer((request, response) => {
         requests.push(`${request.method} ${request.url}`);
@@ -259,30 +278,24 @@ describe("E2B computer backend", () => {
       try {
         const address = server.address();
         if (!address || typeof address === "string") throw new Error("Missing test server address");
-        const desktop = new Sandbox({
-          sandboxId: "expired",
-          envdVersion: "0.1.0",
-          apiKey: "test-key",
-          validateApiKey: false,
-          debug: false,
-          proxy: "",
-          apiUrl: `http://127.0.0.1:${address.port}`,
-        });
-        const sdk: E2BSandboxSdk = {
-          create: vi.fn().mockResolvedValue(desktop),
-          connect: vi.fn(),
-          pause: vi.fn(),
+        vi.stubEnv("E2B_API_URL", `http://127.0.0.1:${address.port}`);
+        const provider = new E2BSandboxProvider("e2b_test");
+        const computer = {
+          id: "paused",
+          providerRef: "paused",
+          kind: "e2b" as const,
+          botId: "bot",
         };
-        const provider = new E2BSandboxProvider("test-key", sdk);
-        const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, context);
-        if (status === 404) {
-          await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
-        } else {
-          await expect(provider.destroy(computer, context)).rejects.toThrow();
-        }
-        expect(requests).toEqual(["DELETE /sandboxes/expired"]);
-        expect(sdk.connect).not.toHaveBeenCalled();
+        const result = provider[method](computer, context);
+        if (outcome === "resolves") await expect(result).resolves.toBeUndefined();
+        else if (outcome === "rejects")
+          await expect(result).rejects.toMatchObject({ statusCode: status });
+        else await expect(result).rejects.toSatisfy(isSandboxGoneError);
+        expect(requests).toEqual([
+          method === "destroy" ? "DELETE /sandboxes/paused" : "POST /sandboxes/paused/pause",
+        ]);
       } finally {
+        vi.unstubAllEnvs();
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
@@ -313,6 +326,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
     const computer = {
@@ -331,7 +345,9 @@ describe("E2B computer backend", () => {
 
   it("surfaces a setup timeout without treating it as a missing sandbox", async () => {
     const run = vi.fn(async () => {
-      throw new TimeoutError("the operation timed out");
+      throw new TimeoutError(
+        "deadline_exceeded: This error is likely due to exceeding 'timeoutMs' — the total time a long running request (like command execution or directory watch) can be active.",
+      );
     });
     const desktop = {
       sandboxId: "timeout-e2b-box",
@@ -342,6 +358,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
     const computer = {
@@ -376,6 +393,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
     const computer = await provider.provision(
@@ -414,6 +432,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     });
     const computer = await provider.provision(
       { botId: "bot-1", homePath: "/unused", providerKind: "e2b" },
@@ -463,6 +482,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     });
     const computer = await provider.provision(
       { botId: "bot-1", homePath: "/unused", providerKind: "e2b" },
@@ -498,7 +518,9 @@ describe("E2B computer backend", () => {
       const response = respond(value);
       if (response) return response;
       if (value.includes("hang")) {
-        throw new TimeoutError("command timed out");
+        throw new TimeoutError(
+          "deadline_exceeded: This error is likely due to exceeding 'timeoutMs' — the total time a long running request (like command execution or directory watch) can be active.",
+        );
       }
       return {
         stdout: "",
@@ -560,13 +582,12 @@ describe("E2B computer backend", () => {
       scroll: vi.fn(async () => undefined),
       wait: vi.fn(async () => undefined),
       setTimeout: vi.fn(async () => undefined),
-      pause: vi.fn(async () => undefined),
-      kill: vi.fn(async () => undefined),
     } as unknown as Sandbox;
     const sdk: E2BSandboxSdk = {
       create: vi.fn(async () => desktop),
       connect: vi.fn(async () => desktop),
       pause: vi.fn(async () => undefined),
+      kill: vi.fn(async () => true),
     };
     const provider = new E2BSandboxProvider("test-key", sdk);
     const computer = await provider.provision(
@@ -655,12 +676,15 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(control.url).toContain("6100-desktop.test");
+    expect(command.mock.calls.some(([value]) => String(value).includes("0.0.0.0:6100 8>&-"))).toBe(
+      true,
+    );
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
     await provider.setScreenControl(computer, false, context, "lease-1");
     await screen.close();
     expect(streamStop).not.toHaveBeenCalled();
     await provider.stop(computer, context);
-    expect(desktop.pause).toHaveBeenCalled();
+    expect(sdk.pause).toHaveBeenCalledWith("e2b-test-box", { apiKey: "test-key" });
   });
 
   it("gives Team bots distinct E2B screens and shared files", async () => {
@@ -716,6 +740,7 @@ describe("E2B computer backend", () => {
       create: vi.fn(async () => desktop as never),
       connect: vi.fn(),
       pause: vi.fn(),
+      kill: vi.fn(async () => true),
     } as unknown as E2BSandboxSdk);
     const computer = await provider.provision({ botId: "team-home", homePath: "/tmp" }, context);
     const writer = { ...context, botId: "writer" };
@@ -759,6 +784,9 @@ describe("E2B computer backend", () => {
       researcher,
     );
     expect(control.url).toContain("6100-desktop.test");
+    expect(command.mock.calls.some(([value]) => String(value).includes("0.0.0.0:6100 8>&-"))).toBe(
+      true,
+    );
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
 
     await provider.writeFile(
@@ -795,18 +823,19 @@ describe("E2B computer backend", () => {
 describe("sandbox-gone detection", () => {
   // Wordings verified against @e2b/desktop 2.4.0 (e2b 2.49.1 dist).
   const gone = [
-    new TimeoutError(
-      "502: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.",
-    ),
     new SandboxNotFoundError("Sandbox is probably not running anymore"),
-    new TimeoutError(
-      "stream reset: The sandbox was killed or reached its end of life while the request was in flight.",
-    ),
     new SandboxNotFoundError("Paused sandbox sandbox-ref-1 not found"),
     // The SDK error class must also identify loss when the API supplies a different message.
     new SandboxNotFoundError("Unavailable"),
   ];
-  const alive = [
+  const notGone = [
+    // With onTimeout "pause" these usually mean paused; the adapter resumes before deciding.
+    new TimeoutError(
+      "502: This error is likely due to sandbox timeout. You can modify the sandbox timeout by passing 'timeoutMs' when starting the sandbox or calling '.setTimeout' on the sandbox with the desired timeout.",
+    ),
+    new TimeoutError(
+      "stream reset: The sandbox was killed or reached its end of life while the request was in flight.",
+    ),
     new Error("bash: x11vnc: command not found"),
     new Error("Path /home/user/rakazo-home/notes.md not found"),
     new Error("tar: /home/user/x: No such file or directory"),
@@ -816,80 +845,445 @@ describe("sandbox-gone detection", () => {
     Object.assign(new Error("fetch failed"), { code: "ECONNRESET" }),
   ];
 
-  it("recognises every sandbox-gone wording", () => {
-    for (const error of gone) {
-      expect(isSandboxGoneError(error), error.message).toBe(true);
-    }
+  it.each(gone)("reads %s as gone", (error) => {
+    expect(isSandboxGoneError(error)).toBe(true);
   });
 
-  it("never reads a live sandbox as gone", () => {
-    for (const error of alive) {
-      expect(isSandboxGoneError(error), error.message).toBe(false);
-    }
-  });
-
-  it("does not interpret a transport failure as sandbox loss", () => {
-    expect(isSandboxGoneError(new Error("fetch failed"))).toBe(false);
-  });
-
-  it.each(gone)("drops a cached handle and reconnects after %s", async (error) => {
-    const dead = {
-      sandboxId: "box-1",
-      setTimeout: vi.fn(async () => {
-        throw error;
-      }),
-    } as unknown as Sandbox;
-    const revived = { sandboxId: "box-1", setTimeout: vi.fn(async () => undefined) };
-    const sdk: E2BSandboxSdk = {
-      create: vi.fn(async () => dead),
-      connect: vi.fn(async () => revived as unknown as Sandbox),
-      pause: vi.fn(async () => undefined),
-    };
-    const provider = new E2BSandboxProvider("test-key", sdk);
-    const ref = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
-    expect(ref.providerRef).toBe("box-1");
-
-    vi.setSystemTime(Date.now() + 61_000);
-    try {
-      await provider.keepAlive?.(ref);
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(dead.setTimeout).toHaveBeenCalledTimes(1);
-    expect(sdk.connect).toHaveBeenCalledTimes(1);
-  });
-
-  it("forgets a dead handle on keepAlive before the 60s probe threshold", async () => {
-    const dead = {
-      sandboxId: "box-1",
-      setTimeout: vi.fn(async () => {
-        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
-      }),
-    } as unknown as Sandbox;
-    const revived = { sandboxId: "box-1", setTimeout: vi.fn(async () => undefined) };
-    const sdk: E2BSandboxSdk = {
-      create: vi.fn(async () => dead),
-      connect: vi.fn(async () => revived as unknown as Sandbox),
-      pause: vi.fn(async () => undefined),
-    };
-    const provider = new E2BSandboxProvider("test-key", sdk);
-    const ref = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
-
-    // Still inside box()'s 60s cache window — keepAlive must not refresh lastTouchedAt
-    // on a gone sandbox, or subsequent heartbeats would keep serving the dead handle.
-    await provider.keepAlive?.(ref);
-    expect(dead.setTimeout).toHaveBeenCalledTimes(1);
-    expect(sdk.connect).not.toHaveBeenCalled();
-
-    await provider.keepAlive?.(ref);
-    expect(sdk.connect).toHaveBeenCalledTimes(1);
-    expect(revived.setTimeout).toHaveBeenCalledTimes(1);
+  it.each(notGone)("does not read %s as gone", (error) => {
+    expect(isSandboxGoneError(error)).toBe(false);
   });
 });
 
-function _unwrapSetupCommand(command: string): string {
-  return command.startsWith("bash -c '") ? command.slice(9, -1).replaceAll(`'"'"'`, "'") : command;
+type FakeState = "running" | "paused" | "killing" | "killed";
+
+/**
+ * One E2B sandbox as the API and envd report it. Its timeout is an absolute deadline that
+ * only setTimeout and connect move; past it the sandbox pauses, as onTimeout "pause" does.
+ */
+class FakeE2B {
+  state: FakeState = "running";
+  revoked = false;
+  deadline = 0;
+  setTimeoutError?: Error;
+  connectError?: Error;
+  pauseError?: Error;
+  command?: (command: string) => Promise<CommandResult>;
+  readonly calls = { connect: 0, pause: 0, kill: 0, setTimeout: 0 };
+  readonly files = new Map<string, Uint8Array>();
+
+  constructor(readonly id = "box-1") {}
+
+  readonly sdk = {
+    create: async () => {
+      this.extend(sandboxIdleMs());
+      return this.handle();
+    },
+    connect: async (_id: string, options: { timeoutMs: number }) => {
+      this.calls.connect += 1;
+      this.authorize();
+      this.settle();
+      if (this.connectError) throw this.connectError;
+      if (this.state === "killed")
+        throw new SandboxNotFoundError(`Paused sandbox ${this.id} not found`);
+      if (this.state === "killing") throw apiError(409, `Sandbox ${this.id} is being killed`);
+      this.state = "running";
+      this.extend(options.timeoutMs);
+      return this.handle();
+    },
+    pause: async () => {
+      this.calls.pause += 1;
+      this.authorize();
+      this.settle();
+      if (this.pauseError) throw this.pauseError;
+      if (this.state === "killed") throw new SandboxNotFoundError(`Sandbox ${this.id} not found`);
+      if (this.state !== "running") return false;
+      this.state = "paused";
+      return true;
+    },
+    kill: async () => {
+      this.calls.kill += 1;
+      this.authorize();
+      if (this.state === "killed") return false;
+      this.state = "killed";
+      return true;
+    },
+  } satisfies E2BSandboxSdk;
+
+  handle(): E2BDesktop {
+    const envd = async <T>(work: () => T | Promise<T>): Promise<T> => {
+      this.settle();
+      if (this.state !== "running") {
+        throw new TimeoutError("502: This error is likely due to sandbox timeout.");
+      }
+      return work();
+    };
+    const missing = (path: string) => new FileNotFoundError(`Path ${path} not found`);
+    return {
+      sandboxId: this.id,
+      getHost: (port) => `${port}-${this.id}.e2b.test`,
+      setTimeout: async (timeoutMs) => {
+        this.calls.setTimeout += 1;
+        this.authorize();
+        this.settle();
+        if (this.setTimeoutError) throw this.setTimeoutError;
+        if (this.state === "killing") throw apiError(409, `Sandbox ${this.id} is being killed`);
+        if (this.state !== "running")
+          throw new SandboxNotFoundError(`Sandbox ${this.id} not found`);
+        this.extend(timeoutMs);
+      },
+      commands: {
+        run: (command) =>
+          envd(async () => {
+            const result = await (this.command?.(command) ?? ok());
+            await envd(() => undefined);
+            if (result.exitCode !== 0) throw new CommandExitError(result);
+            return result;
+          }),
+      },
+      files: {
+        makeDir: () => envd(() => true),
+        list: (path) =>
+          envd(() =>
+            [...this.files.keys()]
+              .filter((file) => file.startsWith(`${path}/`))
+              .map((file) => entry(file.slice(path.length + 1), this.files.get(file)!.byteLength)),
+          ),
+        getInfo: (path) =>
+          envd(() => {
+            const content = this.files.get(path);
+            if (!content) throw missing(path);
+            return entry(path, content.byteLength);
+          }),
+        read: (path) =>
+          envd(() => {
+            const content = this.files.get(path);
+            if (!content) throw missing(path);
+            return content;
+          }),
+        write: (files) =>
+          envd(() => {
+            for (const file of files) this.files.set(file.path, new Uint8Array(file.data));
+          }),
+      },
+    };
+  }
+
+  private extend(timeoutMs: number) {
+    this.deadline = Date.now() + timeoutMs;
+  }
+
+  private settle() {
+    if (this.state === "running" && Date.now() >= this.deadline) this.state = "paused";
+  }
+
+  private authorize() {
+    if (this.revoked) throw new AuthenticationError("Invalid API key");
+  }
 }
+
+function apiError(status: number, message: string): SandboxError {
+  return Object.assign(new SandboxError(`${status}: ${message}`), { statusCode: status });
+}
+
+function ok(stdout = ""): Promise<CommandResult> {
+  return Promise.resolve({ exitCode: 0, stdout, stderr: "" });
+}
+
+function entry(name: string, size: number): EntryInfo {
+  return {
+    name,
+    path: name,
+    type: FileType.FILE,
+    size,
+    mode: 0o600,
+    permissions: "-rw-------",
+    owner: "user",
+    group: "user",
+    modifiedTime: new Date(0),
+  };
+}
+
+async function runCommand(
+  provider: E2BSandboxProvider,
+  computer: ComputerRef,
+  request: CommandRequest = { argv: ["true"] },
+) {
+  const events: ProcessEvent[] = [];
+  for await (const event of provider.execute(computer, request, context)) events.push(event);
+  return events;
+}
+
+describe("E2B sandbox lifecycle", () => {
+  async function started(fake = new FakeE2B()) {
+    const provider = new E2BSandboxProvider("e2b_test", fake.sdk);
+    const computer = await provider.provision({ botId: "bot-1", homePath: "/unused" }, context);
+    return { fake, provider, computer };
+  }
+  const notes = "/home/user/rakazo-home/notes.txt";
+
+  it.each([
+    ["listFiles", (p: E2BSandboxProvider, c: ComputerRef) => p.listFiles(c, "", context)],
+    ["readFile", (p: E2BSandboxProvider, c: ComputerRef) => p.readFile(c, "notes.txt", context)],
+    ["execute", (p: E2BSandboxProvider, c: ComputerRef) => runCommand(p, c)],
+    [
+      "writeFile",
+      (p: E2BSandboxProvider, c: ComputerRef) =>
+        p.writeFile(c, { path: "notes.txt", content: new Uint8Array([1]) }, context),
+    ],
+  ] as const)(
+    "resumes a sandbox E2B paused under %s instead of reporting it gone",
+    async (_, use) => {
+      const { fake, provider, computer } = await started();
+      fake.files.set(notes, new Uint8Array([1]));
+      fake.state = "paused";
+
+      const error = await use(provider, computer).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect(isSandboxGoneError(error)).toBe(false);
+      expect(fake.state).toBe("running");
+      expect(fake.calls.connect).toBe(1);
+      await expect(use(provider, computer)).resolves.not.toThrow();
+    },
+  );
+
+  it("reports a sandbox as gone only once resuming it fails", async () => {
+    const { fake, provider, computer } = await started();
+    fake.state = "killed";
+    await expect(provider.listFiles(computer, "", context)).rejects.toSatisfy(isSandboxGoneError);
+    expect(fake.calls.connect).toBe(1);
+  });
+
+  it.each([
+    { state: "paused", fresh: false, created: 0 },
+    { state: "killing", fresh: true, created: 1 },
+    { state: "killed", fresh: true, created: 1 },
+  ] as const)("provisions over a $state sandbox", async ({ state, fresh, created }) => {
+    const fake = new FakeE2B();
+    fake.state = state;
+    const create = vi.spyOn(fake.sdk, "create");
+    const provider = new E2BSandboxProvider("e2b_test", fake.sdk);
+    await expect(
+      provider.provision(
+        { botId: "bot-1", homePath: "/unused", providerRef: "box-1", providerKind: "e2b" },
+        context,
+      ),
+    ).resolves.toMatchObject({ fresh });
+    expect(create).toHaveBeenCalledTimes(created);
+  });
+
+  it("does not replace a sandbox when connecting is rate limited", async () => {
+    const fake = new FakeE2B();
+    fake.connectError = new RateLimitError("429: rate limited");
+    const create = vi.spyOn(fake.sdk, "create");
+    const provider = new E2BSandboxProvider("e2b_test", fake.sdk);
+    await expect(
+      provider.provision(
+        { botId: "bot-1", homePath: "/unused", providerRef: "box-1", providerKind: "e2b" },
+        context,
+      ),
+    ).rejects.toBe(fake.connectError);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "paused", arrange: (fake: FakeE2B) => (fake.state = "paused"), result: "resolves" },
+    {
+      name: "past the plan's lifetime (400)",
+      arrange: (fake: FakeE2B) => (fake.setTimeoutError = apiError(400, "timeout too long")),
+      result: "resolves",
+    },
+    {
+      name: "mid-pause (409)",
+      arrange: (fake: FakeE2B) => (fake.setTimeoutError = apiError(409, "sandbox is pausing")),
+      result: "resolves",
+    },
+    { name: "being killed", arrange: (fake: FakeE2B) => (fake.state = "killing"), result: "gone" },
+    { name: "killed", arrange: (fake: FakeE2B) => (fake.state = "killed"), result: "gone" },
+    { name: "a revoked key", arrange: (fake: FakeE2B) => (fake.revoked = true), result: "auth" },
+  ])("keepAlive reconnects instead of trusting a sandbox $name", async ({ arrange, result }) => {
+    const { fake, provider, computer } = await started();
+    arrange(fake);
+    const kept = provider.keepAlive(computer);
+    if (result === "resolves") {
+      await expect(kept).resolves.toBeUndefined();
+      expect(fake.state).toBe("running");
+    } else if (result === "gone") {
+      await expect(kept).rejects.toSatisfy(isSandboxGoneError);
+    } else {
+      await expect(kept).rejects.toBeInstanceOf(AuthenticationError);
+    }
+    expect(fake.calls.connect).toBe(1);
+  });
+
+  it("keeps probing after a failed keepAlive instead of serving the stale handle", async () => {
+    const { fake, provider, computer } = await started();
+    fake.setTimeoutError = apiError(400, "timeout too long");
+    fake.connectError = new RateLimitError("429: rate limited");
+    await expect(provider.keepAlive(computer)).rejects.toBe(fake.connectError);
+
+    fake.connectError = undefined;
+    fake.setTimeoutError = undefined;
+    await expect(provider.listFiles(computer, "", context)).resolves.toEqual([]);
+    expect(fake.calls.connect).toBe(2);
+  });
+
+  it("reconnects when the stale-handle probe fails for any reason", async () => {
+    vi.useFakeTimers();
+    try {
+      const { fake, provider, computer } = await started();
+      vi.advanceTimersByTime(61_000);
+      fake.setTimeoutError = apiError(400, "timeout too long");
+      await expect(provider.listFiles(computer, "", context)).resolves.toEqual([]);
+      expect(fake.calls).toMatchObject({ setTimeout: 1, connect: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the sandbox awake for a command that outlasts its timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("SANDBOX_IDLE_MS", "180000");
+    try {
+      const { fake, provider, computer } = await started();
+      fake.command = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30 * 60_000));
+        return ok("done\n");
+      };
+      const events = runCommand(provider, computer, { argv: ["build"], timeoutMs: 60 * 60_000 });
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      await expect(events).resolves.toEqual([
+        { type: "stdout", data: "done\n" },
+        { type: "exit", code: 0 },
+      ]);
+      expect(fake.state).toBe("running");
+      const extensions = fake.calls.setTimeout;
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(fake.calls.setTimeout).toBe(extensions);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("extends a cached handle before a command could outlast its remaining timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("SANDBOX_IDLE_MS", "60000");
+    try {
+      const { fake, provider, computer } = await started();
+      await vi.advanceTimersByTimeAsync(50_000);
+      fake.command = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30_000));
+        return ok();
+      };
+      const events = runCommand(provider, computer);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(events).resolves.toEqual([{ type: "exit", code: 0 }]);
+      expect(fake.calls.connect).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not resume a sandbox that stop paused while a request was in flight", async () => {
+    const { fake, provider, computer } = await started();
+    let finish!: () => void;
+    fake.command = async () => {
+      await new Promise<void>((resolve) => (finish = resolve));
+      return ok();
+    };
+    const events = runCommand(provider, computer).catch((failure: unknown) => failure);
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await provider.stop(computer, context);
+    finish();
+    const error = await events;
+    expect(error).toBeInstanceOf(Error);
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(fake.state).toBe("paused");
+    expect(fake.calls.connect).toBe(0);
+  });
+
+  it("maps only the command's own deadline to exit 124", async () => {
+    const { fake, provider, computer } = await started();
+    fake.command = async () => {
+      throw new TimeoutError(
+        "deadline_exceeded: This error is likely due to exceeding 'timeoutMs' — the total time a long running request (like command execution or directory watch) can be active.",
+      );
+    };
+    await expect(
+      runCommand(provider, computer, { argv: ["hang"], timeoutMs: 42 }),
+    ).resolves.toEqual([
+      { type: "stderr", data: "command timed out after 42 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
+
+    const canceled = new TimeoutError(
+      "canceled: This error is likely due to exceeding 'requestTimeoutMs'. You can pass the request timeout value as an option when making the request.",
+    );
+    fake.command = async () => {
+      throw canceled;
+    };
+    await expect(runCommand(provider, computer)).rejects.toBe(canceled);
+
+    fake.command = async () => {
+      fake.state = "paused";
+      return ok();
+    };
+    const error = await runCommand(provider, computer).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(Error);
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(fake.state).toBe("running");
+  });
+
+  it("reports a non-zero exit as the command's result", async () => {
+    const { fake, provider, computer } = await started();
+    fake.command = async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "busy\n",
+      error: "exit status 1",
+    });
+    await expect(runCommand(provider, computer)).resolves.toEqual([
+      { type: "stderr", data: "busy\n" },
+      { type: "exit", code: 1 },
+    ]);
+  });
+
+  it.each([
+    { state: "running", result: "resolves", after: "paused" },
+    { state: "paused", result: "resolves", after: "paused" },
+    { state: "killed", result: "gone", after: "killed" },
+  ] as const)("stops a $state sandbox without resuming it", async ({ state, result, after }) => {
+    const { fake, provider, computer } = await started();
+    fake.state = state;
+    const stopped = provider.stop(computer, context);
+    if (result === "resolves") await expect(stopped).resolves.toBeUndefined();
+    else await expect(stopped).rejects.toSatisfy(isSandboxGoneError);
+    expect(fake.state).toBe(after);
+    expect(fake.calls.connect).toBe(0);
+  });
+
+  it("surfaces a rate-limited pause so the computer is not marked stopped while billing", async () => {
+    const { fake, provider, computer } = await started();
+    fake.pauseError = new RateLimitError("429: rate limited");
+    await expect(provider.stop(computer, context)).rejects.toBe(fake.pauseError);
+    expect(fake.state).toBe("running");
+  });
+
+  it.each(["running", "paused", "killed"] as const)(
+    "destroys a %s sandbox without resuming it",
+    async (state) => {
+      const { fake, provider, computer } = await started();
+      fake.state = state;
+      await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
+      expect(fake.state).toBe("killed");
+      expect(fake.calls).toMatchObject({ connect: 0, kill: 1 });
+    },
+  );
+});
 
 describe("keepingAwake", () => {
   it("finishes the first timeout extension before reading", async () => {

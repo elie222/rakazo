@@ -46,10 +46,13 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
   {
     id: "honcho",
     name: "Honcho",
-    description: "",
+    description: "Hosted or self-hosted Honcho for long-term memory.",
     SettingsForm: HonchoSettingsForm,
-    connectedLabel: (config) =>
-      config.settings.workspaceId ? `Honcho · ${config.settings.workspaceId}` : "Honcho Cloud",
+    connectedLabel: (config) => {
+      const { mode, baseUrl, workspaceId } = config.settings;
+      if (mode === "local") return [`Local · ${baseUrl}`, workspaceId].filter(Boolean).join(" · ");
+      return workspaceId ? `Honcho · ${workspaceId}` : "Honcho Cloud";
+    },
   },
 ];
 

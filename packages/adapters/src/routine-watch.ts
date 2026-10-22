@@ -18,6 +18,7 @@ import {
   createThreadMessageInTransaction,
   parseComputerMode,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
@@ -248,6 +249,20 @@ export function readItems(data: unknown, track: readonly string[]): Reading {
 
 /** A result as JSON: the parsed text of an MCP or text result, or the data itself. */
 function resultJson(data: unknown): unknown {
+  if (isMcpEnvelope(data)) {
+    const structured = (data as { structuredContent?: unknown }).structuredContent;
+    if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+      return structured;
+    }
+    const texts = toolResultTextParts(data);
+    if (texts.length > 1) {
+      try {
+        return texts.map((text) => JSON.parse(text));
+      } catch {
+        // Some servers split one JSON document across text blocks instead.
+      }
+    }
+  }
   const text = typeof data === "string" || isMcpEnvelope(data) ? toolResultText(data) : null;
   if (text === null) return data;
   try {
@@ -368,12 +383,15 @@ async function readComputer(
     }
   }
   const ctx = context(routine);
+  const computerId = bot.computer.id;
   let computer: Awaited<ReturnType<typeof provisionComputer>>;
   try {
-    computer = await provisionComputer(deps, bot.computer.id, {
-      ...ctx,
-      signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
-    });
+    computer = await getLogger().withContext({ reason: "watch", watchKind: watch.kind }, () =>
+      provisionComputer(deps, computerId, {
+        ...ctx,
+        signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
+      }),
+    );
   } catch (error) {
     if (
       error instanceof ComputerBusyError ||
@@ -535,18 +553,23 @@ async function readTool(
  */
 export function toolResultText(data: unknown): string {
   if (typeof data === "string") return data;
+  const texts = toolResultTextParts(data);
+  if (texts.length) return texts.join("\n");
+  return stableStringify(data ?? null);
+}
+
+function toolResultTextParts(data: unknown): string[] {
   const content = (data as { content?: unknown } | null)?.content;
   if (Array.isArray(content)) {
-    const texts = content
+    return content
       .filter(
         (part): part is { type: "text"; text: string } =>
           (part as { type?: unknown })?.type === "text" &&
           typeof (part as { text?: unknown }).text === "string",
       )
       .map((part) => part.text);
-    if (texts.length) return texts.join("\n");
   }
-  return stableStringify(data ?? null);
+  return [];
 }
 
 function errorText(error: unknown): string {
@@ -562,6 +585,18 @@ type TickRoutine = RoutineWatchTarget & { name: string };
 export type RoutineWatchTick =
   | { run: false }
   | { run: true; state: RoutineWatchState; nextRunAt: Date; note: string };
+
+/** Starts the note a change trigger appends to a routine's prompt; what follows is not the owner's. */
+const ROUTINE_WATCH_NOTE_START = "\n\nThis run was started because something you watch changed (";
+
+/**
+ * The owner's part of a routine run's task prompt, as saved when it fired: the routine's
+ * instructions without the change note, whose detail comes from what the watch read.
+ */
+export function routineTaskInstructions(taskPrompt: string): string {
+  const note = taskPrompt.indexOf(ROUTINE_WATCH_NOTE_START);
+  return note === -1 ? taskPrompt : taskPrompt.slice(0, note);
+}
 
 /**
  * One scheduled check of a watching routine. Returns whether the routine
@@ -626,7 +661,7 @@ export async function tickRoutineWatch(
       run: true,
       state: outcome.state,
       nextRunAt,
-      note: `\n\nThis run was started because something you watch changed (${describeRoutineWatch(watch)}).\nWhat changed since the last check:\n${outcome.state.detail ?? "(no detail)"}`,
+      note: `${ROUTINE_WATCH_NOTE_START}${describeRoutineWatch(watch)}).\nWhat changed since the last check:\n${outcome.state.detail ?? "(no detail)"}`,
     };
   }
   const claimed = await deps.prisma.routine.updateMany({

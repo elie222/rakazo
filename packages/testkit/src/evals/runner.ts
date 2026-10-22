@@ -7,10 +7,12 @@ import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
+import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
+import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
@@ -29,7 +31,6 @@ export type EvalApp = {
   runtime: AgentRuntime;
   notifications?: NotificationProvider;
   harnessIssues?: readonly string[];
-  connector?: { records: readonly unknown[] };
   awaitIdle?: () => Promise<void>;
   finalizeBackground?: () => Promise<void>;
   cacheDecisions?: readonly CacheDecisionMeasurement[];
@@ -48,6 +49,7 @@ export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
   timeoutMs: number;
+  judge?: EvalJudge;
   maxToolCalls: number;
   createApp: (
     services: EvalServices,
@@ -83,6 +85,8 @@ export async function runTrial(
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
   let handles: EvalApp | undefined;
+  // The harness observes product state outside any request or job.
+  let db: EvalApp["prisma"] | undefined;
   let cookie = "";
   let botId = "";
   let seededThreadId: string | undefined;
@@ -103,14 +107,14 @@ export async function runTrial(
   let clearedToolCount = 0;
   const seenUsage = new Map<string, LedgerCall>();
   const countCurrentTools = () =>
-    handles!.prisma.event.count({
+    db!.event.count({
       where: { spaceId: { in: actors.map((actor) => actor.spaceId) }, type: "agent.tool.called" },
     });
   // Clearing removes conversation events while the durable usage ledger remains.
   // Deduplicate observed records by id so multi-turn totals and budgets never reset.
   const captureTools = async () => {
-    if (!handles) return seenTools.size;
-    const events = await handles.prisma.event.findMany({
+    if (!db) return seenTools.size;
+    const events = await db.event.findMany({
       where: {
         spaceId: { in: actors.map((actor) => actor.spaceId) },
         type: "agent.tool.called",
@@ -125,8 +129,8 @@ export async function runTrial(
     return seenTools.size;
   };
   const captureUsage = async () => {
-    if (!handles) return;
-    const usage = await handles.prisma.usageRecord.findMany({
+    if (!db) return;
+    const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
     });
     for (const row of usage)
@@ -140,11 +144,13 @@ export async function runTrial(
   };
   try {
     handles = await options.createApp(services, messaging, { notifications, realtime });
-    realtime.attach(handles.prisma);
+    const prisma = asSystem(handles.prisma);
+    db = prisma;
+    realtime.attach(prisma);
     if (scenario.routine && handles.notifications !== notifications)
       throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
     const trial = handles;
-    const { app, prisma } = trial;
+    const { app } = trial;
     const setupActor = async () => {
       const signup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -610,7 +616,7 @@ export async function runTrial(
     const memories = await rpc<Array<{ content: string }>>(handles.app, cookie, "memory/list", {
       botId,
     });
-    const routines = await handles.prisma.routine.findMany({
+    const routines = await prisma.routine.findMany({
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
@@ -629,7 +635,6 @@ export async function runTrial(
       clarificationPending,
       pendingApproval,
       priorMemory,
-      destinationWrites: handles.connector?.records.length ?? 0,
       toolNames: [...seenTools.values()].map((event) => event.name),
       messaging: {
         originThreadId: messagingOriginThreadId,
@@ -638,14 +643,6 @@ export async function runTrial(
     };
     phase = "harness";
     result.criteria = scenario.grade(evidence);
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
-    }
     result.artifacts = Object.fromEntries(
       Object.entries({
         ...files,
@@ -657,6 +654,33 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
+    if (scenario.judge && result.criteria.every((c) => c.pass)) {
+      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
+      try {
+        const judgment = await withinDeadline(
+          options.judge(
+            scenario.judge(evidence),
+            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+          ),
+          deadline,
+        );
+        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
+        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
+      } catch (error) {
+        throw new EvalFailure(
+          "incomplete",
+          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
+        );
+      }
+    }
+    result.status =
+      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
+    result.category = result.status === "passed" ? null : "agent";
+    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
+    if (result.status === "failed" && handles.harnessIssues?.length) {
+      result.category = "harness";
+      result.reason = handles.harnessIssues.join(" ");
+    }
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;
@@ -683,7 +707,7 @@ export async function runTrial(
       }
       try {
         if (seededThreadId) {
-          const state = await handles.prisma.thread.findUnique({
+          const state = await db!.thread.findUnique({
             where: { id: seededThreadId },
             select: {
               historyCompactedUpToSeq: true,
@@ -695,7 +719,7 @@ export async function runTrial(
             result.historyPreparationState = {
               beforeCursor: scenario.history?.summary?.upToSeq ?? null,
               afterCursor: state.historyCompactedUpToSeq,
-              remainingMessages: await handles.prisma.message.count({
+              remainingMessages: await db!.message.count({
                 where: {
                   threadId: seededThreadId,
                   ...(state.historyCompactedUpToSeq !== null
@@ -844,6 +868,7 @@ export async function cleanupActors(
   actors: readonly EvalActor[],
 ): Promise<void> {
   if (!actors.length) return;
+  const prisma = asSystem(handles.prisma);
   const failures: unknown[] = [];
   const scopes = actorScopes(actors);
   let stable = false;
@@ -858,7 +883,7 @@ export async function cleanupActors(
     }));
     let runsBeforeStop: Array<{ id: string }> = [];
     try {
-      await handles.prisma.routine.updateMany({
+      await prisma.routine.updateMany({
         where: { OR: scopes },
         data: { active: false, nextRunAt: null },
       });
@@ -867,12 +892,12 @@ export async function cleanupActors(
     }
 
     try {
-      bots = await findScopeBots(handles.prisma, actors);
+      bots = await findScopeBots(prisma, actors);
     } catch (error) {
       failures.push(error);
     }
     try {
-      runsBeforeStop = await handles.prisma.run.findMany({
+      runsBeforeStop = await prisma.run.findMany({
         where: { OR: scopes },
         select: { id: true },
       });
@@ -895,7 +920,7 @@ export async function cleanupActors(
 
     let runsAfterStop: Array<{ id: string }> = [];
     try {
-      runsAfterStop = await handles.prisma.run.findMany({
+      runsAfterStop = await prisma.run.findMany({
         where: { OR: scopes },
         select: { id: true },
       });
@@ -922,17 +947,17 @@ export async function cleanupActors(
     let runsAfter: Array<{ id: string; status: string }> | undefined;
     let activeRoutineCount: number | undefined;
     try {
-      await handles.prisma.routine.updateMany({
+      await prisma.routine.updateMany({
         where: { OR: scopes },
         data: { active: false, nextRunAt: null },
       });
       [botsAfter, runsAfter, activeRoutineCount] = await Promise.all([
-        findScopeBots(handles.prisma, actors),
-        handles.prisma.run.findMany({
+        findScopeBots(prisma, actors),
+        prisma.run.findMany({
           where: { OR: scopes },
           select: { id: true, status: true },
         }),
-        handles.prisma.routine.count({ where: { OR: scopes, active: true } }),
+        prisma.routine.count({ where: { OR: scopes, active: true } }),
       ]);
     } catch (error) {
       failures.push(error);

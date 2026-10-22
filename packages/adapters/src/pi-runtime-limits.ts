@@ -6,8 +6,8 @@ export const MODEL_STREAM_TIMEOUT_MS = 120_000;
 export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * `timeoutMs` bounds only time-to-headers; the SSE body that follows is
- * unbounded. A Codex stream silent this long is a dead connection — reasoning
- * models emit thinking deltas continuously while generating.
+ * unbounded. Bound silence for every provider so a stalled stream can fail
+ * and advance the configured fallback chain.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 180_000;
 export const DEFAULT_MODEL_STREAM_MAX_RETRIES = 1;
@@ -91,9 +91,15 @@ export function billedPromptTokens(usage: {
  */
 export const REASONING_MODEL_MAX_TOKENS = 32_768;
 
+/** Leave at least three quarters of the window for input; token limits are positive integers. */
+export function effectiveOutputReserve(contextWindow: number, maxTokens: number): number {
+  return Math.min(maxTokens, Math.max(1, Math.floor(contextWindow / 4)));
+}
+
 /**
  * Completions default to a modest output cap so OpenRouter-style providers do not
- * hold credit for a model card's 128k ceiling. A configured maxTokens is the escape.
+ * hold credit for a model card's 128k ceiling. A configured maxTokens overrides this
+ * default, still bounded to a quarter of the context window when it is supplied.
  * Reasoning models get the wider default because their thinking is billed against
  * the same ceiling: at 4k a hard question can leave no room for the reply at all.
  */
@@ -102,6 +108,7 @@ export function resolveCompletionMaxTokens(
   configuredMaxTokens?: number,
   optionsMaxTokens?: number,
   reasoning?: boolean,
+  contextWindow?: number,
 ): number {
   const userCap =
     typeof configuredMaxTokens === "number" && configuredMaxTokens >= 1
@@ -113,10 +120,11 @@ export function resolveCompletionMaxTokens(
     typeof optionsMaxTokens === "number" && optionsMaxTokens >= 1
       ? Math.min(optionsMaxTokens, userCap)
       : userCap;
-  if (typeof modelMaxTokens === "number" && modelMaxTokens >= 1) {
-    return Math.min(modelMaxTokens, optionCap);
-  }
-  return optionCap;
+  const maxTokens =
+    typeof modelMaxTokens === "number" && modelMaxTokens >= 1
+      ? Math.min(modelMaxTokens, optionCap)
+      : optionCap;
+  return contextWindow === undefined ? maxTokens : effectiveOutputReserve(contextWindow, maxTokens);
 }
 
 function nonNegativeCount(value: number | undefined): number {

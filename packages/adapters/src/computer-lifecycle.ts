@@ -30,8 +30,8 @@ import {
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
 import { resolveAgentHomePath } from "./home.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 type ComputerUpdateProgress = (
   stage: Exclude<ComputerUpdate["stage"], "preparing">,
@@ -162,6 +162,8 @@ export async function provisionComputer(
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
 ): Promise<ComputerRef> {
+  const started = performance.now();
+  const log = getLogger().child({ "computer.id": computerId, "run.id": context.runId });
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw new ComputerBusyError();
@@ -206,6 +208,11 @@ export async function provisionComputer(
         context.botId,
         context,
       );
+      log.info("computer.provisioned", {
+        provider: ref.kind,
+        operation: "reuse",
+        durationMs: Math.round(performance.now() - started),
+      });
       return ref;
     }
   }
@@ -321,14 +328,18 @@ export async function provisionComputer(
   let provisioned: ComputerRef | undefined;
   try {
     await onProgress?.("recreating");
-    const ref = await deps.sandbox.provision(
-      {
-        botId: existing.homeKey,
-        homePath,
-        providerRef: existing.providerRef ?? undefined,
-        providerKind: existing.kind as ComputerRef["kind"],
-      },
-      context,
+    const ref = await getLogger().withContext(
+      { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
+      () =>
+        deps.sandbox.provision(
+          {
+            botId: existing.homeKey,
+            homePath,
+            providerRef: existing.providerRef ?? undefined,
+            providerKind: existing.kind as ComputerRef["kind"],
+          },
+          context,
+        ),
     );
     provisioned = ref;
     await deps.sandbox.prepare(ref, context);
@@ -393,8 +404,17 @@ export async function provisionComputer(
     if (activated.count !== 1) {
       throw new ComputerBusyError();
     }
+    log.info("computer.provisioned", {
+      provider: ref.kind,
+      operation: replacement ? "create" : ref.started ? "resume" : "reuse",
+      durationMs: Math.round(performance.now() - started),
+    });
     return ref;
   } catch (error) {
+    log.warn("computer.provision_failed", {
+      provider: existing.kind,
+      durationMs: Math.round(performance.now() - started),
+    });
     // A failed reconnect never owns an existing workspace, even if setup failed.
     const rollbackError =
       provisioned && (!reconnecting || provisioned.fresh === true)

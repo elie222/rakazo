@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { ResponseError } from "@boatdev/sdk";
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
@@ -6,12 +7,40 @@ import { readBodyCapped } from "./web-ssrf.js";
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
 
-/** Keep HTTP failures actionable without changing the SDK's status-based recovery contract. */
+/** An SDK `ResponseError` that keeps Boat's machine-readable error code. */
+export class BoatApiError extends ResponseError {
+  constructor(
+    response: Response,
+    message: string,
+    readonly code: string | undefined,
+  ) {
+    super(response, message);
+  }
+}
+
+const BOAT_RETRY_DELAY_MS = 1_000;
+// Failures before a TCP connection exists: the request never left this host.
+const UNSENT_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
+
+/**
+ * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.
+ * A brief Boat outage is retried once: any call whose request never arrived, and an
+ * `idempotent` call that Boat failed on its side.
+ */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
   apiKey: string,
+  idempotent = false,
 ): (...args: Args) => Promise<Result> {
-  return async (...args) => {
+  const attempt = async (...args: Args): Promise<Result> => {
     try {
       return await call(...args);
     } catch (error) {
@@ -21,13 +50,47 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       throw wrapped;
     }
   };
+  return async (...args) => {
+    try {
+      return await attempt(...args);
+    } catch (error) {
+      if (!unsent(error) && !(idempotent && failedAtBoat(error))) throw error;
+      await delay(BOAT_RETRY_DELAY_MS, undefined, { signal: callerSignal(args[1]) });
+      return attempt(...args);
+    }
+  };
+}
+
+/** The `RequestInit` signal the SDK takes as each operation's second argument. */
+export function callerSignal(init: unknown): AbortSignal | undefined {
+  const signal = (init as RequestInit | undefined)?.signal;
+  return signal instanceof AbortSignal ? signal : undefined;
+}
+
+/** True when neither Boat nor the sandbox received the request, so sending it again is safe. */
+function unsent(error: unknown): boolean {
+  // Boat's proxy could not open a connection to the sandbox machine.
+  if (error instanceof BoatApiError) {
+    return error.code === "sandbox_direct_failed" && /\bECONNREFUSED\b/.test(error.message);
+  }
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && UNSENT_CODES.has(code)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+function failedAtBoat(error: unknown): boolean {
+  return error instanceof BoatApiError && TRANSIENT_STATUSES.has(error.response.status);
 }
 
 export async function boatResponseError(
   response: Response,
   apiKey: string,
   signal?: AbortSignal,
-): Promise<ResponseError> {
+): Promise<BoatApiError> {
   const body = await readErrorBody(response, signal);
   const code = safeIdentifier(body?.code);
   const requestId = safeIdentifier(body?.requestId);
@@ -41,12 +104,13 @@ export async function boatResponseError(
           .trim()
           .slice(0, 512)
       : "";
-  return new ResponseError(
+  return new BoatApiError(
     response,
     redactSecrets(
       `${prefix}${detail ? `: ${detail}` : ""}${requestId ? ` (request ${requestId})` : ""}`,
       [apiKey],
     ),
+    code,
   );
 }
 

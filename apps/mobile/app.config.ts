@@ -22,13 +22,56 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     }
   }
 
-  const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
-  if (googleServicesFile) {
-    return {
-      ...config,
-      android: { ...config.android, googleServicesFile },
-    } as ExpoConfig;
+  let result = config as ExpoConfig;
+  const rpId = passkeyRpId(process.env.EXPO_PUBLIC_API_URL);
+  if (rpId) {
+    // Native passkeys only work for domains the binary is associated with, so the app reads the
+    // same list at runtime to hide passkeys on other servers.
+    result = {
+      ...result,
+      ios: {
+        ...result.ios,
+        associatedDomains: [...(result.ios?.associatedDomains ?? []), `webcredentials:${rpId}`],
+      },
+      extra: { ...result.extra, passkeyRpIds: [rpId] },
+    };
   }
 
-  return config as ExpoConfig;
+  const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
+  if (googleServicesFile) {
+    result = { ...result, android: { ...result.android, googleServicesFile } };
+  }
+
+  // Native crash handling autolinks; upload build hooks are optional and require credentials.
+  if (process.env.SENTRY_AUTH_TOKEN) {
+    result = {
+      ...result,
+      plugins: [
+        ...(result.plugins ?? []),
+        [
+          "@sentry/react-native/expo",
+          {
+            organization: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+            url: process.env.SENTRY_URL,
+          },
+        ],
+      ],
+    };
+  }
+  return result;
 };
+
+/** The default server's host when native passkeys can use it: HTTPS and a domain name. */
+function passkeyRpId(apiUrl: string | undefined): string | null {
+  let url: URL;
+  try {
+    url = new URL(apiUrl ?? "");
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" || !host.includes(".")) return null;
+  if (host.startsWith("[") || /^\d+(\.\d+){3}$/.test(host)) return null;
+  return host;
+}

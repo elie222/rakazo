@@ -9,20 +9,24 @@ const source = path("packages/ui-tokens/assets/Rakazo.icon/Assets/orange-bot.png
 
 // Match the Icon Composer portrait: the character sits 90 points below center.
 const portrait = await sharp(source).resize(1024, 1024).png().toBuffer();
-const square = await sharp({
-  create: { width: 1024, height: 1114, channels: 4, background: darkTokens.background },
-})
-  .composite([{ input: portrait, top: 90, left: 0 }])
-  .extract({ left: 0, top: 0, width: 1024, height: 1024 })
-  .png()
-  .toBuffer();
+async function framed(background: string) {
+  return sharp({ create: { width: 1024, height: 1114, channels: 4, background } })
+    .composite([{ input: portrait, top: 90, left: 0 }])
+    .extract({ left: 0, top: 0, width: 1024, height: 1024 })
+    .png()
+    .toBuffer();
+}
 const mask = Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" rx="200" fill="white"/></svg>',
 );
-const rounded = await sharp(square)
-  .composite([{ input: mask, blend: "dest-in" }])
-  .png()
-  .toBuffer();
+async function roundedCorners(input: Buffer) {
+  return sharp(input)
+    .composite([{ input: mask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+}
+const square = await framed(darkTokens.background);
+const rounded = await roundedCorners(square);
 
 async function png(input: Buffer, name: string, size: number) {
   await sharp(input).resize(size, size).png().toFile(path(name));
@@ -63,8 +67,9 @@ await png(rounded, "apps/mobile/assets/favicon.png", 128);
 await png(square, "apps/desktop/assets/icon.png", 1024);
 await ico(rounded, "apps/desktop/assets/icon.ico", [16, 32, 48, 64, 128, 256]);
 
-// Keep the splash's existing transparent padding so its visual size stays stable.
-await sharp(rounded)
+// The splash shows the character alone, with no plate, so it sits on either splash colour.
+// Keep the existing transparent padding so its visual size stays stable.
+await sharp(await roundedCorners(await framed("transparent")))
   .resize(620, 620)
   .extend({ top: 202, bottom: 202, left: 202, right: 202, background: "transparent" })
   .png()

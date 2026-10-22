@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import dns from "node:dns";
 import type { LookupFunction } from "node:net";
 import { isIP } from "node:net";
+import { recordSecurityEvent } from "@rakazo/db";
 
 export type ResolvedAddress = { address: string; family: number };
 export type ResolveHostname = (hostname: string) => Promise<ResolvedAddress[]>;
@@ -16,8 +17,29 @@ const CLOUD_METADATA_IPV4 = new Set([
   ipv4ToNumber("100.100.100.200"),
 ]);
 const AWS_IMDS_IPV6 = 0xfd000ec2000000000000000000000254n;
-/** fd7a:115c:a1e0::/48 — the Tailscale IPv6 range. */
-const TAILSCALE_ULA_PREFIX = 0xfd7a115ca1e0n;
+
+/** IPv4 special-purpose ranges (RFC 6890) that are not globally reachable unicast. The
+ * documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, and 2001:db8::/32 for
+ * IPv6) are left out: they are not routed on the internet, and tests use them as public. */
+const NON_PUBLIC_IPV4_RANGES = (
+  [
+    ["0.0.0.0", 8], // "this network"
+    ["10.0.0.0", 8], // RFC 1918
+    ["100.64.0.0", 10], // shared address space (CGNAT, Tailscale)
+    ["127.0.0.0", 8], // loopback
+    ["169.254.0.0", 16], // link-local, cloud metadata
+    ["172.16.0.0", 12], // RFC 1918
+    ["192.0.0.0", 24], // IETF protocol assignments
+    ["192.88.99.0", 24], // deprecated 6to4 relay anycast
+    ["192.168.0.0", 16], // RFC 1918
+    ["198.18.0.0", 15], // benchmarking
+    ["224.0.0.0", 4], // multicast
+    ["240.0.0.0", 4], // reserved, including 255.255.255.255 broadcast
+  ] as const
+).map(([network, prefix]) => {
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  return { network: ipv4ToNumber(network), mask };
+});
 
 function normalizeLookupHostname(hostname: string): string {
   return hostname.replace(/^\[|\]$/g, "").toLowerCase();
@@ -73,13 +95,30 @@ export function createAddressCheckedLookup(
   return (hostname, options, callback) => {
     void resolve(hostname)
       .then((addresses) => {
-        validate(addresses, hostname);
+        try {
+          validate(addresses, hostname);
+        } catch (error) {
+          throw egressRefused(hostname, error);
+        }
         deliverLookup(addresses, lookupOptions(options), callback);
       })
       .catch((error: unknown) =>
         callback(error instanceof Error ? error : new Error(String(error)), "", 0),
       );
   };
+}
+
+/**
+ * Record that an outbound-request guard refused a destination, so a probe of private addresses
+ * leaves a security event. Returns the error for `throw egressRefused(...)`.
+ */
+export function egressRefused(hostname: string, error: unknown): Error {
+  const refusal = error instanceof Error ? error : new Error(String(error));
+  void recordSecurityEvent({
+    type: "egress.refused",
+    metadata: { host: hostname.slice(0, 253), reason: refusal.message },
+  });
+  return refusal;
 }
 
 function pinnedAddressesFor(hostname: string): ResolvedAddress[] | undefined {
@@ -150,35 +189,27 @@ export function isLoopbackAddress(address: string): boolean {
 
 export function isPrivateAddress(address: string): boolean {
   const value = address.toLowerCase().replace(/^\[|\]$/g, "");
-  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
-  if (!ipv4) {
-    const ipv6 = parseIpv6(value);
-    if (ipv6 === undefined) return true;
-    if (ipv6 === 0n || ipv6 === 1n) return true;
-    if (ipv6 >> 120n === 0xffn) return true;
-    const topTenBits = ipv6 >> 118n;
-    // fe80::/10 link-local (and the adjacent fea0::/10 bit pattern 0x3fb)
-    if (topTenBits === 0x3fan || topTenBits === 0x3fbn) return true;
-    // fc00::/7 unique local (ULA), including fd00::/8
-    if (((ipv6 >> 120n) & 0xfen) === 0xfcn) return true;
-    const embeddedIpv4 = getEmbeddedIpv4Number(ipv6);
-    if (embeddedIpv4 !== undefined) return isPrivateIpv4Number(embeddedIpv4);
-    return false;
-  }
-  const octets = ipv4.split(".").map(Number);
-  const [a, b] = octets;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b != null && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b != null && b >= 64 && b <= 127) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    (a != null && a >= 224)
-  );
+  if (isIP(value) === 4) return isPrivateIpv4Number(ipv4ToNumber(value));
+  const ipv6 = parseIpv6(value);
+  if (ipv6 === undefined) return true;
+  // ::/128 unspecified and ::1 loopback.
+  if (ipv6 === 0n || ipv6 === 1n) return true;
+  // ff00::/8 multicast.
+  if (ipv6 >> 120n === 0xffn) return true;
+  // fe80::/10 link-local and fec0::/10 deprecated site-local.
+  const topTenBits = ipv6 >> 118n;
+  if (topTenBits === 0x3fan || topTenBits === 0x3fbn) return true;
+  // fc00::/7 unique local (ULA), including fd00::/8.
+  if (ipv6 >> 121n === 0x7en) return true;
+  // 64:ff9b:1::/48 local-use NAT64 (RFC 8215): translator-local, prefix length varies.
+  if (ipv6 >> 80n === 0x64ff9b0001n) return true;
+  // 100::/64 discard-only.
+  if (ipv6 >> 64n === 0x0100000000000000n) return true;
+  // 2001::/23 IETF protocol assignments, including 2001::/32 Teredo and 2001:2::/48 benchmarking.
+  if (ipv6 >> 105n === 0x2001n << 7n) return true;
+  const embeddedIpv4 = getEmbeddedIpv4Number(ipv6);
+  if (embeddedIpv4 !== undefined) return isPrivateIpv4Number(embeddedIpv4);
+  return false;
 }
 
 export function isCloudMetadataAddress(address: string): boolean {
@@ -192,22 +223,6 @@ export function isCloudMetadataAddress(address: string): boolean {
   if (ipv6 === AWS_IMDS_IPV6) return true;
   const embeddedIpv4 = getEmbeddedIpv4Number(ipv6);
   return embeddedIpv4 !== undefined && isCloudMetadataIpv4Number(embeddedIpv4);
-}
-
-/** Tailscale gives every node a CGNAT 100.64.0.0/10 address and an
- * fd7a:115c:a1e0::/48 ULA, and MagicDNS answers with both. Callers that accept
- * a tailnet host have to accept the IPv6 half too, or the name resolves to one
- * allowed and one blocked address and the whole host is rejected. */
-export function isTailscaleAddress(address: string): boolean {
-  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
-  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  const ipv4 = mapped ?? (isIP(value) === 4 ? value : undefined);
-  if (ipv4) {
-    const [a, b] = ipv4.split(".").map(Number);
-    return a === 100 && b != null && b >= 64 && b <= 127;
-  }
-  const ipv6 = parseIpv6(value);
-  return ipv6 !== undefined && ipv6 >> 80n === TAILSCALE_ULA_PREFIX;
 }
 
 export function isLinkLocalAddress(address: string): boolean {
@@ -277,17 +292,5 @@ function isCloudMetadataIpv4Number(value: number): boolean {
 }
 
 function isPrivateIpv4Number(value: number): boolean {
-  const a = (value >>> 24) & 0xff;
-  const b = (value >>> 16) & 0xff;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
+  return NON_PUBLIC_IPV4_RANGES.some(({ network, mask }) => (value & mask) >>> 0 === network);
 }

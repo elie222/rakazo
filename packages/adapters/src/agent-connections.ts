@@ -9,7 +9,11 @@ import {
   sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { currentBotMessageHop } from "./bot-messages.js";
 
@@ -38,7 +42,14 @@ type Result =
  * messages ride the existing internal bot-message machinery and never
  * transit iMessage.
  */
-export async function connectAgent(
+export function connectAgent(...args: Parameters<typeof requestConnection>): Promise<Result> {
+  // The target is found by address on the whole deployment and invited in its own Space.
+  return runAsSystem("request an agent connection in another Space", () =>
+    requestConnection(...args),
+  );
+}
+
+async function requestConnection(
   deps: AgentConnectionDeps,
   _run: ConnectionRun,
   sender: { id: string; name: string },
@@ -202,7 +213,16 @@ export async function respondAgentConnection(
  * Mirror of messageBot across Spaces: the target is resolved through an
  * approved connection instead of the sender's Space roster.
  */
-export async function messageConnectedAgent(
+export function messageConnectedAgent(
+  ...args: Parameters<typeof deliverToConnectedAgent>
+): Promise<Result> {
+  // Delivery writes the message, task and run into the connected agent's Space.
+  return runAsSystem("deliver a message to a connected agent in another Space", () =>
+    deliverToConnectedAgent(...args),
+  );
+}
+
+async function deliverToConnectedAgent(
   deps: AgentConnectionDeps,
   run: ConnectionRun,
   sender: { id: string; name: string },

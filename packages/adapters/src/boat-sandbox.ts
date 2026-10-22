@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { Sandbox as BoatMachine, Command200Response, CommandResponse } from "@boatdev/sdk";
-import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
+import type {
+  Sandbox as BoatMachine,
+  Command200Response,
+  CommandResponse,
+  FileUrlResponse,
+  SandboxStateEnum,
+} from "@boatdev/sdk";
+import { BoatApi, Configuration } from "@boatdev/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -19,8 +25,10 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { getLogger } from "@rakazo/logging";
+import { BoatApiError, boatResponseError, callerSignal, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
@@ -28,34 +36,54 @@ import {
 } from "./computer-workspace.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
+import { shellExportScript } from "./sandbox-shell-environment.js";
 import { withAbort } from "./web-ssrf.js";
 
 const BOAT_API_BASE = "https://boat.dev/api/v1";
 const BOAT_WORKSPACE = "/home/user/rakazo-home";
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
+/** Outside the workspace so checkpoints never carry it. Boat runs every command as `user`. */
+const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
 const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
 const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
 const BOAT_GONE_CHECK_TIMEOUT_MS = 10_000;
 const BOAT_EXPORT_CONCURRENCY = 16;
+/** Bounds how many exported bytes are held in memory at once; a larger file goes alone. */
+const BOAT_EXPORT_BATCH_BYTES = 64 * 1024 * 1024;
+const BOAT_INLINE_FILE_MAX_BYTES = 5 * 1024 * 1024;
+const BOAT_ARTIFACT_MAX_BYTES = 50 * 1024 * 1024;
+const BOAT_TRANSFER_TIMEOUT_MS = 5 * 60_000;
 
+/** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<
   BoatApi,
   | "artifactRaw"
   | "command"
   | "commandStatus"
   | "create"
-  | "desktop"
+  | "createDownloadUrl"
+  | "createUploadUrl"
   | "get"
   | "hostPort"
+  | "recover"
   | "resume"
   | "stop"
   | "update"
   | "writeFile"
 > & {
+  /** Resolves once the sandbox no longer exists, including when it never did. */
   deleteSandbox(sandboxId: string): Promise<void>;
 };
+
+const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
+const BOAT_NOT_RUNNING_CODES = new Set([
+  "sandbox_not_ready",
+  "machine_not_running",
+  "sandbox_resuming",
+]);
 
 interface BoatCommandResult {
   stdout: string;
@@ -77,6 +105,8 @@ export class BoatSandboxProvider implements SandboxProvider {
       browserProfilesDir: BOAT_BROWSER_PROFILES,
       displayStart: 20,
       portStart: 6100,
+      // The provider port proxy reaches the isolated sandbox through its network interface.
+      bindHost: "0.0.0.0",
     }),
     run: async (computer, command, context) => {
       const result = await this.runCommand(
@@ -93,9 +123,12 @@ export class BoatSandboxProvider implements SandboxProvider {
       };
     },
     screenUrl: async (computer, port, context) => {
-      const hosted = await this.client.hostPort(
-        { sandboxId: this.id(computer), hostPortRequest: { port, _public: false } },
-        { signal: context.signal },
+      const id = this.id(computer);
+      const hosted = await this.whenRunnable(id, context.signal, () =>
+        this.client.hostPort(
+          { sandboxId: id, hostPortRequest: { port, _public: false } },
+          { signal: context.signal },
+        ),
       );
       if (!hosted.url) throw new Error("Boat did not return a desktop URL");
       const url = new URL(hosted.url);
@@ -115,9 +148,9 @@ export class BoatSandboxProvider implements SandboxProvider {
 
   constructor(
     config: { apiKey: string; apiUrl?: string },
-    client: BoatSandboxSdk = createBoatSdk(config),
+    api: BoatSandboxSdk = createBoatSdk(config),
   ) {
-    this.client = client;
+    this.client = boatClient(api, config.apiKey);
   }
 
   describe() {
@@ -167,22 +200,10 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === "boat") {
       try {
-        const existing = await this.client.get(
-          { sandboxId: request.providerRef },
-          { signal: context.signal },
-        );
-        if (existing.sandbox.state === "archived") {
-          await this.client.resume(
-            {
-              sandboxId: request.providerRef,
-              resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS },
-            },
-            { signal: context.signal },
-          );
-        }
-        return this.ref(request.providerRef, request.botId, false);
+        const started = await this.ensureRunnable(request.providerRef, context.signal);
+        return { ...this.ref(request.providerRef, request.botId, false), started };
       } catch (error) {
-        if (!isUnrecoverableBoatError(error)) throw error;
+        if (!isSandboxGoneError(error)) throw error;
         this.forget(request.providerRef);
       }
     }
@@ -210,7 +231,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     if (pending) return pending;
     let preparation!: Promise<void>;
     preparation = (async () => {
-      await this.ensureRunnable(id, context);
+      await this.ensureRunnable(id, context.signal);
       const result = await this.runCommand(
         id,
         configureBoatWorkspaceCommand(),
@@ -251,23 +272,28 @@ export class BoatSandboxProvider implements SandboxProvider {
       yield { type: "exit", code: 130 };
       return;
     }
+    const id = this.id(computer);
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
     const argv = sandboxCommandArgv({
       ...request,
       argv: request.argv.length ? request.argv : ["true"],
-    });
-    const environment = Object.entries(request.env ?? {}).map(([key, value]) => `${key}=${value}`);
-    const command = [...(environment.length ? ["env", ...environment] : []), ...argv]
+    })
       .map(shellQuote)
       .join(" ");
+    // Boat's command API has no env field, and command text shows in `ps` and Boat's logs.
+    const environment = shellExportScript(request.env ?? {});
+    const envFile = environment ? `${BOAT_COMMAND_ENV}/${randomUUID()}` : undefined;
+    let envFileRemoved = !envFile;
     try {
+      if (envFile) await this.writeCommandEnvironment(id, envFile, environment, context.signal);
       const result = await this.runCommand(
-        this.id(computer),
-        command,
+        id,
+        envFile ? sourceEnvironmentCommand(envFile, argv) : argv,
         boatCwd(request.cwd),
         timeoutMs,
         context.signal,
       );
+      envFileRemoved = !result.timedOut;
       if (context.signal.aborted) {
         yield { type: "stderr", data: "command aborted\n" };
         yield { type: "exit", code: 130 };
@@ -288,6 +314,11 @@ export class BoatSandboxProvider implements SandboxProvider {
         return;
       }
       throw error;
+    } finally {
+      // The command removes the file as it starts; this covers a command that never did.
+      if (!envFileRemoved) {
+        await this.rawCommand(id, `rm -f -- ${shellQuote(envFile!)}`, 10).catch(() => undefined);
+      }
     }
   }
 
@@ -368,9 +399,9 @@ export class BoatSandboxProvider implements SandboxProvider {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
     const entries = await this.listWorkspaceFiles(id, context);
-    for (let index = 0; index < entries.length; index += BOAT_EXPORT_CONCURRENCY) {
+    for (const batch of exportBatches(entries)) {
       const files = await Promise.all(
-        entries.slice(index, index + BOAT_EXPORT_CONCURRENCY).map(async (entry) => ({
+        batch.map(async (entry) => ({
           path: entry.path,
           content: await this.readFile(computer, entry.path, context),
           executable: entry.executable,
@@ -429,13 +460,15 @@ export class BoatSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const id = this.id(computer);
     try {
-      const current = await this.client.get({ sandboxId: id }, { signal: context.signal });
-      if (current.sandbox.state !== "archived" && current.sandbox.state !== "archiving") {
+      const { sandbox } = await this.client.get({ sandboxId: id }, { signal: context.signal });
+      // A cancelled sandbox never got a machine, so there is nothing to stop.
+      if (sandbox.state === "cancelled") return;
+      if (sandbox.state !== "archived" && sandbox.state !== "archiving") {
         await this.client.stop({ sandboxId: id }, { signal: context.signal });
       }
       await this.waitForState(id, new Set(["archived"]), context);
     } catch (error) {
-      if (!isUnrecoverableBoatError(error)) throw error;
+      if (!isSandboxGoneError(error)) throw error;
     } finally {
       this.forget(id);
     }
@@ -445,35 +478,91 @@ export class BoatSandboxProvider implements SandboxProvider {
     const id = this.id(computer);
     try {
       await this.client.deleteSandbox(id);
-    } catch (error) {
-      if (!isUnrecoverableBoatError(error)) throw error;
     } finally {
       this.forget(id);
     }
   }
 
-  private async ensureRunnable(id: string, context: AdapterContext): Promise<BoatMachine> {
+  /**
+   * Waits until the sandbox can run commands, resuming or recovering it on the way. Throws a
+   * gone error when Boat cannot bring it back, so the caller replaces it from its checkpoint.
+   * Returns whether this call started it.
+   */
+  private async ensureRunnable(id: string, signal?: AbortSignal): Promise<boolean> {
     const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
-    let resumed = false;
+    let started = false;
+    let recovering = false;
     while (true) {
-      if (context.signal.aborted) {
-        throw context.signal.reason ?? new Error("Boat preparation aborted");
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("Boat preparation aborted");
       }
-      const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
-      const sandbox = response.sandbox;
-      if (sandbox.state === "ready" || sandbox.state === "idle" || sandbox.state === "running")
-        return sandbox;
-      if (sandbox.state === "archived" && !resumed) {
-        await this.client.resume(
-          { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
-          { signal: context.signal },
-        );
-        resumed = true;
-      } else if (sandbox.state === "error") {
-        throw new Error(`Boat ${id} entered the error state`);
+      const { sandbox } = await this.client.get({ sandboxId: id }, { signal });
+      if (RUNNABLE_STATES.has(sandbox.state)) return started;
+      // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
+      if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
+      if (sandbox.state === "archived" && !started) {
+        await this.resume(id, signal);
+        started = true;
+      } else if (sandbox.state === "error" && !recovering) {
+        await this.recover(id, signal);
+        recovering = started = true;
       }
-      if (Date.now() >= deadline) throw new Error(`Boat ${id} did not become ready`);
-      await delay(1_000, undefined, { signal: context.signal });
+      if (Date.now() >= deadline) {
+        if (sandbox.state === "error") throw boatSandboxGone(id);
+        throw new Error(`Boat ${id} did not become ready`);
+      }
+      await delay(1_000, undefined, { signal });
+    }
+  }
+
+  /**
+   * Boat archives a sandbox by itself when its TTL runs out, and then refuses work with
+   * `sandbox_not_ready` without running it; a machine that stopped underneath it answers
+   * `machine_not_running`, and one still waking answers `sandbox_resuming`. Wake or recover
+   * it and try once more.
+   */
+  private async whenRunnable<Result>(
+    id: string,
+    signal: AbortSignal | undefined,
+    call: () => Promise<Result>,
+  ): Promise<Result> {
+    try {
+      return await call();
+    } catch (error) {
+      if (!(error instanceof BoatApiError) || !BOAT_NOT_RUNNING_CODES.has(error.code ?? "")) {
+        throw error;
+      }
+      await this.ensureRunnable(id, signal);
+      return call();
+    }
+  }
+
+  private async resume(id: string, signal?: AbortSignal): Promise<void> {
+    try {
+      await this.client.resume(
+        { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
+        { signal },
+      );
+    } catch (error) {
+      // Another job's resume is already bringing it up; the caller waits for that one.
+      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming") throw error;
+    }
+  }
+
+  /** Boat's documented way out of the `error` state: power-cycle the machine, or resume. */
+  private async recover(id: string, signal?: AbortSignal): Promise<void> {
+    try {
+      await this.client.recover({ sandboxId: id }, { signal });
+    } catch (error) {
+      if (!(error instanceof BoatApiError) || error.response.status !== 409) throw error;
+      if (error.code === "no_machine") return this.resume(id, signal);
+      // Already answering again, or an earlier recover is still running.
+      if (error.code === "sandbox_is_reachable" || error.code === "too_soon") return;
+      // Boat cannot bring this machine back.
+      if (error.code === "recover_unsupported" || error.code === "reset_failed") {
+        throw boatSandboxGone(id, error);
+      }
+      throw error;
     }
   }
 
@@ -494,6 +583,42 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
+  private async writeCommandEnvironment(
+    id: string,
+    envFile: string,
+    environment: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    // Preparation makes the private directory; repeat it for commands that skipped preparation.
+    if (!this.prepared.has(id)) {
+      const result = await this.runCommand(
+        id,
+        commandEnvDirectoryCommand(),
+        undefined,
+        60_000,
+        signal,
+      );
+      if (result.exitCode !== 0) {
+        throw new Error(
+          result.stderr || result.stdout || "could not prepare Boat command environment",
+        );
+      }
+    }
+    await this.whenRunnable(id, signal, () =>
+      this.client.writeFile(
+        {
+          sandboxId: id,
+          fileWriteRequest: {
+            path: envFile,
+            content: Buffer.from(environment).toString("base64"),
+            encoding: "base64",
+          },
+        },
+        { signal },
+      ),
+    );
+  }
+
   private async writeFiles(
     id: string,
     files: readonly PortableFile[],
@@ -502,17 +627,21 @@ export class BoatSandboxProvider implements SandboxProvider {
     if (!files.length) return;
     await Promise.all(
       files.map((file) =>
-        this.client.writeFile(
-          {
-            sandboxId: id,
-            fileWriteRequest: {
-              path: workspacePath(BOAT_WORKSPACE, file.path),
-              content: Buffer.from(file.content).toString("base64"),
-              encoding: "base64",
-            },
-          },
-          { signal: context.signal },
-        ),
+        file.content.byteLength > BOAT_INLINE_FILE_MAX_BYTES
+          ? this.uploadFile(id, file, context)
+          : this.whenRunnable(id, context.signal, () =>
+              this.client.writeFile(
+                {
+                  sandboxId: id,
+                  fileWriteRequest: {
+                    path: workspacePath(BOAT_WORKSPACE, file.path),
+                    content: Buffer.from(file.content).toString("base64"),
+                    encoding: "base64",
+                  },
+                },
+                { signal: context.signal },
+              ),
+            ),
       ),
     );
     const executable = files.map(
@@ -529,6 +658,35 @@ export class BoatSandboxProvider implements SandboxProvider {
     if (result.exitCode !== 0) {
       throw new Error(result.stderr || result.stdout || "could not set Boat file permissions");
     }
+  }
+
+  private async uploadFile(id: string, file: PortableFile, context: AdapterContext): Promise<void> {
+    context.signal.throwIfAborted();
+    const filePath = workspacePath(BOAT_WORKSPACE, file.path);
+    const signed = await this.whenRunnable(id, context.signal, () =>
+      this.client.createUploadUrl(
+        { sandboxId: id, fileUrlRequest: { path: filePath } },
+        { signal: context.signal },
+      ),
+    );
+    const url = signedFileUrl(signed, "upload", filePath);
+    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(BOAT_TRANSFER_TIMEOUT_MS)]);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "PUT",
+        body: Buffer.from(file.content),
+        headers: { "Content-Type": "application/octet-stream" },
+        credentials: "omit",
+        redirect: "error",
+        signal,
+      });
+    } catch {
+      if (signal.aborted) throw signal.reason;
+      throw new Error("Boat file upload failed");
+    }
+    await response.body?.cancel().catch(() => undefined);
+    if (!response.ok) throw new Error(`Boat file upload failed (HTTP ${response.status})`);
   }
 
   private async listWorkspaceFiles(
@@ -556,11 +714,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     signal?: AbortSignal,
     maxBytes?: number,
   ): Promise<Uint8Array> {
-    // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
-    const { raw: response } = await this.client.artifactRaw(
-      { sandboxId: id, path: filePath },
-      signal ? { signal } : undefined,
-    );
+    const response = await this.fileResponse(id, filePath, signal, maxBytes);
     const reader = response.body?.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -593,6 +747,56 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * The JSON/base64 file endpoint rejects files over 5 MiB and the artifact route files over
+   * 50 MiB; a larger file streams from a short-lived URL the sandbox serves itself.
+   */
+  private async fileResponse(
+    id: string,
+    filePath: string,
+    signal: AbortSignal | undefined,
+    maxBytes: number | undefined,
+  ) {
+    try {
+      const { raw } = await this.whenRunnable(id, signal, () =>
+        this.client.artifactRaw({ sandboxId: id, path: filePath }, signal ? { signal } : undefined),
+      );
+      return raw;
+    } catch (error) {
+      if (!isArtifactTooLarge(error)) throw error;
+      if (maxBytes !== undefined && maxBytes < BOAT_ARTIFACT_MAX_BYTES) {
+        throw new Error(`computer file exceeds ${maxBytes} bytes`);
+      }
+    }
+    signal?.throwIfAborted();
+    const signed = await this.whenRunnable(id, signal, () =>
+      this.client.createDownloadUrl(
+        { sandboxId: id, fileUrlRequest: { path: filePath } },
+        signal ? { signal } : undefined,
+      ),
+    );
+    const url = signedFileUrl(signed, "download", filePath);
+    const timeout = AbortSignal.timeout(BOAT_TRANSFER_TIMEOUT_MS);
+    const downloadSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        credentials: "omit",
+        redirect: "error",
+        signal: downloadSignal,
+      });
+    } catch {
+      if (downloadSignal.aborted) throw downloadSignal.reason;
+      throw new Error("Boat file download failed");
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Boat file download failed (HTTP ${response.status})`);
+    }
+    return response;
+  }
+
   private async runCommand(
     id: string,
     command: string,
@@ -605,18 +809,22 @@ export class BoatSandboxProvider implements SandboxProvider {
     const timeoutSeconds = Math.ceil(timeoutMs / 1_000);
     const detached = timeoutSeconds + 5 > BOAT_API_COMMAND_TIMEOUT_SECONDS;
     try {
-      const response = await this.client.command(
-        {
-          sandboxId: id,
-          commandRequest: {
-            command: wrapped,
-            cwd,
-            ...(detached
-              ? { detached: true }
-              : { timeoutSeconds: Math.min(timeoutSeconds + 5, BOAT_API_COMMAND_TIMEOUT_SECONDS) }),
+      const response = await this.whenRunnable(id, signal, () =>
+        this.client.command(
+          {
+            sandboxId: id,
+            commandRequest: {
+              command: wrapped,
+              cwd,
+              ...(detached
+                ? { detached: true }
+                : {
+                    timeoutSeconds: Math.min(timeoutSeconds + 5, BOAT_API_COMMAND_TIMEOUT_SECONDS),
+                  }),
+            },
           },
-        },
-        signal ? { signal } : undefined,
+          signal ? { signal } : undefined,
+        ),
       );
       const result = isFinishedCommand(response)
         ? commandResponse(response)
@@ -705,11 +913,86 @@ export class BoatSandboxProvider implements SandboxProvider {
   }
 }
 
-export function isUnrecoverableBoatError(error: unknown): boolean {
-  if (error instanceof ResponseError) return error.response.status === 404;
-  if (!error || typeof error !== "object") return false;
-  const value = error as { status?: unknown; statusCode?: unknown; code?: unknown };
-  return value.status === 404 || value.statusCode === 404 || value.code === 404;
+/** Boat deletes a stopped sandbox's data after 14 days but keeps the record; it cannot resume. */
+/** Named so the shared `isSandboxGoneError` lets callers replace it from its last checkpoint. */
+function boatSandboxGone(sandboxId: string, cause?: unknown): Error {
+  return Object.assign(new Error(`Boat sandbox ${sandboxId} is gone`, { cause }), {
+    name: "SandboxNotFoundError",
+  });
+}
+
+/** Turns raw SDK failures into actionable errors, rate limits, and gone sandboxes. */
+function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
+  const get = wrapBoatCall(api.get.bind(api), apiKey, true);
+  const sandboxCall = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
+    call: (...args: Args) => Promise<Result>,
+    idempotent = false,
+  ) => {
+    const wrapped = wrapBoatCall(call, apiKey, idempotent);
+    return async (...args: Args): Promise<Result> => {
+      try {
+        return await wrapped(...args);
+      } catch (error) {
+        const { sandboxId } = args[0];
+        if (!(error instanceof BoatApiError)) throw error;
+        // Boat keeps the record of a sandbox whose snapshot data it deleted, but cannot resume it.
+        // A 404 can mean a missing file in a live sandbox; only a missing sandbox counts as gone.
+        if (
+          error.code === "snapshot_data_expired" ||
+          (error.response.status === 404 &&
+            (await sandboxMissing(get, sandboxId, callerSignal(args[1]))))
+        ) {
+          throw boatSandboxGone(sandboxId, error);
+        }
+        throw error;
+      }
+    };
+  };
+  // Observe the provider call itself: provisioning can succeed while later setup fails,
+  // and background probes or file operations can resume a provider-expired computer too.
+  const startCall =
+    <Args extends unknown[], Result>(
+      operation: "create" | "resume" | "recover",
+      call: (...args: Args) => Promise<Result>,
+    ) =>
+    async (...args: Args): Promise<Result> => {
+      const started = performance.now();
+      try {
+        const result = await call(...args);
+        getLogger().info("sandbox.start", {
+          provider: "boat",
+          operation,
+          outcome: "accepted",
+          durationMs: Math.round(performance.now() - started),
+        });
+        return result;
+      } catch (error) {
+        getLogger().warn("sandbox.start", {
+          provider: "boat",
+          operation,
+          outcome: error instanceof SandboxRateLimitError ? "rate_limited" : "failed",
+          durationMs: Math.round(performance.now() - started),
+        });
+        throw error;
+      }
+    };
+  // Reads, URL grants, TTL updates, and whole-file writes are safe to send twice.
+  return {
+    artifactRaw: sandboxCall(api.artifactRaw.bind(api), true),
+    command: sandboxCall(api.command.bind(api)),
+    commandStatus: sandboxCall(api.commandStatus.bind(api), true),
+    create: startCall("create", wrapBoatCall(api.create.bind(api), apiKey)),
+    createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
+    createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
+    get: sandboxCall(api.get.bind(api), true),
+    hostPort: sandboxCall(api.hostPort.bind(api), true),
+    recover: startCall("recover", sandboxCall(api.recover.bind(api))),
+    resume: startCall("resume", sandboxCall(api.resume.bind(api))),
+    stop: sandboxCall(api.stop.bind(api)),
+    update: sandboxCall(api.update.bind(api), true),
+    writeFile: sandboxCall(api.writeFile.bind(api), true),
+    deleteSandbox: api.deleteSandbox.bind(api),
+  };
 }
 
 function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandboxSdk {
@@ -722,43 +1005,7 @@ function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandbox
       fetchApi: (input, init) => fetch(input, init),
     }),
   );
-  const get = wrapBoatCall(api.get.bind(api), config.apiKey);
-  // A 404 can mean a missing file in a live sandbox. Only a missing sandbox counts as gone, and
-  // the shared idle and recovery code recognizes it by this message.
-  const sandboxCall =
-    <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
-      call: (...args: Args) => Promise<Result>,
-    ) =>
-    async (...args: Args): Promise<Result> => {
-      try {
-        return await call(...args);
-      } catch (error) {
-        const { sandboxId } = args[0];
-        if (
-          error instanceof ResponseError &&
-          error.response.status === 404 &&
-          (await sandboxMissing(get, sandboxId, callerSignal(args[1])))
-        ) {
-          throw new ResponseError(error.response, `Boat sandbox ${sandboxId} not found`);
-        }
-        throw error;
-      }
-    };
-  const wrap = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
-    call: (...args: Args) => Promise<Result>,
-  ) => sandboxCall(wrapBoatCall(call, config.apiKey));
-  return {
-    artifactRaw: wrap(api.artifactRaw.bind(api)),
-    command: wrap(api.command.bind(api)),
-    commandStatus: wrap(api.commandStatus.bind(api)),
-    create: wrapBoatCall(api.create.bind(api), config.apiKey),
-    desktop: wrap(api.desktop.bind(api)),
-    get: sandboxCall(get),
-    hostPort: wrap(api.hostPort.bind(api)),
-    resume: wrap(api.resume.bind(api)),
-    stop: wrap(api.stop.bind(api)),
-    update: wrap(api.update.bind(api)),
-    writeFile: wrap(api.writeFile.bind(api)),
+  return Object.assign(api, {
     deleteSandbox: async (sandboxId: string) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
@@ -789,7 +1036,7 @@ function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandbox
       }
       throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
-  };
+  });
 }
 
 async function sandboxMissing(
@@ -802,13 +1049,8 @@ async function sandboxMissing(
     await get({ sandboxId }, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     return false;
   } catch (error) {
-    return error instanceof ResponseError && error.response.status === 404;
+    return error instanceof BoatApiError && error.response.status === 404;
   }
-}
-
-function callerSignal(init: unknown): AbortSignal | undefined {
-  const signal = (init as RequestInit | undefined)?.signal;
-  return signal instanceof AbortSignal ? signal : undefined;
 }
 
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {
@@ -864,7 +1106,23 @@ function boatCwd(cwd: string | undefined): string {
 }
 
 function configureBoatWorkspaceCommand(): string {
-  return `mkdir -p ${shellQuote(BOAT_BROWSER_PROFILES)}`;
+  return `mkdir -p ${shellQuote(BOAT_BROWSER_PROFILES)} && ${commandEnvDirectoryCommand()}`;
+}
+
+/** Only `user` may list or read command environment files. */
+function commandEnvDirectoryCommand(): string {
+  const directory = shellQuote(BOAT_COMMAND_ENV);
+  return `mkdir -p -m 700 ${directory} && chmod 700 ${directory}`;
+}
+
+/**
+ * Opens the env file, deletes it, then loads it from the open descriptor, so it is gone before
+ * the requested env (which may change PATH) applies and before `argv` runs. No shell variables:
+ * the requested env may set any name.
+ */
+function sourceEnvironmentCommand(envFile: string, argv: string): string {
+  const file = shellQuote(envFile);
+  return `exec 3< ${file} || exit 1; rm -f -- ${file}; . /dev/fd/3 || exit 1; exec 3<&-; ${argv}`;
 }
 
 function listBoatFilesCommand(directory: string): string {
@@ -914,6 +1172,65 @@ function parseBoatFileEntries(output: string): ComputerFileEntry[] {
       ];
     })
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Boat's file capability URLs are secrets. Confine them to Boat's sandbox hosts; callers never
+ * forward API credentials, follow redirects, or expose transport errors containing them.
+ */
+function signedFileUrl(
+  signed: FileUrlResponse,
+  direction: "upload" | "download",
+  filePath: string,
+): URL {
+  const invalid = () => new Error(`Boat returned an invalid file ${direction} URL`);
+  let url: URL;
+  try {
+    url = new URL(signed.url);
+  } catch {
+    throw invalid();
+  }
+  if (
+    !signed.ok ||
+    signed.type !== `file.${direction}_url` ||
+    signed.method !== (direction === "upload" ? "PUT" : "GET") ||
+    signed.path !== filePath ||
+    url.protocol !== "https:" ||
+    !url.hostname.endsWith(".on.boat.dev") ||
+    url.username ||
+    url.password ||
+    (url.port && url.port !== "443") ||
+    url.hash
+  )
+    throw invalid();
+  return url;
+}
+
+/** The artifact route refuses files over its size cap with this error. */
+function isArtifactTooLarge(error: unknown): boolean {
+  return (
+    error instanceof BoatApiError &&
+    (error.response.status === 413 ||
+      (error.response.status === 400 && error.code === "artifact_failed"))
+  );
+}
+
+function* exportBatches(entries: readonly ComputerFileEntry[]): Generator<ComputerFileEntry[]> {
+  let batch: ComputerFileEntry[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    if (
+      batch.length &&
+      (batch.length >= BOAT_EXPORT_CONCURRENCY || bytes + entry.size > BOAT_EXPORT_BATCH_BYTES)
+    ) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(entry);
+    bytes += entry.size;
+  }
+  if (batch.length) yield batch;
 }
 
 function isAbortError(error: unknown): boolean {

@@ -8,10 +8,11 @@ import type {
 import { computerSleepJob } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -291,14 +292,14 @@ export async function sleepComputerIfIdle(
     limitReached
       ? Promise.resolve(false)
       : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
-  if (await runHolds()) {
+  if ((await runHolds()) || (await backgroundHolds())) {
     scheduleComputerSleep(deps.jobs, computerId);
-    return;
-  }
-
-  if (await backgroundHolds()) {
-    scheduleComputerSleep(deps.jobs, computerId);
-    await deps.sandbox.keepAlive?.(ref);
+    try {
+      await deps.sandbox.keepAlive?.(ref);
+    } catch (error) {
+      // The holding run or the next idle check recovers a computer whose sandbox is gone.
+      if (!isSandboxGoneError(error)) throw error;
+    }
     return;
   }
 
@@ -423,6 +424,12 @@ export async function sleepComputerIfIdle(
       controlBotId: null,
       controlRunId: null,
     },
+  });
+  getLogger().info("computer.suspended", {
+    "computer.id": computerId,
+    provider: computer.kind,
+    reason: limitReached ? "active_limit" : "idle",
+    activeMs: computer.runningSince ? Date.now() - computer.runningSince.getTime() : undefined,
   });
   const bots = await deps.prisma.bot.findMany({
     where: { computerId },

@@ -438,7 +438,8 @@ function endsWithHighSurrogate(value: string): boolean {
 }
 
 /**
- * Replace unpaired UTF-16 surrogates so the string is safe for JSON (Postgres rejects them).
+ * Replace unpaired UTF-16 surrogates and NUL characters, which Postgres rejects
+ * in json and text columns (command output and binary-ish tool results carry both).
  */
 export function sanitizeUtf16ForJson(value: string): string {
   let result = "";
@@ -452,7 +453,7 @@ export function sanitizeUtf16ForJson(value: string): string {
       } else {
         result += "\uFFFD";
       }
-    } else if (isLowSurrogate(code)) {
+    } else if (isLowSurrogate(code) || code === 0) {
       result += "\uFFFD";
     } else {
       result += value[i]!;
@@ -461,7 +462,7 @@ export function sanitizeUtf16ForJson(value: string): string {
   return result;
 }
 
-/** Deep-sanitize string leaves so event payloads never carry unpaired surrogates into JSON. */
+/** Deep-sanitize string leaves and keys so event payloads always persist in Postgres. */
 export function sanitizeJsonValue<T>(value: T): T {
   if (typeof value === "string") return sanitizeUtf16ForJson(value) as T;
   if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item)) as T;

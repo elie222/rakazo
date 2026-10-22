@@ -22,6 +22,9 @@ vi.mock("expo-document-picker", () => ({
   }),
 }));
 vi.mock("expo-image-picker", () => ({}));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: vi.fn(() => ({})),
+}));
 
 import { pickDocuments } from "./pick-attachments";
 

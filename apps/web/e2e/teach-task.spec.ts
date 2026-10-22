@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expectCardWidth, signup } from "./helpers";
 
 test("teach a task records interaction and saves a draft", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
   await completeOnboarding(page);
 
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);
@@ -58,7 +58,11 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await page.getByTestId("teach-capture-overlay").click({ position: { x: 200, y: 200 } });
   await page.keyboard.type("demo");
   await page.getByTestId("teach-stop-overlay").click();
-  await expect(page.getByTestId("skill-draft-card")).toBeVisible({ timeout: 20_000 });
+  const draftCard = page.getByTestId("skill-draft-card");
+  await expect(draftCard).toBeVisible({ timeout: 20_000 });
+  await page.mouse.move(1, 1);
+  await captureScreenshot(page, testInfo, "teach-skill-draft-card");
+  await expectCardWidth(draftCard, 520);
   await page.getByTestId("skill-draft-card").getByRole("button", { name: "Save" }).click();
   await expect(
     page.getByTestId("skill-draft-card").getByRole("button", { name: "Saved" }),

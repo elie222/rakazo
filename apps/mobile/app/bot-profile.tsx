@@ -16,6 +16,7 @@ import { currentApiBase, loadSessionToken, rpc, selectedSpaceId } from "../lib/a
 import { useI18n } from "../lib/i18n";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
+import { createQueuedSave } from "../lib/queued-save";
 import { deviceTimeZone, routineRowDetail, sortRoutinesByNextRun } from "../lib/routine";
 import { errorText } from "../lib/user-error";
 
@@ -28,11 +29,11 @@ export default function BotProfile() {
   const [bot, setBot] = useState<MobileBot | null>(null);
   const [routines, setRoutines] = useState<Routine[] | null>(null);
   const [routinesError, setRoutinesError] = useState<string | null>(null);
-  const [notificationsPending, setNotificationsPending] = useState(false);
   const name = displayName(bot?.name ?? nameParam, t("Bot"));
   const timeZone = deviceTimeZone();
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
   const notifySaves = useRef(0);
+  const notifyQueue = useRef<ReturnType<typeof createQueuedSave<boolean>> | null>(null);
 
   // Reload on focus so edits made in Chat settings or a routine show on return.
   useFocusEffect(
@@ -45,6 +46,7 @@ export default function BotProfile() {
           if (!current) return;
           // A read that overlapped a save may predate it; keep the switch as the user left it.
           const overlapped = saves % 2 === 1 || saves !== notifySaves.current;
+          if (!overlapped) notifyQueue.current?.reset(next.notifyOnFinish);
           setBot((shown) =>
             overlapped && shown ? { ...next, notifyOnFinish: shown.notifyOnFinish } : next,
           );
@@ -81,29 +83,31 @@ export default function BotProfile() {
   // The chat list's Silence notifications saves the same setting. The switch moves
   // first and moves back if the save fails.
   const setNotifyOnFinish = (notifyOnFinish: boolean) => {
-    if (!bot || notificationsPending) return;
-    setBot((current) => current && { ...current, notifyOnFinish });
-    setNotificationsPending(true);
-    notifySaves.current += 1;
-    void rpc("bots/update", { botId, notifyOnFinish })
-      .then(
-        async () =>
-          afterChatNotifyChange(
+    if (!bot) return;
+    notifyQueue.current ??= createQueuedSave(bot.notifyOnFinish, {
+      onChange: (notifyOnFinish) => setBot((current) => current && { ...current, notifyOnFinish }),
+      save: async (notifyOnFinish) => {
+        await rpc("bots/update", { botId, notifyOnFinish });
+      },
+      onSavingChange: () => {
+        notifySaves.current += 1;
+      },
+      onSaved: async (notify) => {
+        try {
+          await afterChatNotifyChange(
             currentApiBase(),
             await loadSessionToken(),
             selectedSpaceId() ?? "",
-            { threadId: bot.threadId, notify: notifyOnFinish },
-          ),
-        (error) => {
-          setBot((current) => current && { ...current, notifyOnFinish: !notifyOnFinish });
-          Alert.alert(t("Could not update notifications"), errorText(error, t("Try again.")));
-        },
-      )
-      .catch(() => undefined)
-      .finally(() => {
-        notifySaves.current += 1;
-        setNotificationsPending(false);
-      });
+            { threadId: bot.threadId, notify },
+          );
+        } catch {
+          // The server save succeeded; device reconciliation can retry later.
+        }
+      },
+      onError: (error) =>
+        Alert.alert(t("Could not update notifications"), errorText(error, t("Try again."))),
+    });
+    notifyQueue.current.update(notifyOnFinish);
   };
 
   return (
@@ -187,7 +191,6 @@ export default function BotProfile() {
             key="notifications"
             label={t("Notifications")}
             value={bot.notifyOnFinish}
-            disabled={notificationsPending}
             onChange={setNotifyOnFinish}
           />
         </SettingsGroup>

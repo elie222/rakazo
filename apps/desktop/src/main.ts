@@ -4,17 +4,8 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
 import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts/local-settings";
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Menu,
-  net,
-  type Session,
-  session,
-  shell,
-} from "electron";
+import type { Session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
 import { createAppOpener } from "./app-opener.js";
@@ -23,6 +14,7 @@ import {
   type ElectronAutoUpdater,
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
+import { createBadgeHandler } from "./badge.js";
 import { openBrowserAuth } from "./browser-auth.js";
 import { DOCKER_INSTALL_LINKS, isDesktopSetupLink, runDocker } from "./docker-cli.js";
 import { prepareHostComputer } from "./host-computer.js";
@@ -35,12 +27,18 @@ import {
   stackDir,
   stackResourceDir,
 } from "./local-stack.js";
+import {
+  configureDesktopMonitoring,
+  disableDesktopMonitoring,
+  installDesktopEarlyErrorReporting,
+  refreshDesktopMonitoringUser,
+  reportDesktopError,
+} from "./monitoring.js";
 import { oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
-  contentType,
+  bundledRendererHeaders,
   forwardedRendererRequestInit,
-  immutableRendererAsset,
   isRendererAssetMiss,
 } from "./renderer-assets.js";
 import { installSessionPermissions } from "./session-permissions.js";
@@ -69,6 +67,9 @@ import {
   warmWindowTtlMs,
 } from "./window-options.js";
 
+process.setSourceMapsEnabled(true);
+installDesktopEarlyErrorReporting();
+
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 /** Test hook: where the app-managed stack answers. Mode `new` still requires loopback. */
 const LOCAL_WEB_URL = process.env.RAKAZO_LOCAL_WEB_URL?.trim() || DEFAULT_LOCAL_WEB_URL;
@@ -86,6 +87,9 @@ let settingsTarget: { origin: string; token: string } | null = null;
 const bundledRendererInstallations = new Set<string>();
 let currentSetup: DesktopSetup | null = null;
 let currentTargetUrl: string | null = null;
+let monitoringSession: Session | undefined;
+let monitoringTargetUrl: string | undefined;
+let stopMonitoringSession: (() => void) | undefined;
 let setupError: string | null = null;
 let setupSaveInProgress = false;
 const appOpener = createAppOpener(openAppOnce);
@@ -268,6 +272,9 @@ function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
+  win.on("unresponsive", () =>
+    reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
+  );
   mainWindow = win;
   appWindowTargets.set(win, url);
   const targetOrigin = safeOrigin(url);
@@ -516,14 +523,7 @@ async function installBundledRenderer(
         if (isRendererAssetMiss(error)) continue;
         throw error;
       }
-      const headers = new Headers({
-        "cache-control": immutableRendererAsset(file)
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
-        "content-type": contentType(file),
-        "x-content-type-options": "nosniff",
-      });
-      return new Response(body, { headers });
+      return new Response(body, { headers: bundledRendererHeaders(file, request.url) });
     }
     return forward();
   });
@@ -538,7 +538,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0B0C0E",
+    backgroundColor: "#141414",
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }
@@ -711,6 +711,20 @@ function installApplicationMenu() {
       }
     },
   };
+  const viewMenu: Electron.MenuItemConstructorOptions = {
+    label: "View",
+    submenu: [
+      { role: "resetZoom" },
+      { role: "zoomIn" },
+      // zoomIn's default accelerator is Cmd/Ctrl+Plus, which needs Shift on US layouts.
+      { role: "zoomIn", accelerator: "CommandOrControl+=", visible: false },
+      { role: "zoomOut" },
+      // macOS adds its own Enter Full Screen item to a menu named View.
+      ...(process.platform === "darwin"
+        ? []
+        : ([{ type: "separator" }, { role: "togglefullscreen" }] as const)),
+    ],
+  };
   const template: Electron.MenuItemConstructorOptions[] =
     process.platform === "darwin"
       ? [
@@ -733,6 +747,7 @@ function installApplicationMenu() {
             ],
           },
           { role: "editMenu" },
+          viewMenu,
           {
             label: "Window",
             role: "window",
@@ -759,6 +774,7 @@ function installApplicationMenu() {
             ],
           },
           { role: "editMenu" },
+          viewMenu,
           { role: "windowMenu" },
         ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -863,9 +879,38 @@ function openFailureDetail(error: unknown): string {
   return probeFailureMessage(error);
 }
 
+function activateDesktopMonitoring(url: string | undefined, targetSession?: Session) {
+  if (monitoringTargetUrl === url && monitoringSession === targetSession) return;
+  stopMonitoringSession?.();
+  stopMonitoringSession = undefined;
+  monitoringTargetUrl = url;
+  monitoringSession = targetSession;
+  if (!url || !targetSession) {
+    disableDesktopMonitoring();
+    return;
+  }
+  const fetchMonitoringConfig = () =>
+    targetSession.fetch(new URL("/api/monitoring/config", url).href, {
+      signal: AbortSignal.timeout(8_000),
+    });
+  const refreshMonitoringUser = () => {
+    if (monitoringSession === targetSession && monitoringTargetUrl === url)
+      void refreshDesktopMonitoringUser(fetchMonitoringConfig);
+  };
+  targetSession.cookies.on("changed", refreshMonitoringUser);
+  stopMonitoringSession = () =>
+    targetSession.cookies.removeListener("changed", refreshMonitoringUser);
+  void configureDesktopMonitoring(fetchMonitoringConfig, {
+    version: app.getVersion(),
+    base: url,
+  });
+}
+
 async function openAppOnce(targetUrl: string, switching: boolean) {
   hostComputer?.activate(currentSetup?.mode === "new" && targetUrl === localStack.webUrl());
   const target = await resolveSessionForTarget(targetUrl);
+  // A failed switch must leave telemetry with the window that remains selected.
+  if (mainWindow === null) activateDesktopMonitoring(targetUrl, target.value);
   const previous = mainWindow;
   let win: BrowserWindow | null = null;
   try {
@@ -887,6 +932,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
       throw new Error("The server page did not become ready.");
     }
     currentTargetUrl = targetUrl;
+    activateDesktopMonitoring(targetUrl, target.value);
     setupError = null;
     // Keep the previous window until the caller commits (after setup.json is written).
     pendingPreviousWindow =
@@ -894,6 +940,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     if (pendingPreviousWindow !== null) pendingPreviousWindow.hide();
     return true;
   } catch (error) {
+    reportDesktopError(error, "desktop.startup");
     pendingPreviousWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
     if (previous !== null && !previous.isDestroyed()) mainWindow = previous;
@@ -940,6 +987,7 @@ function abandonPendingAppSwitch(
     mainWindow = previous;
     currentSetup = previousSetup;
     currentTargetUrl = previousUrl;
+    activateDesktopMonitoring(previousUrl ?? undefined, previous.webContents.session);
     syncHostComputerAccess();
     // If setup was already closed (e.g. during a slow write), make the restored
     // session visible — otherwise macOS can be left with no shown window.
@@ -1000,6 +1048,10 @@ async function recoverFromCrashedSave(
     mainWindow = null;
     currentSetup = previousSetup;
     currentTargetUrl = previousUrl;
+    if (previousUrl) {
+      const restored = await resolveSessionForTarget(previousUrl);
+      activateDesktopMonitoring(previousUrl, restored.value);
+    } else activateDesktopMonitoring(undefined);
   }
   const message =
     previousSetup !== null
@@ -1193,6 +1245,10 @@ app.whenReady().then(async () => {
       installApplicationMenu();
     }
   });
+  ipcMain.handle(
+    "desktop.badge.set",
+    createBadgeHandler(permissionTarget, (count) => app.setBadgeCount(count)),
+  );
   ipcMain.handle("desktop.platform", () => process.platform);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();

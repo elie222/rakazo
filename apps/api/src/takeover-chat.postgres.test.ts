@@ -13,7 +13,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { createDb, createThreadEvents } from "@rakazo/db";
+import { asSystem, createDb, createThreadEvents, runAsSystem, runAsTenant } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
@@ -27,14 +27,16 @@ const describePostgres =
 describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let prisma: PrismaClient;
+  let system: PrismaClient;
   let dataDir: string;
   const organizations: string[] = [];
 
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = db.prisma;
+    system = asSystem(prisma);
     dataDir = await mkdtemp(join(process.cwd(), ".takeover-chat-test-"));
-    await prisma.deploymentSettings.upsert({
+    await system.deploymentSettings.upsert({
       where: { id: "default" },
       create: {
         id: "default",
@@ -47,8 +49,8 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.organization.deleteMany({ where: { id: { in: organizations } } });
-      await prisma.user.deleteMany({ where: { id: { in: organizations } } });
+      await system.organization.deleteMany({ where: { id: { in: organizations } } });
+      await system.user.deleteMany({ where: { id: { in: organizations } } });
       await prisma.$disconnect();
       await db.pool.end();
     }
@@ -58,21 +60,21 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   async function setup(mode: "opened" | "unopened" = "opened", trigger = "user") {
     const id = randomUUID();
     organizations.push(id);
-    await prisma.user.create({
+    await system.user.create({
       data: { id, name: "Takeover fixture", email: `${id}@example.test`, emailVerified: true },
     });
-    await prisma.organization.create({
+    await system.organization.create({
       data: { id, name: "Takeover fixture", slug: id, createdAt: new Date() },
     });
-    await prisma.space.create({ data: { id, organizationId: id, name: "Fixture" } });
-    const computer = await prisma.computer.create({
+    await system.space.create({ data: { id, organizationId: id, name: "Fixture" } });
+    const computer = await system.computer.create({
       data: { spaceId: id, userId: id, scopeKey: id, homeKey: id, kind: "fake", state: "running" },
     });
-    const bot = await prisma.bot.create({
+    const bot = await system.bot.create({
       data: { spaceId: id, userId: id, name: "Fixture", color: "test", computerId: computer.id },
     });
-    const thread = await prisma.thread.create({ data: { spaceId: id, userId: id, botId: bot.id } });
-    const task = await prisma.task.create({
+    const thread = await system.thread.create({ data: { spaceId: id, userId: id, botId: bot.id } });
+    const task = await system.task.create({
       data: {
         spaceId: id,
         userId: id,
@@ -82,7 +84,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         status: "running",
       },
     });
-    const run = await prisma.run.create({
+    const run = await system.run.create({
       data: {
         spaceId: id,
         userId: id,
@@ -93,7 +95,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         trigger,
       },
     });
-    await prisma.computerExecutionLease.create({
+    await system.computerExecutionLease.create({
       data: {
         computerId: computer.id,
         botId: bot.id,
@@ -119,14 +121,14 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       },
     );
     const events = createThreadEvents(prisma);
-    await prisma.computer.update({
+    await system.computer.update({
       where: { id: computer.id },
       data: { providerRef: ref.id },
     });
     let leaseId: string | null = null;
     if (mode === "opened") {
       leaseId = randomUUID();
-      await prisma.computer.update({
+      await system.computer.update({
         where: { id: computer.id },
         data: {
           controlHolder: "user",
@@ -137,10 +139,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         },
       });
     } else {
-      const attempt = await prisma.attempt.create({
+      const attempt = await system.attempt.create({
         data: { runId: run.id, fence: 1, status: "running" },
       });
-      await prisma.run.update({
+      await system.run.update({
         where: { id: run.id },
         data: {
           status: "running",
@@ -149,22 +151,24 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
           leaseExpiresAt: new Date(Date.now() + 60_000),
         },
       });
-      await events.pauseRunForTakeover({
-        spaceId: id,
-        threadId: thread.id,
-        botId: bot.id,
-        runId: run.id,
-        attemptId: attempt.id,
-        leaseOwner: "fixture-worker",
-        leaseFence: 1,
-        reason: "Enter the fixture code",
-        computerId: computer.id,
-      });
+      await runAsSystem("test fixture", () =>
+        events.pauseRunForTakeover({
+          spaceId: id,
+          threadId: thread.id,
+          botId: bot.id,
+          runId: run.id,
+          attemptId: attempt.id,
+          leaseOwner: "fixture-worker",
+          leaseFence: 1,
+          reason: "Enter the fixture code",
+          computerId: computer.id,
+        }),
+      );
     }
     const queuedStates: Array<{ status: string; checkpoint: string | null }> = [];
     const enqueue = vi.fn<JobPublisher["enqueue"]>(async (job) => {
       if (job.name === "run.continue") {
-        queuedStates.push(await prisma.run.findUniqueOrThrow({ where: { id: job.payload.runId } }));
+        queuedStates.push(await system.run.findUniqueOrThrow({ where: { id: job.payload.runId } }));
       }
     });
     const jobs: JobPublisher = {
@@ -193,7 +197,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       );
       return response!;
     };
-    const control = () => prisma.computer.findUniqueOrThrow({ where: { id: computer.id } });
+    const control = () => system.computer.findUniqueOrThrow({ where: { id: computer.id } });
     return {
       actor,
       bot,
@@ -217,7 +221,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const response = await fixture.send({ clientNonce: "takeover-reply" });
     expect(response.status).toBe(200);
     const { json: sent } = await response.json();
-    const message = await prisma.message.findUniqueOrThrow({
+    const message = await system.message.findUniqueOrThrow({
       where: {
         threadId_clientNonce: { threadId: fixture.thread.id, clientNonce: "takeover-reply" },
       },
@@ -237,7 +241,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       fixture.leaseId,
     );
     expect(
-      await prisma.event.findMany({
+      await system.event.findMany({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toMatchObject([{ payload: { holder: "bot", reason: "done", leaseId: fixture.leaseId } }]);
@@ -299,20 +303,23 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       deploymentModelConfigured: true,
       dataDir,
     });
-    await Promise.all([
-      executor.continueRun(fixture.run.id, "steering-worker"),
-      executor.continueRun(fixture.run.id, "release-worker"),
-    ]);
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    // Run jobs act for the run's owner, as the background job handlers scope them.
+    await runAsTenant(fixture.actor, () =>
+      Promise.all([
+        executor.continueRun(fixture.run.id, "steering-worker"),
+        executor.continueRun(fixture.run.id, "release-worker"),
+      ]),
+    );
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "completed",
       error: null,
     });
     expect(requests).toHaveLength(1);
     expect(act).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(await prisma.attempt.count({ where: { runId: fixture.run.id } })).toBe(1);
-    expect(await prisma.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
-    await executor.continueRun(fixture.run.id, "late-worker");
+    expect(await system.attempt.count({ where: { runId: fixture.run.id } })).toBe(1);
+    expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+    await runAsTenant(fixture.actor, () => executor.continueRun(fixture.run.id, "late-worker"));
     expect(requests).toHaveLength(1);
   });
 
@@ -327,7 +334,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const response = await fixture.send({ clientNonce: "unopened-reply" });
     expect(response.status).toBe(200);
     const { json: sent } = await response.json();
-    const message = await prisma.message.findUniqueOrThrow({
+    const message = await system.message.findUniqueOrThrow({
       where: {
         threadId_clientNonce: { threadId: fixture.thread.id, clientNonce: "unopened-reply" },
       },
@@ -340,11 +347,11 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       controlRunId: null,
     });
     expect(
-      await prisma.event.findMany({
+      await system.event.findMany({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toMatchObject([{ payload: { holder: "bot", reason: "done", leaseId: null } }]);
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "queued",
       checkpoint: "takeover",
     });
@@ -385,23 +392,26 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       deploymentModelConfigured: true,
       dataDir,
     });
-    await Promise.all([
-      executor.continueRun(fixture.run.id, "steering-worker"),
-      executor.continueRun(fixture.run.id, "release-worker"),
-    ]);
-    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+    // Run jobs act for the run's owner, as the background job handlers scope them.
+    await runAsTenant(fixture.actor, () =>
+      Promise.all([
+        executor.continueRun(fixture.run.id, "steering-worker"),
+        executor.continueRun(fixture.run.id, "release-worker"),
+      ]),
+    );
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
       status: "completed",
       error: null,
     });
     expect(requests).toHaveLength(1);
-    expect(await prisma.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+    expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
   });
 
   it.each(["none", "other-run", "other-bot", "idle"])(
     "keeps unrelated computer control (%s)",
     async (owner) => {
       const fixture = await setup();
-      await prisma.computer.update({
+      await system.computer.update({
         where: { id: fixture.computer.id },
         data:
           owner === "none"
@@ -424,11 +434,11 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       expect(await fixture.control()).toEqual(before);
       expect(revoke).not.toHaveBeenCalled();
       expect(
-        await prisma.event.count({
+        await system.event.count({
           where: { threadId: fixture.thread.id, type: "computer.takeover.released" },
         }),
       ).toBe(0);
-      expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
         status: "waiting_takeover",
         checkpoint: null,
       });
@@ -437,7 +447,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
 
   it("does not release a bot's takeover when the user sends to a group", async () => {
     const fixture = await setup();
-    const otherBot = await prisma.bot.create({
+    const otherBot = await system.bot.create({
       data: {
         spaceId: fixture.actor.spaceId,
         userId: fixture.actor.userId,
@@ -445,7 +455,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         color: "test",
       },
     });
-    const group = await prisma.chatGroup.create({
+    const group = await system.chatGroup.create({
       data: {
         spaceId: fixture.actor.spaceId,
         userId: fixture.actor.userId,
@@ -460,7 +470,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(await fixture.control()).toEqual(before);
     expect(revoke).not.toHaveBeenCalled();
     expect(
-      await prisma.event.count({
+      await system.event.count({
         where: { threadId: fixture.thread.id, type: "computer.takeover.released" },
       }),
     ).toBe(0);
@@ -474,10 +484,10 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(await fixture.control()).toEqual(before);
     expect(revoke).not.toHaveBeenCalled();
     expect(
-      await prisma.steeringMessage.count({ where: { botId: fixture.bot.id, runId: null } }),
+      await system.steeringMessage.count({ where: { botId: fixture.bot.id, runId: null } }),
     ).toBe(1);
     expect(
-      await prisma.event.count({
+      await system.event.count({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toBe(0);
@@ -488,7 +498,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     const finalize = fixture.events.finalizeComputerControlRelease;
     vi.spyOn(fixture.events, "finalizeComputerControlRelease").mockImplementationOnce(
       async (input) => {
-        await prisma.computer.update({
+        await system.computer.update({
           where: { id: fixture.computer.id },
           data: {
             controlHolder: "user",
@@ -510,7 +520,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       controlRunId: null,
     });
     expect(
-      await prisma.event.count({
+      await system.event.count({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toBe(1);
@@ -534,13 +544,13 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(revoke).toHaveBeenCalledTimes(2);
     expect(await fixture.control()).toMatchObject({ controlHolder: "bot", controlLeaseId: null });
     expect(
-      await prisma.message.count({
+      await system.message.count({
         where: { threadId: fixture.thread.id, clientNonce: "retry-reply" },
       }),
     ).toBe(1);
-    expect(await prisma.steeringMessage.count({ where: { runId: fixture.run.id } })).toBe(1);
+    expect(await system.steeringMessage.count({ where: { runId: fixture.run.id } })).toBe(1);
     expect(
-      await prisma.event.count({
+      await system.event.count({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toBe(1);
@@ -553,15 +563,15 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
   it("keeps a later takeover when an already delivered reply is retried", async () => {
     const fixture = await setup();
     expect((await fixture.send({ clientNonce: "delivered-reply" })).status).toBe(200);
-    await prisma.steeringMessage.updateMany({
+    await system.steeringMessage.updateMany({
       where: { runId: fixture.run.id },
       data: { claimedAt: new Date() },
     });
-    await prisma.run.update({
+    await system.run.update({
       where: { id: fixture.run.id },
       data: { status: "waiting_takeover", checkpoint: null },
     });
-    await prisma.computer.update({
+    await system.computer.update({
       where: { id: fixture.computer.id },
       data: {
         controlHolder: "user",
@@ -577,7 +587,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(await fixture.control()).toEqual(before);
     expect(revoke).not.toHaveBeenCalled();
     expect(
-      await prisma.event.count({
+      await system.event.count({
         where: { runId: fixture.run.id, type: "computer.takeover.released" },
       }),
     ).toBe(1);

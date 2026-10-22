@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, StyleSheet, Text, View } from "react-native";
@@ -20,11 +21,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
   },
-  description: { fontSize: 13.5, opacity: 0.75 },
+  description: { ...typeScale.secondary, opacity: 0.75 },
   header: { alignItems: "center", flexDirection: "row", gap: 12 },
   headline: { flex: 1, gap: 2 },
-  summary: { fontSize: 13.5 },
-  title: { fontSize: 15, fontWeight: "600" },
+  summary: typeScale.caption,
+  title: typeScale.cardTitle,
 });
 
 export function McpApprovalCard({
@@ -100,7 +101,7 @@ export function McpApprovalCard({
         <Text
           style={{
             color: status === "connected" ? tokens.success : tokens.mutedForeground,
-            fontSize: 13.5,
+            ...typeScale.secondary,
           }}
         >
           {status === "connected"

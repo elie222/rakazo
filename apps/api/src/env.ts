@@ -2,6 +2,7 @@ import type { TelegramBotCredentials } from "@rakazo/adapters";
 import {
   boatApiKeyFromEnv,
   boatApiUrlFromEnv,
+  mcpStdioOptionsFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
@@ -9,19 +10,25 @@ import {
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
+import type { MinimumClientBuilds } from "@rakazo/contracts";
+import { parseMinimumClientBuilds } from "@rakazo/contracts";
 import {
   phoneCallSettings,
   resolveAuthSecret,
+  resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
   uploadSizeFromEnv,
 } from "@rakazo/core";
+import { monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
   passwordAuth?: boolean;
+  /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
+  breachedPasswordCheck?: boolean;
   oidc?: OidcConfig;
   nodeEnv: string;
   desktopStackToken?: string;
@@ -30,12 +37,22 @@ export interface AppEnv {
   authSecret: string;
   authUrl: string;
   webOrigin: string;
+  /** `<TEAM_ID>.<bundle id>` of iOS apps that may use this domain's passkeys. */
+  passkeyAppleAppIds: string[];
+  /** SHA-256 signing certificate fingerprints of Android apps that may use this domain's passkeys. */
+  passkeyAndroidCertFingerprints: string[];
   privacyPolicyUrl?: string;
   apiUrl: string;
   apiHost: string;
+  /** Proxies whose forwarded client address is believed; empty means local networks. */
+  trustedProxies: string[];
+  /** The header those proxies set. */
+  clientIpHeader: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   encryptionKey: string;
+  /** CONTENT_ENCRYPTION: whether new content is encrypted at rest. */
+  contentEncryption: boolean;
   dataDir: string;
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
   piSessionRecording: boolean;
@@ -74,6 +91,7 @@ export interface AppEnv {
   sendblueApiSecret: string | undefined;
   sendblueSigningSecret: string | undefined;
   sendbluePhoneNumber: string | undefined;
+  expoAccessToken: string | undefined;
   smtpUrl: string | undefined;
   emailFrom: string | undefined;
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
@@ -108,12 +126,18 @@ export interface AppEnv {
   wakeupDriver: string;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
+  /** Package dir, install/startup timeouts and idle reaping for stdio MCP servers. */
+  mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   /** Deployment-owner escape for remote MCP on RFC1918 / Docker-network hosts. */
   mcpAllowPrivateEndpoint: boolean;
   port: number;
   gitSha: string | undefined;
+  /** Oldest client build per kind the API still serves (RAKAZO_MIN_CLIENT_BUILD). */
+  minimumClientBuilds?: MinimumClientBuilds;
   /** Browser error reporting, served to the web app at runtime. The DSN is public by design. */
-  browserMonitoring: { dsn: string; environment?: string; release?: string } | undefined;
+  browserMonitoring:
+    | { dsn: string; environment?: string; release?: string; pseudonymSecret?: string }
+    | undefined;
   /** Private Compose control-network URL for the opt-in updater sidecar. */
   updaterUrl: string | undefined;
   /** Bearer shared with the updater; never sent to the browser. */
@@ -142,7 +166,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       throw new Error("OIDC_ISSUER must be an HTTPS issuer URL");
     }
   }
-  for (const key of ["AUTH_PASSWORD_ENABLED", "OIDC_ALLOW_SIGNUP_BYPASS"]) {
+  for (const key of [
+    "AUTH_PASSWORD_ENABLED",
+    "AUTH_BREACHED_PASSWORD_CHECK_ENABLED",
+    "OIDC_ALLOW_SIGNUP_BYPASS",
+  ]) {
     const value = source[key];
     if (value && !["true", "false"].includes(value))
       throw new Error(`${key} must be true or false`);
@@ -171,6 +199,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
   return {
     passwordAuth,
+    breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
     oidc,
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
@@ -179,12 +208,20 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     authSecret,
     authUrl: source.BETTER_AUTH_URL ?? source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
     webOrigin: source.WEB_ORIGIN ?? "http://127.0.0.1:5173",
+    passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
+    passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
     apiHost: source.API_HOST ?? "127.0.0.1",
+    trustedProxies: (source.TRUSTED_PROXIES ?? "")
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    clientIpHeader: optional(source.CLIENT_IP_HEADER)?.toLowerCase() ?? "x-forwarded-for",
     signupsEnabled: source.SIGNUPS_ENABLED,
     signupAllowlist: source.SIGNUP_ALLOWLIST,
     encryptionKey: resolveEncryptionKey(source),
+    contentEncryption: resolveContentEncryption(source),
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
@@ -220,6 +257,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
     sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
+    expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     smtpUrl: optional(source.SMTP_URL),
     emailFrom: optional(source.EMAIL_FROM),
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
@@ -252,9 +290,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    mcpStdio: mcpStdioOptionsFromEnv(source),
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     updaterUrl,
     updaterToken,
@@ -276,10 +316,26 @@ function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMon
     dsn,
     environment: optional(source.SENTRY_ENVIRONMENT),
     release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
+    pseudonymSecret: monitoringPseudonymSecret(source),
   };
 }
 
 function optional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+function list(value: string | undefined): string[] {
+  return (value ?? "").split(/[\s,]+/).filter(Boolean);
+}
+
+/** SHA-256 signing certificate fingerprints, normalized to the `AA:BB:…` form Digital Asset Links uses. */
+function androidCertFingerprints(value: string | undefined): string[] {
+  return list(value).map((fingerprint) => {
+    const hex = fingerprint.replace(/:/g, "");
+    if (!/^[0-9a-f]{64}$/i.test(hex)) {
+      throw new Error("PASSKEY_ANDROID_CERT_SHA256 must list SHA-256 fingerprints");
+    }
+    return hex.toUpperCase().match(/../g)!.join(":");
+  });
 }

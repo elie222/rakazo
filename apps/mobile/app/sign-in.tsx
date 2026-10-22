@@ -1,5 +1,5 @@
 import type { IntegrationSetupState } from "@rakazo/contracts";
-import { credentialIssue } from "@rakazo/core";
+import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -24,7 +24,9 @@ import {
   passwordResetCapabilities,
   requestPasswordReset,
   rpc,
+  sendSignInCode,
   signIn,
+  signInWithCode,
   signUp,
   usesCustomApiBase,
 } from "../lib/api";
@@ -32,8 +34,11 @@ import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
+
+const CODE_LENGTH = 6;
 
 export default function SignIn() {
   const { t } = useI18n();
@@ -53,6 +58,10 @@ export default function SignIn() {
   const [capabilityError, setCapabilityError] = useState(false);
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [resetSent, setResetSent] = useState(false);
+  const [usePassword, setUsePassword] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [passkeys, setPasskeys] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,6 +80,9 @@ export default function SignIn() {
     let active = true;
     setReset(null);
     setCapabilityError(false);
+    // A code belongs to the server that sent it.
+    setCodeSent(false);
+    setCode("");
     void passwordResetCapabilities()
       .then((capabilities) => {
         if (active) setReset(capabilities);
@@ -84,8 +96,19 @@ export default function SignIn() {
   }, [apiBase, capabilityAttempt]);
 
   useEffect(() => {
-    if (resetSent) AccessibilityInfo.announceForAccessibility(t("Check your email"));
-  }, [resetSent, t]);
+    let active = true;
+    setPasskeys(false);
+    void passkeysAvailable(reset).then((available) => {
+      if (active) setPasskeys(available);
+    });
+    return () => {
+      active = false;
+    };
+  }, [reset]);
+
+  useEffect(() => {
+    if (resetSent || codeSent) AccessibilityInfo.announceForAccessibility(t("Check your email"));
+  }, [resetSent, codeSent, t]);
 
   if (!ready) {
     return (
@@ -103,13 +126,22 @@ export default function SignIn() {
   }
   if (hasSession) return <Redirect href="/" />;
 
-  async function submit() {
+  const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
+  const usingCode = codeFlow && !usePassword;
+  const codeStep = usingCode && codeSent;
+
+  async function submit(enteredCode = code) {
     if (pending || !reset?.passwordAuth) return;
-    const issue = credentialIssue({ email, password: mode === "forgot" ? undefined : password });
+    const issue = credentialIssue({
+      email,
+      password: mode === "forgot" || usingCode ? undefined : password,
+    });
     if (issue) {
       setError(credentialIssueText(issue));
       return;
     }
+    // An unfinished code would spend one of the code's three attempts.
+    if (codeStep && enteredCode.length !== CODE_LENGTH) return;
     setPending(true);
     setError(null);
     try {
@@ -121,7 +153,23 @@ export default function SignIn() {
         setResetSent(true);
         return;
       }
-      if (mode === "up") {
+      if (usingCode && !codeSent) {
+        const sentFrom = apiBase;
+        await sendSignInCode(email.trim());
+        if (currentApiBase() !== sentFrom) return;
+        setCode("");
+        setCodeSent(true);
+        return;
+      }
+      if (usingCode) {
+        const trimmedEmail = email.trim();
+        await signInWithCode(
+          trimmedEmail,
+          enteredCode,
+          // Only used when this creates the account.
+          mode === "up" ? name.trim() || trimmedEmail.split("@")[0] || "User" : undefined,
+        );
+      } else if (mode === "up") {
         const trimmedEmail = email.trim();
         const result = await signUp(
           trimmedEmail,
@@ -135,8 +183,9 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
+      // A code can create the account from either form.
       const setup =
-        mode === "up"
+        mode === "up" || usingCode
           ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
           : null;
       router.replace(setup?.needsSetup ? "/integration-setup" : "/");
@@ -147,11 +196,11 @@ export default function SignIn() {
     }
   }
 
-  async function sso() {
+  async function externalSignIn(run: () => Promise<boolean>) {
     setPending(true);
     setError(null);
     try {
-      if (await continueWithSso()) router.replace("/");
+      if (await run()) router.replace("/");
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -188,7 +237,7 @@ export default function SignIn() {
                   textAlign: "center",
                 }}
               >
-                {resetSent
+                {resetSent || codeStep
                   ? t("Check your email")
                   : mode === "in"
                     ? t("Sign in to Rakazo")
@@ -203,6 +252,7 @@ export default function SignIn() {
                     onPress={() => {
                       setMode("in");
                       setResetSent(false);
+                      setCodeSent(false);
                     }}
                   >
                     <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
@@ -233,7 +283,7 @@ export default function SignIn() {
                     <NativeActionButton
                       label={t("Continue with {name}", { name: reset.sso.name })}
                       disabled={pending}
-                      onPress={() => void sso()}
+                      onPress={() => void externalSignIn(continueWithSso)}
                       style={{ marginTop: 16 }}
                     />
                   ) : null}
@@ -245,7 +295,55 @@ export default function SignIn() {
                       {error}
                     </Text>
                   ) : null}
-                  {reset?.passwordAuth ? (
+                  {reset?.passwordAuth && codeStep ? (
+                    <>
+                      <TextInput
+                        accessibilityLabel={t("Code")}
+                        autoComplete="one-time-code"
+                        autoFocus
+                        keyboardType="number-pad"
+                        maxLength={CODE_LENGTH}
+                        placeholder={t("Code")}
+                        placeholderTextColor={tokens.mutedForeground}
+                        textContentType="oneTimeCode"
+                        value={code}
+                        onChangeText={(value) => {
+                          const digits = value.replace(/\D/g, "").slice(0, CODE_LENGTH);
+                          setCode(digits);
+                          // iOS offers the code from Mail; a complete code signs in at once.
+                          if (digits.length === CODE_LENGTH) void submit(digits);
+                        }}
+                        onSubmitEditing={() => void submit()}
+                        style={{
+                          marginTop: 28,
+                          backgroundColor: tokens.muted,
+                          borderRadius: 13,
+                          padding: 16,
+                          color: tokens.foreground,
+                        }}
+                      />
+                      {error ? (
+                        <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                      ) : null}
+                      <NativeActionButton
+                        disabled={pending || code.length < CODE_LENGTH}
+                        label={pending ? t("Working…") : t("Continue")}
+                        onPress={() => void submit()}
+                        style={{ marginTop: 16 }}
+                      />
+                      <NativeActionButton
+                        label={t("Back")}
+                        prominence="quiet"
+                        disabled={pending}
+                        onPress={() => {
+                          setCodeSent(false);
+                          setCode("");
+                          setError(null);
+                        }}
+                        style={{ alignSelf: "center", marginTop: 16 }}
+                      />
+                    </>
+                  ) : reset?.passwordAuth ? (
                     <>
                       {mode === "up" ? (
                         <TextInput
@@ -279,9 +377,12 @@ export default function SignIn() {
                           color: tokens.foreground,
                         }}
                       />
-                      {mode !== "forgot" ? (
+                      {mode !== "forgot" && !usingCode ? (
                         <TextInput
                           autoComplete={mode === "in" ? "current-password" : "new-password"}
+                          textContentType={mode === "in" ? "password" : "newPassword"}
+                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
+                          maxLength={MAX_PASSWORD_LENGTH}
                           placeholder={t("Password")}
                           placeholderTextColor={tokens.mutedForeground}
                           returnKeyType="go"
@@ -306,25 +407,48 @@ export default function SignIn() {
                         label={
                           pending
                             ? t("Working…")
-                            : mode === "in"
-                              ? t("Sign in")
-                              : mode === "up"
-                                ? t("Sign up")
-                                : t("Send reset link")
+                            : usingCode
+                              ? t("Continue")
+                              : mode === "in"
+                                ? t("Sign in")
+                                : mode === "up"
+                                  ? t("Sign up")
+                                  : t("Send reset link")
                         }
                         onPress={() => void submit()}
                         style={{ marginTop: 16 }}
                       />
+                      {passkeys && mode === "in" && !codeSent ? (
+                        <NativeActionButton
+                          label={t("Sign in with passkey")}
+                          prominence="quiet"
+                          disabled={pending}
+                          onPress={() => void externalSignIn(signInWithPasskey)}
+                          style={{ alignSelf: "center", marginTop: 16 }}
+                        />
+                      ) : null}
+                      {codeFlow ? (
+                        <NativeActionButton
+                          label={usingCode ? t("Use password") : t("Use email code")}
+                          prominence="quiet"
+                          disabled={pending}
+                          onPress={() => {
+                            setUsePassword(usingCode);
+                            setError(null);
+                          }}
+                          style={{ alignSelf: "center", marginTop: 16 }}
+                        />
+                      ) : null}
                       {reset.sso && mode !== "forgot" ? (
                         <NativeActionButton
                           label={t("Continue with {name}", { name: reset.sso.name })}
                           prominence="quiet"
                           disabled={pending}
-                          onPress={() => void sso()}
+                          onPress={() => void externalSignIn(continueWithSso)}
                           style={{ alignSelf: "center", marginTop: 16 }}
                         />
                       ) : null}
-                      {mode === "in" && reset?.passwordReset && reset.resetUrl ? (
+                      {mode === "in" && !usingCode && reset?.passwordReset && reset.resetUrl ? (
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}

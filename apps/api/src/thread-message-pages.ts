@@ -53,9 +53,9 @@ export async function loadMessagePage(
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
         : false;
-      // Peer text/activity stays out of the normal transcript (including the
-      // around target). Receipts remain via withoutPeerRunMessages; full peer
-      // history belongs in the bot-messages overlay (includePeerRuns).
+      // Peer activity stays out of the normal transcript (including the
+      // around target). Full peer history belongs in the bot-messages overlay
+      // (includePeerRuns).
       const messages = includePeerRuns ? rows : await withoutPeerRunMessages(prisma, rows);
       return {
         threadId,
@@ -142,13 +142,15 @@ async function withoutPeerRunMessages<
       return blocks.some(isBackgroundInputBlock);
     }
     if (!peerRunIds.has(row.runId)) return true;
-    // Keep peer receipts (chips), ask cards, and the bot's own text reply.
+    // Keep peer receipts (chips), ask cards, and the bot's own text or attachment reply.
     return blocks.some(
       (block) =>
         block.kind === "bot_message_sent" ||
         block.kind === "bot_message_received" ||
         block.kind === "ask" ||
-        block.kind === "text",
+        block.kind === "text" ||
+        block.kind === "file" ||
+        block.kind === "image",
     );
   });
 }
@@ -185,7 +187,7 @@ export async function isBackgroundRun(
   return backgroundRun;
 }
 
-/** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks, text). */
+/** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks, text, attachments). */
 export function shouldForwardPeerThreadEvent(event: {
   type: string;
   payload: { blocks?: unknown };
@@ -213,7 +215,9 @@ export function shouldForwardPeerThreadEvent(event: {
         (block.kind === "bot_message_received" ||
           block.kind === "bot_message_sent" ||
           block.kind === "ask" ||
-          block.kind === "text"),
+          block.kind === "text" ||
+          block.kind === "file" ||
+          block.kind === "image"),
     )
   );
 }

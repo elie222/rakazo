@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  holdAnonymousGate,
   holdUnreachableGate,
   sessionGate,
   sessionRetryDelayMs,
@@ -46,6 +47,14 @@ describe("session gate", () => {
     expect(holdUnreachableGate("anonymous", true)).toBe(false);
     expect(showSessionUnavailable("loading", true)).toBe(true);
     expect(showSessionUnavailable("loading", false)).toBe(false);
+  });
+
+  it("keeps the signed-out pages across a refetch", () => {
+    expect(holdAnonymousGate("anonymous", false)).toBe(true);
+    expect(holdAnonymousGate("loading", true)).toBe(true);
+    expect(holdAnonymousGate("loading", false)).toBe(false);
+    expect(holdAnonymousGate("authenticated", true)).toBe(false);
+    expect(holdAnonymousGate("unreachable", true)).toBe(false);
   });
 
   it("backs off between retries and stops growing", () => {

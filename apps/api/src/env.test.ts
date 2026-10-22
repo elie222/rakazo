@@ -174,6 +174,25 @@ describe("loadEnv", () => {
     expect(env.apiHost).toBe("0.0.0.0");
   });
 
+  it("encrypts content on servers by default and fails startup on an invalid switch", () => {
+    const production = {
+      DATABASE_URL: base.DATABASE_URL,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+      ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "e2b",
+    };
+    expect(loadEnv(production).contentEncryption).toBe(true);
+    expect(loadEnv({ ...production, CONTENT_ENCRYPTION: "off" }).contentEncryption).toBe(false);
+    expect(
+      loadEnv({ DATABASE_URL: base.DATABASE_URL, NODE_ENV: "development" }).contentEncryption,
+    ).toBe(false);
+    expect(() => loadEnv({ ...production, CONTENT_ENCRYPTION: "maybe" })).toThrow(
+      /CONTENT_ENCRYPTION must be "on" or "off"/,
+    );
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     const env = loadEnv({
       DATABASE_URL: base.DATABASE_URL,
@@ -207,6 +226,16 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 
+  it("loads per-client minimum builds and refuses a malformed one", () => {
+    expect(loadEnv(base).minimumClientBuilds).toEqual({});
+    expect(
+      loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "web=20261022093015" }).minimumClientBuilds,
+    ).toEqual({ web: "20261022093015" });
+    expect(() => loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "latest" })).toThrow(
+      /RAKAZO_MIN_CLIENT_BUILD/,
+    );
+  });
+
   it("loads optional updater sidecar wiring without requiring the token at boot", () => {
     expect(loadEnv(base).updaterUrl).toBeUndefined();
     expect(loadEnv(base).updaterToken).toBeUndefined();
@@ -217,6 +246,13 @@ describe("loadEnv", () => {
     });
     expect(env.updaterUrl).toBe("http://updater:7092");
     expect(env.updaterToken).toBe("fake-review-updater-token-000000000000");
+  });
+
+  it("loads an optional Expo access token", () => {
+    expect(loadEnv(base).expoAccessToken).toBeUndefined();
+    expect(loadEnv({ ...base, EXPO_ACCESS_TOKEN: " fake-expo-token " }).expoAccessToken).toBe(
+      "fake-expo-token",
+    );
   });
 
   it("loads SMTP configuration and keeps the email emulator out of production", () => {
@@ -281,6 +317,15 @@ describe("OIDC environment", () => {
   it("guards password-only lockout without contacting discovery", () => {
     expect(() => loadEnv({ ...base, AUTH_PASSWORD_ENABLED: "false" })).toThrow(/requires OIDC/);
     expect(loadEnv({ ...base, ...oidc, AUTH_PASSWORD_ENABLED: "false" }).passwordAuth).toBe(false);
+  });
+  it("leaves the breached password check off unless explicitly enabled", () => {
+    expect(loadEnv(base).breachedPasswordCheck).toBe(false);
+    expect(
+      loadEnv({ ...base, AUTH_BREACHED_PASSWORD_CHECK_ENABLED: "true" }).breachedPasswordCheck,
+    ).toBe(true);
+    expect(() => loadEnv({ ...base, AUTH_BREACHED_PASSWORD_CHECK_ENABLED: "yes" })).toThrow(
+      "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
+    );
   });
   it("defaults to SSO with no policy bypass", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({

@@ -24,6 +24,18 @@ describe("creator skill imports", () => {
       )?.href,
     ).toBe(match);
   });
+  it("prefers skill matching skillPathSlug but falls back to first repository match", () => {
+    const skills = [
+      { githubUrl: "https://github.com/example/recipes/tree/main/skills/baking" },
+      { githubUrl: "https://github.com/example/recipes/tree/main/skills/cooking" },
+    ];
+    expect(
+      findCreatorSkillUrl(skills, "example", "recipes", "cooking")?.href,
+    ).toBe("https://github.com/example/recipes/tree/main/skills/cooking");
+    expect(
+      findCreatorSkillUrl(skills, "example", "recipes", "grilling")?.href,
+    ).toBe("https://github.com/example/recipes/tree/main/skills/baking");
+  });
   it.each([undefined, {}, [], [{ githubUrl: "https://github.com/other/recipes" }]])(
     "returns no match for %j",
     (skills) => {

@@ -87,6 +87,37 @@ describe("user-visible messages", () => {
     ]);
   });
 
+  it("folds peer-run file replies under their received marker", () => {
+    const messages = [
+      ...peerExchange,
+      message("file_reply", "run-peer", [
+        {
+          kind: "file",
+          artifactId: "file1",
+          mimeType: "application/pdf",
+          name: "test.pdf",
+          size: 100,
+        },
+      ]),
+      message("image_reply", "run-peer", [
+        { kind: "image", artifactId: "img1", mimeType: "image/png", name: "test.png" },
+      ]),
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+
+    expect(transcript.messages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+    ]);
+    expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual([
+      "reply",
+      "file_reply",
+      "image_reply",
+    ]);
+  });
+
   it("keeps peer-run user-input cards inline while folding the reply", () => {
     const messages = [
       ...peerExchange,
@@ -292,12 +323,22 @@ describe("user-visible messages", () => {
           status: "pending",
         },
       ]),
+      message("connect", "run-ticket", [
+        {
+          kind: "app_connect",
+          provider: "gmail",
+          name: "Gmail",
+          description: "",
+          logo: null,
+          status: "pending",
+        },
+      ]),
       message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
       message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
-    ).toEqual(["ask", "computer", "approval", "user"]);
+    ).toEqual(["ask", "computer", "approval", "connect", "user"]);
   });
 });

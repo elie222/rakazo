@@ -26,6 +26,8 @@ export type NativeActionButtonProps = {
   /** Disables the control. Android shows a spinner; iOS keeps the label on a disabled native button. */
   busy?: boolean;
   prominence?: ActionProminence;
+  /** Flat recovery controls and text actions, without native glass styling. */
+  variant?: "rectangular" | "text";
   /** Small native control, without the default filled button minimum height. */
   size?: "default" | "compact";
   /** Optional latched state; false is regular, true is prominent. */
@@ -61,11 +63,11 @@ export type NativeSwitchProps = {
   disabled?: boolean;
   accessibilityLabel: string;
   accessibilityHint?: string;
-  /** Android track colors. Ignored by the iOS switch, which uses `tintColor`. */
+  /** Android track colors. Defaults the ON track to system green and OFF to platform grey. Ignored on iOS. */
   trackColor?: { false?: ColorValue; true?: ColorValue };
   /** Android thumb color. Ignored on iOS. */
   thumbColor?: ColorValue;
-  /** iOS on-state tint. Omitted switches use the system tint. */
+  /** On-state tint (also the Android track fallback). iOS uses system green by default. */
   tintColor?: ColorValue;
 };
 

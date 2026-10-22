@@ -218,10 +218,16 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
-it("renders raster artwork with Image and falls back after failure", async () => {
-  await render(<ConnectorIcon name="Example" logo="https://example.test/logo.png" />);
-  expect(container.querySelector("img")?.getAttribute("src")).toContain("logo.png");
+it("retries extensionless artwork as SVG before falling back", async () => {
+  const logo = "https://logos.example.test/api/gmail";
+  await render(<ConnectorIcon name="Example" logo={logo} />);
+  expect(container.querySelector("img")?.getAttribute("src")).toContain(logo);
   await act(async () => container.querySelector("img")?.dispatchEvent(new Event("error")));
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("svg")?.getAttribute("data-uri")).toBe(logo);
+  await act(async () =>
+    container.querySelector("svg")?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+  );
   expect(container.textContent).toBe("E");
 });
 it("falls back for absent logos and empty names", async () => {
@@ -527,4 +533,22 @@ it("ignores an old focus identity error after the new focus succeeds", async () 
   expect(container.textContent).not.toContain("Old focus failed");
   expect(container.textContent).not.toContain("Retry");
   expect(container.textContent).toContain("New space appAdd");
+});
+
+it("shows registered MCP servers with connector initials and sentence case statuses", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string) =>
+    proc === "mcp/servers/list"
+      ? Promise.resolve([
+          { id: "saved", name: "Saved server", enabled: true, hasSecret: true },
+          { id: "open", name: "Open server", enabled: true, hasSecret: false },
+        ])
+      : fallback?.(proc),
+  );
+  await render();
+  const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
+  expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
+  for (const row of rows) expect(row.querySelector("button")).toBeNull();
 });

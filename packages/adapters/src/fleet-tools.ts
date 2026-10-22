@@ -11,6 +11,7 @@ import {
   GROUP_MEMBER_MAX,
   GROUP_MEMBER_MIN,
   ThinkingLevelSchema,
+  TimeZoneSchema,
   UpdateGroupInput,
 } from "@rakazo/contracts";
 import {
@@ -328,7 +329,7 @@ async function prepareChildRoutine(
   const namedRoutine = CreateRoutineInput.shape.name.safeParse(name);
   if (!namedRoutine.success) return refuse(`name: ${issueMessage(namedRoutine.error)}`);
   const timezone = text(args.timezone) ?? "UTC";
-  if (!isTimeZone(timezone)) {
+  if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }
   const resolved = resolveScheduleTiming(
@@ -1299,15 +1300,6 @@ function issueMessage(error: { issues: Array<{ path: PropertyKey[]; message: str
       issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message,
     )
     .join("; ");
-}
-
-function isTimeZone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-GB", { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function formatTime(date: Date, timezone: string): string {

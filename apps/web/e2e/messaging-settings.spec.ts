@@ -12,7 +12,7 @@ test.afterEach(async ({ page }) => {
  * navigation from account settings, layout, and both action lists — renders
  * exactly as it would against a live deployment.
  */
-test("Korean messaging settings show linked chat apps, channels, and connections", async ({
+test("messaging settings show linked chat apps, channels, connections, and team conversations", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/messaging/status", (route) =>
@@ -86,75 +86,6 @@ test("Korean messaging settings show linked chat apps, channels, and connections
     }),
   );
 
-  const stamp = Date.now();
-  const userName = `Messenger ${stamp}`;
-  await signup(page, `messaging-${stamp}@rakazo.test`, "password12", userName);
-  await completeOnboarding(page);
-
-  await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Settings" }).click();
-  const settings = page.getByTestId("user-settings");
-  await settings
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Messaging", exact: true }) })
-    .scrollIntoViewIfNeeded();
-  await captureScreenshot(page, testInfo, "settings-messaging-summary");
-  await settings.getByTestId("ui-locale-select").click();
-  await settings.getByRole("option", { name: "한국어", exact: true }).click();
-  await expect(settings.getByRole("heading", { name: "메시징", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "메시징 설정 관리" }).click();
-
-  await expect(page.getByTestId("messaging-settings")).toBeVisible();
-  await expect(
-    page.getByText("iMessage · Slack · WhatsApp · Telegram · Telegram (work) · Feishu"),
-  ).toBeVisible();
-  await expect(page.getByText("iMessage · +15551230001")).toBeVisible();
-  await expect(page.getByText("→ Chief")).toBeVisible();
-  await expect(page.getByText("Telegram (work) · 424242")).toBeVisible();
-  await expect(page.getByText("→ Lead")).toBeVisible();
-  await expect(page.getByRole("button", { name: "연결 해제" })).toHaveCount(2);
-  await expect(page.getByText("Family")).toBeVisible();
-  await expect(page.getByText("Dana's Assistant")).toBeVisible();
-  await expect(page.getByRole("button", { name: "승인" })).toHaveCount(2);
-
-  // Linking flow: pick a bot, request a code, read it back.
-  await page.getByLabel("연결할 Bot").selectOption({ index: 1 });
-  await page.getByRole("button", { name: "채팅 앱 연결" }).click();
-  await expect(page.getByTestId("messaging-link-code")).toContainText(
-    "채팅 앱에서 연결할 회선으로 ABCD-2345를 보내세요.",
-  );
-  await captureScreenshot(page, testInfo, "messaging-settings-ko");
-
-  await page.getByRole("button", { name: "메시징 설정 닫기" }).click();
-  await expect(page.getByTestId("messaging-settings")).toHaveCount(0);
-});
-
-test("team conversation settings open from messaging overlay", async ({ page }, testInfo) => {
-  await page.route("**/rpc/messaging/status", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        json: {
-          enabled: true,
-          providers: ["sendblue", "slack", "whatsapp", "telegram", "lark"],
-          openSignup: false,
-          identities: [],
-        },
-      }),
-    }),
-  );
-  await page.route("**/rpc/messaging/channels/list", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ json: [] }),
-    }),
-  );
-  await page.route("**/rpc/messaging/connections/list", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ json: [] }),
-    }),
-  );
   await page.route("**/rpc/externalConversations/updatePolicy", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -216,15 +147,18 @@ test("team conversation settings open from messaging overlay", async ({ page }, 
   });
 
   const stamp = Date.now();
-  const userName = `TeamChat ${stamp}`;
-  await signup(page, `team-chat-${stamp}@rakazo.test`, "password12", userName);
+  const userName = `Messenger ${stamp}`;
+  await signup(page, `messaging-${stamp}@rakazo.test`, "password12", userName);
   await completeOnboarding(page);
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(
-    page.getByTestId("user-settings").getByRole("heading", { name: "Messaging" }),
-  ).toBeVisible();
+  const settings = page.getByTestId("user-settings");
+  await settings
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Messaging", exact: true }) })
+    .scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "settings-messaging-summary");
   await page.getByRole("button", { name: "Manage messaging settings" }).click();
 
   const messagingSettings = page.getByTestId("messaging-settings");
@@ -241,4 +175,37 @@ test("team conversation settings open from messaging overlay", async ({ page }, 
   await expect(conversationSettings.getByText("Room guidance")).toBeVisible();
   await expect(conversationSettings.getByText("GitHub")).toBeVisible();
   await captureScreenshot(page, testInfo, "messaging-team-conversation-settings");
+  await page.getByRole("button", { name: "Close messaging settings" }).click();
+  await expect(messagingSettings).toHaveCount(0);
+
+  await page.getByRole("button", { name: new RegExp(userName) }).click();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await settings.getByTestId("ui-locale-select").click();
+  await page.getByRole("option", { name: "한국어", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "메시징", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "메시징 설정 관리" }).click();
+
+  await expect(page.getByTestId("messaging-settings")).toBeVisible();
+  await expect(
+    page.getByText("iMessage · Slack · WhatsApp · Telegram · Telegram (work) · Feishu"),
+  ).toBeVisible();
+  await expect(page.getByText("iMessage · +15551230001")).toBeVisible();
+  await expect(page.getByText("→ Chief")).toBeVisible();
+  await expect(page.getByText("Telegram (work) · 424242")).toBeVisible();
+  await expect(page.getByText("→ Lead")).toBeVisible();
+  await expect(page.getByRole("button", { name: "연결 해제" })).toHaveCount(2);
+  await expect(page.getByText("Family")).toBeVisible();
+  await expect(page.getByText("Dana's Assistant")).toBeVisible();
+  await expect(page.getByRole("button", { name: "승인" })).toHaveCount(2);
+
+  // Linking flow: pick a bot, request a code, read it back.
+  await page.getByLabel("연결할 Bot").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "채팅 앱 연결" }).click();
+  await expect(page.getByTestId("messaging-link-code")).toContainText(
+    "채팅 앱에서 연결할 회선으로 ABCD-2345를 보내세요.",
+  );
+  await captureScreenshot(page, testInfo, "messaging-settings-ko");
+
+  await page.getByRole("button", { name: "메시징 설정 닫기" }).click();
+  await expect(page.getByTestId("messaging-settings")).toHaveCount(0);
 });

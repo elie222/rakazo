@@ -13,27 +13,9 @@ can run on your own machine. It is available on the web, as an Electron desktop 
 and computer provider, or run the complete stack locally.
 
 It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
-OpenClaw, Hermes Agent, and Hark Pro.
+OpenClaw, and Hermes Agent.
 
 Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
-
-## How Rakazo compares
-
-Once Rakazo is running, it is just chat, like Grok Bot: you set up a bot and manage it from that
-chat. Muse, Dots, Instinct, and Hark Pro are hosted assistants. OpenClaw
-and Hermes Agent are also open source agents you can run yourself. Their docs describe installers,
-config files, and a gateway. Hermes Desktop can reach a first chat without the CLI; a messaging
-gateway is a separate process.
-
-- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
-- [Muse](https://rakazo.com/muse-alternative/)
-- [Dots](https://rakazo.com/dots-alternative/)
-- [Instinct](https://rakazo.com/instinct-alternative/), the personal assistant you text or call
-- [OpenClaw](https://rakazo.com/openclaw-alternative/)
-- [Hermes Agent](https://rakazo.com/hermes-alternative/), Nous Research's open source agent
-- [Hark Pro](https://rakazo.com/hark-alternative/), the personal agent at hark.com
-- [All comparisons](https://rakazo.com/alternatives/)
-- [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
 
 ## Features
 
@@ -50,6 +32,14 @@ gateway is a separate process.
 
 https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 
+## Thanks
+
+- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+
 ## Stack
 
 - TypeScript
@@ -62,14 +52,6 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Pi
 - Docker, E2B, Daytona, CreateOS, and Boat
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
-
-## Deploy on Railway
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
-
-Deploy a private Rakazo instance with PostgreSQL, persistent storage and Railway computers.
-Enter your email and Railway API token, then connect a model after signing in.
-See [setup, security defaults and backups](./infra/railway/README.md).
 
 ## Quick start (published images)
 
@@ -113,6 +95,8 @@ Put HTTPS in front of port 5173; [docs/self-host.md](./docs/self-host.md#public-
 covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
 the `https://` address.
 
+Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see the [Railway setup guide](./infra/railway/README.md).
+
 ## Local development (source checkout)
 
 You need Node.js 22.22.2 or newer in the 22.x line, Node.js 24.x, or Node.js 26+;
@@ -124,8 +108,10 @@ cd rakazo
 cp .env.example .env
 ```
 
-Set `POSTGRES_PASSWORD` (for example `openssl rand -hex 16`), then put the same value in
-`DATABASE_URL`. Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to
+Set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` to two values from `openssl rand -hex 16`,
+then put them in `DATABASE_MIGRATION_URL` and `DATABASE_URL`. The app connects as its own
+`rakazo_app` login, which row-level security applies to; migrations run as the owner
+([database roles](docs/self-host.md#database-roles)). Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to
 independent long random values. Docker sandboxes also need a dedicated
 `SANDBOX_SUPERVISOR_TOKEN`. You can also set `OPENROUTER_API_KEY`, or connect a supported
 model provider during onboarding.
@@ -158,7 +144,8 @@ pnpm dev
 
 Postgres stays network-internal in the default Compose file (same as published images). The
 `postgres-host` overlay publishes loopback `127.0.0.1:5433` for host-side `pnpm` and DB tools.
-If that port is occupied, change `POSTGRES_HOST_PORT` and the port in `DATABASE_URL` in `.env`.
+If that port is occupied, change `POSTGRES_HOST_PORT` and the ports in `DATABASE_URL` and
+`DATABASE_MIGRATION_URL` in `.env`.
 Without the overlay, open a shell with
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
 Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the
@@ -217,6 +204,21 @@ app verifies Rakazo's health endpoint before saving, and later launches go strai
 instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
 menu turns it off.
 
+On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
+that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
+`dlopen(): error loading libfuse.so.2`. Install the FUSE 2 library (`fuse-libs` on Fedora,
+`libfuse2t64` on Ubuntu 24.04, `libfuse2` on older Ubuntu and Debian), or run the AppImage without
+FUSE:
+
+```bash
+chmod +x Rakazo-*.AppImage
+./Rakazo-*.AppImage --appimage-extract-and-run
+```
+
+**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
+before starting the app.
+
 Use **Change Rakazo Server…** in the application menu to reconnect. Closing that window without
 saving returns to the previous instance. For development automation, set `RAKAZO_WEB_URL` to point
 the shell somewhere else without changing the saved instance, or `RAKAZO_FORCE_SETUP=1` to run
@@ -265,7 +267,17 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 - [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
-- [Fleet management](./docs/fleet-management.md)
+- [Manage the bots it creates](./docs/fleet-management.md)
+
+## How Rakazo compares
+
+- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
+- [Muse](https://rakazo.com/muse-alternative/)
+- [Dots](https://rakazo.com/dots-alternative/)
+- [Instinct](https://rakazo.com/instinct-alternative/)
+- [OpenClaw](https://rakazo.com/openclaw-alternative/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/)
+- [All comparisons](https://rakazo.com/alternatives/)
 
 ## Contributing
 

@@ -41,6 +41,113 @@ class PageBrowserTest(unittest.TestCase):
             client._read_frame()
         client._sock.recv.assert_not_called()
 
+    def settling_client(self, idle_after_calls):
+        """A client whose page reaches networkIdle on the given getFrameTree call, or never."""
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        frame_tree_calls = []
+
+        def event(name, loader="L1"):
+            client._handle_event({"method": "Page.lifecycleEvent", "sessionId": "session",
+                                  "params": {"frameId": "F", "loaderId": loader, "name": name}})
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            if method == "Page.setLifecycleEventsEnabled":
+                # Chromium replays what the current document has reached: loaded, still fetching.
+                for name in ("commit", "DOMContentLoaded", "load", "networkAlmostIdle"):
+                    event(name)
+            if method == "Page.getFrameTree":
+                frame_tree_calls.append(method)
+                if len(frame_tree_calls) == idle_after_calls:
+                    event("networkIdle")
+                return {"frameTree": {"frame": {"id": "F"}}}
+            return {}
+
+        client.call = call
+        return client, frame_tree_calls, event
+
+    def test_snapshot_waits_for_the_page_to_finish_its_requests(self):
+        client, calls, _ = self.settling_client(idle_after_calls=3)
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate, \
+                patch.object(helper.time, "sleep"):
+            evaluate.return_value = {"title": "Example", "tree": "Signed in as test-user"}
+            result = helper.snapshot(client, "session")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(result, {"ok": True, "title": "Example", "tree": "Signed in as test-user"})
+
+    def test_snapshot_flags_a_page_that_is_still_loading(self):
+        client, calls, _ = self.settling_client(idle_after_calls=0)
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate, \
+                patch.object(helper, "SETTLE_SECONDS", 0.2):
+            evaluate.return_value = {"title": "Example", "tree": "Sign in Loading"}
+            result = helper.snapshot(client, "session")
+        self.assertGreater(len(calls), 1)
+        self.assertEqual(result, {"ok": True, "title": "Example", "tree": "Sign in Loading", "loading": True})
+
+    def test_snapshot_reports_loading_when_the_browser_is_too_slow_to_answer(self):
+        timeouts = []
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            # A browser that answers no call before that call's own timeout.
+            timeouts.append(timeout_s)
+            raise TimeoutError(f"CDP call timed out: {method}")
+
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client.call = call
+        with patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate:
+            evaluate.return_value = {"title": "Example", "tree": "Sign in Loading"}
+            result = helper.snapshot(client, "session")
+        self.assertEqual(result, {"ok": True, "title": "Example", "tree": "Sign in Loading", "loading": True})
+        self.assertTrue(timeouts)
+        self.assertTrue(all(timeout <= helper.SETTLE_SECONDS for timeout in timeouts), timeouts)
+
+    def test_slow_lifecycle_enable_exhausts_the_settle_budget(self):
+        # Advance a fake clock by the timeout an unresponsive CDP call receives.
+        now = [0.0]
+        calls = []
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            calls.append((method, timeout_s))
+            now[0] += timeout_s
+            raise TimeoutError("CDP enable timed out")
+
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client.call = call
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]), \
+                patch.object(helper, "ensure_helpers"), patch.object(helper, "eval_json") as evaluate:
+            evaluate.return_value = {"tree": "Loading"}
+            result = helper.snapshot(client, "session")
+        self.assertEqual(result, {"ok": True, "tree": "Loading", "loading": True})
+        self.assertEqual(calls, [("Page.setLifecycleEventsEnabled", helper.SETTLE_SECONDS)])
+        self.assertLessEqual(now[0], helper.SETTLE_SECONDS)
+
+    def test_frame_wait_uses_only_the_budget_left_after_enabling_events(self):
+        now = [0.0]
+        calls = []
+
+        def call(method, params=None, *, session_id=None, timeout_s=30.0):
+            calls.append((method, timeout_s))
+            if method == "Page.setLifecycleEventsEnabled":
+                now[0] += helper.SETTLE_SECONDS - 0.01
+                return {}
+            now[0] += timeout_s
+            raise TimeoutError("CDP frame timed out")
+
+        client = helper.CdpClient("ws://127.0.0.1:9222/test")
+        client.call = call
+        with patch.object(helper.time, "monotonic", side_effect=lambda: now[0]):
+            self.assertFalse(helper.wait_for_settle(client, "session"))
+        self.assertEqual([method for method, _ in calls],
+                         ["Page.setLifecycleEventsEnabled", "Page.getFrameTree"])
+        self.assertAlmostEqual(calls[1][1], 0.01)
+        self.assertLessEqual(now[0], helper.SETTLE_SECONDS)
+
+    def test_a_new_document_does_not_inherit_the_old_one_being_idle(self):
+        client, _, event = self.settling_client(idle_after_calls=0)
+        event("networkIdle")
+        event("init", loader="L2")
+        event("load", loader="L2")
+        self.assertEqual(client.lifecycle("session", "F"), {"init", "load"})
+
     def test_rejects_url_credentials_before_navigation(self):
         client = Mock()
         for url in ("http://example:fake-password@example.test", "https://example:fake-password@example.test"):

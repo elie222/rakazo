@@ -1,14 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "./generated/prisma/client.js";
+import type { Prisma, PrismaClient } from "./generated/prisma/client.js";
 import { recordUsage } from "./usage.js";
+
+function client(createMany: ReturnType<typeof vi.fn>) {
+  const tx = { usageRecord: { createMany }, modelCreditEntry: { findUnique: async () => null } };
+  return {
+    $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(tx),
+  } as unknown as Pick<PrismaClient, "$transaction">;
+}
 
 describe("usage ledger", () => {
   it("retains charged usage arriving after its run was deleted", async () => {
-    const createMany = vi
-      .fn()
-      .mockRejectedValueOnce({ code: "P2003" })
-      .mockResolvedValueOnce({ count: 1 });
-    const prisma = { usageRecord: { createMany } } as unknown as Pick<PrismaClient, "usageRecord">;
+    const createMany = vi.fn(async (_args: { data: Prisma.UsageRecordCreateManyInput[] }) => ({
+      count: 1,
+    }));
+    const prisma = client(createMany);
     await recordUsage(
       prisma,
       {
@@ -21,18 +27,22 @@ describe("usage ledger", () => {
       },
       { spaceId: "space-fixture", userId: "user-fixture", runId: "deleted-run" },
     );
-    expect(createMany).toHaveBeenCalledTimes(2);
-    expect(createMany.mock.calls[1]?.[0]).toMatchObject({
-      data: [expect.objectContaining({ runId: null, parentRunId: "deleted-run", inputTokens: 10 })],
+    expect(createMany).toHaveBeenCalledTimes(1);
+    expect(createMany.mock.calls[0]?.[0]).toMatchObject({
+      data: [
+        expect.objectContaining({
+          runId: "deleted-run",
+          parentRunId: "deleted-run",
+          inputTokens: 10,
+        }),
+      ],
     });
   });
   it("persists every reported bucket and durable operation attribution idempotently", async () => {
-    const createMany = vi.fn(async () => ({ count: 1 }));
-    const create = vi.fn();
-    const prisma = { usageRecord: { createMany, create } } as unknown as Pick<
-      PrismaClient,
-      "usageRecord"
-    >;
+    const createMany = vi.fn(async (_args: { data: Prisma.UsageRecordCreateManyInput[] }) => ({
+      count: 1,
+    }));
+    const prisma = client(createMany);
     const event = {
       type: "usage" as const,
       provider: "fixture",
@@ -73,11 +83,12 @@ describe("usage ledger", () => {
       ],
       skipDuplicates: true,
     });
-    expect(create).not.toHaveBeenCalled();
   });
   it("keeps unknown usage null and never invents a foreground run for background work", async () => {
-    const create = vi.fn(async (args) => args.data);
-    const prisma = { usageRecord: { create } } as unknown as Pick<PrismaClient, "usageRecord">;
+    const createMany = vi.fn(async (_args: { data: Prisma.UsageRecordCreateManyInput[] }) => ({
+      count: 1,
+    }));
+    const prisma = client(createMany);
     await recordUsage(
       prisma,
       { type: "usage", provider: "fixture", model: "test", inputTokens: null, outputTokens: null },
@@ -88,7 +99,7 @@ describe("usage ledger", () => {
         operationId: "job-fixture",
       },
     );
-    const data = create.mock.calls[0]?.[0].data;
+    const data = createMany.mock.calls[0]?.[0].data[0];
     expect(data).toMatchObject({
       operationKind: "compaction",
       inputTokens: null,
@@ -96,6 +107,6 @@ describe("usage ledger", () => {
       cacheReadTokens: null,
       costUsd: null,
     });
-    expect(data).not.toHaveProperty("runId");
+    expect(data?.runId).toBeUndefined();
   });
 });

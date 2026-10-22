@@ -33,6 +33,7 @@ import {
   expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
+  retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -573,6 +574,7 @@ function messagesWithLiveEvents(
 
 function mapRun(run: {
   id: string;
+  userId: string;
   botId: string;
   threadId: string;
   taskId: string;
@@ -588,6 +590,7 @@ function mapRun(run: {
 }) {
   return {
     id: run.id,
+    userId: run.userId,
     botId: run.botId,
     threadId: run.threadId,
     taskId: run.taskId,
@@ -731,6 +734,14 @@ export async function sendThreadMessage(
             })
           )
             answered.push({ ...run, status: "queued" });
+          else
+            await retireWaitingQuestionInTransaction(tx, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              botId: target.botId,
+              runId: run.id,
+              answer: input.text ?? "",
+            });
         }
         if (answered.length) {
           const primary = answered[0];
@@ -892,6 +903,14 @@ export async function sendThreadMessage(
             const queuedForBot = answeredByBotId.get(run.botId) ?? [];
             queuedForBot.push({ ...run, status: "queued" });
             answeredByBotId.set(run.botId, queuedForBot);
+          } else {
+            await retireWaitingQuestionInTransaction(tx, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              botId: run.botId,
+              runId: run.id,
+              answer: input.text ?? "",
+            });
           }
           continue;
         }
@@ -1387,6 +1406,58 @@ export async function stopThreadRuns(
       executionLeaseExpiresAt: null,
     },
   });
+}
+
+/**
+ * Marks the thread read up to its latest message. Returns the seq the user had read up
+ * to before, or null when the chat wasn't unread or nothing new arrived; the first
+ * answer of a visit places the "New" divider. A message landing mid-update makes the
+ * conditional write miss, so it retries rather than marking that message read; a chat
+ * that stays that busy is read under the thread's row lock instead.
+ */
+export async function markThreadRead(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+): Promise<number | null> {
+  const where = { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const thread = await prisma.thread.findFirst({
+      where,
+      select: { unread: true, lastReadSeq: true, nextMessageSeq: true },
+    });
+    if (!thread) return null;
+    const latestSeq = thread.nextMessageSeq - 1;
+    if (!thread.unread && thread.lastReadSeq >= latestSeq) return null;
+    const result = await prisma.thread.updateMany({
+      where: { ...where, lastReadSeq: thread.lastReadSeq, nextMessageSeq: thread.nextMessageSeq },
+      data: { unread: false, lastReadSeq: latestSeq },
+    });
+    if (result.count > 1) throw new IsolationError();
+    if (result.count === 1) return dividerSeq(thread, latestSeq);
+  }
+  // New messages take the same row lock, so none can land between this read and write.
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+    const thread = await tx.thread.findFirst({
+      where,
+      select: { unread: true, lastReadSeq: true, nextMessageSeq: true },
+    });
+    if (!thread) return null;
+    const latestSeq = thread.nextMessageSeq - 1;
+    if (!thread.unread && thread.lastReadSeq >= latestSeq) return null;
+    const result = await tx.thread.updateMany({
+      where,
+      data: { unread: false, lastReadSeq: latestSeq },
+    });
+    if (result.count > 1) throw new IsolationError();
+    return dividerSeq(thread, latestSeq);
+  });
+}
+
+/** A chat only gets a divider when its unread dot was on, so replies seen live never do. */
+function dividerSeq(thread: { unread: boolean; lastReadSeq: number }, latestSeq: number) {
+  return thread.unread && thread.lastReadSeq < latestSeq ? thread.lastReadSeq : null;
 }
 
 export async function setThreadUnreadState(

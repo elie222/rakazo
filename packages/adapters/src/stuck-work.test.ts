@@ -222,6 +222,30 @@ describe("reconcileStuckWork", () => {
     ]);
   });
 
+  it("stops reminding once Expo reports the device unregistered", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-stuck-push-"));
+    dirs.push(dataDir);
+    const run = candidate("waiting_takeover", 5);
+    const stamps: Array<{ runId: string | null; payload: unknown }> = [];
+    const prisma = noticePrisma(run, stamps);
+    const { jobs } = publisher();
+    const push = new ExpoPushProvider(dataDir);
+    await savePushToken(dataDir, run.userId, "ExponentPushToken[gone]");
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        data: { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reconcileStuckWork({ prisma, jobs, notifications: push, now, batchSize: 100 });
+    await reconcileStuckWork({ prisma, jobs, notifications: push, now, batchSize: 100 });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(stamps).toHaveLength(0);
+    await expect(push.hasPushRecipient(run.userId)).resolves.toBe(false);
+  });
+
   it("retries a pending reminder left behind when the worker stops", async () => {
     const run = candidate("waiting_takeover", 5);
     const otherEpisode = {

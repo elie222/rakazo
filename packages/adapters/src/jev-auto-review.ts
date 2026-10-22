@@ -11,6 +11,7 @@ import {
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
   DEFAULT_JEV_MODEL,
+  MAX_OWNER_WORDS_CHARS,
   sanitizeAutoReviewReason,
 } from "./auto-review.js";
 import { readBodyCapped } from "./web-ssrf.js";
@@ -111,23 +112,33 @@ export class JevAutoReviewProvider implements AutoReviewProvider {
           state: {
             toolName: request.toolName,
             connectorKind: request.connectorKind,
-            args: boundArgs(request.args),
-            userTask: truncate(request.userTask, MAX_TASK_CHARS),
+            // A new site is judged on the whole URL, since any part of it can carry data out.
+            args: request.newSite ? request.args : boundArgs(request.args),
+            userTask: truncate(
+              request.userTask,
+              request.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
+            ),
             botDescription: truncate(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
               effect: rule.effect,
               matchKind: rule.matchKind,
               matchValue: rule.matchValue,
             })),
+            ...(request.newSite ? { newSite: true } : {}),
           },
           questions: {
             decision: {
               type: "choice",
               instructions: "Should this bot tool call auto-pass or ask the user to approve?",
-              criteria: {
-                pass: "Clearly fits the user task and looks low risk",
-                ask: "Unexpected, high risk, or outside the task. Ask the user",
-              },
+              criteria: request.newSite
+                ? {
+                    pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
+                    ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
+                  }
+                : {
+                    pass: "Clearly fits the user task and looks low risk",
+                    ask: "Unexpected, high risk, or outside the task. Ask the user",
+                  },
             },
           },
         }),

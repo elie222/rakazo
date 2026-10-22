@@ -63,7 +63,6 @@ async function expectRailAtRest(page: Page, row: Locator) {
   });
   await expect(rail).toHaveCSS("opacity", "0");
   await expect(rail).toHaveCSS("pointer-events", "none");
-  await expect(row.getByTestId("message-hover-time")).toHaveCSS("opacity", "0");
 }
 
 test("message hover shows beside-bubble actions; reply links to parent", async ({
@@ -91,15 +90,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
 
   const botRail = await revealHoverRail(botRow);
   const botToolbar = botRow.getByTestId("message-hover-actions");
-  const botTime = botRow.getByTestId("message-hover-time");
-  await expect(botTime).toHaveCSS("opacity", "1");
-  const botTimeBox = await botTime.boundingBox();
-  const botRowBox = await botRow.boundingBox();
-  expect(botTimeBox).not.toBeNull();
-  expect(botRowBox).not.toBeNull();
-  expect(
-    Math.abs(botTimeBox!.x + botTimeBox!.width - botRowBox!.x - botRowBox!.width),
-  ).toBeLessThan(2);
+  await expect(botRow.locator("time")).toHaveCount(0);
 
   await expect(botToolbar.getByRole("button", { name: "Reply" })).toBeVisible();
   await expect(botToolbar.getByRole("button", { name: "More" })).toBeVisible();
@@ -194,16 +185,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
     .toBeLessThan(8);
   await captureScreenshot(page, testInfo, "message-bubble-wide-desktop");
 
-  // Time appears at the opposite row edge on hover, outside More.
   await revealHoverRail(parentRow);
-  const rowTime = parentRow.getByTestId("message-hover-time");
-  await expect(rowTime).toHaveCSS("opacity", "1");
-  await expect(rowTime).toHaveText(/\d/);
-  const timeBox = await rowTime.boundingBox();
-  const rowBox = await parentRow.boundingBox();
-  expect(timeBox).not.toBeNull();
-  expect(rowBox).not.toBeNull();
-  expect(Math.abs(timeBox!.x - rowBox!.x)).toBeLessThan(2);
   await toolbar.getByRole("button", { name: "More" }).click();
   await expect(page.getByRole("menu")).toBeVisible();
   await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
@@ -283,6 +265,17 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const parentPreview = replyRow.getByTestId("reply-parent-preview");
   await expect(parentPreview).toBeVisible();
   await expect(parentPreview).toContainText(parentText);
+  // The reply line sits above the bubble; the rail centers on the bubble, not the pair.
+  const replyRail = await revealHoverRail(replyRow);
+  const replyBubble = replyRow.getByTestId("message-user-bubble");
+  await expect
+    .poll(async () => {
+      const railBox = await replyRail.boundingBox();
+      const bubbleBox = await replyBubble.boundingBox();
+      if (!railBox || !bubbleBox) return null;
+      return Math.abs(railBox.y + railBox.height / 2 - (bubbleBox.y + bubbleBox.height / 2));
+    })
+    .toBeLessThan(2);
   await expect(transcript.getByTestId("time-separator").first()).toContainText(/Today/);
   await captureScreenshot(page, testInfo, "message-reply-thread");
 
@@ -296,6 +289,52 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await parentRow.scrollIntoViewIfNeeded();
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
+});
+
+test("a message with an attachment centers hover actions on its text bubble", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `hover-attach-${stamp}@rakazo.test`, "password12", "Hover Attach");
+  await completeOnboarding(page);
+  const composer = page.getByRole("combobox", { name: /^Message/ });
+  await expect(composer).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("meeting notes"),
+  });
+  await expect(page.getByRole("button", { name: "Remove notes.txt" })).toBeVisible();
+  const text = `hover-attach-${stamp}`;
+  await sendComposerMessage(page, composer, text);
+
+  const row = page
+    .getByTestId("transcript")
+    .locator("[data-message-id]")
+    .filter({ hasText: text })
+    .first();
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await expect(row.getByText("notes.txt")).toBeVisible();
+  // Blocks in one message keep the same gap as separate messages instead of touching.
+  // Poll: the bot's reply can land and scroll the transcript between the two measurements.
+  await expect
+    .poll(async () => {
+      const bubbleBox = await row.getByTestId("message-user-bubble").boundingBox();
+      const fileBox = await row.getByRole("button", { name: /notes\.txt/ }).boundingBox();
+      return bubbleBox && fileBox ? fileBox.y - (bubbleBox.y + bubbleBox.height) : null;
+    })
+    .toBeGreaterThanOrEqual(6);
+  const rail = await revealHoverRail(row);
+  const bubble = row.getByTestId("message-user-bubble");
+  await expect
+    .poll(async () => {
+      const railBox = await rail.boundingBox();
+      const bubbleBox = await bubble.boundingBox();
+      if (!railBox || !bubbleBox) return null;
+      return Math.abs(railBox.y + railBox.height / 2 - (bubbleBox.y + bubbleBox.height / 2));
+    })
+    .toBeLessThan(2);
+  await captureScreenshot(page, testInfo, "message-attachment-actions-desktop");
 });
 
 test("reply preview jumps to parent outside the loaded page", async ({ page }) => {
@@ -381,103 +420,6 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   await expect(page.locator(`[data-message-id="${parentId}"]`)).toContainText(parentText);
 });
 
-test("hover time shows the date for a message from an earlier day", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `hover-date-${stamp}@rakazo.test`, "password12", "Hover Date");
-  await completeOnboarding(page);
-
-  await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible({
-    timeout: 20_000,
-  });
-  await page.getByRole("button", { name: /Day-to-day work/ }).click();
-  const botText = page.getByText(/Got it\./);
-  await expect(botText).toBeVisible({ timeout: 20_000 });
-  const row = page
-    .getByTestId("transcript")
-    .locator("[data-message-id]")
-    .filter({ has: botText })
-    .first();
-  const messageId = await row.getAttribute("data-message-id");
-  if (!messageId) throw new Error("missing message id");
-
-  // Messages are created today, so rewrite createdAt or the hover label stays time-only.
-  const createdAt = await page.evaluate(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 1);
-    date.setHours(15, 4, 0, 0);
-    return date.toISOString();
-  });
-  await page.evaluate(() => {
-    localStorage.setItem("rakazo.uiLocale", "en");
-  });
-
-  type HydrateMessage = { id?: string; createdAt?: string };
-  type HydrateBody = {
-    json?: {
-      messages?: HydrateMessage[];
-      thread?: { messages?: HydrateMessage[] };
-    };
-  };
-  const rewriteCreatedAt = (body: HydrateBody) => {
-    const messages = [...(body.json?.messages ?? []), ...(body.json?.thread?.messages ?? [])];
-    for (const message of messages) {
-      if (message.id === messageId) message.createdAt = createdAt;
-    }
-  };
-  const hydrateRpc = /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/;
-  const rewriteHydrate = async (route: Route) => {
-    try {
-      const response = await route.fetch();
-      const body = (await response.json()) as HydrateBody;
-      rewriteCreatedAt(body);
-      await route.fulfill({
-        status: response.status(),
-        headers: response.headers(),
-        body: JSON.stringify(body),
-      });
-    } catch (error) {
-      if (/already handled|Target closed|Request context disposed/i.test(String(error))) return;
-      throw error;
-    }
-  };
-  await page.route(hydrateRpc, rewriteHydrate);
-
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("combobox", { name: /^Message/ })).toBeVisible({ timeout: 20_000 });
-  const datedRow = page.locator(`[data-message-id="${messageId}"]`);
-  await expect(datedRow).toBeVisible({ timeout: 20_000 });
-  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe("en");
-  await datedRow.scrollIntoViewIfNeeded();
-  await revealHoverRail(datedRow);
-
-  const time = datedRow.getByTestId("message-hover-time");
-  await expect(time).toHaveCSS("opacity", "1");
-  await expect(time).toHaveAttribute("datetime", createdAt);
-  const expected = await page.evaluate((iso) => {
-    const date = new Date(iso);
-    const now = new Date();
-    const locale = document.documentElement.lang || "en";
-    const sameYear = date.getFullYear() === now.getFullYear();
-    const parts = new Intl.DateTimeFormat(locale, {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-      hour: "numeric",
-      minute: "2-digit",
-    }).formatToParts(date);
-    return {
-      day: parts.find((item) => item.type === "day")?.value ?? "",
-      month: parts.find((item) => item.type === "month")?.value ?? "",
-    };
-  }, createdAt);
-  expect(expected.month).not.toBe("");
-  expect(expected.day).not.toBe("");
-  const month = expected.month.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const day = expected.day.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  await expect(time).toHaveText(new RegExp(`${month}\\s+${day}\\b`));
-  await captureScreenshot(page, testInfo, "message-hover-time-earlier-day");
-});
-
 test.describe("touch message actions", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
@@ -521,19 +463,6 @@ test.describe("touch message actions", () => {
     await expect(row.getByTestId("message-reactions")).toHaveText("🎉 2");
     await rail.getByRole("button", { name: "More" }).tap();
     await expect(page.getByRole("menuitem", { name: "Copy" })).toBeVisible();
-    const time = row.getByTestId("message-hover-time");
-    await expect(time).toHaveCSS("opacity", "1");
-    await expect(time).toHaveCSS("position", "static");
-    await expect(time).toHaveText(/\d/);
-    const timeBox = await time.boundingBox();
-    const openBubbleBox = await botBubble.boundingBox();
-    const openRailBox = await rail.boundingBox();
-    expect(timeBox).not.toBeNull();
-    expect(openBubbleBox).not.toBeNull();
-    expect(openRailBox).not.toBeNull();
-    // A date uses this same label. Under the actions it cannot cover the bubble.
-    expect(timeBox!.y).toBeGreaterThanOrEqual(openBubbleBox!.y + openBubbleBox!.height - 1);
-    expect(timeBox!.y).toBeGreaterThanOrEqual(openRailBox!.y + openRailBox!.height - 1);
     await expect(page.getByRole("menu")).toBeVisible();
     await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");

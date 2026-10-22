@@ -16,8 +16,13 @@ export function MessageCaption({
   streaming: boolean;
 }) {
   // User messages keep literal Markdown; only explicit URLs and email addresses link.
+  // Links stay the bubble's text colour (underlined): link blue is too faint on chatUser.
   return role === "user" ? (
-    <LinkifiedText color={tokens.secondaryForeground} linkColor={tokens.link} palette={tokens}>
+    <LinkifiedText
+      color={tokens.chatUserForeground}
+      linkColor={tokens.chatUserForeground}
+      palette={tokens}
+    >
       {text}
     </LinkifiedText>
   ) : (

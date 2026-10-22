@@ -1,4 +1,5 @@
-import { readBoundedJsonResponse } from "@rakazo/core";
+// Relative source path: Vercel functions cannot resolve the TypeScript exports of @rakazo/core.
+import { readBoundedJsonResponse } from "../../../packages/core/src/http-response.js";
 import { GITHUB_API_REPO } from "./site";
 
 export const GITHUB_STARS_TIMEOUT_MS = 5_000;
@@ -8,6 +9,12 @@ export type DesktopDownloads = Partial<Record<"mac" | "windows" | "linux", strin
 
 const DESKTOP_ASSET_SUFFIXES = { mac: ".dmg", windows: ".exe", linux: ".AppImage" } as const;
 export const MAX_GITHUB_RELEASE_RESPONSE_BYTES = 256 * 1024;
+export const MAX_GITHUB_COMMITS_RESPONSE_BYTES = 512 * 1024;
+
+export type RecentChange = { title: string; pr: string | null; url: string; date: string };
+
+// Housekeeping commits say nothing about the product.
+const QUIET_COMMIT = /^(chore|test|ci|build|docs|style|refactor)(\(.*?\))?!?:|^Merge /i;
 
 export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number | null> {
   const payload = await fetchGithubJson<{ stargazers_count?: unknown }>(
@@ -19,6 +26,18 @@ export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise
 }
 
 /** Installer URLs from the latest desktop release; empty when GitHub is unavailable. */
+/** Desktop platforms to offer: macOS always, Windows and Linux once a release ships them. */
+export function availableDesktopPlatforms(downloads: DesktopDownloads) {
+  return (["mac", "windows", "linux"] as const).filter(
+    (platform) => platform === "mac" || Boolean(downloads[platform]),
+  );
+}
+
+/** The redirect resolves the newest installer per request, so releases need no site rebuild. */
+export function desktopDownloadHref(platform: keyof DesktopDownloads) {
+  return `/api/download?platform=${platform}`;
+}
+
 export async function fetchDesktopDownloads(
   fetchImpl: typeof fetch = fetch,
 ): Promise<DesktopDownloads> {
@@ -39,6 +58,36 @@ export async function fetchDesktopDownloads(
   return downloads;
 }
 
+/** The newest product changes on main, newest first; empty when GitHub is unavailable. */
+export async function fetchRecentChanges(
+  limit: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RecentChange[]> {
+  const payload = await fetchGithubJson<unknown>(
+    `${GITHUB_API_REPO}/commits?per_page=30`,
+    MAX_GITHUB_COMMITS_RESPONSE_BYTES,
+    fetchImpl,
+  );
+  if (!Array.isArray(payload)) return [];
+  const changes: RecentChange[] = [];
+  for (const entry of payload as Array<{
+    html_url?: unknown;
+    commit?: { message?: unknown; committer?: { date?: unknown } };
+  }>) {
+    const message = entry?.commit?.message;
+    const date = entry?.commit?.committer?.date;
+    const url = entry?.html_url;
+    if (typeof message !== "string" || typeof date !== "string" || typeof url !== "string") continue;
+    const subject = message.split("\n", 1)[0]!.trim();
+    if (!subject || QUIET_COMMIT.test(subject)) continue;
+    const pr = subject.match(/\s*\(#(\d+)\)$/);
+    const title = subject.slice(0, pr?.index ?? subject.length).replace(/^\w+(\(.*?\))?!?:\s*/, "");
+    changes.push({ title: title.charAt(0).toUpperCase() + title.slice(1), pr: pr?.[1] ?? null, url, date });
+    if (changes.length === limit) break;
+  }
+  return changes;
+}
+
 async function fetchGithubJson<T>(
   url: string,
   maxBytes: number,
@@ -53,6 +102,8 @@ async function fetchGithubJson<T>(
         headers: {
           Accept: "application/vnd.github+json",
           "User-Agent": "rakazo-www",
+          // Optional: anonymous requests share a 60/hour limit per IP.
+          ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
         },
         signal: controller.signal,
       }),

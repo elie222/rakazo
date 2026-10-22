@@ -1,7 +1,13 @@
 import path from "node:path";
+import {
+  APP_CONTENT_SECURITY_POLICY,
+  CSP_REPORTING_ENDPOINTS,
+  HTML_VIEWER_PATH,
+} from "@rakazo/contracts/content-security-policy";
 import { describe, expect, it } from "vitest";
 import {
   bundledRendererCandidates,
+  bundledRendererHeaders,
   contentType,
   forwardedRendererRequestInit,
   immutableRendererAsset,
@@ -47,6 +53,25 @@ describe("bundled desktop renderer", () => {
     expect(contentType("app.woff2")).toBe("font/woff2");
     expect(immutableRendererAsset(path.join(root, "assets/app-123.js"))).toBe(true);
     expect(immutableRendererAsset(path.join(root, "index.html"))).toBe(false);
+  });
+
+  it("sends the web server's CSP with bundled documents", () => {
+    const index = path.join(root, "index.html");
+    const app = bundledRendererHeaders(index, `${origin}/bots/1?tab=chat`);
+    expect(app.get("content-security-policy")).toBe(APP_CONTENT_SECURITY_POLICY);
+    expect(app.get("reporting-endpoints")).toBe(CSP_REPORTING_ENDPOINTS);
+    expect(app.get("x-content-type-options")).toBe("nosniff");
+    expect(app.get("cache-control")).toBe("no-cache");
+    const viewer = bundledRendererHeaders(
+      path.join(root, "html-viewer.html"),
+      `${origin}${HTML_VIEWER_PATH}`,
+    );
+    expect(viewer.get("content-security-policy")).toBe("frame-ancestors 'self'");
+    expect(
+      bundledRendererHeaders(path.join(root, "assets/app-1.js"), `${origin}/assets/app-1.js`).get(
+        "cache-control",
+      ),
+    ).toBe("public, max-age=31536000, immutable");
   });
 
   it("treats filesystem path misses as renderer fallbacks", () => {

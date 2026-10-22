@@ -19,6 +19,8 @@ export type SecretFillStep = {
   field: LoginField;
 };
 export type BrowserActInput = BrowserActStep | SecretFillStep;
+/** desktopTools: the run also has computer_act, so a page-tool failure can fall back to it. */
+export type PageToolOptions = { desktopTools?: boolean };
 export type ResolveSecretFill = (
   step: SecretFillStep,
 ) => Promise<{ text: string; origin: string } | { error: string }>;
@@ -28,24 +30,28 @@ export async function browserNavigateFromTool(
   computer: ComputerRef,
   context: AdapterContext,
   args: Record<string, unknown>,
+  options: PageToolOptions = {},
 ) {
   const url = String(args.url ?? "").trim();
   try {
     const parsed = new URL(url);
     if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password) {
-      return {
-        error: "An HTTP(S) URL without embedded credentials is required",
-        fallback: "computer_act" as const,
-      };
+      return formatBrowserResult(
+        {
+          error: "An HTTP(S) URL without embedded credentials is required",
+          fallback: "computer_act",
+        },
+        options,
+      );
     }
     const result = await browser.navigate(computer, { url, signal: context.signal }, context);
-    return formatBrowserResult(result);
+    return formatBrowserResult(result, options);
   } catch (error) {
     context.signal.throwIfAborted();
-    return {
-      error: error instanceof Error ? error.message : String(error),
-      fallback: "computer_act" as const,
-    };
+    return formatBrowserResult(
+      { error: error instanceof Error ? error.message : String(error), fallback: "computer_act" },
+      options,
+    );
   }
 }
 
@@ -54,17 +60,18 @@ export async function browserSnapshotFromTool(
   computer: ComputerRef,
   context: AdapterContext,
   args: Record<string, unknown>,
+  options: PageToolOptions = {},
 ) {
   void args;
   try {
     const result = await browser.snapshot(computer, { signal: context.signal }, context);
-    return formatBrowserResult(result);
+    return formatBrowserResult(result, options);
   } catch (error) {
     context.signal.throwIfAborted();
-    return {
-      error: error instanceof Error ? error.message : String(error),
-      fallback: "computer_act" as const,
-    };
+    return formatBrowserResult(
+      { error: error instanceof Error ? error.message : String(error), fallback: "computer_act" },
+      options,
+    );
   }
 }
 
@@ -73,7 +80,7 @@ export async function browserActFromTool(
   computer: ComputerRef,
   context: AdapterContext,
   args: Record<string, unknown>,
-  options: {
+  options: PageToolOptions & {
     resolveSecretFill?: ResolveSecretFill;
     redactions?: () => string[];
     /** Maps a bot-facing workspace path to its path in the computer's home. */
@@ -106,15 +113,21 @@ export async function browserActFromTool(
       actions.push({ kind: "fill", ref: step.ref, text: resolved.text, origin: resolved.origin });
     }
     const result = await browser.act(computer, { actions, signal: context.signal }, context);
-    return redactConnectorPayload(formatBrowserResult(result), options.redactions?.() ?? []);
+    return redactConnectorPayload(
+      formatBrowserResult(result, options),
+      options.redactions?.() ?? [],
+    );
   } catch (error) {
     context.signal.throwIfAborted();
-    return {
-      ok: false,
-      uncertain: true,
-      error: error instanceof Error ? error.message : String(error),
-      fallback: "computer_act" as const,
-    };
+    return formatBrowserResult(
+      {
+        ok: false,
+        uncertain: true,
+        error: error instanceof Error ? error.message : String(error),
+        fallback: "computer_act",
+      },
+      options,
+    );
   }
 }
 
@@ -173,12 +186,22 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
   });
 }
 
-function formatBrowserResult<T extends { fallback?: "computer_act"; error?: string }>(result: T) {
-  if (result.fallback === "computer_act") {
+function formatBrowserResult<T extends { fallback?: "computer_act"; error?: string }>(
+  result: T,
+  { desktopTools = true }: PageToolOptions,
+) {
+  if (result.fallback !== "computer_act") return result;
+  if (desktopTools) {
     return {
       ...result,
       note: "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
     };
   }
-  return result;
+  // Without desktop tools, pointing at computer_act leaves only request_takeover. A browser
+  // that is still starting after the computer woke up usually answers a moment later.
+  const { fallback: _fallback, ...rest } = result;
+  return {
+    ...rest,
+    note: "Page browser could not complete this step. The computer or its browser may still be starting, so call browser_snapshot again to check the page. Use request_takeover only if it keeps failing. Do not replay completed or uncertain actions.",
+  };
 }

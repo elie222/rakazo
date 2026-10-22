@@ -1,3 +1,4 @@
+import type { ToolkitConnectionState } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
@@ -5,7 +6,7 @@ import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  CompositeConnector,
+  ConnectorRegistry,
   collectLogIds,
   collectPages,
   composioResultError,
@@ -39,16 +40,10 @@ const composioSdkState = vi.hoisted(() => ({
     string,
     {
       sessionId: string;
-      toolkits?: () => Promise<{
-        items: Array<{
-          slug: string;
-          name: string;
-          logo: string | null;
-          isNoAuth: boolean;
-          connection?: { isActive?: boolean; connectedAccount?: { id: string } };
-        }>;
+      toolkits?: (options?: {
+        isConnected?: boolean;
         cursor?: string;
-      }>;
+      }) => Promise<{ items: ToolkitConnectionState[]; cursor?: string }>;
       tools?: () => Promise<unknown[]>;
       execute?: (
         tool: string,
@@ -93,9 +88,11 @@ vi.mock("@composio/core", () => ({
                 {
                   slug: "GITHUB",
                   name: "GitHub",
-                  logo: null,
                   isNoAuth: false,
-                  connection: { isActive: true, connectedAccount: { id: "ca-github" } },
+                  connection: {
+                    isActive: true,
+                    connectedAccount: { id: "ca-github", status: "ACTIVE" },
+                  },
                 },
               ],
             };
@@ -179,7 +176,7 @@ describe("composio tool mapping", () => {
         yield { type: "result", data: { provider: "composio" } } as ConnectorEvent;
       },
     } as never;
-    const connector = new CompositeConnector(destination, [composio]);
+    const connector = new ConnectorRegistry([destination, composio]);
     const context = { userId: "u" } as AdapterContext;
     for await (const event of connector.execute(
       {
@@ -203,7 +200,7 @@ describe("composio tool mapping", () => {
       },
       execute: async function* () {},
     } as never;
-    const connector = new CompositeConnector(destination, [failing]);
+    const connector = new ConnectorRegistry([destination, failing]);
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
 
@@ -453,44 +450,6 @@ describe("composio tool mapping", () => {
           sandbox: { enable: false },
           toolkits: ["GITHUB"],
           connectedAccounts: { GITHUB: ["ca_current"] },
-        },
-      });
-    } finally {
-      restore();
-    }
-  });
-
-  it("omits stale account ids when the provider lists no ACTIVE accounts", async () => {
-    composioSdkState.created.length = 0;
-    composioSdkState.sessions.clear();
-    composioToolkitDirectory.invalidate();
-    const restore = stubActiveAccounts([]);
-
-    try {
-      const connector = new ComposioConnector();
-      await connector.discoverTools({
-        operationId: "composio-empty-active",
-        traceId: "composio-empty-active",
-        spaceId: "workspace",
-        userId: "user-1",
-        signal: new AbortController().signal,
-        connectedConnections: [
-          {
-            id: "connection-revoked",
-            connectorId: "composio",
-            externalId: "github",
-            displayName: "GitHub",
-            providerRef: "ca_old",
-          },
-        ],
-      });
-
-      expect(composioSdkState.created.at(-1)).toEqual({
-        userId: "user-1",
-        config: {
-          manageConnections: false,
-          sandbox: { enable: false },
-          toolkits: ["GITHUB"],
         },
       });
     } finally {

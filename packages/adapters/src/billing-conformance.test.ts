@@ -1,4 +1,5 @@
 import type { BillingProvider, BillingSubscriptionStatus } from "@rakazo/adapter-kit";
+import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { BillingEmulator } from "./billing-emulator.js";
 import { StripeBillingProvider, signStripeWebhook } from "./stripe-billing.js";
@@ -10,6 +11,8 @@ const now = () => NOW;
 interface Harness {
   provider: BillingProvider;
   completeCheckout(customerId: string, status?: BillingSubscriptionStatus): void;
+  setStatus(customerId: string, status: BillingSubscriptionStatus): void;
+  deleteCustomer(customerId: string): void;
   sign(event: object, timestamp?: number): { body: string; headers: Headers };
 }
 
@@ -19,6 +22,8 @@ const factories: Record<string, () => Harness> = {
     return {
       provider,
       completeCheckout: (customerId, status) => provider.completeCheckout(customerId, status),
+      setStatus: (customerId, status) => provider.setStatus(customerId, status),
+      deleteCustomer: (customerId) => provider.deleteCustomer(customerId),
       sign: (event, timestamp) => provider.signWebhook(event, timestamp),
     };
   },
@@ -35,6 +40,8 @@ const factories: Record<string, () => Harness> = {
     return {
       provider,
       completeCheckout: (customerId, status) => wire.completeCheckout(customerId, status),
+      setStatus: (customerId, status) => wire.setStatus(customerId, status),
+      deleteCustomer: (customerId) => wire.deleteCustomer(customerId),
       sign(event, timestamp = Math.floor(NOW / 1000)) {
         const body = JSON.stringify(event);
         const headers = new Headers({
@@ -68,7 +75,7 @@ for (const [name, create] of Object.entries(factories)) {
   describe(`${name} billing conformance (offline)`, () => {
     it("describes a recurring price", async () => {
       const { provider } = create();
-      expect(provider.describe().capabilities).toEqual({ trials: true, portal: true });
+      expect(provider.describe().capabilities).toMatchObject({ trials: true, portal: true });
       const price = await provider.getPrice();
       expect(price.amount).toBeGreaterThan(0);
       expect(price.currency).toMatch(/^[a-z]{3}$/);
@@ -94,12 +101,39 @@ for (const [name, create] of Object.entries(factories)) {
       ).toMatch(/^https:\/\//);
     });
 
-    it("reuses the customer for the same organization", async () => {
-      const { provider } = create();
-      const input = { email: "owner@example.com", organizationId: "org_1" };
-      expect((await provider.createCustomer(input)).customerId).toBe(
-        (await provider.createCustomer(input)).customerId,
-      );
+    it("refuses a deleted customer with a classified error and reports no access", async () => {
+      const harness = create();
+      const customerId = await subscribe(harness);
+      harness.deleteCustomer(customerId);
+      const snapshot = await harness.provider.getCustomerSubscription(customerId);
+      expect(snapshot?.status ?? "canceled").toBe("canceled");
+      await expect(
+        harness.provider.createCheckout({ customerId, seats: 1, ...urls }),
+      ).rejects.toBeInstanceOf(BillingCustomerNotFoundError);
+      await expect(
+        harness.provider.createPortal({ customerId, returnUrl: urls.successUrl }),
+      ).rejects.toBeInstanceOf(BillingCustomerNotFoundError);
+      await harness.provider.cancelCustomerSubscriptions(customerId);
+    });
+
+    it("keeps unpaid and paused apart from canceled", async () => {
+      for (const status of ["unpaid", "paused"] as const) {
+        const harness = create();
+        const customerId = await subscribe(harness);
+        harness.setStatus(customerId, status);
+        expect((await harness.provider.getCustomerSubscription(customerId))?.status).toBe(status);
+      }
+    });
+
+    it("expires an open checkout when canceling", async () => {
+      const harness = create();
+      const { customerId } = await harness.provider.createCustomer({
+        email: "owner@example.com",
+        organizationId: "org_4",
+      });
+      await harness.provider.createCheckout({ customerId, seats: 1, ...urls });
+      await harness.provider.cancelCustomerSubscriptions(customerId);
+      expect(() => harness.completeCheckout(customerId)).toThrow();
     });
 
     it("replaces an unfinished checkout so only the latest one can be paid", async () => {
@@ -133,26 +167,50 @@ for (const [name, create] of Object.entries(factories)) {
       });
     });
 
-    it("prefers an older active subscription over a newer incomplete one", async () => {
+    it("refuses another checkout while a subscription is held", async () => {
+      for (const status of ["trialing", "past_due", "unpaid", "paused"] as const) {
+        const harness = create();
+        const customerId = await subscribe(harness);
+        harness.setStatus(customerId, status);
+        await expect(
+          harness.provider.createCheckout({ customerId, seats: 5, ...urls }),
+        ).rejects.toBeInstanceOf(BillingCheckoutCompletedError);
+      }
       const harness = create();
       const customerId = await subscribe(harness);
-      const active = await harness.provider.getCustomerSubscription(customerId);
+      harness.setStatus(customerId, "incomplete");
       await harness.provider.createCheckout({ customerId, seats: 5, ...urls });
-      harness.completeCheckout(customerId, "incomplete");
-      expect(await harness.provider.getCustomerSubscription(customerId)).toEqual(active);
     });
 
     it("updates seats and cancels", async () => {
       const harness = create();
       const customerId = await subscribe(harness);
-      const snapshot = await harness.provider.getCustomerSubscription(customerId);
-      await harness.provider.updateSeats(snapshot!.subscriptionItemId, 7);
+      await harness.provider.updateSeats(customerId, 7);
       expect((await harness.provider.getCustomerSubscription(customerId))?.seats).toBe(7);
       await harness.provider.cancelCustomerSubscriptions(customerId);
       const canceled = await harness.provider.getCustomerSubscription(customerId);
       expect(canceled?.status).toBe("canceled");
       expect(canceled?.endedAt).toBeInstanceOf(Date);
       await harness.provider.cancelCustomerSubscriptions(customerId);
+    });
+
+    it("sets seats only while the subscription can still take updates", async () => {
+      const cases: Array<[BillingSubscriptionStatus, number]> = [
+        ["past_due", 7],
+        ["unpaid", 7],
+        ["paused", 7],
+        ["incomplete", 3],
+        ["canceled", 3],
+      ];
+      for (const [status, seats] of cases) {
+        const harness = create();
+        const customerId = await subscribe(harness);
+        harness.setStatus(customerId, status);
+        await harness.provider.updateSeats(customerId, 7);
+        expect((await harness.provider.getCustomerSubscription(customerId))?.seats, status).toBe(
+          seats,
+        );
+      }
     });
 
     it("verifies webhooks", () => {
@@ -179,3 +237,38 @@ for (const [name, create] of Object.entries(factories)) {
     });
   });
 }
+
+describe("offline monthly credit renewals", () => {
+  it("grants each paid period once across two renewals and keeps top-ups permanent", async () => {
+    let timestamp = NOW;
+    const provider = new BillingEmulator({ modelCredits: true, now: () => timestamp });
+    const { customerId } = await provider.createCustomer({
+      email: "billing@example.test",
+      organizationId: "fixture",
+    });
+    const checkout = {
+      customerId,
+      amountCents: 1000,
+      successUrl: "https://example.test/success",
+      cancelUrl: "https://example.test/cancel",
+    };
+    await provider.createCreditCheckout({ ...checkout, monthly: true });
+    provider.completeCreditCheckout(customerId);
+    await provider.createCreditCheckout({ ...checkout, monthly: false });
+    provider.completeCreditCheckout(customerId);
+    const month = 30 * 86400000;
+    timestamp += 2 * month;
+    const purchases = await provider.listCreditPurchases(customerId);
+    expect(purchases.filter((p) => p.expiresAt).map((p) => p.expiresAt)).toEqual([
+      new Date(NOW + month).toISOString(),
+      new Date(NOW + 2 * month).toISOString(),
+      new Date(NOW + 3 * month).toISOString(),
+    ]);
+    expect(purchases.filter((p) => !p.expiresAt)).toHaveLength(1);
+    expect(new Set(purchases.map((p) => p.id)).size).toBe(4);
+    expect(await provider.listCreditPurchases(customerId)).toEqual(purchases);
+    expect((await provider.getCustomerSubscription(customerId))?.currentPeriodEndsAt).toEqual(
+      new Date(NOW + 3 * month),
+    );
+  });
+});

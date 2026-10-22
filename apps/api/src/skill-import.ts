@@ -3,8 +3,11 @@ export function findCreatorSkillUrl(
   skills: unknown,
   author: string,
   repo: string,
+  skillPathSlug?: string,
 ): URL | undefined {
   if (!Array.isArray(skills)) return undefined;
+  const matches: URL[] = [];
+  const normalizedSkillPath = skillPathSlug?.trim().toLowerCase().replace(/^\/+|\/+$/g, "");
   for (const skill of skills) {
     if (!skill || typeof skill !== "object" || typeof skill.githubUrl !== "string") continue;
     let url: URL;
@@ -23,10 +26,19 @@ export function findCreatorSkillUrl(
       owner?.toLowerCase() === author.toLowerCase() &&
       name?.toLowerCase() === repo.toLowerCase()
     ) {
-      return url;
+      if (normalizedSkillPath) {
+        const cleanPathname = url.pathname.toLowerCase().replace(/\/+$/, "");
+        if (
+          cleanPathname.endsWith(`/${normalizedSkillPath}`) ||
+          cleanPathname.endsWith(`/${normalizedSkillPath}/skill.md`)
+        ) {
+          return url;
+        }
+      }
+      matches.push(url);
     }
   }
-  return undefined;
+  return matches[0];
 }
 
 /** Repository roots use the Contents API's default branch; explicit refs stay explicit. */

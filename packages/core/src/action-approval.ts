@@ -29,7 +29,6 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "generate_image",
   "generate_video",
-  "destination.write",
   "delete_bot",
   "archive_bot",
   "secret_request",
@@ -167,6 +166,95 @@ export function unattendedTriggerToolRequiresApproval(
     : !UNATTENDED_SAFE_BUILTIN_TOOLS.has(toolName);
 }
 
+/**
+ * Tools whose results bring in nothing from outside during the run: confirmations of the bot's own
+ * writes, the owner's answers, and the product's own saved state (memory, skills, history), which
+ * is treated like the conversation already in context. Every other result (pages, search hits,
+ * files, connector data, the screen, shell output, other bots) can carry text an attacker wrote,
+ * and taints the run. New tools taint by default.
+ */
+const OWN_STATE_RESULT_TOOLS = new Set([
+  "ask_user",
+  "connect_app",
+  "attach_file",
+  "end_call",
+  "list_fleet",
+  "list_secrets",
+  "message_user",
+  "read_history",
+  "recall_memory",
+  "remember",
+  "render_plot",
+  "request_secret",
+  "save_memory",
+  "save_shared_memory",
+  "schedule_cancel",
+  "schedule_create",
+  "schedule_list",
+  "scratchpad_add",
+  "scratchpad_complete",
+  "scratchpad_list",
+  "scratchpad_remove",
+  "scratchpad_update",
+  "search_history",
+  "skill_read",
+  "task_catalog",
+  "write_file",
+]);
+
+export function toolResultTaintsRun(toolName: string): boolean {
+  return !OWN_STATE_RESULT_TOOLS.has(toolName);
+}
+
+/**
+ * A connector read still sends its arguments to the connector's server. Until outside content
+ * enters the run, those arguments come from the owner's request. After that, injected text could
+ * choose them, so a read skips approval only on a connector this run already used before then or
+ * was approved for. Reads on that connector stay free, so list-then-get flows never ask twice.
+ */
+export function connectorReadRequiresApproval(input: {
+  tainted: boolean;
+  connectorTrusted: boolean;
+}): boolean {
+  return input.tainted && !input.connectorTrusted;
+}
+
+/**
+ * web_fetch sends its whole URL, query string included, to the site it names, so a site this run
+ * was not given is a new destination that injected text could have picked. Trusted sites (named in
+ * the owner's own words, approved earlier in the run, or the exact URL of a search result) and
+ * sites with an always-allow rule go through. Anything else is new: planActionGate decides who
+ * judges it, and newSiteOutcome what happens when nobody passed it.
+ */
+export function outboundSiteGate(input: {
+  site: string;
+  trusted: boolean;
+  rules: ActionApprovalRule[];
+}): "allow" | "new" {
+  return input.trusted || siteAlwaysAllowed(input.rules, input.site) ? "allow" : "new";
+}
+
+/**
+ * A new site that Auto Review did not pass needs a person. A webhook run has nobody to ask, so
+ * there it is refused.
+ */
+export function newSiteOutcome(input: {
+  trigger: string;
+  decision: "ask" | "allow";
+}): "ask" | "allow" | "deny" {
+  if (input.decision === "allow") return "allow";
+  return input.trigger === "webhook" ? "deny" : "ask";
+}
+
+export function siteAlwaysAllowed(rules: ActionApprovalRule[], site: string): boolean {
+  return rules.some(
+    (rule) =>
+      rule.effect === "always_allow" &&
+      rule.matchKind === "site" &&
+      rule.matchValue.toLowerCase() === site,
+  );
+}
+
 function categoryMatches(
   category: string,
   toolName: string,
@@ -191,9 +279,12 @@ function ruleMatches(
   toolName: string,
   connectorKind: string,
   readOnly: boolean | undefined,
+  site: string | undefined,
 ): boolean {
   const value = rule.matchValue.toLowerCase();
   switch (rule.matchKind) {
+    case "site":
+      return site === value;
     case "tool":
       return toolName.toLowerCase() === value;
     case "connector":
@@ -207,6 +298,8 @@ function ruleMatches(
 
 function ruleSpecificity(rule: ActionApprovalRule): number {
   switch (rule.matchKind) {
+    case "site":
+      return 4;
     case "tool":
       return 3;
     case "connector":
@@ -226,16 +319,20 @@ export type ActionApprovalResolved = {
   matchingRules: ActionApprovalRule[];
 };
 
-/** Deterministic rule resolution. Always-allow and require-approval both beat the default. */
+/**
+ * Deterministic rule resolution. Always-allow and require-approval both beat the default.
+ * `site` is the destination of an outbound fetch; a rule for that site beats a rule for the tool.
+ */
 export function resolveActionApprovalDetail(input: {
   toolName: string;
   connectorKind?: string;
   readOnly?: boolean;
+  site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
   const matchingRules = input.rules.filter((rule) =>
-    ruleMatches(rule, input.toolName, connectorKind, input.readOnly),
+    ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site),
   );
   if (matchingRules.length === 0) {
     return { decision: "allow", source: "default", matchingRules };
@@ -270,8 +367,17 @@ export function planActionGate(input: {
   consequential: boolean;
   autoReviewEnabled: boolean;
   checkerConfigured: boolean;
+  /** A fetch to a site the run was not given (see outboundSiteGate). */
+  newDestination?: boolean;
 }): "ask" | "allow" | "judge" {
   if (input.resolved.decision === "ask") return "ask";
+  // A rule for the whole tool is not a choice of sites, so it never allows a new one; only a site
+  // rule does, and that makes the site no longer new. Auto Review may pass one, judging only the
+  // owner's own words and the full URL: it never sees tool results or inbound messages, so text
+  // injected there cannot argue for the site. Without Auto Review a person decides.
+  if (input.newDestination) {
+    return input.autoReviewEnabled && input.checkerConfigured ? "judge" : "ask";
+  }
   if (input.resolved.source === "always_allow") return "allow";
   if (
     input.consequential &&

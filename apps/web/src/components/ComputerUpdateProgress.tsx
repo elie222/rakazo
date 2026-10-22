@@ -15,8 +15,9 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  Spinner,
 } from "@rakazo/ui-web";
-import { CheckCircle2, Circle, CircleAlert, LoaderCircle } from "lucide-react";
+import { CheckCircle2, Circle, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { computerUpdates } from "../lib/computer-updates";
 import { LoadingState } from "./ai/primitives";
@@ -84,9 +85,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
             ) : (
               <LoadingState
                 label={title(update)}
-                indicator={
-                  <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" />
-                }
+                indicator={<Spinner aria-hidden className="size-5 motion-reduce:animate-none" />}
               />
             )}
             <span className="text-center">
@@ -118,14 +117,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               <ol className="space-y-4 px-6 py-6" aria-label={t`Update progress`}>
                 {computerUpdateStages(selected.action).map((stage, index) => {
                   const current = computerUpdateStages(selected.action).indexOf(selected.stage);
-                  const Icon =
-                    index < current
-                      ? CheckCircle2
-                      : index === current
-                        ? selected.status === "failed"
-                          ? CircleAlert
-                          : LoaderCircle
-                        : Circle;
+                  const Icon = index < current ? CheckCircle2 : Circle;
                   return (
                     <li
                       key={stage}
@@ -135,16 +127,15 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                         index === current ? "text-foreground" : "text-muted-foreground",
                       )}
                     >
-                      <Icon
-                        aria-hidden
-                        className={cn(
-                          "size-5 shrink-0",
-                          index === current &&
-                            !computerUpdateNeedsAttention(selected) &&
-                            "animate-spin motion-reduce:animate-none",
-                          index === current && selected.status === "failed" && "text-destructive",
-                        )}
-                      />
+                      {/* Stages only show while the update runs, so the current one spins. */}
+                      {index === current ? (
+                        <Spinner
+                          aria-hidden
+                          className="size-5 shrink-0 motion-reduce:animate-none"
+                        />
+                      ) : (
+                        <Icon aria-hidden className="size-5 shrink-0" />
+                      )}
                       {labels[COMPUTER_UPDATE_STAGES.indexOf(stage)]}
                     </li>
                   );

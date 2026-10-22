@@ -1,5 +1,6 @@
 import { Trans } from "@lingui/react/macro";
 import type { SearchHit } from "@rakazo/contracts";
+import { searchHitListKey } from "@rakazo/core";
 
 export function SpaceSearchResults({
   hits,
@@ -28,7 +29,7 @@ export function SpaceSearchResults({
     <div className="flex flex-col gap-0.5">
       {hits.map((hit) => (
         <button
-          key={`${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`}
+          key={searchHitListKey(hit)}
           type="button"
           onClick={() => onSelect(hit)}
           className="rounded-xl px-2.5 py-[11px] text-start hover:bg-background"

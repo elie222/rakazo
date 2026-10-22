@@ -1,5 +1,24 @@
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
-import nodemailer, { type Transporter } from "nodemailer";
+import type { NodemailerError, Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+
+/**
+ * Nodemailer waits up to 2 minutes to connect and 10 minutes on an idle socket,
+ * and sign-up awaits the verification email. `SMTP_URL` query parameters win.
+ */
+const SMTP_TIMEOUTS_MS = {
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 30_000,
+};
+/** Timeouts that can only fire before the message is handed to the server. */
+const SETUP_TIMEOUTS = new Set<NodemailerError["timeoutType"]>([
+  "CONNECT_TIMEOUT",
+  "GREETING_TIMEOUT",
+  "UPGRADE_TIMEOUT",
+]);
+/** Socket errors that only `connect()` raises, so no message was sent yet. */
+const CONNECT_ERRNOS = new Set(["ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL"]);
 
 export interface SmtpEmailConfig {
   url: string;
@@ -96,7 +115,7 @@ export class SmtpEmailProvider implements TransactionalEmailProvider {
       } catch (error) {
         if (this.shutdown.signal.aborted) throw error;
         const retryDelay = this.retryDelaysMs[attempt];
-        if (retryDelay === undefined) throw error;
+        if (retryDelay === undefined || !retrySafe(error)) throw error;
         await this.sleep(retryDelay, this.shutdown.signal);
       }
     }
@@ -122,7 +141,26 @@ function secureSmtpUrl(value: string): string {
     throw new Error("SMTP_URL cannot disable TLS or certificate verification");
   }
   if (parsed.protocol === "smtp:") parsed.searchParams.set("requireTLS", "true");
+  for (const [key, timeoutMs] of Object.entries(SMTP_TIMEOUTS_MS)) {
+    if (!parsed.searchParams.has(key)) parsed.searchParams.set(key, String(timeoutMs));
+  }
   return parsed.href;
+}
+
+/**
+ * Retries a temporary 4xx rejection, or a connection that failed before the
+ * message could have been sent. A drop after DATA may already have delivered it,
+ * so it is not sent twice.
+ */
+function retrySafe(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { code, responseCode, timeoutType, originalCode } = error as NodemailerError;
+  if (responseCode) return responseCode >= 400 && responseCode < 500;
+  if (code === "ETIMEDOUT") return SETUP_TIMEOUTS.has(timeoutType);
+  if (code === "ECONNECTION" || code === "ESOCKET") {
+    return CONNECT_ERRNOS.has(originalCode ?? "");
+  }
+  return false;
 }
 
 function wait(delayMs: number, signal: AbortSignal): Promise<void> {

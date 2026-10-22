@@ -94,42 +94,58 @@ export function SoftwareUpdatePanel({
   );
 }
 
-export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner: boolean }) {
-  const { t } = useLingui();
-  const [status, setStatus] = useState<ServerUpdateStatus | null>(null);
-  const [check, setCheck] = useState<ServerUpdateCheck | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<"check" | "apply" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+export type ServerUpdateLoad = {
+  status: ServerUpdateStatus | null;
+  error: unknown;
+  loading: boolean;
+};
+
+/** Loads the server's update status for the deployment owner; others never see server updates. */
+export function useServerUpdateStatus(isDeploymentOwner: boolean): ServerUpdateLoad {
+  const [load, setLoad] = useState<ServerUpdateLoad>({
+    status: null,
+    error: null,
+    loading: isDeploymentOwner,
+  });
 
   useEffect(() => {
-    if (!isDeploymentOwner) return;
+    if (!isDeploymentOwner) {
+      setLoad({ status: null, error: null, loading: false });
+      return;
+    }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setLoad({ status: null, error: null, loading: true });
     void rpc.updater
       .status()
-      .then((next) => {
-        if (!cancelled) setStatus(next);
+      .then((status) => {
+        if (!cancelled) setLoad({ status, error: null, loading: false });
       })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(errorText(err, t`Could not load update status`));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+      .catch((error) => {
+        if (!cancelled) setLoad({ status: null, error, loading: false });
       });
     return () => {
       cancelled = true;
     };
-  }, [isDeploymentOwner, t]);
+  }, [isDeploymentOwner]);
 
-  if (!isDeploymentOwner) return null;
+  return load;
+}
 
-  // Wait for status before deciding whether to show the section (compose/source stay hidden).
-  if (loading) return null;
+/** Only the sidecar install can update itself from the app (compose/source stay hidden). */
+export function hasServerUpdates(load: ServerUpdateLoad) {
+  return load.status?.installKind === "sidecar" || load.error != null;
+}
+
+export function SoftwareUpdateSection({ load }: { load: ServerUpdateLoad }) {
+  const { t } = useLingui();
+  const [status, setStatus] = useState(load.status);
+  const [check, setCheck] = useState<ServerUpdateCheck | null>(null);
+  const [busy, setBusy] = useState<"check" | "apply" | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    load.error == null ? null : errorText(load.error, t`Could not load update status`),
+  );
+  const [done, setDone] = useState<string | null>(null);
+
   if (!status) {
     if (!error) return null;
     return (

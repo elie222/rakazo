@@ -44,7 +44,7 @@ describe("Pi outgoing provider prefixes", () => {
       if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
       try {
         const beforeCall = vi.fn(async (call: { inputTokensEstimate: number }) => {
-          expect(call.inputTokensEstimate).toBeGreaterThan(16_384);
+          expect(call.inputTokensEstimate).toBeGreaterThan(1399);
           expect(call.inputTokensEstimate).toBeLessThan(128_000 - 4096);
           return "image-reservation";
         });
@@ -66,6 +66,7 @@ describe("Pi outgoing provider prefixes", () => {
               provider: "openai-compatible",
               id: "fixture",
               baseUrl: `http://127.0.0.1:${address.port}/v1`,
+              allowPrivateEndpoint: true,
               acceptsImages: true,
               contextWindow: 128_000,
               maxTokens: 4096,
@@ -87,6 +88,63 @@ describe("Pi outgoing provider prefixes", () => {
     },
     30_000,
   );
+
+  it("sends the clamped output limit and retains history to an OpenAI-compatible provider", async () => {
+    const requests: Array<{
+      max_tokens?: number;
+      max_completion_tokens?: number;
+      messages: unknown[];
+    }> = [];
+    const server = createServer((request, response) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "Ready" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+        );
+      })().catch(() => response.destroy());
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
+    const historyContent = "Synthetic prior discussion ".repeat(100);
+    try {
+      const events = [];
+      for await (const event of new PiAgentRuntime().run(
+        {
+          botId: "bot-fixture",
+          threadId: "thread-fixture",
+          runId: "run-clamped-output",
+          prompt: "Continue",
+          instructions: "Answer briefly.",
+          history: [{ role: "user", content: historyContent }],
+          tools: [],
+          model: {
+            provider: "openai-compatible",
+            id: "fixture",
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            allowPrivateEndpoint: true,
+            contextWindow: 32_768,
+            maxTokens: 32_768,
+          },
+        },
+        { signal: AbortSignal.timeout(15_000) },
+      )) {
+        events.push(event);
+      }
+      expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.max_completion_tokens ?? requests[0]!.max_tokens).toBe(8192);
+      expect(JSON.stringify(requests[0]!.messages)).toContain(historyContent);
+    } finally {
+      server.close();
+      server.closeAllConnections();
+      await once(server, "close");
+    }
+  }, 30_000);
 
   it("reserves input room in an unknown OpenRouter model's actual completion request", async () => {
     const requests: Array<{ max_completion_tokens?: number; messages?: unknown[] }> = [];
@@ -150,10 +208,11 @@ describe("Pi outgoing provider prefixes", () => {
         expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
       }
       expect(requests).toHaveLength(3);
-      expect(requests[0]).toMatchObject({ max_completion_tokens: 8192 });
+      expect(requests[0]).toMatchObject({ max_completion_tokens: 4096 });
       expect(requests[1]!.max_completion_tokens).toBeGreaterThan(0);
-      expect(requests[1]!.max_completion_tokens).toBeLessThanOrEqual(2048);
-      expect(requests[2]).toMatchObject({ max_completion_tokens: 12_000 });
+      // Pi may reduce this further for its own input safety margin on tiny windows.
+      expect(requests[1]!.max_completion_tokens).toBeLessThanOrEqual(1024);
+      expect(requests[2]).toMatchObject({ max_completion_tokens: 8192 });
       expect(requests[0]!.messages?.length).toBeGreaterThan(0);
     } finally {
       vi.unstubAllGlobals();
@@ -236,6 +295,7 @@ describe("Pi outgoing provider prefixes", () => {
               provider: "openai-compatible",
               id: "fixture",
               baseUrl: `http://127.0.0.1:${address.port}/v1`,
+              allowPrivateEndpoint: true,
             },
           },
           { signal: AbortSignal.timeout(15000) },

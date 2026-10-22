@@ -89,6 +89,20 @@ export function stripNoResponseReply(
   };
 }
 
+/**
+ * For runs that must reply: drop stray sentinels at the edges of a reply with
+ * prose, such as one a late follow-up message adds after the final answer.
+ * A sentinel-only reply is left as is, so the run still says something.
+ */
+export function stripStrayNoResponse(
+  assembled: string,
+  blocks: MessageBlock[],
+): { assembled: string; blocks: MessageBlock[] } {
+  const visible = assembled.trim() || joinedText(blocks).trim();
+  if (isExactNoResponse(visible)) return { assembled, blocks };
+  return withoutStraySentinelsAtEdges(assembled, blocks);
+}
+
 /** A reply with prose stays a reply; a sentinel misplaced at its edge is dropped from what the user sees. */
 function withoutStraySentinelsAtEdges(
   assembled: string,

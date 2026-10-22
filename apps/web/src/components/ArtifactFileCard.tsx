@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
 import { errorText } from "../lib/user-error";
+import { IconTooltip } from "./IconTooltip";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
@@ -102,15 +103,16 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
               </span>
             </span>
           </button>
-          <button
-            type="button"
-            aria-label={t`Download ${props.name}`}
-            title={t`Download ${props.name}`}
-            onClick={() => void startDownload()}
-            className="grid w-14 shrink-0 place-items-center border-l border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <Download size={19} strokeWidth={1.8} />
-          </button>
+          <IconTooltip label={t`Download ${props.name}`}>
+            <button
+              type="button"
+              aria-label={t`Download ${props.name}`}
+              onClick={() => void startDownload()}
+              className="grid w-14 shrink-0 place-items-center border-l border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Download size={19} strokeWidth={1.8} />
+            </button>
+          </IconTooltip>
         </div>
         {downloadError ? <DownloadError message={downloadError} /> : null}
       </div>
@@ -181,26 +183,27 @@ function FilePreview({
         <DialogTitle className="min-w-0 flex-1 truncate text-[14px] leading-5 font-medium text-foreground">
           {name}
         </DialogTitle>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          className="rounded-full text-muted-foreground"
-          aria-label={t`Download ${name}`}
-          title={t`Download ${name}`}
-          onClick={() =>
-            void (async () => {
-              setDownloadError(null);
-              try {
-                if (state.status === "ready") downloadArtifactBytes(name, mimeType, state.bytes);
-                else await downloadArtifact(target, artifactId, name, mimeType);
-              } catch {
-                setDownloadError(t`Could not download ${name}. Try again.`);
-              }
-            })()
-          }
-        >
-          <Download />
-        </Button>
+        <IconTooltip label={t`Download ${name}`}>
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            className="rounded-full text-muted-foreground"
+            aria-label={t`Download ${name}`}
+            onClick={() =>
+              void (async () => {
+                setDownloadError(null);
+                try {
+                  if (state.status === "ready") downloadArtifactBytes(name, mimeType, state.bytes);
+                  else await downloadArtifact(target, artifactId, name, mimeType);
+                } catch {
+                  setDownloadError(t`Could not download ${name}. Try again.`);
+                }
+              })()
+            }
+          >
+            <Download />
+          </Button>
+        </IconTooltip>
         <DialogClose
           ref={closeButtonRef}
           aria-label={t`Close preview`}

@@ -1,7 +1,8 @@
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { getLogger } from "@rakazo/logging";
+import { describe, expect, it, vi } from "vitest";
 import { ContextBudgetError, ContextCacheTracker } from "./context-selection.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 
@@ -48,7 +49,134 @@ function enableHistoryRetrieval(request: AgentRunRequest) {
   }));
   request.executeTool = async () => ({});
 }
+function connectorPages() {
+  const { request, context } = fixture(0);
+  const bodies = Array.from({ length: 14 }, (_, index) => `Page ${index}: ${"e".repeat(9500)}`);
+  context.messages.push({
+    role: "assistant",
+    content: bodies.map((_, index) => ({
+      type: "toolCall",
+      id: `page-${index}`,
+      name: "connectors_execute_tool",
+      arguments: {},
+    })),
+    timestamp: 101,
+  } as Message);
+  for (const [index, body] of bodies.entries()) {
+    context.messages.push({
+      role: "toolResult",
+      toolCallId: `page-${index}`,
+      toolName: "connectors_execute_tool",
+      content: [{ type: "text", text: body }],
+      isError: false,
+      timestamp: 102,
+    });
+  }
+  context.messages.push(
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "later", name: "shell", arguments: {} }],
+      timestamp: 103,
+    } as Message,
+    {
+      role: "toolResult",
+      toolCallId: "later",
+      toolName: "shell",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: 104,
+    },
+  );
+  return { request, context, bodies };
+}
+
 describe("runtime context policy", () => {
+  it.each([200_000, 80_000])(
+    "retains connector pages newest-first within a %i context budget",
+    (contextWindow) => {
+      const { request, context, bodies } = connectorPages();
+      const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+      const prepared = policy.prepareContext(context, { ...model, contextWindow });
+      const pages = prepared.messages.filter(
+        (message) =>
+          message.role === "toolResult" && message.toolName === "connectors_execute_tool",
+      );
+      expect(pages).toHaveLength(14);
+      const whole = pages.map(
+        (message, index) =>
+          JSON.stringify(message.content) ===
+          JSON.stringify([{ type: "text", text: bodies[index] }]),
+      );
+      if (contextWindow === 200_000) expect(whole).toEqual(bodies.map(() => true));
+      else {
+        const firstWhole = whole.indexOf(true);
+        expect(firstWhole).toBeGreaterThan(0);
+        expect(firstWhole).toBeLessThan(10);
+        expect(whole).toEqual(whole.map((_, index) => index >= firstWhole));
+        for (const page of pages.slice(0, firstWhole))
+          expect(JSON.stringify(page.content)).toContain(
+            "Earlier result shortened after you read it",
+          );
+      }
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(contextWindow - 4096);
+    },
+  );
+
+  it("never restores shortened connector pages on later rebuilds with more room", () => {
+    const { request, context } = connectorPages();
+    const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+    const first = policy.prepareContext(context, { ...model, contextWindow: 25_000 });
+    const shortened = first.messages.filter(
+      (message): message is Extract<Message, { role: "toolResult" }> =>
+        message.role === "toolResult" &&
+        JSON.stringify(message.content).includes("Earlier result shortened after you read it"),
+    );
+    expect(shortened.length).toBeGreaterThan(0);
+    const next = policy.prepareContext(
+      { ...context, systemPrompt: "Changed instructions" },
+      { ...model, contextWindow: 200_000 },
+    );
+    for (const page of shortened) {
+      expect(
+        next.messages.find(
+          (message) => message.role === "toolResult" && message.toolCallId === page.toolCallId,
+        ),
+      ).toEqual(page);
+    }
+  });
+
+  it("preserves fitting history with oversized output and warns once per policy", () => {
+    const { request, context } = fixture(30);
+    request.model.contextWindow = 32_768;
+    request.model.maxTokens = 32_768;
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const policy = createRuntimeContextPolicy(request);
+      const selectedModel = { ...model, contextWindow: 32_768, maxTokens: 32_768 };
+      expect(policy.prepareContext(context, selectedModel).messages).toEqual(context.messages);
+      expect(policy.getDecision()!.droppedMessages).toBe(0);
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThan(24_576);
+      policy.prepareContext(context, selectedModel);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Model output limit clamped to preserve context room",
+        { configuredMaxTokens: 32_768, effectiveMaxTokens: 8192, contextWindow: 32_768 },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not warn for an output limit within a quarter of the window", () => {
+    const { request, context } = fixture();
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      createRuntimeContextPolicy(request).prepareContext(context, model);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("preserves a selected prefix across turns with a declared cache window", () => {
     const { request, context } = fixture(30);
     request.threadId = "declared-cache-thread";
@@ -185,7 +313,7 @@ describe("runtime context policy", () => {
       readOnly: false,
       content: `---\nname: daily-brief\n---\n${"1. Step kept for skill_update.\n".repeat(80)}`,
     });
-    const shellOutput = "synthetic shell output ".repeat(100);
+    const shellOutput = "synthetic shell output ".repeat(900);
     context.messages.push(
       call("read", "skill_read"),
       result("read", "skill_read", skill),
@@ -199,12 +327,16 @@ describe("runtime context policy", () => {
       result("shell-1", "shell", shellOutput),
       call("shell-2", "shell"),
       result("shell-2", "shell", shellOutput),
+      call("shell-3", "shell"),
+      result("shell-3", "shell", shellOutput),
+      call("shell-4", "shell"),
+      result("shell-4", "shell", shellOutput),
     );
     const policy = createRuntimeContextPolicy({
       ...request,
       contextStrategy: DEFAULT_CONTEXT_STRATEGY,
     });
-    const prepared = policy.prepareContext(context, model);
+    const prepared = policy.prepareContext(context, { ...model, contextWindow: 100_000 });
     const body = (id: string) => {
       const message = prepared.messages.find(
         (message) => message.role === "toolResult" && message.toolCallId === id,
@@ -216,9 +348,63 @@ describe("runtime context policy", () => {
     );
     expect(skill.length).toBeGreaterThan(2500);
     expect(body("read")).toBe(skill);
-    expect(body("shell-1")).toContain("[Tool result truncated to fit context");
-    expect(body("shell-2")).toBe(shellOutput);
+    expect(body("shell-1")).toContain("[Earlier result shortened after you read it");
+    expect(body("shell-1")).not.toContain("unavailable");
+    for (const id of ["shell-2", "shell-3", "shell-4"]) {
+      expect(body(id)).toBe(shellOutput);
+    }
   });
+  it.each([65_536, 10_000])(
+    "retains individual parallel results within a %i budget",
+    (contextWindow) => {
+      const { request, context } = fixture(0);
+      const bodies = Array.from({ length: 4 }, (_, i) => `${i}: ${"evidence ".repeat(400)}`);
+      context.messages.push({
+        role: "assistant",
+        content: bodies.slice(0, 3).map((_, i) => ({
+          type: "toolCall",
+          id: `call-${i}`,
+          name: "shell",
+          arguments: {},
+        })),
+        timestamp: 101,
+      } as Message);
+      for (const [i, body] of bodies.entries()) {
+        if (i === 3)
+          context.messages.push({
+            role: "assistant",
+            content: [{ type: "toolCall", id: `call-${i}`, name: "shell", arguments: {} }],
+            timestamp: 102,
+          } as Message);
+        context.messages.push({
+          role: "toolResult",
+          toolCallId: `call-${i}`,
+          toolName: "shell",
+          content: [{ type: "text", text: body }],
+          isError: false,
+          timestamp: 102,
+        });
+      }
+      context.messages.push({
+        role: "assistant",
+        content: [{ type: "text", text: "Continue" }],
+        timestamp: 103,
+      } as Message);
+      const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+      const selected = policy.prepareContext(context, { ...model, contextWindow, maxTokens: 1024 });
+      const results = selected.messages.filter((message) => message.role === "toolResult");
+      expect(results).toHaveLength(4);
+      for (const [i, result] of results.entries()) {
+        if (contextWindow === 65_536 || i === 3)
+          expect(result.content).toEqual([{ type: "text", text: bodies[i] }]);
+        else
+          expect(JSON.stringify(result.content)).toContain(
+            "Earlier result shortened after you read it",
+          );
+      }
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(contextWindow - 1024);
+    },
+  );
   it("leaves the baseline provider payload untouched", () => {
     const { request, context } = fixture();
     const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "current" });
@@ -316,9 +502,9 @@ describe("runtime context policy", () => {
     );
     expect(after.messages.at(-1)).toEqual(steered.messages.at(-1));
     expect(after.messages.length).toBe(before.messages.length + 1);
-    // History is still bounded and old tool evidence is still shortened.
+    // History is still bounded and recent tool evidence remains whole.
     expect(after.messages.length).toBeLessThan(steered.messages.length);
-    expect(JSON.stringify(after.messages)).toContain("[Tool result truncated to fit context");
+    expect(JSON.stringify(after.messages)).toContain(shellOutput);
   });
   it.each(["snapshots", "cache-aware"] as const)(
     "retains already-short history without lookup navigation under %s",

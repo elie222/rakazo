@@ -1,5 +1,5 @@
 import { createAuth } from "@rakazo/auth";
-import { createDb } from "@rakazo/db";
+import { createDb, runAsSystem } from "@rakazo/db";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -8,7 +8,15 @@ function required(name: string): string {
 }
 
 const { prisma, pool } = createDb(required("DATABASE_URL"));
+// Creates the first account and its Space before any tenant exists.
 try {
+  await runAsSystem("owner bootstrap", bootstrap);
+} finally {
+  await prisma.$disconnect();
+  await pool.end();
+}
+
+async function bootstrap() {
   const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
   if (!settings?.ownerUserId) {
     const email = required("OWNER_EMAIL").trim().toLowerCase();
@@ -31,6 +39,7 @@ try {
       webOrigin: baseURL,
       signupsEnabled: "true",
       signupAllowlist: "",
+      breachedPasswordCheck: process.env.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
     });
     const existing = await prisma.user.findUnique({ where: { email } });
     // A failed first boot may have created the account before its owner claim.
@@ -56,7 +65,4 @@ try {
     where: { id: "default" },
     data: { signupsEnabled: false, signupPolicyInitialized: true },
   });
-} finally {
-  await prisma.$disconnect();
-  await pool.end();
 }

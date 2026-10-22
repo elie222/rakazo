@@ -1,12 +1,17 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVE_RUN_STATUSES,
   assertTransition,
   canTransition,
   isActive,
   isBackgroundRunTrigger,
   isConversationalRun,
+  isRunWaitingOnUser,
+  isRunWorking,
   QUEUE_HOLDING_RUN_STATUSES,
+  WAITING_ON_USER_RUN_STATUSES,
+  WORKING_RUN_STATUSES,
 } from "./run-state.js";
 
 describe("run state machine", () => {
@@ -15,12 +20,26 @@ describe("run state machine", () => {
     expect(QUEUE_HOLDING_RUN_STATUSES).toEqual(["queued", "leased", "running", "waiting_takeover"]);
   });
 
+  it("splits active runs into working and waiting on the user", () => {
+    expect(WORKING_RUN_STATUSES.filter((status) => isRunWaitingOnUser(status))).toEqual([]);
+    expect([...WORKING_RUN_STATUSES, ...WAITING_ON_USER_RUN_STATUSES].sort()).toEqual(
+      [...ACTIVE_RUN_STATUSES].sort(),
+    );
+    // A card waiting on the user is not the bot working.
+    expect(isRunWorking("waiting_input")).toBe(false);
+    expect(isRunWorking("waiting_takeover")).toBe(false);
+    expect(isRunWaitingOnUser("waiting_takeover")).toBe(true);
+    expect(isRunWorking("running")).toBe(true);
+    expect(isRunWorking("idle")).toBe(false);
+    expect(isRunWorking(undefined)).toBe(false);
+  });
+
   it("allows takeover resume onto a lease", () => {
     expect(canTransition("waiting_takeover", "leased")).toBe(true);
     expect(canTransition("waiting_takeover", "running")).toBe(false);
   });
 
-  it("withholds user steering from routine, webhook, and creation intro turns", () => {
+  it("withholds user steering from routine, webhook, creation intro, and peer wake turns", () => {
     expect(isConversationalRun("user")).toBe(true);
     expect(isConversationalRun("follow_up")).toBe(true);
     expect(isConversationalRun("messaging")).toBe(true);
@@ -28,6 +47,7 @@ describe("run state machine", () => {
     expect(isConversationalRun("webhook")).toBe(false);
     expect(isConversationalRun("created")).toBe(false);
     expect(isConversationalRun("tickets")).toBe(false);
+    expect(isConversationalRun("bot_message")).toBe(false);
   });
 
   it("marks ticket runs as background work that stays out of the chat", () => {

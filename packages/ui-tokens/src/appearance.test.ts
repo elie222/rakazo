@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import type { ColorTokens } from "./index.js";
 import {
-  type ColorTokens,
+  botColors,
   cssVariableName,
   darkTokens,
   lightTokens,
@@ -46,9 +47,19 @@ describe("appearance preference", () => {
     expect(tokensForAppearance("dark")).toBe(darkTokens);
     expect(tokensForAppearance("light")).toBe(lightTokens);
     for (const key of Object.keys(darkTokens) as (keyof ColorTokens)[]) {
-      if (key === "destructiveForeground" || key === "faviconPlate") continue;
+      if (
+        key === "chatUserForeground" ||
+        key === "destructiveForeground" ||
+        key === "destructiveFill" ||
+        key === "faviconPlate" ||
+        key === "unread"
+      )
+        continue;
       expect(darkTokens[key], key).not.toBe(lightTokens[key]);
     }
+    // Link icons keep a white plate in both themes; the light user bubble is near-black.
+    expect(lightTokens.faviconPlate).toBe("#FFFFFF");
+    expect(darkTokens.faviconPlate).toBe("#FFFFFF");
   });
 
   it("keeps working-state blue in its own semantic token across themes", () => {
@@ -93,6 +104,97 @@ describe("appearance preference", () => {
       if (desc) Object.defineProperty(globalThis, "localStorage", desc);
       else delete (globalThis as { localStorage?: Storage }).localStorage;
     }
+  });
+});
+
+// Composite translucent foregrounds before measuring WCAG 2.x contrast.
+function contrastRatio(a: string, b: string): number {
+  const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+  const alpha = a.length === 9 ? Number.parseInt(a.slice(7, 9), 16) / 255 : 1;
+  const backdrop = rgb(b);
+  const foreground = rgb(a).map((c, i) => c * alpha + backdrop[i]! * (1 - alpha));
+  const luminance = (channels: number[]) =>
+    channels.reduce((sum, value, i) => {
+      const c = value / 255;
+      return (
+        sum +
+        [0.2126, 0.7152, 0.0722][i]! * (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      );
+    }, 0);
+  const la = luminance(foreground);
+  const lb = luminance(backdrop);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+describe("light palette readability", () => {
+  it.each(["background", "card", "muted"] as const)(
+    "keeps faint text readable and lighter than secondary text on %s",
+    (surface) => {
+      const faint = contrastRatio(lightTokens.faintForeground, lightTokens[surface]);
+      const secondary = contrastRatio(lightTokens.mutedForeground, lightTokens[surface]);
+      expect(faint).toBeGreaterThanOrEqual(3);
+      expect(secondary - faint).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it("separates grouped cells at least as much as the iOS grouped palette", () => {
+    expect(contrastRatio(lightTokens.card, lightTokens.background)).toBeGreaterThanOrEqual(
+      contrastRatio("#FFFFFF", "#F2F2F7"),
+    );
+  });
+
+  it("keeps enabled password actions readable", () => {
+    expect(
+      contrastRatio(lightTokens.primaryForeground, lightTokens.primary),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("dark palette readability", () => {
+  // The destructive fill follows the system palette; ordinary body text meets AA.
+  it.each(["background", "card", "muted"] as const)(
+    "keeps faint text readable on %s",
+    (surface) => {
+      expect(contrastRatio(darkTokens.faintForeground, darkTokens[surface])).toBeGreaterThanOrEqual(
+        3,
+      );
+    },
+  );
+
+  it.each(botColors)("keeps bot identity %s readable on dark messages", (color) => {
+    for (const surface of [darkTokens.background, darkTokens.muted]) {
+      expect(contrastRatio(color, surface)).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
+describe.each([
+  ["dark", darkTokens],
+  ["light", lightTokens],
+] as const)("%s palette contrast", (_name, palette: ColorTokens) => {
+  // Opaque text tokens on the surfaces they are drawn on. Secondary and faint text are
+  // translucent system label colours and white on the solid red fill is 3.9:1, so the
+  // palette matches the iOS design there instead of 4.5:1; they are not listed.
+  const pairs: [keyof ColorTokens, keyof ColorTokens][] = [
+    ["foreground", "background"],
+    ["foreground", "dialog"],
+    ["cardForeground", "card"],
+    ["popoverForeground", "popover"],
+    ["foreground", "muted"],
+    ["chatUserForeground", "chatUser"],
+    ["primaryForeground", "primary"],
+    ["sidebarForeground", "sidebar"],
+    ["sidebarAccentForeground", "sidebarAccent"],
+    ["link", "background"],
+    ["link", "card"],
+    ["destructive", "background"],
+    ["destructive", "card"],
+    ["success", "background"],
+    ["success", "card"],
+  ];
+
+  it.each(pairs)("%s on %s meets WCAG AA (4.5:1)", (text, surface) => {
+    expect(contrastRatio(palette[text], palette[surface])).toBeGreaterThanOrEqual(4.5);
   });
 });
 

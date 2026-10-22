@@ -28,6 +28,7 @@ vi.mock("react-native", () => {
     Text: View,
     Switch: () => null,
     StyleSheet: { create: (styles: unknown) => styles },
+    Platform: { OS: "ios" },
     useWindowDimensions: () => ({ fontScale: 1 }),
     Pressable: (props: {
       children?: ReactNode;

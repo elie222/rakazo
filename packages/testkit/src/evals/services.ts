@@ -4,7 +4,7 @@ import type {
   ConnectorEvent,
   ConnectorTool,
 } from "@rakazo/adapter-kit";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 
 export const INBOX = [
@@ -29,8 +29,20 @@ export type ServiceCall = {
   outcome: ServiceCallOutcome;
 };
 
-/** State belongs to one trial. Reads observe state; invalid actions never advance it. */
-export class EvalServices extends ComposioEmulator {
+const DIRECTORY = [
+  { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
+  { slug: "CRM", name: "CRM", logo: null, noAuth: false },
+  { slug: "GITHUB", name: "GitHub", logo: null, noAuth: false },
+  { slug: CUSTOMER_SUPPORT_PROVIDERS.salesforce, name: "Salesforce", logo: null, noAuth: false },
+  { slug: CUSTOMER_SUPPORT_PROVIDERS.zendesk, name: "Zendesk", logo: null, noAuth: false },
+];
+
+/**
+ * State belongs to one trial. Reads observe state; invalid actions never advance it.
+ * Catalog, connections and GitHub run through the real connector over a fake Composio client.
+ */
+export class EvalServices extends ComposioConnector {
+  private readonly composio: FakeComposioClient;
   private diagnosticChain: Array<{ cursor: string; nextCursor: string | null }> = [];
   enableDiagnosticChain(length = 12) {
     if (!Number.isSafeInteger(length) || length < 2 || length > 50)
@@ -52,24 +64,10 @@ export class EvalServices extends ComposioEmulator {
   private faultUsed = false;
 
   constructor() {
-    super([
-      { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
-      { slug: "CRM", name: "CRM", logo: null, noAuth: false },
-      { slug: "GITHUB", name: "GitHub", logo: null, noAuth: false },
-      {
-        slug: CUSTOMER_SUPPORT_PROVIDERS.salesforce,
-        name: "Salesforce",
-        logo: null,
-        noAuth: false,
-      },
-      {
-        slug: CUSTOMER_SUPPORT_PROVIDERS.zendesk,
-        name: "Zendesk",
-        logo: null,
-        noAuth: false,
-      },
-    ]);
-    this.seedGithubReleases([
+    const composio = new FakeComposioClient(DIRECTORY);
+    super({ client: composio });
+    this.composio = composio;
+    composio.seedGithubReleases([
       {
         owner: "example",
         repo: "widget",
@@ -89,6 +87,14 @@ export class EvalServices extends ComposioEmulator {
         htmlUrl: "https://example.test/widget/releases/v2.0.0",
       },
     ]);
+  }
+
+  seedGithubReleases(releases: Parameters<FakeComposioClient["seedGithubReleases"]>[0]): void {
+    this.composio.seedGithubReleases(releases);
+  }
+
+  listGithubReleases() {
+    return this.composio.listGithubReleases();
   }
 
   override async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
@@ -204,13 +210,8 @@ export class EvalServices extends ComposioEmulator {
         throw new Error("Release service unavailable; check did not complete.");
       for await (const event of super.execute(call, context)) {
         if (event.type === "result") {
-          entry.outcome =
-            event.data !== null &&
-            typeof event.data === "object" &&
-            "ok" in event.data &&
-            event.data.ok === true
-              ? "read"
-              : "rejected";
+          const { data } = event.data as { data?: { ok?: unknown } };
+          entry.outcome = data?.ok === true ? "read" : "rejected";
         }
         if (event.type === "error") entry.outcome = "rejected";
         yield event;

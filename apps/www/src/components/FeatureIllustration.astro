@@ -2,30 +2,19 @@
 import type { HomeCopy } from "../i18n/home";
 
 interface Props {
-  kind: "model" | "schedule" | "approval" | "job";
+  kind: "model" | "schedule" | "approval";
   labels: HomeCopy["selfHost"]["mock"];
-  job?: number;
 }
 
-const { kind, labels, job = 0 } = Astro.props;
-// Familiar app surfaces: model picker, routine schedule, approval, task result.
-const jobIcons = [
-  "M3 5h18v14H3z M3 5l9 8 9-8",
-  "M3 4h18v16H3z M3 13h5l2 3h4l2-3h5",
-  "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M17 4l2 2 3-3",
-  "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6",
-  "M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16",
-  "M3 5h18v12H8l-5 4z M7 9h10 M7 13h6",
-  "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
-  "M4 5h16v16H4z M8 3v4 M16 3v4 M4 11h16 M8 15h3 M8 18h7",
-];
+const { kind, labels } = Astro.props;
+// Familiar app surfaces: model picker, routine schedule, approval.
 ---
 
 <div class:list={["feature-illustration", `feature-illustration--${kind}`]} aria-hidden="true">
   {kind === "model" ? (
     <div class="mini-window">
       <span class="mini-label">{labels.model}</span>
-      <div class="mini-picker"><span>Claude Sonnet ✓</span><span>⌄</span></div>
+      <div class="mini-picker"><span>Claude Sonnet <b>✓</b></span><span>⌄</span></div>
       <div class="mini-option"><span>○</span> GPT</div>
     </div>
   ) : kind === "schedule" ? (
@@ -33,16 +22,10 @@ const jobIcons = [
       <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M7 3v4m10-4v4M3 11h18m-14 5h4" /></svg>
       <span>{labels.weekdays}</span><span class="mini-toggle"><i /></span>
     </div>
-  ) : kind === "approval" ? (
+  ) : (
     <div class="mini-window">
       <span class="mini-label">{labels.approval}</span>
       <div class="mini-approval"><span>{labels.deny}</span><span>{labels.approve} ✓</span></div>
-    </div>
-  ) : (
-    <div class="mini-task">
-      <svg class="mini-job-icon" viewBox="0 0 24 24"><path d={jobIcons[job]} /></svg>
-      <div class="mini-task-lines"><span /><span /></div>
-      <span class="mini-done">✓</span>
     </div>
   )}
 </div>
@@ -53,7 +36,7 @@ const jobIcons = [
     margin-bottom: 24px;
     border: 1px solid var(--line);
     border-radius: 12px;
-    background: var(--surface-soft);
+    background: radial-gradient(120% 100% at 50% 100%, var(--accent-soft), var(--surface-soft) 85%);
     color: var(--ink);
     display: flex;
     align-items: center;
@@ -64,6 +47,9 @@ const jobIcons = [
     font-size: 12px;
     line-height: 1.4;
   }
+  .feature-illustration--model { --accent: var(--coral); --accent-soft: var(--coral-soft); }
+  .feature-illustration--schedule { --accent: var(--indigo); --accent-soft: var(--indigo-soft); }
+  .feature-illustration--approval { --accent: var(--green); --accent-soft: var(--green-soft); }
   .mini-window {
     width: 100%;
     max-width: 240px;
@@ -74,20 +60,16 @@ const jobIcons = [
     box-shadow: var(--shadow-soft);
   }
   .mini-label { display: block; margin-bottom: 9px; color: var(--muted-2); font-size: 11px; }
-  .mini-picker, .mini-option, .mini-approval, .mini-schedule, .mini-task { display: flex; align-items: center; gap: 10px; }
-  .mini-picker { justify-content: space-between; padding: 7px 9px; border: 1px solid var(--line-2); border-radius: 6px; }
+  .mini-picker, .mini-option, .mini-approval, .mini-schedule { display: flex; align-items: center; gap: 10px; }
+  .mini-picker { justify-content: space-between; padding: 7px 9px; border: 1px solid var(--accent); border-radius: 6px; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .mini-picker b { color: var(--accent); font-weight: inherit; }
   .mini-option { padding: 8px 9px 0; color: var(--muted-2); }
   .mini-schedule { max-width: 270px; padding: 16px 12px; }
   .mini-schedule > span:nth-child(2) { flex: 1; }
+  .mini-schedule svg { color: var(--accent); }
   svg { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .mini-toggle { display: flex; flex: none; justify-content: flex-end; width: 28px; padding: 3px; border-radius: 20px; background: var(--ink); }
+  .mini-toggle { display: flex; flex: none; justify-content: flex-end; width: 28px; padding: 3px; border-radius: 20px; background: var(--accent); }
   .mini-toggle i { width: 10px; height: 10px; border-radius: 50%; background: var(--surface); }
   .mini-approval > span { flex: 1; padding: 7px 4px; border: 1px solid var(--line-2); border-radius: 6px; text-align: center; }
-  .mini-approval > span:last-child { background: var(--ink); color: var(--surface); border-color: var(--ink); }
-  .feature-illustration--job { height: 86px; padding: 12px; margin-bottom: 18px; }
-  .mini-task { width: 100%; padding: 12px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); }
-  .mini-task-lines { flex: 1; display: grid; gap: 6px; }
-  .mini-task-lines span { height: 3px; border-radius: 2px; background: var(--line-2); }
-  .mini-task-lines span:last-child { width: 65%; }
-  .mini-done { font-size: 12px; }
+  .mini-approval > span:last-child { background: var(--accent); color: var(--surface); border-color: var(--accent); }
 </style>

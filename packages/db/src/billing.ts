@@ -17,15 +17,61 @@ export function billingAccountForOrganization(
 }
 
 /** Idempotent per organization: a concurrent create keeps the first stored customer. */
-export function createBillingAccount(
+export async function createBillingAccount(
   prisma: PrismaClient,
   input: { organizationId: string; customerId: string },
 ): Promise<BillingAccount> {
-  return prisma.billingAccount.upsert({
-    where: { organizationId: input.organizationId },
-    create: input,
-    update: {},
+  try {
+    return await prisma.billingAccount.upsert({
+      where: { organizationId: input.organizationId },
+      create: input,
+      update: {},
+    });
+  } catch (error) {
+    // An empty update is not a native upsert, so a concurrent create can still collide.
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+      throw error;
+    }
+    const existing = await billingAccountForOrganization(prisma, input.organizationId);
+    if (!existing) throw error;
+    return existing;
+  }
+}
+
+/**
+ * Points the organization at a new customer after the provider deleted the old one, clearing the
+ * old subscription snapshot but keeping `subscribedAt` so no second trial is offered. When a
+ * concurrent request already swapped it, that swap wins. Returns the stored account.
+ */
+export async function replaceBillingCustomer(
+  prisma: PrismaClient,
+  input: { organizationId: string; previousCustomerId: string; customerId: string },
+): Promise<BillingAccount> {
+  await prisma.billingAccount.updateMany({
+    where: { organizationId: input.organizationId, customerId: input.previousCustomerId },
+    data: {
+      customerId: input.customerId,
+      creditAmountCents: null,
+      subscriptionId: null,
+      subscriptionItemId: null,
+      priceId: null,
+      status: null,
+      seats: null,
+      trialEndsAt: null,
+      currentPeriodEndsAt: null,
+      cancelAtPeriodEnd: false,
+      endedAt: null,
+      syncedAt: null,
+    },
   });
+  return prisma.billingAccount.findUniqueOrThrow({
+    where: { organizationId: input.organizationId },
+  });
+}
+
+/** The subscription exists but has no access until the owner settles it in the billing portal. */
+export function needsBillingPortal(status: string | null): boolean {
+  return status === "unpaid" || status === "paused";
 }
 
 /**
@@ -46,6 +92,7 @@ export async function syncBillingSnapshot(
   const written = await prisma.billingAccount.updateMany({
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
     data: {
+      creditAmountCents: snapshot?.creditAmountCents ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,

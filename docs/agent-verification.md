@@ -189,15 +189,16 @@ The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
 
-Keep functional criteria deterministic. Add a model judge only for a quality
-that cannot be graded directly, with a versioned rubric and human calibration.
-Do not let a judge override forbidden effects or missing artifacts.
+Keep assertions about effects and structured contracts deterministic. Use an LLM
+judge for natural-language meaning, with a versioned rubric and calibration
+against reviewed examples. Do not match prose against keywords or regexes, and
+do not let a judge override forbidden effects or missing artifacts.
 
 ### Routine silence evals
 
 ```sh
 pnpm test:evals --suite silence --list
-pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/silence.json
+pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/silence.json
 ```
 
 The five synthetic cases cover unchanged releases, an empty successful listing,
@@ -224,15 +225,21 @@ judgment. Native push delivery and rendered UI pixels are outside this fixture.
 Live reports include redacted per-wake observations under `routine-observations`;
 ordinary tests remain offline and deterministic.
 
-The initial October 19, 2026 `silence-v1` live run planned three trials per case on
-`openai/gpt-6-luna` through OpenRouter. One empty-source trial passed; the other
-fourteen trials ended with `Request timed out.` before usable outcomes. This is
-an inconclusive baseline, not a model-quality pass. The initial report is preserved
-locally as `test-report/evals/silence-first.json`, with a backup outside the worktree.
-Known token and cost totals remain unavailable for failed calls; the conservative
-spend guard settled USD 0.101028585 with zero reservations under a USD 0.25 cap.
-This run predates the added unread-badge criterion; offline verification covers
-that criterion. No live qualification of the final source is claimed.
+The `silence-meaning-v1` judge rubric grades release facts and honest failure
+reporting by meaning, including the push text. It accepts paraphrases and rejects
+contradictory all-clears. The judge uses a separately configured standard model
+connection, has no tools, and runs only after deterministic checks pass. Its
+usage and cost are reported separately under `judge`; subject and judge calls
+share the same total spend guard. Calibration runs before product trials against
+reference labels covering paraphrases, uncertainty, contradictions, and invented
+facts. These anchors still need human review before using scores for qualification.
+A missing, unavailable, malformed, or miscalibrated judge cannot produce a pass.
+Ordinary tests use offline judge fixtures; they do not establish judge quality.
+
+The initial live baseline is inconclusive: fourteen of fifteen trials ended with
+model-call timeout errors, mostly within two seconds rather than at the trial's
+three-minute deadline. The saved report lacks transport diagnostics to establish
+the cause. No live qualification of the suite or its judge is claimed.
 
 ### Long conversation and cost evals
 
