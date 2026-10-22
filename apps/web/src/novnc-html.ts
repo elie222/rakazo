@@ -124,7 +124,7 @@ export function injectNovncStorageShim(html: string) {
               : "";
     if (!state || state === last) return;
     last = state;
-    report(state, state === "failed" ? failure || String(status.textContent || "") : undefined);
+    report(state, state === "failed" ? failure || String(status?.textContent || "") : undefined);
   };
   const observe = () => {
     sync();

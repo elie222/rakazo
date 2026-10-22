@@ -967,6 +967,9 @@ function SpaceShell() {
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? active?.id;
+  useEffect(() => {
+    setScreenLoadError(null);
+  }, [computerBot?.id, screenUrl]);
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),

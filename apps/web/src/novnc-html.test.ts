@@ -181,7 +181,7 @@ describe("noVNC HTML read", () => {
 });
 
 describe("noVNC frame state report", () => {
-  function page(options: { readyState?: string; canvas?: boolean } = {}) {
+  function page(options: { readyState?: string; canvas?: boolean; statusBar?: boolean } = {}) {
     const posted: unknown[] = [];
     const classes = new Set<string>();
     const statusClasses = new Set<string>();
@@ -199,7 +199,8 @@ describe("noVNC frame state report", () => {
     const document = {
       documentElement: root,
       readyState: options.readyState ?? "complete",
-      getElementById: (id: string) => (id === "noVNC_status" ? status : null),
+      getElementById: (id: string) =>
+        id === "noVNC_status" && options.statusBar !== false ? status : null,
       querySelector: (selector: string) =>
         selector === "#screen canvas" && options.canvas ? {} : null,
       addEventListener: (type: string, listener: () => void) => {
@@ -280,6 +281,14 @@ describe("noVNC frame state report", () => {
       rakazoScreen: "failed",
       detail: "Authentication failure",
     });
+  });
+
+  it("reports an empty embed failure without a status bar", () => {
+    const p = page({ canvas: true, statusBar: false });
+    expect(p.posted.at(-1)).toEqual({ rakazoScreen: "connecting" });
+    p.attributes.set("data-rakazo-screen-error", "");
+    p.mutate();
+    expect(p.posted.at(-1)).toEqual({ rakazoScreen: "failed" });
   });
 
   it("treats a Rakazo embed page that built its viewer as connecting", () => {
