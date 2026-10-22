@@ -1,0 +1,428 @@
+import { randomUUID } from "node:crypto";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import {
+  answerRunInput,
+  asSystem,
+  createDb,
+  createThreadMessage,
+  provisionMessagingIdentity,
+  runAsSystem,
+  runAsTenant,
+} from "@rakazo/db";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ThreadTarget } from "./thread-target.js";
+import { sendThreadMessage } from "./thread-target.js";
+
+const databaseUrl = process.env.DATABASE_URL;
+const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
+
+describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
+  let prisma: PrismaClient;
+  let system: PrismaClient;
+  let close: () => Promise<void>;
+  let actor: Actor;
+  let botId: string;
+  let threadId: string;
+  let peerBotId: string;
+  let peerThreadId: string;
+  let groupTarget: Extract<ThreadTarget, { kind: "group" }>;
+  const enqueue = vi.fn().mockResolvedValue(undefined);
+  const notify = vi.fn().mockResolvedValue(undefined);
+  const question: MessageBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "choice-1", label: "Berlin" },
+      { id: "choice-2", label: "Paris" },
+    ],
+  };
+
+  beforeAll(() => {
+    const db = createDb(databaseUrl!);
+    prisma = db.prisma;
+    system = asSystem(prisma);
+    close = async () => {
+      await prisma.$disconnect();
+      await db.pool.end();
+    };
+  });
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const identity = await runAsSystem("test fixture", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider: "test", address: `typed-reply-${randomUUID()}` },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
+    ({ botId, threadId } = identity);
+    actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
+    const peer = await system.bot.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        name: "Beta",
+        color: "primary",
+        thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
+      },
+      include: { thread: true },
+    });
+    peerBotId = peer.id;
+    peerThreadId = peer.thread!.id;
+    const group = await system.chatGroup.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        name: "Group",
+        members: { create: [{ botId }, { botId: peerBotId }] },
+        thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
+      },
+      include: { thread: true },
+    });
+    groupTarget = {
+      kind: "group",
+      groupId: group.id,
+      threadId: group.thread!.id,
+      groupName: group.name,
+      members: [],
+      memberBotIds: [botId, peerBotId],
+    };
+  });
+  afterEach(async () => {
+    if (!actor) return;
+    await system.messagingIdentity.deleteMany({ where: { userId: actor.userId } });
+    await system.organization.deleteMany({ where: { id: actor.spaceId } });
+    await system.user.deleteMany({ where: { id: actor.userId } });
+  });
+  afterAll(async () => {
+    await close?.();
+  });
+
+  const privateTarget = () =>
+    ({ kind: "bot", botId, threadId, bot: { computer: null } }) as ThreadTarget;
+  function send(target: ThreadTarget, text = "Paris", clientNonce = randomUUID()) {
+    return runAsTenant(actor, () =>
+      sendThreadMessage(
+        { prisma, events: { notify } as never, jobs: { enqueue } as never },
+        actor,
+        target,
+        { text, mentions: target.kind === "group" ? [botId] : [], clientNonce },
+      ),
+    );
+  }
+  async function waitingCard(
+    card: MessageBlock = question,
+    targetThreadId = threadId,
+    targetBotId = botId,
+  ) {
+    const task = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: targetBotId,
+        threadId: targetThreadId,
+        prompt: "Choose a city",
+        status: "waiting_input",
+      },
+    });
+    const run = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: targetBotId,
+        threadId: targetThreadId,
+        taskId: task.id,
+        status: "waiting_input",
+        trigger: "user",
+        checkpoint: JSON.stringify({ pending: true }),
+      },
+    });
+    const attempt = await system.attempt.create({
+      data: { runId: run.id, fence: 1, status: "waiting_input" },
+    });
+    const message = await createThreadMessage(system, {
+      threadId: targetThreadId,
+      botId: targetBotId,
+      runId: run.id,
+      role: "bot",
+      blocks: [card],
+    });
+    return { run, task, message, attempt };
+  }
+  async function expectPending(fixture: Awaited<ReturnType<typeof waitingCard>>) {
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "waiting_input",
+      completedAt: null,
+    });
+    expect(
+      await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
+    ).toMatchObject({ blocks: fixture.message.blocks });
+  }
+
+  it.each(["bot", "group"] as const)(
+    "retires questions that are no longer latest in a %s send and starts one normal run",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const old = await waitingCard(question, target.threadId);
+      // An unrelated newer message used to prevent composer answers from finding the old ask.
+      await createThreadMessage(system, {
+        threadId: target.threadId,
+        role: "bot",
+        botId,
+        blocks: [{ kind: "text", text: "Another update" }],
+      });
+      const latest = await waitingCard(
+        { kind: "ask", text: "Any preference?", status: "pending" },
+        target.threadId,
+      );
+      const peer = await waitingCard(question, target.threadId, peerBotId);
+      const otherThread = await waitingCard(question, peerThreadId);
+      const nonce = randomUUID();
+      const result = await send(target, "Paris", nonce);
+      expect(result.runIds).toEqual([result.runId]);
+      expect([old.run.id, latest.run.id]).not.toContain(result.runId);
+      expect(await system.run.findUniqueOrThrow({ where: { id: result.runId! } })).toMatchObject({
+        status: "queued",
+        trigger: "user",
+      });
+      for (const fixture of [old, latest]) {
+        expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject(
+          { status: "cancelled", error: null, completedAt: expect.any(Date), checkpoint: null },
+        );
+        expect(
+          await system.task.findUniqueOrThrow({ where: { id: fixture.task.id } }),
+        ).toMatchObject({ status: "cancelled" });
+        expect(
+          await system.attempt.findUniqueOrThrow({ where: { id: fixture.attempt.id } }),
+        ).toMatchObject({ status: "cancelled", finishedAt: expect.any(Date) });
+        const updated = await system.message.findUniqueOrThrow({
+          where: { id: fixture.message.id },
+        });
+        expect(updated.blocks).toEqual([
+          expect.objectContaining({ status: "answered", answer: "Paris" }),
+        ]);
+        const events = await system.event.findMany({
+          where: { runId: fixture.run.id },
+          orderBy: { seq: "asc" },
+        });
+        expect(events.map((event) => event.type)).toEqual([
+          "thread.message.updated",
+          "run.cancelled",
+        ]);
+        expect(
+          await runAsTenant(actor, () =>
+            answerRunInput(prisma, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              runId: fixture.run.id,
+              messageId: fixture.message.id,
+              answeredByUserId: actor.userId,
+              answer: "choice-1",
+            }),
+          ),
+        ).toBe(false);
+      }
+      await expectPending(peer);
+      await expectPending(otherThread);
+      const count = await system.event.count({ where: { threadId: target.threadId } });
+      expect(await send(target, "Paris", nonce)).toMatchObject({
+        runId: result.runId,
+        runIds: result.runIds,
+      });
+      expect(await system.event.count({ where: { threadId: target.threadId } })).toBe(count);
+      expect(enqueue.mock.calls.every(([job]) => job.payload.runId === result.runId)).toBe(true);
+    },
+  );
+
+  it.each(["bot", "group"] as const)(
+    "resumes the latest question in a %s send while retiring an older stranded question",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const old = await waitingCard(question, target.threadId);
+      const peer = await waitingCard(question, target.threadId, peerBotId);
+      const latest = await waitingCard(question, target.threadId);
+      const result = await send(target);
+      expect(result).toMatchObject({ runId: latest.run.id, runIds: [latest.run.id] });
+      expect(await system.run.findUniqueOrThrow({ where: { id: latest.run.id } })).toMatchObject({
+        status: "queued",
+        completedAt: null,
+      });
+      expect(
+        await system.message.findFirstOrThrow({
+          where: { threadId: target.threadId, seq: result.seq },
+        }),
+      ).toMatchObject({
+        runId: latest.run.id,
+      });
+      expect(
+        await system.message.findUniqueOrThrow({ where: { id: latest.message.id } }),
+      ).toMatchObject({
+        blocks: [expect.objectContaining({ status: "answered", answer: "choice-2" })],
+      });
+      expect(await system.run.findUniqueOrThrow({ where: { id: old.run.id } })).toMatchObject({
+        status: "cancelled",
+      });
+      expect(
+        await system.message.findUniqueOrThrow({ where: { id: old.message.id } }),
+      ).toMatchObject({
+        blocks: [expect.objectContaining({ status: "answered", answer: "Paris" })],
+      });
+      const events = await system.event.findMany({
+        where: { runId: latest.run.id },
+        orderBy: { seq: "asc" },
+      });
+      expect(events.map((event) => event.type)).toEqual([
+        "thread.message.updated",
+        "thread.message.created",
+      ]);
+      expect(events.at(-1)?.payload).toMatchObject({ runIds: [latest.run.id] });
+      expect(notify).toHaveBeenCalledWith(target.threadId, events.at(-1)?.seq);
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: latest.run.id } }),
+      );
+      await expectPending(peer);
+    },
+  );
+
+  it("still resumes the same run when an option is tapped", async () => {
+    const fixture = await waitingCard();
+    expect(
+      await runAsTenant(actor, () =>
+        answerRunInput(prisma, {
+          spaceId: actor.spaceId,
+          threadId,
+          runId: fixture.run.id,
+          messageId: fixture.message.id,
+          answeredByUserId: actor.userId,
+          answer: "choice-2",
+        }),
+      ),
+    ).toBe(true);
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "queued",
+      checkpoint: null,
+    });
+    expect(
+      await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
+    ).toMatchObject({
+      blocks: [expect.objectContaining({ status: "answered", answer: "choice-2" })],
+    });
+    expect(await system.task.findUniqueOrThrow({ where: { id: fixture.task.id } })).toMatchObject({
+      prompt: "Selected choice choice-2: Paris",
+    });
+  });
+
+  it.each(["secret", "login", "approval"] as const)(
+    "leaves a %s card and its run pending",
+    async (kind) => {
+      const card: MessageBlock = {
+        kind: "ask",
+        text: "Input needed",
+        status: "pending",
+        ...(kind === "approval"
+          ? {
+              approvalEffectId: "synthetic-effect",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            }
+          : { input: "secret" as const }),
+        ...(kind === "login"
+          ? {
+              credential: {
+                name: "site_login",
+                origin: "https://login.example.test",
+                auth: { type: "login" as const },
+              },
+            }
+          : {}),
+      };
+      const fixture = await waitingCard(card);
+      const result = await send(privateTarget());
+      expect(result.runId).not.toBe(fixture.run.id);
+      await expectPending(fixture);
+      expect(await system.event.count({ where: { runId: fixture.run.id } })).toBe(0);
+    },
+  );
+
+  it("retires a question while steering live work for the same bot", async () => {
+    const fixture = await waitingCard();
+    await createThreadMessage(system, {
+      threadId,
+      botId,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Current update" }],
+    });
+    const liveTask = await system.task.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        prompt: "Current work",
+        status: "running",
+      },
+    });
+    const liveRun = await system.run.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId,
+        threadId,
+        taskId: liveTask.id,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const result = await send(privateTarget());
+    expect(result.runId).toBe(liveRun.id);
+    expect(await system.run.findUniqueOrThrow({ where: { id: liveRun.id } })).toMatchObject({
+      status: "running",
+    });
+    expect(await system.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(await system.steeringMessage.count({ where: { runId: liveRun.id } })).toBe(1);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("rolls back retirement if accepting the new run fails", async () => {
+    const fixture = await waitingCard();
+    await createThreadMessage(system, {
+      threadId,
+      botId,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Current update" }],
+    });
+    const failing = prisma.$extends({
+      query: {
+        run: {
+          create() {
+            throw new Error("synthetic send failure");
+          },
+        },
+      },
+    });
+    await expect(
+      runAsTenant(actor, () =>
+        sendThreadMessage(
+          {
+            prisma: failing as PrismaClient,
+            events: { notify } as never,
+            jobs: { enqueue } as never,
+          },
+          actor,
+          privateTarget(),
+          { text: "Paris" },
+        ),
+      ),
+    ).rejects.toThrow("synthetic send failure");
+    await expectPending(fixture);
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(0);
+    expect(await system.event.count({ where: { runId: fixture.run.id } })).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

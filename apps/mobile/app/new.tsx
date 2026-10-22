@@ -74,6 +74,7 @@ export default function NewBot() {
     <>
       <Stack.Screen options={cancelHeaderOptions(t("Cancel"), close)} />
       <ScrollView
+        automaticallyAdjustKeyboardInsets
         contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}

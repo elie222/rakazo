@@ -83,9 +83,9 @@ export function HostComputerPrompt({
     setPending(true);
     setError(null);
     try {
+      if (!desktop?.computer?.managesHostChoice)
+        throw new Error(t`Local computer access requires the latest desktop app.`);
       if (computerHost === "this-mac") {
-        if (!desktop?.computer)
-          throw new Error(t`Local computer access requires the latest desktop app.`);
         if (!(await desktop.computer.requestAccess())) {
           setPending(false);
           return;
@@ -93,7 +93,6 @@ export function HostComputerPrompt({
       } else {
         await desktop?.computer?.revokeAccess();
       }
-      await rpc.deployment.update({ computerHost });
     } catch (err) {
       setError(errorText(err, t`Could not save that choice`));
       setPending(false);

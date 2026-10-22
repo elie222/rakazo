@@ -113,6 +113,62 @@ export async function attachWorkspaceFileToThread(
   return { artifactId: row.id, block: messageBlockForArtifact(row) };
 }
 
+function attachmentBlocks(blocks: MessageBlock[] | undefined) {
+  return (
+    blocks?.filter(
+      (block): block is Extract<MessageBlock, { kind: "file" | "image" }> =>
+        block.kind === "file" || block.kind === "image",
+    ) ?? []
+  );
+}
+
+async function attachedArtifacts(
+  prisma: PrismaClient,
+  blocks: Array<Extract<MessageBlock, { kind: "file" | "image" }>>,
+  context: AdapterContext,
+) {
+  const rows = await prisma.artifact.findMany({
+    where: {
+      id: { in: blocks.map((block) => block.artifactId) },
+      spaceId: context.spaceId,
+      userId: context.userId,
+    },
+  });
+  return new Map(rows.map((row) => [row.id, row]));
+}
+
+function threadFileMetadata(
+  row: Pick<Artifact, "id" | "name" | "mimeType" | "size">,
+): MaterializedThreadFile {
+  return {
+    name: row.name,
+    mimeType: row.mimeType,
+    size: row.size,
+    path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
+  };
+}
+
+/** Resolve current attachments without reading their bytes or waking a computer. */
+export async function listCurrentTurnFiles(
+  deps: { prisma: PrismaClient; maxUploadSizeBytes?: number },
+  blocks: MessageBlock[] | undefined,
+  context: AdapterContext,
+): Promise<MaterializedThreadFile[]> {
+  const attached = attachmentBlocks(blocks);
+  if (!attached.length) return [];
+  const byId = await attachedArtifacts(deps.prisma, attached, context);
+  return attached.map((block) => {
+    const row = byId.get(block.artifactId);
+    if (!row) throw new Error(`Attached file is unavailable: ${block.name}`);
+    if (row.size > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
+      throw new Error(
+        `Attached file exceeds the ${attachmentSizeLabel(deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)} limit: ${row.name}`,
+      );
+    }
+    return threadFileMetadata(row);
+  });
+}
+
 export async function materializeCurrentTurnFiles(
   deps: {
     prisma: PrismaClient;
@@ -143,30 +199,19 @@ async function materializeThreadFiles(
   // inline for vision (loadCurrentTurnImages) doesn't put them on disk, so
   // they must be included here too or a bot can describe a photo it can't
   // actually attach, forward, or hand to a tool that needs the file.
-  const fileBlocks = blocks?.filter(
-    (block): block is Extract<MessageBlock, { kind: "file" | "image" }> =>
-      block.kind === "file" || block.kind === "image",
-  );
-  if (!fileBlocks?.length) return [];
-
-  const rows = await deps.prisma.artifact.findMany({
-    where: {
-      id: { in: fileBlocks.map((block) => block.artifactId) },
-      spaceId: input.context.spaceId,
-      userId: input.context.userId,
-    },
-  });
-  const byId = new Map(rows.map((row) => [row.id, row]));
+  const fileBlocks = attachmentBlocks(blocks);
+  if (!fileBlocks.length) return [];
+  const byId = await attachedArtifacts(deps.prisma, fileBlocks, input.context);
   const materialized: MaterializedThreadFile[] = [];
 
   for (const block of fileBlocks) {
     const row = byId.get(block.artifactId);
     if (!row) throw new Error(`Attached file is unavailable: ${block.name}`);
-    const relativePath = `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`;
+    const metadata = threadFileMetadata(row);
     const workspacePath = resolveBotWorkspacePath(
       input.computerMode,
       input.context.botId,
-      relativePath,
+      metadata.path,
     );
     const exists = preserveExisting
       ? await deps.sandbox.readFile(await input.computer(), workspacePath, input.context).then(
@@ -188,12 +233,7 @@ async function materializeThreadFiles(
         input.context,
       );
     }
-    materialized.push({
-      name: row.name,
-      mimeType: row.mimeType,
-      size: row.size,
-      path: relativePath,
-    });
+    materialized.push(metadata);
   }
 
   return materialized;
@@ -246,27 +286,13 @@ export async function listRecentThreadFiles(
 ): Promise<MaterializedThreadFile[]> {
   const blocks = recentAttachmentBlocks(history, messages, input);
   if (!blocks.length) return [];
-  const rows = await deps.prisma.artifact.findMany({
-    where: {
-      id: { in: blocks.map((block) => block.artifactId) },
-      spaceId: input.context.spaceId,
-      userId: input.context.userId,
-    },
-  });
-  const byId = new Map(rows.map((row) => [row.id, row]));
+  const byId = await attachedArtifacts(deps.prisma, blocks, input.context);
   const limit = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
   return blocks
     .flatMap((block) => {
       const row = byId.get(block.artifactId);
       if (!row || row.size > limit) return [];
-      return [
-        {
-          name: row.name,
-          mimeType: row.mimeType,
-          size: row.size,
-          path: `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`,
-        },
-      ];
+      return [threadFileMetadata(row)];
     })
     .slice(0, ATTACHMENT_MAX_COUNT);
 }
@@ -283,10 +309,7 @@ function recentAttachmentBlocks(
   for (let index = history.length - 1; index >= 0 && turns < input.maxTurns; index -= 1) {
     const entry = history[index];
     if (!entry?.id || entry.role !== "user" || entry.id === input.skipMessageId) continue;
-    const attached = (blocksByMessageId.get(entry.id) ?? []).filter(
-      (block): block is Extract<MessageBlock, { kind: "file" | "image" }> =>
-        block.kind === "file" || block.kind === "image",
-    );
+    const attached = attachmentBlocks(blocksByMessageId.get(entry.id));
     if (!attached.length) continue;
     turns += 1;
     for (const block of attached.reverse()) {
@@ -303,7 +326,7 @@ function fileLine(file: MaterializedThreadFile): string {
 export function currentTurnFilesInstruction(files: readonly MaterializedThreadFile[]): string {
   if (!files.length) return "";
   return [
-    "Current-turn attached files are available on your computer. Inspect them before answering:",
+    "Attachments will be copied to these paths when a tool needs the computer. If an image is visible directly in your input, answer from that image without starting the computer. Inspect files not visible in your input with file tools before answering questions about their contents:",
     ...files.map(fileLine),
   ].join("\n");
 }

@@ -9,7 +9,8 @@ import {
   Button,
 } from "@rakazo/ui-web";
 import type { ComponentType, ReactNode } from "react";
-import { Component, lazy } from "react";
+import { Component } from "react";
+import { lazyComponent } from "../lib/preload-recovery";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -47,7 +48,7 @@ export function SectionLoadFailed() {
 export function lazyOverlay<Props extends { onClose: () => void }>(
   load: () => Promise<ComponentType<Props>>,
 ) {
-  const Overlay = lazy(() => load().then((component) => ({ default: component })));
+  const Overlay = lazyComponent(load);
   return function LazyOverlay(props: Props) {
     return (
       <ErrorBoundary

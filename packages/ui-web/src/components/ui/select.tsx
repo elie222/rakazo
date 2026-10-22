@@ -1,5 +1,3 @@
-"use client";
-
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
@@ -40,7 +38,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-input bg-muted py-2 pr-2 pl-3 text-sm whitespace-nowrap text-foreground transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-7 data-[size=sm]:pl-2.5 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 hover:bg-accent dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -176,71 +174,7 @@ function SelectScrollDownButton({
   );
 }
 
-/** One choice in an {@link OptionSelect}. */
-type SelectOption<T extends string> = {
-  readonly value: T;
-  readonly label: string;
-  readonly disabled?: boolean;
-};
-
-/**
- * A dropdown over a fixed list of options: the app's menu, never the browser's own, so every
- * dropdown looks and behaves the same. Give it an `id` to pair it with a `FieldLabel`.
- */
-function OptionSelect<T extends string>({
-  id,
-  value,
-  options,
-  onValueChange,
-  disabled = false,
-  size = "default",
-  className,
-  "aria-label": ariaLabel,
-  "data-testid": testId,
-}: {
-  id?: string;
-  value: T;
-  options: readonly SelectOption<T>[];
-  onValueChange: (value: T) => void;
-  disabled?: boolean;
-  size?: "sm" | "default";
-  className?: string;
-  "aria-label"?: string;
-  "data-testid"?: string;
-}) {
-  return (
-    <Select
-      value={value}
-      items={options}
-      disabled={disabled}
-      onValueChange={(next) => {
-        const option = options.find((entry) => entry.value === next);
-        if (option) onValueChange(option.value);
-      }}
-    >
-      <SelectTrigger
-        id={id}
-        size={size}
-        aria-label={ariaLabel}
-        data-testid={testId}
-        className={cn("w-full", className)}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-export type { SelectOption };
 export {
-  OptionSelect,
   Select,
   SelectContent,
   SelectGroup,

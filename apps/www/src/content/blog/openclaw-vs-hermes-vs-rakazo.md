@@ -37,7 +37,7 @@ faq:
   - question: "Is Rakazo always fewer steps than Hermes Desktop?"
     answer: "No. The Hermes desktop guide says first-run onboarding can reach a first message in seconds, and that Choose provider later skips provider setup. Rakazo's published images still need Docker to pull and start, then an account and a model. Pick the install that matches the app you want to live in."
   - question: "Do any of these charge for the software?"
-    answer: "Rakazo is free to self-host. Hosted Rakazo Cloud is not generally available. OpenClaw's docs say there is no paid tier and no hosted service. Hermes Agent is MIT-licensed and also documents optional Nous Portal credits and cloud hosting. You still pay for models, machines, and any optional computer provider."
+    answer: "Rakazo is free to self-host. Hosted Rakazo Cloud is in beta. OpenClaw's docs say there is no paid tier and no hosted service. Hermes Agent is MIT-licensed and also documents optional Nous Portal credits and cloud hosting. You still pay for models, machines, and any optional computer provider."
   - question: "Can I message all three from Telegram or Slack?"
     answer: "OpenClaw's main surface is chat apps, through its Gateway. Hermes uses a messaging gateway that the desktop guide describes as a separate process from the app's local backend. Rakazo's optional connectors can attach Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark. Those connectors are extras. The Rakazo apps do not require them."
   - question: "Where do the details on this page come from?"
@@ -98,7 +98,7 @@ If you want a native desktop agent, Hermes Desktop is documented as a first-run 
 
 ## Rakazo
 
-Rakazo is Apache-2.0. You run the published Docker images, or a source checkout, on a machine you control. The desktop app can start that stack locally or connect to a server you already run. Hosted Rakazo Cloud is not generally available.
+Rakazo is Apache-2.0. You run the published Docker images, or a source checkout, on a machine you control. The desktop app can start that stack locally or connect to a server you already run. Hosted Rakazo Cloud is in beta.
 
 The published-image installer is one script in an empty directory. It writes `.env` with random secrets, pulls the images, and starts the API, the worker, Postgres, and a Docker computer. You open the app, create an account, and connect a model. The first registered user is the deployment owner. From there the product is chat. A new bot interviews you. Routines are Markdown. A bot can pause for approval, and actions land in an audit log you keep.
 

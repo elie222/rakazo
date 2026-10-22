@@ -79,7 +79,7 @@ describe("sandbox idle", () => {
     );
   });
 
-  it("does not suspend a computer while a run is active", async () => {
+  it("keeps a computer alive without suspending it while a run is active", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockResolvedValueOnce({ id: "run" });
 
@@ -87,7 +87,25 @@ describe("sandbox idle", () => {
 
     expect(harness.home.commit).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.execute).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a held computer whose heartbeat finds the sandbox gone to its recovery", async () => {
+    const harness = idleHarness();
+    harness.prisma.run.findFirst.mockResolvedValue({ id: "run" });
+    harness.sandbox.keepAlive.mockRejectedValueOnce(
+      Object.assign(new Error("sandbox removed"), { name: "SandboxNotFoundError" }),
+    );
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+
+    harness.sandbox.keepAlive.mockRejectedValueOnce(new Error("requires PRIVATE networking"));
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow(
+      "PRIVATE networking",
+    );
   });
 
   it("does not suspend a computer while bot-launched background work is active", async () => {
@@ -494,7 +512,7 @@ describe("maximum active lifetime", () => {
       );
     }
 
-    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(3);
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(6);
     expect(harness.jobs.enqueue).toHaveBeenCalledTimes(6);
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });

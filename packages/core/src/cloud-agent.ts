@@ -19,7 +19,9 @@ export function cloudAgentBlockFromPayload(
     agentId: String(payload.agentId ?? ""),
     title: String(payload.title ?? "Cloud agent"),
     status:
-      status === "finished" || status === "failed" || status === "cancelled" ? status : "running",
+      status === "finished" || status === "failed" || status === "cancelled" || status === "expired"
+        ? status
+        : "running",
     url: cloudAgentHttpsUrl(String(payload.url ?? "")) ?? "",
     ...(payload.branch ? { branch: String(payload.branch) } : {}),
     ...(cloudAgentHttpsUrl(String(payload.prUrl ?? "")) ? { prUrl: String(payload.prUrl) } : {}),

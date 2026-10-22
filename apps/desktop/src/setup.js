@@ -48,6 +48,7 @@
   const PULL_SCALE_BYTES = 1.2e9;
 
   let defaultLocalUrl = "";
+  let cloudUrl = "";
   let stackPolling = false;
   let lastStack = null;
   let lastProgress = 0;
@@ -59,7 +60,7 @@
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
-    return checked === null ? "new" : checked.value;
+    return checked === null ? "cloud" : checked.value;
   }
 
   function setStatus(message, tone) {
@@ -81,8 +82,8 @@
   function syncPanels() {
     const mode = selectedMode();
     panelNew.hidden = mode !== "new";
-    panelExisting.hidden = mode === "new";
-    checkButton.hidden = mode === "new";
+    panelExisting.hidden = mode !== "existing";
+    checkButton.hidden = mode !== "existing";
     if (mode !== "new") continueButton.textContent = "Continue";
     setStatus("");
   }
@@ -312,8 +313,10 @@
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (selectedMode() === "new") void runStack();
-    else void save("existing", serverUrl.value);
+    const mode = selectedMode();
+    if (mode === "new") void runStack();
+    // Cloud is an existing server at a fixed address.
+    else void save("existing", mode === "cloud" ? cloudUrl : serverUrl.value);
   });
 
   /** Pushed state keeps progress moving even when the OS throttles this window's timers. */
@@ -337,14 +340,19 @@
     }
 
     watchStack();
+    // Continue needs the Cloud address and any saved choice before it can submit.
+    setBusy(true);
     try {
       const state = await bridge.state();
       if (state === null) throw new Error("Setup is not active");
       defaultLocalUrl = state.defaultLocalUrl;
+      cloudUrl = state.cloudUrl;
       if (state.saved !== null) {
-        const modeInput = document.querySelector(`input[name="mode"][value="${state.saved.mode}"]`);
+        const savedCloud = state.saved.mode === "existing" && state.saved.serverUrl === cloudUrl;
+        const mode = savedCloud ? "cloud" : state.saved.mode;
+        const modeInput = document.querySelector(`input[name="mode"][value="${mode}"]`);
         if (modeInput !== null) modeInput.checked = true;
-        if (state.saved.mode === "existing") serverUrl.value = state.saved.serverUrl;
+        if (mode === "existing") serverUrl.value = state.saved.serverUrl;
       }
       // A relaunch with the stack down starts it before this window opens; show that
       // attempt instead of the saved mode, and follow it while it is still running.
@@ -352,6 +360,7 @@
       const attached = stack !== null && stack.phase !== "idle";
       if (attached) document.getElementById("mode-new").checked = true;
       syncPanels();
+      setBusy(false);
       if (state.error) setStatus(state.error, "error");
       if (attached) {
         renderStack(stack);

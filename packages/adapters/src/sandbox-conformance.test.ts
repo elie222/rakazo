@@ -3,10 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { BoatSandboxEmulator } from "./boat-emulator.js";
-import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
+import { fakeBoatProvider as fakeBoat } from "./boat-sandbox.test-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
@@ -28,41 +26,26 @@ async function drain(provider: SandboxProvider, computer: ComputerRef) {
 }
 
 describe("sandbox conformance", () => {
-  it("runs the same graphical command across fake, managed-provider emulators, and desktop", async () => {
+  it("runs the same graphical command across fake, Boat, and desktop", async () => {
     const fake = new FakeSandboxProvider();
-    const managed = new ManagedSandboxEmulator();
-    const daytona = new DaytonaSandboxEmulator();
-    const boat = new BoatSandboxEmulator();
+    const boat = fakeBoat();
     const desktop = new DesktopSandboxProvider();
     const a = await provisionPrepared(fake, { botId: "bot-a", homePath: "/tmp/a" }, ctx);
-    const b = await provisionPrepared(managed, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
-    const c = await provisionPrepared(daytona, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
-    const d = await provisionPrepared(boat, { botId: "bot-d", homePath: "/tmp/d" }, ctx);
-    const e = await provisionPrepared(desktop, { botId: "bot-e", homePath: "/tmp/e" }, ctx);
-    const outA = await drain(fake, a);
-    const outB = await drain(managed, b);
-    const outC = await drain(daytona, c);
-    const outD = await drain(boat, d);
-    const outE = await drain(desktop, e);
-    expect(outA).toContain("graphical-ok");
-    expect(outB).toContain("graphical-ok");
-    expect(outC).toContain("graphical-ok");
-    expect(outD).toContain("graphical-ok");
-    expect(outE).toContain("graphical-ok");
-    expect(new Set([a.id, b.id, c.id, d.id, e.id]).size).toBe(5);
+    const b = await provisionPrepared(boat, { botId: "bot-b", homePath: "/tmp/b" }, ctx);
+    const c = await provisionPrepared(desktop, { botId: "bot-c", homePath: "/tmp/c" }, ctx);
+    expect(await drain(fake, a)).toContain("graphical-ok");
+    expect(await drain(boat, b)).toContain("graphical-ok");
+    expect(await drain(desktop, c)).toContain("graphical-ok");
+    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
     await fake.destroy(a, ctx);
-    await managed.destroy(b, ctx);
-    await daytona.destroy(c, ctx);
-    await boat.destroy(d, ctx);
-    await desktop.destroy(e, ctx);
+    await boat.destroy(b, ctx);
+    await desktop.destroy(c, ctx);
   });
 
   it("offers the same observation, action, and workspace contract across providers", async () => {
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
-      new ManagedSandboxEmulator(),
-      new DaytonaSandboxEmulator(),
-      new BoatSandboxEmulator(),
+      fakeBoat(),
       new DesktopSandboxProvider(),
     ];
     for (const [index, provider] of providers.entries()) {
@@ -80,9 +63,7 @@ describe("sandbox conformance", () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-unset-env-"));
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
-      new ManagedSandboxEmulator(),
-      new DaytonaSandboxEmulator(),
-      new BoatSandboxEmulator(),
+      fakeBoat(),
       new DesktopSandboxProvider({ root }),
     ];
     vi.stubEnv("RAKAZO_COMMAND_UNSET_TEST", "fake-host-value");
@@ -250,9 +231,7 @@ describe("sandbox conformance", () => {
     const root = mkdtempSync(path.join(tmpdir(), "rakazo-destroy-idempotent-"));
     const providers: SandboxProvider[] = [
       new FakeSandboxProvider(),
-      new ManagedSandboxEmulator(),
-      new DaytonaSandboxEmulator(),
-      new BoatSandboxEmulator(),
+      fakeBoat(),
       new DesktopSandboxProvider({ root }),
     ];
     for (const [index, provider] of providers.entries()) {

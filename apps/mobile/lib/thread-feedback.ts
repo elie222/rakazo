@@ -1,6 +1,6 @@
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
-import { isServerUnreachable } from "@rakazo/core";
+import { isModelRequiredSendError, isServerUnreachable } from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { rpc } from "./api";
 import { t } from "./i18n";
@@ -173,6 +173,10 @@ export function restoreUnsentSends() {
   if (restored || !scope || !config) return;
   // Restore before the first write; repeated preparation cannot duplicate nonces.
   unsentSends = config.disk.load(sessionCount, scope);
+  for (const attempt of unsentSends) {
+    if (attempt.state === "refused" && isModelRequiredSendError(attempt.error))
+      attempt.state = "failed";
+  }
   restored = true;
   changed();
 }
@@ -245,7 +249,11 @@ export function sendWaitingMessages(force = false): Promise<void> {
           const offline = isServerUnreachable(error) || (status ?? detail?.cause?.status) === 429;
           attempt.state = offline
             ? "queued"
-            : status && status >= 400 && status < 500 && ![408, 425, 429].includes(status)
+            : !isModelRequiredSendError(error) &&
+                status &&
+                status >= 400 &&
+                status < 500 &&
+                ![408, 425, 429].includes(status)
               ? "refused"
               : "failed";
           attempt.error = config.errorText(error);
@@ -271,7 +279,12 @@ export function sendWaitingMessages(force = false): Promise<void> {
   running = task;
   return task;
 }
-export function useThreadFeedback(threadKey: string | undefined, newNonce: () => string) {
+/** `echoed` holds the seqs of the chat's user messages on screen; an echoed send hides in that render. */
+export function useThreadFeedback(
+  threadKey: string | undefined,
+  newNonce: () => string,
+  echoed?: ReadonlySet<number>,
+) {
   const [error, setError] = useState<string | null>(null);
   const allSends = useSyncExternalStore(subscribe, getUnsentSends, getUnsentSends);
   const activeThread = useRef(threadKey);
@@ -294,6 +307,9 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
       }
     };
   }, [threadKey]);
+  useEffect(() => {
+    if (threadKey && echoed) confirmEchoes(threadKey, echoed);
+  }, [threadKey, echoed]);
   return {
     error,
     setError(value: string | null) {
@@ -302,7 +318,12 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
     refreshed(key = threadKey) {
       if (key === activeThread.current) setError(null);
     },
-    unsentSends: allSends.filter((a) => a.payload.originThreadKey === threadKey && inScope(a)),
+    unsentSends: allSends.filter(
+      (a) =>
+        a.payload.originThreadKey === threadKey &&
+        inScope(a) &&
+        !(a.acceptedSeq !== undefined && echoed?.has(a.acceptedSeq)),
+    ),
     sendAttempt(payload: SendPayload): SendAttempt {
       const scope = config?.scope();
       if (!scope) throw new Error("SESSION_CHANGED");

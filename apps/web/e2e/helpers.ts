@@ -1,5 +1,6 @@
 import type { Locator, Page, TestInfo } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { signupRequiresEmailVerification } from "@rakazo/core";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
   return provider === "e2b" || provider === "daytona" || provider === "boat";
@@ -51,7 +52,32 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   }
 }
 
+/**
+ * Creates the account through the auth API, as the sign-up form does, and opens
+ * the page the form would land on. Passing testInfo goes through the form to
+ * capture it; tests of the form itself use signupThroughForm.
+ */
 export async function signup(
+  page: Page,
+  email: string,
+  password: string,
+  name: string,
+  testInfo?: TestInfo,
+) {
+  if (testInfo) return signupThroughForm(page, email, password, name, testInfo);
+  const baseURL = test.info().project.use.baseURL;
+  if (!baseURL) throw new Error("signup needs a baseURL");
+  const response = await page.request.post("/api/auth/sign-up/email", {
+    data: { email, password, name },
+    // Better Auth checks the origin of credential requests that carry cookies.
+    headers: { origin: new URL(baseURL).origin },
+  });
+  if (!response.ok()) throw new Error(`sign-up ${response.status()}: ${await response.text()}`);
+  const verify = signupRequiresEmailVerification(await response.json());
+  await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
+}
+
+export async function signupThroughForm(
   page: Page,
   email: string,
   password: string,
@@ -63,8 +89,63 @@ export async function signup(
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
+  await showPasswordForm(page);
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
+}
+
+/** With email delivery the auth form opens on the emailed-code flow; switch to the password form. */
+export async function showPasswordForm(page: Page) {
+  const usePassword = page.getByRole("button", { name: "Use password" });
+  await expect(usePassword.or(page.getByPlaceholder("Password"))).toBeVisible();
+  if (await usePassword.isVisible()) await usePassword.click();
+}
+
+/** Open Advanced through its trigger, preserving an already-expanded section. */
+export async function expandAdvancedSection(section: Locator) {
+  const trigger = section.getByRole("button", { name: "Advanced", exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await waitForTransitions(section);
+}
+
+/** Waits for fold-outs to settle before clicking or dragging their contents. */
+async function waitForTransitions(element: Locator) {
+  // Base UI starts a fold a frame after the toggle.
+  await element.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
+      ),
+  );
+  await expect
+    .poll(() =>
+      element.evaluate(
+        (node) =>
+          node
+            .getAnimations({ subtree: true })
+            .filter((animation) => animation instanceof CSSTransition).length,
+      ),
+    )
+    .toBe(0);
+}
+
+export async function waitForSidebarTransitions(page: Page) {
+  await waitForTransitions(page.locator("aside").first());
+}
+
+/**
+ * A card inside the fit-content bubble frame fills its fixed width and shrinks only to the
+ * frame's cap. A percentage width would resolve against the card's own content instead.
+ */
+export async function expectCardWidth(card: Locator, width: number) {
+  const measured = await card.evaluate((element) => ({
+    card: element.getBoundingClientRect().width,
+    frame:
+      element.closest('[data-testid="message-bubble-frame"]')?.getBoundingClientRect().width ??
+      Number.NaN,
+  }));
+  expect(Math.abs(measured.card - Math.min(width, measured.frame))).toBeLessThan(1);
 }
 
 export async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {

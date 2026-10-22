@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -34,6 +34,9 @@ describe("dockerBinaryCandidates", () => {
       "/opt/homebrew/bin/docker",
       "/Applications/Docker.app/Contents/Resources/bin/docker",
       "/Users/me/.orbstack/bin/docker",
+      "/Users/me/.docker/bin/docker",
+      "/Users/me/.rd/bin/docker",
+      "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/docker",
       "/usr/bin/docker",
     ]);
   });
@@ -71,6 +74,16 @@ describe("resolveDockerBinary", () => {
     expect(resolveDockerBinary("darwin", { HOME: "/Users/me" }, () => false)).toBeNull();
   });
 
+  it("finds Rancher Desktop without shell PATH configuration", () => {
+    expect(
+      resolveDockerBinary(
+        "darwin",
+        { HOME: "/Users/me", PATH: "/usr/bin:/bin" },
+        (file) => file === "/Users/me/.rd/bin/docker",
+      ),
+    ).toBe("/Users/me/.rd/bin/docker");
+  });
+
   it("treats RAKAZO_DOCKER_BINARY as the only candidate", () => {
     const env = { RAKAZO_DOCKER_BINARY: "/fake/docker", PATH: "/usr/bin" };
     expect(resolveDockerBinary("linux", env, (file) => file === "/fake/docker")).toBe(
@@ -98,13 +111,44 @@ describe("dockerSpawnEnv", () => {
     );
     expect(env).toEqual({
       HOME: "/Users/me",
-      PATH: "/Users/me/.orbstack/bin:/usr/bin:/bin",
+      PATH: [
+        "/Users/me/.orbstack/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/Applications/Docker.app/Contents/Resources/bin",
+        "/Users/me/.docker/bin",
+        "/Users/me/.rd/bin",
+        "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin",
+      ].join(":"),
       DOCKER_HOST: "unix:///Users/me/.orbstack/run/docker.sock",
       LANG: "en_US.UTF-8",
       RAKAZO_IMAGE_TAG: "v1.2.3",
     });
     expect(env).not.toHaveProperty("OPENROUTER_API_KEY");
     expect(env).not.toHaveProperty("POSTGRES_PASSWORD");
+  });
+
+  it("preserves configured helper precedence and Docker configuration", () => {
+    const input = {
+      HOME: "/Users/me",
+      PATH: "/custom/helpers:/usr/local/bin:/Users/me/.rd/bin",
+      DOCKER_CONFIG: "/custom/docker-config",
+      DOCKER_CONTEXT: "rancher-desktop",
+    };
+    const env = dockerSpawnEnv("darwin", input, "/usr/local/bin/docker");
+    const directories = env.PATH?.split(":") ?? [];
+    expect(directories.slice(0, 3)).toEqual([
+      "/usr/local/bin",
+      "/custom/helpers",
+      "/Users/me/.rd/bin",
+    ]);
+    expect(directories.filter((dir) => dir === "/usr/local/bin")).toHaveLength(1);
+    expect(directories.filter((dir) => dir === "/Users/me/.rd/bin")).toHaveLength(1);
+    expect(env.DOCKER_CONFIG).toBe(input.DOCKER_CONFIG);
+    expect(env.DOCKER_CONTEXT).toBe(input.DOCKER_CONTEXT);
+    expect(input.PATH).toBe("/custom/helpers:/usr/local/bin:/Users/me/.rd/bin");
   });
 
   it("keeps the Windows system variables docker.exe depends on", () => {
@@ -170,6 +214,37 @@ describe("runDocker", () => {
   });
   const node = process.execPath;
   const options = { cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" }, timeoutMs: 10_000 };
+
+  it.skipIf(process.platform === "win32")(
+    "lets a CLI outside Rancher find its credential helper after a GUI launch",
+    async () => {
+      const root = mkdtempSync(path.join(tmpdir(), "rakazo-rancher-helper-"));
+      roots.push(root);
+      const bin = path.join(root, ".rd", "bin");
+      const helper = `docker-credential-${path.basename(root)}`;
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(path.join(bin, helper), "#!/bin/sh\nprintf 'fake-helper-found'\n", {
+        mode: 0o700,
+      });
+      const binary = path.join(root, "docker");
+      symlinkSync(node, binary);
+      const env = dockerSpawnEnv("darwin", { HOME: root, PATH: "/usr/bin:/bin" }, binary);
+      const result = await runDocker(
+        binary,
+        [
+          "-e",
+          `const { spawnSync } = require('node:child_process');
+           const child = spawnSync(process.argv[1], ['get'], { encoding: 'utf8' });
+           process.stdout.write(child.stdout ?? '');
+           process.stderr.write(child.error?.message ?? child.stderr ?? '');
+           process.exit(child.status ?? 1);`,
+          helper,
+        ],
+        { ...options, cwd: root, env },
+      );
+      expect(result).toEqual({ code: 0, stdout: "fake-helper-found", stderr: "" });
+    },
+  );
 
   it("captures stdout, stderr, the exit code, and complete lines in order", async () => {
     const lines: string[] = [];

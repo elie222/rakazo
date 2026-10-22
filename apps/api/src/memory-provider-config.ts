@@ -2,8 +2,8 @@ import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import {
   classifyMemoryProviderSettings,
-  MemoryProviderDeploymentOwnerRequiredError,
-  memoryProviderRequiresDeploymentOwner,
+  MemoryProviderPrivateEndpointRequiredError,
+  memoryProviderRequiresPrivateEndpoint,
   prepareMemoryProviderConnection,
   toStringRecord,
 } from "@rakazo/adapters";
@@ -13,6 +13,7 @@ import { withSerializableRetry } from "./serializable-retry.js";
 
 export interface MemoryProviderConfigDeps {
   prisma: PrismaClient;
+  env?: { mcpAllowPrivateEndpoint?: boolean };
   secrets: Pick<SecretStore, "put">;
   /** Test seam: override DNS/trust classification without probing. */
   classifySettings?: (
@@ -49,36 +50,36 @@ export async function persistMemoryProviderConfig(
   try {
     // Fast-path known private endpoints before probing.
     if (
-      memoryProviderRequiresDeploymentOwner(input.provider, input.settings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(input.provider, input.settings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
     const classify = deps.classifySettings ?? classifyMemoryProviderSettings;
     const prepare = deps.prepareConnection ?? prepareMemoryProviderConnection;
-    // Classify DNS/trust before any credentialed probe so LAN endpoints stay owner-gated.
+    // Classify DNS/trust before any credentialed probe so LAN endpoints stay operator-authorized.
     const classifiedSettings = await classify(input.provider, input.settings);
     if (
-      memoryProviderRequiresDeploymentOwner(input.provider, classifiedSettings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(input.provider, classifiedSettings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
     prepared = await prepare({
       ...input,
       settings: classifiedSettings,
-      allowPrivateEndpoint: actor.isDeploymentOwner,
+      allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint === true,
     });
     // Defense in depth if prepare reclassified further.
     if (
-      memoryProviderRequiresDeploymentOwner(prepared.provider, prepared.settings) &&
-      !actor.isDeploymentOwner
+      memoryProviderRequiresPrivateEndpoint(prepared.provider, prepared.settings) &&
+      deps.env?.mcpAllowPrivateEndpoint !== true
     ) {
       throw new ORPCError("FORBIDDEN");
     }
   } catch (error) {
     if (error instanceof ORPCError) throw error;
-    if (error instanceof MemoryProviderDeploymentOwnerRequiredError) {
+    if (error instanceof MemoryProviderPrivateEndpointRequiredError) {
       throw new ORPCError("FORBIDDEN");
     }
     throw new ORPCError("BAD_REQUEST", {

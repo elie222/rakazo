@@ -308,26 +308,10 @@ async function postAuth(
     ok: response.ok,
     status: response.status,
     message,
-    token: tokenFrom(response, parsed),
+    // The signed bearer; the server refuses the raw session token.
+    token: response.headers.get("set-auth-token") ?? "",
     cookie: sessionCookieHeader(response),
   };
-}
-
-function tokenFrom(response: Response, body: unknown) {
-  if (body && typeof body === "object") {
-    const record = body as { token?: unknown; session?: { token?: unknown } };
-    if (typeof record.token === "string" && record.token) return record.token;
-    if (typeof record.session?.token === "string" && record.session.token)
-      return record.session.token;
-  }
-  const cookies = response.headers.get("set-cookie") ?? "";
-  const encoded = cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
-  if (!encoded) return "";
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return "";
-  }
 }
 
 async function rpc<T>(

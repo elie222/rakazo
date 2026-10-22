@@ -1,4 +1,6 @@
 FROM node:22-bookworm@sha256:0557ac14e0d45d02ed563067b82856ca5e7aa3437fa28d98d4350ea9c3d9494a
+# pnpm lives in the image so containers start without downloading it.
+ENV COREPACK_HOME=/usr/local/share/corepack
 RUN corepack enable
 WORKDIR /app
 # Manifests land before the source tree so editing a source file does not re-run the
@@ -6,6 +8,7 @@ WORKDIR /app
 # needs its manifest below, or --frozen-lockfile fails. The store is a cache mount, so
 # a lockfile change reuses whatever was already downloaded.
 COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN corepack install && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/
 COPY --chmod=755 apps/desktop/package.json apps/desktop/
@@ -32,6 +35,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
 RUN pnpm --filter @rakazo/db generate
+RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
 ARG GIT_SHA

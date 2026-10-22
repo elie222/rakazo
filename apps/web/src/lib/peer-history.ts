@@ -1,4 +1,5 @@
 import type { ThreadMessage } from "@rakazo/contracts";
+import { anySignal } from "@rakazo/core";
 
 const PEER_HISTORY_PAGE_TIMEOUT_MS = 15_000;
 const PEER_HISTORY_TOTAL_TIMEOUT_MS = 60_000;
@@ -26,7 +27,7 @@ export async function loadPeerHistory({
   do {
     const page = await loadPage(
       before,
-      AbortSignal.any([signal, deadline, AbortSignal.timeout(pageTimeoutMs)]),
+      anySignal([signal, deadline, AbortSignal.timeout(pageTimeoutMs)]),
     );
     collected = [...page.messages, ...collected];
     before = page.olderCursor ?? undefined;

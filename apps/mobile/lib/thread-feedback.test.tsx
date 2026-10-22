@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 
-import { AiConsentBlocked, resolveComposerSendPlan } from "@rakazo/core";
+import { AiConsentBlocked, MODEL_REQUIRED_SEND_ERROR, resolveComposerSendPlan } from "@rakazo/core";
+import { router } from "expo-router";
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useMemo } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
-import type { ComposerSnapshot, SendPayload } from "./thread-feedback";
+import type { MobileSnapshot } from "./api";
+import { applyMobileThreadEvent } from "./api";
+import type { ComposerSnapshot, SendAttempt, SendPayload } from "./thread-feedback";
 import {
   clearFailedSends,
   configureUnsentSends,
@@ -53,6 +57,10 @@ vi.mock("react-native", () => ({
   ActionSheetIOS: { showActionSheetWithOptions: vi.fn() },
   Alert: { alert: vi.fn() },
 }));
+vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
+vi.mock("expo-secure-store", () => ({}));
+vi.mock("./live-notifications", () => ({ resumeLiveNotifications: vi.fn() }));
+vi.mock("./network-cache", () => ({ clearNetworkCache: vi.fn() }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("./i18n", () => ({
@@ -62,6 +70,7 @@ vi.mock("./i18n", () => ({
 
 let feedback: ReturnType<typeof useThreadFeedback>;
 let nonces = 0;
+let needsModel: boolean | undefined;
 const retry = vi.fn();
 function Probe({ threadKey }: { threadKey: string }) {
   feedback = useThreadFeedback(threadKey, () => `nonce-${++nonces}`);
@@ -71,6 +80,7 @@ function Probe({ threadKey }: { threadKey: string }) {
       attempt={attempt}
       onRetry={retry}
       onDelete={() => feedback.discard(attempt)}
+      needsModel={needsModel}
     />
   ));
 }
@@ -136,7 +146,7 @@ describe("scoped mobile outbox", () => {
     admit: vi.fn(() => true),
     hydrate: vi.fn(async () => undefined),
     forget: vi.fn(),
-    load: vi.fn(() => []),
+    load: vi.fn((): SendAttempt[] => []),
     save: vi.fn(),
     clear: vi.fn(),
   };
@@ -155,7 +165,7 @@ describe("scoped mobile outbox", () => {
       scope: () => scope,
       serverReachable: () => reachable,
       disk,
-      errorText: String,
+      errorText: (error) => (error instanceof Error ? error.message : String(error)),
       notDelivered,
     });
     restoreUnsentSends();
@@ -237,6 +247,149 @@ describe("scoped mobile outbox", () => {
     expect(notDelivered).not.toHaveBeenCalled();
     expect(container.textContent).toBe("");
     expect(disk.clear).toHaveBeenCalled();
+  });
+  it.each(["ios", "android"])(
+    "offers Add Model instead of Try Again for missing-model failures on %s",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request
+        .mockResolvedValueOnce({ id: "artifact-a" })
+        .mockRejectedValueOnce(
+          Object.assign(new Error(MODEL_REQUIRED_SEND_ERROR), { status: 400 }),
+        );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.state).toBe("failed");
+      expect(container.textContent).toContain("Not sent · No model");
+      expect(container.textContent).not.toContain("Tap to retry");
+      act(() =>
+        container
+          .querySelector("button")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      if (os === "ios") {
+        const [options, choose] = vi
+          .mocked(ActionSheetIOS.showActionSheetWithOptions)
+          .mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(options.message).toBeUndefined();
+        expect(options.cancelButtonIndex).toBe(2);
+        expect(options.destructiveButtonIndex).toBe(1);
+        act(() => choose(0));
+        expect(router.push).toHaveBeenCalledWith("/(settings)/models");
+      } else {
+        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+        expect(vi.mocked(Alert.alert).mock.calls.at(-1)![1]).toBeUndefined();
+        expect(buttons.map(({ text }) => text)).toEqual(["Add Model", "Delete", "Cancel"]);
+        expect(buttons[2]!.style).toBe("cancel");
+        act(() => buttons[0]!.onPress?.());
+        expect(router.push).toHaveBeenCalledWith("/(settings)/models");
+      }
+      expect(retry).not.toHaveBeenCalled();
+      // Tapping the bubble is still the manual retry.
+      act(() => container.querySelector("button")!.click());
+      expect(retry).toHaveBeenCalledOnce();
+      const calls = request.mock.calls.length;
+      await act(async () => {
+        await sendWaitingMessages(true);
+      });
+      expect(request).toHaveBeenCalledTimes(calls);
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+      expect(sends).toHaveLength(2);
+      expect(sends[1]).toEqual(sends[0]);
+      Platform.OS = "ios";
+    },
+  );
+  it.each(["ios", "android"])("keeps Try Again for other send failures on %s", async (os) => {
+    Platform.OS = os as typeof Platform.OS;
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Quota exceeded"));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    act(() =>
+      container
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+    );
+    if (os === "ios") {
+      const [options, choose] = vi
+        .mocked(ActionSheetIOS.showActionSheetWithOptions)
+        .mock.calls.at(-1)!;
+      expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+      expect(options.cancelButtonIndex).toBe(2);
+      expect(options.destructiveButtonIndex).toBe(1);
+      act(() => choose(0));
+    } else {
+      const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+      expect(buttons.map(({ text }) => text)).toEqual(["Try Again", "Delete", "Cancel"]);
+      act(() => buttons[0]!.onPress?.());
+    }
+    expect(retry).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+    Platform.OS = "ios";
+  });
+  it("offers retry for a missing-model failure once a model is connected", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error(MODEL_REQUIRED_SEND_ERROR), { status: 400 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    needsModel = true;
+    act(() => root.render(<Probe threadKey="bot-1" />));
+    expect(container.textContent).toContain("Not sent · No model");
+    expect(container.textContent).not.toContain("Tap to retry");
+    needsModel = false;
+    act(() => root.render(<Probe threadKey="bot-1" />));
+    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).not.toContain("No model");
+    act(() =>
+      container
+        .querySelector("button")!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+    );
+    const [options, choose] = vi
+      .mocked(ActionSheetIOS.showActionSheetWithOptions)
+      .mock.calls.at(-1)!;
+    expect(options.options).toEqual(["Try Again", "Delete", "Cancel"]);
+    expect(options.message).toBeUndefined();
+    act(() => choose(0));
+    expect(retry).toHaveBeenCalledOnce();
+    expect(router.push).not.toHaveBeenCalled();
+    needsModel = undefined;
+  });
+  it("restores old missing-model rejections as manually retryable", async () => {
+    act(() => clearFailedSends());
+    const attempt = feedback.sendAttempt(payload());
+    attempt.state = "refused";
+    attempt.error = MODEL_REQUIRED_SEND_ERROR;
+    disk.load.mockReturnValueOnce([attempt]);
+    act(() => restoreUnsentSends());
+    expect(attempt.state).toBe("failed");
+    await sendWaitingMessages(true);
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("keeps unrelated client rejections refused and inert on tap", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request.mockRejectedValueOnce(Object.assign(new Error("Rejected"), { status: 400 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("refused");
+    expect(container.textContent).toContain("Not sent");
+    act(() => container.querySelector("button")!.click());
+    expect(router.push).not.toHaveBeenCalled();
+    expect(retry).not.toHaveBeenCalled();
   });
   it("reports real errors and reuses uploaded artifacts on manual retry", async () => {
     const attempt = feedback.sendAttempt(payload());
@@ -336,5 +489,220 @@ describe("scoped mobile outbox", () => {
     const [send] = request.mock.calls.filter(([proc]) => proc === "threads/send");
     expect(send?.[3]).toBe("space-a");
     expect(attempt.acceptedSeq).toBe(42);
+  });
+});
+
+describe("a send and its echo", () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  let reachable = true;
+  let chat: MobileSnapshot;
+  /** What each render showed: the server's copies of the message and the unsent bubbles. */
+  let frames: Array<{ echoed: number; bubbles: number }> = [];
+  const request = vi.fn();
+  const scope = {
+    apiBase: "https://api.example.test",
+    userId: "user-a",
+    cacheSession: "ns-a",
+    spaceId: "space-a",
+  };
+  const disk = {
+    admit: () => true,
+    hydrate: async () => undefined,
+    forget: () => undefined,
+    load: () => [],
+    save: () => undefined,
+    clear: () => undefined,
+  };
+
+  // Mirrors the thread screen: the server's messages, then the unsent sends below them.
+  function Chat({ snapshot }: { snapshot: MobileSnapshot }) {
+    const seqs = useMemo(
+      () =>
+        new Set(
+          snapshot.messages.flatMap((message) =>
+            message.role === "user" && message.seq !== undefined ? [message.seq] : [],
+          ),
+        ),
+      [snapshot],
+    );
+    feedback = useThreadFeedback("bot-1", () => `nonce-${++nonces}`, seqs);
+    const echoed = snapshot.messages.filter((message) => message.role === "user");
+    frames.push({ echoed: echoed.length, bubbles: feedback.unsentSends.length });
+    return (
+      <>
+        {echoed.map((message) => (
+          <p key={message.id}>Hello</p>
+        ))}
+        {feedback.unsentSends.map((attempt) => (
+          <FailedSendBubble
+            key={attempt.clientNonce}
+            attempt={attempt}
+            onRetry={() => void feedback.send(attempt, true)}
+            onDelete={() => feedback.discard(attempt)}
+          />
+        ))}
+      </>
+    );
+  }
+  function show(next: MobileSnapshot) {
+    chat = next;
+    act(() => root.render(<Chat snapshot={chat} />));
+  }
+  /** The live (or replayed) event for the stored message; its own event seq differs. */
+  function echo(eventSeq = 9) {
+    show(
+      applyMobileThreadEvent(chat, {
+        type: "thread.message.created",
+        seq: eventSeq,
+        payload: {
+          messageId: "message-42",
+          seq: 42,
+          role: "user",
+          blocks: [{ kind: "text", text: "Hello" }],
+        },
+      } as never)!,
+    );
+  }
+  /** Holds the next threads/send open until the returned function accepts it. */
+  function heldSend(): (value: { seq: number }) => Promise<void> {
+    let accept: ((value: { seq: number }) => void) | undefined;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+    return async (value) => {
+      await vi.waitFor(() => expect(accept).toBeTypeOf("function"));
+      accept!(value);
+    };
+  }
+  function textPayload(text = "Hello"): SendPayload {
+    return {
+      ...payload(text),
+      replyPreview: null,
+      plan: resolveComposerSendPlan({ text, mentions: [], hasAttachments: false }),
+      attachments: [],
+      replyTargetId: undefined,
+      replyQuote: null,
+    };
+  }
+  const copies = () => frames.at(-1)!.echoed + frames.at(-1)!.bubbles;
+
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    clearFailedSends();
+    reachable = true;
+    frames = [];
+    request.mockReset();
+    request.mockResolvedValue({ seq: 42 });
+    configureUnsentSends({
+      request,
+      scope: () => scope,
+      serverReachable: () => reachable,
+      disk,
+      errorText: String,
+      notDelivered: () => undefined,
+    });
+    restoreUnsentSends();
+    container = document.createElement("div");
+    root = createRoot(container);
+    show({
+      botId: "bot-1",
+      threadId: "thread-1",
+      cursor: 8,
+      messages: [],
+      olderCursor: null,
+      run: null,
+    });
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    clearFailedSends();
+    vi.unstubAllGlobals();
+  });
+
+  it("swaps the sending bubble for the live echo in one render", async () => {
+    const accept = heldSend();
+    const attempt = feedback.sendAttempt(textPayload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    expect(container.textContent).toContain("Sending…");
+    await act(async () => {
+      await accept({ seq: 42 });
+      await sending;
+    });
+    expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
+    frames = [];
+    echo();
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(frames.at(-1)).toEqual({ echoed: 1, bubbles: 0 });
+    expect(container.textContent).not.toContain("Sending…");
+  });
+
+  it("shows the message once when the echo arrives before threads/send resolves", async () => {
+    const accept = heldSend();
+    const attempt = feedback.sendAttempt(textPayload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    echo();
+    frames = [];
+    await act(async () => {
+      await accept({ seq: 42 });
+      await sending;
+    });
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(copies()).toBe(1);
+    expect(container.textContent).not.toContain("Sending…");
+  });
+
+  it("shows a send held offline once when the reconnect replays its echo", async () => {
+    reachable = false;
+    const attempt = feedback.sendAttempt(textPayload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(container.textContent).toContain("Not sent · Tap to retry");
+    reachable = true;
+    await act(async () => {
+      await sendWaitingMessages();
+    });
+    frames = [];
+    // The resumed subscription replays the event, and a second reconnect replays it again.
+    echo();
+    echo();
+    expect(frames.every((frame) => frame.echoed + frame.bubbles === 1)).toBe(true);
+    expect(copies()).toBe(1);
+  });
+
+  it("keeps one failed bubble with Retry while other messages arrive", async () => {
+    request.mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }));
+    const attempt = feedback.sendAttempt(textPayload());
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    show(
+      applyMobileThreadEvent(chat, {
+        type: "thread.message.created",
+        seq: 9,
+        payload: { messageId: "message-41", seq: 41, role: "bot", blocks: [] },
+      } as never)!,
+    );
+    expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect(container.textContent).toContain("Not sent · Tap to retry");
+    await act(async () => {
+      container.querySelector("button")!.click();
+      await vi.waitFor(() => expect(attempt.acceptedSeq).toBe(42));
+    });
+    echo(10);
+    expect(copies()).toBe(1);
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 });

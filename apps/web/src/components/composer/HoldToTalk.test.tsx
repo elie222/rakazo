@@ -164,4 +164,24 @@ describe("hold to talk", () => {
     expect(dictation.listen).toHaveBeenCalledOnce();
     expect(button("Send recording")).toBeTruthy();
   });
+
+  it("keeps the solid red under the held pointer in both themes", () => {
+    const mic = button("Hold to talk");
+    pointer(mic, "pointerdown");
+    const classes = mic.className.split(" ");
+
+    // The pointer hovers the button for the whole hold, so the outline hover colours
+    // (a grey fill in dark, dark text) must give way to the recording colours.
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        "bg-destructive-fill",
+        "hover:bg-destructive-fill",
+        "dark:hover:bg-destructive-fill",
+        "text-destructive-foreground",
+        "hover:text-destructive-foreground",
+      ]),
+    );
+    expect(classes).not.toContain("dark:hover:bg-input/50");
+    expect(classes).not.toContain("hover:text-foreground");
+  });
 });

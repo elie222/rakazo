@@ -592,8 +592,18 @@ whole checklist is complete. The implementation goal resumed after this handoff.
   UTF-8 bytes and framing provide a conservative text estimate rather than an
   exact tokenizer count. Unknown images use their encoded bytes; this is not a
   universal upper bound for every provider's vision processing. Provider-specific
-  image estimates can improve this bound. Required content that cannot fit the
-  estimated budget fails explicitly instead of being silently discarded.
+  image estimates can improve this bound. Pi estimates known image dimensions per
+  composited frame by fitting within 2048×2048 without upscaling, then taking
+  `max(1024, 85 + 170 * ceil(width / 512) * ceil(height / 512), ceil(width * height / 750))`.
+  This conservatively bounds the [OpenAI standard tile policy](https://developers.openai.com/api/docs/guides/images-vision)
+  (which further reduces the shortest side to 768px) and the
+  [Anthropic standard area policy](https://platform.claude.com/docs/en/build-with-claude/vision)
+  (which caps the long edge at 1568px). A 4000×3000 image estimates at 4,195 tokens.
+  This changes planning only; original image bytes are still submitted, usage is
+  provider-reported, and model-specific high/original-resolution modes may cost more.
+  Malformed or unsupported images retain the encoded-byte fallback. Required
+  content that cannot fit the estimated budget fails explicitly instead of being
+  silently discarded.
 - A full offline run with four workers and a supported Node release passed 3,740
   tests across 363 files; 164 opt-in tests across 30 files were skipped. Subsequent
   security and accounting fixes require their focused integration checks and a
@@ -877,3 +887,20 @@ balance forward rather than resetting the cap for another command. A request to
 increase the cumulative cap was subsequently approved at USD 5, leaving
 USD 4.061721915 before the full qualification. See `docs/evals/history-findings.md` for the preserved
 comparison, per-question accounting, and failed diagnostics.
+
+Context retention update (#1863): a context rebuild retains tool results whole,
+newest first, within three quarters of the available model input budget after
+reserving output and fixed instructions/tool schemas. The last three individual
+results (including parallel calls) remain the minimum retention window. Only
+older eligible results outside that budget use the deterministic ~1 KB shortening
+rule. This applies equally to direct tools and lazy connector catalog wrappers;
+no connector-specific names or result payload fields control retention. If the
+candidate still exceeds the full input budget, the existing shortening and
+context-selection fallback applies. History, skill and fleet instruction
+exceptions remain unchanged; builtins are exposed separately from connector
+catalogs and cannot resolve through their wrappers. Once a shortened result is
+sent, later rebuilds in the same run reuse it even when more space is available.
+Speculative rebuilds do not advance this boundary. Between rebuilds, the sent
+transcript stays byte-identical for prompt caching. The unread tool group remains
+protected even when steering follows its results, and the runtime's 12,000-character
+result cap is unchanged.

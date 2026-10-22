@@ -3,22 +3,25 @@ import {
   type ActionApprovalRule,
   applyJudgeDecision,
   connectorKindFromToolName,
+  connectorReadRequiresApproval,
   connectorToolRequiresApproval,
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  newSiteOutcome,
+  outboundSiteGate,
   planActionGate,
   resolveActionApproval,
   resolveActionApprovalDetail,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  toolResultTaintsRun,
   unattendedTriggerToolRequiresApproval,
   watchToolRefusal,
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
-  it("requires approval for consequential builtins and destination writes", () => {
-    expect(toolRequiresApproval("destination.write", false)).toBe(true);
+  it("requires approval for consequential builtins and connector writes", () => {
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
@@ -49,7 +52,7 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before fleet writes that touch several bots, cost money or rewrite a bot", () => {
+  it("always asks before bot management writes that touch several bots, cost money or rewrite a bot", () => {
     for (const name of [
       "create_group",
       "update_group",
@@ -62,7 +65,7 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("never asks before reading the fleet or organizing the sidebar", () => {
+  it("never asks before reading the bots it manages or organizing the sidebar", () => {
     for (const name of ["list_fleet", "organize_bot", "update_bot"]) {
       expect(toolRequiresApproval(name, false)).toBe(false);
       expect(toolRequiresExplicitApproval(name)).toBe(false);
@@ -394,6 +397,48 @@ describe("planActionGate", () => {
     ).toBe("allow");
   });
 
+  it("sends a new site to Auto Review, even with a rule for the whole tool", () => {
+    const gate = (source: "default" | "always_allow") =>
+      planActionGate({
+        resolved: { decision: "allow", source, matchingRules: [] },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+        newDestination: true,
+      });
+    expect(gate("default")).toBe("judge");
+    expect(gate("always_allow")).toBe("judge");
+  });
+
+  it("asks before a new site when Auto Review is off or has no checker", () => {
+    for (const [autoReviewEnabled, checkerConfigured] of [
+      [false, true],
+      [true, false],
+    ] as const) {
+      expect(
+        planActionGate({
+          resolved: { decision: "allow", source: "always_allow", matchingRules: [] },
+          consequential,
+          autoReviewEnabled,
+          checkerConfigured,
+          newDestination: true,
+        }),
+      ).toBe("ask");
+    }
+  });
+
+  it("lets a require_approval rule ask about a new site without judging", () => {
+    expect(
+      planActionGate({
+        resolved: { decision: "ask", source: "require_approval", matchingRules: [] },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+        newDestination: true,
+      }),
+    ).toBe("ask");
+  });
+
   it("does not judge non-consequential tools", () => {
     expect(
       planActionGate({
@@ -415,6 +460,24 @@ describe("applyJudgeDecision", () => {
   it("fails closed on consequential checker errors and open on exempt", () => {
     expect(applyJudgeDecision({ decision: "error", consequential: true })).toBe("ask");
     expect(applyJudgeDecision({ decision: "error", consequential: false })).toBe("allow");
+  });
+});
+
+describe("newSiteOutcome", () => {
+  it("allows a new site Auto Review passed, in any run", () => {
+    for (const trigger of ["user", "routine", "webhook"]) {
+      expect(newSiteOutcome({ trigger, decision: "allow" })).toBe("allow");
+    }
+  });
+
+  it("asks a person about a new site that was not passed", () => {
+    for (const trigger of ["user", "follow_up", "routine", "messaging"]) {
+      expect(newSiteOutcome({ trigger, decision: "ask" })).toBe("ask");
+    }
+  });
+
+  it("refuses it in a webhook run, which has nobody to ask", () => {
+    expect(newSiteOutcome({ trigger: "webhook", decision: "ask" })).toBe("deny");
   });
 });
 
@@ -449,5 +512,90 @@ describe("watchToolRefusal", () => {
         rules: [rule("tool", "brain_search", "always_allow")],
       }),
     ).toBeNull();
+  });
+});
+
+describe("outboundSiteGate", () => {
+  const siteRule: ActionApprovalRule = {
+    effect: "always_allow",
+    matchKind: "site",
+    matchValue: "example.com",
+  };
+
+  it("lets a run reach sites it was given", () => {
+    expect(outboundSiteGate({ site: "example.com", trusted: true, rules: [] })).toBe("allow");
+  });
+
+  it("marks any other site new, even with a rule for the whole tool", () => {
+    expect(outboundSiteGate({ site: "attacker.test", trusted: false, rules: [] })).toBe("new");
+    expect(
+      outboundSiteGate({
+        site: "attacker.test",
+        trusted: false,
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "web_fetch" }],
+      }),
+    ).toBe("new");
+  });
+
+  it("allows a site the owner always allowed, and only that site", () => {
+    expect(outboundSiteGate({ site: "example.com", trusted: false, rules: [siteRule] })).toBe(
+      "allow",
+    );
+    expect(outboundSiteGate({ site: "other.com", trusted: false, rules: [siteRule] })).toBe("new");
+  });
+
+  it("matches site rules ahead of tool rules", () => {
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "web_fetch",
+        site: "example.com",
+        rules: [
+          { effect: "require_approval", matchKind: "tool", matchValue: "web_fetch" },
+          siteRule,
+        ],
+      }).decision,
+    ).toBe("allow");
+    expect(
+      resolveActionApprovalDetail({ toolName: "web_fetch", site: "other.com", rules: [siteRule] })
+        .source,
+    ).toBe("default");
+  });
+});
+
+describe("connectorReadRequiresApproval", () => {
+  it("keeps reads free until outside content enters the run", () => {
+    expect(connectorReadRequiresApproval({ tainted: false, connectorTrusted: false })).toBe(false);
+  });
+
+  it("keeps reads free on a connector the run already used or was approved for", () => {
+    expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: true })).toBe(false);
+  });
+
+  it("asks before a read on a new connector once the run is tainted", () => {
+    expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: false })).toBe(true);
+  });
+});
+
+describe("toolResultTaintsRun", () => {
+  it("treats outside content as taint, including connector tools and new tools", () => {
+    for (const tool of [
+      "web_fetch",
+      "web_search",
+      "browser_snapshot",
+      "computer_observe",
+      "shell",
+      "read_file",
+      "run_subagent",
+      "gmail_list_messages",
+      "some_future_tool",
+    ]) {
+      expect(toolResultTaintsRun(tool)).toBe(true);
+    }
+  });
+
+  it("does not taint on the bot's own writes and saved state", () => {
+    for (const tool of ["ask_user", "remember", "recall_memory", "skill_read", "write_file"]) {
+      expect(toolResultTaintsRun(tool)).toBe(false);
+    }
   });
 });

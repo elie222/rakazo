@@ -42,7 +42,10 @@ export function isBackgroundInputBlock(block: unknown): boolean {
     !!block &&
     typeof block === "object" &&
     "kind" in block &&
-    (block.kind === "ask" || block.kind === "computer" || block.kind === "mcp_approval")
+    (block.kind === "ask" ||
+      block.kind === "computer" ||
+      block.kind === "mcp_approval" ||
+      block.kind === "app_connect")
   );
 }
 
@@ -111,7 +114,13 @@ export function foldPeerReplies<T extends PresentableMessage>(
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
     // User-input cards stay inline; previews without receipts keep only asks, as before.
     if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
-    if (!includeText || !message.blocks.some((block) => block.kind === "text")) return false;
+    if (
+      !includeText ||
+      !message.blocks.some(
+        (block) => block.kind === "text" || block.kind === "file" || block.kind === "image",
+      )
+    )
+      return false;
     // Only bot replies fold: a person's answer, steering or reaction in the run stays inline.
     if (message.role !== "bot") return true;
     const markerId = includePeerReceipts ? markerByRunId.get(message.runId) : undefined;

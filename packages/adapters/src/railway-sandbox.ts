@@ -14,8 +14,9 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import type { RailwayClientConfig } from "railway";
+import type { ConnectOptions, SandboxStatus } from "railway";
 import {
+  RailwayGraphQLError,
   Sandbox,
   SandboxFailedError,
   SandboxFileNotFoundError,
@@ -24,6 +25,7 @@ import {
 } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
+import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
@@ -37,6 +39,11 @@ const WORKSPACE = "/home/rakazo";
 const SCREEN_PORT = 6080;
 const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+const GONE_STATUSES = new Set<SandboxStatus>(["DESTROYED", "DESTROYING", "FAILED"]);
+// The SDK waits five minutes for RUNNING; a record still creating well past that is stuck.
+const CREATING_STALE_MS = 10 * 60_000;
+// Railway's longest finite idle timeout on any plan.
+const MAX_IDLE_TIMEOUT_MINUTES = 120;
 
 export interface RailwaySandboxOptions {
   token: string;
@@ -57,6 +64,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
       browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
       displayStart: 1,
       portStart: SCREEN_PORT,
+      // The provider port proxy reaches the isolated sandbox through its network interface.
+      bindHost: "0.0.0.0",
     }),
     run: async (computer, command, context) => {
       const result = await this.run(computer, command, context);
@@ -72,7 +81,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     },
   });
 
-  private readonly options: RailwayClientConfig;
+  private readonly options: ConnectOptions;
 
   private readonly maxWorkspaceFileBytes: number;
 
@@ -130,20 +139,23 @@ export class RailwaySandboxProvider implements SandboxProvider {
           this.ref(request.providerRef, request.botId, false),
           context,
         );
-        if (sandbox.status === "RUNNING") {
-          assertPrivateNetwork(sandbox);
+        if (sandbox.status === "RUNNING" && sandbox.networkIsolation === "PRIVATE")
           return this.ref(sandbox.id, request.botId, false);
-        }
-        if (sandbox.status === "CREATING") throw new Error("Railway computer is still starting");
-        await this.destroy(this.ref(sandbox.id, request.botId, false), context);
+        if (
+          sandbox.status === "CREATING" &&
+          Date.now() - Date.parse(sandbox.createdAt) < CREATING_STALE_MS
+        )
+          throw new Error("Railway computer is still starting");
+        // Replace stuck, ended, and non-PRIVATE sandboxes; the portable home restores the workspace.
+        await remove(sandbox);
       } catch (error) {
         if (!(error instanceof SandboxNotFoundError)) throw error;
       }
     }
     let sandbox: Sandbox;
     let createdId: string | undefined;
-    try {
-      sandbox = await Sandbox.create({
+    const create = (idleTimeoutMinutes?: number) =>
+      Sandbox.create({
         ...this.options,
         fetch: async (input, init) => {
           // Finish the bounded request so cancellation cannot hide a created sandbox's ID.
@@ -153,11 +165,25 @@ export class RailwaySandboxProvider implements SandboxProvider {
           context.signal.throwIfAborted();
           return response;
         },
+        ...(idleTimeoutMinutes !== undefined && { idleTimeoutMinutes }),
         // Railway public domains require the sandbox to join the private network.
         networkIsolation: "PRIVATE",
         domains: [{ port: SCREEN_PORT }],
         ...(this.region && { region: this.region }),
       });
+    try {
+      try {
+        sandbox = await create(railwayIdleTimeoutMinutes());
+      } catch (error) {
+        // Trial and Free plans allow 1-5 minutes and never 0, and Railway does not document how
+        // it words that rejection. Retry with the plan default unless a retry cannot help.
+        if (createdId || context.signal.aborted || !retriesWithoutIdleTimeout(error)) throw error;
+        sandbox = await create();
+        // biome-ignore lint/suspicious/noConsole: Operators need to know idle work can be lost.
+        console.warn(
+          "[railway] created the sandbox with the plan's idle timeout, which can destroy idle computers before they are saved",
+        );
+      }
       createdId = sandbox.id;
       assertPrivateNetwork(sandbox);
     } catch (error) {
@@ -179,7 +205,9 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     try {
-      return (await this.connect(computer, context)).status === "RUNNING";
+      const sandbox = await this.lookup(computer, context);
+      // Provisioning replaces a sandbox without PRIVATE networking.
+      return sandbox.status === "RUNNING" && sandbox.networkIsolation === "PRIVATE";
     } catch (error) {
       if (error instanceof SandboxNotFoundError) return false;
       throw error;
@@ -443,9 +471,12 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   async keepAlive(computer: ComputerRef) {
-    const sandbox = await Sandbox.connect(computer.providerRef, this.options);
-    assertPrivateNetwork(sandbox);
-    await sandbox.heartbeat();
+    const sandbox = usable(await connectSandbox(computer.providerRef, this.options));
+    try {
+      await sandbox.heartbeat();
+    } catch (error) {
+      throw goneError(error, sandbox.id, sandbox.environmentId);
+    }
   }
 
   async stop(computer: ComputerRef, context: AdapterContext) {
@@ -456,22 +487,19 @@ export class RailwaySandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext) {
     try {
       // Cleanup must still run when provisioning or preparation was canceled.
-      const sandbox = await Sandbox.connect(computer.providerRef, this.options);
-      await sandbox.destroy();
+      await remove(await connectSandbox(computer.providerRef, this.options));
     } catch (error) {
       if (!(error instanceof SandboxNotFoundError)) throw error;
     }
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
-    const sandbox = await this.lookup(computer, context);
-    assertPrivateNetwork(sandbox);
-    return sandbox;
+    return usable(await this.lookup(computer, context));
   }
 
   private async lookup(computer: ComputerRef, context: AdapterContext) {
     context.signal.throwIfAborted();
-    return Sandbox.connect(computer.providerRef, {
+    return connectSandbox(computer.providerRef, {
       ...this.options,
       fetch: (input, init) =>
         railwayFetch(input, {
@@ -512,6 +540,71 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 }
 
+/**
+ * Railway destroys an idle sandbox, so it must outlast the checkpointing idle sleep. When no
+ * finite timeout can, Railway never idles it out and Rakazo's own idle sleep stops it.
+ */
+function railwayIdleTimeoutMinutes() {
+  if (!computerIdleSleepEnabled()) return 0;
+  const minutes = Math.ceil((sandboxIdleMs() * 1.5) / 60_000);
+  return minutes <= MAX_IDLE_TIMEOUT_MINUTES ? minutes : 0;
+}
+
+async function connectSandbox(id: string, options: ConnectOptions) {
+  try {
+    return await Sandbox.connect(id, options);
+  } catch (error) {
+    throw goneError(error, id, options.environmentId ?? "");
+  }
+}
+
+/** Ended sandboxes are gone: a heartbeat cannot revive them. */
+function usable(sandbox: Sandbox) {
+  if (GONE_STATUSES.has(sandbox.status))
+    throw new SandboxNotFoundError({ id: sandbox.id, environmentId: sandbox.environmentId });
+  assertPrivateNetwork(sandbox);
+  return sandbox;
+}
+
+async function remove(sandbox: Sandbox) {
+  // Only CREATING and RUNNING sandboxes count toward Railway's per-environment cap.
+  if (GONE_STATUSES.has(sandbox.status)) return;
+  try {
+    await sandbox.destroy();
+  } catch (error) {
+    if (!(goneError(error, sandbox.id, sandbox.environmentId) instanceof SandboxNotFoundError))
+      throw error;
+  }
+}
+
+function goneError(error: unknown, id: string, environmentId: string) {
+  return hasRailwayErrorCode(error, "NOT_FOUND")
+    ? new SandboxNotFoundError({ id, environmentId })
+    : error;
+}
+
+/**
+ * Only a rejection Railway answered proves nothing was created. A lost reply or a server error
+ * can hide a created sandbox that a retry would leak, and is not a plan rejecting the timeout.
+ */
+function retriesWithoutIdleTimeout(error: unknown) {
+  return (
+    error instanceof RailwayGraphQLError &&
+    error.status < 500 &&
+    error.status !== 401 &&
+    error.status !== 403 &&
+    !hasRailwayErrorCode(error, "LIMIT_EXCEEDED") &&
+    !hasRailwayErrorCode(error, "UNAUTHORIZED")
+  );
+}
+
+function hasRailwayErrorCode(error: unknown, code: string) {
+  return (
+    error instanceof RailwayGraphQLError &&
+    error.errors.some((item) => item.extensions?.code === code)
+  );
+}
+
 function assertPrivateNetwork(sandbox: Sandbox) {
   if (sandbox.networkIsolation !== "PRIVATE")
     throw new Error(
@@ -546,15 +639,47 @@ async function railwayFetch(
   // sanitizing the response so a failed create can still clean it up.
   const createdId = body.data?.sandboxCreate?.id;
   if (typeof createdId === "string") onCreated?.(createdId);
-  // Never attach upstream error bodies (which may echo credentials) to SDK errors.
+  // Never attach upstream error bodies (which may echo credentials) to SDK errors. Keep only a
+  // coarse code so a missing sandbox or a full sandbox cap stays distinguishable.
   const failed = !response.ok || body.errors?.length || !body.data;
+  const code = failed ? railwayErrorCode(body.errors?.[0]) : undefined;
   return new Response(
-    failed ? '{"errors":[{"message":"Railway API request failed"}]}' : new Uint8Array(bytes),
+    code
+      ? JSON.stringify({
+          errors: [{ message: `Railway API request failed (${code})`, extensions: { code } }],
+        })
+      : new Uint8Array(bytes),
     {
       status: response.status,
       headers: { "content-type": "application/json" },
     },
   );
+}
+
+const RailwayErrorItem = z
+  .object({
+    message: z.string().catch(""),
+    extensions: z
+      .object({
+        code: z
+          .string()
+          .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+          .optional()
+          .catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
+  })
+  .catch({ message: "" });
+
+function railwayErrorCode(error: unknown) {
+  const { message, extensions } = RailwayErrorItem.parse(error);
+  // An out-of-range idle timeout may name a maximum; keep it from reading as the sandbox cap.
+  if (/\bidle\b/i.test(message)) return "IDLE_TIMEOUT_REJECTED";
+  if (/\bnot found\b/i.test(message)) return "NOT_FOUND";
+  if (/\b(?:not authori[sz]ed|unauthori[sz]ed|forbidden)\b/i.test(message)) return "UNAUTHORIZED";
+  if (/\b(?:limit|quota|maximum)\b/i.test(message)) return "LIMIT_EXCEEDED";
+  return extensions?.code ?? "REQUEST_FAILED";
 }
 
 function railwayCwd(cwd: string | undefined) {

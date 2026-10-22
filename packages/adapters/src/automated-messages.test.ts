@@ -117,6 +117,7 @@ describe("automated messages are labelled as not from the user", () => {
         modelId: "m",
         baseUrl,
         acceptsImages: true,
+        allowPrivate: true,
       });
       const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "m")!;
       const usage = {

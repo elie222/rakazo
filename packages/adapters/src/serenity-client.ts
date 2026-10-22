@@ -25,6 +25,8 @@ export const MAX_SERENITY_FACT_CHARS = 10_000;
 /** Hosted Serenity rejects larger facts; self-hosted brains share the same bound. */
 export const MAX_SERENITY_FACT_BYTES = 4096;
 export const MAX_SERENITY_PROVENANCE_CHARS = 500;
+/** The most facts one recall returns. */
+const MAX_SERENITY_RECALL_LIMIT = 100;
 
 export type SerenityNetworkDependencies = RemoteTransportDependencies;
 
@@ -97,7 +99,7 @@ function hostnameOf(url: URL): string {
 }
 
 /** Loopback, RFC1918/ULA literals, or HTTP need deployment-owner authorization. */
-export function serenityEndpointRequiresDeploymentOwner(endpoint: string): boolean {
+export function serenityEndpointRequiresPrivateEndpoint(endpoint: string): boolean {
   const url = parseSerenityEndpoint(endpoint);
   const host = hostnameOf(url);
   if (isLocalMcpHost(host) || isBlockedHostname(host)) return true;
@@ -115,7 +117,7 @@ export async function classifySerenityEndpointTrust(
   resolveHostname?: ResolveHostname,
 ): Promise<"private" | "public"> {
   const url = parseSerenityEndpoint(endpoint);
-  if (serenityEndpointRequiresDeploymentOwner(url.href)) return "private";
+  if (serenityEndpointRequiresPrivateEndpoint(url.href)) return "private";
   const host = hostnameOf(url);
   const resolve =
     resolveHostname ??
@@ -221,7 +223,7 @@ function serenityFetchPath(
   config: SerenityConnectionConfig,
   url: URL,
 ): "private-literal" | "private-dns" | "public" {
-  if (config.endpointTrust === "private" || serenityEndpointRequiresDeploymentOwner(url.href)) {
+  if (config.endpointTrust === "private" || serenityEndpointRequiresPrivateEndpoint(url.href)) {
     return isIP(hostnameOf(url)) !== 0 ? "private-literal" : "private-dns";
   }
   return "public";
@@ -386,15 +388,18 @@ export async function probeSerenity(
   }
 }
 
+/**
+ * Lists an entity's newest facts, up to the server maximum. Recall's `query` only drives a
+ * separate page search; facts are filtered by entity and sorted newest first regardless of it,
+ * so the query is omitted and callers rank the facts themselves.
+ */
 export async function recallSerenity(
-  query: string,
   config: SerenityConnectionConfig,
   options: {
-    limit: number;
     entity?: string;
     signal?: AbortSignal;
     network?: SerenityNetworkDependencies;
-  },
+  } = {},
 ): Promise<SerenityResult<SerenityRecallFact[]>> {
   try {
     const payload = await withSerenityClient(
@@ -405,8 +410,7 @@ export async function recallSerenity(
           {
             name: "recall",
             arguments: {
-              query,
-              limit: Math.min(Math.max(1, Math.floor(options.limit)), 50),
+              limit: MAX_SERENITY_RECALL_LIMIT,
               ...(options.entity ? { entity: options.entity } : {}),
             },
           },
@@ -421,7 +425,7 @@ export async function recallSerenity(
       },
       options.network,
     );
-    return { ok: true, value: parseRecallFacts(payload).slice(0, options.limit) };
+    return { ok: true, value: parseRecallFacts(payload) };
   } catch (error) {
     return {
       ok: false,

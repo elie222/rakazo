@@ -1,5 +1,12 @@
+import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  showPasswordForm,
+  signup,
+  signupThroughForm,
+} from "./helpers";
 
 for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
   test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
@@ -89,12 +96,13 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.goto("/sign-up");
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
+  await showPasswordForm(page);
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
     "new-password",
   );
 
-  await signup(page, email, password, userName);
+  await signupThroughForm(page, email, password, userName);
   await completeOnboarding(page);
 
   await page.waitForURL(/\/app\/[^/]+$/);
@@ -136,17 +144,17 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  // Sign-out usually overlaps a bot refresh that the server rejects; when it does, wait
-  // for it so an unhandled rejection would surface before the assertion.
-  const refreshRejected = page
-    .waitForResponse(
-      (response) => response.url().includes("/rpc/spaces/list") && response.status() === 401,
-      { timeout: 5_000 },
-    )
-    .catch(() => undefined);
+  // Sign-out usually overlaps a bot refresh that the server rejects; wait for every
+  // refresh that started so an unhandled rejection would surface before the assertion.
+  const refreshes: Promise<unknown>[] = [];
+  const trackRefresh = (request: Request) => {
+    if (request.url().includes("/rpc/spaces/list")) refreshes.push(request.response());
+  };
+  page.on("request", trackRefresh);
   await page.getByRole("button", { name: "Log out" }).click();
-  await refreshRejected;
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  page.off("request", trackRefresh);
+  await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
   await page.goto("/");
@@ -163,7 +171,8 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
+  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
+  await showPasswordForm(page);
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
     "current-password",
@@ -253,6 +262,8 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
     "current-password",
   );
   await expect(settings.getByLabel("New password")).toHaveAttribute("autocomplete", "new-password");
+  await expect(settings.getByLabel("New password")).toHaveAttribute("minlength", "8");
+  await expect(settings.getByLabel("Current password")).not.toHaveAttribute("minlength");
   await expect(settings.getByLabel("Confirm password")).toHaveAttribute(
     "autocomplete",
     "new-password",
@@ -267,6 +278,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await page.getByRole("button", { name: "Log out" }).click();
+  await showPasswordForm(page);
   await expect(page.getByRole("link", { name: "Forgot password?" })).toBeVisible();
   await page.getByRole("link", { name: "Forgot password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
@@ -300,6 +312,7 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await expect(page.getByText("Password updated")).toBeVisible();
   await page.getByRole("link", { name: "Sign in" }).click();
   await page.getByLabel("Email").fill(email);
+  await showPasswordForm(page);
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
   await page.getByRole("button", { name: "Continue with email" }).click();
   await page.waitForURL(/\/app(?:\/|$)/);

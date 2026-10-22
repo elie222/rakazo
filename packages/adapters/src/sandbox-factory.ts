@@ -1,12 +1,9 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { BoatSandboxEmulator } from "./boat-emulator.js";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
-import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
-import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
@@ -85,13 +82,8 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
         opts.supervisorToken,
       );
-    case "e2b-emulator":
-      return new ManagedSandboxEmulator();
-    case "daytona-emulator":
-      return new DaytonaSandboxEmulator();
-    case "boat-emulator":
-      return new BoatSandboxEmulator();
     case "desktop":
+      assertHostCommandsAllowed();
       return new DesktopSandboxProvider({
         root: opts.dataDir,
       });
@@ -99,7 +91,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | e2b-emulator | daytona-emulator | boat-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.`,
       );
   }
 }

@@ -1,6 +1,7 @@
 package com.rakazo.notifications
 
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
@@ -83,11 +84,16 @@ class RakazoNotificationsModule : Module() {
       }
     }
 
+    Function("hasPromotedSettings") {
+      Build.VERSION.SDK_INT >= 36 && runCatching {
+        val context = context()
+        promotedSettingsIntent(context).resolveActivity(context.packageManager) != null
+      }.getOrDefault(false)
+    }
+
     AsyncFunction("openPromotedSettings") {
       val context = context()
-      val promoted = Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
-        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      val promoted = promotedSettingsIntent(context)
       runCatching { context.startActivity(promoted) }.getOrElse {
         context.startActivity(
           Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -97,6 +103,11 @@ class RakazoNotificationsModule : Module() {
       }
     }
   }
+
+  private fun promotedSettingsIntent(context: Context) =
+    Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS")
+      .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
   private fun context() = appContext.reactContext
     ?: throw IllegalStateException("Android application context is unavailable")

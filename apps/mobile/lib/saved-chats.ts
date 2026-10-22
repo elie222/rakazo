@@ -1,3 +1,4 @@
+import { displayIdentityResult, identitySource } from "@rakazo/core";
 import { Directory, File, Paths } from "expo-file-system";
 import type {
   MobileBot,
@@ -10,6 +11,7 @@ import type {
 } from "./api";
 import { currentApiBase, selectedSpaceId } from "./api";
 import { artifactCacheSession } from "./artifact-cache-session";
+import { identityLabels } from "./identity-display";
 import type { IntegrationsCacheScope } from "./integrations-cache";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "./integrations-cache";
 import {
@@ -90,7 +92,7 @@ export function readSavedInbox(scope: SavedChatsScope): SavedInbox | null {
       typeof me.name !== "string"
     )
       return null;
-    return inbox;
+    return displayIdentityResult(["bootstrap"], inbox, identityLabels()) as SavedInbox;
   } catch {
     return null;
   }
@@ -102,6 +104,7 @@ export function writeSavedInbox(
   me: MobileMe,
 ): void {
   try {
+    navigation = identitySource(navigation);
     const inbox: SavedInbox = {
       bots: navigation.current.bots.slice(0, SAVED_INBOX_ROWS).map(
         ({
@@ -219,6 +222,7 @@ export function saveInbox(
 }
 
 export function savedThreadSnapshot(snapshot: MobileSnapshot): MobileSnapshot {
+  snapshot = identitySource(snapshot);
   const { cursor: _cursor, activeRuns: _activeRuns, computer: _computer, ...rest } = snapshot;
   return {
     ...rest,
@@ -252,7 +256,11 @@ export function readSavedThread(scope: SavedChatsScope, target: string): MobileS
       )
     )
       return null;
-    return savedThreadSnapshot(snapshot);
+    return displayIdentityResult(
+      ["threads", "get"],
+      savedThreadSnapshot(snapshot),
+      identityLabels(),
+    ) as MobileSnapshot;
   } catch {
     return null;
   }

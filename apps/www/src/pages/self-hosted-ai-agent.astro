@@ -4,7 +4,6 @@ import Button from "../components/Button.astro";
 import CaptionedImage from "../components/CaptionedImage.astro";
 import FaqSection from "../components/FaqSection.astro";
 import Footer from "../components/Footer.astro";
-import GetStartedDialog from "../components/GetStartedDialog.astro";
 import Header from "../components/Header.astro";
 import {
   CADDY_SNIPPET,
@@ -19,10 +18,10 @@ import {
   SOURCE_DEV,
 } from "../guide";
 import { fetchGithubStars, formatStarCount } from "../github";
-import { getHomeCopy } from "../i18n/home";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
 import {
+  APP_URL,
   DOCS_URL,
   GITHUB_URL,
   OPENCLAW_ALTERNATIVE_PATH,
@@ -31,7 +30,6 @@ import {
   SETUP_PROMPT_URL,
 } from "../site";
 
-const home = getHomeCopy("en");
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
 const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
@@ -46,7 +44,6 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
-    <GetStartedDialog copy={home.getStartedDialog} waitlist={home.waitlist} />
     <main id="main" class="privacy-copy guide">
       <h1>Self-hosted AI agent</h1>
       <p>
@@ -55,7 +52,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         Self-hosting means that stack runs on a machine you control.
       </p>
       <p>
-        The software is <a href={`${GITHUB_URL}/blob/main/LICENSE`}>Apache-2.0</a>. Hosted Rakazo Cloud is not generally available. This page is the setup you need
+        The software is <a href={`${GITHUB_URL}/blob/main/LICENSE`}>Apache-2.0</a>. Hosted Rakazo Cloud is in beta. This page is the setup you need
         to run it. The <a href={DOCS_URL}>full self-hosting guide</a> on GitHub covers backups, upgrades,
         secrets, restricted networks, and production Compose.
       </p>
@@ -162,7 +159,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
       <p>Use this path to develop Rakazo. The published images above are enough to run it.</p>
       <pre><code>{SOURCE_CHECKOUT}</code></pre>
       <p>
-        Set <code>POSTGRES_PASSWORD</code> to a URI-safe random value (for example <code>openssl rand -hex 16</code>) and put the same value in <code>DATABASE_URL</code>. Set <code>BETTER_AUTH_SECRET</code>, <code>ENCRYPTION_KEY</code>, and <code>SCREEN_PROXY_SECRET</code> to independent long random values. Docker sandboxes also need
+        Set <code>POSTGRES_PASSWORD</code> and <code>POSTGRES_APP_PASSWORD</code> to two URI-safe random values (for example <code>openssl rand -hex 16</code>) and put them in <code>DATABASE_MIGRATION_URL</code> and <code>DATABASE_URL</code>. Set <code>BETTER_AUTH_SECRET</code>, <code>ENCRYPTION_KEY</code>, and <code>SCREEN_PROXY_SECRET</code> to independent long random values. Docker sandboxes also need
         a dedicated <code>SANDBOX_SUPERVISOR_TOKEN</code>. Keep these in <code>.env</code>, not in git.
       </p>
       <p>
@@ -206,9 +203,9 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
       </ul>
 
       <h2>Get started</h2>
-      <p>Self-host with the steps above, or leave an email for hosted Rakazo Cloud.</p>
+      <p>Self-host with the steps above, or start on Rakazo Cloud.</p>
       <div class="cta-actions">
-        <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+        <Button href={APP_URL}>Rakazo Cloud</Button>
         <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
       </div>
     </main>

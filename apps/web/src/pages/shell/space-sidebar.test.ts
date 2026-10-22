@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { commitSpaceRename, sidebarGroupsForSpaces } from "./space-sidebar";
+import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./space-sidebar";
 
 function chat(id: string, name: string) {
   return {
@@ -77,11 +77,11 @@ describe("sidebarGroupsForSpaces", () => {
     ]);
   });
 
-  it("keeps rename on the only space without showing its name", () => {
+  it("names the only space on the header that holds its menu", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 
     expect(group).toMatchObject({
-      title: null,
+      title: "Personal",
       spaceName: "Personal",
       canRenameSpace: true,
       canDeleteSpace: false,
@@ -125,7 +125,7 @@ describe("sidebarGroupsForSpaces", () => {
   it("keeps settings reachable in a member's only empty space", () => {
     expect(sidebarGroupsForSpaces([space("space-1", "Shared", { bots: [] })], "")).toEqual([
       expect.objectContaining({
-        title: null,
+        title: "Shared",
         spaceName: "Shared",
         canRenameSpace: false,
         canDeleteSpace: false,
@@ -171,4 +171,31 @@ describe("commitSpaceRename", () => {
     expect(apply).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
+});
+
+it("counts unread bots and groups from the sidebar across spaces", () => {
+  const input = [
+    {
+      ...space("first", "First"),
+      bots: [
+        { ...chat("read", "Read"), unread: false },
+        { ...chat("bot", "Unread bot"), unread: true, pinned: true },
+      ],
+      groups: [{ ...chat("group", "Unread group"), unread: true }],
+    },
+    {
+      ...space("second", "Second"),
+      bots: [{ ...chat("other", "Other"), unread: true }],
+      groups: [],
+    },
+  ];
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, ""))).toBe(3);
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, "Unread"))).toBe(2);
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, "Read group"))).toBe(1);
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, "missing"))).toBe(0);
+  input[0]!.groups[0]!.unread = false;
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, ""))).toBe(2);
+  input[0]!.bots[0]!.unread = true;
+  expect(countUnreadChats(sidebarGroupsForSpaces(input, ""))).toBe(3);
+  expect(countUnreadChats([])).toBe(0);
 });

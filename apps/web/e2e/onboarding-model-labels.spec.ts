@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, signup } from "./helpers";
 
-test("onboarding uses compact model selects without misleading latest labels", async ({
+test("onboarding requires a model and uses compact model selects without misleading latest labels", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/me", async (route) => {
@@ -26,8 +26,46 @@ test("onboarding uses compact model selects without misleading latest labels", a
     timeout: 20_000,
   });
 
+  // A deployment without a model cannot skip setup or continue without a usable key.
+  await expect(page.getByRole("button", { name: "Skip for now" })).toBeHidden();
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("   ");
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  await expect(continueButton).toBeEnabled();
+  await page.getByLabel("API key", { exact: true }).fill("");
+  await captureScreenshot(page, testInfo, "onboarding-model-required");
+
   const provider = page.getByRole("combobox", { name: "Provider" });
   await expect(provider).toContainText("OpenRouter");
+  const thinking = page.getByRole("combobox", { name: "Thinking", exact: true });
+  await thinking.click();
+  const thinkingMenu = page.getByRole("listbox");
+  await expect(thinkingMenu).toBeVisible();
+  const defaultOption = page.getByRole("option", { name: "Default (Medium)", exact: true });
+  await expect(defaultOption).toHaveAttribute("aria-selected", "true");
+  const menu = page.locator('[data-slot="select-content"]');
+  const group = menu.locator('[data-slot="select-group"]');
+  await expect(group).toBeVisible();
+  await expect
+    .poll(async () => {
+      const menuBounds = await menu.boundingBox();
+      const optionBounds = await defaultOption.boundingBox();
+      return menuBounds && optionBounds ? optionBounds.x - menuBounds.x : 0;
+    })
+    .toBeGreaterThan(0);
+  await captureScreenshot(page, testInfo, "onboarding-thinking-menu");
+  await page.getByRole("option", { name: "High", exact: true }).click();
+  await expect(thinking).toContainText("High");
+  await expect(thinkingMenu).toBeHidden();
+  await thinking.click();
+  await expect(page.getByRole("option", { name: "High", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await expect(thinkingMenu).toBeHidden();
   await page.getByLabel("API key").fill("openrouter-only-key");
   await provider.click();
   await expect(page.getByRole("option", { name: "ChatGPT" })).toBeVisible();
@@ -38,6 +76,7 @@ test("onboarding uses compact model selects without misleading latest labels", a
 
   const models = page.getByRole("combobox", { name: "Model", exact: true });
   await models.click();
+  await expect(page.getByRole("option", { name: /\(auto-updates\)/ }).first()).toBeVisible();
   const labels = await page.getByRole("option").allTextContents();
   // "latest" is an upstream alias marker, so it lands on families like Claude Opus 4.5 while
   // newer models carry no marker. Rendered as-is it tells the user the opposite of the truth.

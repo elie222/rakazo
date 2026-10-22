@@ -1,9 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { instructionUpdateDiff, redactSecrets, toolRequiresExplicitApproval } from "@rakazo/core";
+import { urlSite } from "@rakazo/core/egress";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
+/** Longer fetch URLs are refused, so an approval card always shows the whole URL it sends. */
+export const MAX_FETCH_URL_LENGTH = 2_048;
 
 /** A fleet card built from the resolved request: a title and the lines under it. */
 export type FleetCardSummary = { title: string; lines: string[] };
@@ -66,6 +69,7 @@ export function buildApprovalAskBlock(
       ],
     };
   }
+  const fetchSite = webFetchSite(toolName, args);
   const summary = describeApprovalAction(toolName, args);
   const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
@@ -80,6 +84,7 @@ export function buildApprovalAskBlock(
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
     detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    ...(fetchSite ? { site: fetchSite } : {}),
     status: "pending",
     actions:
       toolName === "create_space"
@@ -94,18 +99,20 @@ export function buildApprovalAskBlock(
             ]
           : [
               { id: "allow", label: "Allow once" },
-              { id: "always", label: "Always allow this tool" },
+              {
+                id: "always",
+                label: fetchSite ? `Always allow ${fetchSite}` : "Always allow this tool",
+              },
               { id: "deny", label: "Deny" },
             ],
   };
 }
 
+function webFetchSite(toolName: string, args: Record<string, unknown>): string | undefined {
+  return toolName === "web_fetch" && typeof args.url === "string" ? urlSite(args.url) : undefined;
+}
+
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === "destination.write") {
-    const collection = args.collection ? String(args.collection) : "records";
-    const title = args.title ? ` "${String(args.title)}"` : "";
-    return `writing${title} to ${collection}`;
-  }
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
@@ -114,7 +121,7 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
   }
-  const target = pickScopeLabel(args);
+  const target = webFetchSite(toolName, args) ?? pickScopeLabel(args);
   return target ? `${toolName} → ${target}` : toolName;
 }
 
@@ -132,7 +139,10 @@ function formatApprovalDetail(
       "Bots, groups, chats, files, memory, and integrations in this space stay separate from other spaces.",
     );
   }
-  for (const key of ["collection", "title", "to", "subject", "amount", "body"]) {
+  // A fetch carries data in its path and query, so the card shows the whole URL.
+  const keys =
+    toolName === "web_fetch" ? ["url"] : ["collection", "title", "to", "subject", "amount", "body"];
+  for (const key of keys) {
     const value = args[key];
     if (value == null || value === "") continue;
     lines.push(`${key}: ${String(value)}`);

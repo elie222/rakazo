@@ -1,7 +1,9 @@
 import { ResponseError } from "@boatdev/sdk";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
-import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
+import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatSandboxProvider } from "./boat-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,14 +40,97 @@ describe("Boat API errors", () => {
     );
   });
 
-  it("preserves 404 recovery and does not retry failed commands", async () => {
+  it("reports a sandbox that no longer exists as gone, but not a missing file", async () => {
+    const notFound = () =>
+      Response.json({ code: "not_found", message: "not_found" }, { status: 404 });
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "test",
+      userId: "test",
+      signal: new AbortController().signal,
+    };
+    const computer = { id: "gone", providerRef: "gone", botId: "bot-test", kind: "boat" as const };
+    const provider = new BoatSandboxProvider({ apiKey: "fake-boat-key" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => notFound()),
+    );
+    const gone = await provider.keepAlive(computer).catch((error: unknown) => error);
+    expect(isSandboxGoneError(gone)).toBe(true);
+    expect((gone as Error).name).toBe("SandboxNotFoundError");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        new URL(String(input)).pathname.endsWith("/sandboxes/gone")
+          ? Response.json({ ok: true, type: "sandbox.info", sandbox: { id: "gone" } })
+          : notFound(),
+      ),
+    );
+    const missingFile = await provider
+      .readFile(computer, "missing.txt", context)
+      .catch((error: unknown) => error);
+    expect(isSandboxGoneError(missingFile)).toBe(false);
+
+    const cancel = new AbortController();
+    const lookups: (AbortSignal | null | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (!new URL(String(input)).pathname.endsWith("/sandboxes/gone")) return notFound();
+        lookups.push(init?.signal);
+        cancel.abort(new Error("cancelled"));
+        throw init?.signal?.reason;
+      }),
+    );
+    await expect(
+      provider.readFile(computer, "missing.txt", { ...context, signal: cancel.signal }),
+    ).rejects.toThrow();
+    expect(lookups[0]?.aborted).toBe(true);
+  });
+
+  it("keeps the HTTP status and Boat's error code and does not retry failed commands", async () => {
     const call = vi.fn(async () => {
-      throw new ResponseError(Response.json({ message: "Boat not found" }, { status: 404 }));
+      throw new ResponseError(
+        Response.json({ code: "not_found", message: "Boat not found" }, { status: 404 }),
+      );
     });
     const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
-    expect(error).toBeInstanceOf(ResponseError);
-    expect(isUnrecoverableBoatError(error)).toBe(true);
+    expect(error).toBeInstanceOf(BoatApiError);
+    expect(error).toMatchObject({ code: "not_found", response: { status: 404 } });
     expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
+    const call = wrapBoatCall(async () => {
+      throw new ResponseError(
+        Response.json(
+          { code: "rate_limited", message: "Rate limit hit: 200 sandbox starts per day" },
+          { status: 429 },
+        ),
+      );
+    }, "fake-key");
+    const error = await call().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect((error as Error).cause).toBeInstanceOf(ResponseError);
+    expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
+  });
+
+  it("stops waiting to retry an unsent request once the caller cancels", async () => {
+    const controller = new AbortController();
+    const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
+      controller.abort();
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect refused"), { code: "ECONNREFUSED" }),
+      });
+    });
+    const wrapped = wrapBoatCall(call, "fake-key", true);
+    await expect(wrapped({}, { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(call).toHaveBeenCalledOnce();
   });
 
   it("does not replace cancellation and network errors", async () => {

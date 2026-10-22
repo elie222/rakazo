@@ -6,8 +6,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { ConnectorRegistry } from "./composio-connector.js";
-import { DestinationEmulator } from "./destination-emulator.js";
+import { ConnectorRegistry, createConnectorStack } from "./composio-connector.js";
 
 class StubConnector implements ConnectorProvider {
   calls: ConnectorCall[] = [];
@@ -48,10 +47,9 @@ describe("ConnectorRegistry", () => {
   it("preserves every colliding tool and routes through hidden source metadata", async () => {
     const first = new StubConnector("first", [tool("shared.tool")]);
     const second = new StubConnector("second", [tool("shared.tool")]);
-    const registry = new ConnectorRegistry(new DestinationEmulator(), [first, second]);
+    const registry = new ConnectorRegistry([first, second]);
 
-    const tools = await registry.discoverTools(context);
-    const external = tools.filter((entry) => entry.route?.connectorId !== "destination");
+    const external = await registry.discoverTools(context);
     expect(external.map((entry) => entry.name)).toEqual(["shared.tool", "second.shared.tool"]);
 
     const selected = external[1]!;
@@ -70,6 +68,22 @@ describe("ConnectorRegistry", () => {
     expect(results).toEqual([{ connector: "second", tool: "shared.tool" }]);
     expect(first.calls).toHaveLength(0);
     expect(second.calls).toHaveLength(1);
+  });
+
+  it("registers only the providers it is given", async () => {
+    const stack = createConnectorStack(undefined, [new StubConnector("first", [tool("a")])]);
+
+    await expect(stack.connector.discoverTools(context)).resolves.toEqual([
+      expect.objectContaining({ name: "a", route: { connectorId: "first", toolName: "a" } }),
+    ]);
+    const events: ConnectorEvent[] = [];
+    for await (const event of stack.connector.execute(
+      { tool: "destination.write", args: {}, executionId: "execution" },
+      context,
+    )) {
+      events.push(event);
+    }
+    expect(events).toEqual([{ type: "error", message: "unknown connector composio" }]);
   });
 });
 

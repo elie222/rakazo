@@ -9,6 +9,7 @@ import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { createRunSandbox, HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
+import { HostComputerSandbox } from "./host-computer-sandbox.js";
 
 const ctx = {
   operationId: "1",
@@ -202,6 +203,25 @@ describe("host-aware sandbox", () => {
     }
     expect(code).toBe(0);
     await desktop.destroy(computer, ctx);
+  });
+
+  it("never runs bot commands on a production backend host", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      expect(() => createRunSandbox("desktop", {})).toThrow(
+        "SANDBOX_PROVIDER=desktop runs bot commands directly on this host",
+      );
+      // The desktop app's backend reaches this computer only through the authenticated bridge.
+      const bridged = new HostAwareSandbox(
+        new FakeSandboxProvider(),
+        new HostComputerSandbox("", ""),
+        async () => true,
+      );
+      expect(bridged.describe().id).toBe("fake");
+      expect(new HostComputerSandbox("", "").describe().id).toBe("desktop");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("only switches docker deployments onto this Mac", () => {

@@ -67,6 +67,10 @@ The web and desktop computer view opens a terminal and a file browser from a doc
 
 The web service logs `screen.proxy.target_rejected`, `screen.proxy.http_failed`, `screen.proxy.http_upstream_response`, `screen.proxy.websocket_handshake_failed`, `screen.proxy.websocket_error`, `screen.proxy.websocket_upgraded`, `screen.proxy.websocket_closed`, and revocation events. Each event includes a random `screen.connection_id` and a view/control policy. WebSocket close events include whether the upstream handshake completed, its duration, and the side that initiated the close (`client`, `upstream`, or `revoked`). Logs omit capability URLs, socket tokens, provider hostnames, cookies, and request headers.
 
+The web and Electron screen frame is sandboxed, so the app cannot look inside it. Before framing a proxied page the app fetches it once and shows the proxy's refusal (for example `Screen unavailable (upstream_timeout)`) in place of the screen. The proxy rewrites every noVNC page with a small reporter that posts `loading` as soon as the page runs and then `connecting`, `connected`, `failed` (with noVNC's status text) or `disconnected` to the app; Rakazo's own `embed.html` sets the same noVNC classes so Docker computers report too. A `failed` report, or nothing past `loading` within 15 seconds, shows the error and Retry instead of a blank frame. A frame that stays silent means the document never executed in that browser; one that stops at `loading` means noVNC's modules never finished evaluating; a `failed` report means the page ran and noVNC could not connect.
+
+The shim also removes `VideoDecoder` from the page. noVNC releases before 1.7 probe WebCodecs H.264 support with a top-level `await`, and on some Android devices `VideoDecoder.flush()` never returns, which leaves the page on `noVNC_loading` with no error. Screens never use H.264. Every proxied screen response is sent with `Cache-Control: no-transform`, so a CDN in front of the web service does not inject scripts into or minify the page.
+
 When the screen shows a connection error, check whether `computer.screenUrl` succeeded in the API logs, then inspect web-service `screen.proxy.*` events around the same time. On `screen.proxy.target_rejected`, read `reason`: `invalid_path` is not a session path (API not contacted); `authority_rejected` is a non-OK API response (expired, revoked, or an API error); `invalid_authority_response` is an OK response with an invalid or malformed target body; `authority_unavailable` is a request, connectivity, or timeout failure. An upstream error or non-101 handshake points to the provider screen gateway. An upgraded connection that closes quickly points to a transport drop after the handshake. If the API issued a URL but no web-service event appears, inspect the browser Network panel and its WebSocket request. Do not paste the full capability URL into an issue or log.
 
 ## E2B backend
@@ -81,7 +85,7 @@ The database stores the provider kind and opaque `providerRef`. That reference i
 
 The Boat adapter uses Boat's official TypeScript SDK for lifecycle, command, and file operations. It creates and resumes sandboxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The shared runtime creates each bot's display and noVNC transports, exposed through protected Boat port hosting. Rakazo's encrypted screen capability proxy binds the view/control policy and keeps the provider credentials out of browser-visible URLs. Observations and actions target the assigned bot display.
 
-Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. The Boat emulator uses the same multi-screen contract as the other managed-provider emulators.
+Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. Boat states the API cannot recover from (deleted, cancelled, snapshot data expired, or an `error` that recover cannot fix) are reported as gone, so the computer is replaced and restored from its last checkpoint.
 
 ## Persistence
 
@@ -102,7 +106,7 @@ contacts-export replay through real Pi, with either a stateful fake computer or
 real Docker Chromium. It requires no inference and complements the vision
 acceptance test below.
 
-Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and multi-screen managed-provider emulators. They never call a model or live sandbox.
+Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and the real Boat adapter against an in-memory Boat API. They never call a model or live sandbox.
 
 The explicit acceptance test requires Docker (for temporary Postgres), `E2B_API_KEY`, `OPENROUTER_API_KEY`, and a vision-capable OpenRouter model id:
 

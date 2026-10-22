@@ -23,7 +23,7 @@ function publisher() {
 }
 
 function fakePrisma(
-  runs: Array<{ id: string; updatedAt: Date }> = [],
+  runs: Array<{ id: string; status: string; updatedAt: Date }> = [],
   routines: Array<{ id: string; nextRunAt: Date | null }> = [],
   controls: Array<{
     id: string;
@@ -117,7 +117,7 @@ describe("createJobReconciler", () => {
     const scheduledFor = new Date(Date.now() + 30_000);
     const controlExpiresAt = new Date(Date.now() + 15_000);
     const prisma = fakePrisma(
-      [{ id: "run-1", updatedAt: new Date() }],
+      [{ id: "run-1", status: "queued", updatedAt: new Date() }],
       [{ id: "routine-1", nextRunAt: scheduledFor }],
       [
         {
@@ -139,6 +139,7 @@ describe("createJobReconciler", () => {
       payload: { runId: "run-1" },
       replaceKey: "run:run-1",
       keepExisting: true,
+      replaceLockedBefore: expect.any(Date),
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "routine.wakeup",
@@ -168,6 +169,27 @@ describe("createJobReconciler", () => {
         orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
       }),
     );
+  });
+
+  it("replaces any lock for an expired lease but only an old lock for a queued run", async () => {
+    const prisma = fakePrisma([
+      { id: "run-queued", status: "queued", updatedAt: new Date() },
+      { id: "run-expired", status: "running", updatedAt: new Date() },
+    ]);
+    const { jobs, enqueue } = publisher();
+    const before = Date.now();
+
+    await createJobReconciler({ prisma, jobs }).reconcileOnce();
+
+    const cutoff = (runId: string) => {
+      const job = enqueue.mock.calls
+        .map(([queued]) => queued)
+        .find((queued) => queued.name === "run.continue" && queued.payload.runId === runId);
+      return job?.name === "run.continue" ? job.replaceLockedBefore?.getTime() : undefined;
+    };
+    expect(cutoff("run-expired")).toBeGreaterThanOrEqual(before);
+    expect(cutoff("run-queued")).toBeLessThanOrEqual(Date.now() - 5 * 60_000);
+    expect(cutoff("run-queued")).toBeGreaterThanOrEqual(before - 5 * 60_000);
   });
 
   it("restores expiry for orphaned user-control leases without a control bot", async () => {

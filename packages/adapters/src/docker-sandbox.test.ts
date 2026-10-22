@@ -6,7 +6,7 @@ import {
   MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
   SCREEN_RELEASE_TIMEOUT_MS,
 } from "./docker-sandbox.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 const context = {
   operationId: "docker-test",
@@ -591,6 +591,73 @@ describe("Docker sandbox stopped containers", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(isSandboxGoneError(error)).toBe(true);
+  });
+
+  it("reports a deleted container gone when running a command", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          stdout: "",
+          stderr: "(HTTP code 404) no such container - No such container: computer",
+          code: 1,
+        }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await (async () => {
+      for await (const _event of provider.execute(computer, { argv: ["true"] }, context));
+    })().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(isSandboxGoneError(error)).toBe(true);
+  });
+
+  it("reports a stopped container gone when running a command", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) =>
+      String(input).endsWith("/exec")
+        ? Response.json({ error: "computer is not running" }, { status: 409 })
+        : Response.json({ id: "computer", running: false }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await (async () => {
+      for await (const _event of provider.execute(computer, { argv: ["true"] }, context));
+    })().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(isSandboxGoneError(error)).toBe(true);
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "http://supervisor.test/computers/computer/exec",
+      "http://supervisor.test/computers/computer",
+    ]);
+  });
+
+  it("keeps an exec failure on a live container a failed command", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        String(input).endsWith("/exec")
+          ? new Response("bad gateway", { status: 502 })
+          : Response.json({ id: "computer", running: true }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["true"] }, context)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stderr", data: "exec failed: 502" },
+      { type: "exit", code: 1 },
+    ]);
   });
 
   it("reports a stopped container gone when granting interactive control", async () => {

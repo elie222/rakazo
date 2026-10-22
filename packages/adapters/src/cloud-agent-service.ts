@@ -119,7 +119,7 @@ export async function executeCloudAgentTool(
         where: { id: agent.id, version: agent.version },
         data: {
           followup,
-          followupDispatching: false,
+          followupDispatchedAt: null,
           status: "running",
           generation: { increment: 1 },
           version: { increment: 1 },
@@ -142,7 +142,7 @@ export async function executeCloudAgentTool(
     id: agentId,
     ...snapshot,
     ...(agent.cancelRequested ? { cancellationPending: true } : {}),
-    ...(agent.followupDispatching ? { followupPending: true } : {}),
+    ...(agent.followupDispatchedAt ? { followupPending: true } : {}),
   };
 }
 

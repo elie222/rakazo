@@ -84,6 +84,8 @@ class CdpClient:
         self._pending: dict[int, dict[str, Any] | None] = {}
         # Worlds live in Chromium until navigation; rediscover them per CLI process.
         self._contexts: dict[int, dict[str, Any]] = {}
+        # Lifecycle events reached by each frame's current document, per CDP session.
+        self._lifecycle: dict[tuple[Any, str], tuple[Any, set[str]]] = {}
 
     def connect(self) -> None:
         assert self._ws_url.startswith("ws://"), self._ws_url
@@ -234,6 +236,15 @@ class CdpClient:
             context_id = params.get("executionContextId")
             if isinstance(context_id, int):
                 self._contexts.pop(context_id, None)
+        elif method == "Page.lifecycleEvent":
+            frame_id, name = params.get("frameId"), params.get("name")
+            if not isinstance(frame_id, str) or not isinstance(name, str):
+                return
+            loader_id, reached = self._lifecycle.get((session_id, frame_id), (None, set()))
+            if name == "init" or params.get("loaderId") != loader_id:
+                loader_id, reached = params.get("loaderId"), set()
+            reached.add(name)
+            self._lifecycle[(session_id, frame_id)] = (loader_id, reached)
         elif method == "Runtime.executionContextsCleared":
             if session_id is None:
                 self._contexts.clear()
@@ -243,6 +254,9 @@ class CdpClient:
                     for cid, ctx in self._contexts.items()
                     if ctx.get("_sessionId") != session_id
                 }
+
+    def lifecycle(self, session_id: str, frame_id: str) -> set[str]:
+        return self._lifecycle.get((session_id, frame_id), (None, set()))[1]
 
     def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
         for context_id, context in self._contexts.items():
@@ -682,12 +696,47 @@ def upload(client: CdpClient, session_id: str, ref: str, files: list[str]) -> No
         client.call("Runtime.releaseObject", {"objectId": object_id}, session_id=session_id)
 
 
+SETTLE_SECONDS = 3.0
+
+
+def wait_for_settle(client: CdpClient, session_id: str) -> bool:
+    """Wait until the page has loaded and made no requests for 500 ms (Chromium's networkIdle).
+
+    Many sites draw a signed-out shell first and replace it once their own requests return,
+    so a page captured earlier can show "Sign in" to an account that is signed in.
+    """
+    deadline = time.monotonic() + SETTLE_SECONDS
+
+    def remaining() -> float:
+        budget = deadline - time.monotonic()
+        if budget <= 0:
+            raise TimeoutError("Page settle budget exhausted")
+        return budget
+
+    try:
+        # Enabling lifecycle events replays the ones the current document has already reached.
+        client.call("Page.setLifecycleEventsEnabled", {"enabled": True}, session_id=session_id,
+                    timeout_s=remaining())
+        while True:
+            # Each call also handles the lifecycle events that arrived meanwhile.
+            frame = client.call("Page.getFrameTree", session_id=session_id, timeout_s=remaining())
+            if {"load", "networkIdle"} <= client.lifecycle(session_id, frame["frameTree"]["frame"]["id"]):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(min(0.1, remaining()))
+    except TimeoutError:
+        # A browser too slow to answer within the wait is not settled either.
+        return False
+
+
 def snapshot(client: CdpClient, session_id: str) -> dict[str, Any]:
+    settled = wait_for_settle(client, session_id)
     ensure_helpers(client, session_id)
     data = eval_json(client, session_id, "window.__rakazoPageBrowser.snapshot()")
     if not isinstance(data, dict):
         raise RuntimeError("snapshot returned non-object")
-    return {"ok": True, **data}
+    return {"ok": True, **data, **({} if settled else {"loading": True})}
 
 
 def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> dict[str, Any]:

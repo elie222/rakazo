@@ -4,6 +4,8 @@
  * `isFinal` / `end` is a breath or an OS timeout, never the caller finishing a sentence.
  */
 
+import { reportMobileError } from "./monitoring";
+
 /** Quiet gap that ends an utterance. A natural breath is well under it, a finished turn well over. */
 export const ENDPOINT_SILENCE_MS = 1_200;
 const RESTART_MIN_MS = 250;
@@ -11,7 +13,17 @@ const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
 /** Errors that mean this turn cannot recover; the rest are routine and `end` restarts. */
-const FATAL_ERRORS = new Set(["not-allowed", "service-not-allowed", "audio-capture"]);
+const FATAL_ERRORS = new Set([
+  "not-allowed",
+  "service-not-allowed",
+  "audio-capture",
+  "language-not-supported",
+  "bad-grammar",
+]);
+/** Recoverable errors that indicate failure if the last empty attempt still has one. */
+const TRANSIENT_ERRORS = new Set(["client", "busy", "network", "unknown", "too-many-requests"]);
+
+export type DictationGiveUp = "idle" | "failed";
 
 type ResultEvent = { isFinal: boolean; results: { transcript: string }[] };
 type ErrorEvent = { error?: string };
@@ -35,6 +47,7 @@ type Session = {
   lang: string;
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
   subs: { remove: () => void }[];
   /** Text from earlier recognizer sessions of the same utterance. */
   carried: string;
@@ -44,6 +57,8 @@ type Session = {
   restart?: ReturnType<typeof setTimeout>;
   backoff: number;
   deadRestarts: number;
+  /** Reset on each native start: only the last attempt classifies empty exhaustion. */
+  transientError: boolean;
 };
 
 let injected: SpeechRecognizer | null = null;
@@ -92,6 +107,7 @@ export function stop(): void {
 export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp?: (reason: DictationGiveUp) => void;
   signal?: AbortSignal;
   lang?: string;
 }): Promise<void> {
@@ -106,11 +122,13 @@ export async function listen(opts: {
     lang: opts.lang || "en-US",
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
+    onGiveUp: opts.onGiveUp,
     subs: [],
     carried: "",
     heard: "",
     backoff: RESTART_MIN_MS,
     deadRestarts: 0,
+    transientError: false,
   };
   active = session;
   opts.signal?.addEventListener(
@@ -125,11 +143,16 @@ export async function listen(opts: {
     recognizer.addListener("end", () => onEnd(session)),
     recognizer.addListener("error", (event) => onError(session, event)),
   ];
-  start(session);
+  try {
+    start(session);
+  } catch {
+    giveUp(session, "failed", "start-failed");
+  }
 }
 
 function start(session: Session): void {
   if (active !== session) return;
+  session.transientError = false;
   session.recognizer.start({ lang: session.lang, interimResults: true, continuous: true });
 }
 
@@ -163,9 +186,8 @@ function onEnd(session: Session): void {
   session.heard = "";
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
-    // ponytail: a wedged recognizer just ends the turn; the call opens the mic again next
-    // turn. Surface it as an error if callers ever need to tell it from a real endpoint.
-    finish(session);
+    const failed = session.transientError && !session.carried;
+    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
     return;
   }
   clearTimeout(session.restart);
@@ -176,23 +198,35 @@ function onEnd(session: Session): void {
     try {
       start(session);
     } catch {
-      finish(session);
+      giveUp(session, "failed", "start-failed");
     }
   }, delay);
 }
 
 function onError(session: Session, event: ErrorEvent): void {
   if (active !== session) return;
-  if (!event?.error || !FATAL_ERRORS.has(event.error)) return;
-  finish(session);
+  if (!event?.error) return;
+  if (TRANSIENT_ERRORS.has(event.error)) session.transientError = true;
+  if (FATAL_ERRORS.has(event.error)) giveUp(session, "failed", event.error);
 }
 
-function finish(session: Session): void {
+function giveUp(session: Session, reason: DictationGiveUp, code: string): void {
+  if (active !== session) return;
+  if (reason === "failed") {
+    reportMobileError(new Error(`Speech recognition stopped: ${code}`), "voice.microphone", {
+      source: "dictation",
+    });
+  }
+  finish(session, reason);
+}
+
+function finish(session: Session, reason?: DictationGiveUp): void {
   if (active !== session) return;
   const text = join(session.carried, session.heard).trim();
   const { onFinal } = session;
   stop();
   if (text) onFinal(text);
+  else if (reason) session.onGiveUp?.(reason);
 }
 
 function join(left: string, right: string): string {

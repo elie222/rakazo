@@ -19,6 +19,13 @@ it("requires explicit password and SSO capabilities", () => {
   ).toBe(false);
 });
 
+it("treats email code sign-in as an optional boolean capability", () => {
+  const base = { passwordAuth: true, passwordReset: true, resetUrl: null, sso: null };
+  expect(authCapabilitiesSchema.parse(base).emailCode).toBeUndefined();
+  expect(authCapabilitiesSchema.parse({ ...base, emailCode: true }).emailCode).toBe(true);
+  expect(authCapabilitiesSchema.safeParse({ ...base, emailCode: "true" }).success).toBe(false);
+});
+
 it("only accepts complete legacy capabilities without partial SSO fields", () => {
   expect(
     legacyAuthCapabilitiesSchema.parse({ passwordReset: false, resetUrl: null, billing: true }),

@@ -12,7 +12,7 @@ import {
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 const TOKEN = "serenity_test_token";
@@ -48,11 +48,11 @@ describe("serenity endpoint helpers", () => {
   });
 
   it("requires deployment-owner trust for loopback, private LAN, and private DNS", () => {
-    expect(serenityEndpointRequiresDeploymentOwner("http://127.0.0.1:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("http://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.internal/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.example.test/mcp")).toBe(
+    expect(serenityEndpointRequiresPrivateEndpoint("http://127.0.0.1:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("http://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.internal/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.example.test/mcp")).toBe(
       false,
     );
   });
@@ -332,6 +332,18 @@ describe("serenity SSRF fetch path", () => {
   });
 });
 
+/** One entry of `facts` in Serenity's recall response (internal/server/memory/recall.go). */
+type SerenityRecallFactRow = {
+  id: number;
+  fact_id: string;
+  fact: string;
+  kind: string;
+  entity_slug: string | null;
+  provenance: string;
+  valid_until: string | null;
+  visibility: string;
+};
+
 type JsonRpcRequest = { id?: number; method: string; params?: { arguments?: unknown } };
 
 /** Minimal Streamable HTTP MCP server over the fetch seam; `toolResult` answers tools/call. */
@@ -381,6 +393,34 @@ describe("serenity verbs", () => {
     expect(server.calls.at(-1)?.method).toBe("DELETE");
   });
 
+  it("asks recall for the most facts without the query, which only drives page search", async () => {
+    const facts: SerenityRecallFactRow[] = Array.from({ length: 100 }, (_, index) => ({
+      id: index,
+      fact_id: `fact-${index}`,
+      fact: `Fact ${index}`,
+      kind: "preference",
+      entity_slug: "bot-1",
+      provenance: "rakazo",
+      valid_until: null,
+      visibility: "world",
+    }));
+    const server = fakeSerenityFetch(() => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ protocol_version: 1, facts, total: facts.length }),
+        },
+      ],
+    }));
+    const result = await recallSerenity(LOOPBACK, {
+      entity: "rakazo-bot/bot-1",
+      network: { fetch: server.fetch },
+    });
+    expect(result.ok && result.value).toHaveLength(100);
+    const call = server.calls.find((entry) => entry.rpc?.method === "tools/call");
+    expect(call?.rpc?.params?.arguments).toEqual({ limit: 100, entity: "rakazo-bot/bot-1" });
+  });
+
   it("rejects facts over the hosted byte limit before connecting", async () => {
     const server = fakeSerenityFetch(() => ({}));
     const result = await rememberSerenity(
@@ -411,10 +451,7 @@ describe("serenity verbs", () => {
         },
       ],
     }));
-    const result = await recallSerenity("units", LOOPBACK, {
-      limit: 5,
-      network: { fetch: server.fetch },
-    });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch: server.fetch } });
     expect(result).toEqual({
       ok: false,
       error:
@@ -426,7 +463,7 @@ describe("serenity verbs", () => {
     const fetch = vi.fn(
       async () => new Response("slow down", { status: 429, headers: { "retry-after": "30" } }),
     );
-    const result = await recallSerenity("units", LOOPBACK, { limit: 5, network: { fetch } });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch } });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/rate limit reached; retry after 30s/);
   });
@@ -436,7 +473,7 @@ describe("serenity verbs", () => {
     const fetch = vi.fn(
       async () => new Response("slow down", { status: 429, headers: { "retry-after": date } }),
     );
-    const result = await recallSerenity("units", LOOPBACK, { limit: 5, network: { fetch } });
+    const result = await recallSerenity(LOOPBACK, { network: { fetch } });
     if (!result.ok) expect(result.error).toContain(`retry after ${date}.`);
     expect(result.ok).toBe(false);
   });
@@ -450,10 +487,7 @@ describe("serenity verbs", () => {
       const stalling = vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
         init?.method === "DELETE" ? new Promise<Response>(() => {}) : server.fetch(input, init),
       );
-      const pending = recallSerenity("units", LOOPBACK, {
-        limit: 5,
-        network: { fetch: stalling },
-      });
+      const pending = recallSerenity(LOOPBACK, { network: { fetch: stalling } });
       await vi.advanceTimersByTimeAsync(2_000);
       await expect(pending).resolves.toEqual({ ok: true, value: [] });
     } finally {

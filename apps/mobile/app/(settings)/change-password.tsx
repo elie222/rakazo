@@ -1,3 +1,4 @@
+import { MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -33,7 +34,7 @@ export default function ChangePassword() {
     };
   }, []);
   const [error, setError] = useState<string | null>(null);
-  const ready = !!currentPassword && newPassword.length >= 8 && !!confirmation;
+  const ready = !!currentPassword && !!newPassword && !!confirmation;
 
   function close() {
     if (router.canGoBack()) router.back();
@@ -100,6 +101,9 @@ export default function ChangePassword() {
               accessibilityLabel={field.label}
               autoCapitalize="none"
               autoComplete={field.current ? "current-password" : "new-password"}
+              textContentType={field.current ? "password" : "newPassword"}
+              passwordRules={field.current ? undefined : PASSWORD_RULES}
+              maxLength={MAX_PASSWORD_LENGTH}
               autoCorrect={false}
               editable={!pending}
               onChangeText={field.onChange}

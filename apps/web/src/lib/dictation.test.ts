@@ -3,7 +3,6 @@ import {
   combineTranscript,
   Dictation,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
-  speechLocaleTag,
   TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
   transcriptionLanguage,
   webSpeechAvailable,
@@ -1681,12 +1680,6 @@ describe("Dictation web speech", () => {
 });
 
 describe("transcriptionLanguage", () => {
-  it("maps an app locale to a tag the recognizer accepts", () => {
-    expect(speechLocaleTag("es")).toBe("es-ES");
-    expect(speechLocaleTag("pt-BR")).toBe("pt-BR");
-    expect(speechLocaleTag("nl")).toBe("nl-NL");
-  });
-
   it("hints the provider with the language the caller picked", () => {
     vi.stubGlobal("navigator", { language: "es-ES" });
     expect(transcriptionLanguage()).toBe("es");

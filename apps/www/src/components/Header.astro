@@ -1,16 +1,9 @@
 ---
 import { getHomeCopy } from "../i18n/home";
 import type { HomeCopy } from "../i18n/home";
-import {
-  DEFAULT_LOCALE,
-  localeHashPath,
-  localeHomePath,
-  type Locale,
-} from "../i18n/locales";
-import { HUB_CARDS } from "../alternatives";
-import { GROK_ALTERNATIVE_PATH } from "../grok-alternative";
-import { GITHUB_URL, IOS_APP_URL, SELF_HOST_GUIDE_PATH } from "../site";
-import Button from "./Button.astro";
+import { DEFAULT_LOCALE, localeHomePath } from "../i18n/locales";
+import type { Locale } from "../i18n/locales";
+import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import Logo from "./Logo.astro";
 
 type Props = {
@@ -25,23 +18,9 @@ const locale = Astro.props.locale ?? DEFAULT_LOCALE;
 const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
-const NAV_LINKS: Array<{ href: string; label: string; external?: boolean }> = [
-  { href: localeHashPath(locale, "demo"), label: copy.product },
-  { href: localeHashPath(locale, "roster"), label: copy.bots },
-  { href: localeHashPath(locale, "selfhost"), label: copy.selfHost },
-  { href: localeHashPath(locale, "open-source"), label: copy.openSource },
+const NAV_LINKS = [
   { href: SELF_HOST_GUIDE_PATH, label: copy.docs },
   { href: "/blog/", label: copy.blog },
-  { href: GROK_ALTERNATIVE_PATH, label: copy.grokBot },
-];
-
-const comparisonLinks = HUB_CARDS.filter((card) => card.href !== GROK_ALTERNATIVE_PATH).map(
-  (card) => ({ href: card.href, label: card.name }),
-);
-const menuLinks = [
-  ...NAV_LINKS,
-  { href: "/alternatives/", label: copy.alternatives, external: false },
-  ...comparisonLinks.map((link) => ({ ...link, external: false })),
 ];
 
 const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
@@ -49,8 +28,6 @@ const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
 function isCurrent(href: string): boolean {
   return (href.replace(/\/+$/, "") || "/") === currentPath;
 }
-
-const externalAttrs = { target: "_blank", rel: "noreferrer" };
 ---
 
 <header class="site-header">
@@ -61,55 +38,30 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
         NAV_LINKS.map((link) => (
           <a
             href={link.href}
-            aria-current={!link.external && isCurrent(link.href) ? "page" : undefined}
-            {...(link.external ? externalAttrs : {})}
+            aria-current={isCurrent(link.href) ? "page" : undefined}
           >
             {link.label}
           </a>
         ))
       }
-      <div class="nav-drop">
-        <a href="/alternatives/" aria-current={isCurrent("/alternatives/") ? "page" : undefined}>
-          {copy.alternatives}
-        </a>
-        <details class="nav-drop__menu">
-          <summary aria-label={copy.alternativesMenu}>
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 8l5 5 5-5" />
-            </svg>
-          </summary>
-          <div class="nav-drop__panel">
-            {
-              comparisonLinks.map((link) => (
-                <a href={link.href} aria-current={isCurrent(link.href) ? "page" : undefined}>
-                  {link.label}
-                </a>
-              ))
-            }
-          </div>
-        </details>
-      </div>
     </nav>
   </div>
   <div class="site-header__right">
-    <a class="star-pill" href={GITHUB_URL} target="_blank" rel="noreferrer">
+    <a
+      class="star-pill"
+      href={GITHUB_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={copy.github}
+      data-attr="header-github"
+    >
       <span aria-hidden="true">★</span>
       <span>{starsLabel}</span>
     </a>
-    <a
-      class="star-pill star-pill--icon"
-      href={IOS_APP_URL}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={copy.iosApp}
-      title={copy.iosApp}
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M16.37 12.62c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.8 1.3 10.35.86 1.25 1.89 2.65 3.24 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.39.81 1.4-.03 2.28-1.27 3.14-2.52.99-1.45 1.4-2.85 1.42-2.92-.03-.01-2.72-1.04-2.74-4.15ZM13.8 4.98c.72-.87 1.2-2.07 1.07-3.27-1.03.04-2.28.69-3.02 1.56-.66.77-1.24 1.99-1.09 3.17 1.15.09 2.32-.58 3.04-1.46Z" />
-      </svg>
-    </a>
     <div class="site-header__cta">
-      <Button href={GITHUB_URL} size="sm" external>{copy.viewOnGithub}</Button>
+      <a class="button button--primary button--small" href={APP_URL}>
+        {copy.getStarted}
+      </a>
     </div>
     <details class="site-menu" data-site-menu>
       <summary class="site-menu__toggle" aria-label={copy.menu}>
@@ -122,16 +74,16 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
       </summary>
       <nav class="site-menu__panel" aria-label={copy.primary}>
         {
-          menuLinks.map((link) => (
+          NAV_LINKS.map((link) => (
             <a
               href={link.href}
-              aria-current={!link.external && isCurrent(link.href) ? "page" : undefined}
-              {...(link.external ? externalAttrs : {})}
+              aria-current={isCurrent(link.href) ? "page" : undefined}
             >
               {link.label}
             </a>
           ))
         }
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer" data-attr="menu-github">{copy.github}</a>
       </nav>
     </details>
   </div>
@@ -139,7 +91,6 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
 
 <script>
   const menu = document.querySelector<HTMLDetailsElement>("[data-site-menu]");
-  const drops = document.querySelectorAll<HTMLDetailsElement>(".nav-drop__menu");
 
   if (menu) {
     menu.addEventListener("click", (event) => {
@@ -153,13 +104,6 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         menu.open = false;
-        for (const drop of drops) drop.open = false;
-      }
-    });
-
-    document.addEventListener("click", (event) => {
-      for (const drop of drops) {
-        if (drop.open && !drop.parentElement?.contains(event.target as Node)) drop.open = false;
       }
     });
   }

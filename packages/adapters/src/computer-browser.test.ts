@@ -117,6 +117,30 @@ describe("computer browser provider", () => {
     });
   });
 
+  it("passes on that the live page was still loading", async () => {
+    const tree = '- link "Sign in" [e1]';
+    const live = { ok: true, url: "https://example.test/", title: "Example", tree, elements: [] };
+    const provider = new ComputerBrowserProvider({
+      pages,
+      liveDriver: vi
+        .fn()
+        .mockResolvedValueOnce({ ...live, loading: true })
+        .mockResolvedValueOnce(live),
+    });
+    const computer: ComputerRef = { id: "c", botId: "b", kind: "docker", providerRef: "c" };
+    const context = { ...baseContext, botId: "bot-a" };
+    expect(await provider.snapshot(computer, {}, context)).toMatchObject({ tree, loading: true });
+    expect(await provider.snapshot(computer, {}, context)).not.toHaveProperty("loading");
+    // browser_act returns the page after its actions, which can still be loading too.
+    const acting = new ComputerBrowserProvider({
+      pages,
+      liveDriver: async () => ({ ...live, completed: 1, loading: true }),
+    });
+    expect(
+      await acting.act(computer, { actions: [{ kind: "click", ref: "e1" }] }, context),
+    ).toMatchObject({ ok: true, completed: 1, tree, loading: true });
+  });
+
   it("returns computer_act when the live driver reports failure", async () => {
     const provider = new ComputerBrowserProvider({
       pages,

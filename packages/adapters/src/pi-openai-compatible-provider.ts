@@ -18,6 +18,7 @@ import {
   isPrivateAddress,
   type ResolveHostname,
 } from "./network-address.js";
+import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
@@ -25,7 +26,9 @@ import {
   isPrivateOpenAiCompatibleHostname,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PRIVATE_MODEL_ENDPOINT_MESSAGE,
 } from "./openai-compatible-url.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
@@ -88,7 +91,10 @@ export function openAiCompatibleModel(
   };
 }
 
-function openAiCompatibleProvider(models: Model<"openai-completions">[]): Provider {
+function openAiCompatibleProvider(
+  models: Model<"openai-completions">[],
+  policy: { allowPrivate?: boolean } = {},
+): Provider {
   const api = openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
   // dispatcher-matched default; never the bare global.
@@ -96,12 +102,12 @@ function openAiCompatibleProvider(models: Model<"openai-completions">[]): Provid
     stream: (model, context, options) =>
       api.stream(model, context, {
         ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch),
+        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
     streamSimple: (model, context, options) =>
       api.streamSimple(model, context, {
         ...options,
-        fetch: createOpenAiCompatibleFetch(options?.fetch),
+        fetch: createOpenAiCompatibleFetch(options?.fetch, undefined, policy),
       }),
   };
   return createProvider({
@@ -125,9 +131,13 @@ function openAiCompatibleProvider(models: Model<"openai-completions">[]): Provid
 export function createOpenAiCompatibleLookup(
   url: URL,
   resolve: ResolveHostname = resolveHostname,
+  opts?: { allowPrivate?: boolean },
 ): LookupFunction {
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   const privateHostname = isPrivateOpenAiCompatibleHostname(hostname);
+  if (privateHostname && opts?.allowPrivate !== true) {
+    throw new Error(PRIVATE_MODEL_ENDPOINT_MESSAGE);
+  }
   return createAddressCheckedLookup(resolve, (addresses) => {
     if (addresses.length === 0) throw new Error("Model server did not resolve to an address");
     if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
@@ -173,35 +183,35 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
-  opts?: { allowPublic?: boolean },
+  opts?: OpenAiCompatibleUrlPolicy,
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
-    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, {
-      allowPublic: opts?.allowPublic,
-    });
+    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts);
     if (requestCarriesAuthorization(input, init)) {
       assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    const dispatcher =
-      isIP(hostname) === 0
-        ? new Agent({
-            connect: { lookup: createOpenAiCompatibleLookup(url, resolve) },
-          })
-        : undefined;
-    // Node's fetch rejects this package Agent. Pair them only when the
-    // dispatcher is attached; a caller-supplied fetch stays in charge.
-    const transport = dispatcher ? fetchPairedWithDispatcher(baseFetch) : baseFetch;
+    const dispatcher = new Agent({
+      connect: {
+        timeout: MODEL_CONNECT_TIMEOUT_MS,
+        ...(isIP(hostname) === 0
+          ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
+          : {}),
+      },
+    });
+    // Node's fetch rejects this package Agent. Use its matching fetch;
+    // a caller-supplied fetch stays in charge.
+    const transport = fetchPairedWithDispatcher(baseFetch);
     try {
       const response = await transport(url, {
         ...(await requestInitFor(input, init)),
         redirect: "error",
-        ...(dispatcher ? { dispatcher } : {}),
-      } as RequestInit & { dispatcher?: Agent });
-      return dispatcher ? await closeDispatcherWithResponse(response, dispatcher) : response;
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent });
+      return await closeDispatcherWithResponse(response, dispatcher);
     } catch (error) {
-      await dispatcher?.close().catch(() => undefined);
+      await dispatcher.destroy().catch(() => undefined);
       throw error;
     }
   };
@@ -313,22 +323,27 @@ export function registerOpenAiCompatibleRuntime(
     acceptsImages?: boolean;
     maxTokens?: number;
     contextWindow?: number;
+    /** Explicit operator authorization for private endpoints. */
+    allowPrivate?: boolean;
   },
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
   const modelId = opts.modelId.trim();
   const acceptsImages = opts.acceptsImages || openAiCompatibleVisionModelIds().has(modelId);
   models.setProvider(
-    openAiCompatibleProvider([
-      openAiCompatibleModel(
-        modelId,
-        baseUrl,
-        opts.reasoning,
-        acceptsImages,
-        opts.maxTokens,
-        opts.contextWindow,
-      ),
-    ]),
+    openAiCompatibleProvider(
+      [
+        openAiCompatibleModel(
+          modelId,
+          baseUrl,
+          opts.reasoning,
+          acceptsImages,
+          opts.maxTokens,
+          opts.contextWindow,
+        ),
+      ],
+      { allowPrivate: opts.allowPrivate },
+    ),
   );
   return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
 }
@@ -340,7 +355,10 @@ export type OpenAiCompatibleConnectInput = {
   apiKey?: string;
 };
 
-export function prepareOpenAiCompatibleConnect(input: OpenAiCompatibleConnectInput): {
+export function prepareOpenAiCompatibleConnect(
+  input: OpenAiCompatibleConnectInput,
+  policy?: { allowPrivate?: boolean },
+): {
   baseUrl: string;
   modelId: string;
   apiKey?: string;
@@ -349,7 +367,7 @@ export function prepareOpenAiCompatibleConnect(input: OpenAiCompatibleConnectInp
   const modelId = input.modelId?.trim();
   if (!baseUrl) throw new Error("Base URL is required for OpenAI-compatible models");
   if (!modelId) throw new Error("Model id is required for OpenAI-compatible models");
-  const allowed = assertAllowedOpenAiCompatibleUrl(baseUrl);
+  const allowed = assertAllowedOpenAiCompatibleUrl(baseUrl, policy);
   const apiKey = input.apiKey?.trim();
   assertHttpsForKeyedOpenAiCompatibleUrl(allowed, apiKey);
   const normalized = allowed.href;
@@ -433,11 +451,9 @@ export async function probeOpenAiCompatibleModels(
   input: { baseUrl: string; apiKey?: string },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
-  opts?: { allowPublic?: boolean; catalogProbe?: boolean },
+  opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
 ): Promise<string[]> {
-  const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, {
-    allowPublic: opts?.allowPublic,
-  });
+  const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, opts);
   assertHttpsForKeyedOpenAiCompatibleUrl(baseUrl, input.apiKey);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);

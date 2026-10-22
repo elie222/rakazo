@@ -20,6 +20,7 @@ import Docker from "dockerode";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import type { ComputerEgressMode } from "./computer-spec.js";
 import {
   assertVolumeSubpathSupport,
   COMPUTER_GID,
@@ -55,6 +56,7 @@ import {
   screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
+import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
   assertRequestIdentity,
@@ -110,7 +112,10 @@ let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 let dockerApiVersion: string | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
 const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
-const computerEgressMode = resolveComputerEgressMode();
+const computerEgressSetting = resolveComputerEgressMode();
+// `auto` starts open and becomes restricted once the probe shows the host rules are in place.
+let computerEgressMode: ComputerEgressMode =
+  computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
@@ -208,6 +213,7 @@ app.post("/computers", async (c) => {
     });
     return await withBotLifecycleLock(body.botId, async () => {
       await ensureComputerImage();
+      await ensureRestrictedEgressEnforced();
       const runtimeInfo = await inspectSupervisorContainer();
       const networkMode = computerNetworkName(body.botId, runtimeInfo);
       const networkOwner = computerNetworkOwnerFor(dataDir, runtimeInfo);
@@ -405,6 +411,8 @@ app.post("/computers/:id/exec", async (c) => {
       c.req.header("x-rakazo-bot-id"),
       c.req.header("x-rakazo-space-id"),
     );
+    // Docker would fail the exec inside the stream; answer up front so the caller can boot it.
+    if (!managed.info.State.Running) return c.json({ error: "computer is not running" }, 409);
     container = managed.container;
     const screenId = c.req.header("x-rakazo-screen-id") || c.req.header("x-rakazo-bot-id") || id;
     const screenIndex = computerScreens.get(id)?.get(screenId)?.index ?? 0;
@@ -1091,12 +1099,17 @@ function startSupervisor() {
   // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
   // Docker problem. Failing here names the variable while the deployment is still coming up.
   computerResourceLimits();
-  if (computerEgressMode === "restricted") {
-    // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag
-    // only names the interfaces. Without the host script, egress stays open.
-    logger.warn(
-      "SANDBOX_COMPUTER_EGRESS=restricted requires the host firewall rules from infra/compose/restrict-computer-egress.sh (see docs/self-host.md)",
-    );
+  if (computerEgressSetting === "auto" && screenNetworkMode !== "internal") {
+    // Settle the mode before the first provision rather than on it.
+    void ensureComputerImage()
+      .then(ensureRestrictedEgressEnforced)
+      .catch((error) => logger.error("computer egress probe failed", error));
+  } else if (computerEgressMode === "restricted" && screenNetworkMode !== "internal") {
+    // Report a missing host ruleset at startup too, not only on the first provision.
+    void ensureComputerImage()
+      .then(ensureRestrictedEgressEnforced)
+      .then(() => logger.info("restricted computer egress verified"))
+      .catch((error) => logger.error("restricted computer egress unavailable", error));
   }
   void reclaimIdleComputerNetworks().catch((error) => {
     logger.error("computer network reclaim failed", error);
@@ -1177,6 +1190,42 @@ async function ensureComputerImage() {
     })();
   }
   await imageReady;
+}
+
+// Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
+// names the interfaces. Refuse restricted computers until a probe shows the host
+// rules are in place. Only success is cached, so installing the rules needs no restart.
+// `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
+// otherwise open with a warning, which is how computers ran before the rules existed. A probe
+// that could not finish decides nothing: the provision fails and the next one probes again.
+let restrictedEgressVerified: Promise<void> | undefined;
+let autoEgressSettled: Promise<void> | undefined;
+async function ensureRestrictedEgressEnforced() {
+  if (screenNetworkMode === "internal") return;
+  if (computerEgressSetting === "auto") {
+    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).then(
+      () => {
+        computerEgressMode = "restricted";
+        getLogger().info("restricted computer egress verified");
+      },
+      (error) => {
+        if (!(error instanceof EgressNotEnforced)) {
+          autoEgressSettled = undefined;
+          throw error;
+        }
+        getLogger().warn("computer egress is open: the host firewall rules are not installed", {
+          error: error.message,
+        });
+      },
+    );
+    return autoEgressSettled;
+  }
+  if (computerEgressMode !== "restricted") return;
+  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).catch((error) => {
+    restrictedEgressVerified = undefined;
+    throw error;
+  });
+  await restrictedEgressVerified;
 }
 
 async function findBotContainer(botId: string, spaceId: string) {

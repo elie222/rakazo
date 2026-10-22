@@ -204,6 +204,11 @@ export class DockerSandboxProvider implements SandboxProvider {
       signal: context.signal,
     });
     if (!res.ok) {
+      cancelResponseBody(res);
+      // A stopped container cannot run anything; report it gone so the computer is booted again.
+      if ((await this.containerRunning(computer, context)) === false) {
+        throw sandboxGoneError(computer);
+      }
       yield { type: "stderr", data: `exec failed: ${res.status}` };
       yield { type: "exit", code: 1 };
       return;
@@ -223,6 +228,10 @@ export class DockerSandboxProvider implements SandboxProvider {
       res,
       context.signal,
     );
+    // The supervisor answers a missing container with Docker's 404 as the command's stderr.
+    if (body.code !== 0 && /no such container/i.test(body.stderr)) {
+      throw sandboxGoneError(computer);
+    }
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };

@@ -17,7 +17,7 @@ The token must be able to create environments and sandboxes in the project. Pref
 
 ## Why Deploy Rakazo on Railway
 
-- The owner account is created before the public web server starts. Public registration is closed on every start; this template is intended for a personal deployment.
+- The initial ordinary account is created before the public web server starts. Public registration is closed on every start; this template is intended for a personal deployment.
 - Every install gets separate random database, authentication, encryption, screen and initial owner secrets. Keep the encryption key and database password stable across redeploys.
 - PostgreSQL has no public endpoint. Only the web port is published; the API binds to loopback.
 - Computers run in a separate, empty Railway environment, so they cannot reach the application's private database network. Startup creates one environment per application service and application environment, then reuses it on restart.
@@ -27,7 +27,7 @@ The token must be able to create environments and sandboxes in the project. Pref
 
 ## Updates and backups
 
-To update, connect the service to the desired source branch and deploy its latest commit in the application environment. Do not deploy application services into the sandbox environment. The owner bootstrap keeps existing accounts and passwords. Changing `OWNER_PASSWORD` later does not reset an account password.
+To update, connect the service to the desired source branch and deploy its latest commit in the application environment. Do not deploy application services into the sandbox environment. The private account bootstrap keeps existing accounts and passwords. Changing `OWNER_PASSWORD` later does not reset an account password.
 
 Back up PostgreSQL, `/data`, and `ENCRYPTION_KEY` before upgrades. Railway volume persistence is not a backup. Keep backups private and test restoring them together. Do not delete volumes to fix a failed deploy.
 

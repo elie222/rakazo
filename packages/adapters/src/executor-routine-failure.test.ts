@@ -1,4 +1,7 @@
+import type { NotificationMessage } from "@rakazo/adapter-kit";
 import { TransientModelError } from "@rakazo/adapter-kit";
+import type * as DbModule from "@rakazo/db";
+import { countUnreadInboxChats } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -8,6 +11,11 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+}));
+
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  countUnreadInboxChats: vi.fn(),
 }));
 
 const NOW = new Date("2026-03-02T09:00:00.000Z");
@@ -23,9 +31,15 @@ interface Scenario {
   toolCalls?: number;
   botMessages?: number;
   retryEnqueueFails?: boolean;
+  unreadChats?: number;
+  badgeFails?: boolean;
 }
 
 async function failRun(scenario: Scenario) {
+  vi.mocked(countUnreadInboxChats).mockImplementation(async () => {
+    if (scenario.badgeFails) throw new Error("count unavailable");
+    return scenario.unreadChats ?? 0;
+  });
   const trigger = scenario.trigger ?? "routine";
   const run = {
     id: "run-1",
@@ -128,7 +142,7 @@ async function failRun(scenario: Scenario) {
   const enqueue = vi.fn(async (job: { name: string }) => {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
@@ -157,13 +171,14 @@ async function failRun(scenario: Scenario) {
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send };
+  return { retries, send, prisma };
 }
 
 const overloaded = () =>
   new TransientModelError("Our servers are currently overloaded. Please try again later.");
 
 beforeEach(() => {
+  vi.mocked(countUnreadInboxChats).mockReset().mockResolvedValue(0);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
 });
@@ -184,6 +199,24 @@ describe("routine failure notifications", () => {
       expect.objectContaining({ kind: "failure", title: "Assistant failed" }),
       expect.anything(),
     );
+  });
+
+  it("puts the unread chats across the user's Spaces on the app icon", async () => {
+    const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure", badge: 3 }),
+      expect.anything(),
+    );
+    expect(countUnreadInboxChats).toHaveBeenCalledWith(prisma, {
+      userId: "user-1",
+      spaceId: "space-1",
+    });
+  });
+
+  it("still sends without a badge when counting fails", async () => {
+    const { send } = await failRun({ error: new Error("Invalid API key"), badgeFails: true });
+    expect(send).toHaveBeenCalled();
+    expect(send.mock.calls[0]?.[0]).not.toHaveProperty("badge");
   });
 
   it("stays quiet about a failed routine that turned notifications off", async () => {
@@ -271,6 +304,7 @@ interface RetryScenario {
 }
 
 function retryHarness(scenario: RetryScenario = {}) {
+  vi.mocked(countUnreadInboxChats).mockResolvedValue(1);
   const failedAt = new Date(NOW.getTime() - 12 * MINUTE);
   const failed = {
     id: "run-1",
@@ -352,7 +386,7 @@ function retryHarness(scenario: RetryScenario = {}) {
   const enqueue = vi.fn(async () => {
     if (scenario.enqueueFails) throw new Error("queue down");
   });
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue },
@@ -406,6 +440,7 @@ describe("running a routine retry", () => {
           kind: "failure",
           title: "Assistant failed",
           body: overloaded().message,
+          badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
         },

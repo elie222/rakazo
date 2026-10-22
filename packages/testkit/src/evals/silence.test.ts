@@ -30,7 +30,6 @@ function evidence(run: Partial<RoutineEvidence> = {}): Evidence {
     approvalPending: false,
     pendingApproval: null,
     priorMemory: "",
-    destinationWrites: 0,
     toolNames: [],
     messaging: { originThreadId: null, outbound: [] },
     routineRuns: [routineRun],
@@ -125,12 +124,21 @@ describe("source-read evidence", () => {
     services.seedGithubReleases([]);
     const args = { owner: "example", repo: "widget" };
     const events = [];
+    const github = {
+      id: "github",
+      connectorId: "composio",
+      externalId: "GITHUB",
+      displayName: "GitHub",
+    };
     for await (const event of services.execute(
       { tool: "GITHUB_GET_RELEASE", args, executionId: "synthetic" } as ConnectorCall,
-      context,
+      { ...context, connectedConnections: [github] },
     ))
       events.push(event);
-    expect(events).toContainEqual({ type: "result", data: expect.objectContaining({ ok: false }) });
+    expect(events).toContainEqual({
+      type: "result",
+      data: expect.objectContaining({ data: expect.objectContaining({ ok: false }) }),
+    });
     expect(services.calls[0]?.outcome).toBe("rejected");
     const e = evidence({ calls: services.calls });
     expect(SILENCE_EVAL_CASES[1]!.grade(e)).toContainEqual({
@@ -170,22 +178,13 @@ describe("source-read evidence", () => {
   });
 });
 
-describe("failed-check all-clear grading", () => {
-  const criterion = (text: string) =>
-    SILENCE_EVAL_CASES[3]!
-      .grade(evidence({ text }))
-      .find((c) => c.id === "wake-1-no-false-all-clear")?.pass;
-  it.each([
-    "The GitHub check failed, but there are no new releases.",
-    "The GitHub check failed and I found nothing new.",
-    "The GitHub check failed; I cannot say there are no new releases, but there are no new releases.",
-    "I couldn't check GitHub, so everything is up to date.",
-    "The GitHub check failed; I cannot confirm there are no new releases, but there are no new releases.",
-  ])("rejects unsupported all-clear in %s", (text) => expect(criterion(text)).toBe(false));
-  it.each([
-    "The GitHub check failed; I cannot confirm there are no new releases.",
-    "The GitHub check failed, so I cannot say there are no new releases.",
-    "The release service is unavailable; I couldn't verify whether nothing changed.",
-    "I am unable to check GitHub; I can't confirm everything is up to date.",
-  ])("allows explicit uncertainty in %s", (text) => expect(criterion(text)).toBe(true));
+describe("semantic grading boundary", () => {
+  it("leaves wording to the judge with the reply and push as evidence", () => {
+    const e = evidence({ text: "Any phrasing or language." });
+    const scenario = SILENCE_EVAL_CASES[3]!;
+    expect(scenario.judge?.(e).evidence).toEqual([
+      { outcome: "failure", chat: e.text, pushes: [] },
+    ]);
+    expect(scenario.grade(e).map((c) => c.id)).not.toContain("wake-1-no-false-all-clear");
+  });
 });

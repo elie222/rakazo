@@ -18,6 +18,7 @@ import {
   runReplyGuidance,
   runSendsFinishNotification,
   stripNoResponseReply,
+  stripStrayNoResponse,
   subagentMarksUnread,
   TICKET_SILENT_REPLY_GUIDANCE,
 } from "./executor.js";
@@ -585,5 +586,30 @@ describe("subagentMarksUnread", () => {
     expect(subagentMarksUnread("bot_message", "completed")).toBe(false);
     expect(subagentMarksUnread("bot_message", "failed")).toBe(true);
     expect(subagentMarksUnread("bot_message", "completed", true)).toBe(true);
+  });
+});
+
+describe("stripStrayNoResponse for runs that must reply", () => {
+  it.each([
+    ["Done.\n\nNO_RESPONSE", "Done."],
+    ["Done.NO_RESPONSENO_RESPONSE", "Done."],
+    ["NO_RESPONSE Done.", "Done."],
+  ])("drops edge sentinels from %j", (text, prose) => {
+    expect(stripStrayNoResponse(text, [{ kind: "text", text }])).toEqual({
+      assembled: prose,
+      blocks: [{ kind: "text", text: prose }],
+    });
+  });
+
+  it.each([
+    [NO_RESPONSE],
+    [`  ${NO_RESPONSE}NO_RESPONSE  `],
+    ["first NO_RESPONSE last"],
+    ["reportNO_RESPONSE"],
+    ["NO_RESPONSE_POLICY is on."],
+    [""],
+  ])("leaves %j unchanged", (text) => {
+    const blocks = text ? [{ kind: "text" as const, text }] : [];
+    expect(stripStrayNoResponse(text, blocks)).toEqual({ assembled: text, blocks });
   });
 });

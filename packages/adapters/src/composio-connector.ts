@@ -1,3 +1,4 @@
+import type { ConnectedAccountStatus, ToolRouterCreateSessionConfig } from "@composio/core";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -12,13 +13,29 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import {
   composioToolkitDirectory,
+  createToolkitDirectoryCache,
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
-import { DestinationEmulator } from "./destination-emulator.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
-type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
+type SdkSession = Awaited<ReturnType<Composio["create"]>>;
+
+/** The tool-router session surface the connector uses. */
+export type ComposioSession = Pick<
+  SdkSession,
+  "sessionId" | "toolkits" | "tools" | "execute" | "authorize"
+>;
+
+/** The Composio SDK surface the connector uses; offline tests inject a stateful fake. */
+export type ComposioClient = {
+  create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession>;
+  sessions: { use(sessionId: string): Promise<ComposioSession> };
+  connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
+};
+
+/** Account states the user can only leave by reconnecting. */
+const RECONNECT_STATUSES: ConnectedAccountStatus[] = ["EXPIRED", "INACTIVE", "FAILED", "REVOKED"];
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
   return Boolean(apiKey) && !isVitestRuntime();
@@ -126,6 +143,8 @@ export function executeSessionKey(
 }
 
 const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
+/** Connected-account listings are per user and toolkit; this bounds a runaway cursor. */
+const MAX_ACCOUNT_PAGES = 20;
 /** Folder listings treat a missing path as the account root. */
 const DROPBOX_FOLDER_LIST_TOOLS = new Set(["DROPBOX_LIST_FILES_IN_FOLDER", "DROPBOX_LIST_FOLDERS"]);
 
@@ -169,6 +188,19 @@ export function expandComposioMultiExecute(
     return [{ tool, args }];
   }
   return calls;
+}
+
+/** Composio tool slugs are prefixed with their toolkit slug, including multi-execute items. */
+function callUsesToolkit(call: ConnectorCall, toolkit: string): boolean {
+  const prefix = `${composioSlugKey(toolkit)}_`;
+  const tools = Array.isArray(call.args?.tools) ? call.args.tools : [];
+  const slugs = [
+    call.tool,
+    ...tools.map((item) =>
+      item && typeof item === "object" ? (item as { tool_slug?: unknown }).tool_slug : undefined,
+    ),
+  ];
+  return slugs.some((slug) => typeof slug === "string" && composioSlugKey(slug).startsWith(prefix));
 }
 
 function dropboxFolderListCall(item: unknown): ComposioExecutionCall | undefined {
@@ -302,8 +334,16 @@ export function planLiveConnectionSync(
 }
 
 export class ComposioConnector implements ComposioProvider {
-  constructor(private readonly apiKey?: string) {}
-  private client: Composio | undefined;
+  private client: ComposioClient | undefined;
+  private readonly apiKey: string | undefined;
+  /** An injected client has its own catalog, so it must not share the process-wide cache. */
+  private readonly directoryCache: typeof composioToolkitDirectory;
+
+  constructor(options: { apiKey?: string; client?: ComposioClient } = {}) {
+    this.apiKey = options.apiKey;
+    this.client = options.client;
+    this.directoryCache = options.client ? createToolkitDirectoryCache() : composioToolkitDirectory;
+  }
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
@@ -334,17 +374,21 @@ export class ComposioConnector implements ComposioProvider {
     return session;
   }
 
-  async sessionForExecute(
+  /**
+   * A toolkit whose every pinned account is no longer ACTIVE is left out of the
+   * session: without a pin Composio would act as the user's newest active
+   * account for that toolkit, which may be a different mailbox or workspace.
+   */
+  private async sessionForExecute(
     userId: string,
-    connections: ReturnType<typeof connectedComposioConnections>,
-  ): Promise<ComposioSession> {
-    const canonicalToolkits = await this.canonicalizeToolkits(
+    connections: ConnectedConnector[],
+  ): Promise<{ session?: ComposioSession; reconnect: string[] }> {
+    const requested = await this.canonicalizeToolkits(
       connections.map((connection) => connection.externalId),
     );
-    const canonicalByKey = new Map(
-      canonicalToolkits.map((toolkit) => [composioSlugKey(toolkit), toolkit]),
-    );
-    const liveAccountIds = await this.listActiveAccountIds(userId, canonicalToolkits);
+    const canonicalByKey = new Map(requested.map((toolkit) => [composioSlugKey(toolkit), toolkit]));
+    const liveAccountIds = await this.listActiveAccountIds(userId, requested);
+    const pinnedToolkits = new Set<string>();
     const accountIdsByToolkit = new Map<string, Set<string>>();
     for (const connection of connections) {
       const accountId = connection.providerRef?.trim();
@@ -352,26 +396,34 @@ export class ComposioConnector implements ComposioProvider {
       // No-auth and legacy rows store the toolkit slug rather than a remote
       // connected-account id. Only concrete account ids can scope a session.
       if (composioSlugKey(accountId) === composioSlugKey(connection.externalId)) continue;
+      const toolkit = canonicalByKey.get(composioSlugKey(connection.externalId));
+      if (!toolkit) continue;
+      pinnedToolkits.add(toolkit);
       // Drop refs the provider no longer lists as ACTIVE so a revoked sibling
       // with a deleted account cannot fail the whole tool-router session.
       if (liveAccountIds && !liveAccountIds.has(accountId)) continue;
-      const toolkit = canonicalByKey.get(composioSlugKey(connection.externalId));
-      if (!toolkit) continue;
       const ids = accountIdsByToolkit.get(toolkit) ?? new Set<string>();
       ids.add(accountId);
       accountIdsByToolkit.set(toolkit, ids);
     }
+    const reconnect = [...pinnedToolkits].filter((toolkit) => !accountIdsByToolkit.has(toolkit));
+    if (reconnect.length > 0) {
+      getLogger().warn("composio connected accounts need reconnect", {
+        "composio.toolkits": reconnect.join(","),
+      });
+    }
+    const toolkits = requested.filter((toolkit) => !reconnect.includes(toolkit));
+    if (toolkits.length === 0) return { reconnect };
     const connectedAccounts: Record<string, string[]> = {};
     for (const [toolkit, ids] of accountIdsByToolkit) {
       connectedAccounts[toolkit] = [...ids].sort();
     }
-    const key = executeSessionKey(canonicalToolkits, connectedAccounts);
-    if (!key) return this.sessionFor(userId);
+    const key = executeSessionKey(toolkits, connectedAccounts);
     const composio = this.sdk();
     const existing = this.executeSessions.get(userId);
     if (existing?.key === key) {
       try {
-        return await composio.sessions.use(existing.sessionId);
+        return { session: await composio.sessions.use(existing.sessionId), reconnect };
       } catch {
         this.executeSessions.delete(userId);
       }
@@ -383,7 +435,7 @@ export class ComposioConnector implements ComposioProvider {
     const session = await composio.create(userId, {
       manageConnections: false,
       sandbox: { enable: false },
-      toolkits: canonicalToolkits,
+      toolkits,
       ...(Object.keys(connectedAccounts).length > 0 ? { connectedAccounts } : {}),
       ...(needsMultiAccount
         ? {
@@ -396,7 +448,7 @@ export class ComposioConnector implements ComposioProvider {
         : {}),
     });
     this.executeSessions.set(userId, { sessionId: session.sessionId, key });
-    return session;
+    return { session, reconnect };
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
@@ -428,7 +480,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private async directory(): Promise<ToolkitDirectoryEntry[]> {
-    return composioToolkitDirectory.get(() => this.loadDirectory());
+    return this.directoryCache.get(() => this.loadDirectory());
   }
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
@@ -447,28 +499,46 @@ export class ComposioConnector implements ComposioProvider {
     const connected = await collectPages((cursor) =>
       session.toolkits({ isConnected: true, limit: 50, cursor }),
     );
-    return connected.map((toolkit) => toolkit.slug);
+    return connected
+      .filter((toolkit) => toolkit.connection?.isActive || toolkit.isNoAuth)
+      .map((toolkit) => toolkit.slug);
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
     return this.listConnectedSlugs(context.userId);
   }
 
+  async listReconnectRefs(context: AdapterContext): Promise<string[]> {
+    return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
+  }
+
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
-    const session = await this.sessionForExecute(context.userId, connections);
-    const raw = await session.tools();
-    return asConnectorTools(raw);
+    const { session } = await this.sessionForExecute(context.userId, connections);
+    if (!session) return [];
+    return asConnectorTools(await session.tools());
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     const executed = [];
     try {
-      const session = await this.sessionForExecute(
+      const { session, reconnect } = await this.sessionForExecute(
         context.userId,
         connectedComposioConnections(context),
       );
+      const stale = reconnect.find((toolkit) => callUsesToolkit(call, toolkit));
+      if (stale) {
+        yield {
+          type: "error",
+          message: `The ${stale} connection is no longer active. Ask the user to reconnect ${stale}.`,
+        };
+        return;
+      }
+      if (!session) {
+        yield { type: "error", message: "No active Composio connection for this tool." };
+        return;
+      }
       const planned = expandComposioMultiExecute(call.tool, call.args ?? {});
       for (const item of planned) {
         const result = await session.execute(
@@ -585,8 +655,12 @@ export class ComposioConnector implements ComposioProvider {
       }
       throw error;
     }
-    accountId = accountId ?? connectionRef;
-    await this.sdk().connectedAccounts.delete(accountId, requestOptions);
+    try {
+      await this.sdk().connectedAccounts.delete(accountId ?? connectionRef, requestOptions);
+    } catch (error) {
+      // Already deleted upstream: the revoke goal is met.
+      if (!isComposioNotFoundError(error)) throw error;
+    }
   }
 
   async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
@@ -599,16 +673,9 @@ export class ComposioConnector implements ComposioProvider {
     toolkits: string[],
   ): Promise<Set<string> | null> {
     try {
-      const listed = await this.sdk().connectedAccounts.list({
-        userIds: [userId],
-        ...(toolkits.length > 0 ? { toolkitSlugs: toolkits } : {}),
-        statuses: ["ACTIVE"],
-      });
       // A successful list is the allowlist, including empty. Only a thrown
       // lookup leaves filtering skipped so an outage does not strip every pin.
-      return new Set(
-        (listed.items ?? []).map((item) => item.id).filter((id): id is string => Boolean(id)),
-      );
+      return new Set(await this.accountIds(userId, toolkits, ["ACTIVE"]));
     } catch {
       return null;
     }
@@ -620,17 +687,7 @@ export class ComposioConnector implements ComposioProvider {
     requestOptions?: { signal?: AbortSignal },
   ): Promise<string[]> {
     try {
-      const listed = await this.sdk().connectedAccounts.list(
-        {
-          userIds: [userId],
-          toolkitSlugs: [slug],
-          statuses: ["ACTIVE"],
-        },
-        requestOptions,
-      );
-      const ids = (listed.items ?? [])
-        .map((item) => item.id)
-        .filter((id): id is string => Boolean(id));
+      const ids = await this.accountIds(userId, [slug], ["ACTIVE"], requestOptions);
       if (ids.length > 0) return ids;
     } catch {
       // List may be unavailable; fall through to toolkit metadata.
@@ -641,10 +698,36 @@ export class ComposioConnector implements ComposioProvider {
         : new Error("Aborted");
     }
     const session = await this.sessionFor(userId);
-    const toolkits = await session.toolkits({ isConnected: true });
-    const id = toolkits.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug))
-      ?.connection?.connectedAccount?.id;
+    const toolkits = await collectPages(
+      (cursor) => session.toolkits({ isConnected: true, limit: 50, cursor }),
+      MAX_ACCOUNT_PAGES,
+    );
+    const id = toolkits.find(
+      (item) =>
+        composioSlugKey(item.slug) === composioSlugKey(slug) && item.connection?.isActive === true,
+    )?.connection?.connectedAccount?.id;
     return id ? [id] : [];
+  }
+
+  private async accountIds(
+    userId: string,
+    toolkits: string[],
+    statuses: ConnectedAccountStatus[],
+    requestOptions?: { signal?: AbortSignal },
+  ): Promise<string[]> {
+    const accounts = await collectPages(async (cursor) => {
+      const page = await this.sdk().connectedAccounts.list(
+        {
+          userIds: [userId],
+          ...(toolkits.length > 0 ? { toolkitSlugs: toolkits } : {}),
+          statuses,
+          ...(cursor ? { cursor } : {}),
+        },
+        requestOptions,
+      );
+      return { items: page.items ?? [], cursor: page.nextCursor ?? undefined };
+    }, MAX_ACCOUNT_PAGES);
+    return accounts.map((item) => item.id).filter((id): id is string => Boolean(id));
   }
 
   /**
@@ -698,7 +781,7 @@ export class ComposioConnector implements ComposioProvider {
     return ids.find((id) => !excluded.has(id));
   }
 
-  private sdk(): Composio {
+  private sdk(): ComposioClient {
     this.client ??= new Composio(this.apiKey ? { apiKey: this.apiKey } : undefined);
     return this.client;
   }
@@ -713,11 +796,7 @@ function isComposioNotFoundError(error: unknown): boolean {
 export class ConnectorRegistry implements ConnectorProvider {
   private readonly providers = new Map<string, ConnectorProvider>();
 
-  constructor(
-    readonly destination: DestinationEmulator,
-    providers: ConnectorProvider[],
-  ) {
-    this.providers.set("destination", destination);
+  constructor(providers: ConnectorProvider[]) {
     for (const provider of providers) {
       const id = provider.describe().id;
       if (this.providers.has(id)) throw new Error(`Duplicate connector id ${id}`);
@@ -779,8 +858,7 @@ export class ConnectorRegistry implements ConnectorProvider {
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
-    const connectorId =
-      call.route?.connectorId ?? (call.tool === "destination.write" ? "destination" : "composio");
+    const connectorId = call.route?.connectorId ?? "composio";
     const provider = this.providers.get(connectorId);
     if (!provider) {
       yield { type: "error", message: `unknown connector ${connectorId}` };
@@ -799,9 +877,6 @@ export class ConnectorRegistry implements ConnectorProvider {
     return provider?.resolveCall?.({ ...call, tool: call.route?.toolName ?? call.tool }, context);
   }
 }
-
-/** @deprecated Use ConnectorRegistry. */
-export const CompositeConnector = ConnectorRegistry;
 
 function isManagedConnectorProvider(
   provider: ConnectorProvider,
@@ -830,19 +905,12 @@ function connectedComposioConnections(context: AdapterContext): ConnectedConnect
 }
 
 export function createConnectorStack(
-  composioEnabled: boolean,
-  composioOverride?: ComposioProvider,
-  additionalProviders: ConnectorProvider[] = [],
+  composio: ComposioProvider | undefined,
+  providers: ConnectorProvider[] = [],
 ) {
-  const destination = new DestinationEmulator();
-  const composio = composioOverride ?? (composioEnabled ? new ComposioConnector() : undefined);
   return {
-    destination,
     composio,
-    connector: new ConnectorRegistry(destination, [
-      ...(composio ? [composio] : []),
-      ...additionalProviders,
-    ]),
+    connector: new ConnectorRegistry([...(composio ? [composio] : []), ...providers]),
   };
 }
 

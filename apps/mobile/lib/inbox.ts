@@ -21,17 +21,6 @@ export function botTag(title: string | undefined, name: string, maxLength = 22) 
   return tag;
 }
 
-export function userInitials(name: string) {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return initials || "?";
-}
-
 export function formatThreadTime(iso: string, now = new Date()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";

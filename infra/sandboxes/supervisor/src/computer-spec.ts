@@ -4,7 +4,24 @@ import path from "node:path";
 import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
 
-export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
+/**
+ * The computer image. RAKAZO_COMPUTER_IMAGE_TAG is appended the way Compose does, so a
+ * supervisor started outside Compose pulls the same published tag instead of an untagged
+ * (`:latest`) name. An image that already carries a tag or digest is used as is.
+ */
+export function resolveComputerImage(
+  image = process.env.RAKAZO_COMPUTER_IMAGE,
+  tag = process.env.RAKAZO_COMPUTER_IMAGE_TAG,
+): string {
+  const name = image?.trim();
+  if (!name) return "rakazo/computer:local";
+  const wantedTag = tag?.trim();
+  const lastSegment = name.slice(name.lastIndexOf("/") + 1);
+  if (!wantedTag || name.includes("@") || lastSegment.includes(":")) return name;
+  return `${name}:${wantedTag}`;
+}
+
+export const COMPUTER_IMAGE = resolveComputerImage();
 export const COMPUTER_UID = 1000;
 export const COMPUTER_GID = 1000;
 export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;
@@ -151,22 +168,27 @@ export function resolveScreenNetworkMode(value: string | undefined): ScreenNetwo
 }
 
 /**
- * Egress policy for per-bot computer networks. `open` is today's behaviour: full
- * outbound access, including the host's bridge addresses, the LAN, and link-local
- * cloud metadata endpoints. `restricted` keeps public internet egress but lets the
- * operator drop everything else with one host-side iptables rule set — the
- * supervisor gives each computer network a deterministic bridge interface name so
- * the rules match by interface (`-i rakazo-c+`) instead of ephemeral subnets.
- * Enforcement lives on the Docker host (infra/compose/restrict-computer-egress.sh);
- * the flag only marks the networks. Supervisor capabilities stay unchanged.
+ * Egress policy for per-bot computer networks. `open` gives full outbound access,
+ * including the host's bridge addresses, the LAN, and link-local cloud metadata
+ * endpoints. `restricted` keeps public internet egress but lets the operator drop
+ * everything else with one host-side iptables rule set — the supervisor gives each
+ * computer network a deterministic bridge interface name so the rules match by
+ * interface (`-i rakazo-c+`) instead of ephemeral subnets. Enforcement lives on the
+ * Docker host (infra/compose/restrict-computer-egress.sh) and is verified before
+ * computers start (egress-probe.ts). The Compose stacks default to `auto`: restricted
+ * when that check passes, open otherwise, so a stack installed before the rules
+ * existed keeps working on upgrade. Unset here means a host-run supervisor, usually
+ * on Docker Desktop, whose VM-hosted bridges the host rules cannot reach, so it stays
+ * open.
  */
 export type ComputerEgressMode = "open" | "restricted";
+export type ComputerEgressSetting = ComputerEgressMode | "auto";
 
 export function resolveComputerEgressMode(
   value = process.env.SANDBOX_COMPUTER_EGRESS,
-): ComputerEgressMode {
+): ComputerEgressSetting {
   if (value === undefined || value.trim() === "" || value === "open") return "open";
-  if (value === "restricted") return "restricted";
+  if (value === "restricted" || value === "auto") return value;
   throw new Error(`Unsupported SANDBOX_COMPUTER_EGRESS value: ${value}`);
 }
 

@@ -1558,7 +1558,7 @@ describe("Team Computer wake", () => {
 });
 
 describe("computer execution leases", () => {
-  it("does not serialize dedicated computers", async () => {
+  it("leaves dedicated serialization to the screen lease", async () => {
     const prisma = leasePrisma({ scope: "dedicated" });
 
     await expect(
@@ -1745,6 +1745,7 @@ describe("computer execution leases", () => {
     };
     const create = vi.fn().mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
     const client = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         update: vi
           .fn()
@@ -1917,10 +1918,11 @@ describe("computer execution leases", () => {
     const tx = {
       $queryRaw: queryRaw,
       computerExecutionLease: {
+        findUnique: vi.fn().mockResolvedValue(null),
         updateManyAndReturn,
         create: vi.fn(),
       },
-      run: { aggregate: vi.fn() },
+      run: { aggregate: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
     };
     const prisma = {
       $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
@@ -1944,6 +1946,51 @@ describe("computer execution leases", () => {
     ).rejects.toBeInstanceOf(ComputerBusyError);
     expect(updateManyAndReturn).toHaveBeenCalledTimes(2);
   });
+
+  it.each([true, false])(
+    "dedicated screen acquisition respects lease expiry (live=%s)",
+    async (live) => {
+      const now = new Date();
+      const tx = {
+        $queryRaw: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "bot-1" }])
+          .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+          .mockResolvedValueOnce([{ id: "run-resumed-card" }]),
+        computerExecutionLease: {
+          updateManyAndReturn: vi.fn().mockResolvedValue(live ? [] : [{ fence: 8 }]),
+          create: vi
+            .fn()
+            .mockRejectedValue(Object.assign(new Error("lease exists"), { code: "P2002" })),
+        },
+        run: { aggregate: vi.fn().mockResolvedValue({ _max: { leaseFence: 2 } }) },
+      };
+      const prisma = {
+        $transaction: async (work: (client: typeof tx) => unknown) => work(tx),
+      } as unknown as PrismaClient;
+      const acquiring = acquireDedicatedScreenLeaseFence(prisma, {
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-resumed-card",
+        workerId: "worker-1",
+        runFence: 2,
+      });
+      if (live) await expect(acquiring).rejects.toBeInstanceOf(ComputerBusyError);
+      else await expect(acquiring).resolves.toMatchObject({ runId: "run-resumed-card", fence: 8 });
+      expect(tx.computerExecutionLease.updateManyAndReturn).toHaveBeenCalledWith({
+        where: {
+          computerId: "computer-1",
+          botId: "bot-1",
+          OR: [{ expiresAt: { lte: expect.any(Date) } }, { runId: "run-resumed-card" }],
+        },
+        data: { runId: "run-resumed-card", expiresAt: expect.any(Date), fence: { increment: 1 } },
+        select: { fence: true },
+      });
+      expect(
+        tx.computerExecutionLease.updateManyAndReturn.mock.calls[0]?.[0].data.expiresAt.getTime(),
+      ).toBeGreaterThan(now.getTime());
+    },
+  );
 
   it("acquires a team lease on a stale suspending computer", async () => {
     const prisma = leasePrisma({ scope: "team" });

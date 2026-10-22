@@ -1,14 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection } from "@rakazo/contracts";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from "@rakazo/ui-web";
 import {
   Archive,
@@ -24,14 +22,11 @@ import {
   Trash2,
 } from "lucide-react";
 
-export type ContextMenuPosition = { x: number; y: number };
-
 type ChatMenuTarget = Pick<Bot, "name" | "pinned" | "sectionId" | "unread">;
 
+/** A roster row's context menu content; `onClose` serves the lazy-load error fallback. */
 export function BotContextMenu({
   bot,
-  position,
-  onClose,
   onTogglePinned,
   sections,
   onMoveToSection,
@@ -45,7 +40,6 @@ export function BotContextMenu({
   onDelete,
 }: {
   bot: ChatMenuTarget;
-  position: ContextMenuPosition;
   onClose: () => void;
   onTogglePinned: () => void;
   sections: BotSection[];
@@ -62,92 +56,71 @@ export function BotContextMenu({
   const { t } = useLingui();
 
   return (
-    <DropdownMenu
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <ContextMenuContent
+      aria-label={t`Actions for ${bot.name}`}
+      className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
     >
-      {/* Invisible anchor at the pointer position; the menu itself carries the accessible name. */}
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-hidden
-            className="fixed size-0 p-0 opacity-0"
-            style={{ left: position.x, top: position.y }}
-          />
-        }
-      />
-      <DropdownMenuContent
-        aria-label={t`Actions for ${bot.name}`}
-        align="start"
-        sideOffset={0}
-        className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
-      >
-        <DropdownMenuItem onClick={onTogglePinned}>
-          <Pin />
-          {bot.pinned ? t`Unpin` : t`Pin`}
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Folder />
-            {t`Move to`}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-[min(420px,calc(100vh-16px))] min-w-[180px] overflow-y-auto">
-            {sections.map((section) => (
-              <DropdownMenuItem key={section.id} onClick={() => onMoveToSection(section.id)}>
-                <Folder />
-                <span dir="auto">{section.name}</span>
-                {bot.sectionId === section.id ? <Check className="ms-auto" /> : null}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuItem onClick={() => onMoveToSection(null)}>
+      <ContextMenuItem onClick={onTogglePinned}>
+        <Pin />
+        {bot.pinned ? t`Unpin` : t`Pin`}
+      </ContextMenuItem>
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          <Folder />
+          {t`Move to`}
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="max-h-[min(420px,calc(100vh-16px))] min-w-[180px] overflow-y-auto">
+          {sections.map((section) => (
+            <ContextMenuItem key={section.id} onClick={() => onMoveToSection(section.id)}>
               <Folder />
-              {t`Unassigned`}
-              {bot.sectionId === null ? <Check className="ms-auto" /> : null}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onCreateSection}>
-              <FolderPlus />
-              {t`New section`}
-            </DropdownMenuItem>
-            {bot.sectionId && onRenameSection ? (
-              <DropdownMenuItem onClick={() => onRenameSection(bot.sectionId!)}>
-                <Pencil />
-                {t`Rename section`}
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuItem onClick={onToggleUnread}>
-          {bot.unread ? <BellDot /> : <Bell />}
-          {bot.unread ? t`Mark as Read` : t`Mark as Unread`}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onEdit}>
-          <Pencil />
-          {t`Edit Profile`}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDuplicate}>
-          <Copy />
-          {t`Duplicate`}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onClear}>
-          <Eraser />
-          {t`Clear conversation`}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onArchive}>
-          <Archive />
-          {t`Archive`}
-        </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
-          <Trash2 />
-          {t`Delete`}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+              <span dir="auto">{section.name}</span>
+              {bot.sectionId === section.id ? <Check className="ms-auto" /> : null}
+            </ContextMenuItem>
+          ))}
+          <ContextMenuItem onClick={() => onMoveToSection(null)}>
+            <Folder />
+            {t`Unassigned`}
+            {bot.sectionId === null ? <Check className="ms-auto" /> : null}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={onCreateSection}>
+            <FolderPlus />
+            {t`New section`}
+          </ContextMenuItem>
+          {bot.sectionId && onRenameSection ? (
+            <ContextMenuItem onClick={() => onRenameSection(bot.sectionId!)}>
+              <Pencil />
+              {t`Rename section`}
+            </ContextMenuItem>
+          ) : null}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuItem onClick={onToggleUnread}>
+        {bot.unread ? <BellDot /> : <Bell />}
+        {bot.unread ? t`Mark as Read` : t`Mark as Unread`}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={onEdit}>
+        <Pencil />
+        {t`Edit Profile`}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onDuplicate}>
+        <Copy />
+        {t`Duplicate`}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={onClear}>
+        <Eraser />
+        {t`Clear conversation`}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onArchive}>
+        <Archive />
+        {t`Archive`}
+      </ContextMenuItem>
+      <ContextMenuItem variant="destructive" onClick={onDelete}>
+        <Trash2 />
+        {t`Delete`}
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }

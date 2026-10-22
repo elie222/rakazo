@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
+import { displayName } from "@rakazo/core";
 import { bootstrapUserSpace, type SignupPolicyEnv } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { createRepos } from "./repos.js";
@@ -77,7 +78,7 @@ export async function provisionMessagingIdentity(
       .create({
         data: {
           id,
-          name: request.displayName?.trim() || `${titleCase(provider)} ${address.slice(-4)}`,
+          name: displayName(request.displayName, `${titleCase(provider)} ${address.slice(-4)}`),
           email: `msg-${randomBytes(16).toString("hex")}@messaging.invalid`,
           emailVerified: false,
         },
@@ -90,13 +91,7 @@ export async function provisionMessagingIdentity(
   }
 
   const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
-  const spaceId =
-    membership?.spaceId ??
-    (
-      await bootstrapUserSpace(prisma, user, env, {
-        claimDeploymentOwner: false,
-      })
-    ).spaceId;
+  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;
   // messaging users only ever get bots here, so an existing bot is theirs.

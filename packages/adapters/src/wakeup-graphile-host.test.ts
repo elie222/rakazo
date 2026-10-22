@@ -37,6 +37,7 @@ function handlers(): BackgroundJobHandlers {
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "push.receipt": vi.fn(async () => undefined),
   };
 }
 
@@ -111,12 +112,25 @@ describe("GraphileJobPublisher.enqueue", () => {
     await publisher.close();
   });
 
+  type KeyedJob = { attempts: number; maxAttempts: number; runAt: Date; lockedAt?: Date };
+
   // graphile-worker 0.17.3 add_job: unsafe_dedupe on conflict bumps revision only.
-  // replace sets attempts = 0 and run_at = excluded.run_at.
-  function graphileJobs(jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>) {
+  // replace sets attempts = 0 and run_at = excluded.run_at, or detaches a locked
+  // job and inserts a new one.
+  function graphileJobs(jobs: Map<string, KeyedJob>) {
     const query = vi.fn(async (_sql: string, params?: readonly unknown[]) => {
       const job = jobs.get(String(params?.[0]));
-      return { rows: job ? [{ attempts: job.attempts, max_attempts: job.maxAttempts }] : [] };
+      return {
+        rows: job
+          ? [
+              {
+                attempts: job.attempts,
+                max_attempts: job.maxAttempts,
+                locked_at: job.lockedAt ?? null,
+              },
+            ]
+          : [],
+      };
     });
     const addJob = vi.fn(
       async (
@@ -142,9 +156,7 @@ describe("GraphileJobPublisher.enqueue", () => {
     return { query, addJob, withPgClient };
   }
 
-  function publisherOver(
-    jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>,
-  ) {
+  function publisherOver(jobs: Map<string, KeyedJob>) {
     const graphile = graphileJobs(jobs);
     vi.mocked(makeWorkerUtils).mockResolvedValue({
       addJob: graphile.addJob,
@@ -167,7 +179,7 @@ describe("GraphileJobPublisher.enqueue", () => {
       keepExisting: true,
     });
     expect(query).toHaveBeenCalledWith(
-      "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+      "select attempts, max_attempts, locked_at from graphile_worker._private_jobs where key = $1",
       ["run:run-1"],
     );
     expect(addJob).toHaveBeenCalledWith(
@@ -201,8 +213,47 @@ describe("GraphileJobPublisher.enqueue", () => {
     await publisher.close();
   });
 
+  it("keeps a job locked after replaceLockedBefore", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const lockedAt = new Date("2030-01-01T00:00:01.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 1, maxAttempts: 25, runAt, lockedAt }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "retry-pending" },
+      replaceKey: "run:run-1",
+      availableAt: new Date("2030-01-01T00:00:02.000Z"),
+      keepExisting: true,
+      replaceLockedBefore: new Date("2030-01-01T00:00:00.000Z"),
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBe("unsafe_dedupe");
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 1, maxAttempts: 25, runAt, lockedAt });
+    await publisher.close();
+  });
+
+  it("replaces a locked job so a worker that died mid-job cannot hold the key", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const lockedAt = new Date("2030-01-01T00:00:01.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 1, maxAttempts: 25, runAt, lockedAt }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    const reclaimedAt = new Date("2030-01-01T04:00:00.000Z");
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "reclaimed" },
+      replaceKey: "run:run-1",
+      availableAt: reclaimedAt,
+      keepExisting: true,
+      replaceLockedBefore: lockedAt,
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBeUndefined();
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 0, maxAttempts: 25, runAt: reclaimedAt });
+    await publisher.close();
+  });
+
   it("enqueues a keepExisting job when no row has that key", async () => {
-    const jobs = new Map<string, { attempts: number; maxAttempts: number; runAt: Date }>();
+    const jobs = new Map<string, KeyedJob>();
     const { publisher, addJob } = publisherOver(jobs);
     const runAt = new Date("2030-01-03T00:00:00.000Z");
     await publisher.enqueue({

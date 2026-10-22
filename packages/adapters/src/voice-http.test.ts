@@ -1,10 +1,13 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_VOICE_JSON_BYTES,
   readVoiceJson,
   speechUploadName,
   verifyVoiceHttpGet,
+  voiceAccountIssue,
   voiceDeadline,
+  voiceRequestError,
 } from "./voice-http.js";
 
 describe("voiceDeadline", () => {
@@ -148,5 +151,51 @@ describe("readVoiceJson", () => {
     await expect(
       readVoiceJson(new Response("upstream down"), { rawOnInvalid: true }),
     ).resolves.toBe("upstream down");
+  });
+});
+
+describe("voiceAccountIssue", () => {
+  it.each([
+    ["Fish Audio or Cartesia spent credit", 402, { message: "Insufficient API credit." }],
+    [
+      "OpenAI insufficient quota",
+      429,
+      { error: { message: "You have no credits remaining.", code: "insufficient_quota" } },
+    ],
+    ["ElevenLabs spent quota", 401, { detail: { status: "quota_exceeded", message: "Over" } }],
+  ])("reads %s as out of credit", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBe("VOICE_OUT_OF_CREDIT");
+  });
+
+  it.each([
+    ["a bare 401", 401, null],
+    ["a 403", 403, { message: "Forbidden" }],
+    ["ElevenLabs invalid key", 401, { detail: { status: "invalid_api_key", message: "Bad" } }],
+  ])("reads %s as a rejected key", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBe("VOICE_KEY_REJECTED");
+  });
+
+  it.each([
+    ["a rate limit", 429, { error: { message: "Slow down", code: "rate_limit_exceeded" } }],
+    ["an outage", 503, { message: "Service unavailable" }],
+    [
+      "a missing ElevenLabs permission",
+      401,
+      { detail: { status: "missing_permissions", message: "Needs text_to_speech" } },
+    ],
+  ])("leaves %s unclassified", (_name, status, body) => {
+    expect(voiceAccountIssue(status, body)).toBeUndefined();
+  });
+
+  it("raises account issues as VoiceAccountError and keeps the provider message", () => {
+    const error = voiceRequestError(402, "Fish Audio", "speaking", null);
+    expect(error).toBeInstanceOf(VoiceAccountError);
+    expect(error).toMatchObject({
+      code: "VOICE_OUT_OF_CREDIT",
+      message: "Fish Audio says this account is out of credit.",
+    });
+    expect(voiceRequestError(503, "Fish Audio", "speaking", null)).not.toBeInstanceOf(
+      VoiceAccountError,
+    );
   });
 });

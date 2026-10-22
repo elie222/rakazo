@@ -2,6 +2,7 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
+import { ModelCreditsSettings } from "../components/ModelCredits";
 import { formatBillingDate, formatBillingPrice } from "../lib/billing";
 import { rpc } from "../lib/rpc";
 
@@ -67,6 +68,14 @@ export function BillingSettingsPanel() {
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
 
+  if (status?.funding !== undefined)
+    return (
+      <ModelCreditsSettings
+        status={status}
+        refresh={async () => setStatus(await rpc.billing.status())}
+      />
+    );
+
   return (
     <div data-testid="billing-settings" className="rounded-xl border border-border px-4 py-4">
       <div className="flex items-start justify-between gap-4">
@@ -117,7 +126,10 @@ function billingDate(
   if (status.state === "trialing" && status.trialEndsAt) {
     return { kind: "trial", at: status.trialEndsAt };
   }
-  if (!status.currentPeriodEndsAt) return null;
+  // Unpaid and paused subscriptions do not renew until the owner resumes them.
+  if (!status.currentPeriodEndsAt || status.state === "unpaid" || status.state === "paused") {
+    return null;
+  }
   if (status.cancelAtPeriodEnd || status.state === "canceled") {
     return { kind: "ends", at: status.currentPeriodEndsAt };
   }

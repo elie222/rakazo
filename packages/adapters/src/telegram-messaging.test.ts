@@ -226,3 +226,71 @@ describe("Telegram bots side by side", () => {
     expect(inbound).toEqual([]);
   });
 });
+
+describe("Telegram messaging files", () => {
+  function createFileSurface() {
+    const uploads: { method: string; field: string; filename: string; caption: unknown }[] = [];
+    // Exercise the pinned adapter's upload requests, replacing only HTTP.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init: RequestInit) => {
+        const method = new URL(input).pathname.split("/").at(-1)!;
+        if (method === "getMe") {
+          return Response.json({
+            ok: true,
+            result: { id: 999, is_bot: true, username: "testbot" },
+          });
+        }
+        if (method !== "sendPhoto" && method !== "sendDocument") {
+          throw new Error(`Unexpected Telegram method: ${method}`);
+        }
+        const form = init.body as FormData;
+        const field = method === "sendPhoto" ? "photo" : "document";
+        const file = form.get(field) as File;
+        uploads.push({ method, field, filename: file.name, caption: form.get("caption") });
+        return Response.json({
+          ok: true,
+          result: {
+            message_id: 43,
+            date: 1_700_000_000,
+            chat: { id: 123, type: "private" },
+            from: { id: 999, is_bot: true, first_name: "Test Bot" },
+          },
+        });
+      }),
+    );
+    const adapter = createTelegramAdapter({
+      botToken: "test-token",
+      secretToken: "test-webhook-secret",
+      mode: "webhook",
+    });
+    const surface = new ChatSdkMessagingSurface([
+      {
+        provider: "telegram",
+        capabilities: { direct: true, groups: false, receipt: null, files: true },
+        adapter,
+      },
+    ]);
+    return { surface, uploads, threadId: adapter.encodeThreadId({ chatId: "123" }) };
+  }
+
+  it("sends an image as a photo and other files as documents", async () => {
+    const { surface, uploads, threadId } = createFileSurface();
+    const data = new Uint8Array([1, 2, 3]);
+
+    const photo = await surface.sendToThread(
+      { threadId, body: "", attachment: { name: "chart.png", mimeType: "image/png", data } },
+      context,
+    );
+    await surface.sendToThread(
+      { threadId, body: "", attachment: { name: "report.pdf", mimeType: "application/pdf", data } },
+      context,
+    );
+
+    expect(photo.handle).toBeTruthy();
+    expect(uploads).toEqual([
+      { method: "sendPhoto", field: "photo", filename: "chart.png", caption: null },
+      { method: "sendDocument", field: "document", filename: "report.pdf", caption: null },
+    ]);
+  });
+});

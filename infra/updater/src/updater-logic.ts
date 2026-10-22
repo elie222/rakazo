@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
   DEFAULT_IMAGE_TAG,
@@ -122,6 +123,19 @@ export function readEnvAssignment(contents: string, key: string): string | null 
     found = value.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
   }
   return found;
+}
+
+/**
+ * Secrets a newer Compose file requires that an older `.env` never had. An update writes the
+ * missing ones so its recreate does not stop at `Set POSTGRES_APP_PASSWORD in .env`; values
+ * already present, however they are set, are never replaced.
+ */
+export function missingSecretAssignments(
+  envContents: string,
+  generate: () => string = () => randomBytes(16).toString("hex"),
+): Record<string, string> {
+  const value = readEnvAssignment(envContents, "POSTGRES_APP_PASSWORD");
+  return value === null || value === "" ? { POSTGRES_APP_PASSWORD: generate() } : {};
 }
 
 export interface TagState {

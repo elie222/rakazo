@@ -1,5 +1,7 @@
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAppBadge, syncAppBadge } from "./app-badge";
 import { artifactCacheSession } from "./artifact-cache-session";
 import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
 import { clearNetworkCache } from "./network-cache.js";
@@ -18,6 +20,8 @@ import {
   tokenFromAuthResponse,
 } from "./session.js";
 import { clearFailedSends } from "./thread-feedback.js";
+
+vi.mock("expo-notifications", () => ({ setBadgeCountAsync: vi.fn(async () => true) }));
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -75,6 +79,17 @@ describe("mobile session storage", () => {
     expect(clear).toHaveBeenCalledTimes(2);
     await restoreSessionToken("fake-b");
     expect(clear.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  it("clears the icon badge on sign-out and server-session restoration", async () => {
+    registerSessionDiskCache(() => void clearAppBadge());
+    await syncAppBadge(3);
+    vi.mocked(Notifications.setBadgeCountAsync).mockClear();
+    await clearSessionToken();
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+    await syncAppBadge(2);
+    await restoreSessionToken("fake-other-server");
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
   });
 
   it("still signs out and runs every other wipe when one disk cache throws", async () => {
@@ -256,14 +271,33 @@ describe("mobile session storage", () => {
 });
 
 describe("auth response token parsing", () => {
-  it("prefers explicit JSON tokens, including nested session responses", () => {
+  it("prefers the signed set-auth-token header over the cookie and an unsigned body token", () => {
     const response = new Response(null, {
-      headers: { "set-cookie": "better-auth.session_token=cookie-token; Path=/" },
+      headers: {
+        "set-auth-token": "header-token.c2lnbmF0dXJl%2B%3D",
+        "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/",
+      },
     });
 
-    expect(tokenFromAuthResponse(response, { token: "body-token" })).toBe("body-token");
-    expect(tokenFromAuthResponse(response, { session: { token: "nested-token" } })).toBe(
-      "nested-token",
+    expect(tokenFromAuthResponse(response, { token: "header-token" })).toBe(
+      "header-token.c2lnbmF0dXJl+=",
+    );
+  });
+
+  it("prefers the signed cookie over an unsigned body token", () => {
+    const response = new Response(null, {
+      headers: { "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/" },
+    });
+
+    expect(tokenFromAuthResponse(response, { token: "cookie-token" })).toBe("cookie-token.sig");
+  });
+
+  it("falls back to JSON tokens, including nested session responses", () => {
+    const response = new Response(null);
+
+    expect(tokenFromAuthResponse(response, { token: "body-token.sig" })).toBe("body-token.sig");
+    expect(tokenFromAuthResponse(response, { session: { token: "nested-token.sig" } })).toBe(
+      "nested-token.sig",
     );
   });
 

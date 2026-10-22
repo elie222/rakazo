@@ -11,6 +11,9 @@ appId: com.rakazo.app
     timeout: 15000
 - tapOn: "Email"
 - inputText: ${RAKAZO_ACTIVE_EMAIL}
+- tapOn:
+    text: "Use password"
+    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
 - hideKeyboard

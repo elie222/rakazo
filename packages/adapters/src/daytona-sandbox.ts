@@ -1,10 +1,15 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
+import type { CreateSandboxFromSnapshotParams, DaytonaConfig, Sandbox } from "@daytona/sdk";
 import {
   Daytona,
-  type DaytonaConfig,
+  DaytonaBadRequestError,
+  DaytonaConflictError,
+  DaytonaError,
+  DaytonaGoneError,
   DaytonaNotFoundError,
   DaytonaProcessExecutionTimeoutError,
-  type Sandbox,
+  DaytonaTimeoutError,
   SandboxState,
 } from "@daytona/sdk";
 import type {
@@ -23,7 +28,8 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
@@ -32,10 +38,52 @@ import {
 } from "./computer-workspace.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
+import { withAbort } from "./web-ssrf.js";
 
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
+const DAYTONA_START_TIMEOUT_MS = 120_000;
+const DAYTONA_STOP_TIMEOUT_MS = 120_000;
+/** Waking an archived sandbox first copies its disk back from object storage. */
+const DAYTONA_RESTORE_TIMEOUT_MS = 600_000;
+const DAYTONA_POLL_MS = 1_000;
+/** How long a cached handle is trusted before Daytona is asked whether the sandbox still runs. */
+const DAYTONA_HANDLE_PROBE_MS = 60_000;
 
-export type DaytonaSandboxSdk = Pick<Daytona, "create" | "get">;
+/** The slice of a Daytona sandbox this adapter uses. */
+export type DaytonaSandbox = Pick<
+  Sandbox,
+  | "id"
+  | "state"
+  | "desiredState"
+  | "recoverable"
+  | "getUserHomeDir"
+  | "getWorkDir"
+  | "getSignedPreviewUrl"
+  | "expireSignedPreviewUrl"
+  | "refreshActivity"
+  | "refreshData"
+  | "start"
+  | "recover"
+  | "waitUntilStarted"
+  | "stop"
+  | "delete"
+> & {
+  process: Pick<Sandbox["process"], "executeCommand">;
+  fs: Pick<Sandbox["fs"], "listFiles" | "getFileDetails"> & {
+    uploadFile(file: Buffer, remotePath: string): Promise<void>;
+    downloadFile(remotePath: string): Promise<Buffer>;
+  };
+  computerUse: Pick<Sandbox["computerUse"], "stop">;
+};
+
+export interface DaytonaSandboxSdk {
+  create(
+    params: CreateSandboxFromSnapshotParams,
+    options: { timeout: number },
+  ): Promise<DaytonaSandbox>;
+  get(sandboxIdOrName: string): Promise<DaytonaSandbox>;
+}
 
 export class DaytonaSandboxProvider implements SandboxProvider {
   billsWhileRunning(): boolean {
@@ -43,8 +91,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 
   private readonly client: DaytonaSandboxSdk;
-  private readonly boxes = new Map<string, Sandbox>();
-  private readonly connections = new Map<string, Promise<Sandbox>>();
+  private readonly boxes = new Map<string, DaytonaSandbox>();
+  private readonly checkedAt = new Map<string, number>();
+  private readonly connections = new Map<
+    string,
+    Promise<{ sandbox: DaytonaSandbox; started: boolean }>
+  >();
   private readonly workspaceRoots = new Map<string, string>();
   private readonly prepared = new Set<string>();
   private readonly desktops = new LinuxDesktop({
@@ -56,6 +108,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         browserProfilesDir: path.posix.join(await this.workspaceRoot(sandbox), ".browser-profiles"),
         displayStart: 20,
         portStart: 6100,
+        // The provider port proxy reaches the isolated sandbox through its network interface.
+        bindHost: "0.0.0.0",
       };
     },
     run: async (computer, command, context) => {
@@ -130,34 +184,47 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
     },
-    _context: AdapterContext,
+    context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === "daytona") {
       try {
-        const sandbox = await this.connect(request.providerRef);
-        return this.ref(sandbox, request.botId, false);
+        const { sandbox, started } = await withAbort(
+          this.connect(request.providerRef, true),
+          context.signal,
+        );
+        return this.ref(sandbox, request.botId, false, started);
       } catch (error) {
-        this.forget(request.providerRef);
-        if (!isUnrecoverableDaytonaError(error)) throw error;
+        if (!isSandboxGoneError(error)) throw error;
       }
     }
 
-    const sandbox = await this.client.create(
-      {
-        ...(this.snapshotName ? { snapshot: this.snapshotName } : {}),
-        labels: { botId: request.botId, rakazo: "computer" },
-        envVars: { VNC_RESOLUTION: "1280x800" },
-        autoStopInterval: 0,
-        autoDeleteInterval: -1,
-      },
-      { timeout: 120 },
-    );
+    // The unique name lets a create that fails after Daytona accepted it find and delete the
+    // sandbox: it never auto-stops or auto-deletes, so a leaked one bills until removed.
+    const name = `rakazo-${randomUUID()}`;
+    let sandbox: DaytonaSandbox;
+    try {
+      sandbox = await this.client.create(
+        {
+          name,
+          ...(this.snapshotName ? { snapshot: this.snapshotName } : {}),
+          labels: { botId: request.botId, rakazo: "computer" },
+          envVars: { VNC_RESOLUTION: "1280x800" },
+          autoStopInterval: 0,
+          autoDeleteInterval: -1,
+        },
+        { timeout: 120 },
+      );
+    } catch (error) {
+      await this.deleteAbandoned(name);
+      throw error;
+    }
     this.boxes.set(sandbox.id, sandbox);
-    return this.ref(sandbox, request.botId, true);
+    this.checkedAt.set(sandbox.id, Date.now());
+    return this.ref(sandbox, request.botId, true, false);
   }
 
-  async prepare(computer: ComputerRef, _context: AdapterContext): Promise<void> {
-    await this.prepareWorkspace(await this.box(computer));
+  async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    await this.prepareWorkspace(await withAbort(this.box(computer), context.signal));
   }
 
   async *execute(
@@ -345,7 +412,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     );
     this.forget(id);
     await sandbox.computerUse.stop().catch(() => undefined);
-    await sandbox.stop(120);
+    await stopDaytonaSandbox(sandbox);
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
@@ -366,57 +433,95 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       await sandbox.delete(120, true);
     } catch (error) {
       // Deletion is idempotent even when the sandbox disappears after lookup.
-      if (!isUnrecoverableDaytonaError(error)) throw error;
+      if (!isDaytonaSandboxMissing(error)) throw error;
     }
   }
 
-  private ref(sandbox: Sandbox, botId: string, fresh: boolean): ComputerRef {
+  private ref(
+    sandbox: DaytonaSandbox,
+    botId: string,
+    fresh: boolean,
+    started: boolean,
+  ): ComputerRef {
     return {
       id: sandbox.id,
       botId,
       kind: "daytona",
       providerRef: sandbox.id,
       fresh,
+      ...(started ? { started: true } : {}),
     };
   }
 
-  private async connect(id: string): Promise<Sandbox> {
+  /**
+   * Returns a running sandbox, starting it if needed. A cached handle is trusted for a minute,
+   * or not at all with `revalidate`; after that Daytona is asked again, so a sandbox deleted or
+   * stopped behind our back is noticed instead of failing every later call.
+   */
+  private async connect(
+    id: string,
+    revalidate = false,
+  ): Promise<{ sandbox: DaytonaSandbox; started: boolean }> {
     const existing = this.boxes.get(id);
-    if (existing) return existing;
+    if (
+      existing &&
+      !revalidate &&
+      Date.now() - (this.checkedAt.get(id) ?? 0) < DAYTONA_HANDLE_PROBE_MS
+    ) {
+      return { sandbox: existing, started: false };
+    }
     const pending = this.connections.get(id);
     if (pending) return pending;
-    let connection!: Promise<Sandbox>;
+    let connection!: Promise<{ sandbox: DaytonaSandbox; started: boolean }>;
     connection = (async () => {
-      const sandbox = await this.client.get(id);
-      if (sandbox.state !== SandboxState.STARTED) await sandbox.start(120);
+      const sandbox = await this.client.get(id).catch((error: unknown) => {
+        throw isDaytonaSandboxMissing(error) ? daytonaSandboxGoneError(id, error) : error;
+      });
+      const started = await startDaytonaSandbox(sandbox);
       if (this.connections.get(id) !== connection) {
         throw new Error("Daytona connection was invalidated during teardown");
       }
       this.boxes.set(id, sandbox);
-      return sandbox;
-    })().finally(() => {
-      if (this.connections.get(id) === connection) this.connections.delete(id);
-    });
+      this.checkedAt.set(id, Date.now());
+      return { sandbox, started };
+    })()
+      .catch((error: unknown) => {
+        if (isSandboxGoneError(error) && this.connections.get(id) === connection) this.forget(id);
+        throw error;
+      })
+      .finally(() => {
+        if (this.connections.get(id) === connection) this.connections.delete(id);
+      });
     this.connections.set(id, connection);
     return connection;
   }
 
-  private async box(computer: ComputerRef): Promise<Sandbox> {
-    return this.connect(computer.providerRef || computer.id);
+  private async box(computer: ComputerRef): Promise<DaytonaSandbox> {
+    return (await this.connect(computer.providerRef || computer.id)).sandbox;
   }
 
-  private async findForTeardown(id: string): Promise<Sandbox | undefined> {
+  private async findForTeardown(id: string): Promise<DaytonaSandbox | undefined> {
     const existing = this.boxes.get(id);
     if (existing) return existing;
     try {
       return await this.client.get(id);
     } catch (error) {
-      if (isUnrecoverableDaytonaError(error)) return undefined;
+      if (isDaytonaSandboxMissing(error)) return undefined;
       throw error;
     }
   }
 
-  private async workspaceRoot(sandbox: Sandbox): Promise<string> {
+  private async deleteAbandoned(name: string): Promise<void> {
+    try {
+      await (await this.client.get(name)).delete(60);
+    } catch (error) {
+      if (!isDaytonaSandboxMissing(error)) {
+        getLogger().error("delete Daytona sandbox left by a failed create", error);
+      }
+    }
+  }
+
+  private async workspaceRoot(sandbox: DaytonaSandbox): Promise<string> {
     const cached = this.workspaceRoots.get(sandbox.id);
     if (cached) return cached;
     const home = (await sandbox.getUserHomeDir()) ?? (await sandbox.getWorkDir());
@@ -426,7 +531,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return root;
   }
 
-  private async prepareWorkspace(sandbox: Sandbox): Promise<void> {
+  private async prepareWorkspace(sandbox: DaytonaSandbox): Promise<void> {
     if (this.prepared.has(sandbox.id)) return;
     const pending = this.preparations.get(sandbox.id);
     if (pending) return pending;
@@ -457,7 +562,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     return preparation;
   }
 
-  private async writeFiles(sandbox: Sandbox, files: readonly PortableFile[]): Promise<void> {
+  private async writeFiles(sandbox: DaytonaSandbox, files: readonly PortableFile[]): Promise<void> {
     if (!files.length) return;
     const root = await this.workspaceRoot(sandbox);
     const directories = new Set(
@@ -484,7 +589,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async screenPreview(sandbox: Sandbox, screenKey: string, viewPort: number) {
+  private async screenPreview(sandbox: DaytonaSandbox, screenKey: string, viewPort: number) {
     const previewKey = `${sandbox.id}:${screenKey}:${viewPort}`;
     const cached = this.screenPreviews.get(previewKey);
     if (cached && cached.expiresAt > Date.now() + 60_000) return cached;
@@ -522,7 +627,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 
   private async revokeScreenPreview(
-    sandbox: Sandbox,
+    sandbox: DaytonaSandbox,
     preview: { url: string; token: string; expiresAt: number; viewPort: number } | undefined,
   ): Promise<void> {
     if (!preview) return;
@@ -531,6 +636,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   private forget(id: string): void {
     this.boxes.delete(id);
+    this.checkedAt.delete(id);
     this.connections.delete(id);
     this.workspaceRoots.delete(id);
     this.prepared.delete(id);
@@ -544,19 +650,187 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   }
 }
 
-export function isUnrecoverableDaytonaError(error: unknown): boolean {
-  if (error instanceof DaytonaNotFoundError) return true;
-  if (!error || typeof error !== "object") return false;
-  const details = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    code?: unknown;
-  };
+/** Only for calls that address the sandbox itself: get, refresh and delete. */
+function isDaytonaSandboxMissing(error: unknown): boolean {
+  if (error instanceof DaytonaNotFoundError || error instanceof DaytonaGoneError) return true;
+  const status = (error as { statusCode?: unknown } | null)?.statusCode;
+  return status === 404 || status === 410;
+}
+
+/** Named so the shared isSandboxGoneError recognizes it and the computer is replaced. */
+function daytonaSandboxGoneError(id: string, cause?: unknown): Error {
+  return Object.assign(new Error(`Daytona sandbox ${id} is gone`, { cause }), {
+    name: "SandboxNotFoundError",
+  });
+}
+
+async function refreshDaytonaSandbox(sandbox: DaytonaSandbox): Promise<void> {
+  try {
+    await sandbox.refreshData();
+  } catch (error) {
+    throw isDaytonaSandboxMissing(error) ? daytonaSandboxGoneError(sandbox.id, error) : error;
+  }
+}
+
+/**
+ * Drives a sandbox to started from whatever state Daytona reports, and returns whether it was
+ * not running before. Throws the gone error when Daytona can no longer run it.
+ */
+async function startDaytonaSandbox(sandbox: DaytonaSandbox): Promise<boolean> {
+  const wasRunning = sandbox.state === SandboxState.STARTED;
+  const begun = Date.now();
+  let deadline = begun + DAYTONA_START_TIMEOUT_MS;
+  let recovered = false;
+  const seconds = () => Math.max(1, Math.ceil((deadline - Date.now()) / 1_000));
+  for (;;) {
+    const state = sandbox.state ?? SandboxState.UNKNOWN;
+    // Restores get a longer budget, still counted from the start so polling cannot extend it.
+    if (state === SandboxState.ARCHIVED || state === SandboxState.RESTORING) {
+      deadline = begun + DAYTONA_RESTORE_TIMEOUT_MS;
+    }
+    try {
+      switch (state) {
+        case SandboxState.STARTED:
+          return !wasRunning;
+        case SandboxState.STOPPED:
+        case SandboxState.PAUSED:
+        case SandboxState.ARCHIVED:
+          await sandbox.start(seconds());
+          break;
+        case SandboxState.ERROR:
+        case SandboxState.BUILD_FAILED:
+          if (!sandbox.recoverable || recovered) throw daytonaSandboxGoneError(sandbox.id);
+          recovered = true;
+          await sandbox.recover(seconds());
+          break;
+        case SandboxState.DESTROYED:
+        case SandboxState.DESTROYING:
+          throw daytonaSandboxGoneError(sandbox.id);
+        case SandboxState.CREATING:
+        case SandboxState.RESTORING:
+        case SandboxState.STARTING:
+        case SandboxState.RESUMING:
+        case SandboxState.PENDING_BUILD:
+        case SandboxState.BUILDING_SNAPSHOT:
+        case SandboxState.PULLING_SNAPSHOT:
+        case SandboxState.RESIZING:
+        case SandboxState.SNAPSHOTTING:
+        case SandboxState.FORKING:
+          if (sandbox.desiredState === SandboxState.STARTED) {
+            await sandbox.waitUntilStarted(seconds());
+          }
+          break;
+        // Let these settle, then act on the state they land in.
+        case SandboxState.STOPPING:
+        case SandboxState.ARCHIVING:
+        case SandboxState.PAUSING:
+        case SandboxState.UNKNOWN:
+        case SandboxState.UNKNOWN_DEFAULT_OPEN_API:
+          break;
+        default: {
+          const unexpected: never = state;
+          throw new Error(`unexpected Daytona sandbox state ${String(unexpected)}`);
+        }
+      }
+    } catch (error) {
+      if (error instanceof DaytonaGoneError) throw daytonaSandboxGoneError(sandbox.id, error);
+      // A 400 usually means our cached state was stale, and a 404 can name something other
+      // than the sandbox, such as its region. Act on the real state, or fail if it is unchanged.
+      if (error instanceof DaytonaBadRequestError || error instanceof DaytonaNotFoundError) {
+        await refreshDaytonaSandbox(sandbox);
+        if (sandbox.state === state) throw error;
+        continue;
+      }
+      // 409 means another state change is in progress, and a status-less error means a wait
+      // saw the sandbox fail. Either way, re-read the state and act on it.
+      if (!(error instanceof DaytonaConflictError) && !isFailedDaytonaTransition(error)) {
+        throw error;
+      }
+    }
+    if (sandbox.state === SandboxState.STARTED) return !wasRunning;
+    if (Date.now() >= deadline) {
+      throw new DaytonaTimeoutError(`Daytona sandbox ${sandbox.id} is still ${sandbox.state}`);
+    }
+    await abortableDelay(DAYTONA_POLL_MS);
+    await refreshDaytonaSandbox(sandbox);
+  }
+}
+
+/**
+ * Drives a sandbox to a state that no longer runs it. Already stopped, archived, errored and
+ * deleted sandboxes have nothing to stop, so teardown succeeds instead of failing every retry.
+ */
+async function stopDaytonaSandbox(sandbox: DaytonaSandbox): Promise<void> {
+  const deadline = Date.now() + DAYTONA_STOP_TIMEOUT_MS;
+  const seconds = () => Math.max(1, Math.ceil((deadline - Date.now()) / 1_000));
+  try {
+    for (;;) {
+      const state = sandbox.state ?? SandboxState.UNKNOWN;
+      try {
+        switch (state) {
+          case SandboxState.STOPPED:
+          case SandboxState.ARCHIVED:
+          case SandboxState.ARCHIVING:
+          case SandboxState.ERROR:
+          case SandboxState.BUILD_FAILED:
+          case SandboxState.DESTROYED:
+          case SandboxState.DESTROYING:
+            return;
+          case SandboxState.STARTED:
+          case SandboxState.PAUSED:
+            await sandbox.stop(seconds());
+            continue;
+          // Let these settle, then act on the state they land in.
+          case SandboxState.STOPPING:
+          case SandboxState.CREATING:
+          case SandboxState.RESTORING:
+          case SandboxState.STARTING:
+          case SandboxState.RESUMING:
+          case SandboxState.PAUSING:
+          case SandboxState.PENDING_BUILD:
+          case SandboxState.BUILDING_SNAPSHOT:
+          case SandboxState.PULLING_SNAPSHOT:
+          case SandboxState.RESIZING:
+          case SandboxState.SNAPSHOTTING:
+          case SandboxState.FORKING:
+          case SandboxState.UNKNOWN:
+          case SandboxState.UNKNOWN_DEFAULT_OPEN_API:
+            break;
+          default: {
+            const unexpected: never = state;
+            throw new Error(`unexpected Daytona sandbox state ${String(unexpected)}`);
+          }
+        }
+      } catch (error) {
+        if (error instanceof DaytonaGoneError) return;
+        // Stale cached state, or a 404 that may name something other than the sandbox.
+        if (error instanceof DaytonaBadRequestError || error instanceof DaytonaNotFoundError) {
+          await refreshDaytonaSandbox(sandbox);
+          if (sandbox.state === state) throw error;
+          continue;
+        }
+        // 409 or a wait that saw the sandbox fail: re-read the state and act on it.
+        if (!(error instanceof DaytonaConflictError) && !isFailedDaytonaTransition(error)) {
+          throw error;
+        }
+      }
+      if (Date.now() >= deadline) {
+        throw new DaytonaTimeoutError(`Daytona sandbox ${sandbox.id} is still ${sandbox.state}`);
+      }
+      await abortableDelay(DAYTONA_POLL_MS);
+      await refreshDaytonaSandbox(sandbox);
+    }
+  } catch (error) {
+    if (isSandboxGoneError(error)) return;
+    throw error;
+  }
+}
+
+function isFailedDaytonaTransition(error: unknown): boolean {
   return (
-    details.status === 404 ||
-    details.statusCode === 404 ||
-    details.code === 404 ||
-    details.code === "NOT_FOUND"
+    error instanceof DaytonaError &&
+    error.statusCode === undefined &&
+    !(error instanceof DaytonaTimeoutError)
   );
 }
 
@@ -580,7 +854,7 @@ function isDaytonaExecutable(mode: string, permissions: string): boolean {
 }
 
 async function* walkDaytonaWorkspace(
-  sandbox: Sandbox,
+  sandbox: DaytonaSandbox,
   root: string,
   directory: string,
   context: AdapterContext,

@@ -1,7 +1,13 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
-import { BOT_COLORS, canonicalPiProviderId, InstructionVersionSchema } from "@rakazo/contracts";
+import {
+  BOT_COLORS,
+  canonicalPiProviderId,
+  InstructionVersionSchema,
+  initialBotMemory,
+} from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
+  displayName,
   isBackgroundRunTrigger,
   phoneCallSettings,
   ringingCall,
@@ -11,6 +17,7 @@ import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
+import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import { activeRunSelection, latestBotRunSelection, previewFromBlocks } from "./thread-listing.js";
@@ -97,7 +104,7 @@ function mapBot(
     id: bot.id,
     spaceId: bot.spaceId,
     name: bot.name,
-    title: bot.title,
+    title: displayName(bot.title, ""),
     description: bot.description,
     instructions: bot.instructions,
     selfUpdateInstructions: bot.selfUpdateInstructions ?? false,
@@ -157,7 +164,7 @@ export function createRepos(
 
   async function listSpaceBotsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceBot[]> {
     if (spaceIds.length === 0) return [];
-    const bots = await prisma.bot.findMany({
+    const rows = await prisma.bot.findMany({
       where: {
         spaceId: { in: spaceIds },
         userId: actor.userId,
@@ -176,12 +183,8 @@ export function createRepos(
         parentBotId: true,
         thread: {
           select: {
+            id: true,
             unread: true,
-            messages: {
-              orderBy: { seq: "desc" },
-              take: 1,
-              select: { blocks: true, createdAt: true },
-            },
             runs: latestBotRunSelection,
           },
         },
@@ -189,13 +192,14 @@ export function createRepos(
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
+    const bots = await withNewestThreadMessages(prisma, rows, 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       return {
         id: bot.id,
         spaceId: bot.spaceId,
         name: bot.name,
-        title: bot.title,
+        title: displayName(bot.title, ""),
         color: bot.color,
         notifyOnFinish: bot.notifyOnFinish,
         pinned: bot.pinned,
@@ -342,24 +346,27 @@ export function createRepos(
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
-      const bots = await prisma.bot.findMany({
-        where: {
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          archivedAt: options.archived ? { not: null } : null,
-        },
-        include: {
-          thread: {
-            include: {
-              messages: { orderBy: { seq: "desc" }, take: SIDEBAR_PREVIEW_MESSAGE_WINDOW },
-              runs: latestBotRunSelection,
-            },
+      const bots = await withNewestThreadMessages(
+        prisma,
+        await prisma.bot.findMany({
+          where: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            archivedAt: options.archived ? { not: null } : null,
           },
-          runs: activeRunSelection,
-          computer: { select: { scope: true } },
-        },
-        orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-      });
+          include: {
+            thread: {
+              include: {
+                runs: latestBotRunSelection,
+              },
+            },
+            runs: activeRunSelection,
+            computer: { select: { scope: true } },
+          },
+          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+        }),
+        SIDEBAR_PREVIEW_MESSAGE_WINDOW,
+      );
       const callThreadIds = capabilities.phoneCallsEnabled
         ? bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []))
         : [];
@@ -488,6 +495,7 @@ export function createRepos(
         description: string;
         instructions: string;
         notifyOnFinish: boolean;
+        fleetManagement?: boolean;
         color?: string;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -556,11 +564,12 @@ export function createRepos(
             data: {
               spaceId: actor.spaceId,
               userId: actor.userId,
-              name: input.name,
-              title: input.title,
+              name: displayName(input.name, ""),
+              title: displayName(input.title, ""),
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,
+              fleetManagement: input.fleetManagement,
               color,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
@@ -583,6 +592,7 @@ export function createRepos(
             await createThreadMessageInTransaction(tx, {
               threadId: thread.id,
               ...input.initialMessage,
+              markUnread: false,
             });
           }
           if (input.computerMode === "dedicated") {
@@ -609,7 +619,7 @@ export function createRepos(
               botId: created.id,
               scope: "bot",
               path: "MEMORY.md",
-              content: `# ${input.name}\n\n`,
+              content: initialBotMemory(input.name),
             },
           });
           return tx.bot.findFirstOrThrow({

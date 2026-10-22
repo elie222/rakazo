@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  ComposioEmulator,
+  ComposioConnector,
   diagnoseReleaseWatchRun,
+  FakeComposioClient,
   githubToolResultHasSeededRelease,
   RELEASE_WATCH_GITHUB_TOOL_NAMES,
   resolveReleaseWatchEvalModelId,
@@ -22,7 +23,8 @@ const describeLive = live ? describe : describe.skip;
 describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
   let stop: (() => Promise<void>) | undefined;
   let dataDir: string | undefined;
-  const composio = new ComposioEmulator();
+  const fake = new FakeComposioClient();
+  const composio = new ComposioConnector({ client: fake });
 
   afterAll(async () => {
     try {
@@ -123,7 +125,7 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       where: { id: routine.id },
       data: { nextRunAt: dueAt, active: true },
     });
-    composio.executions.length = 0;
+    fake.executions.length = 0;
     const priorToolEvent = await handles.prisma.event.findFirst({
       where: { botId: bot.id, type: "agent.tool.called" },
       orderBy: { seq: "desc" },
@@ -150,11 +152,10 @@ describeLive("live release-watch eval (GPT 5.6 Luna + GitHub emulator)", () => {
       const payload = event.payload as { name?: string };
       return String(payload.name ?? "");
     });
-    const routineExecutions = composio.executions.filter(
-      (row) => row.botId === bot.id && (routineRunId ? row.runId === routineRunId : true),
-    );
+    // Cleared before the routine woke, so every row belongs to this run.
+    const routineExecutions = fake.executions;
     const calledToolNames = [...calledFromEvents, ...routineExecutions.map((row) => row.tool)];
-    const seededReleaseTags = composio.listGithubReleases().map((release) => release.tag);
+    const seededReleaseTags = fake.listGithubReleases().map((release) => release.tag);
     const resultText = JSON.stringify(snap);
     const githubToolResults = routineExecutions
       .filter((row) => (RELEASE_WATCH_GITHUB_TOOL_NAMES as readonly string[]).includes(row.tool))

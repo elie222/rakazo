@@ -113,3 +113,69 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("live page helper waits for a site's sign-in check, or says the page is still loading", async () => {
+  const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-settle-"));
+  // Like many web apps, the page draws a signed-out shell and asks its server who is signed in.
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://fixture.test");
+    if (url.pathname === "/api/me") {
+      setTimeout(
+        () => {
+          res.setHeader("content-type", "application/json");
+          res.end('{"name":"test-user"}');
+        },
+        Number(url.searchParams.get("delay")),
+      );
+      return;
+    }
+    res.setHeader("content-type", "text/html");
+    res.end(`<!doctype html><title>Example</title><header><a href="/login">Sign in</a></header>
+      <main id="m">Loading</main>
+      <script>fetch('/api/me?delay=${Number(url.searchParams.get("check"))}').then((r) => r.json())
+        .then((u) => { document.querySelector('header').textContent = 'Signed in as ' + u.name;
+          document.getElementById('m').textContent = 'Your account'; });</script>`);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No fixture server");
+  let context: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+  try {
+    context = await chromium.launchPersistentContext(profile, {
+      headless: true,
+      args: ["--remote-debugging-port=0"],
+    });
+    let port = "";
+    await expect(async () => {
+      port = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0];
+      expect(port).toMatch(/^\d+$/);
+    }).toPass({ timeout: 5_000 });
+    const snapshot = async () => {
+      const { stdout } = await execute("python3", [helper, "snapshot", "{}"], {
+        env: { ...process.env, RAKAZO_CDP_PORT: port },
+        timeout: 30_000,
+      });
+      return JSON.parse(stdout);
+    };
+    const page = context.pages()[0]!;
+
+    // The check answers within the wait: the snapshot shows the signed-in page.
+    await page.goto(`http://127.0.0.1:${address.port}/?check=500`);
+    const settled = await snapshot();
+    expect(settled).toMatchObject({ ok: true, title: "Example" });
+    expect(settled.tree).toContain("Signed in as test-user");
+    expect(settled.tree).not.toContain('link "Sign in"');
+    expect(settled).not.toHaveProperty("loading");
+
+    // The check outlasts the wait: the snapshot still shows the shell, and says it is loading.
+    await page.goto(`http://127.0.0.1:${address.port}/?check=20000`);
+    const loading = await snapshot();
+    expect(loading).toMatchObject({ ok: true, title: "Example", loading: true });
+    expect(loading.tree).toContain('link "Sign in"');
+  } finally {
+    await context?.close();
+    await rm(profile, { recursive: true, force: true });
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

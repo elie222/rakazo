@@ -1,9 +1,15 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import type { AppContract } from "@rakazo/contracts";
-import { LOCAL_SETTINGS_PAGE, LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
-import { desktopBridge } from "./desktop";
+import type { AppContract, ProductEvent } from "@rakazo/contracts";
+import { CLIENT_BUILD_HEADER, formatClientBuild } from "@rakazo/contracts";
+import { displayIdentityEvent, displayIdentityResult } from "@rakazo/core";
+import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
+import { authClient } from "./auth";
+import { CLIENT_BUILD } from "./client-build";
+import { i18n } from "./i18n";
+import { identityLabels } from "./identity-display";
+import { reportClientError } from "./monitoring";
 
 const SPACE_STORAGE_KEY = "rakazo:space-id";
 
@@ -51,42 +57,81 @@ export function withSpaceHeaders(
   return headers;
 }
 
+const responseListeners = new Set<(response: Response) => void>();
+
+/** Every API reply, for the build handshake; RPC callers still get their own result. */
+export function onRpcResponse(listener: (response: Response) => void): () => void {
+  responseListeners.add(listener);
+  return () => {
+    responseListeners.delete(listener);
+  };
+}
+
 const link = new RPCLink<RpcClientContext>({
   url: () =>
-    typeof window === "undefined"
-      ? "http://127.0.0.1:5173/rpc"
-      : `${window.location.origin}${window.location.pathname === LOCAL_SETTINGS_PAGE ? LOCAL_SETTINGS_RPC : "/rpc"}`,
+    typeof window === "undefined" ? "http://127.0.0.1:5173/rpc" : `${window.location.origin}/rpc`,
   fetch: async (input, init, options) => {
     const request = new Request(input, init);
-    if (typeof window !== "undefined" && window.location.pathname === LOCAL_SETTINGS_PAGE) {
-      const bridge = desktopBridge()?.localSettings;
-      if (!bridge) throw new Error("Local settings require the desktop app");
-      const result = await bridge.request(new URL(request.url).pathname, await request.text());
-      return new Response(result.body, {
-        status: result.status,
-        headers: { "content-type": "application/json" },
-      });
-    }
     const spaceId =
       options.context.spaceId === undefined ? selectedSpaceId() : options.context.spaceId;
-    return fetch(request, {
-      headers: withSpaceHeaders(request.headers, spaceId),
-      credentials: "include",
-      // Keep cancellation attached directly to fetch rather than only a cloned Request.
-      signal: options.signal,
-    });
+    const correlation = clientCorrelationHeaders();
+    const headers = withSpaceHeaders(request.headers, spaceId);
+    if (CLIENT_BUILD) headers.set(CLIENT_BUILD_HEADER, formatClientBuild("web", CLIENT_BUILD));
+    for (const [key, value] of Object.entries(correlation)) headers.set(key, value);
+    let response: Response;
+    try {
+      response = await fetch(request, {
+        headers,
+        credentials: "include",
+        // Keep cancellation attached directly to fetch rather than only a cloned Request.
+        signal: options.signal,
+      });
+    } catch (error) {
+      if (!options.signal?.aborted)
+        reportClientError(error, "rpc.transport", responseCorrelation(new Headers(correlation)));
+      throw error;
+    }
+    // Server exceptions are reported by the API; do not report every HTTP failure twice.
+    recheckSessionOnUnauthorized(response.status);
+    for (const listener of responseListeners) listener(response);
+    return response;
   },
 });
 
+/**
+ * A 401 means the session behind the app's last known user may be gone, but Better Auth only
+ * rechecks it on focus or a timer, so a backgrounded window would keep its stale user (and every
+ * screen that polls) indefinitely. Recheck now: a signed-out answer routes to sign-in.
+ */
+export function recheckSessionOnUnauthorized(status: number): void {
+  if (status === 401) authClient.$store.notify("$sessionSignal");
+}
+
 export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;
 
-export const rpc: RpcClient = createORPCClient(link);
+const displayLink = {
+  call: async (...args: Parameters<typeof link.call>) => {
+    const [path, input, options] = args;
+    const result = await link.call(path, input, options);
+    if (path.join("/") === "threads/subscribe") {
+      return (async function* () {
+        for await (const event of result as AsyncIterable<ProductEvent>) {
+          yield displayIdentityEvent(event, identityLabels());
+        }
+      })();
+    }
+    // Bootstrap can be prefetched before the locale catalog is ready. Its consumer projects it.
+    return i18n.locale ? displayIdentityResult(path, result, identityLabels()) : result;
+  },
+};
+
+export const rpc: RpcClient = createORPCClient(displayLink);
 
 /** Keep late async follow-up requests in the shell's original auth boundary. */
 export function createSpaceRpc(spaceId: string | null): typeof rpc {
   return createORPCClient({
     call: (path, input, options) =>
-      link.call(path, input, {
+      displayLink.call(path, input, {
         ...options,
         // A call that names its own space (e.g. renaming another space's section) keeps it.
         context: {

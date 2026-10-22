@@ -7,16 +7,29 @@ import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
 type SlackRequest = { method: string; params: Record<string, string> };
 
+type SlackResponse = { status: number; headers: Record<string, string>; data: unknown };
+
 const slack = vi.hoisted(() => ({
   requests: [] as SlackRequest[],
   reactionResult: { ok: true } as Record<string, unknown>,
+  postMessageResponse: null as SlackResponse | null,
 }));
 
 const slackResults: Record<string, () => Record<string, unknown>> = {
   "auth.test": () => ({ ok: true, user_id: "UBOT", bot_id: "BBOT" }),
   "users.info": () => ({ ok: true, user: { name: "test-user", real_name: "Test User" } }),
   "reactions.add": () => slack.reactionResult,
+  "chat.postMessage": () => ({ ok: true, ts: "1700000000.000002", channel: "CTEST" }),
 };
+
+function slackResponse(method: string): SlackResponse {
+  if (method === "chat.postMessage" && slack.postMessageResponse) return slack.postMessageResponse;
+  return {
+    status: 200,
+    headers: {},
+    data: slackResults[method]?.() ?? { ok: false, error: "unknown_method" },
+  };
+}
 
 vi.mock("@chat-adapter/slack", async (importOriginal) => {
   const actual = await importOriginal<typeof SlackAdapterModule>();
@@ -25,7 +38,9 @@ vi.mock("@chat-adapter/slack", async (importOriginal) => {
     createSlackAdapter: (config: Parameters<typeof actual.createSlackAdapter>[0]) =>
       actual.createSlackAdapter({
         ...config,
+        // Keep the production client options (retries, rate limits, timeout).
         webClientOptions: {
+          ...config?.webClientOptions,
           adapter: async (request) => {
             const method = (request.url ?? "").replace("https://slack.com/api/", "");
             slack.requests.push({
@@ -33,10 +48,8 @@ vi.mock("@chat-adapter/slack", async (importOriginal) => {
               params: Object.fromEntries(new URLSearchParams(String(request.data ?? ""))),
             });
             return {
-              data: slackResults[method]?.() ?? { ok: false, error: "unknown_method" },
-              status: 200,
-              statusText: "OK",
-              headers: {},
+              ...slackResponse(method),
+              statusText: "",
               config: request,
               request: { path: `/api/${method}` },
             };
@@ -55,14 +68,13 @@ const context: AdapterContext = {
 };
 const signingSecret = "test-slack-signing-secret";
 
-async function receiveChannelMention() {
-  const surface = new ChatSdkMessagingSurface(
+function createSlackSurface() {
+  return new ChatSdkMessagingSurface(
     messagingPlatformsFromEnv({ slackBotToken: "xoxb-fake", slackSigningSecret: signingSecret }),
   );
-  const events: MessagingInboundMessage[] = [];
-  surface.onInbound(async (event) => {
-    if (event.type === "message") events.push(event);
-  });
+}
+
+function mentionWebhook(retryNum?: number): Request {
   const body = JSON.stringify({
     type: "event_callback",
     team_id: "TTEST",
@@ -81,18 +93,27 @@ async function receiveChannelMention() {
   const signature = createHmac("sha256", signingSecret)
     .update(`v0:${timestamp}:${body}`)
     .digest("hex");
-  const response = await surface.handleWebhook(
-    "slack",
-    new Request("https://rakazo.test/api/v1/messaging/webhook/slack", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-slack-request-timestamp": timestamp,
-        "x-slack-signature": `v0=${signature}`,
-      },
-      body,
-    }),
-  );
+  return new Request("https://rakazo.test/api/v1/messaging/webhook/slack", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-slack-request-timestamp": timestamp,
+      "x-slack-signature": `v0=${signature}`,
+      ...(retryNum
+        ? { "x-slack-retry-num": String(retryNum), "x-slack-retry-reason": "http_error" }
+        : {}),
+    },
+    body,
+  });
+}
+
+async function receiveChannelMention() {
+  const surface = createSlackSurface();
+  const events: MessagingInboundMessage[] = [];
+  surface.onInbound(async (event) => {
+    if (event.type === "message") events.push(event);
+  });
+  const response = await surface.handleWebhook("slack", mentionWebhook());
   expect(response?.status).toBe(200);
   expect(events).toHaveLength(1);
   return { surface, event: events[0]! };
@@ -142,6 +163,96 @@ describe("Slack receipt", () => {
       await expect(surface.acknowledge(event.threadId, event.handle, context)).rejects.toThrow(
         "An API error occurred: missing_scope",
       );
+    } finally {
+      await surface.shutdown();
+    }
+  });
+});
+
+describe("Slack inbound retries", () => {
+  beforeEach(() => {
+    slack.requests.length = 0;
+  });
+
+  it("processes Slack's retry of an event the sink failed on, exactly once", async () => {
+    const surface = createSlackSurface();
+    const processed: string[] = [];
+    let failNext = true;
+    surface.onInbound(async (event) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("provision failed");
+      }
+      if (event.type === "message") processed.push(event.handle);
+    });
+    try {
+      // Slack marks the event delivered and Chat marks the message seen
+      // before the sink runs; both must be cleared or the retry is dropped.
+      expect((await surface.handleWebhook("slack", mentionWebhook()))?.status).toBe(500);
+      expect((await surface.handleWebhook("slack", mentionWebhook(1)))?.status).toBe(200);
+      expect((await surface.handleWebhook("slack", mentionWebhook(2)))?.status).toBe(200);
+
+      expect(processed).toEqual(["1700000000.000001"]);
+    } finally {
+      await surface.shutdown();
+    }
+  });
+});
+
+describe("Slack sends", () => {
+  beforeEach(() => {
+    slack.requests.length = 0;
+    slack.postMessageResponse = null;
+  });
+
+  function postRequests() {
+    return slack.requests.filter((request) => request.method === "chat.postMessage");
+  }
+
+  it.each([
+    [
+      "a rate limit, with Slack's retry-after",
+      { status: 429, headers: { "retry-after": "30" }, data: { ok: false, error: "ratelimited" } },
+      { permanent: false, retryAfterMs: 30_000 },
+    ],
+    [
+      "a server error",
+      { status: 503, headers: {}, data: "" },
+      { permanent: false, retryAfterMs: null },
+    ],
+    [
+      "a channel the bot cannot reach",
+      { status: 200, headers: {}, data: { ok: false, error: "channel_not_found" } },
+      { permanent: true, retryAfterMs: null },
+    ],
+    [
+      "a revoked token",
+      { status: 200, headers: {}, data: { ok: false, error: "invalid_auth" } },
+      { permanent: true, retryAfterMs: null },
+    ],
+  ] as const)(
+    "fails fast on %s and leaves retries to the outbox",
+    async (_label, response, classified) => {
+      const surface = createSlackSurface();
+      slack.postMessageResponse = response;
+      try {
+        await expect(
+          surface.sendToThread({ threadId: "slack:CTEST:", body: "hi" }, context),
+        ).rejects.toMatchObject({ name: "MessagingSendError", ...classified });
+        expect(postRequests()).toHaveLength(1);
+      } finally {
+        await surface.shutdown();
+      }
+    },
+  );
+
+  it("returns the posted message handle", async () => {
+    const surface = createSlackSurface();
+    try {
+      await expect(
+        surface.sendToThread({ threadId: "slack:CTEST:", body: "hi" }, context),
+      ).resolves.toEqual({ handle: "1700000000.000002" });
+      expect(postRequests()).toHaveLength(1);
     } finally {
       await surface.shutdown();
     }

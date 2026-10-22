@@ -40,6 +40,7 @@ import {
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
+  resolveComputerImage,
   resolveScreenNetworkMode,
   resolveScreenPublishTarget,
   resolveSpaceComputerLimit,
@@ -65,6 +66,28 @@ describe("graphical computer spec", () => {
     expect(resolveTeamScreenLimit("4")).toBe(4);
     for (const value of ["-1", "1.5", "not-a-number"])
       expect(() => resolveTeamScreenLimit(value)).toThrow(/positive integer/);
+  });
+
+  it("resolves the computer image tag outside Compose", () => {
+    // Explicit "" stands for unset, so exported RAKAZO_COMPUTER_IMAGE* values cannot leak in.
+    expect(resolveComputerImage("", "")).toBe("rakazo/computer:local");
+    expect(resolveComputerImage("", "edge")).toBe("rakazo/computer:local");
+    expect(resolveComputerImage("ghcr.io/elie222/rakazo/computer", "edge")).toBe(
+      "ghcr.io/elie222/rakazo/computer:edge",
+    );
+    expect(resolveComputerImage("ghcr.io/elie222/rakazo/computer", "")).toBe(
+      "ghcr.io/elie222/rakazo/computer",
+    );
+    // Compose already appends the tag, so a tagged or pinned image is never tagged twice.
+    expect(resolveComputerImage("ghcr.io/elie222/rakazo/computer:edge", "edge")).toBe(
+      "ghcr.io/elie222/rakazo/computer:edge",
+    );
+    expect(resolveComputerImage("registry.example.com:5000/rakazo/computer", "v1.2.3")).toBe(
+      "registry.example.com:5000/rakazo/computer:v1.2.3",
+    );
+    expect(resolveComputerImage("rakazo/computer@sha256:abc", "edge")).toBe(
+      "rakazo/computer@sha256:abc",
+    );
   });
 
   it("validates space computer limit", () => {
@@ -149,6 +172,7 @@ describe("graphical computer spec", () => {
     expect(resolveComputerEgressMode("")).toBe("open");
     expect(resolveComputerEgressMode("open")).toBe("open");
     expect(resolveComputerEgressMode("restricted")).toBe("restricted");
+    expect(resolveComputerEgressMode("auto")).toBe("auto");
     for (const value of ["blocked", "RESTRICTED", "0"])
       expect(() => resolveComputerEgressMode(value)).toThrow(/SANDBOX_COMPUTER_EGRESS/);
   });
@@ -268,6 +292,63 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/wmctrl/);
     expect(dockerfile).toMatch(/rakazo-focus-or-launch/);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "finds Google Chrome and passes over Ubuntu's snap chromium",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-find-"));
+      const bin = path.join(temp, "bin");
+      const tools = path.join(temp, "tools");
+      const capture = path.join(temp, "launched");
+      const snapChromium = path.join(bin, "chromium-browser");
+      const chrome = path.join(bin, "google-chrome");
+      mkdirSync(bin);
+      writeFileSync(snapChromium, '#!/bin/sh\nexec /snap/bin/chromium "$@"\n');
+      writeFileSync(chrome, '#!/bin/sh\nprintf "%s" "$0" > "$RAKAZO_TEST_LAUNCHED"\n');
+      chmodSync(snapChromium, 0o755);
+      chmodSync(chrome, 0o755);
+
+      try {
+        mkdirSync(tools);
+        // Expose only shell utilities, never browsers from the host PATH.
+        const utilities = [
+          "sh",
+          "mkdir",
+          "readlink",
+          "head",
+          "grep",
+          "rm",
+          "find",
+          "tr",
+          "sed",
+          "cat",
+        ];
+        if (process.platform === "linux") utilities.push("timeout");
+        for (const utility of utilities) {
+          const resolved = spawnSync("/bin/sh", ["-c", 'command -v "$1"', "sh", utility], {
+            encoding: "utf8",
+          });
+          expect(resolved.status, resolved.stderr).toBe(0);
+          symlinkSync(resolved.stdout.trim(), path.join(tools, utility));
+        }
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser")], {
+          env: {
+            ...process.env,
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${tools}`,
+            RAKAZO_TEST_LAUNCHED: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        expect(readFileSync(capture, "utf8")).toBe(chrome);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("ships a sha256-pinned gh CLI", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");

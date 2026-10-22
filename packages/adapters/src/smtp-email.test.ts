@@ -1,5 +1,6 @@
 import type { Socket } from "node:net";
 import { createServer } from "node:net";
+import nodemailer from "nodemailer";
 import { describe, expect, it, vi } from "vitest";
 import { SmtpEmailProvider } from "./smtp-email.js";
 
@@ -28,11 +29,15 @@ describe("SmtpEmailProvider", () => {
     });
   });
 
-  it("retries transient failures and drains tracked delivery", async () => {
+  it("retries only failures that cannot have sent the message, then drains", async () => {
+    const temporary = Object.assign(new Error("Try again later"), {
+      code: "EENVELOPE",
+      responseCode: 451,
+    });
     const sendMail = vi
       .fn()
-      .mockRejectedValueOnce(new Error("temporary failure"))
-      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockRejectedValueOnce(temporary)
+      .mockRejectedValueOnce(temporary)
       .mockResolvedValue({ messageId: "message-1" });
     const sleep = vi.fn(async (_delayMs: number, _signal: AbortSignal) => undefined);
     const provider = new SmtpEmailProvider(
@@ -50,6 +55,65 @@ describe("SmtpEmailProvider", () => {
 
     expect(sendMail).toHaveBeenCalledTimes(3);
     expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([250, 1_000]);
+  });
+
+  // Each case runs real nodemailer against a scripted server and counts connections.
+  it.each([
+    { name: "a 4xx on RCPT", script: { rcpt: ["451 busy", "250 ok"] }, connections: 2, sent: 1 },
+    {
+      name: "a 4xx after DATA",
+      script: { end: ["451 later", "250 queued"] },
+      connections: 2,
+      sent: 1,
+    },
+    { name: "a 5xx on RCPT", script: { rcpt: ["550 no such user"] }, connections: 1, sent: 0 },
+    { name: "a drop after the message was sent", script: { end: [null] }, connections: 1, sent: 0 },
+    { name: "a missing greeting", script: { greet: [false, true] }, connections: 2, sent: 1 },
+  ])("handles $name", async ({ script, connections, sent }) => {
+    const server = await scriptedSmtpServer(script);
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      {
+        createTransport: () =>
+          nodemailer.createTransport({
+            host: "127.0.0.1",
+            port: server.port,
+            ignoreTLS: true,
+            greetingTimeout: 100,
+            socketTimeout: 1_000,
+          }),
+        retryDelaysMs: [0, 0],
+      },
+    );
+    try {
+      const delivery = provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" });
+      if (sent) await expect(delivery).resolves.toBeUndefined();
+      else await expect(delivery).rejects.toThrow();
+      expect(server.connections()).toBe(connections);
+      expect(server.messages()).toBe(sent);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("retries a refused connection", async () => {
+    const server = await scriptedSmtpServer({});
+    await server.close();
+    const sleep = vi.fn(async (_delayMs: number, _signal: AbortSignal) => undefined);
+    const provider = new SmtpEmailProvider(
+      { url: "smtp://smtp.example.test", from: "a@example.test" },
+      {
+        createTransport: () =>
+          nodemailer.createTransport({ host: "127.0.0.1", port: server.port, ignoreTLS: true }),
+        retryDelaysMs: [5],
+        sleep,
+      },
+    );
+
+    await expect(
+      provider.send({ to: "ada@example.test", subject: "Hi", text: "Hello" }),
+    ).rejects.toMatchObject({ code: "ESOCKET", originalCode: "ECONNREFUSED" });
+    expect(sleep).toHaveBeenCalledOnce();
   });
 
   it("rejects deliveries after draining begins", async () => {
@@ -101,7 +165,9 @@ describe("SmtpEmailProvider", () => {
   it("cancels a pending retry when the drain deadline expires", async () => {
     vi.useFakeTimers();
     try {
-      const sendMail = vi.fn(async () => Promise.reject(new Error("temporary failure")));
+      const sendMail = vi.fn(async () =>
+        Promise.reject(Object.assign(new Error("Try again later"), { responseCode: 421 })),
+      );
       const close = vi.fn();
       const provider = new SmtpEmailProvider(
         { url: "smtp://smtp.example.test", from: "a@example.test" },
@@ -168,6 +234,21 @@ describe("SmtpEmailProvider", () => {
     const configuredUrl = new URL(String(createTransport.mock.calls[0]?.[0]));
     expect(configuredUrl.protocol).toBe("smtp:");
     expect(configuredUrl.searchParams.get("requireTLS")).toBe("true");
+    expect(configuredUrl.searchParams.get("connectionTimeout")).toBe("10000");
+    expect(configuredUrl.searchParams.get("greetingTimeout")).toBe("10000");
+    expect(configuredUrl.searchParams.get("socketTimeout")).toBe("30000");
+  });
+
+  it("keeps timeouts set on SMTP_URL", () => {
+    const createTransport = vi.fn((_url: string) => ({ sendMail: vi.fn() }) as never);
+
+    new SmtpEmailProvider(
+      { url: "smtps://smtp.example.test?connectionTimeout=2000", from: "a@example.test" },
+      { createTransport },
+    );
+
+    const configuredUrl = new URL(String(createTransport.mock.calls[0]?.[0]));
+    expect(configuredUrl.searchParams.getAll("connectionTimeout")).toEqual(["2000"]);
   });
 
   it("rejects an smtp relay that does not advertise STARTTLS", async () => {
@@ -206,3 +287,70 @@ describe("SmtpEmailProvider", () => {
     }
   });
 });
+
+type SmtpScript = {
+  /** Whether each connection, in order, gets a greeting; later ones do. */
+  greet?: boolean[];
+  /** Reply to RCPT TO on each connection; later ones accept. */
+  rcpt?: string[];
+  /** Reply after the message body, or null to drop the connection; later ones queue it. */
+  end?: Array<string | null>;
+};
+
+async function scriptedSmtpServer(script: SmtpScript) {
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  let messages = 0;
+  const server = createServer((socket) => {
+    const index = connections++;
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => undefined);
+    if (script.greet?.[index] === false) return;
+    socket.write("220 localhost ESMTP\r\n");
+    let buffer = "";
+    let inData = false;
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      for (let end = buffer.indexOf("\r\n"); end >= 0; end = buffer.indexOf("\r\n")) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (inData) {
+          if (line !== ".") continue;
+          inData = false;
+          const reply = script.end && index < script.end.length ? script.end[index] : "250 queued";
+          if (reply === null) {
+            socket.destroy();
+            return;
+          }
+          if (reply?.startsWith("250")) messages += 1;
+          socket.write(`${reply}\r\n`);
+        } else if (/^(EHLO|HELO) /i.test(line)) socket.write("250 localhost\r\n");
+        else if (/^MAIL FROM:/i.test(line)) socket.write("250 ok\r\n");
+        else if (/^RCPT TO:/i.test(line)) socket.write(`${script.rcpt?.[index] ?? "250 ok"}\r\n`);
+        else if (/^DATA$/i.test(line)) {
+          inData = true;
+          socket.write("354 go ahead\r\n");
+        } else if (/^QUIT$/i.test(line)) socket.end("221 bye\r\n");
+        else if (/^RSET$/i.test(line)) socket.write("250 ok\r\n");
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("SMTP test server did not bind");
+  let closed = false;
+  return {
+    port: address.port,
+    connections: () => connections,
+    messages: () => messages,
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    },
+  };
+}

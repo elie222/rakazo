@@ -280,6 +280,12 @@ class ScriptTest(unittest.TestCase):
             ]
         )
         try:
+            # Popen returns after fork, before exec; until then /proc shows this test's arguments.
+            for proc in (equals, separate):
+                deadline = time.monotonic() + 5
+                while b"--user-data-dir" not in Path(f"/proc/{proc.pid}/cmdline").read_bytes():
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.01)
             self.assertEqual(helper.window_profile(str(equals.pid)), "/profiles/mine")
             self.assertEqual(helper.window_profile(str(separate.pid)), "/profiles/other")
             self.assertIsNone(helper.window_profile("99999999"))

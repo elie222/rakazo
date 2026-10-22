@@ -1,4 +1,5 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
@@ -30,6 +31,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "push.receipt": vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -235,6 +237,79 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
+  it("replaces a job still locked by a worker that died mid-job", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-locked:${Date.now()}`;
+    const deadWorker = `contract-dead-worker-${Date.now()}`;
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "abandoned" },
+        replaceKey: key,
+      });
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = 1, locked_at = now(), locked_by = $2 where key = $1`,
+        [key, deadWorker],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "reclaimed" },
+        replaceKey: key,
+        keepExisting: true,
+        replaceLockedBefore: new Date(),
+      });
+      const reclaimed = await keyedRow(key);
+      expect(reclaimed?.attempts).toBe(0);
+      expect(reclaimed?.payload).toContain("reclaimed");
+      const detached = await testPool().query<{ key: string | null }>(
+        "select key from graphile_worker._private_jobs where locked_by = $1",
+        [deadWorker],
+      );
+      expect(detached.rows).toEqual([{ key: null }]);
+    } finally {
+      await testPool()
+        .query("delete from graphile_worker._private_jobs where locked_by = $1", [deadWorker])
+        .catch(() => undefined);
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
+  it("keeps a job locked after replaceLockedBefore", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-live-lock:${Date.now()}`;
+    const liveWorker = `contract-live-worker-${Date.now()}`;
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "finishing" },
+        replaceKey: key,
+      });
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = 1, locked_at = now(), locked_by = $2 where key = $1`,
+        [key, liveWorker],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "too-early" },
+        replaceKey: key,
+        keepExisting: true,
+        replaceLockedBefore: new Date(Date.now() - 5 * 60_000),
+      });
+      const kept = await keyedRow(key);
+      expect(kept?.attempts).toBe(1);
+      expect(kept?.payload).toContain("finishing");
+    } finally {
+      await testPool()
+        .query("delete from graphile_worker._private_jobs where locked_by = $1", [liveWorker])
+        .catch(() => undefined);
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
   it("enqueues a keepExisting job when the key is missing", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const key = `contract:keep-missing:${Date.now()}`;
@@ -254,6 +329,52 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     } finally {
       await publisher.cancel(key).catch(() => undefined);
       await publisher.close();
+    }
+  });
+
+  // `pnpm test:integration` connects as the runtime login. graphile-worker turns on
+  // row-level security for its own tables, so without the queue policy that
+  // `pnpm db:migrate` installs, the runtime login can neither add nor take a job.
+  it("enqueues from a request and runs the job as the restricted runtime login", async () => {
+    const appPool = createPool(databaseUrl!);
+    const workerPool = createPool(databaseUrl!);
+    const { rows } = await appPool.query<{ restricted: boolean }>(
+      `select not (r.rolsuper or r.rolbypassrls
+          or pg_has_role(current_user, c.relowner, 'USAGE')) as restricted
+         from pg_roles r, pg_class c
+        where r.rolname = current_user and c.oid = 'graphile_worker._private_jobs'::regclass`,
+    );
+    expect(rows[0]?.restricted).toBe(true);
+    const publisher = new GraphileJobPublisher(appPool);
+    const host = new GraphileJobWorkerHost(workerPool, { concurrency: 1, pollInterval: 25 });
+    const contexts: unknown[] = [];
+    const key = `contract:restricted:${Date.now()}`;
+    try {
+      await host.start(
+        handlers({
+          "run.continue": async () => {
+            contexts.push(currentDbContext());
+          },
+        }),
+      );
+      // The API enqueues inside the signed-in Space's context, keepExisting
+      // included, which reads the queue table before adding the job.
+      await runAsTenant({ spaceId: "space-restricted", userId: "user-restricted" }, () =>
+        publisher.enqueue({
+          name: "run.continue",
+          payload: { runId: "restricted" },
+          replaceKey: key,
+          keepExisting: true,
+        }),
+      );
+      await waitFor(() => expect(contexts).toHaveLength(1));
+      expect(contexts[0]).toEqual({ kind: "system", reason: "background job run.continue" });
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      await appPool.end();
+      await workerPool.end();
     }
   });
 

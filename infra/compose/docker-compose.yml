@@ -1,3 +1,228 @@
+# What the api and worker both read. Each service adds the keys only it reads, so a process
+# only sees what it uses instead of the whole .env. A key with no value is passed through
+# when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
+# infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
+x-app-environment: &app-environment
+  # Runtime
+  NODE_ENV: ${NODE_ENV:-production}
+  # The app's own login, subject to row-level security (docs/self-host.md#database-roles).
+  DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+  REALTIME_DATABASE_URL:
+  DB_POOL_MAX:
+  DATA_DIR: /data
+  ENCRYPTION_KEY:
+  ENCRYPTION_MASTER_KEYS:
+  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
+  WAKEUP_DRIVER: graphile
+  AGENT_RUNTIME: pi
+  API_URL:
+  MAX_UPLOAD_SIZE_MB:
+  RAKAZO_UPDATE_RESTART_SUPERVISOR:
+  TICKET_BOARD_ENABLED:
+  BOT_MESSAGE_MAX_HOPS:
+  RAKAZO_MESSAGE_USER_MAX_CHARS:
+  TEACH_RECORDING_TTL_MS:
+  PHONE_CALLS_ENABLED:
+  PHONE_CALL_RING_SECONDS:
+  PHONE_CALL_COOLDOWN_MINUTES:
+  RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
+  EXPO_ACCESS_TOKEN:
+  # Secret storage
+  SECRET_STORE: ${SECRET_STORE:-encrypted}
+  INFISICAL_URL: ${INFISICAL_URL:-}
+  INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
+  INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID:-}
+  INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET:-}
+  INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+  INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-}
+  INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
+  # Logs, errors, traces and analytics
+  LOG_LEVEL:
+  SECURITY_EVENT_RETENTION_DAYS:
+  LOG_FORMAT:
+  AXIOM_TOKEN:
+  AXIOM_DATASET:
+  AXIOM_EDGE:
+  AXIOM_EDGE_URL:
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+  SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+  OTEL_EXPORTER_OTLP_ENDPOINT:
+  OTEL_EXPORTER_OTLP_HEADERS:
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
+  OTEL_EXPORTER_OTLP_TRACES_HEADERS:
+  OTEL_SERVICE_NAME:
+  OTEL_CAPTURE_CONTENT:
+  ANALYTICS_PROVIDER:
+  ANALYTICS_HOST:
+  ANALYTICS_KEY:
+  ANALYTICS_PSEUDONYM_SECRET:
+  # Models
+  PI_DEFAULT_PROVIDER:
+  PI_DEFAULT_MODEL:
+  PI_DEFAULT_CREDENTIALS:
+  PI_SESSION_RECORDING:
+  RAKAZO_LIVE_MODEL_CATALOG:
+  OPENROUTER_API_KEY:
+  ANTHROPIC_API_KEY:
+  TYPESAFE_API_KEY:
+  MAX_TOOL_CALLS_PER_TURN:
+  MODEL_STREAM_MAX_RETRIES:
+  RAKAZO_LOCAL_MODELS:
+  RAKAZO_LOCAL_MODELS_URL:
+  RAKAZO_LOCAL_VISION_MODELS:
+  RAKAZO_LOCAL_CONTEXT_WINDOW:
+  RAKAZO_LOCAL_MAX_TOKENS:
+  RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
+  RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
+  RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
+  RAKAZO_AUTO_REVIEW:
+  RAKAZO_AUTO_REVIEW_PROVIDER:
+  RAKAZO_AUTO_REVIEW_MODEL:
+  RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE:
+  RAKAZO_AUTO_REVIEW_TIMEOUT_MS:
+  RELEASE_WATCH_EVAL_MODEL:
+  FISH_TTS_MODEL:
+  FISH_ASR_MODEL:
+  MEDIA_GENERATION_PROVIDER: ${MEDIA_GENERATION_PROVIDER:-disabled}
+  MEDIA_GENERATION_BASE_URL: ${MEDIA_GENERATION_BASE_URL:-https://queue.fal.run}
+  MEDIA_GENERATION_API_KEY: ${MEDIA_GENERATION_API_KEY:-}
+  MEDIA_GENERATION_IMAGE_MODEL: ${MEDIA_GENERATION_IMAGE_MODEL:-}
+  MEDIA_GENERATION_VIDEO_MODEL: ${MEDIA_GENERATION_VIDEO_MODEL:-}
+  # Provider keys Pi reads itself when a model has no stored credential
+  AI_GATEWAY_API_KEY:
+  ANTHROPIC_AUTH_TOKEN:
+  ANTHROPIC_FEDERATION_RULE_ID:
+  ANTHROPIC_IDENTITY_TOKEN_FILE:
+  ANTHROPIC_OAUTH_TOKEN:
+  ANTHROPIC_ORGANIZATION_ID:
+  ANTHROPIC_SERVICE_ACCOUNT_ID:
+  ANTHROPIC_WORKSPACE_ID:
+  ANT_LING_API_KEY:
+  AZURE_OPENAI_API_KEY:
+  BASETEN_API_KEY:
+  CEREBRAS_API_KEY:
+  CLOUDFLARE_API_KEY:
+  COPILOT_GITHUB_TOKEN:
+  DEEPSEEK_API_KEY:
+  FIREWORKS_API_KEY:
+  GEMINI_API_KEY:
+  GOOGLE_CLOUD_API_KEY:
+  GROQ_API_KEY:
+  HF_TOKEN:
+  KIMI_API_KEY:
+  META_API_KEY:
+  MINIMAX_API_KEY:
+  MINIMAX_CN_API_KEY:
+  MISTRAL_API_KEY:
+  MOONSHOT_API_KEY:
+  NVIDIA_API_KEY:
+  OPENAI_API_KEY:
+  OPENCODE_API_KEY:
+  QWEN_TOKEN_PLAN_API_KEY:
+  QWEN_TOKEN_PLAN_CN_API_KEY:
+  RADIUS_API_KEY:
+  TOGETHER_API_KEY:
+  XAI_API_KEY:
+  XIAOMI_API_KEY:
+  XIAOMI_TOKEN_PLAN_AMS_API_KEY:
+  XIAOMI_TOKEN_PLAN_CN_API_KEY:
+  XIAOMI_TOKEN_PLAN_SGP_API_KEY:
+  ZAI_API_KEY:
+  ZAI_CODING_CN_API_KEY:
+  # Host credentials for PI_DEFAULT_CREDENTIALS=host (Bedrock, Vertex)
+  AWS_ACCESS_KEY_ID:
+  AWS_SECRET_ACCESS_KEY:
+  AWS_SESSION_TOKEN:
+  AWS_REGION:
+  AWS_DEFAULT_REGION:
+  AWS_PROFILE:
+  AWS_BEARER_TOKEN_BEDROCK:
+  AWS_CONTAINER_CREDENTIALS_FULL_URI:
+  AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:
+  AWS_WEB_IDENTITY_TOKEN_FILE:
+  AWS_ROLE_ARN:
+  GOOGLE_APPLICATION_CREDENTIALS:
+  GOOGLE_CLOUD_PROJECT:
+  GCLOUD_PROJECT:
+  GOOGLE_CLOUD_LOCATION:
+  # Computers and cloud agents
+  SANDBOX_PROVIDER: docker
+  SANDBOX_SUPERVISOR_URL: http://supervisor:7091
+  SANDBOX_SUPERVISOR_TOKEN:
+  SANDBOX_HOST_URL:
+  SANDBOX_HOST_TOKEN:
+  SANDBOX_COMMAND_TIMEOUT_MS:
+  SANDBOX_IDLE_MS:
+  SANDBOX_MAX_COMPUTERS_PER_USER:
+  COMPUTER_MAX_ACTIVE_MS:
+  COMPUTER_TAKEOVER_TTL_MS:
+  BROWSER_PROVIDER:
+  E2B_API_KEY:
+  DAYTONA_API_KEY:
+  DAYTONA_API_URL:
+  DAYTONA_TARGET:
+  DAYTONA_SNAPSHOT:
+  BOAT_API_KEY:
+  BOAT_API_URL:
+  BOX_API_KEY:
+  BOX_API_URL:
+  BOX_BASE_URL:
+  RAILWAY_API_TOKEN:
+  RAILWAY_ENVIRONMENT_ID:
+  RAILWAY_SANDBOX_REGION:
+  RAILWAY_MAX_WORKSPACE_FILE_BYTES:
+  CREATEOS_SANDBOX_API_KEY:
+  CREATEOS_SANDBOX_BASE_URL:
+  CREATEOS_SANDBOX_ROOTFS:
+  CREATEOS_SANDBOX_SHAPE:
+  CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
+  CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
+  CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+  # Tools and integrations
+  WEB_PROVIDER:
+  KEENABLE_API_KEY:
+  COMPOSIO_API_KEY:
+  PIPEDREAM_CLIENT_ID:
+  PIPEDREAM_CLIENT_SECRET:
+  PIPEDREAM_PROJECT_ID:
+  PIPEDREAM_ENVIRONMENT:
+  MCP_STDIO_ENABLED:
+  MCP_STDIO_ALLOWED_COMMANDS:
+  MCP_STDIO_INSTALL_TIMEOUT_MS:
+  MCP_STDIO_STARTUP_TIMEOUT_MS:
+  MCP_STDIO_IDLE_MS:
+  MCP_DISCOVERY_TIMEOUT_MS:
+  MCP_PACKAGES_DIR:
+  MCP_ALLOW_PRIVATE_ENDPOINT:
+  # Messaging (outbound delivery runs in the worker)
+  MESSAGING_OPEN_SIGNUP:
+  SENDBLUE_API_KEY_ID:
+  SENDBLUE_API_SECRET:
+  SENDBLUE_SIGNING_SECRET:
+  SENDBLUE_PHONE_NUMBER:
+  SLACK_BOT_TOKEN:
+  SLACK_SIGNING_SECRET:
+  WHATSAPP_ACCESS_TOKEN:
+  WHATSAPP_PHONE_NUMBER_ID:
+  WHATSAPP_APP_SECRET:
+  WHATSAPP_VERIFY_TOKEN:
+  TELEGRAM_BOT_TOKEN:
+  TELEGRAM_WEBHOOK_SECRET_TOKEN:
+  LARK_APP_ID:
+  LARK_APP_SECRET:
+  LARK_VERIFICATION_TOKEN:
+  LARK_ENCRYPT_KEY:
+  LARK_DOMAIN:
+  # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
+  HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+  HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+  NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+  http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+  https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+  no_proxy: ${no_proxy:-${NO_PROXY:-}}
+
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16}
@@ -34,7 +259,7 @@ services:
       SANDBOX_TEAM_SCREEN_LIMIT: ${SANDBOX_TEAM_SCREEN_LIMIT:-0}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
-      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-open}
+      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
@@ -70,51 +295,62 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    command: ["bash", "-lc", "pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start"]
-    env_file:
-      - ../../.env
+    # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
+    # process before its graceful shutdown finishes in-flight requests and jobs.
+    working_dir: /app/apps/api
+    command: ["bash", "-lc", "pnpm db:deploy && exec env -u DATABASE_MIGRATION_URL node --enable-source-maps dist/index.js"]
     environment:
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
-      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
-      SECRET_STORE: ${SECRET_STORE:-encrypted}
-      INFISICAL_URL: ${INFISICAL_URL:-}
-      INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
-      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID:-}
-      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET:-}
-      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
-      INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-}
-      INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
-      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      <<: *app-environment
+      # Owner login for migrations; the start command drops it before serving.
+      DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+      # Sign-in, sessions, billing and inbound webhooks: API only.
       API_HOST: "0.0.0.0"
+      API_PORT:
+      BETTER_AUTH_SECRET:
+      BETTER_AUTH_URL:
+      WEB_ORIGIN:
+      AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
+      AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
+      PASSKEY_APPLE_APP_IDS:
+      PASSKEY_ANDROID_CERT_SHA256:
+      # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
+      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      TRUSTED_PROXIES:
+      CLIENT_IP_HEADER:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
-      AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
-      DATA_DIR: /data
-      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
-      WAKEUP_DRIVER: graphile
-      SANDBOX_PROVIDER: docker
-      MEDIA_GENERATION_PROVIDER: ${MEDIA_GENERATION_PROVIDER:-disabled}
-      MEDIA_GENERATION_BASE_URL: ${MEDIA_GENERATION_BASE_URL:-https://queue.fal.run}
-      MEDIA_GENERATION_API_KEY: ${MEDIA_GENERATION_API_KEY:-}
-      MEDIA_GENERATION_IMAGE_MODEL: ${MEDIA_GENERATION_IMAGE_MODEL:-}
-      MEDIA_GENERATION_VIDEO_MODEL: ${MEDIA_GENERATION_VIDEO_MODEL:-}
-      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
-      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
-      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
-      AGENT_RUNTIME: pi
-      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
-      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
-      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
-      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
-      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
-      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
-      no_proxy: ${no_proxy:-${NO_PROXY:-}}
+      SIGNUPS_ENABLED:
+      SIGNUP_ALLOWLIST:
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
+      RAKAZO_DESKTOP_STACK_TOKEN:
+      RAKAZO_GIT_SHA:
+      SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
+      PRIVACY_POLICY_URL:
+      SMTP_URL:
+      EMAIL_FROM:
+      STRIPE_SECRET_KEY:
+      STRIPE_WEBHOOK_SECRET:
+      STRIPE_PRICE_ID:
+      INTEGRATIONS_CATALOG_URL:
+      TEAM_CHAT_BOT_ID:
+      SLACK_RAKAZO_BOT_ID:
+      TEAM_CHAT_JUDGE_PROVIDER:
+      TEAM_CHAT_JUDGE_MODEL:
+      SPACE_TEARDOWN_TIMEOUT_MS:
+      RAKAZO_MIN_CLIENT_BUILD:
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -129,48 +365,18 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
-    env_file:
-      - ../../.env
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/worker
+    command: ["node", "--enable-source-maps", "dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/health-check.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
     environment:
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
-      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
-      SECRET_STORE: ${SECRET_STORE:-encrypted}
-      INFISICAL_URL: ${INFISICAL_URL:-}
-      INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
-      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID:-}
-      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET:-}
-      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
-      INFISICAL_ENVIRONMENT: ${INFISICAL_ENVIRONMENT:-}
-      INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
-      BETTER_AUTH_SECRET: ""
-      OIDC_ISSUER: ""
-      OIDC_CLIENT_ID: ""
-      OIDC_CLIENT_SECRET: ""
-      AUTH_PASSWORD_ENABLED: "true"
-      DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
-      DATA_DIR: /data
-      SANDBOX_SUPERVISOR_URL: http://supervisor:7091
-      WAKEUP_DRIVER: graphile
-      SANDBOX_PROVIDER: docker
-      MEDIA_GENERATION_PROVIDER: ${MEDIA_GENERATION_PROVIDER:-disabled}
-      MEDIA_GENERATION_BASE_URL: ${MEDIA_GENERATION_BASE_URL:-https://queue.fal.run}
-      MEDIA_GENERATION_API_KEY: ${MEDIA_GENERATION_API_KEY:-}
-      MEDIA_GENERATION_IMAGE_MODEL: ${MEDIA_GENERATION_IMAGE_MODEL:-}
-      MEDIA_GENERATION_VIDEO_MODEL: ${MEDIA_GENERATION_VIDEO_MODEL:-}
-      CLOUD_AGENT_PROVIDER: ${CLOUD_AGENT_PROVIDER:-none}
-      CLOUD_AGENT_SPACE_ID: ${CLOUD_AGENT_SPACE_ID:-}
-      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
-      SCREEN_PROXY_SECRET: ""
-      AGENT_RUNTIME: pi
-      # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
-      HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
-      HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
-      NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
-      http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
-      https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
-      no_proxy: ${no_proxy:-${NO_PROXY:-}}
+      <<: *app-environment
+      GRAPHILE_WORKER_CONCURRENCY:
     volumes:
       - ../../data:/data
     depends_on:
@@ -178,16 +384,23 @@ services:
         condition: service_healthy
       data-init:
         condition: service_completed_successfully
+      # The API's start command migrates and creates the login the worker uses.
+      api:
+        condition: service_healthy
 
   web:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/web
+    command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       API_PROXY_TARGET: http://api:3100
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
+      RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:
