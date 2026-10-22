@@ -10,6 +10,8 @@ export interface TurnCheckpoint {
   systemPrompt: string;
   pendingToolCallId: string;
   messages: Message[];
+  /** Only explicit sequential checkpoints guarantee an unstarted tail. */
+  executionMode?: "parallel" | "sequential";
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {

@@ -18,7 +18,7 @@ vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
   }),
 }));
 
-function fixture(model: AgentRunModel) {
+function fixture(model: AgentRunModel, encryptedCheckpoint = false) {
   const run = {
     id: "fixture-run",
     botId: "fixture-bot",
@@ -43,6 +43,20 @@ function fixture(model: AgentRunModel) {
   };
   const prisma = new Proxy(
     {
+      $contentEncryption: () =>
+        encryptedCheckpoint
+          ? {
+              ring: {
+                encryptWrites: true,
+                byId: async () => ({
+                  id: "fixture-key",
+                  spaceId: "fixture-space",
+                  version: 1,
+                  key: new Uint8Array(32).fill(7),
+                }),
+              },
+            }
+          : undefined,
       actionApprovalRule: {
         findMany: async () => [
           { effect: "require_approval", matchKind: "tool", matchValue: "fixture_write" },
@@ -201,6 +215,9 @@ function fixture(model: AgentRunModel) {
     return { continuationRunId: null };
   });
   const writes = vi.fn(async () => ({ ok: true }));
+  const reads = vi.fn(async (_computer: unknown, _path: string) =>
+    new TextEncoder().encode("unique-executor-evidence"),
+  );
   const executor = createRunExecutor({
     prisma,
     runtime: new PiAgentRuntime(),
@@ -236,7 +253,7 @@ function fixture(model: AgentRunModel) {
     },
     sandbox: {
       describe: () => ({ id: "fake", capabilities: { graphical: true } }),
-      readFile: async () => new TextEncoder().encode("unique-executor-evidence"),
+      readFile: reads,
       writeFile: writes,
       async *exportWorkspace() {},
       releaseScreen: async () => undefined,
@@ -265,10 +282,158 @@ function fixture(model: AgentRunModel) {
     pauseRunForInput,
     pauseRunForTakeover,
     writes,
+    reads,
   };
 }
 
 describe("executor paused transcript", () => {
+  it("keeps parallel checkpoint captures bound to the pausing call on resume", async () => {
+    let releaseLate!: () => void;
+    const late = new Promise<void>((resolve) => {
+      releaseLate = resolve;
+    });
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tools",
+            calls: [
+              { id: "finished-read", name: "read_file", arguments: { path: "finished.txt" } },
+              {
+                id: "pending-write",
+                name: "fixture_write",
+                arguments: { content: "approved-fixture" },
+              },
+              { id: "late-read", name: "read_file", arguments: { path: "late.txt" } },
+            ],
+          },
+        },
+        {
+          expect(request) {
+            const results = request.messages.filter((message) => message.role === "tool");
+            expect(
+              results.find((message) => message.tool_call_id === "late-read")?.content,
+            ).toContain("outcome is unknown");
+            expect(
+              results.find((message) => message.tool_call_id === "pending-write")?.content,
+            ).toContain("fixture-approved-result");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    try {
+      const state = fixture(model.model);
+      state.reads.mockImplementation(async (_computer, path) => {
+        if (path === "late.txt") await late;
+        return new TextEncoder().encode("unique-executor-evidence");
+      });
+      state.pauseRunForInput.mockImplementation(async () => {
+        state.run.status = "waiting_input";
+        releaseLate();
+        return { continuationRunId: null };
+      });
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.reads).toHaveBeenCalledTimes(2);
+      const saved = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+      expect(JSON.parse(String(saved.result)).pendingToolCallId).toBe("pending-write");
+      for (const effect of state.effects)
+        if (effect.status === "intended") effect.status = "approved";
+      state.run.status = "queued";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.reads).toHaveBeenCalledTimes(2);
+      expect(state.writes).toHaveBeenCalledExactlyOnceWith({ content: "approved-fixture" });
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
+      );
+    } finally {
+      releaseLate();
+      await model.close();
+    }
+  });
+  it.each([false, true])(
+    "fails closed on an unreadable encrypted checkpoint before opening the model (key available: %s)",
+    async (keyAvailable) => {
+      const model = await startModelEmulator({ steps: [] });
+      try {
+        const state = fixture(model.model, keyAvailable);
+        state.effects.push({
+          kind: "runtime_checkpoint",
+          status: "runtime_checkpoint",
+          runId: state.run.id,
+          spaceId: state.run.spaceId,
+          idempotencyKey: JSON.stringify(["runtime_checkpoint", state.run.id]),
+          result: "rkz1:fixture-key:invalid:invalid:invalid",
+        });
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "failed" }),
+        );
+        expect(model.requests).toHaveLength(0);
+        expect(state.writes).not.toHaveBeenCalled();
+        model.assertComplete();
+      } finally {
+        await model.close();
+      }
+    },
+  );
+  it.each(["version", "missing-tool"])(
+    "falls back safely for a checkpoint with %s",
+    async (failure) => {
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "pending",
+              name: "fixture_write",
+              arguments: { content: "approved-fixture" },
+            },
+          },
+          {
+            expect(request) {
+              expect(JSON.stringify(request.messages)).toContain("fixture_write");
+            },
+            response: {
+              type: "tool",
+              id: "new-choice",
+              name: "fixture_write",
+              arguments: { content: "changed-fixture" },
+            },
+          },
+          { expect() {}, response: { type: "text", text: "Done." } },
+        ],
+      });
+      try {
+        const state = fixture(model.model);
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+        const checkpoint = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+        const saved = JSON.parse(String(checkpoint.result));
+        if (failure === "version") saved.version = 99;
+        else
+          saved.messages.find(
+            (message: { role: string }) => message.role === "assistant",
+          ).content[0].name = "removed_fixture_tool";
+        checkpoint.result = JSON.stringify(saved);
+        for (const effect of state.effects)
+          if (effect.status === "intended") effect.status = "approved";
+        state.run.status = "queued";
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        model.assertComplete();
+        expect(state.writes).toHaveBeenCalledExactlyOnceWith({ content: "approved-fixture" });
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "completed" }),
+        );
+        expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+      } finally {
+        await model.close();
+      }
+    },
+  );
   it.each(["ask_user", "approval", "request_takeover"])(
     "restores %s through the real executor before opening the model",
     async (pause) => {

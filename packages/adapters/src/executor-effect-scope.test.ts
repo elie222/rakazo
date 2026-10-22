@@ -61,6 +61,29 @@ const effect = (idempotencyKey: string, runId: string, spaceId = "space-a"): Eff
 });
 
 describe("executor tool effect ownership", () => {
+  it("rejects the reserved checkpoint kind before reading or recording effects", async () => {
+    const f = fixture();
+    await expect(
+      recordEffect(f.deps, run("fixture"), "runtime_checkpoint", "fixture-key", {}),
+    ).rejects.toThrow();
+    expect(f.deps.prisma.externalEffect.findMany).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.append).not.toHaveBeenCalled();
+  });
+  it("never reconciles a checkpoint through an exact effect key", async () => {
+    const f = fixture([
+      {
+        ...effect("fixture-key", "fixture"),
+        kind: "runtime_checkpoint",
+        status: "runtime_checkpoint",
+        result: "opaque-fixture",
+      },
+    ]);
+    await expect(
+      recordEffect(f.deps, run("fixture"), "write_fixture", "fixture-key", {}),
+    ).rejects.toThrow();
+    expect(f.append).not.toHaveBeenCalled();
+  });
   it("keeps identical provider tool IDs distinct across runs and spaces", async () => {
     const f = fixture();
     const runs = [run("one"), run("two"), run("three", "space-b")];

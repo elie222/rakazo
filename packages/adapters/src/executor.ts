@@ -128,6 +128,7 @@ import {
   loadRunTurnCheckpoint,
   Prisma,
   parseComputerMode,
+  RUN_TURN_CHECKPOINT_KIND,
   RunHistoryWriteError,
   readHistory,
   recordUsage,
@@ -373,6 +374,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -4375,8 +4377,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
         // Whether outside content has entered the run. A run someone else started begins tainted,
         // and so does a later attempt, including one with restored untrusted tool results.
-        const turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
-        let runTainted = !ownerStartedRun || Boolean(turnCheckpoint);
+        let turnCheckpoint: string | undefined;
+        let checkpointLoadError: Error | undefined;
+        try {
+          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+        } catch (error) {
+          checkpointLoadError =
+            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
+        }
+        let runTainted =
+          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         let earlierAttemptPromise: Promise<boolean> | undefined;
         const isRunTainted = async () => {
           if (runTainted) return true;
@@ -4519,10 +4529,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
-        let pendingTurnCheckpoint: string | undefined;
-        const persistTurnCheckpoint = async () => {
-          if (pendingTurnCheckpoint)
-            await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, pendingTurnCheckpoint);
+        const pendingTurnCheckpoints = new Map<string, () => string>();
+        const persistTurnCheckpoint = async (executionId?: string) => {
+          const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
+          if (capture) await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, capture());
         };
         let handedOff = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
@@ -5345,7 +5355,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForApproval();
             }
             await workspaceCheckpoint.flush();
-            await persistTurnCheckpoint();
+            await persistTurnCheckpoint(executionId);
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -6917,7 +6927,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForSecret();
             }
             await workspaceCheckpoint.flush();
-            await persistTurnCheckpoint();
+            await persistTurnCheckpoint(executionId);
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -7432,6 +7442,39 @@ export function createRunExecutor(deps: ExecutorDeps) {
               parsePlaybook(invokedSkill.playbook),
             )}\n\n${taskPrompt}`
           : taskPrompt;
+        if (turnCheckpoint) {
+          try {
+            const saved = restoreTurnCheckpoint(turnCheckpoint, {
+              provider: runModelProvider,
+              id: runModelId,
+            });
+            const completed = new Set(
+              saved.messages.flatMap((message) =>
+                message.role === "toolResult" ? [message.toolCallId] : [],
+              ),
+            );
+            const available = new Set(tools.map((tool) => tool.name));
+            if (
+              saved.messages.some(
+                (message) =>
+                  message.role === "assistant" &&
+                  message.content.some(
+                    (call) =>
+                      call.type === "toolCall" &&
+                      !completed.has(call.id) &&
+                      (saved.executionMode === "sequential" ||
+                        call.id === saved.pendingToolCallId) &&
+                      !available.has(call.name),
+                  ),
+              )
+            )
+              turnCheckpoint = undefined;
+          } catch {
+            // Incompatible transcripts use the existing canonical approval replay.
+            // Decryption happens earlier and must still fail closed.
+            turnCheckpoint = undefined;
+          }
+        }
         const approvalContinuation = turnCheckpoint
           ? undefined
           : buildApprovalContinuation(
@@ -7577,6 +7620,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
 
         try {
+          if (checkpointLoadError) throw checkpointLoadError;
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
@@ -7692,8 +7736,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               turnCheckpoint,
-              onCheckpoint: async (blob) => {
-                pendingTurnCheckpoint = blob;
+              onCheckpoint: async (capture, executionId) => {
+                pendingTurnCheckpoints.set(executionId, capture);
               },
               resumeToolResult: {
                 content: [{ type: "text", text: takeoverResume?.promptNote ?? task.prompt }],
@@ -7708,8 +7752,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     resolveConnectedModel(run, provider, modelId, (values) =>
                       runSecrets.push(...values),
                     ),
-              onToolCompleted: (completion) =>
-                appendToolCompletionAudit(
+              onToolCompleted: (completion) => {
+                if (!completion.paused) pendingTurnCheckpoints.delete(completion.executionId);
+                return appendToolCompletionAudit(
                   deps,
                   {
                     spaceId: run.spaceId,
@@ -7719,7 +7764,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   },
                   completion,
                   runSecrets,
-                ),
+                );
+              },
               claimSteering: async (seenIds) => {
                 const steering = await deps.events.claimSteering({
                   threadId: thread.id,
@@ -7857,7 +7903,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 label: redactSecrets(action.label, runSecrets),
               }));
               await workspaceCheckpoint.flush();
-              await persistTurnCheckpoint();
+              await persistTurnCheckpoint(event.executionId);
               const paused = await deps.events.pauseRunForInput({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -7932,7 +7978,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
-              await persistTurnCheckpoint();
+              await persistTurnCheckpoint(event.executionId);
               const paused = await deps.events.pauseRunForTakeover({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -9686,9 +9732,12 @@ export async function recordEffect(
   legacyIdempotencyKey?: string,
   consumedIds?: Set<string>,
 ) {
+  if (kind === RUN_TURN_CHECKPOINT_KIND) throw new Error("Unsupported tool effect kind");
   const existing = await deps.prisma.externalEffect.findUnique({
     where: { idempotencyKey },
   });
+  if (existing?.kind === RUN_TURN_CHECKPOINT_KIND || existing?.status === RUN_TURN_CHECKPOINT_KIND)
+    throw new Error("Unsupported tool effect kind");
   if (existing && (existing.runId !== run.id || existing.spaceId !== run.spaceId)) {
     throw new Error("Stored tool execution does not belong to this run.");
   }
