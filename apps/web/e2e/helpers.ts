@@ -134,6 +134,20 @@ export async function waitForSidebarTransitions(page: Page) {
   await waitForTransitions(page.locator("aside").first());
 }
 
+/**
+ * A card inside the fit-content bubble frame fills its fixed width and shrinks only to the
+ * frame's cap. A percentage width would resolve against the card's own content instead.
+ */
+export async function expectCardWidth(card: Locator, width: number) {
+  const measured = await card.evaluate((element) => ({
+    card: element.getBoundingClientRect().width,
+    frame:
+      element.closest('[data-testid="message-bubble-frame"]')?.getBoundingClientRect().width ??
+      Number.NaN,
+  }));
+  expect(Math.abs(measured.card - Math.min(width, measured.frame))).toBeLessThan(1);
+}
+
 export async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {
   const screenshotPath = testInfo.outputPath(`${name}.png`);
   await page.screenshot({

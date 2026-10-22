@@ -838,10 +838,9 @@ describe("MCP connector session cache", () => {
       const error = vi.spyOn(getLogger(), "error");
       try {
         expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
-        expect(error).toHaveBeenCalledWith(
-          "mcp discovery failed for server demo:",
-          expect.any(String),
-        );
+        expect(error).toHaveBeenCalledWith("mcp.discovery.failed", expect.any(Error), {
+          "connector.id": SERVER.id,
+        });
       } finally {
         vi.restoreAllMocks();
         await connector.close();

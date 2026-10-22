@@ -87,7 +87,8 @@ describe("sentry sink", () => {
     const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
     const error = new Error("run failed", { cause: new TypeError("bad input") });
     logger.error("job crashed", error, {
-      jobId: "j1",
+      "job.id": "j1",
+      "run.id": "r1",
       apiKey: "sk-secret",
       content: "private message",
       "user.id": "u1",
@@ -100,7 +101,7 @@ describe("sentry sink", () => {
       environment: "prod-acme",
       release: "abc",
       level: "error",
-      tags: { service: "rakazo-worker", jobId: "j1" },
+      tags: { service: "rakazo-worker", "job.id": "j1", "run.id": "r1" },
       extra: { "log.message": "job crashed" },
     });
     expect(event.extra).toEqual({ "log.message": "job crashed" });
@@ -212,6 +213,7 @@ describe("sentry sink", () => {
     });
     logger.info("started");
     logger.warn("slow");
+    logger.error("http.request.completed", { "error.report": false });
     logger.error("queue unavailable", { "request.id": "req-1" });
     logger.error("mail sync failed");
     await logger.flush();

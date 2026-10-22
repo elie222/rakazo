@@ -49,6 +49,7 @@ import {
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
+import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
 import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
@@ -57,6 +58,7 @@ import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
+import { reportMobileError } from "./monitoring";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -829,6 +831,7 @@ export async function rpc<T>(
     )
       throw new Error(t("Something went wrong. Try again."));
     let res: Response;
+    const correlation = clientCorrelationHeaders();
     try {
       res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
         method: "POST",
@@ -836,6 +839,7 @@ export async function rpc<T>(
           "content-type": "application/json",
           origin: "rakazo://",
           ...requestHeaders,
+          ...correlation,
         },
         body: JSON.stringify({ json: body }),
         signal: controller.signal,
@@ -844,6 +848,8 @@ export async function rpc<T>(
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException") and an unreachable server with a native stack
       // location; say what happened instead.
+      if (!controller.signal.aborted)
+        reportMobileError(error, "rpc.transport", responseCorrelation(new Headers(correlation)));
       throw requestError(error, controller.signal);
     }
     if (

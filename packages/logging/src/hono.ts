@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { getLogContext } from "./context.js";
 import { correlationBindings, establishRequestCorrelation } from "./correlation.js";
 import { formatTraceparent } from "./ids.js";
 import { getLogger } from "./logger.js";
@@ -27,6 +28,8 @@ export function requestLogging(logger?: Logger): MiddlewareHandler {
         const status = failure && c.res.status < 400 ? 500 : c.res.status;
         const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
         log[level]("http.request.completed", {
+          // Completion records stay searchable without creating a second collector issue.
+          "error.report": !failure && !getLogContext()["error.reported"],
           "http.method": c.req.method,
           "http.route": matchedRoute(c.req.path, c.req.routePath),
           "http.status": status,

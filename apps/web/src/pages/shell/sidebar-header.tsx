@@ -4,6 +4,7 @@ import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web"
 import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
+import { desktopBridge } from "../../lib/desktop";
 import type { Panel } from "../../lib/right-panel-state";
 import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
@@ -33,13 +34,14 @@ export function SidebarHeader({
 }) {
   const { t } = useLingui();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const hasWindowChrome = Boolean(desktopBridge());
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   return (
     <div
-      className={`app-drag flex items-center pb-3 pt-4 ${mini ? "flex-col gap-3 px-1" : "justify-between px-[18px]"}`}
+      className={`app-drag flex items-center ${mini ? `flex-col gap-2 px-0 pb-2 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-[18px] pb-3 pt-4"}`}
     >
-      <WindowChrome />
-      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-2.5"}`}>
+      {!mini || hasWindowChrome ? <WindowChrome /> : null}
+      <div className={`relative flex items-center ${mini ? "flex-col gap-0.5" : "gap-2.5"}`}>
         <IconTooltip label={t`Activity`}>
           <Button
             variant="ghost"

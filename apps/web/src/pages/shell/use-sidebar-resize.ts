@@ -18,10 +18,12 @@ export function useSidebarResize({
   userId,
   collapsed,
   onCollapsedChange,
+  onPreviewCollapsedChange,
 }: {
   userId: string | null | undefined;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  onPreviewCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -32,6 +34,8 @@ export function useSidebarResize({
     width: number;
     direction: number;
     moved: boolean;
+    initialCollapsed: boolean;
+    mini: boolean;
   } | null>(null);
   const maxWidth = maximumBotsSidebarWidth(viewportWidth);
   const expandedWidth = clampBotsSidebarWidth(preferredWidth, viewportWidth);
@@ -75,16 +79,24 @@ export function useSidebarResize({
     }
   }
 
-  function widthAt(clientX: number) {
+  function previewAt(clientX: number) {
     const current = drag.current;
     if (!current) return width;
-    return Math.max(
-      BOTS_SIDEBAR_MINI_WIDTH,
-      Math.min(
-        maximumBotsSidebarWidth(window.innerWidth),
-        current.width + (clientX - current.startX) * current.direction,
-      ),
-    );
+    const rawWidth = current.width + (clientX - current.startX) * current.direction;
+    // Separate thresholds keep the mode stable while the pointer hovers near the snap point.
+    const threshold = BOTS_SIDEBAR_SNAP_WIDTH + (current.mini ? 16 : -16);
+    const mini = rawWidth < threshold;
+    if (mini !== current.mini) {
+      current.mini = mini;
+      onPreviewCollapsedChange(mini);
+    }
+    return mini ? BOTS_SIDEBAR_MINI_WIDTH : clampBotsSidebarWidth(rawWidth, window.innerWidth);
+  }
+
+  function cancelPreview() {
+    if (drag.current) onPreviewCollapsedChange(drag.current.initialCollapsed);
+    drag.current = null;
+    setDragWidth(null);
   }
 
   const handleProps: HTMLAttributes<HTMLElement> = {
@@ -104,28 +116,31 @@ export function useSidebarResize({
         width,
         direction: direction(),
         moved: false,
+        initialCollapsed: collapsed,
+        mini: collapsed,
       };
       setDragWidth(width);
     },
     onPointerMove(event) {
       if (drag.current?.pointerId !== event.pointerId) return;
       if (Math.abs(event.clientX - drag.current.startX) >= 4) drag.current.moved = true;
-      setDragWidth(widthAt(event.clientX));
+      setDragWidth(previewAt(event.clientX));
     },
     onPointerUp(event) {
       if (drag.current?.pointerId !== event.pointerId) return;
       if (!drag.current.moved && Math.abs(event.clientX - drag.current.startX) < 4)
-        onCollapsedChange(!collapsed);
-      else commit(widthAt(event.clientX));
+        onCollapsedChange(!drag.current.initialCollapsed);
+      else commit(previewAt(event.clientX));
       release(event);
     },
     onPointerCancel(event) {
-      if (drag.current?.pointerId === event.pointerId) release(event);
+      if (drag.current?.pointerId !== event.pointerId) return;
+      cancelPreview();
+      release(event);
     },
     onLostPointerCapture(event) {
       if (drag.current?.pointerId !== event.pointerId) return;
-      drag.current = null;
-      setDragWidth(null);
+      cancelPreview();
     },
     onKeyDown(event) {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {

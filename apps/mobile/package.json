@@ -2,7 +2,7 @@
   "name": "@rakazo/mobile",
   "version": "0.1.0",
   "license": "Apache-2.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "expo": {
     "autolinking": {
       "nativeModulesDir": "./modules"
@@ -22,9 +22,11 @@
     "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@react-native-vector-icons/ionicons": "13.1.4",
     "@react-native-vector-icons/material-design-icons": "13.1.4",
+    "@sentry/react-native": "7.11.0",
     "expo": "57.0.31",
     "expo-application": "57.0.3",
     "expo-audio": "57.0.5",

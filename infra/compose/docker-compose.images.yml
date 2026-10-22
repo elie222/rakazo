@@ -425,6 +425,12 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/health-check.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
     init: true
     security_opt:
       - no-new-privileges:true

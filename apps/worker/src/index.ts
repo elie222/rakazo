@@ -2,6 +2,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -310,12 +311,14 @@ async function main() {
     ),
   });
   reconciler.start();
+  const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
 
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
     try {
+      await stopHealth();
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();

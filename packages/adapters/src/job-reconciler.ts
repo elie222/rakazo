@@ -121,6 +121,7 @@ export function createJobReconciler(
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   let timer: ReturnType<typeof setInterval> | undefined;
   let reconciling: Promise<void> | undefined;
+  let lastCompletedAt = Date.now();
   let stuckCursor: Cursor | undefined;
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
@@ -390,9 +391,13 @@ export function createJobReconciler(
           ? { at: lastControl.controlLeaseExpiresAt, id: lastControl.id }
           : undefined;
       if (!controlCursor) controlScanDeadline = undefined;
-    })().finally(() => {
-      reconciling = undefined;
-    });
+    })()
+      .then(() => {
+        lastCompletedAt = Date.now();
+      })
+      .finally(() => {
+        reconciling = undefined;
+      });
     return reconciling;
   };
   const reconcileSafely = () => {
@@ -403,6 +408,7 @@ export function createJobReconciler(
 
   return {
     reconcileOnce,
+    lastCompletedAt: () => lastCompletedAt,
     start() {
       if (timer) return;
       reconcileSafely();

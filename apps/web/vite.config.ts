@@ -453,6 +453,7 @@ export default defineConfig(({ command, mode }) => {
     ),
   });
   return {
+    build: { sourcemap: true },
     define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
       {

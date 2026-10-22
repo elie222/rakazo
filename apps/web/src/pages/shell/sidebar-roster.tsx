@@ -268,9 +268,7 @@ export function SidebarRoster({
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent
-              className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
-            >
+            <CollapsibleContent className="flex flex-col gap-0.5">
               {nestedRows.map(({ item, depth, hasChildren, parentId }) => {
                 const parentCollapsed = hasChildren && collapsedRosterParents.has(item.chat.id);
                 const selected =
@@ -405,7 +403,7 @@ export function SidebarRoster({
                     onContextMenu={(event) => event.currentTarget.focus()}
                     className={`flex items-center ${
                       mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
+                        ? "mx-auto size-10 justify-center rounded-xl"
                         : compact
                           ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
                           : "w-full gap-3 rounded-xl px-2.5 py-[10px]"

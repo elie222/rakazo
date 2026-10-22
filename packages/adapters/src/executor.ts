@@ -140,6 +140,7 @@ import {
   writeBotInstructions,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
+import { sanitizedError } from "@rakazo/logging/monitoring";
 import { parse as parseShellCommand } from "shell-quote";
 import {
   connectAgent,
@@ -3548,6 +3549,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // Logs and security events raised by this run's tools name its account and space.
       enrichLogContext({
         "run.id": runId,
+        "bot.id": run.botId,
+        "thread.id": run.threadId,
         "space.id": run.spaceId,
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
@@ -7668,47 +7671,45 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   completion,
                   runSecrets,
                 ),
-              claimSteering: scripted
-                ? undefined
-                : async (seenIds) => {
-                    const steering = await deps.events.claimSteering({
-                      threadId: thread.id,
-                      botId: bot.id,
-                      runId,
-                      leaseOwner: workerId,
-                      leaseFence: fence,
-                      seenIds,
-                    });
-                    return Promise.all(
-                      steering.map(async (item) => {
-                        const { images, files, unavailableInstruction } =
-                          await settleSteeringAttachmentLoads(
-                            loadCurrentTurnImages(deps, item.blocks, context),
-                            deps.artifacts
-                              ? listCurrentTurnFiles(deps, item.blocks, context)
-                              : Promise.resolve([]),
-                            item.blocks,
-                            context.signal,
-                          );
-                        if (files.length) pendingTurnFiles.push(item.blocks);
-                        const filesInstruction = currentTurnFilesInstruction(files);
-                        return {
-                          id: item.id,
-                          messageId: item.messageId,
-                          historyText: item.text,
-                          text: [
-                            await loadReplyContext(deps.prisma, thread.id, item.messageId),
-                            item.text,
-                            filesInstruction,
-                            unavailableInstruction,
-                          ]
-                            .filter(Boolean)
-                            .join("\n\n"),
-                          images,
-                        };
-                      }),
-                    );
-                  },
+              claimSteering: async (seenIds) => {
+                const steering = await deps.events.claimSteering({
+                  threadId: thread.id,
+                  botId: bot.id,
+                  runId,
+                  leaseOwner: workerId,
+                  leaseFence: fence,
+                  seenIds,
+                });
+                return Promise.all(
+                  steering.map(async (item) => {
+                    const { images, files, unavailableInstruction } =
+                      await settleSteeringAttachmentLoads(
+                        loadCurrentTurnImages(deps, item.blocks, context),
+                        deps.artifacts
+                          ? listCurrentTurnFiles(deps, item.blocks, context)
+                          : Promise.resolve([]),
+                        item.blocks,
+                        context.signal,
+                      );
+                    if (files.length) pendingTurnFiles.push(item.blocks);
+                    const filesInstruction = currentTurnFilesInstruction(files);
+                    return {
+                      id: item.id,
+                      messageId: item.messageId,
+                      historyText: item.text,
+                      text: [
+                        await loadReplyContext(deps.prisma, thread.id, item.messageId),
+                        item.text,
+                        filesInstruction,
+                        unavailableInstruction,
+                      ]
+                        .filter(Boolean)
+                        .join("\n\n"),
+                      images,
+                    };
+                  }),
+                );
+              },
             },
             context,
           );
@@ -8301,6 +8302,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          getLogger().error(
+            "run.failed",
+            sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
+            {
+              "run.outcome": "failed",
+            },
+          );
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -8335,15 +8343,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           setupError instanceof Error ? setupError.message : String(setupError),
           runSecrets,
         );
-        if (!computerBusy) {
-          // undici collapses every network failure to "fetch failed"; the cause names the
-          // host and errno, which is the only part worth paging over.
-          const causeMessage =
-            setupError instanceof Error && setupError.cause instanceof Error
-              ? `: ${redactSecrets(setupError.cause.message, runSecrets)}`
-              : "";
-          getLogger().error("run setup failed", `${setupMessage}${causeMessage}`);
-        }
+        const reportedSetupError = sanitizedError(setupError, (text) =>
+          redactSecrets(text, runSecrets),
+        );
+        if (!computerBusy) getLogger().error("run setup failed", reportedSetupError);
         // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
         // setup that fails every time would retry forever. End the run instead.
         if (
@@ -8388,7 +8391,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return;
           }
-          throw new Error("Run setup failed; retrying");
+          throw new Error("Run setup failed; retrying", { cause: reportedSetupError });
         }
       } finally {
         getLogger().info("run.computer", {

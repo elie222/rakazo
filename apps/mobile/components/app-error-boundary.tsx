@@ -4,6 +4,7 @@ import { Component } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { t } from "../lib/i18n";
+import { reportMobileError } from "../lib/monitoring";
 
 type Props = { children: ReactNode };
 type State = { failed: boolean };
@@ -16,8 +17,8 @@ export class AppErrorBoundary extends Component<Props, State> {
     return { failed: true };
   }
 
-  override componentDidCatch() {
-    // React Native already reports caught render errors through ExceptionsManager.
+  override componentDidCatch(error: Error) {
+    reportMobileError(error, "react.render");
     void SplashScreen.hideAsync().catch(() => undefined);
   }
 

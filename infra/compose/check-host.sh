@@ -44,5 +44,12 @@ else
   done
 fi
 
+# Opt-in because self-hosted Compose project names are chosen by the operator.
+if [[ -n "${RAKAZO_MONITOR_COMPOSE_PROJECT:-}" ]]; then
+  if ! service_health="$(/usr/local/sbin/rakazo-check-services "${RAKAZO_MONITOR_COMPOSE_PROJECT}")"; then
+    report "${service_health:-Could not inspect application container health}"
+  fi
+fi
+
 printf '%s\n' "${messages[@]}" | /usr/local/sbin/rakazo-host-alert host-check
 ((${#messages[@]} == 0))

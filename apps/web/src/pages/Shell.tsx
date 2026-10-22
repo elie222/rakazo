@@ -3044,6 +3044,7 @@ function SpaceShell() {
       userId={userId}
       collapsed={botsSidebarCollapsed}
       onCollapsedChange={setBotsSidebarCollapsedPref}
+      onPreviewCollapsedChange={setBotsSidebarCollapsed}
       computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}
@@ -3145,7 +3146,7 @@ function SpaceShell() {
               variant="ghost"
               size="icon"
               aria-label={t`Search`}
-              className="mx-auto mb-3"
+              className="mx-auto mb-1"
               onClick={() => {
                 setBotsSidebarCollapsedPref(false);
                 requestAnimationFrame(() =>

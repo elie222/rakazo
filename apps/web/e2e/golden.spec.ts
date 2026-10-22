@@ -4,6 +4,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   expandAdvancedSection,
+  expectCardWidth,
   realSandboxTimeout,
   rpc,
   showPasswordForm,
@@ -72,6 +73,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(computerCard).toBeVisible();
   await expect(computerCard.getByText("Needs you", { exact: true })).toBeVisible();
   await expect(computerCard.getByTestId("computer-card-open")).toBeVisible();
+  await expectCardWidth(computerCard, 340);
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await computerCard.getByTestId("computer-card-open").click();
   await page
@@ -410,6 +412,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
   });
+  const botLinkCard = page.getByTestId("bot-link-card");
+  await expect(botLinkCard).toBeVisible({ timeout: 30_000 });
+  await expectCardWidth(botLinkCard, 340);
   await captureScreenshot(page, testInfo, "13-spawned-bot");
 
   await page

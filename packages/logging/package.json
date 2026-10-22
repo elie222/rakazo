@@ -18,7 +18,8 @@
       "types": "./src/axiom.ts",
       "development": "./src/axiom.ts",
       "default": "./src/axiom.ts"
-    }
+    },
+    "./monitoring": "./src/monitoring.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",

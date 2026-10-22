@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
+    "@rakazo/logging": "workspace:*",
+    "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.9",
     "koffi": "3.3.3"
   },

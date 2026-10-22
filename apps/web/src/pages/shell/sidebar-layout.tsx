@@ -15,6 +15,7 @@ export function BotsSidebarLayout({
   userId,
   collapsed,
   onCollapsedChange,
+  onPreviewCollapsedChange,
   computerOpen,
   children,
   ...props
@@ -22,6 +23,7 @@ export function BotsSidebarLayout({
   userId: string | null | undefined;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  onPreviewCollapsedChange: (collapsed: boolean) => void;
   computerOpen: boolean;
 }) {
   const { t } = useLingui();
@@ -29,6 +31,7 @@ export function BotsSidebarLayout({
     userId,
     collapsed,
     onCollapsedChange,
+    onPreviewCollapsedChange,
   });
   return (
     <SidebarWidthContext value={width}>

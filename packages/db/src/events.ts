@@ -20,6 +20,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
+  STEERING_CONTINUATION_PROMPT,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -1483,6 +1484,13 @@ export async function finalizeRun(
 ): Promise<FinalizeRunResult | false> {
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
+  getLogger().info("run.finished", {
+    "run.id": input.runId,
+    "run.outcome": input.outcome,
+    "space.id": input.spaceId,
+    "thread.id": input.threadId,
+    "bot.id": input.botId,
+  });
   void captureRunAnalytics(prisma, analytics, input.runId, `run.${input.outcome}`);
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return { continuationRunId: committed.continuationRunId };
@@ -1706,7 +1714,7 @@ export async function createPendingSteeringRun(
       prompt:
         origin === "webhook"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
-          : "Respond to the user's steering context.",
+          : STEERING_CONTINUATION_PROMPT,
       status: "queued",
     },
   });
