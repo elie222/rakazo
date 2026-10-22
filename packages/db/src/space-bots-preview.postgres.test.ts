@@ -254,7 +254,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
         runErrorId: bot.runErrorId,
       })),
     ).toEqual(expected);
-    expect(rowCount).toBeLessThanOrEqual(listed.length);
+    expect(rowCount).toBe(MESSAGE_BOTS.length);
   });
 
   it("reads no messages when the member has no other spaces", async () => {
