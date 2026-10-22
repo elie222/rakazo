@@ -241,7 +241,7 @@ test("sidebar footer keeps the account identity readable and installs a ready de
 
   // Width changes must drop marks before taking space from the label or padding.
   // Measure the fixed controls and label, then target the middle of each band.
-  // Marks need 26px initially and 18px per additional mark, leaving 9px margin.
+  // Marks need 26px initially and 22px per additional mark, leaving 11px margin.
   const fixedWidth = await pill.evaluate((el) => {
     const style = getComputedStyle(el);
     return (
@@ -255,9 +255,9 @@ test("sidebar footer keeps the account identity readable and installs a ready de
   });
   for (const [availableWidth, count] of [
     [17, 0],
-    [35, 1],
-    [53, 2],
-    [71, 3],
+    [37, 1],
+    [59, 2],
+    [81, 3],
   ]) {
     const width = fixedWidth + availableWidth!;
     await footer.evaluate((el, width) => {

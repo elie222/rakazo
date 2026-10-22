@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { waitForConnection } from "@rakazo/core";
+import { appConnectedInput, waitForConnection } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -10,15 +10,20 @@ import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
+import { ConnectorIcon } from "./connector-icon";
 import { NativeActionButton } from "./native-action-button";
 
 export function AppConnectCard({
   botId,
+  threadId,
+  messageId,
   block,
   accessibilityActions,
   onAccessibilityAction,
 }: {
   botId: string;
+  threadId?: string;
+  messageId?: string;
   block: Extract<MessageBlock, { kind: "app_connect" }>;
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
@@ -36,7 +41,7 @@ export function AppConnectCard({
   useEffect(() => () => connectionAttempt.current?.abort(), []);
 
   async function authorize() {
-    if (readOnly) return;
+    if (readOnly || !threadId) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
@@ -62,11 +67,7 @@ export function AppConnectCard({
       );
       if (result.status === "aborted") return;
       if (result.status === "connected") {
-        await rpc("onboarding/appConnected", {
-          botId,
-          provider: block.provider,
-          connectorId: block.connectorId,
-        });
+        await rpc("onboarding/appConnected", appConnectedInput(botId, threadId, block, messageId));
         if (controller.signal.aborted) return;
         setLocalStatus("connected");
         return;
@@ -88,7 +89,7 @@ export function AppConnectCard({
     <View
       accessibilityLabel={t("{name} connection", { name: block.name })}
       style={{
-        width: "90%",
+        width: "100%",
         borderRadius: 18,
         backgroundColor: native.fill,
         paddingHorizontal: 16,
@@ -97,20 +98,7 @@ export function AppConnectCard({
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            backgroundColor: native.fillPressed,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
-            {block.name.slice(0, 1).toUpperCase()}
-          </Text>
-        </View>
+        <ConnectorIcon name={block.name} logo={block.logo} size={40} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text
             accessibilityActions={accessibilityActions}
@@ -119,11 +107,11 @@ export function AppConnectCard({
           >
             {view.title}
           </Text>
-          <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }} numberOfLines={2}>
+          <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }} numberOfLines={1}>
             {view.description}
           </Text>
         </View>
-        {view.showAuthorize && !readOnly ? (
+        {view.showAuthorize && !readOnly && threadId ? (
           <NativeActionButton
             label={view.actionLabel}
             accessibilityLabel={t("Authorize {name}", { name: block.name })}

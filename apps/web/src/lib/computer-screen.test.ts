@@ -279,6 +279,21 @@ describe("probeScreen", () => {
     );
   });
 
+  it("never shows an upstream HTML error page as the reason", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () =>
+        response(502, "<!DOCTYPE html><html><body><h1>Bad gateway</h1></body></html>"),
+      ),
+    ).resolves.toBe("fallback (HTTP 502)");
+    const html = {
+      ...response(500, "Bad gateway"),
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+    } as Response;
+    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe(
+      "fallback (HTTP 500)",
+    );
+  });
+
   it("falls back when the page cannot be fetched or would leave the app", async () => {
     await expect(
       probeScreen(url, "fallback", async () => {

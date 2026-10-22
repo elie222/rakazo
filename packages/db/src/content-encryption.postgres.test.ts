@@ -41,7 +41,8 @@ describePostgres("content encryption (PostgreSQL)", () => {
   function client(keys = [masterA], options: { encryptContent?: boolean } = {}) {
     // The derived key keeps rows from other suites sharing this database readable.
     const provider = new LocalKeyProvider([...keys, ...masterKeysFromEnv()]);
-    const db = createDb(databaseUrl!, { keyProvider: provider, ...options });
+    // On unless a test switches it, whatever NODE_ENV the developer runs with.
+    const db = createDb(databaseUrl!, { keyProvider: provider, encryptContent: true, ...options });
     clients.push(db);
     return db;
   }

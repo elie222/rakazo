@@ -791,46 +791,51 @@ describe("Pi runtime ordered model fallback", () => {
     },
   );
 
-  it("switches after a Codex idle timeout before output", async () => {
-    vi.useFakeTimers();
-    try {
-      const codex = {
-        ...primary,
-        provider: "openai-codex",
-        api: "openai-codex-responses" as const,
-      };
-      providerState.models.set(`${codex.provider}/${codex.id}`, codex);
-      providerState.stream.mockImplementation(
-        (
-          target: Model<"openai-completions">,
-          _ctx: unknown,
-          options: {
-            signal: AbortSignal;
-            onResponse: (response: Response, model: Model<"openai-completions">) => void;
+  it.each(["openai-codex", "openrouter", "openai-compatible"])(
+    "switches after a %s stream goes silent before output",
+    async (provider) => {
+      vi.useFakeTimers();
+      try {
+        const targetModel = {
+          ...primary,
+          provider,
+          api: provider === "openai-codex" ? ("openai-codex-responses" as const) : primary.api,
+        };
+        providerState.models.set(`${targetModel.provider}/${targetModel.id}`, targetModel);
+        providerState.stream.mockImplementation(
+          (
+            target: Model<"openai-completions">,
+            _ctx: unknown,
+            options: {
+              signal: AbortSignal;
+              onResponse?: (response: Response, model: Model<"openai-completions">) => void;
+            },
+          ) => {
+            if (target.provider !== targetModel.provider)
+              return stream(target, message(target, [{ type: "text", text: "recovered" }], "stop"));
+            const result = new AssistantMessageEventStream();
+            options.onResponse?.(new Response(null, { status: 200 }), target);
+            options.signal.addEventListener("abort", () => {
+              const failure = message(target, [], "aborted", "aborted");
+              result.push({ type: "error", reason: "aborted", error: failure });
+              result.end(failure);
+            });
+            return result;
           },
-        ) => {
-          if (target.provider !== codex.provider)
-            return stream(target, message(target, [{ type: "text", text: "recovered" }], "stop"));
-          const result = new AssistantMessageEventStream();
-          options.onResponse(new Response(null, { status: 200 }), target);
-          options.signal.addEventListener("abort", () => {
-            const failure = message(target, [], "aborted", "aborted");
-            result.push({ type: "error", reason: "aborted", error: failure });
-            result.end(failure);
-          });
-          return result;
-        },
-      );
-      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-      input.model.provider = codex.provider;
-      const pending = run(input);
-      await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
-      expect(await pending).toContainEqual({ type: "text", text: "recovered" });
-      expect(providerState.stream).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+        );
+        const input = request([
+          { provider: backupA.provider, id: backupA.id, apiKey: "backup-key" },
+        ]);
+        input.model.provider = targetModel.provider;
+        const pending = run(input);
+        await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
+        expect(providerState.stream).toHaveBeenCalledTimes(2);
+        expect(await pending).toContainEqual({ type: "text", text: "recovered" });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("records streamed content when the provider iterator throws after output", async () => {
     const failure = message(

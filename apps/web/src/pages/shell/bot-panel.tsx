@@ -33,6 +33,7 @@ import {
   Textarea,
   Toggle,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { X } from "lucide-react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
@@ -567,21 +568,15 @@ export function BotSettings({
           }}
         />
       </div>
-      <details
+      <Disclosure
         data-testid="bot-settings-advanced"
         className="group mt-5"
-        onToggle={(event) => {
-          if (event.currentTarget.open) setAdvancedOpened(true);
+        onOpenChange={(open) => {
+          if (open) setAdvancedOpened(true);
         }}
+        summary={<Trans>Advanced</Trans>}
+        summaryClassName="w-full flex items-center justify-between gap-3 text-[14px] text-muted-foreground"
       >
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
-          <span className="text-muted-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
         <InstructionSettings key={bot.id} bot={bot} />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
@@ -750,35 +745,36 @@ export function BotSettings({
           </label>
         ))}
         {advancedOpened ? <BotCredentialsSection botId={bot.id} /> : null}
-      </details>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => void onExport()}>
+            <Trans>Export</Trans>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={onClear}
+          >
+            <Trans>Clear conversation</Trans>
+          </Button>
+        </div>
+      </Disclosure>
       {error ? <p className="mt-2 text-[13px] text-destructive">{error}</p> : null}
-      <div className="mt-5 flex flex-col items-start gap-3">
-        <Button
-          disabled={saving}
-          onClick={() => {
-            void enqueueSave({
-              name,
-              title,
-              description,
-              color,
-              notifyOnFinish,
-            });
-          }}
-        >
-          <Trans>Save</Trans>
-        </Button>
-        <Button variant="ghost" size="sm" className="-ms-2.5" onClick={() => void onExport()}>
-          <Trans>Export</Trans>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="-ms-2.5 text-destructive hover:text-destructive"
-          onClick={onClear}
-        >
-          <Trans>Clear conversation</Trans>
-        </Button>
-      </div>
+      <Button
+        className="mt-5"
+        disabled={saving}
+        onClick={() => {
+          void enqueueSave({
+            name,
+            title,
+            description,
+            color,
+            notifyOnFinish,
+          });
+        }}
+      >
+        <Trans>Save</Trans>
+      </Button>
     </div>
   );
 }

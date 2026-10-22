@@ -141,6 +141,15 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
+  if (lower.includes("can you check my gmail inbox?")) {
+    return [
+      {
+        assistant: "Connect Gmail and I’ll check your inbox.",
+        toolCalls: [{ name: "connect_app", args: { app: "gmail" } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("silent routine fixture")) {
     return [
       {

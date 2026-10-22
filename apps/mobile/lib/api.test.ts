@@ -3473,3 +3473,15 @@ it("localizes non-JSON successful account-security responses", async () => {
   );
   await expect(fetchAccountSecurity()).rejects.toThrow("Could not load sign-in options");
 });
+
+it("keeps the thread id on live messages so inline cards can act on them", () => {
+  const view = applyMobileThreadEvent(
+    { threadId: "chat", messages: [], olderCursor: null, run: null } as MobileSnapshot,
+    {
+      type: "thread.message.created",
+      seq: 1,
+      payload: { messageId: "card", role: "bot", blocks: [] },
+    } as never,
+  );
+  expect(view?.messages[0]?.threadId).toBe("chat");
+});

@@ -1,6 +1,8 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
 import {
   displayName,
+  escapeJsonSearchWildcards,
+  escapeSearchWildcards,
   extractLinksFromText,
   matchesSearchQuery,
   snippetAroundMatch,
@@ -21,7 +23,7 @@ const UNINDEXED_SCAN_LIMIT = 200;
  * on rows that are still plaintext.
  */
 async function messageMatch(prisma: PrismaClient, spaceId: string, query: string) {
-  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${query}%`}`;
+  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
   const keyTokens = await encryption.messageSearchTokens(spaceId, query, "prefix");
@@ -86,6 +88,10 @@ export async function querySpaceSearch(
 ): Promise<SearchHit[]> {
   const query = q.trim();
   if (!query) return [];
+  // The database side has to match the text the user typed, the way
+  // `matchesSearchQuery` does in memory: a `%` or `_` would otherwise widen
+  // the match, and a `\` would swallow the character after it.
+  const likeQuery = escapeSearchWildcards(query);
 
   const conversationHits: SearchHit[] = [];
   const contentHits: SearchHit[] = [];
@@ -112,9 +118,9 @@ export async function querySpaceSearch(
       userId: actor.userId,
       archivedAt: null,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { title: { contains: likeQuery, mode: "insensitive" } },
+        { description: { contains: likeQuery, mode: "insensitive" } },
       ],
     },
     take: CONVERSATION_HIT_LIMIT,
@@ -137,7 +143,7 @@ export async function querySpaceSearch(
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     take: CONVERSATION_HIT_LIMIT,
   });
@@ -163,7 +169,7 @@ export async function querySpaceSearch(
       userId: actor.userId,
       groupId: null,
       botId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
       bot: { archivedAt: null },
     },
     include: { bot: { select: { name: true } } },
@@ -202,7 +208,7 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       groupId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     include: { group: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -240,8 +246,8 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { prompt: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { prompt: { contains: likeQuery, mode: "insensitive" } },
       ],
       bot: { archivedAt: null },
     },

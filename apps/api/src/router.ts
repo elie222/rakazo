@@ -176,6 +176,7 @@ import {
   clampCatalogThinkingLevel,
   containsSecret,
   displayName,
+  escapeSearchWildcards,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
@@ -4237,6 +4238,10 @@ export function createRouter(deps: RouterDeps) {
       list: boardEnabled.tickets.list.handler(async ({ context, input }) => {
         const board = await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
         const q = input.q?.trim();
+        // The database side has to match the text the user typed: a `%` or `_`
+        // would otherwise widen the match, and a `\` would swallow the
+        // character after it.
+        const likeQ = q ? escapeSearchWildcards(q) : q;
         const where: Prisma.TicketWhereInput = {
           spaceId: context.actor.spaceId,
           boardId: board.id,
@@ -4245,8 +4250,8 @@ export function createRouter(deps: RouterDeps) {
           ...(q
             ? {
                 OR: [
-                  { title: { contains: q, mode: "insensitive" } },
-                  { description: { contains: q, mode: "insensitive" } },
+                  { title: { contains: likeQ, mode: "insensitive" } },
+                  { description: { contains: likeQ, mode: "insensitive" } },
                 ],
               }
             : {}),
@@ -5163,6 +5168,8 @@ export function createRouter(deps: RouterDeps) {
           input.botId,
           input.provider,
           input.connectorId,
+          input.threadId,
+          input.messageId,
         );
         return { ok: true as const };
       }),

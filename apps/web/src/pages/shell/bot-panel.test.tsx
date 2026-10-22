@@ -196,18 +196,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps advanced controls inside details in the shared order", async () => {
+it("keeps advanced controls inside the disclosure in the shared order", async () => {
   vi.mocked(rpc.voice.voices).mockResolvedValueOnce([
     { id: "fixture-voice", label: "Fixture voice" },
   ]);
   await render();
-  const advanced = container.querySelector<HTMLDetailsElement>(
-    '[data-testid="bot-settings-advanced"]',
-  )!;
-  expect(advanced.open).toBe(false);
+  const advanced = container.querySelector<HTMLElement>('[data-testid="bot-settings-advanced"]')!;
+  expect(advanced.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
+    "false",
+  );
   await act(async () => {
-    advanced.open = true;
-    advanced.dispatchEvent(new Event("toggle"));
+    advanced.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click();
   });
   const labels = {
     instructions: "Instructions",
@@ -228,7 +227,8 @@ it("keeps advanced controls inside details in the shared order", async () => {
     ),
   );
   expect(controls).toHaveLength(Object.keys(labels).length);
-  for (const control of controls) expect(control.closest("details")).toBe(advanced);
+  for (const control of controls)
+    expect(control.closest('[data-testid="bot-settings-advanced"]')).toBe(advanced);
   for (const control of controls.filter(
     (node) => !["Open work", "Memory / Shared skills"].includes(node.textContent ?? ""),
   )) {

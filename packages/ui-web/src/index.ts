@@ -1,3 +1,4 @@
+export { AppMarkStack } from "./app-mark-stack.js";
 export { type AvatarStyle, AvatarStyleProvider, useAvatarStyle } from "./avatar-style.js";
 export {
   BOT_AVATAR_COLORS,

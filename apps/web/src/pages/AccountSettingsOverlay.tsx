@@ -4,6 +4,7 @@ import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakaz
 import {
   BotAvatar,
   Button,
+  buttonVariants,
   Field,
   FieldLabel,
   Input,
@@ -16,6 +17,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
@@ -316,20 +318,17 @@ export function GeneralSettingsPanels({
       </section>
 
       {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
+        <Link to="/integrations/setup" className={buttonVariants({ variant: "outline" })}>
           <Trans>Server integrations</Trans>
-        </Button>
+        </Link>
       ) : null}
 
-      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-          <span className="block text-[15px] text-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
+      <Disclosure
+        data-testid="advanced-settings"
+        className="group rounded-xl border border-border"
+        summary={<Trans>Advanced</Trans>}
+        summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75"
+      >
         <div className="border-t border-border px-4 pb-5">
           <div className="flex items-start gap-3 pt-5">
             <Switch
@@ -395,7 +394,7 @@ export function GeneralSettingsPanels({
             </Label>
           </div>
         </div>
-      </details>
+      </Disclosure>
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>

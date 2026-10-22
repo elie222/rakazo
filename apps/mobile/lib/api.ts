@@ -17,6 +17,7 @@ import type {
 import {
   accountSecuritySchema,
   authCapabilitiesSchema,
+  CLIENT_UPDATE_REQUIRED_STATUS,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -33,6 +34,7 @@ import {
   isUnreachableStatus,
   mergeThreadHistory,
   messagingProviderLabel,
+  parseRetryAfter,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -463,11 +465,22 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
+let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+  headers: () => ({}),
+  onUpdateRequired: () => {},
+};
+
+/** The app names its build on every request and decides what a refused build does. */
+export function configureClientBuild(options: typeof clientBuild): void {
+  clientBuild = options;
+}
+
 export async function authHeaders(
   spaceId: string | null = selectedSpaceId(),
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   };
@@ -939,11 +952,7 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw Object.defineProperties(new Error(message), {
-        status: { value: res.status },
-        // oRPC's error code; a proxy's bare 404 has none.
-        code: { value: typeof error?.code === "string" ? error.code : undefined },
-      });
+      throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (
@@ -1194,6 +1203,20 @@ type ThreadEvent = {
 /** No frame at all for this long means the stream is half-open; the server beats far faster. */
 export const IDLE_TIMEOUT_MS = 45_000;
 
+/**
+ * A failed response as an error the shared retry policy can read: its status, oRPC code, and any
+ * Retry-After. A 426 also asks the user to update, from whichever request noticed it.
+ */
+function httpError(message: string, res: Response, code?: string): Error {
+  if (res.status === CLIENT_UPDATE_REQUIRED_STATUS) clientBuild.onUpdateRequired();
+  return Object.defineProperties(new Error(message), {
+    status: { value: res.status },
+    // oRPC's error code; a proxy's bare 404 has none.
+    code: { value: code },
+    retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
+  });
+}
+
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -1219,7 +1242,10 @@ export async function subscribeThread(
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  if (!res.ok || !res.body) {
+    cancelResponseBody(res);
+    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1469,6 +1495,8 @@ export function applyMobileThreadEvent(
     const seq = typeof event.payload?.seq === "number" ? event.payload.seq : known?.seq;
     const next: MobileMessage = {
       id,
+      // Inline cards act on the message's thread, so live messages need it too.
+      threadId: known?.threadId ?? prev.threadId,
       // The seq lets a send that is still on screen as "Sending…" recognize its echo.
       ...(seq === undefined ? {} : { seq }),
       createdAt: known?.createdAt ?? event.createdAt,

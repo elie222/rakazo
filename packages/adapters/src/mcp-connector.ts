@@ -90,8 +90,8 @@ export const DEFAULT_MCP_DISCOVERY_TIMEOUT_MS = 20_000;
 /** After a failed discovery, runs skip the server for this long, doubling up to the max. */
 const DISCOVERY_BACKOFF_MS = 30_000;
 const DISCOVERY_BACKOFF_MAX_MS = 5 * 60_000;
-/** A server that needs new credentials waits longer: retrying rarely helps, but a refresh
- * that failed only because the provider was briefly down still gets another try. */
+/** A server that needs new credentials or a new address waits longer: retrying rarely
+ * helps, but a failure that was only brief still gets another try. */
 const RECONNECT_BACKOFF_MS = 60 * 60_000;
 
 /** A server that did not list its tools within the discovery deadline. */
@@ -115,12 +115,12 @@ function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 /**
  * A failure the user resolves rather than a bug: `reconnect` needs new credentials or
- * config (each of which bumps the server's revision), `unreachable` a host that is down
- * or gone. Both are logged as warnings, so they stay out of error reporting.
+ * config (each of which bumps the server's revision), including a host name that no
+ * longer resolves, such as an expired tunnel; `unreachable` a host that is down. Both are
+ * logged as warnings, so they stay out of error reporting.
  */
 type ExpectedFailure = "reconnect" | "unreachable";
 const UNREACHABLE_CODES = new Set([
-  "ENOTFOUND",
   "EAI_AGAIN",
   "ECONNREFUSED",
   "ECONNRESET",
@@ -138,6 +138,7 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
   if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403))
     return "reconnect";
   const code = (error as { code?: unknown }).code;
+  if (code === "ENOTFOUND") return "reconnect";
   if (typeof code === "string" && UNREACHABLE_CODES.has(code)) return "unreachable";
   const inner = error instanceof AggregateError ? error.errors : [error.cause];
   for (const cause of inner) {

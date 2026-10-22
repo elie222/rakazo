@@ -135,7 +135,12 @@ export async function probeScreen(
     });
     if (response.ok) return null;
     if (response.type === "opaqueredirect") return fallback;
-    const text = (await response.text().catch(() => "")).trim().slice(0, 200);
+    const contentType = response.headers?.get("content-type") ?? "";
+    const body = (await response.text().catch(() => "")).trim();
+    // Only the proxy's own short plain-text reasons are worth showing; an upstream HTML error
+    // page would read as raw markup in the alert.
+    const isHtml = /html/i.test(contentType) || /<[a-z!/]/i.test(body);
+    const text = isHtml ? "" : body.slice(0, 200);
     return text || `${fallback} (HTTP ${response.status})`;
   } catch {
     return fallback;

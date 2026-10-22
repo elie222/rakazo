@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@source "../../../../packages/ui-web/src/button.tsx";
-
 @font-face {
   font-family: "Aeonik";
   src: url("/fonts/aeonik-medium.woff") format("woff");
@@ -1485,7 +1483,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow-y: auto;
   padding: 20px 24px;
 }
@@ -1974,14 +1972,73 @@ button.product-demo__dock-icon {
   border-radius: 14px;
 }
 
+/* Under the preview, like the app's caption row: a plain text action flush
+   with the preview's right edge, plus a status line only while in control. */
 .product-demo__screen-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--panel-muted);
   font-size: 13.5px;
+}
+
+.product-demo__screen-meta > span {
+  margin-right: auto;
+}
+
+/* Matches the app's text button: no box at rest, brighter on hover, and a
+   ring only for keyboard focus. */
+.product-demo__text-btn {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  color: var(--panel-muted);
+  font: inherit;
+  line-height: 20px;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.product-demo__text-btn:hover {
+  color: var(--panel-copy);
+}
+
+.product-demo__text-btn:focus {
+  outline: none;
+}
+
+.product-demo__text-btn:focus-visible {
+  color: var(--panel-copy);
+  outline: 2px solid color-mix(in srgb, var(--panel-copy) 50%, transparent);
+  outline-offset: 3px;
+}
+
+.product-demo__outline-btn {
+  border: 1px solid var(--panel-line-2);
+  border-radius: 10px;
+  background: transparent;
+  padding: 5px 12px;
+  color: var(--panel-copy);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.product-demo__outline-btn:hover {
+  background: var(--panel-line);
+}
+
+.product-demo__outline-btn:focus {
+  outline: none;
+}
+
+.product-demo__outline-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--panel-copy) 50%, transparent);
+  outline-offset: 2px;
 }
 
 .product-demo__panel-label {

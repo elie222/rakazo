@@ -60,4 +60,55 @@ describe("computer update presentation", () => {
     await Promise.resolve();
     expect(store.getSnapshot().updates).toEqual([]);
   });
+  it("stops polling on a 401 and resumes on the next watch", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
+      throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    });
+    const store = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+      releaseInterrupted: async () => {},
+    });
+    let stop = store.watch();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    stop();
+    list.mockResolvedValue([]);
+    stop = store.watch();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(list).toHaveBeenCalledTimes(3);
+    stop();
+  });
+  it("stops polling when the server refuses this build", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
+      throw Object.assign(new Error("Update required"), { status: 426 });
+    });
+    const stop = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+      releaseInterrupted: async () => {},
+    }).watch();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    stop();
+  });
+  it("keeps polling through other failures", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
+      throw Object.assign(new Error("Unavailable"), { status: 503 });
+    });
+    const stop = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+      releaseInterrupted: async () => {},
+    }).watch();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(list).toHaveBeenCalledTimes(3);
+    stop();
+  });
 });

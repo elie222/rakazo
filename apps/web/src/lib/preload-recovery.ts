@@ -38,6 +38,7 @@ export function usePreloadRecoveryState<T>(key: string, initial: T) {
 
 const PRELOAD_RECOVERY_COOLDOWN_MS = 30_000;
 let reloading = false;
+let reloadOnce: () => boolean = () => false;
 const untilReload = new Promise<never>(() => {});
 
 /**
@@ -93,9 +94,9 @@ export function installPreloadRecovery(
     () => storage.removeItem(PRELOAD_RECOVERY_KEY),
     PRELOAD_RECOVERY_COOLDOWN_MS,
   );
-  const onPreloadError = () => {
-    if (reloading) return;
-    if (!target.navigator.onLine || storage.getItem(PRELOAD_RECOVERY_KEY)) return;
+  reloadOnce = () => {
+    if (reloading) return false;
+    if (!target.navigator.onLine || storage.getItem(PRELOAD_RECOVERY_KEY)) return false;
     storage.setItem(PRELOAD_RECOVERY_KEY, "1");
     try {
       storage.setItem(PRELOAD_RECOVERY_STATE_KEY, JSON.stringify(getState()));
@@ -104,12 +105,24 @@ export function installPreloadRecovery(
     }
     reloading = true;
     target.location.reload();
+    return true;
   };
+  const onPreloadError = () => void reloadOnce();
 
   target.addEventListener("vite:preloadError", onPreloadError);
   return () => {
     reloading = false;
+    reloadOnce = () => false;
     target.clearTimeout(clearRecovery);
     target.removeEventListener("vite:preloadError", onPreloadError);
   };
+}
+
+/**
+ * Reload to pick up a newer deployment, under the same guard as stale-chunk recovery: at most one
+ * reload per cooldown, never offline, and with read-only overlays restored afterwards. False when
+ * the guard refused.
+ */
+export function recoveryReload(): boolean {
+  return reloadOnce();
 }

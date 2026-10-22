@@ -1,5 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
+import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 type ThreadHead = { threadId: string; cursor: number };
 
@@ -19,20 +20,33 @@ export async function runThreadSubscription(options: {
   onEvent: (event: ProductEvent, initial: ThreadHead) => void;
 }): Promise<void> {
   const { signal } = options;
-  const wait = async (ms: number) => {
-    await abortableDelay(ms, signal);
-    return !signal.aborted;
+  // A 401 (session gone), 426 (build retired) or other 4xx is the server's answer: retrying
+  // cannot succeed and only polls the server. A 429 may ask for a longer wait.
+  let refused = false;
+  let lastFailure: unknown;
+  const stopped = () => signal.aborted || refused;
+  const noteFailure = (error: unknown) => {
+    // Keep whichever failure asked for the longer wait (a 429's Retry-After).
+    if (retryDelayMs(error, 0) >= retryDelayMs(lastFailure, 0)) lastFailure = error;
+    if (!isRetryableError(error)) refused = true;
+    return null;
   };
-  let initial = await options.loadInitial().catch(() => null);
-  if (signal.aborted) return;
+  const wait = async (ms: number) => {
+    const delay = retryDelayMs(lastFailure, ms);
+    lastFailure = undefined;
+    await abortableDelay(delay, signal);
+    return !stopped();
+  };
+  let initial = await options.loadInitial().catch(noteFailure);
+  if (stopped()) return;
   let headRetryMs = 250;
-  while (!initial && !signal.aborted) {
-    initial = await options.loadHead().catch(() => null);
+  while (!initial && !stopped()) {
+    initial = await options.loadHead().catch(noteFailure);
     if (initial) break;
-    if (!(await wait(headRetryMs))) return;
+    if (stopped() || !(await wait(headRetryMs))) return;
     headRetryMs = Math.min(headRetryMs * 2, 5_000);
   }
-  if (!initial || signal.aborted) return;
+  if (!initial || stopped()) return;
   const head = initial;
   let cursor = head.cursor;
   let snapshotReady = options.currentSnapshot()?.threadId === head.threadId;
@@ -40,10 +54,10 @@ export async function runThreadSubscription(options: {
   if (!snapshotReady) {
     void (async () => {
       let snapshotRetryMs = 250;
-      while (!snapshotReady && !signal.aborted) {
+      while (!snapshotReady && !stopped()) {
         if (!(await wait(snapshotRetryMs))) return;
-        await options.refresh().catch(() => null);
-        if (signal.aborted) return;
+        await options.refresh().catch(noteFailure);
+        if (stopped()) return;
         const committed = options.currentSnapshot();
         if (committed?.threadId === head.threadId) {
           snapshotReady = true;
@@ -97,16 +111,17 @@ export async function runThreadSubscription(options: {
         attempt.abort();
         void iterator.return?.(undefined).catch(() => {});
       }
-    } catch {
-      // Reconnect from the last durable event after a transient transport failure.
+    } catch (error) {
+      // Reconnect from the last durable event after a transient failure.
+      noteFailure(error);
     } finally {
       signal.removeEventListener("abort", abortAttempt);
       // Also release attempts that failed before returning an iterator.
       attempt.abort();
     }
-    if (signal.aborted) return;
-    await options.refresh().catch(() => null);
-    if (!(await wait(retryMs))) return;
+    if (stopped()) return;
+    await options.refresh().catch(noteFailure);
+    if (stopped() || !(await wait(retryMs))) return;
     retryMs = Math.min(retryMs * 2, 5_000);
   }
 }
