@@ -14,8 +14,16 @@ import {
   notifyArchivedChatsChanged,
   onArchivedChatsChanged,
 } from "./archived-chats";
+import { confirmDeleteGroup } from "./bot-lifecycle";
 
-vi.mock("./api", () => ({ rpc: vi.fn() }));
+const { groupRpc, groupAlert } = vi.hoisted(() => ({
+  groupRpc: vi.fn(),
+  groupAlert: vi.fn(),
+}));
+vi.mock("./api", () => ({ rpc: groupRpc }));
+vi.mock("react-native", () => ({ Alert: { alert: groupAlert } }));
+vi.mock("./i18n", () => ({ t: (text: string) => text }));
+vi.mock("./user-error", () => ({ errorText: () => "failure" }));
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
@@ -346,20 +354,19 @@ describe("thread menu archive notifications", () => {
 describe("group deletion archive notifications", () => {
   it("notifies after success and leaves the count unchanged on failure", async () => {
     const group = readFileSync(new URL("../app/group-settings.tsx", testFileUrl), "utf8");
-    const rpc = vi.fn().mockResolvedValueOnce({});
+    const rpc = groupRpc.mockReset().mockResolvedValueOnce({});
     const notify = vi.fn();
-    const alert = vi.fn();
+    const alert = groupAlert.mockReset();
     const remove = new Function(
-      "rpc",
+      "confirmDeleteGroup",
       "notifyArchivedChatsChanged",
-      "Alert",
       compile(`
       const groupId = "group-b", group = { name: "Group" };
-      const t = text => text, router = { replace() {} }, errorText = () => "failure";
+      const router = { replace() {} };
       ${group.slice(group.indexOf("  function remove()"), group.indexOf("  return ("))}
       return remove;
     `),
-    )(rpc, notify, { alert });
+    )(confirmDeleteGroup, notify);
     remove();
     alert.mock.calls[0]![2][1].onPress();
     expect(notify).not.toHaveBeenCalled();

@@ -183,8 +183,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  const advanced = settings.getByTestId("bot-settings-advanced");
-  await expandAdvancedSection(advanced);
+  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
   // NativeSelect sits inside a wrapping <label>, so label text includes option
   // copy and getByLabel(..., { exact: true }) misses the control. Use the
   // combobox accessible name, matching other model E2E tests.
@@ -206,8 +205,101 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.reload();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   await expect(settings).toBeVisible();
-  await expandAdvancedSection(advanced);
+  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
   await expect(thinking).toHaveValue("low");
+});
+
+test("the bot's model picker marks models that cannot read images", async ({ page }, testInfo) => {
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      json: Array<{ provider: string; id: string; label: string; images?: boolean }>;
+    };
+    const template = body.json.find((entry) => entry.provider === "openrouter");
+    if (!template) throw new Error("Missing OpenRouter catalog fixture");
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        json: [
+          ...body.json.filter((entry) => entry.provider !== "openrouter"),
+          { ...template, id: "fixture-text", label: "Text-only model", images: false },
+          ...Array.from({ length: 10 }, (_, index) => ({
+            ...template,
+            id: `fixture-vision-${index + 1}`,
+            label: `Vision model ${index + 1}`,
+            images: true,
+          })),
+        ],
+      },
+    });
+  });
+  // A connected OpenRouter key offers its catalog models to the bot.
+  await page.route("**/rpc/models/credentials", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<Record<string, unknown>> };
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        json: [
+          ...body.json,
+          {
+            id: "fixture-openrouter",
+            provider: "openrouter",
+            label: "OpenRouter",
+            hasKey: true,
+            isDefault: false,
+          },
+        ],
+      },
+    });
+  });
+  await signup(page, `bot-text-only-${Date.now()}@rakazo.test`, "password12", "Bot Models");
+  await completeOnboarding(page);
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
+
+  // Past ten choices the model field becomes a searchable button.
+  const picker = settings.getByRole("button", { name: "Model", exact: true });
+  await expect(picker).toBeVisible();
+  await picker.click();
+  await page.getByRole("combobox", { name: "Search models" }).fill("model");
+  const textOnly = page.getByRole("option", { name: "OpenRouter · Text-only model", exact: true });
+  const vision = page.getByRole("option", { name: "OpenRouter · Vision model 1", exact: true });
+  await expect(textOnly).toBeVisible();
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-row");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-row-dark");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
+  await expect(textOnly.getByTitle("Can't read images")).toBeVisible();
+  await expect(textOnly).toHaveAccessibleDescription("Can't read images");
+  await expect(vision.getByTitle("Can't read images")).toHaveCount(0);
+
+  await textOnly.click();
+  await expect(picker).toContainText("Text-only model");
+  await picker.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-selected");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-selected-dark");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
+  await expect(picker.getByTitle("Can't read images")).toBeVisible();
+  await expect(picker).toHaveAccessibleDescription("Can't read images");
+
+  await picker.click();
+  await page.getByRole("combobox", { name: "Search models" }).fill("Vision model 1");
+  await vision.click();
+  await expect(picker.getByTitle("Can't read images")).toHaveCount(0);
 });
 
 function readJsonBody(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -288,12 +380,14 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    const socket = process.env.E2E_COMPATIBLE_SOCKET;
+    if (socket) server.listen(socket, resolve);
+    else server.listen(0, "127.0.0.1", resolve);
   });
 
   try {
     const address = server.address() as AddressInfo;
-    const baseUrl = `http://127.0.0.1:${address.port}/v1`;
+    const baseUrl = process.env.E2E_COMPATIBLE_FIXTURE_URL ?? `http://127.0.0.1:${address.port}/v1`;
     const stamp = Date.now();
     const userName = `Local model ${stamp}`;
     // The pi runtime asks for a model before onboarding finishes; this test connects
@@ -803,10 +897,7 @@ test("chat settings search a long model list", async ({ page }, testInfo) => {
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
   await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
-  const model = settings
-    .locator("label")
-    .filter({ hasText: /^Model/ })
-    .getByRole("button");
+  const model = settings.getByRole("button", { name: "Model", exact: true });
   await expect(model).toHaveText(/^Space default/);
   await model.click();
 

@@ -326,7 +326,8 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+                data-testid="subagent-card"
+                className="w-[420px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[15px] font-medium text-foreground" dir="auto">
@@ -366,7 +367,8 @@ export const MessageView = memo(function MessageView({
                 type="button"
                 disabled={removed}
                 onClick={() => onOpenBot(block.botId)}
-                className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
+                data-testid="bot-link-card"
+                className="w-[340px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-[15px] font-medium text-foreground" dir="auto">
@@ -552,7 +554,7 @@ export const MessageView = memo(function MessageView({
               <div
                 key={i}
                 data-testid="computer-card"
-                className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+                className="w-[340px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-[15px] font-medium text-foreground">

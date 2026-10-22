@@ -59,6 +59,42 @@ describe("lingui catalogs", () => {
     }
   });
 
+  it("translates bot settings labels and retains placeholders in every locale", () => {
+    for (const locale of UI_LOCALES) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of [
+        "Advanced",
+        "Notifications",
+        "When it finishes or needs input",
+        "Model",
+        "Add a label",
+        "Add open work",
+        "Can edit and organise bots it creates",
+        "Disable a tool",
+        "Edit label",
+        "Edit name",
+        "Enable {0}",
+        "Encrypted and never shown again",
+        "How other bots see it",
+        "Model connections",
+        "Permissions",
+        "Skills",
+      ]) {
+        const entry = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+        expect(entry, `${locale}: ${message}`).toMatch(/msgstr ".+"/);
+        const translated = entry?.split("msgstr ")[1] ?? "";
+        expect(translated.match(/\{\w+\}/g) ?? [], `${locale}: ${message}`).toEqual(
+          message.match(/\{\w+\}/g) ?? [],
+        );
+      }
+    }
+  });
+
   beforeEach(() => {
     i18n.load("en", {});
     i18n.activate("en");
@@ -69,7 +105,7 @@ describe("lingui catalogs", () => {
       "Command variable",
       "Available to this bot's shell commands as {commandVariable}",
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
-      "Values are encrypted and never shown again.",
+      "Encrypted and never shown again",
     ];
     for (const locale of [
       "en",

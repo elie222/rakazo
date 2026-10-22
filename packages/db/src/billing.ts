@@ -51,6 +51,7 @@ export async function replaceBillingCustomer(
     where: { organizationId: input.organizationId, customerId: input.previousCustomerId },
     data: {
       customerId: input.customerId,
+      creditAmountCents: null,
       subscriptionId: null,
       subscriptionItemId: null,
       priceId: null,
@@ -91,6 +92,7 @@ export async function syncBillingSnapshot(
   const written = await prisma.billingAccount.updateMany({
     where: { customerId, OR: [{ syncedAt: null }, { syncedAt: { lt: startedAt } }] },
     data: {
+      creditAmountCents: snapshot?.creditAmountCents ?? null,
       subscriptionId: snapshot?.subscriptionId ?? null,
       subscriptionItemId: snapshot?.subscriptionItemId ?? null,
       priceId: snapshot?.priceId ?? null,

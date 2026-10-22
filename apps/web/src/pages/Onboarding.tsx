@@ -127,6 +127,7 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const [billingEnabled, setBillingEnabled] = useState(false);
   const [integrationSetup, setIntegrationSetup] = useState<IntegrationSetupState | null>(null);
   const needsIntegrationSetup = integrationSetup?.needsSetup ?? false;
   const [integrationServers, setIntegrationServers] = useState<string[]>([]);
@@ -199,6 +200,7 @@ export function OnboardingPage() {
       rpc.integrationSetup.get().catch(() => null),
     ])
       .then(([me, models, integrations]) => {
+        setBillingEnabled(me.billingEnabled);
         setIntegrationSetup(integrations);
         setCatalog(models);
         deploymentDefaultModelRef.current = me.defaultModel;
@@ -1019,6 +1021,19 @@ export function OnboardingPage() {
               <Button disabled={!canSaveModel} onClick={() => void saveModel()}>
                 <Trans>Continue</Trans>
               </Button>
+              {billingEnabled ? (
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void rpc.billing
+                      .selectFunding({ funding: "credits" })
+                      .then(() => window.location.assign("/onboarding"))
+                      .catch(() => setError(t`Could not open billing`))
+                  }
+                >
+                  <Trans>Use Rakazo credits</Trans>
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : null}

@@ -32,6 +32,8 @@ type NativeNotifications = {
   openSettings(): Promise<void>;
   canPostPromotedNotifications(): Promise<boolean>;
   openPromotedSettings(): Promise<void>;
+  /** Missing on native builds that predate the check. */
+  hasPromotedSettings?: () => boolean;
 };
 
 const nativeNotifications =
@@ -183,6 +185,18 @@ export async function openLiveNotificationSettings(): Promise<void> {
 
 export async function canPostPromotedNotifications(): Promise<boolean> {
   return nativeNotifications?.canPostPromotedNotifications() ?? true;
+}
+
+/**
+ * Android's own live update screen arrived in Android 16 and some devices
+ * still lack it. Without it, the row would open general notification settings.
+ */
+export function hasLiveUpdateSettings(): boolean {
+  if (!nativeNotifications) return false;
+  if (typeof nativeNotifications.hasPromotedSettings === "function") {
+    return nativeNotifications.hasPromotedSettings();
+  }
+  return typeof Platform.Version === "number" && Platform.Version >= 36;
 }
 
 export async function openPromotedNotificationSettings(): Promise<void> {

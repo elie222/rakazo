@@ -1,7 +1,6 @@
-import { readBoundedResponseBytes } from "@rakazo/core";
+import { readBoundedResponseBytes, speechLocaleTag } from "@rakazo/core";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
-import type { UiLocale } from "./ui-locale.js";
 import { errorText, voiceAccountErrorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
@@ -95,27 +94,6 @@ const RESTART_BACKOFF_MS = 900;
 const RESTART_GIVE_UP_AFTER = 4;
 const RESTART_GIVE_UP_ERROR =
   "The browser keeps dropping the microphone. Start dictation again to retry.";
-
-/** Web Speech wants a BCP-47 tag; the app's UI locale is a short code. */
-const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
-  en: "en-US",
-  de: "de-DE",
-  es: "es-ES",
-  fr: "fr-FR",
-  he: "he-IL",
-  hi: "hi-IN",
-  ko: "ko-KR",
-  nl: "nl-NL",
-  "pt-BR": "pt-BR",
-  ru: "ru-RU",
-  tr: "tr-TR",
-  "zh-CN": "zh-CN",
-};
-
-/** The tag the recognizer needs for a UI locale, when we know one. */
-export function speechLocaleTag(locale: UiLocale): string | undefined {
-  return SPEECH_LOCALE_TAGS[locale];
-}
 
 /**
  * The language the recognizer listens in: the app's own language when the UI is

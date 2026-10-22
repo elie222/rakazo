@@ -5,10 +5,19 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 
+interface SessionState {
+  isPending: boolean;
+  data: { user: { id: string } } | null;
+  error: null;
+}
+
+const signedIn: SessionState = { isPending: false, data: { user: { id: "user-1" } }, error: null };
 const capability = vi.hoisted(() => ({
   enabled: false,
   boardLoaded: vi.fn(),
   screen: vi.fn(async () => ({ ok: true })),
+  session: null as SessionState | null,
+  authMounts: 0,
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -20,9 +29,20 @@ vi.mock("./lib/bootstrap", () => ({
 }));
 vi.mock("./lib/auth", () => ({
   authClient: {
-    useSession: () => ({ isPending: false, data: { user: { id: "user-1" } }, refetch: vi.fn() }),
+    useSession: () => ({ ...(capability.session ?? signedIn), refetch: vi.fn() }),
   },
 }));
+vi.mock("./pages/Auth", async () => {
+  const { useEffect } = await import("react");
+  return {
+    AuthPage: ({ mode }: { mode: string }) => {
+      useEffect(() => {
+        capability.authMounts += 1;
+      }, []);
+      return <div>Auth {mode}</div>;
+    },
+  };
+});
 vi.mock("./lib/remote-images-preference", () => ({
   getRemoteImagesEnabled: () => false,
   subscribeRemoteImages: () => () => {},
@@ -65,6 +85,38 @@ it("loads the board chunk only after bootstrap enables the route", async () => {
     expect(capability.boardLoaded).toHaveBeenCalledOnce();
     expect(container.textContent).toBe("Board page");
   } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps the sign-in page mounted while a signed-out session refetches", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = async (session: SessionState) => {
+    capability.session = session;
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/sign-in"]}>
+          <App />
+        </MemoryRouter>,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
+  try {
+    capability.authMounts = 0;
+    await render({ isPending: false, data: null, error: null });
+    expect(container.textContent).toBe("Auth in");
+    // Better Auth refetches a null session when the tab regains focus.
+    await render({ isPending: true, data: null, error: null });
+    expect(container.textContent).toBe("Auth in");
+    await render({ isPending: false, data: null, error: null });
+    expect(container.textContent).toBe("Auth in");
+    expect(capability.authMounts).toBe(1);
+  } finally {
+    capability.session = null;
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }

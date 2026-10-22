@@ -1,4 +1,4 @@
-import { iosAtLeast } from "./native-controls";
+import { Platform } from "react-native";
 
 // Inversion can spread a side edge's tint across the entire message list.
 export const threadScrollEdgeEffects = {
@@ -8,10 +8,17 @@ export const threadScrollEdgeEffects = {
   right: "hidden",
 } as const;
 
+export function threadHeaderFloats() {
+  return Platform.OS === "ios";
+}
+
 export function threadEdgeOptions() {
+  const floatingHeader = threadHeaderFloats();
   return {
-    headerTransparent: iosAtLeast(26),
-    ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
+    headerTransparent: floatingHeader,
+    ...(floatingHeader
+      ? { headerStyle: { backgroundColor: "transparent" }, headerShadowVisible: false }
+      : {}),
     scrollEdgeEffects: threadScrollEdgeEffects,
   };
 }

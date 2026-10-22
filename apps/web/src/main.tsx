@@ -1,3 +1,4 @@
+import "./monitoring-bootstrap";
 import { Toaster, TooltipProvider } from "@rakazo/ui-web";
 import { StrictMode, useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,7 +8,7 @@ import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { clientUpdates } from "./lib/client-update";
-import { reportCaughtReactError, startMonitoring } from "./lib/monitoring";
+import { reportCaughtReactError } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { installPreloadRecovery } from "./lib/preload-recovery";
 import { applyUiAppearance, watchSystemAppearance } from "./lib/ui-appearance";
@@ -15,7 +16,6 @@ import { resolveUiLocale } from "./lib/ui-locale";
 import "./styles.css";
 
 markOnce("rk:renderer:module-evaluated");
-void startMonitoring();
 installPreloadRecovery();
 clientUpdates().install();
 applyUiDirection(resolveUiLocale());

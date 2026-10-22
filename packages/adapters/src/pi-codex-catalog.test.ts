@@ -296,7 +296,12 @@ describe("CodexCatalogCache", () => {
   it("serves a fresh entry without refetching inside the TTL", async () => {
     let now = 1_000_000;
     const fetchImpl = listFetch();
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => now, waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => now,
+      waitMs: 50,
+    });
 
     const first = await cache.read("user-1", account());
     expect(first?.map((model) => model.slug)).toEqual([SPARK]);
@@ -322,7 +327,12 @@ describe("CodexCatalogCache", () => {
       .mockImplementation(async () =>
         okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
       );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => now, waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => now,
+      waitMs: 50,
+    });
 
     await cache.read("user-1", account());
     now += 16 * 60_000;
@@ -350,7 +360,12 @@ describe("CodexCatalogCache", () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 2_000 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 2_000,
+    });
 
     const reads = Promise.all([
       cache.read("user-1", account()),
@@ -370,7 +385,12 @@ describe("CodexCatalogCache", () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 30 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 30,
+    });
 
     const slow = await cache.read("user-1", account());
     expect(slow).toBeUndefined();
@@ -395,6 +415,7 @@ describe("CodexCatalogCache", () => {
         okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
       );
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => now,
       waitMs: 20,
@@ -423,6 +444,7 @@ describe("CodexCatalogCache", () => {
     let now = 1_000_000;
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("x", { status: 503 }));
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => now,
       waitMs: 50,
@@ -450,6 +472,7 @@ describe("CodexCatalogCache", () => {
       )
       .mockImplementation(async () => new Response("x", { status: 503 }));
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => now,
       waitMs: 50,
@@ -483,6 +506,7 @@ describe("CodexCatalogCache", () => {
       )
       .mockImplementation(async () => new Response("x", { status: 503 }));
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => now,
       waitMs: 50,
@@ -528,7 +552,12 @@ describe("CodexCatalogCache", () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 30_000 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 30_000,
+    });
 
     // A cold miss returns immediately instead of waiting on the network.
     expect(await cache.read("user-1", account(), { waitMs: 0 })).toBeUndefined();
@@ -546,7 +575,12 @@ describe("CodexCatalogCache", () => {
 
   it("keeps catalogs isolated per (userId, accountId)", async () => {
     const fetchImpl = listFetch();
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 50,
+    });
 
     await cache.read("user-1", account());
     await cache.read("user-2", account());
@@ -556,7 +590,12 @@ describe("CodexCatalogCache", () => {
 
   it("cannot collide keys across the userId/accountId boundary", async () => {
     const fetchImpl = listFetch();
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 50,
+    });
 
     await cache.read("ab", { accountId: "c", accessToken: async () => ACCESS_TOKEN });
     await cache.read("a", { accountId: "bc", accessToken: async () => ACCESS_TOKEN });
@@ -565,13 +604,19 @@ describe("CodexCatalogCache", () => {
 
   it("treats an empty catalog as a failure so the static list stays", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => okResponse(catalogPayload([])));
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => 0, waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => 0,
+      waitMs: 50,
+    });
     expect(await cache.read("user-1", account())).toBeUndefined();
   });
 
   it("does not negative-cache a read that never got a bearer", async () => {
     const fetchImpl = listFetch();
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => 0,
       waitMs: 50,
@@ -593,6 +638,7 @@ describe("CodexCatalogCache", () => {
     let now = 1_000_000;
     const fetchImpl = listFetch();
     const cache = new CodexCatalogCache({
+      enabled: true,
       fetch: fetchImpl,
       now: () => now,
       waitMs: 50,
@@ -685,7 +731,12 @@ describe("codexLiveListsModel", () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
     const expired = oauthSecret(ACCESS_TOKEN, -1_000);
 
     await expect(codexLiveListsModel(cache, "user-1", expired, SPARK)).resolves.toBe(false);
@@ -696,7 +747,12 @@ describe("codexLiveListsModel", () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
     const onExpiredToken = vi.fn();
 
     await expect(
@@ -713,7 +769,12 @@ describe("codexLiveListsModel", () => {
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
     // failureTtlMs dwarfs the test: a cached failure would hide the model.
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
     const onExpiredToken = vi.fn();
 
     await expect(
@@ -734,7 +795,12 @@ describe("codexLiveListsModel", () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
     const onExpiredToken = vi.fn();
 
     await expect(
@@ -849,7 +915,12 @@ describe("codexLiveCatalogsForSpace", () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
 
     const live = await codexLiveCatalogsForSpace(
       prisma,
@@ -879,7 +950,12 @@ describe("codexLiveCatalogsForSpace", () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       okResponse(catalogPayload([{ slug: SPARK, visibility: "list", supported_in_api: true }])),
     );
-    const cache = new CodexCatalogCache({ fetch: fetchImpl, now: () => Date.now(), waitMs: 50 });
+    const cache = new CodexCatalogCache({
+      enabled: true,
+      fetch: fetchImpl,
+      now: () => Date.now(),
+      waitMs: 50,
+    });
     const onExpiredToken = vi.fn();
     const auth: CodexCatalogSpaceAuth = {
       byProvider: { [CHATGPT_OAUTH_PROVIDER]: "oauth" },
@@ -947,7 +1023,7 @@ describe("applyCodexLiveCatalog", () => {
     expect(codexIds).toEqual([LUNA]);
   });
 
-  it("ignores live-only slugs that cannot resolve to a runnable pi model", () => {
+  it("adds live-only slugs using a runnable sibling", () => {
     const merged = applyCodexLiveCatalog(
       base,
       oauthAuth,
@@ -962,8 +1038,32 @@ describe("applyCodexLiveCatalog", () => {
     const ids = merged
       .filter((entry) => entry.provider === CHATGPT_OAUTH_PROVIDER)
       .map((entry) => entry.id);
-    expect(ids).toEqual([LUNA]);
-    expect(ids).not.toContain("gpt-7-codex-new");
+    expect(ids).toEqual([LUNA, "gpt-7-codex-new"]);
+  });
+
+  it("adds live-only models from their owning model-specific accounts once", () => {
+    const saved = "gpt-6-luna-latest";
+    const other = "gpt-7-codex-other";
+    const auth: CodexCatalogSpaceAuth = {
+      ...oauthAuth,
+      byModel: { [CHATGPT_OAUTH_PROVIDER]: { [saved]: "oauth" } },
+      secretIdByModel: { [CHATGPT_OAUTH_PROVIDER]: { [saved]: "secret-b" } },
+    };
+    const idsFor = (providerModels: CodexCatalogModel[], modelModels: CodexCatalogModel[]) =>
+      applyCodexLiveCatalog(
+        base,
+        auth,
+        liveFor({
+          "secret-a": [liveModel(LUNA), ...providerModels],
+          "secret-b": [liveModel(LUNA), ...modelModels],
+        }),
+      )
+        .filter((entry) => entry.provider === CHATGPT_OAUTH_PROVIDER)
+        .map((entry) => entry.id);
+
+    expect(idsFor([], [liveModel(saved), liveModel(other)])).toEqual([LUNA, saved]);
+    expect(idsFor([liveModel(saved)], [liveModel(saved)])).toEqual([LUNA, saved]);
+    expect(idsFor([liveModel(saved)], [])).toEqual([LUNA]);
   });
 
   it("overrides thinking levels only when the endpoint supplies known efforts", () => {

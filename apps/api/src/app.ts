@@ -32,6 +32,7 @@ import {
   createMessagingContextLoader,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
+  createModelCreditReconciler,
   createProductAnalytics,
   createRunExecutor,
   createRunSandbox,
@@ -40,6 +41,7 @@ import {
   createTicketChangeNotifier,
   createWebProvider,
   deletePushToken,
+  deploymentModelUsageLookup,
   destroyBot,
   EmailEmulator,
   ExpoPushProvider,
@@ -66,6 +68,7 @@ import {
   reconcileCloudAgents,
   reconcileComputerUpdates,
   removePiUserSessions,
+  resolveDeploymentModel,
   ScriptedAgentRuntime,
   SmtpEmailProvider,
   SpaceMemoryProviderResolver,
@@ -413,8 +416,22 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const billingProvider: BillingProvider | undefined =
     billingOverride ?? (stripeBilling ? new StripeBillingProvider(stripeBilling) : undefined);
   const billing = billingProvider
-    ? createBillingService({ prisma, provider: billingProvider, webOrigin: env.webOrigin })
+    ? createBillingService({
+        prisma,
+        provider: billingProvider,
+        webOrigin: env.webOrigin,
+        managedModelsAvailable: resolveDeploymentModel().configured,
+      })
     : undefined;
+  const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
+  await prisma.deploymentSettings.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      modelCreditsEnabled,
+    },
+    update: { modelCreditsEnabled },
+  });
   const installed = new InstalledConnectorProvider(
     prisma,
     secrets,
@@ -529,6 +546,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
   const executor = createRunExecutor({
+    billingEnabled: modelCreditsEnabled,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     contextStrategy,
     prisma,
@@ -583,6 +601,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     sandbox,
     home,
+    artifacts,
     jobs,
     events,
     workerId: "api",
@@ -604,6 +623,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         jobs,
         events,
         notifications,
+        reconcileModelCredits: createModelCreditReconciler({
+          prisma,
+          lookup: deploymentModelUsageLookup(),
+        }),
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
         reconcileSecurityEventRetention: createSecurityEventPruner(

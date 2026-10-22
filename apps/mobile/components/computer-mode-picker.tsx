@@ -26,15 +26,17 @@ export function ComputerModePicker({
           : { marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: native.fill }
       }
     >
-      <Text
-        style={
-          plain
-            ? { color: tokens.mutedForeground, fontSize: 14 }
-            : { color: tokens.foreground, marginBottom: 12, fontSize: 16, fontWeight: "600" }
-        }
-      >
-        {t("Computer")}
-      </Text>
+      {!plain ? (
+        <Text
+          style={
+            plain
+              ? { color: tokens.mutedForeground, fontSize: 14 }
+              : { color: tokens.foreground, marginBottom: 12, fontSize: 16, fontWeight: "600" }
+          }
+        >
+          {t("Computer")}
+        </Text>
+      ) : null}
       <NativeSegmentedControl
         accessibilityLabel={t("Computer")}
         disabled={disabled}

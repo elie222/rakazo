@@ -1,4 +1,6 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import { OpenRouterUsageLookup } from "./openrouter-usage.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = "openai/gpt-6-luna";
 
@@ -57,4 +59,11 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     configured: Boolean(key) || hostCredentials,
     hostCredentials,
   };
+}
+
+export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
+  const model = resolveDeploymentModel();
+  return model.provider === "openrouter" && model.key
+    ? new OpenRouterUsageLookup(model.key)
+    : undefined;
 }

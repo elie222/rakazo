@@ -1,42 +1,85 @@
+import type { ClientOperation, MonitoringConfig } from "@rakazo/logging/monitoring";
+import {
+  createClientErrorReporter,
+  isMonitoringUserId,
+  sanitizeMonitoringEvent,
+} from "@rakazo/logging/monitoring";
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
 import { importChunk } from "./preload-recovery";
 
-// Browser error reporting. The API says at runtime whether it is on, so one web build serves every
-// deployment; the SDK is only downloaded when it is.
-
-interface MonitoringConfig {
-  dsn: string | null;
-  environment?: string | null;
-  release?: string | null;
-  tunnel?: string;
-  userId?: string | null;
-}
+// Load the SDK only when the connected API enables reporting.
 
 const MAX_PENDING = 20;
 
 let sentry: typeof SentryReact | undefined;
-// Errors caught while startup is still in flight; sent once the SDK starts, dropped if it does not.
+// Queue caught React errors until monitoring starts.
 let pending: Array<[unknown, ErrorInfo]> | undefined = [];
 // The signed-in user's pseudonymous id, minted by the API; the raw account id never leaves.
 let userId: string | undefined;
 let identifications = 0;
 // Unknown until the session resolves; false means signed out.
 let signedInState: boolean | undefined;
-let monitoringOff = false;
-const MONITORING_USER_ID = /^[0-9a-f]{64}$/;
+const errors = createClientErrorReporter();
+let explicitlyDisabled = false;
+let starting: Promise<boolean> | undefined;
+let retries = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-function validUserId(value: unknown): value is string {
-  return typeof value === "string" && MONITORING_USER_ID.test(value);
+export function reportClientError(
+  error: unknown,
+  operation: ClientOperation,
+  tags?: Record<string, string>,
+): void {
+  errors.capture(error, operation, tags);
+}
+
+/** Runs before the application imports, so module evaluation failures are captured too. */
+export function installEarlyErrorReporting(target: Window = window): void {
+  const error = (event: ErrorEvent) => {
+    if (!sentry)
+      reportClientError(event.error ?? new Error("Application startup failed"), "react.render");
+  };
+  const rejection = (event: PromiseRejectionEvent) => {
+    if (!sentry) reportClientError(event.reason, "react.render");
+  };
+  target.addEventListener("error", error);
+  target.addEventListener("unhandledrejection", rejection);
+  target.addEventListener("online", () => {
+    if (!sentry && !explicitlyDisabled) void startMonitoring();
+  });
 }
 
 export async function startMonitoring(fetchImpl: typeof fetch = fetch): Promise<boolean> {
-  sentry = await loadSentry(fetchImpl);
-  const queued = pending ?? [];
-  pending = undefined;
-  monitoringOff = sentry === undefined;
-  for (const [error, errorInfo] of queued) sentry?.captureReactException(error, errorInfo);
-  return sentry !== undefined;
+  if (starting) return starting;
+  starting = (async () => {
+    sentry = await loadSentry(fetchImpl);
+    if (sentry || explicitlyDisabled) {
+      const queued = pending ?? [];
+      pending = undefined;
+      for (const [error, errorInfo] of queued) sentry?.captureReactException(error, errorInfo);
+      errors.install(
+        sentry
+          ? {
+              capture: (error, operation, tags) =>
+                sentry?.captureException(error, { tags: { ...tags, operation, surface: "web" } }),
+            }
+          : undefined,
+      );
+      clearTimeout(retryTimer);
+    } else if (typeof window !== "undefined" && retries < 3) {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        void startMonitoring(fetchImpl);
+      }, [1000, 5000, 15000][retries++]!);
+    }
+    return sentry !== undefined;
+  })();
+  try {
+    return await starting;
+  } finally {
+    starting = undefined;
+  }
 }
 
 /** Follow sign-in and sign-out so reports count affected users without naming them. */
@@ -47,13 +90,13 @@ export async function identifyMonitoringUser(
   const current = ++identifications;
   signedInState = signedIn;
   userId = undefined;
-  if (!signedIn || monitoringOff) return;
+  if (!signedIn || explicitlyDisabled) return;
   try {
     const response = await fetchImpl("/api/monitoring/config");
     if (!response.ok) return;
     const { userId: id } = (await response.json()) as MonitoringConfig;
     // A sign-out or another account that arrived meanwhile wins.
-    if (current === identifications && validUserId(id)) userId = id;
+    if (current === identifications && isMonitoringUserId(id)) userId = id;
   } catch {
     // Reports go out without a user.
   }
@@ -69,13 +112,13 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
     // The API is unreachable; the app shows its own connection error.
     return undefined;
   }
+  explicitlyDisabled = !config.dsn;
   if (!config.dsn) return undefined;
   // Errors queued during startup count the user too, unless a sign-out or a newer answer came first.
-  if (signedInState !== false && userId === undefined && validUserId(config.userId))
+  if (signedInState !== false && userId === undefined && isMonitoringUserId(config.userId))
     userId = config.userId;
   let Sentry: typeof SentryReact;
   try {
-    // A stale chunk after a deploy or a network failure must not surface as an unhandled rejection.
     Sentry = await importChunk(() => import("@sentry/react"));
     Sentry.init({
       dsn: config.dsn,
@@ -89,38 +132,13 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
         httpBodies: [],
         urlQueryParams: false,
       },
-      // Sessions are not used by the collector, and console output can carry user content.
+      // Completion reports carry no activity history or console content.
+      maxBreadcrumbs: 0,
       integrations: (defaults) =>
-        defaults.filter((integration) => integration.name !== "BrowserSession"),
-      beforeBreadcrumb: (breadcrumb) => {
-        if (["console", "ui.click", "ui.input"].includes(breadcrumb.category ?? "")) return null;
-        if (["fetch", "xhr", "navigation"].includes(breadcrumb.category ?? "")) {
-          for (const key of ["url", "from", "to"]) {
-            const value = breadcrumb.data?.[key];
-            if (typeof value === "string") breadcrumb.data![key] = stripUrl(value);
-          }
-        }
-        return breadcrumb;
-      },
-      beforeSend: (event) => {
-        if (event.request) {
-          if (event.request.url) event.request.url = stripUrl(event.request.url);
-          delete event.request.headers;
-          delete event.request.cookies;
-          delete event.request.data;
-        }
-        // Only the pseudonymous id, and no address for the collector to infer one from.
-        event.user = userId ? { id: userId, ip_address: null } : { ip_address: null };
-        if (event.message) event.message = scrubText(event.message);
-        for (const value of event.exception?.values ?? []) {
-          if (value.value) value.value = scrubText(value.value);
-          for (const frame of value.stacktrace?.frames ?? []) {
-            if (frame.filename) frame.filename = stripUrl(frame.filename);
-            if (frame.abs_path) frame.abs_path = stripUrl(frame.abs_path);
-          }
-        }
-        return event;
-      },
+        defaults.filter(
+          (integration) => !["BrowserSession", "Breadcrumbs"].includes(integration.name),
+        ),
+      beforeSend: (event) => sanitizeMonitoringEvent(event, userId),
     });
   } catch {
     console.warn("Browser error reporting failed to start");
@@ -137,16 +155,4 @@ export function reportCaughtReactError(error: unknown, errorInfo: ErrorInfo): vo
   if (sentry) sentry.captureReactException(error, errorInfo);
   else if (pending && pending.length < MAX_PENDING) pending.push([error, errorInfo]);
   console.error(error);
-}
-
-const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-const BEARER = /\bBearer\s+[^\s"',;&]+/gi;
-
-/** Error messages can quote user input; drop emails and bearer tokens before they leave. */
-function scrubText(value: string): string {
-  return value.replace(EMAIL, "[Redacted]").replace(BEARER, "Bearer [Redacted]");
-}
-
-function stripUrl(value: string): string {
-  return value.split(/[?#]/, 1)[0]!;
 }

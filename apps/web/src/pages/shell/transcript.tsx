@@ -9,6 +9,8 @@ import {
   isToolActivityBlock,
   projectMessageReactions,
   timeSeparatorIds,
+  unreadDividerMessageId,
+  voiceChatHoldsMessage,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { cn } from "@rakazo/ui-web";
@@ -30,7 +32,7 @@ import type { ArtifactTarget } from "../../lib/artifact-open";
 import { quoteDraftForSelection } from "../../lib/quote-selection";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
-import { TimeSeparator } from "./chat-context";
+import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
 
@@ -42,6 +44,7 @@ export const Transcript = memo(function Transcript({
   transcript,
   showToolActivity,
   olderCursor,
+  unreadAfterSeq,
   loadingOlder,
   answerableAskIds,
   dismissableAskIds,
@@ -73,6 +76,8 @@ export const Transcript = memo(function Transcript({
   transcript: FoldedTranscript<ThreadMessage>;
   showToolActivity: boolean;
   olderCursor: number | null;
+  /** The seq read up to when this chat opened; null when nothing was unread. */
+  unreadAfterSeq: number | null;
   loadingOlder: boolean;
   answerableAskIds: Set<string>;
   dismissableAskIds: Set<string>;
@@ -140,11 +145,11 @@ export const Transcript = memo(function Transcript({
     [messages],
   );
   const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
-  const separatorIds = timeSeparatorIds(
-    reactionView.visibleMessages.filter((message) =>
-      messageHasVisibleBlocks(message.blocks, showToolActivity),
-    ),
+  const shownMessages = reactionView.visibleMessages.filter((message) =>
+    messageHasVisibleBlocks(message.blocks, showToolActivity),
   );
+  const separatorIds = timeSeparatorIds(shownMessages);
+  const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor);
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
     workingBotName != null && workingBotName !== ""
@@ -411,6 +416,13 @@ export const Transcript = memo(function Transcript({
                     locale={i18n.locale || "en"}
                   />
                 ) : null}
+                {voiceChatHoldsMessage(item, unreadDividerId) ? (
+                  <UnreadDivider
+                    afterSeparator={Boolean(
+                      item.messages[0] && separatorIds.has(item.messages[0].id),
+                    )}
+                  />
+                ) : null}
                 <VoiceChatCard
                   group={item}
                   revealMessageId={scrollRequest?.messageId}
@@ -427,6 +439,9 @@ export const Transcript = memo(function Transcript({
             <Fragment key={message.id}>
               {separatorIds.has(message.id) ? (
                 <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
+              ) : null}
+              {message.id === unreadDividerId ? (
+                <UnreadDivider afterSeparator={separatorIds.has(message.id)} />
               ) : null}
               <div
                 data-message-id={message.id}

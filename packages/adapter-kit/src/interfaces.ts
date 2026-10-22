@@ -11,6 +11,8 @@ import type {
   BackgroundJob,
   BackgroundJobHandlers,
   BillingCheckoutRequest,
+  BillingCreditCheckoutRequest,
+  BillingCreditPurchase,
   BillingPrice,
   BillingSubscriptionSnapshot,
   BrowserActRequest,
@@ -401,7 +403,11 @@ export interface TransactionalEmailProvider {
  * vendor API. Sync is pull-based: webhooks only say which customer changed.
  */
 export interface BillingProvider {
-  describe(): AdapterDescriptor<{ trials: boolean; portal: boolean }>;
+  /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
+  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
+  listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
+  setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
+  describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
   createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;

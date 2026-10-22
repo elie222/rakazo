@@ -5,6 +5,7 @@ import type {
   ConnectionCatalogItem,
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
+  McpServer,
 } from "@rakazo/contracts";
 import {
   buildFeaturedConnectorTiles,
@@ -41,6 +42,22 @@ import { connectedAppMarks } from "../lib/connected-apps";
 import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+
+function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
+  return logo ? (
+    <img
+      src={logo}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
+    />
+  ) : (
+    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
+      {name[0]}
+    </div>
+  );
+}
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
 
@@ -84,6 +101,8 @@ export function PluginsOverlay({
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpError, setMcpError] = useState<string | null>(null);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourceName, setSourceName] = useState("");
@@ -108,8 +127,23 @@ export function PluginsOverlay({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const mcpRefreshGeneration = useRef(0);
+
+  async function refreshMcp() {
+    const generation = ++mcpRefreshGeneration.current;
+    try {
+      const servers = await rpc.mcp.servers.list();
+      if (generation !== mcpRefreshGeneration.current) return;
+      setMcpServers(servers);
+      setMcpError(null);
+    } catch (reason) {
+      if (generation === mcpRefreshGeneration.current)
+        setMcpError(errorText(reason, t`Could not load MCP servers`));
+    }
+  }
 
   async function refresh() {
+    void refreshMcp();
     // The catalog call reconciles connection rows, so list them after it settles.
     const catalog = rpc.connections.catalog({});
     const [items, installs, rows, catalogFeed] = await Promise.all([
@@ -149,7 +183,10 @@ export function PluginsOverlay({
 
   useEffect(() => {
     load();
-    return () => connectionAttempt.current?.abort();
+    return () => {
+      mcpRefreshGeneration.current += 1;
+      connectionAttempt.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -466,19 +503,7 @@ export function PluginsOverlay({
   ) {
     const connected = itemConnected(item);
     const tileTestId = opts?.tileTestId !== false && connected;
-    const icon = logo ? (
-      <img
-        src={logo}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
-      />
-    ) : (
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-sm font-semibold text-foreground">
-        {label[0]}
-      </div>
-    );
+    const icon = <ConnectorIcon name={label} logo={logo} />;
     const title = (
       <div className="min-w-0 flex-1 text-start">
         <div className="truncate text-[15px] font-medium text-foreground">{label}</div>
@@ -692,6 +717,60 @@ export function PluginsOverlay({
                 </Button>
               ) : null}
             </div>
+          ) : null}
+
+          {!detailItem && (mcpServers.length > 0 || mcpError) ? (
+            <section data-testid="registered-mcp-servers" className="mb-6">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium">
+                  <Trans>MCP servers</Trans>
+                </h2>
+                {onOpenMcp ? (
+                  <Button variant="link" size="xs" onClick={onOpenMcp}>
+                    <Trans>Manage MCP servers</Trans>
+                  </Button>
+                ) : null}
+              </div>
+              {mcpError ? (
+                <div role="alert" className="flex items-center gap-2 text-sm text-destructive">
+                  {mcpError}
+                  <Button variant="link" size="xs" onClick={() => void refreshMcp()}>
+                    <Trans>Retry</Trans>
+                  </Button>
+                </div>
+              ) : null}
+              {mcpServers
+                .filter((server) =>
+                  `${server.name} ${server.description}`
+                    .toLowerCase()
+                    .includes(query.trim().toLowerCase()),
+                )
+                .map((server) => (
+                  <div
+                    key={server.id}
+                    data-testid="registered-mcp-server"
+                    className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
+                  >
+                    <ConnectorIcon name={server.name} />
+                    <span className="min-w-0 flex-1 truncate text-[15px] font-medium">
+                      {server.name}
+                    </span>
+                    <span className="shrink-0 text-[12.5px] text-muted-foreground">
+                      {!server.enabled ? (
+                        <Trans>Disabled</Trans>
+                      ) : server.oauthStatus === "reconnect" ? (
+                        <Trans>OAuth expired</Trans>
+                      ) : server.oauthStatus === "connected" ? (
+                        <Trans>OAuth connected</Trans>
+                      ) : server.hasSecret ? (
+                        <Trans>Credential saved</Trans>
+                      ) : (
+                        <Trans>No auth</Trans>
+                      )}
+                    </span>
+                  </div>
+                ))}
+            </section>
           ) : null}
 
           {detailItem ? (
@@ -1109,9 +1188,9 @@ export function PluginsOverlay({
                           <div className="truncate text-[13.5px] text-muted-foreground/70">
                             {source.kind.toUpperCase()} · {source.source} ·{" "}
                             {source.secretConfigured ? (
-                              <Trans>credential saved</Trans>
+                              <Trans>Credential saved</Trans>
                             ) : (
-                              <Trans>no auth</Trans>
+                              <Trans>No auth</Trans>
                             )}
                           </div>
                         </div>
@@ -1127,7 +1206,7 @@ export function PluginsOverlay({
                         </Button>
                       </div>
                     ))}
-                    {onOpenMcp ? (
+                    {onOpenMcp && mcpServers.length === 0 && !mcpError ? (
                       <Button
                         type="button"
                         variant="link"

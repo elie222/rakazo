@@ -50,6 +50,7 @@ import {
   saveAvatarStyle,
 } from "./avatar-style.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
+import { threadRefreshDelayMs } from "./refresh";
 import {
   clearSessionToken,
   restoreSessionToken,
@@ -3107,10 +3108,10 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(next?.cursor).toBe(9);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running" });
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
     expect(next?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-2", status: "running" },
+      { id: "peer-run", botId: "bot-2", status: "running", error: null },
     ]);
     expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
   });
@@ -3205,8 +3206,8 @@ describe("mobile thread event reduction", () => {
     });
 
     expect(next?.cursor).toBe(3);
-    expect(next?.run).toEqual({ id: "unattributed-run", status: "running" });
-    expect(next?.activeRuns).toEqual([{ id: "unattributed-run", status: "running" }]);
+    expect(next?.run).toEqual({ id: "unattributed-run", status: "running", error: null });
+    expect(next?.activeRuns).toEqual([{ id: "unattributed-run", status: "running", error: null }]);
     expect(next?.members).toBe(initial.members);
   });
 
@@ -3235,10 +3236,10 @@ describe("mobile thread event reduction", () => {
     const next = applyMobileThreadEvent(initial, event);
     const replayed = applyMobileThreadEvent(next, event);
 
-    expect(next?.run).toEqual({ id: "resumed-run", botId: "bot-2", status: "running" });
+    expect(next?.run).toEqual({ id: "resumed-run", botId: "bot-2", status: "running", error: null });
     expect(next?.activeRuns).toEqual([
       ...retained,
-      { id: "resumed-run", botId: "bot-2", status: "running" },
+      { id: "resumed-run", botId: "bot-2", status: "running", error: null },
     ]);
     expect(replayed?.activeRuns).toEqual(next?.activeRuns);
   });
@@ -3257,9 +3258,9 @@ describe("mobile thread event reduction", () => {
 
     expect(next?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
-      { id: "peer-run", botId: "bot-2", status: "running" },
+      { id: "peer-run", botId: "bot-2", status: "running", error: null },
     ]);
-    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running" });
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
   });
 
   it("retains an unrelated group failure until that failed run starts again", () => {
@@ -3280,7 +3281,7 @@ describe("mobile thread event reduction", () => {
     expect(next?.run).toBe(initial.run);
     expect(next?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running" },
+      { id: "peer-run", botId: "bot-3", status: "running", error: null },
     ]);
     const restarted = applyMobileThreadEvent(next, {
       type: "run.started",
@@ -3289,11 +3290,16 @@ describe("mobile thread event reduction", () => {
       botId: "bot-1",
     });
     expect(restarted?.cursor).toBe(10);
-    expect(restarted?.run).toEqual({ id: "failed-run", botId: "bot-1", status: "running" });
+    expect(restarted?.run).toEqual({
+      id: "failed-run",
+      botId: "bot-1",
+      status: "running",
+      error: null,
+    });
     expect(restarted?.activeRuns).toEqual([
       { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
-      { id: "peer-run", botId: "bot-3", status: "running" },
-      { id: "failed-run", botId: "bot-1", status: "running" },
+      { id: "peer-run", botId: "bot-3", status: "running", error: null },
+      { id: "failed-run", botId: "bot-1", status: "running", error: null },
     ]);
   });
 
@@ -3310,8 +3316,10 @@ describe("mobile thread event reduction", () => {
       botId: "bot-1",
     });
 
-    expect(next?.run).toEqual({ id: "new-run", botId: "bot-1", status: "running" });
-    expect(next?.activeRuns).toEqual([{ id: "new-run", botId: "bot-1", status: "running" }]);
+    expect(next?.run).toEqual({ id: "new-run", botId: "bot-1", status: "running", error: null });
+    expect(next?.activeRuns).toEqual([
+      { id: "new-run", botId: "bot-1", status: "running", error: null },
+    ]);
   });
 
   it("accumulates progress deltas for the same run", () => {
@@ -3871,9 +3879,75 @@ describe("mobile thread event reduction", () => {
     });
   });
 
+  it("starts an idle run from live events and selects the active safety cadence", () => {
+    const initial: MobileSnapshot = { ...snapshot(), run: null, activeRuns: [] };
+    expect(threadRefreshDelayMs(initial.run?.status, { liveSubscribed: true })).toBe(60_000);
+    const started = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      runId: "run-remote",
+      botId: "bot-1",
+      seq: 12,
+      payload: { trigger: "routine" },
+    });
+    expect(started?.cursor).toBe(12);
+    expect(started?.run).toEqual({
+      id: "run-remote",
+      botId: "bot-1",
+      status: "running",
+      error: null,
+    });
+    expect(started?.activeRuns).toEqual([started?.run]);
+    expect(threadRefreshDelayMs(started?.run?.status, { liveSubscribed: true })).toBe(30_000);
+    const finished = applyMobileThreadEvent(started, {
+      type: "run.completed",
+      runId: "run-remote",
+      seq: 13,
+    });
+    expect(finished?.run).toBeNull();
+    expect(finished?.activeRuns).toEqual([]);
+  });
+
+  it("resumes a waiting run without duplicating it or dropping other paused runs", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "run-1", status: "waiting_input" },
+      activeRuns: [
+        { id: "run-1", status: "waiting_input" },
+        { id: "run-2", status: "waiting_takeover" },
+        { id: "run-old", status: "completed" },
+      ],
+    };
+    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-1" });
+    expect(next?.run?.status).toBe("running");
+    expect(next?.activeRuns).toEqual([
+      { id: "run-2", status: "waiting_takeover" },
+      { id: "run-1", status: "running", error: null },
+    ]);
+  });
+
+  it("ignores background run starts and preserves group failures on member starts", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "run-failed", status: "failed", error: "Failed" },
+      activeRuns: [],
+    };
+    expect(
+      applyMobileThreadEvent(initial, {
+        type: "run.started",
+        runId: "run-background",
+        payload: { trigger: "tickets" },
+      }),
+    ).toBe(initial);
+    const next = applyMobileThreadEvent(initial, { type: "run.started", runId: "run-new" });
+    expect(next?.run).toBe(initial.run);
+    expect(next?.activeRuns).toEqual([{ id: "run-new", status: "running", error: null }]);
+  });
+
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
     expect(applyMobileThreadEvent(initial, { type: "thread.unrecognized" })).toBe(initial);
+    expect(applyMobileThreadEvent(initial, { type: "run.checkpointed" })).toBe(initial);
     expect(applyMobileThreadEvent(null, { type: "thread.progress" })).toBeNull();
   });
 });

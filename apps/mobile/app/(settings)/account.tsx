@@ -57,6 +57,7 @@ import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
+  hasLiveUpdateSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
@@ -593,11 +594,13 @@ export default function Account() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <SettingsRow
-              accessibilityRole="button"
-              onPress={() => void openPromotedNotificationSettings()}
-              title={t("Live update settings")}
-            />
+            {hasLiveUpdateSettings() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                onPress={() => void openPromotedNotificationSettings()}
+                title={t("Live update settings")}
+              />
+            ) : null}
             <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
@@ -608,6 +611,13 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
+          {me?.billingEnabled ? (
+            <SettingsRow
+              title={t("Billing")}
+              chevron="right"
+              onPress={() => router.push("/billing")}
+            />
+          ) : null}
           {(
             [
               { title: t("Artifacts"), href: "/artifacts" },

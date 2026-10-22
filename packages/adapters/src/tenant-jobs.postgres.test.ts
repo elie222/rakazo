@@ -1,6 +1,7 @@
 import type {
   AgentHomeStore,
   AgentRuntime,
+  ArtifactStore,
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
@@ -126,6 +127,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
       prisma,
       sandbox: {} as SandboxProvider,
       home: {} as AgentHomeStore,
+      artifacts: {} as ArtifactStore,
       jobs: { enqueue: vi.fn(async () => undefined) } as never,
       events: {} as ThreadEvents,
       workerId: "tenant-jobs",

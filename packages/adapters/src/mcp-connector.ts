@@ -21,6 +21,7 @@ import {
 } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "./approval-effect.js";
 import {
   combineSignals,
@@ -483,7 +484,13 @@ export class McpConnector implements ConnectorProvider {
               reason,
             });
           else
-            getLogger().error(`mcp discovery failed for server ${assignment.server.slug}:`, reason);
+            getLogger().error(
+              "mcp.discovery.failed",
+              sanitizedError(error, (text) => sanitizeConnectorError(new Error(text), secrets)),
+              {
+                "connector.id": assignment.server.id,
+              },
+            );
           await this.evict(key);
           this.unavailable.set(key, reason);
           // A cancelled run says nothing about the server, and an install that outlived the

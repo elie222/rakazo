@@ -70,11 +70,13 @@ async function post(
   deps: OnboardingDeps,
   target: { spaceId: string; botId: string; threadId: string },
   blocks: MessageBlock[],
+  markUnread = true,
 ): Promise<string> {
   const committed = await deps.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const message = await createThreadMessageInTransaction(tx, {
       threadId: target.threadId,
       role: "bot",
+      markUnread,
       blocks,
     });
     const event = await appendEventInTransaction(tx, {
@@ -143,6 +145,7 @@ export async function promptFocus(
     const message = await createThreadMessageInTransaction(tx, {
       threadId: target.threadId,
       role: "bot",
+      markUnread: false,
       blocks,
     });
     const event = await appendEventInTransaction(tx, {
@@ -233,12 +236,17 @@ export async function chooseFocus(
 
   // Keep the name and title the user chose when creating the bot; the focus
   // step only suggests apps, it must not rename the bot.
-  await post(deps, target, [
-    {
-      kind: "text",
-      text: `Got it. ${capitalize(option.summary)}. I’ll see what’s already connected so I don’t make you set something up twice.`,
-    },
-  ]);
+  await post(
+    deps,
+    target,
+    [
+      {
+        kind: "text",
+        text: `Got it. ${capitalize(option.summary)}. I’ll see what’s already connected so I don’t make you set something up twice.`,
+      },
+    ],
+    false,
+  );
 
   const providers = deps.connectors.managedProviders();
   const catalog = (

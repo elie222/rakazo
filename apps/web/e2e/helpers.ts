@@ -106,12 +106,13 @@ export async function expandAdvancedSection(section: Locator) {
   const trigger = section.getByRole("button", { name: "Advanced", exact: true });
   if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await waitForTransitions(section);
 }
 
-/** Waits for sidebar folds to finish so drag-and-drop targets have stopped moving. */
-export async function waitForSidebarTransitions(page: Page) {
-  // Base UI starts a fold a frame after the toggle, so let it begin before polling.
-  await page.evaluate(
+/** Waits for fold-outs to settle before clicking or dragging their contents. */
+async function waitForTransitions(element: Locator) {
+  // Base UI starts a fold a frame after the toggle.
+  await element.evaluate(
     () =>
       new Promise((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
@@ -119,15 +120,32 @@ export async function waitForSidebarTransitions(page: Page) {
   );
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          document
-            .querySelector("aside")
-            ?.getAnimations({ subtree: true })
-            .filter((animation) => animation instanceof CSSTransition).length ?? 0,
+      element.evaluate(
+        (node) =>
+          node
+            .getAnimations({ subtree: true })
+            .filter((animation) => animation instanceof CSSTransition).length,
       ),
     )
     .toBe(0);
+}
+
+export async function waitForSidebarTransitions(page: Page) {
+  await waitForTransitions(page.locator("aside").first());
+}
+
+/**
+ * A card inside the fit-content bubble frame fills its fixed width and shrinks only to the
+ * frame's cap. A percentage width would resolve against the card's own content instead.
+ */
+export async function expectCardWidth(card: Locator, width: number) {
+  const measured = await card.evaluate((element) => ({
+    card: element.getBoundingClientRect().width,
+    frame:
+      element.closest('[data-testid="message-bubble-frame"]')?.getBoundingClientRect().width ??
+      Number.NaN,
+  }));
+  expect(Math.abs(measured.card - Math.min(width, measured.frame))).toBeLessThan(1);
 }
 
 export async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {

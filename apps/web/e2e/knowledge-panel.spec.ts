@@ -5,6 +5,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  createNamedBot,
   openUserSettings,
   rpc,
   signup,
@@ -70,7 +71,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   } finally {
     releaseSave();
   }
-  await expect(spaceDocs.getByText("rev 2")).toBeVisible();
+  await expect(spaceDocs.getByText("rev 2")).toHaveCount(0);
 
   // The save persisted: reopen the document and find the marker.
   await memoryRow.click();
@@ -97,11 +98,17 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   );
   await captureScreenshot(page, testInfo, "84-space-memory-conflict");
   const downloadPromise = page.waitForEvent("download");
-  await spaceDocs.getByRole("button", { name: "Download as markdown" }).click();
+  // Document order is not fixed, so download from the MEMORY.md row itself.
+  await spaceDocs
+    .locator("div.border-b")
+    .filter({ has: page.getByRole("button", { name: "MEMORY.md", exact: true }) })
+    .getByRole("button", { name: "Download", exact: true })
+    .click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("space-memory.md");
+  expect(download.suggestedFilename()).toBe("MEMORY.md");
   const exported = await readFile((await download.path())!, "utf8");
-  expect(exported).toContain(latestMarker);
+  expect(exported).toBe(latestMarker);
+  expect(exported).not.toContain(retiredContent);
   expect(exported).not.toContain(marker);
   expect(exported).not.toContain("# Chief");
   // Exporting must not hide why Save stays disabled.
@@ -134,20 +141,22 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await page.getByLabel("Close memory settings").click();
   await expect(page.getByLabel("Close memory settings")).toHaveCount(0);
 
-  // The bot's Knowledge section lives under Advanced in its settings panel.
+  // Bot memory is directly available in its settings panel.
+  const seededDocs = await rpc<MemoryDocument[]>(page, "memory/list", {
+    botId: activeBotId(page),
+    scope: "bot",
+  });
+  await rpc(page, "memory/update", {
+    documentId: seededDocs[0].id,
+    content: "# Chief\n\nA remembered preference.\n",
+  });
   await page
     .locator("main")
     .getByRole("button", { name: /^Chief/ })
     .click();
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
-  await settings.getByText("Advanced", { exact: true }).click();
-  const knowledge = settings.getByTestId("bot-knowledge");
-  await expect(knowledge).toBeVisible();
-  await expect(knowledge.getByRole("tablist", { name: "Knowledge" })).toBeVisible();
-
-  // Bot creation seeds MEMORY.md (`# Chief`); edit it and assert the revision bumps.
-  const botMemory = knowledge.getByTestId("bot-knowledge-memory");
+  await expect(settings.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+  const botMemory = settings.getByTestId("bot-knowledge-memory");
   const botMemoryRow = botMemory.getByRole("button", { name: /MEMORY\.md/ });
   await expect(botMemoryRow).toBeVisible();
   await botMemoryRow.click();
@@ -157,19 +166,24 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await botDocEditor.fill(`# Chief\n\n${botMarker}\n`);
   await botMemory.getByRole("button", { name: "Save", exact: true }).scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "80-knowledge-bot-memory");
+  const botMemorySaved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/memory/update") && response.ok(),
+  );
   await botMemory.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(botMemory.getByText("rev 2")).toBeVisible();
+  await botMemorySaved;
+  await expect(botMemory.getByText("rev 2")).toHaveCount(0);
   expect(
     await rpc<MemoryDocument[]>(page, "memory/list", {
       botId: activeBotId(page),
       scope: "bot",
     }),
-  ).toContainEqual(expect.objectContaining({ content: `# Chief\n\n${botMarker}\n`, revision: 2 }));
+  ).toContainEqual(expect.objectContaining({ content: `# Chief\n\n${botMarker}\n`, revision: 3 }));
   await botMemoryRow.click();
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 
-  await knowledge.getByRole("tab", { name: "Shared skills", exact: true }).click();
+  await settings.getByRole("button", { name: "Advanced", exact: true }).click();
+  const knowledge = settings.getByTestId("bot-knowledge");
   const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
   await expect(builtinSkill).toBeVisible();
   await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
@@ -267,4 +281,29 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   expect(await rpc<Array<{ name: string }>>(page, "agentSkills/list", {})).not.toContainEqual(
     expect.objectContaining({ name: "greet-politely" }),
   );
+});
+
+test("a new bot hides its untouched memory index", async ({ page }, testInfo) => {
+  await signup(page, `empty-memory-${Date.now()}@example.test`, "password12", "Sample");
+  await completeOnboarding(page);
+  const botId = await createNamedBot(page, "Researcher");
+  const docs = await rpc<MemoryDocument[]>(page, "memory/list", { botId, scope: "bot" });
+  expect(docs).toEqual([
+    expect.objectContaining({ path: "MEMORY.md", content: "# Researcher\n\n" }),
+  ]);
+  const memoryLoaded = page.waitForResponse(
+    (response) => response.url().includes("/rpc/memory/list") && response.ok(),
+  );
+  await page.locator("main").getByRole("button", { name: "Researcher", exact: true }).click();
+  await memoryLoaded;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("button", { name: "Edit label" })).toHaveText("Add a label");
+  await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
 });
