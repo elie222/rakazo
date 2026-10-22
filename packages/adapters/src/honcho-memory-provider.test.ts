@@ -26,9 +26,11 @@ type DialecticContent = string | null;
 function honchoFetch(
   chatAnswers?: Record<string, DialecticContent>,
   workspaces = ["rakazo-space-1"],
+  readOnlyPeers: string[] = [],
 ) {
   const facts = new Map<string, string[]>();
   const peers = new Set(["rakazo-shared", "bot-bot-1", "bot-bot-2"]);
+  const readable = new Set([...peers, ...readOnlyPeers]);
   return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
     expect(new URL(String(url)).origin).toBe("https://api.honcho.dev");
@@ -44,12 +46,12 @@ function honchoFetch(
     if (peer) {
       // DialecticOptions.query: max_length=10000 code points, else 422.
       if ([...body.query].length > 10_000) return new Response("{}", { status: 422 });
-      expect(peers.has(peer)).toBe(true);
+      expect(readable.has(peer)).toBe(true);
       expect(body).toEqual({
         query: expect.any(String),
         reasoning_level: "low",
         stream: false,
-        ...(peer === "rakazo-shared" ? {} : { target: "rakazo-shared" }),
+        ...(peer === "rakazo-shared" || !peers.has(peer) ? {} : { target: "rakazo-shared" }),
       });
       if (chatAnswers) {
         if (!Object.hasOwn(chatAnswers, peer)) throw new Error(`Unexpected chat: ${path}`);
@@ -304,6 +306,79 @@ describe("HonchoMemoryProvider", () => {
   });
 });
 
+describe("existing Honcho user peer", () => {
+  const settings = { workspaceId: "existing-app", userPeerId: "user-alex" };
+
+  it.each(["shared", "isolated"] as const)(
+    "recalls what Honcho already knows about the user in %s scope",
+    async (scope) => {
+      const fetchMock = honchoFetch(
+        {
+          "rakazo-shared": "NO_RELEVANT_MEMORY",
+          "bot-bot-1": "NO_RELEVANT_MEMORY",
+          "user-alex": "Prefers short morning briefings.",
+        },
+        ["existing-app"],
+        ["user-alex"],
+      );
+      const recalled = await provider(fetchMock, settings).recall(
+        { query: "plan my morning", scope, botId: "bot-1", limit: 5 },
+        context,
+      );
+
+      expect(recalled).toEqual({
+        ok: true,
+        value: [
+          {
+            memory: "Prefers short morning briefings.",
+            score: 1,
+            provenance: "honcho",
+            entity: "user-alex",
+          },
+        ],
+      });
+      const userChat = calls(fetchMock).find((call) => call.path.endsWith("/user-alex/chat"));
+      expect(userChat?.path).toBe("/v3/workspaces/existing-app/peers/user-alex/chat");
+      expect(userChat?.body.target).toBeUndefined();
+      expect(userChat?.body.query).toContain("what you know about the user");
+    },
+  );
+
+  it("never creates or writes to the user peer", async () => {
+    const fetchMock = honchoFetch({ "user-alex": "A fact" }, ["existing-app"], ["user-alex"]);
+    const memory = provider(fetchMock, settings);
+    await memory.save(
+      { content: "Bot fact", scope: "shared", botId: "bot-1", source: { kind: "durable" } },
+      context,
+    );
+    await memory.recall({ query: "q", scope: "isolated", botId: "bot-1", limit: 5 }, context);
+
+    for (const call of calls(fetchMock)) {
+      if (call.path.endsWith("/peers")) expect(call.body.id).not.toBe("user-alex");
+      if (call.path.endsWith("/conclusions")) {
+        for (const conclusion of call.body.conclusions) {
+          expect(conclusion.observer_id).not.toBe("user-alex");
+          expect(conclusion.observed_id).not.toBe("user-alex");
+        }
+      }
+    }
+  });
+
+  it("keeps the Space's own memory when the user peer cannot be read", async () => {
+    const normal = honchoFetch({ "bot-bot-1": "A bot fact" }, ["existing-app"], ["user-alex"]);
+    const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/user-alex/chat")) return new Response("", { status: 404 });
+      return normal(url, init);
+    });
+    await expect(
+      provider(fetch, settings).recall(
+        { query: "q", scope: "isolated", botId: "bot-1", limit: 5 },
+        context,
+      ),
+    ).resolves.toMatchObject({ ok: true, value: [{ memory: "A bot fact", entity: "bot-bot-1" }] });
+  });
+});
+
 describe("shared recall deduplication", () => {
   it.each([1, 5])("keeps the first answer before applying limit %i", async (limit) => {
     const result = await provider(
@@ -382,6 +457,35 @@ describe("prepareHonchoConnection", () => {
       ).rejects.toThrow(`Honcho request failed: ${status}`);
       expect(fetch).toHaveBeenCalledOnce();
     }
+  });
+
+  it("saves an existing user peer with its workspace", async () => {
+    const fetch = connectionFetch("/v3/workspaces", { id: "existing-app" });
+    const prepared = await prepareHonchoConnection(
+      { workspaceId: "existing-app", userPeerId: " user-alex " },
+      { apiKey: "hch-test-key" },
+      { fetch },
+    );
+    expect(prepared.settings).toEqual({
+      workspaceId: "existing-app",
+      userPeerId: "user-alex",
+      reasoningLevel: "low",
+    });
+  });
+
+  it.each([
+    [{ userPeerId: "user-alex" }, /requires the workspace/],
+    [{ workspaceId: "existing-app", userPeerId: "bad peer" }, /userPeerId/],
+    [{ workspaceId: "existing-app", userPeerId: "rakazo-shared" }, /reserved/],
+    [{ workspaceId: "existing-app", userPeerId: "bot-bot_1" }, /reserved/],
+  ])("rejects an invalid user peer before probing", async (settings, error) => {
+    const fetch = vi.fn(() => {
+      throw new Error("Unexpected request");
+    });
+    await expect(
+      prepareHonchoConnection(settings, { apiKey: "hch-test-key" }, { fetch }),
+    ).rejects.toThrow(error);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it.each(["bad workspace", "../private", "a".repeat(513)])(

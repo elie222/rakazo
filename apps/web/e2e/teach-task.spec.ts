@@ -6,7 +6,7 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
   await completeOnboarding(page);
 
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "computer");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);

@@ -1,6 +1,33 @@
 import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
+test("onboarding choices show borderless rows in both themes", async ({ page }, testInfo) => {
+  await signup(page, `onboarding-rows-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await completeOnboarding(page);
+  const question = page.getByText("What do you want me on first?", { exact: true });
+  await expect(question).toBeVisible();
+  const card = question.locator("xpath=ancestor::div[contains(@class,'bg-card')][1]");
+  const option = card.getByRole("button", { name: /Inbox & email/ });
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute("data-theme", value),
+      theme,
+    );
+    await expect(option).toHaveCSS("border-top-width", "0px");
+    const rowColor = await option.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const cardColor = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(rowColor).not.toBe(cardColor);
+    await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
+  }
+  await option.focus();
+  await expect(option).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(card.getByRole("button")).toHaveCount(1);
+  await expect(option).toBeDisabled();
+  await expect(option).toContainText("✓");
+  await captureScreenshot(page, testInfo, "onboarding-choice-rows-answered");
+});
+
 test("renders tappable choice buttons and submits the offered action id", async ({
   page,
 }, testInfo) => {

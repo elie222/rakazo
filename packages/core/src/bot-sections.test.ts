@@ -7,6 +7,24 @@ const sections = [
 ];
 
 describe("groupBotsForSidebar", () => {
+  it("labels only built-in groups and preserves keys and the heading-free list", () => {
+    const labels = { pinned: "Angeheftet", unassigned: "Nicht zugewiesen" };
+    const bots = [
+      { id: "pin", pinned: true, sectionId: null },
+      { id: "loose", pinned: false, sectionId: null },
+    ];
+    expect(
+      groupBotsForSidebar(bots, [{ id: "custom", name: "Pinned" }], {
+        labels,
+        includeEmptySections: true,
+      }).map(({ key, title }) => [key, title]),
+    ).toEqual([
+      ["pinned", labels.pinned],
+      ["section:custom", "Pinned"],
+      ["unassigned", labels.unassigned],
+    ]);
+    expect(groupBotsForSidebar([bots[1]!], [], { labels })[0]?.title).toBeNull();
+  });
   it("keeps pinned bots in one top-level group without duplicating them", () => {
     const groups = groupBotsForSidebar(
       [

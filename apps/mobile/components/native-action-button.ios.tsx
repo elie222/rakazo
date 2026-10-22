@@ -62,7 +62,13 @@ export function NativeActionButton({
           weight: rectangular ? "semibold" : "medium",
         }),
         foregroundStyle(
-          rectangular ? (primary ? tokens.primaryForeground : tokens.foreground) : tokens.link,
+          rectangular
+            ? primary
+              ? tokens.primaryForeground
+              : tokens.foreground
+            : prominence === "destructive"
+              ? tokens.destructive
+              : tokens.link,
         ),
         ...(rectangular ? [fixedSize({ horizontal: false, vertical: true })] : []),
         padding({ horizontal: rectangular ? 16 : 0, vertical: rectangular ? 12 : 8 }),
@@ -75,7 +81,8 @@ export function NativeActionButton({
               ),
             ]
           : []),
-        ...(rectangular ? [frame({ minHeight: 44 })] : []),
+        // Rectangular buttons and the destructive text action (Disconnect) keep a 44pt target.
+        ...(rectangular || prominence === "destructive" ? [frame({ minHeight: 44 })] : []),
         ...(rectangular
           ? [
               background(
@@ -95,9 +102,13 @@ export function NativeActionButton({
         ...(stretches ? [frame({ maxWidth: Infinity, ...(small ? { minHeight: 16 } : {}) })] : []),
         ...(filled ? [foregroundStyle(tokens.primaryForeground)] : []),
       ];
+  // Destructive buttons use the prominent style, which fills with the tint under a white
+  // label; the text-red `destructive` is too pale for that in dark mode.
   const color =
     effectiveProminence === "destructive"
-      ? tokens.destructive
+      ? variant
+        ? tokens.destructive
+        : tokens.destructiveFill
       : effectiveProminence === "primary"
         ? tokens.primary
         : undefined;

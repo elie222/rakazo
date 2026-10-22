@@ -2,7 +2,7 @@ import type { SandboxProvider } from "@rakazo/adapter-kit";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
@@ -83,6 +83,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         opts.supervisorToken,
       );
     case "desktop":
+      assertHostCommandsAllowed();
       return new DesktopSandboxProvider({
         root: opts.dataDir,
       });

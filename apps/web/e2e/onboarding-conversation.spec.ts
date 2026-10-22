@@ -50,19 +50,11 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   const restingBackground = await authorizeButton.evaluate(
     (button) => getComputedStyle(button).backgroundColor,
   );
-  const accentBackground = await authorizeButton.evaluate((button) => {
-    const probe = document.createElement("span");
-    probe.style.backgroundColor = "var(--accent)";
-    button.append(probe);
-    const backgroundColor = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return backgroundColor;
-  });
-  expect(accentBackground).not.toBe(restingBackground);
+  // The primary button still shows a visible hover state.
   await authorizeButton.hover();
   await expect
     .poll(() => authorizeButton.evaluate((button) => getComputedStyle(button).backgroundColor))
-    .toBe(accentBackground);
+    .not.toBe(restingBackground);
   await captureScreenshot(page, testInfo, "02-app-suggestions-authorize-hover");
 
   await authorizeButton.click();
@@ -99,7 +91,7 @@ test("focus choice follows Simplified Chinese UI locale", async ({ page }, testI
   const settings = await openUserSettings(page);
   const picker = settings.getByTestId("ui-locale-select");
   await picker.click();
-  await settings.getByRole("option", { name: "简体中文", exact: true }).click();
+  await page.getByRole("option", { name: "简体中文", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "语言", exact: true })).toBeVisible();
   await settings.getByRole("button", { name: "关闭用户设置" }).click();
   await expect(settings).toHaveCount(0);

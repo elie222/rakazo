@@ -174,6 +174,25 @@ describe("loadEnv", () => {
     expect(env.apiHost).toBe("0.0.0.0");
   });
 
+  it("encrypts content on servers by default and fails startup on an invalid switch", () => {
+    const production = {
+      DATABASE_URL: base.DATABASE_URL,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+      ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "e2b",
+    };
+    expect(loadEnv(production).contentEncryption).toBe(true);
+    expect(loadEnv({ ...production, CONTENT_ENCRYPTION: "off" }).contentEncryption).toBe(false);
+    expect(
+      loadEnv({ DATABASE_URL: base.DATABASE_URL, NODE_ENV: "development" }).contentEncryption,
+    ).toBe(false);
+    expect(() => loadEnv({ ...production, CONTENT_ENCRYPTION: "maybe" })).toThrow(
+      /CONTENT_ENCRYPTION must be "on" or "off"/,
+    );
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     const env = loadEnv({
       DATABASE_URL: base.DATABASE_URL,
@@ -205,6 +224,16 @@ describe("loadEnv", () => {
     expect(loadEnv(base).gitSha).toBeUndefined();
     expect(loadEnv({ ...base, GIT_SHA: "  3c6e209  " }).gitSha).toBe("3c6e209");
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
+  });
+
+  it("loads per-client minimum builds and refuses a malformed one", () => {
+    expect(loadEnv(base).minimumClientBuilds).toEqual({});
+    expect(
+      loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "web=20261022093015" }).minimumClientBuilds,
+    ).toEqual({ web: "20261022093015" });
+    expect(() => loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "latest" })).toThrow(
+      /RAKAZO_MIN_CLIENT_BUILD/,
+    );
   });
 
   it("loads optional updater sidecar wiring without requiring the token at boot", () => {

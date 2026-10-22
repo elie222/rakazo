@@ -38,7 +38,7 @@ test("screen connection failures stay visible and can be retried", async ({ page
     }),
   );
 
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
   await expect(preview.getByRole("alert")).toContainText("temporarily busy");
   await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);

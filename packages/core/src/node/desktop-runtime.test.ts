@@ -112,6 +112,61 @@ function fixture() {
 }
 
 describe("shared Linux desktop lifecycle", () => {
+  it("defaults to a loopback gateway without environment options", () => {
+    expect(ensureScreenCommand(0, "bot", "view")).toContain("127.0.0.1:6080 8>&-");
+    expect(interactiveScreenCommand(true, "control")).toContain("127.0.0.1:6080 8>&-");
+    expect(terminalCommand("control", "terminal", "/work")).toContain("127.0.0.1:6080 8>&-");
+  });
+
+  it.each([undefined, "127.0.0.1", "localhost", "192.0.2.10", "0.0.0.0"])(
+    "binds and identifies the configured gateway (%s)",
+    (bindHost) => {
+      const environment = { ...env, bindHost };
+      const host = bindHost ?? "127.0.0.1";
+      const command = terminalCommand("control", "terminal", "/work", environment);
+      expect(command).toContain(`--token-source=/tmp/rakazo/desktop-targets ${host}:6100 8>&-`);
+      const pattern = command.match(/if ! pgrep -f '([^']+)'/)?.[1];
+      expect(pattern).toBeDefined();
+      const process = (address: string, source = "desktop-targets") =>
+        `/usr/bin/python3 /usr/bin/websockify --token-source=/tmp/rakazo/${source} ${address}:6100`;
+      expect(process(host)).toMatch(new RegExp(pattern!));
+      expect(process("192x0x2x10")).not.toMatch(new RegExp(pattern!));
+      expect(process(host, "view-target-1")).not.toMatch(new RegExp(pattern!));
+      if (host !== "0.0.0.0") expect(process("0.0.0.0")).not.toMatch(new RegExp(pattern!));
+      // Retirement still matches older wildcard listeners, including single-screen images.
+      const retirement = command.match(/pkill -f '([^']*websockify[^']*)'/)?.[1];
+      expect(retirement).toBeDefined();
+      expect(process("0.0.0.0", "view-target-1")).toMatch(new RegExp(retirement!));
+      expect(process("0.0.0.0")).toMatch(new RegExp(retirement!));
+      expect(command).toContain(`/dev/tcp/${host === "0.0.0.0" ? "127.0.0.1" : host}/6100`);
+      expect(ensureScreenCommand(0, "bot", "view", environment)).toContain(`${host}:6100 8>&-`);
+      expect(interactiveScreenCommand(true, "control", screenPorts(0, environment))).toContain(
+        `${host}:6100 8>&-`,
+      );
+    },
+  );
+
+  it.each([
+    "",
+    "example.test",
+    "256.1.1.1",
+    "127.1",
+    "::1",
+    "127.0.0.1; touch /tmp/injected",
+    "localhost\n",
+  ])("rejects invalid gateway hosts (%j)", (bindHost) => {
+    const environment = { ...env, bindHost };
+    expect(() => ensureScreenCommand(0, "bot", "view", environment)).toThrow(
+      "invalid screen gateway bind host",
+    );
+    expect(() => terminalCommand("control", "terminal", "/work", environment)).toThrow(
+      "invalid screen gateway bind host",
+    );
+    expect(() =>
+      interactiveScreenCommand(true, "control", { ...screenPorts(0), bindHost }),
+    ).toThrow("invalid screen gateway bind host");
+  });
+
   it("allocates live slots past 1000 bots, keeps assignments across callers, and rejects stale leases", () => {
     const f = fixture();
     expect(f.ensure("a").stdout).toContain("RAKAZO_DESKTOP=0:view-a");

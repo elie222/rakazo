@@ -42,6 +42,74 @@ describe("browser monitoring", () => {
     consoleError.mockRestore();
   });
 
+  it("tags reports with the server-minted pseudonym and clears it on sign-out", async () => {
+    vi.resetModules();
+    sentry.init.mockReset();
+    const fresh = await import("./monitoring");
+    const PSEUDONYM = "a".repeat(64);
+    expect(await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }))).toBe(
+      true,
+    );
+    const beforeSend = sentry.init.mock.calls[0]![0].beforeSend;
+    const signedInConfig = respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM });
+
+    await fresh.identifyMonitoringUser(true, signedInConfig);
+    expect(signedInConfig).toHaveBeenCalledWith("/api/monitoring/config");
+    expect(beforeSend({ user: { id: "raw-user", email: "ada@example.com" } })).toEqual({
+      user: { id: PSEUDONYM, ip_address: null },
+    });
+
+    await fresh.identifyMonitoringUser(false);
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+
+    // A malformed id is never sent, and a sign-out that lands first wins over a slow sign-in.
+    await fresh.identifyMonitoringUser(true, respond({ dsn: "x", userId: "raw-user" }));
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+    let release!: () => void;
+    const slow = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Response(JSON.stringify({ userId: PSEUDONYM }));
+    }) as unknown as typeof fetch;
+    const signingIn = fresh.identifyMonitoringUser(true, slow);
+    await fresh.identifyMonitoringUser(false);
+    release();
+    await signingIn;
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+  });
+
+  it("uses the startup pseudonym for errors queued before the session resolves", async () => {
+    vi.resetModules();
+    sentry.init.mockReset();
+    const fresh = await import("./monitoring");
+    const PSEUDONYM = "b".repeat(64);
+    await fresh.startMonitoring(
+      respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM }),
+    );
+    const beforeSend = sentry.init.mock.calls[0]![0].beforeSend;
+    expect(beforeSend({})).toEqual({ user: { id: PSEUDONYM, ip_address: null } });
+
+    // A sign-out that resolved before startup finished is not overridden.
+    vi.resetModules();
+    sentry.init.mockReset();
+    const signedOut = await import("./monitoring");
+    await signedOut.identifyMonitoringUser(false);
+    await signedOut.startMonitoring(
+      respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM }),
+    );
+    expect(sentry.init.mock.calls[0]![0].beforeSend({})).toEqual({ user: { ip_address: null } });
+  });
+
+  it("does not ask for a pseudonym when monitoring is off", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: null }));
+    const fetchImpl = respond({ dsn: null });
+    await fresh.identifyMonitoringUser(true, fetchImpl);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     sentry.init.mockReset();
     sentry.captureReactException.mockReset();
@@ -119,8 +187,8 @@ describe("browser monitoring", () => {
         },
         user: { email: "private@example.com" },
       }),
-    ).toEqual({ request: { url: "https://example.com/path" } });
-    expect(options.beforeSend({})).toEqual({});
+    ).toEqual({ request: { url: "https://example.com/path" }, user: { ip_address: null } });
+    expect(options.beforeSend({})).toEqual({ user: { ip_address: null } });
     expect(
       options.beforeSend({
         message: "Failed for someone@example.com",
@@ -129,6 +197,7 @@ describe("browser monitoring", () => {
     ).toEqual({
       message: "Failed for [Redacted]",
       exception: { values: [{ value: "401 Bearer [Redacted] from [Redacted]" }] },
+      user: { ip_address: null },
     });
     expect(
       options.beforeSend({
@@ -142,6 +211,7 @@ describe("browser monitoring", () => {
       exception: {
         values: [{ stacktrace: { frames: [{ filename: "https://app.example.com/a.js" }] } }],
       },
+      user: { ip_address: null },
     });
     expect(options.tracesSampleRate).toBeUndefined();
     expect(options.profilesSampleRate).toBeUndefined();

@@ -298,6 +298,7 @@ async function main() {
       {
         ...judgeConnection,
         id: judgeConnection.modelId!,
+        allowPrivateEndpoint: true,
         maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
         maxTokens: judgeConnection.maxTokens ?? 2048,
       },
@@ -370,6 +371,7 @@ async function main() {
       {
         ...connection,
         id: connection.modelId!,
+        allowPrivateEndpoint: true,
         maxImagesPerPrompt: connection.maxImagesPerPrompt ?? undefined,
         maxTokens: connection.maxTokens ?? undefined,
       },
@@ -560,6 +562,8 @@ async function main() {
               cloudAgentProvider: "none",
               signupsEnabled: "true",
               signupAllowlist: "",
+              // The operator runs evals against the model server they chose, often on loopback.
+              mcpAllowPrivateEndpoint: true,
               emailEmulator: true,
               pipedreamClientId: undefined,
               pipedreamClientSecret: undefined,

@@ -49,9 +49,40 @@ import {
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
 import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
-import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
+import { hostCommandEnvironment } from "./sandbox-command-environment.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+
+/**
+ * Bot commands run directly as this OS user, so a backend may select SANDBOX_PROVIDER=desktop
+ * only inside the desktop app or a local development or test process. Server images set
+ * NODE_ENV=production and must use an isolated provider.
+ */
+export function assertHostCommandsAllowed(
+  env: NodeJS.ProcessEnv = process.env,
+  versions: NodeJS.ProcessVersions = process.versions,
+) {
+  if (versions.electron || env.NODE_ENV === "development" || env.NODE_ENV === "test") return;
+  throw new Error(
+    "SANDBOX_PROVIDER=desktop runs bot commands directly on this host and is limited to local development. Use docker or a remote provider, or local computer access in the desktop app.",
+  );
+}
+
+export function describeDesktopSandbox() {
+  return {
+    id: "desktop",
+    contractVersion: "1",
+    adapterVersion: "0.1.0",
+    capabilities: {
+      graphical: false,
+      pty: true,
+      snapshots: true,
+      takeover: false,
+      persistentHome: true,
+      multiScreen: false,
+    },
+  };
+}
 
 /** Node FileHandle or Win32 duck-typed handle opened relative to a parent directory. */
 type ContainedHandle = Awaited<ReturnType<typeof open>> | Win32FileHandle;
@@ -118,19 +149,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
   ) {}
 
   describe() {
-    return {
-      id: "desktop",
-      contractVersion: "1",
-      adapterVersion: "0.1.0",
-      capabilities: {
-        graphical: false,
-        pty: true,
-        snapshots: true,
-        takeover: false,
-        persistentHome: true,
-        multiScreen: false,
-      },
-    };
+    return describeDesktopSandbox();
   }
 
   async provision(
@@ -862,11 +881,7 @@ async function* streamLocalCommand(
     yield { type: "exit", code: 1 };
     return;
   }
-  const { child, tree } = spawnOwnedCommand(
-    direct,
-    cwd,
-    sandboxCommandEnvironment(request, process.env),
-  );
+  const { child, tree } = spawnOwnedCommand(direct, cwd, hostCommandEnvironment(request));
   own(tree);
   const queue: ProcessEvent[] = [];
   let ended = false;

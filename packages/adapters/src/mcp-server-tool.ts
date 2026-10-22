@@ -1,7 +1,12 @@
 /** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
  * the executor wires the parsed result into Prisma + the secret store. */
 
-import { McpRemoteEndpointSchema, type McpTransport, McpTransportSchema } from "@rakazo/contracts";
+import type { McpTransport } from "@rakazo/contracts";
+import {
+  McpRemoteEndpointSchema,
+  McpTransportSchema,
+  mcpOAuthEnvReferences,
+} from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import { toStringRecord } from "./memory-provider-factory.js";
 
@@ -64,6 +69,16 @@ export function parseMcpServerToolArgs(
     return undefined;
   }
 
+  // This tool accepts static credentials only; OAuth templates need a configured client.
+  if (
+    transport === "stdio" &&
+    Object.values(env).some((value) => {
+      const references = mcpOAuthEnvReferences(value);
+      return references.fields.length > 0 || references.unknown.length > 0;
+    })
+  )
+    return undefined;
+
   return {
     slug: deriveMcpSlug(name),
     name,
@@ -85,14 +100,50 @@ export function parseMcpServerToolArgs(
 export function buildMcpCredentialBlob(parsed: {
   secret?: string;
   env?: Record<string, string>;
+  files?: Record<string, string>;
   headers?: Record<string, string>;
+  oauthClient?: {
+    clientId: string;
+    clientSecret?: string;
+    scope?: string;
+    authorizationServer?: string;
+    authorizationParams?: string;
+  } | null;
 }): string | null {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
-  if (!parsed.secret && Object.keys(env).length === 0 && Object.keys(headers).length === 0) {
+  const files = parsed.files ?? {};
+  const client = parsed.oauthClient;
+  if (
+    !parsed.secret &&
+    !client &&
+    Object.keys(env).length === 0 &&
+    Object.keys(headers).length === 0 &&
+    Object.keys(files).length === 0
+  ) {
     return null;
   }
-  return JSON.stringify({ secret: parsed.secret, env, headers });
+  return JSON.stringify({
+    secret: parsed.secret,
+    env,
+    headers,
+    ...(Object.keys(files).length > 0 ? { files } : {}),
+    ...(client
+      ? {
+          oauthClient: {
+            client_id: client.clientId,
+            ...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
+            ...(client.scope ? { scope: client.scope } : {}),
+            ...(client.authorizationParams
+              ? { authorization_params: client.authorizationParams }
+              : {}),
+            ...(client.authorizationServer
+              ? { authorization_server: new URL(client.authorizationServer).href }
+              : {}),
+          },
+        }
+      : {}),
+  });
 }
 
 /** Heuristic for whether the approval card should lead with OAuth: remote

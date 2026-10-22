@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  rpc,
+  signup,
+  waitForSidebarTransitions,
+} from "./helpers";
 
 test("drag bots into collapsed sections, another section's row, and group chats", async ({
   page,
@@ -28,6 +35,7 @@ test("drag bots into collapsed sections, another section's row, and group chats"
   const sectionRows = sidebar.locator(`[data-sidebar-group="section:${section.id}"]`);
   const chief = sidebar.locator(`[data-roster-bot-id="${chiefId}"]`);
   await sectionRows.getByRole("button", { name: "Collapse Projects", exact: true }).click();
+  await waitForSidebarTransitions(page);
   await chief.dragTo(sectionRows.getByRole("button", { name: "Expand Projects", exact: true }));
   await expect
     .poll(async () => {
@@ -36,6 +44,7 @@ test("drag bots into collapsed sections, another section's row, and group chats"
     })
     .toBe(section.id);
   await sectionRows.getByRole("button", { name: "Expand Projects", exact: true }).click();
+  await waitForSidebarTransitions(page);
   await expect(sectionRows.locator(`[data-roster-bot-id="${chiefId}"]`)).toBeVisible();
   await sidebar.locator(`[data-roster-bot-id="${beta.id}"]`).dragTo(chief);
   await expect(sectionRows.locator(`[data-roster-bot-id="${beta.id}"]`)).toBeVisible();

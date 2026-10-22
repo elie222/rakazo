@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { createDb, type PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
+import { asSystem, runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -12,12 +14,21 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let provisioned: { userId: string; spaceId: string; botId: string } | null = null;
+  // Production provisions from the inbound messaging webhook.
+  const provision = (from: string) =>
+    runAsSystem("messaging inbound", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider, address: from },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
 
   afterAll(async () => {
     if (provisioned) {
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address } });
-      await prisma.organization.deleteMany({ where: { id: provisioned.spaceId } });
-      await prisma.user.deleteMany({ where: { id: provisioned.userId } });
+      await asSystem(prisma).messagingIdentity.deleteMany({ where: { provider, address } });
+      await asSystem(prisma).organization.deleteMany({ where: { id: provisioned.spaceId } });
+      await asSystem(prisma).user.deleteMany({ where: { id: provisioned.userId } });
     }
     await close?.();
   });
@@ -30,18 +41,14 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       await db.pool.end();
     };
 
-    const result = await provisionMessagingIdentity(
-      prisma,
-      { provider, address },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provision(address);
     provisioned = result;
 
     expect(result.created).toBe(true);
     expect(result.provider).toBe(provider);
     expect(result.address).toBe(address);
 
-    const user = await prisma.user.findUnique({
+    const user = await asSystem(prisma).user.findUnique({
       where: { id: result.userId },
       include: { accounts: true, members: true },
     });
@@ -52,11 +59,11 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     expect(user!.members[0]!.organizationId).toBe(result.spaceId);
     expect(user!.members[0]!.role).toBe("owner");
 
-    const org = await prisma.organization.findUnique({ where: { id: result.spaceId } });
+    const org = await asSystem(prisma).organization.findUnique({ where: { id: result.spaceId } });
     expect(org!.name).toBe("Personal");
     expect(org!.slug).toBe(`user-${result.userId.slice(0, 12)}`);
 
-    const space = await prisma.space.findUnique({
+    const space = await asSystem(prisma).space.findUnique({
       where: { id: result.spaceId },
       include: { memberships: true },
     });
@@ -66,17 +73,19 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     });
     expect(space!.memberships).toEqual([expect.objectContaining({ userId: result.userId })]);
 
-    const bot = await prisma.bot.findUnique({
-      where: { id: result.botId },
-      include: { thread: true },
-    });
+    const bot = await runAsSystem("test fixture", () =>
+      prisma.bot.findUnique({
+        where: { id: result.botId },
+        include: { thread: true },
+      }),
+    );
     expect(bot).toBeTruthy();
     expect(bot!.spaceId).toBe(result.spaceId);
     expect(bot!.userId).toBe(result.userId);
     expect(bot!.thread).toBeTruthy();
     expect(result.threadId).toBe(bot!.thread!.id);
 
-    const identity = await prisma.messagingIdentity.findUnique({
+    const identity = await asSystem(prisma).messagingIdentity.findUnique({
       where: { provider_address: { provider, address } },
     });
     expect(identity).toBeTruthy();
@@ -88,39 +97,41 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     expect(identity!.verifiedAt).toBeNull();
 
     // bootstrap parity: same surrounding rows the auth signup hook creates
-    const memories = await prisma.memoryDocument.findMany({
-      where: { spaceId: result.spaceId, userId: result.userId },
-    });
+    const memories = await runAsSystem("test fixture", () =>
+      prisma.memoryDocument.findMany({
+        where: { spaceId: result.spaceId, userId: result.userId },
+      }),
+    );
     expect(memories.some((m) => m.scope === "user" && m.path === "MEMORY.md")).toBe(true);
     expect(memories.some((m) => m.scope === "bot" && m.botId === result.botId)).toBe(true);
-    const pref = await prisma.notificationPreference.findFirst({
+    const pref = await asSystem(prisma).notificationPreference.findFirst({
       where: { spaceId: result.spaceId, userId: result.userId },
     });
     expect(pref).toBeTruthy();
   });
 
   it("does not let a texter claim deployment ownership", async () => {
-    const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+    const settings = await asSystem(prisma).deploymentSettings.findUnique({
+      where: { id: "default" },
+    });
     expect(settings?.ownerUserId ?? null).not.toBe(provisioned!.userId);
   });
 
   it("is idempotent for a repeat inbound from the same address", async () => {
-    const again = await provisionMessagingIdentity(
-      prisma,
-      { provider, address },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const again = await provision(address);
 
     expect(again.created).toBe(false);
     expect(again.userId).toBe(provisioned!.userId);
     expect(again.spaceId).toBe(provisioned!.spaceId);
     expect(again.botId).toBe(provisioned!.botId);
 
-    const users = await prisma.user.findMany({
+    const users = await asSystem(prisma).user.findMany({
       where: { id: provisioned!.userId },
     });
     expect(users).toHaveLength(1);
-    const identities = await prisma.messagingIdentity.findMany({ where: { provider, address } });
+    const identities = await asSystem(prisma).messagingIdentity.findMany({
+      where: { provider, address },
+    });
     expect(identities).toHaveLength(1);
   });
 
@@ -128,7 +139,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     const partialAddress = "+15550002222";
     // This could be an abandoned attempt or an attacker registration. An
     // email address alone cannot distinguish those origins.
-    const orphan = await prisma.user.create({
+    const orphan = await asSystem(prisma).user.create({
       data: {
         id: `partial${Date.now()}`,
         name: "Sendblue 2222",
@@ -137,58 +148,52 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       },
     });
     try {
-      const result = await provisionMessagingIdentity(
-        prisma,
-        { provider, address: partialAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      );
+      const result = await provision(partialAddress);
 
       expect(result.created).toBe(true);
       expect(result.userId).not.toBe(orphan.id);
-      const identity = await prisma.messagingIdentity.findUnique({
+      const identity = await asSystem(prisma).messagingIdentity.findUnique({
         where: { provider_address: { provider, address: partialAddress } },
       });
       expect(identity).toBeTruthy();
-      const bots = await prisma.bot.findMany({
+      const bots = await asSystem(prisma).bot.findMany({
         where: { spaceId: result.spaceId, userId: result.userId },
       });
       expect(bots).toHaveLength(1);
 
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address: partialAddress } });
-      await prisma.organization.deleteMany({ where: { id: result.spaceId } });
-      await prisma.user.deleteMany({ where: { id: result.userId } });
+      await asSystem(prisma).messagingIdentity.deleteMany({
+        where: { provider, address: partialAddress },
+      });
+      await asSystem(prisma).organization.deleteMany({ where: { id: result.spaceId } });
+      await asSystem(prisma).user.deleteMany({ where: { id: result.userId } });
     } finally {
-      await prisma.user.deleteMany({ where: { id: orphan.id } });
+      await asSystem(prisma).user.deleteMany({ where: { id: orphan.id } });
     }
   });
 
   it("resumes after a partial attempt that reached createBot, reusing the orphaned bot", async () => {
     const partialAddress = "+15550003333";
     // First attempt: let it provision fully, then delete only the identity row.
-    const first = await provisionMessagingIdentity(
-      prisma,
-      { provider, address: partialAddress },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
-    await prisma.messagingIdentity.deleteMany({ where: { provider, address: partialAddress } });
+    const first = await provision(partialAddress);
+    await asSystem(prisma).messagingIdentity.deleteMany({
+      where: { provider, address: partialAddress },
+    });
     try {
-      const second = await provisionMessagingIdentity(
-        prisma,
-        { provider, address: partialAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      );
+      const second = await provision(partialAddress);
 
       expect(second.userId).toBe(first.userId);
       expect(second.spaceId).toBe(first.spaceId);
       expect(second.botId).toBe(first.botId);
-      const bots = await prisma.bot.findMany({
+      const bots = await asSystem(prisma).bot.findMany({
         where: { spaceId: first.spaceId, userId: first.userId },
       });
       expect(bots).toHaveLength(1);
     } finally {
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address: partialAddress } });
-      await prisma.organization.deleteMany({ where: { id: first.spaceId } });
-      await prisma.user.deleteMany({ where: { id: first.userId } });
+      await asSystem(prisma).messagingIdentity.deleteMany({
+        where: { provider, address: partialAddress },
+      });
+      await asSystem(prisma).organization.deleteMany({ where: { id: first.spaceId } });
+      await asSystem(prisma).user.deleteMany({ where: { id: first.userId } });
     }
   });
 });

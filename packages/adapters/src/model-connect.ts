@@ -28,6 +28,8 @@ import {
 export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
+  /** From `actorMayUsePrivateEndpoint`; private and loopback endpoints are refused without it. */
+  allowPrivateEndpoint?: boolean;
 };
 
 /** Reuse a saved probe key only for the endpoint it was saved for. */
@@ -60,16 +62,17 @@ export function buildModelConnectPlaintext(
     ...(contextWindow !== undefined ? { contextWindow } : {}),
   };
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    const prepared = prepareOpenAiCompatibleConnect(input);
+    const policy = { allowPrivate: options?.allowPrivateEndpoint };
+    const prepared = prepareOpenAiCompatibleConnect(input, policy);
     const sameEndpoint =
       previous?.kind === "openai_compatible" && previous.baseUrl === prepared.baseUrl;
     const compatiblePrevious = sameEndpoint ? previous : undefined;
     if (input.apiKey === undefined && sameEndpoint) {
       // Revalidate the inherited key too: public endpoints must still use HTTPS.
-      prepared.apiKey = prepareOpenAiCompatibleConnect({
-        ...input,
-        apiKey: previous.apiKey,
-      }).apiKey;
+      prepared.apiKey = prepareOpenAiCompatibleConnect(
+        { ...input, apiKey: previous.apiKey },
+        policy,
+      ).apiKey;
     }
     const previousVisionModelIds = sameEndpoint ? previous.visionModelIds : undefined;
     const maxImagesPerPrompt =

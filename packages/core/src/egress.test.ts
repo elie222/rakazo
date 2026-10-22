@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+import { hostSite, normalizedHttpUrl, registrableDomain, sitesInText, urlSite } from "./egress.js";
+
+describe("urlSite", () => {
+  it.each([
+    ["https://example.com/page", "example.com"],
+    ["https://docs.example.com/a?b=c", "example.com"],
+    ["https://c2VjcmV0.leak.attacker.test/", "attacker.test"],
+    ["https://news.bbc.co.uk/", "bbc.co.uk"],
+    ["HTTPS://WWW.Example.COM.", "example.com"],
+    ["http://203.0.113.7:8080/?q=x", "203.0.113.7"],
+    ["http://[2001:db8::1]/", "[2001:db8::1]"],
+    ["http://localhost:3000/", "localhost"],
+  ])("puts %s on %s", (url, site) => {
+    expect(urlSite(url)).toBe(site);
+  });
+
+  it.each(["ftp://example.com/", "javascript:alert(1)", "example.com", "not a url", ""])(
+    "has no site for %s",
+    (url) => {
+      expect(urlSite(url)).toBeUndefined();
+    },
+  );
+
+  it("counts each tenant of a shared host as its own site", () => {
+    expect(hostSite("alice.github.io")).toBe("alice.github.io");
+    expect(hostSite("docs.alice.github.io")).toBe("alice.github.io");
+    expect(hostSite("attacker.github.io")).toBe("attacker.github.io");
+  });
+
+  it("contacts only the ICANN registrable domain, ignoring private suffixes", () => {
+    expect(registrableDomain("c2VjcmV0.github.io")).toBe("github.io");
+    expect(registrableDomain("c2VjcmV0.leak.example.co.uk")).toBe("example.co.uk");
+  });
+});
+
+describe("normalizedHttpUrl", () => {
+  it("normalizes http(s) URLs and refuses anything else", () => {
+    expect(normalizedHttpUrl(" HTTPS://Example.com/a b ")).toBe("https://example.com/a%20b");
+    expect(normalizedHttpUrl("file:///etc/passwd")).toBeUndefined();
+  });
+});
+
+describe("sitesInText", () => {
+  it("finds links and bare domains the person wrote", () => {
+    expect(
+      [
+        ...sitesInText(
+          "Read https://docs.example.com/guide, compare with shop.example.org. and (http://203.0.113.7/x).",
+        ),
+      ].sort(),
+    ).toEqual(["203.0.113.7", "example.com", "example.org"]);
+  });
+
+  it("trusts only a link's host, not domains in its path or query", () => {
+    expect([
+      ...sitesInText("Summarize https://forum.example.org/topic/attacker.com?next=evil.net"),
+    ]).toEqual(["example.org"]);
+  });
+
+  it("skips email addresses, file names and words without a public suffix", () => {
+    expect([...sitesInText("Email bob@mail.example.com about notes.txt and index.ts")]).toEqual([]);
+  });
+});

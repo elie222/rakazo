@@ -16,7 +16,7 @@ import {
   speechUploadName,
   verifyVoiceHttpGet,
   voiceDeadline,
-  voiceHttpError,
+  voiceRequestError,
 } from "./voice-http.js";
 
 const API = "https://api.openai.com/v1";
@@ -98,7 +98,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw new Error(voiceHttpError(res.status, "OpenAI", "transcribing", body));
+    if (!res.ok) throw voiceRequestError(res.status, "OpenAI", "transcribing", body);
     return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
   }
 }

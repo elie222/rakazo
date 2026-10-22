@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COMPOSE_FILE,
   DEFAULT_UPDATER_PORT,
+  missingSecretAssignments,
   readEnvAssignment,
   readTagState,
   resolveUpdaterConfig,
@@ -160,6 +161,27 @@ describe("readEnvAssignment", () => {
 
   it("does not match a key that merely shares a prefix", () => {
     expect(readEnvAssignment("RAKAZO_IMAGE_TAG_PREVIOUS=v1", "RAKAZO_IMAGE_TAG")).toBeNull();
+  });
+});
+
+describe("missingSecretAssignments", () => {
+  const generate = () => "f".repeat(32);
+
+  it("adds the app database password to a .env from before database roles", () => {
+    expect(missingSecretAssignments("POSTGRES_PASSWORD=x\n", generate)).toEqual({
+      POSTGRES_APP_PASSWORD: generate(),
+    });
+    expect(missingSecretAssignments("POSTGRES_APP_PASSWORD=\n", generate)).toEqual({
+      POSTGRES_APP_PASSWORD: generate(),
+    });
+  });
+
+  it("never replaces a password that is already set", () => {
+    expect(missingSecretAssignments("POSTGRES_APP_PASSWORD='kept'\n", generate)).toEqual({});
+  });
+
+  it("generates a URI-safe value by default", () => {
+    expect(missingSecretAssignments("").POSTGRES_APP_PASSWORD).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

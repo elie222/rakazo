@@ -15,6 +15,31 @@ describe("deriveMcpSlug", () => {
 });
 
 describe("parseMcpServerToolArgs", () => {
+  it("cannot set an issuer through unsupported OAuth tool arguments", () => {
+    const parsed = parseMcpServerToolArgs({
+      name: "Local",
+      transport: "stdio",
+      command: "demo",
+      oauthClient: { clientId: "id", authorizationServer: "https://127.0.0.1" },
+    });
+    expect(parsed).toBeDefined();
+    expect(buildMcpCredentialBlob(parsed ?? {})).toBeNull();
+  });
+
+  it.each(["{{oauth.access_token}}", "{{oauth.unknown}}"])(
+    "rejects templates without a configurable OAuth client: %s",
+    (value) => {
+      expect(
+        parseMcpServerToolArgs({
+          name: "Local",
+          transport: "stdio",
+          command: "demo",
+          env: { TOKEN: value },
+        }),
+      ).toBeUndefined();
+    },
+  );
+
   it("parses a minimal remote server", () => {
     const parsed = parseMcpServerToolArgs({
       name: "Brex",
@@ -102,6 +127,75 @@ describe("buildMcpCredentialBlob", () => {
       buildMcpCredentialBlob({ secret: "tok", headers: { Authorization: "Bearer tok" }, env: {} }),
     ).toEqual(JSON.stringify({ secret: "tok", env: {}, headers: { Authorization: "Bearer tok" } }));
   });
+
+  it("stores a pre-registered OAuth client on its own", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          headers: {},
+          oauthClient: { clientId: "client-1", clientSecret: "client-secret" },
+        }) ?? "null",
+      ),
+    ).toEqual({
+      env: {},
+      headers: {},
+      oauthClient: { client_id: "client-1", client_secret: "client-secret" },
+    });
+    expect(
+      JSON.parse(buildMcpCredentialBlob({ oauthClient: { clientId: "public-client" } }) ?? "null"),
+    ).toMatchObject({ oauthClient: { client_id: "public-client" } });
+  });
+});
+
+describe("buildMcpCredentialBlob credential files", () => {
+  const files = { CREDENTIALS_PATH: '{"refresh_token":"{{oauth.refresh_token}}"}' };
+
+  it("stores file templates, which may hold secrets, in the blob", () => {
+    expect(JSON.parse(buildMcpCredentialBlob({ files }) ?? "null")).toEqual({
+      env: {},
+      headers: {},
+      files,
+    });
+  });
+
+  it("leaves the files out when there are none", () => {
+    expect(buildMcpCredentialBlob({ files: {} })).toBeNull();
+    expect(JSON.parse(buildMcpCredentialBlob({ secret: "tok", files: {} }) ?? "null")).toEqual({
+      secret: "tok",
+      env: {},
+      headers: {},
+    });
+  });
+});
+
+describe("buildMcpCredentialBlob OAuth client options", () => {
+  it("stores the scope and the normalized authorization server when given", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          env: { TOKEN: "{{oauth.access_token}}" },
+          oauthClient: {
+            clientId: "client-1",
+            scope: "mail.read mail.send",
+            authorizationServer: "https://accounts.example.test",
+          },
+        }) ?? "null",
+      ),
+    ).toMatchObject({
+      oauthClient: {
+        client_id: "client-1",
+        scope: "mail.read mail.send",
+        authorization_server: "https://accounts.example.test/",
+      },
+    });
+  });
+
+  it("leaves out an empty scope and a missing authorization server", () => {
+    const blob = JSON.parse(
+      buildMcpCredentialBlob({ oauthClient: { clientId: "client-1", scope: "" } }) ?? "null",
+    );
+    expect(blob.oauthClient).toEqual({ client_id: "client-1" });
+  });
 });
 
 describe("needsOAuthProbe", () => {
@@ -113,5 +207,19 @@ describe("needsOAuthProbe", () => {
       false,
     );
     expect(needsOAuthProbe({ transport: "stdio", command: "c" } as never)).toBe(false);
+  });
+});
+
+describe("buildMcpCredentialBlob authorization parameters", () => {
+  it("stores the client's extra authorization parameters", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          oauthClient: { clientId: "c", authorizationParams: "access_type=offline" },
+        }) ?? "null",
+      ),
+    ).toMatchObject({
+      oauthClient: { client_id: "c", authorization_params: "access_type=offline" },
+    });
   });
 });

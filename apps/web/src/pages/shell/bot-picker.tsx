@@ -11,6 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import { Info, Lock, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
+import { IconTooltip } from "../../components/IconTooltip";
 
 export function BotCreatePicker({
   bots,
@@ -99,23 +100,24 @@ export function BotCreatePicker({
               <span className="min-w-0 flex-1 truncate">
                 <Trans>Create new Group</Trans>
               </span>
-              <button
-                type="button"
-                data-testid="picker-info-group"
-                aria-label={t`About groups`}
-                title={t`About groups`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  event.preventDefault();
-                  onShowGroupInfo();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-              </button>
+              <IconTooltip label={t`About groups`}>
+                <button
+                  type="button"
+                  data-testid="picker-info-group"
+                  aria-label={t`About groups`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    onShowGroupInfo();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              </IconTooltip>
             </CommandItem>
             <CommandItem
               value="create-space"
@@ -127,23 +129,24 @@ export function BotCreatePicker({
               <span className="min-w-0 flex-1 truncate">
                 <Trans>Create new Space</Trans>
               </span>
-              <button
-                type="button"
-                data-testid="picker-info-space"
-                aria-label={t`About spaces`}
-                title={t`About spaces`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  event.preventDefault();
-                  onShowSpaceInfo();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-              </button>
+              <IconTooltip label={t`About spaces`}>
+                <button
+                  type="button"
+                  data-testid="picker-info-space"
+                  aria-label={t`About spaces`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    onShowSpaceInfo();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              </IconTooltip>
             </CommandItem>
           </CommandGroup>
         </CommandList>

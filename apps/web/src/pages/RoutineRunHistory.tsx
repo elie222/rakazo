@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RoutineHistory } from "@rakazo/contracts";
-import { normalizeRunError } from "@rakazo/core";
-import { Button } from "@rakazo/ui-web";
+import { isRetryableError, normalizeRunError } from "@rakazo/core";
+import { Button, Collapsible, CollapsibleContent } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -32,6 +32,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
+    // A non-retryable answer stops polling until the routine or revision changes.
+    let refused = false;
     generation.current += 1;
     setHistory(null);
     setFailed(false);
@@ -45,7 +47,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
-      } catch {
+      } catch (error) {
+        refused = !isRetryableError(error);
         if (!cancelled) setFailed(true);
       }
     }
@@ -71,7 +74,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
-      } catch {
+      } catch (error) {
+        refused = !isRetryableError(error);
         if (
           !cancelled &&
           request === generation.current &&
@@ -80,12 +84,12 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         )
           setFailed(true);
       } finally {
-        if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+        if (!cancelled && !refused) timer = window.setTimeout(() => void poll(), 15_000);
       }
     }
 
     void loadFirstPage().then(() => {
-      if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+      if (!cancelled && !refused) timer = window.setTimeout(() => void poll(), 15_000);
     });
     return () => {
       cancelled = true;
@@ -156,6 +160,52 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
     }
   }
 
+  function renderRun(run: RoutineHistory["runs"][number]) {
+    const at = run.startedAt ?? run.createdAt;
+    const duration =
+      run.startedAt && run.completedAt
+        ? formatToolActivityDuration(Date.parse(run.completedAt) - Date.parse(run.startedAt))
+        : null;
+    const chatTo = run.messageId
+      ? run.groupId
+        ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
+        : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
+      : null;
+    return (
+      <li key={run.id} className="py-2.5 text-[13px]" data-testid="routine-run-row">
+        <div className="flex items-center justify-between gap-2">
+          <time dateTime={at} title={new Date(at).toLocaleString(i18n.locale || "en")}>
+            {new Date(at).toLocaleString(i18n.locale || "en", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </time>
+          <span className={statusTone(run.status)}>{statusLabel(run.status)}</span>
+        </div>
+        {run.status === "failed" && run.error ? (
+          <div className="mt-1 text-destructive">
+            <p>{normalizeRunError(run.error, translateRunError, i18n.locale || "en").summary}</p>
+            <details key={run.error} className="mt-1">
+              <summary className="w-fit cursor-pointer">{t`Details`}</summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{run.error}</pre>
+            </details>
+          </div>
+        ) : null}
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span>{duration}</span>
+          {chatTo ? (
+            <Link to={chatTo} className="text-foreground underline underline-offset-2">
+              <Trans>View chat</Trans>
+            </Link>
+          ) : null}
+        </div>
+      </li>
+    );
+  }
+
   return (
     <section data-testid="routine-run-history" className="mt-8 text-sm text-muted-foreground">
       <div className="flex items-center justify-between gap-2">
@@ -168,7 +218,11 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
             className="flex items-center gap-2 hover:text-foreground"
           >
             <Trans>Run history</Trans>
-            <ChevronDown size={14} aria-hidden className={expanded ? "rotate-180" : undefined} />
+            <ChevronDown
+              size={14}
+              aria-hidden
+              className={`transition-transform duration-150 ease-out motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`}
+            />
           </button>
         </h3>
         {expanded ? (
@@ -191,59 +245,16 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         </p>
       ) : null}
       {runs && runs.length > 0 ? (
-        <ul id={listId} className="mt-2 divide-y divide-border">
-          {(expanded ? runs : runs.slice(0, 1)).map((run) => {
-            const at = run.startedAt ?? run.createdAt;
-            const duration =
-              run.startedAt && run.completedAt
-                ? formatToolActivityDuration(
-                    Date.parse(run.completedAt) - Date.parse(run.startedAt),
-                  )
-                : null;
-            const chatTo = run.messageId
-              ? run.groupId
-                ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
-                : `/app/${encodeURIComponent(run.botId)}?m=${encodeURIComponent(run.messageId)}`
-              : null;
-            return (
-              <li key={run.id} className="py-2.5 text-[13px]" data-testid="routine-run-row">
-                <div className="flex items-center justify-between gap-2">
-                  <time dateTime={at} title={new Date(at).toLocaleString(i18n.locale || "en")}>
-                    {new Date(at).toLocaleString(i18n.locale || "en", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                  <span className={statusTone(run.status)}>{statusLabel(run.status)}</span>
-                </div>
-                {run.status === "failed" && run.error ? (
-                  <div className="mt-1 text-destructive">
-                    <p>
-                      {normalizeRunError(run.error, translateRunError, i18n.locale || "en").summary}
-                    </p>
-                    <details key={run.error} className="mt-1">
-                      <summary className="w-fit cursor-pointer">{t`Details`}</summary>
-                      <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
-                        {run.error}
-                      </pre>
-                    </details>
-                  </div>
-                ) : null}
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span>{duration}</span>
-                  {chatTo ? (
-                    <Link to={chatTo} className="text-foreground underline underline-offset-2">
-                      <Trans>View chat</Trans>
-                    </Link>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div id={listId} className="mt-2">
+          <ul className="divide-y divide-border">{runs.slice(0, 1).map(renderRun)}</ul>
+          <Collapsible open={expanded} className="contents">
+            <CollapsibleContent className="flex flex-col">
+              <ul className="divide-y divide-border border-t border-border">
+                {runs.slice(1).map(renderRun)}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
       ) : null}
       {expanded && history?.nextCursor ? (
         <Button

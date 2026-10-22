@@ -8,7 +8,7 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
-import { errorText } from "./user-error";
+import { errorText, voiceAccountErrorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
@@ -386,7 +386,9 @@ async function renderUtterance(
     });
     if (!res.ok) {
       const body = await readVoiceError(res, deadline.signal);
-      throw new Error(errorText(body.error ?? "", t("Could not speak that.")));
+      throw new Error(
+        voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not speak that.")),
+      );
     }
     return await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
   } finally {
@@ -620,11 +622,13 @@ function requestDeadline(timeoutMs: number) {
 async function readVoiceError(
   response: Response,
   signal: AbortSignal,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; code?: string }> {
   const bytes = await readResponseBytes(response, MAX_VOICE_ERROR_BYTES, signal);
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as { error?: string }) : {};
+    return parsed && typeof parsed === "object"
+      ? (parsed as { error?: string; code?: string })
+      : {};
   } catch {
     return {};
   }

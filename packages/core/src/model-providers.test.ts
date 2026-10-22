@@ -2,12 +2,15 @@ import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   canUseCompatibleModelAsDefault,
+  chatModelChoices,
   clampCatalogThinkingLevel,
   compatibleModelRows,
   connectedModelChoices,
   credentialForModel,
   featuredModelProviders,
   filterModelCatalog,
+  filterModelChoices,
+  groupModelChoices,
   pickCatalogModelId,
   resolveSelectableModelId,
   savedCompatibleModelIds,
@@ -227,6 +230,8 @@ describe("connected model choices", () => {
         provider: "deepseek",
         modelId: "my-finetune",
         label: "DeepSeek · my-finetune",
+        providerLabel: "DeepSeek",
+        modelLabel: "my-finetune",
       },
     ]);
   });
@@ -249,6 +254,8 @@ describe("connected model choices", () => {
         provider: "openai-compatible",
         modelId: id,
         label: `Local server · ${id}`,
+        providerLabel: "Local server",
+        modelLabel: id,
       })),
     );
   });
@@ -377,6 +384,75 @@ describe("filterModelCatalog", () => {
   });
 });
 
+describe("chat model choices", () => {
+  const connected = [
+    {
+      key: "openrouter::anthropic/claude-sonnet",
+      provider: "openrouter",
+      modelId: "anthropic/claude-sonnet",
+      label: "OpenRouter · Claude Sonnet",
+    },
+    {
+      key: "openrouter::openai/gpt-mini",
+      provider: "openrouter",
+      modelId: "openai/gpt-mini",
+      label: "OpenRouter · GPT Mini",
+    },
+  ];
+
+  it("puts the space default first, then a saved model no connection offers, then the rest", () => {
+    expect(chatModelChoices(connected, "openai::retired-model", "Space default")).toEqual([
+      { key: "", label: "Space default" },
+      {
+        key: "openai::retired-model",
+        label: "retired-model",
+        provider: "openai",
+        modelId: "retired-model",
+      },
+      ...connected,
+    ]);
+    expect(chatModelChoices(connected, connected[1]!.key, "Space default")).toEqual([
+      { key: "", label: "Space default" },
+      ...connected,
+    ]);
+  });
+
+  it("matches the label, model id, or provider, ignoring case", () => {
+    const choices = chatModelChoices(connected, "", "Space default (Claude Sonnet)");
+    expect(filterModelChoices(choices, "  SONNET ").map((choice) => choice.key)).toEqual([
+      "",
+      "openrouter::anthropic/claude-sonnet",
+    ]);
+    expect(filterModelChoices(choices, "openai/").map((choice) => choice.key)).toEqual([
+      "openrouter::openai/gpt-mini",
+    ]);
+    expect(
+      filterModelChoices([{ key: "openrouter::x", label: "X", provider: "openrouter" }], "router"),
+    ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [
+          {
+            key: "cloudflare-ai-gateway::x",
+            label: "X",
+            provider: "cloudflare-ai-gateway",
+            providerLabel: "Cloudflare AI Gateway",
+          },
+        ],
+        "AI Gateway",
+      ),
+    ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [{ key: "google", label: "Google", providerLabel: "All providers" }],
+        "all",
+      ),
+    ).toEqual([]);
+    expect(filterModelChoices(choices, "gemini")).toEqual([]);
+    expect(filterModelChoices(choices, " ")).toBe(choices);
+  });
+});
+
 describe("openai-compatible model rows", () => {
   const saved = { baseUrl: "http://127.0.0.1:8000/v1", enabledModelIds: ["a", "b"] };
 
@@ -427,4 +503,59 @@ it("offers Azure catalog models for a credential saved with the old provider id"
   );
   expect(choices).toMatchObject([{ key: "azure::gpt-4o", provider: "azure", modelId: "gpt-4o" }]);
   expect(pickCatalogModelId(catalog, "azure-openai-responses", "gpt-4o")).toBe("gpt-4o");
+});
+
+describe("groupModelChoices", () => {
+  const connected = connectedModelChoices(
+    [{ provider: "openrouter", label: "OpenRouter" }],
+    [
+      {
+        provider: "openrouter",
+        providerName: "OpenRouter",
+        id: "anthropic/opus",
+        label: "Anthropic: Claude Opus",
+      },
+      {
+        provider: "openrouter",
+        providerName: "OpenRouter",
+        id: "anthropic/sonnet",
+        label: "Anthropic: Claude Sonnet",
+      },
+      {
+        provider: "openrouter",
+        providerName: "OpenRouter",
+        id: "google/gemini",
+        label: "Google: Gemini",
+      },
+    ],
+  );
+  const choices = chatModelChoices(connected, "retired::saved", "Space default");
+
+  it("keeps default and disconnected choices first and groups catalog vendor names", () => {
+    const sections = groupModelChoices(choices, "");
+    expect(sections.map((section) => section.heading)).toEqual([
+      undefined,
+      "OpenRouter · Anthropic",
+      "OpenRouter · Google",
+    ]);
+    expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["", "retired::saved"]);
+    expect(sections[1]?.data.map((choice) => choice.title)).toEqual([
+      "Claude Opus",
+      "Claude Sonnet",
+    ]);
+    expect(sections[1]?.data[0]?.label).toBe("OpenRouter · Anthropic: Claude Opus");
+  });
+
+  it("matches the original full labels and ids and removes empty sections", () => {
+    for (const query of ["OpenRouter", "Anthropic", "anthropic/opus", "Sonnet", "missing"]) {
+      expect(
+        groupModelChoices(choices, query).flatMap((section) =>
+          section.data.map((choice) => choice.key),
+        ),
+      ).toEqual(filterModelChoices(choices, query).map((choice) => choice.key));
+    }
+    expect(groupModelChoices(choices, "Sonnet").map((section) => section.heading)).toEqual([
+      "OpenRouter · Anthropic",
+    ]);
+  });
 });

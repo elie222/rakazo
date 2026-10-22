@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -30,10 +31,11 @@ vi.mock("@rakazo/chat-ui/web", () => ({
     <div data-testid="chat-markdown">{children}</div>
   ),
 }));
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Button: (props: ComponentProps<"button">) => <button {...props} />,
+    buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
     Dialog: Container,
     DialogContent: Container,
     DialogHeader: Container,
@@ -78,13 +80,14 @@ function ticket(
   };
 }
 
-async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>) {
+async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusal?: unknown) {
   api.boards.subscribe.mockReset();
   api.boards.subscribe.mockResolvedValue(
     stream ?? {
       [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
     },
   );
+  if (refusal) api.boards.subscribe.mockRejectedValueOnce(refusal);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -327,3 +330,38 @@ it.each(["end", "error"] as const)(
     }
   },
 );
+
+it.each([
+  [403, 1],
+  [404, 1],
+  [503, 2],
+])("after a %i subscribing, reconnect attempts total %i", async (status, attempts) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  api.bots.list.mockResolvedValue([]);
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+  const page = await renderBoard(undefined, Object.assign(new Error("Refused"), { status }));
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(api.boards.subscribe).toHaveBeenCalledTimes(attempts);
+  } finally {
+    await page.cleanup();
+    vi.useRealTimers();
+  }
+});
+
+it("renders the back control as a plain link", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([]);
+  api.tickets.list.mockResolvedValue({ tickets: [] });
+  const page = await renderBoard();
+  try {
+    const back = page.container.querySelector('a[href="/app"]');
+    if (!back) throw new Error("Missing back link");
+    expect(back.hasAttribute("type")).toBe(false);
+    expect(back.hasAttribute("role")).toBe(false);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});

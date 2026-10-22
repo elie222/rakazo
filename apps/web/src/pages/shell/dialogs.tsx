@@ -18,6 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  RadioGroup,
+  RadioGroupItem,
 } from "@rakazo/ui-web";
 import { Lock, Users } from "lucide-react";
 import { useId, useState } from "react";
@@ -410,6 +412,7 @@ export function DeleteBotDialog({
   const [deleting, setDeleting] = useState(false);
   const [deleteMemories, setDeleteMemories] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const memoriesLabelId = useId();
 
   return (
     <AlertDialog open onOpenChange={closeUnlessBusy(deleting, onCancel)}>
@@ -425,43 +428,41 @@ export function DeleteBotDialog({
             </Trans>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <fieldset className="space-y-2">
-          <legend className="mb-2 text-[13.5px] text-foreground/75">
+        <div className="space-y-2">
+          <p id={memoriesLabelId} className="mb-2 text-[13.5px] text-foreground/75">
             <Trans>What about its memories?</Trans>
-          </legend>
-          <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={!deleteMemories}
-              onChange={() => setDeleteMemories(false)}
-            />
-            <span>
-              <span className="block text-[14px] text-foreground">
-                <Trans>Keep memories</Trans>
+          </p>
+          <RadioGroup
+            aria-labelledby={memoriesLabelId}
+            value={deleteMemories ? "delete" : "keep"}
+            onValueChange={(value) => setDeleteMemories(value === "delete")}
+          >
+            {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
+            <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
+              <RadioGroupItem value="keep" className="mt-0.5" />
+              <span>
+                <span className="block text-[14px] text-foreground">
+                  <Trans>Keep memories</Trans>
+                </span>
+                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                  <Trans>Move them to your shared memory.</Trans>
+                </span>
               </span>
-              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                <Trans>Move them to your shared memory.</Trans>
+            </label>
+            {/* biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control. */}
+            <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
+              <RadioGroupItem value="delete" className="mt-0.5" />
+              <span>
+                <span className="block text-[14px] text-foreground">
+                  <Trans>Delete memories too</Trans>
+                </span>
+                <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                  <Trans>This cannot be undone.</Trans>
+                </span>
               </span>
-            </span>
-          </label>
-          <label className="flex cursor-pointer gap-3 rounded-lg border border-border p-3">
-            <input
-              type="radio"
-              name="delete-memory"
-              checked={deleteMemories}
-              onChange={() => setDeleteMemories(true)}
-            />
-            <span>
-              <span className="block text-[14px] text-foreground">
-                <Trans>Delete memories too</Trans>
-              </span>
-              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
-                <Trans>This cannot be undone.</Trans>
-              </span>
-            </span>
-          </label>
-        </fieldset>
+            </label>
+          </RadioGroup>
+        </div>
         {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>

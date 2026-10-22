@@ -1,5 +1,5 @@
 import type { MenuAction } from "@expo/ui/community/menu";
-import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, markdownCodeBlocks } from "@rakazo/chat-ui/native";
 import type {
   AgentSkillCatalogEntry,
   Connection,
@@ -22,6 +22,7 @@ import {
   attachmentsForThread,
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
+  dismissableAskMessageIds,
   expandPeerReplies,
   foldPeerReplies,
   formatFileSize,
@@ -29,7 +30,10 @@ import {
   groupVoiceChats,
   isApprovalAskBlock,
   isPeerReceiptBlocks,
+  isRetryableError,
   isRunTerminalEvent,
+  isRunWaitingOnUser,
+  isRunWorking,
   isSecretAskBlock,
   leaveThreadWindow,
   openThreadWindow,
@@ -39,12 +43,14 @@ import {
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
+  retryDelayMs,
   displayName as safeDisplayName,
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
   withLiveStreamingProgress,
 } from "@rakazo/core";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import {
   useFocusEffect,
@@ -131,6 +137,7 @@ import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
+import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
@@ -161,6 +168,7 @@ import {
 } from "../lib/api";
 import { useAppForeground } from "../lib/app-foreground";
 import { mobileTokens } from "../lib/appearance";
+import { notifyArchivedChatsChanged } from "../lib/archived-chats";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { plainAskTitle } from "../lib/ask-title";
@@ -175,6 +183,7 @@ import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt"
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
+import { useKeyboardLayout } from "../lib/keyboard-layout";
 import { KeyboardScrollBack } from "../lib/keyboard-scroll-back";
 import { saveLastBotId } from "../lib/last-bot";
 import {
@@ -225,6 +234,7 @@ import {
   subscribeSessionGeneration,
 } from "../lib/session";
 import { setInboxHidden, useSplitView } from "../lib/split-view";
+import { threadEdgeOptions } from "../lib/thread-edges";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
@@ -281,14 +291,8 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
   return `${name} (${item.reason})`;
 }
 
-function isWorkingStatus(status: string | undefined): boolean {
-  return (
-    status === "queued" ||
-    status === "leased" ||
-    status === "running" ||
-    status === "waiting_input" ||
-    status === "waiting_takeover"
-  );
+function isActiveStatus(status: string | undefined): boolean {
+  return isRunWorking(status) || isRunWaitingOnUser(status);
 }
 
 const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
@@ -304,7 +308,9 @@ function speakableMessageText(message: MobileMessage): string {
 export default function ThreadRoute() {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  const [owner, setOwner] = useState<{ key: string; generation: number } | null>(null);
+  const [owner, setOwner] = useState<{ key: string; generation: number; userId: string } | null>(
+    null,
+  );
   useEffect(() => {
     if (generation !== ready) return;
     const apiBase = currentApiBase();
@@ -321,12 +327,16 @@ export default function ThreadRoute() {
             generation === currentSessionGeneration() &&
             apiBase === currentApiBase()
           )
-            setOwner({ key: JSON.stringify([apiBase, scope.userId]), generation });
+            setOwner({
+              key: JSON.stringify([apiBase, scope.userId]),
+              generation,
+              userId: scope.userId,
+            });
         })
         .catch((error) => {
           if (!cancelled && !notified) Alert.alert(t("Could not continue"), errorText(error));
           notified = true;
-          if (!cancelled) timer = setTimeout(verify, 5_000);
+          if (!cancelled && isRetryableError(error)) timer = setTimeout(verify, 5_000);
         });
     verify();
     return () => {
@@ -389,7 +399,7 @@ export default function ThreadRoute() {
       <>
         {owner?.generation !== generation ? <ActivityIndicator color={tokens.foreground} /> : null}
         <View style={{ flex: 1, display: owner?.generation === generation ? "flex" : "none" }}>
-          {owner ? <Thread key={owner.key} sessionEpoch={ready} /> : null}
+          {owner ? <Thread key={owner.key} sessionEpoch={ready} userId={owner.userId} /> : null}
         </View>
       </>
     );
@@ -418,7 +428,8 @@ export default function ThreadRoute() {
   );
 }
 
-function Thread({ sessionEpoch }: { sessionEpoch: number }) {
+function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string }) {
+  const keyboardLayout = useKeyboardLayout();
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
@@ -692,19 +703,22 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
-  const workingGroupBots = useMemo(() => {
+  const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];
     const seen = new Set<string>();
-    const working = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
-    return working.flatMap((run) => {
-      if (!run.botId || seen.has(run.botId) || !isWorkingStatus(run.status)) return [];
+    const active = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
+    return active.flatMap((run) => {
+      if (!run.botId || seen.has(run.botId) || !isActiveStatus(run.status)) return [];
       const member = snap?.members?.find((candidate) => candidate.botId === run.botId);
       if (!member) return [];
       seen.add(run.botId);
       return [{ ...member, status: run.status }];
     });
   }, [inGroup, snap?.activeRuns, snap?.members, snap?.run]);
-  const working = inGroup ? workingGroupBots.length > 0 : isWorkingStatus(currentBotStatus);
+  // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
+  // card is the state: no typing dots under it.
+  const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
+  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReply = useCallback(() => {
     if (!botId || inGroup || !currentBot) return;
@@ -875,12 +889,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     navigation.setOptions({
       title: displayName || t("Thread"),
       headerTitleAlign: "center",
-      // Inversion swaps the visual edges, so both are hidden. The sides must be hidden too:
-      // on an iOS 26 device the side effect of the inverted list covers the whole list and
-      // dims every message. "hidden" for top and bottom leaves the sides at "automatic".
-      headerTransparent: iosAtLeast(26),
-      ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
-      scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" },
+      ...threadEdgeOptions(),
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -1031,6 +1040,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     setRestoring(true);
     try {
       await restoreArchivedBot(botId);
+      notifyArchivedChatsChanged();
       router.setParams({ readOnly: "0" });
     } catch (cause) {
       Alert.alert(t("Could not restore bot"), errorText(cause, t("Try again.")));
@@ -1106,7 +1116,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       text: t("Archive"),
       onPress: () =>
         void rpc("bots/archive", { botId })
-          .then(leaveBot)
+          .then(() => {
+            notifyArchivedChatsChanged();
+            leaveBot();
+          })
           .catch((error) =>
             Alert.alert(t("Could not archive bot"), errorText(error, t("Try again."))),
           ),
@@ -1114,7 +1127,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     {
       text: t("Delete…"),
       destructive: true,
-      onPress: () => confirmDeleteBot({ id: botId ?? "", name: displayName || t("Bot") }, leaveBot),
+      onPress: () =>
+        confirmDeleteBot({ id: botId ?? "", name: displayName || t("Bot") }, () => {
+          notifyArchivedChatsChanged();
+          leaveBot();
+        }),
     },
   ];
 
@@ -1492,6 +1509,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
+        let failure: unknown;
         try {
           liveSubscribed.current = true;
           await subscribeThread(
@@ -1511,7 +1529,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.subagent" ||
                 event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
-                event.type === "run.started" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
                 event.type === "computer.takeover.released" ||
@@ -1536,6 +1553,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               }
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
+              }
+              if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+                // Reconcile run ownership for ask cards first seen through live events.
                 if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
                   void refresh().catch(() => undefined);
                 }
@@ -1543,18 +1563,30 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             },
             abort.signal,
           );
-        } catch {
+        } catch (error) {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
+          failure = error;
         } finally {
           if (liveSubscriptionGeneration.current === subscriptionGeneration) {
             liveSubscribed.current = false;
           }
         }
-        if (abort.signal.aborted) break;
+        // A 4xx other than 408/429 is the server's answer; reconnecting only polls it.
+        if (abort.signal.aborted || !isRetryableError(failure)) break;
+        let refreshFailure: unknown;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-          await refresh().catch(() => undefined);
+          refreshFailure = await refresh().then(
+            () => undefined,
+            (error: unknown) => error,
+          );
+          if (!isRetryableError(refreshFailure)) break;
         }
-        await abortableDelay(retryMs, abort.signal);
+        // Wait as long as either request was asked to (a 429's Retry-After).
+        const delay = Math.max(
+          retryDelayMs(failure, retryMs),
+          retryDelayMs(refreshFailure, retryMs),
+        );
+        await abortableDelay(delay, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
     })();
@@ -1603,31 +1635,28 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           liveSubscribed: liveSubscribed.current,
           readOnly,
         });
-      const clearTimer = () => {
-        if (timer !== undefined) clearTimeout(timer);
-        timer = undefined;
-      };
       function schedule() {
-        clearTimer();
-        if (cancelled) return;
-        timer = setTimeout(() => void tick(), refreshDelay());
+        if (!cancelled) timer = setTimeout(() => void tick(), refreshDelay());
       }
       async function tick() {
         if (cancelled || ticking) return;
         ticking = true;
+        let failure: unknown;
         try {
           if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-            await refresh().catch(() => undefined);
+            await refresh().catch((error: unknown) => {
+              failure = error;
+            });
           }
         } finally {
           ticking = false;
-          schedule();
+          if (isRetryableError(failure)) schedule();
         }
       }
       schedule();
       return () => {
         cancelled = true;
-        clearTimer();
+        if (timer !== undefined) clearTimeout(timer);
       };
     }, [botId, foreground, groupId, readOnly, snap?.run?.status]),
   );
@@ -1825,7 +1854,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   const answerMessage = useCallback(
-    async (message: MobileMessage, answer: string, username?: string) => {
+    async (message: MobileMessage, answer: string, username?: string, dismiss?: boolean) => {
       const targetBotId = botId;
       const targetGroupId = groupId;
       if (readOnly || (!targetBotId && !targetGroupId) || !message.runId) return;
@@ -1835,6 +1864,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         messageId: message.id,
         answer,
         ...(username ? { username } : {}),
+        ...(dismiss ? { dismiss: true as const } : {}),
       });
       // The answer is saved once the server accepts it; a failed refresh only delays the card.
       if (isCurrentTarget(targetBotId, targetGroupId)) await refresh().catch(() => undefined);
@@ -2016,6 +2046,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
+  const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
   const normalizedRunError = useRunError(runError, false);
   const failedRunId = runError ? snap?.run?.id : null;
@@ -2218,8 +2249,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       select: (text) => rowActionsRef.current.select(text),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
-      answer: (message, answer, username) =>
-        rowActionsRef.current.answer(message, answer, username),
+      answer: (message, answer, username, dismiss) =>
+        rowActionsRef.current.answer(message, answer, username, dismiss),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
@@ -2272,6 +2303,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           readOnly={readOnly}
           onCall={onCall}
           canAnswer={!readOnly && answerableAskIds.has(message.id)}
+          canDismiss={dismissableAskIds.has(message.id)}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
           replyAuthor={replyAuthor}
@@ -2313,6 +2345,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       readOnly,
       onCall,
       answerableAskIds,
+      dismissableAskIds,
       highlightedMessageId,
       separatorIds,
       columnWidth,
@@ -2343,7 +2376,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   );
 
   const workingFooter =
-    !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
+    !inGroup && currentBot && isRunWorking(currentBotStatus) && !hasLiveProgress ? (
       <View
         accessibilityLabel={t("{name} is working", { name: currentBot.name })}
         accessibilityRole="text"
@@ -2446,412 +2479,434 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   ) : null;
 
   return (
-    <KeyboardAvoidingView
-      behavior="height"
-      // Android lays out the screen below the opaque native navigation header.
-      keyboardVerticalOffset={Platform.OS === "android" ? nativeHeaderHeight : 0}
-      style={{
-        flex: 1,
-        backgroundColor: tokens.background,
-        paddingHorizontal: 20 + columnInset,
-      }}
-    >
-      {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
-      <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
-        {showPinnedPage ? (
-          <ScrollView
-            key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
-            ref={pinnedScroll}
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingTop: headerHeight + 8, paddingBottom: 16 }}
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-            maintainVisibleContentPosition={messageListPosition}
-            scrollEventThrottle={16}
-            onLayout={(event) => {
-              pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
-              loadNewerNearEnd();
-            }}
-            onContentSizeChange={(_, height) => {
-              pinnedScrollMetrics.current.content = height;
-              const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
-              if (jumpOffset != null) scrollPinnedTo(jumpOffset);
-              const armedAt = joinPinnedAfterLayout.current;
-              if (armedAt != null && height !== armedAt) {
-                joinPinnedAfterLayout.current = null;
-                if (
-                  !jumpAnchor.current.holds() &&
-                  pinnedAroundRef.current?.newerCursor == null &&
-                  pinnedNearEnd()
-                ) {
-                  showLatest();
-                  return;
-                }
-              }
-              loadNewerNearEnd();
-            }}
-            onScroll={(event) => {
-              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-              pinnedScrollMetrics.current = {
-                offset: contentOffset.y,
-                viewport: layoutMeasurement.height,
-                content: contentSize.height,
-              };
-              if (pinnedScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
-                KeyboardController.dismiss();
-              }
-              loadNewerNearEnd();
-            }}
-            onScrollBeginDrag={(event) => {
-              pinnedScrollBack.current.onDragStart(event.nativeEvent);
-              newerLoadFailed.current = false;
-              if (!jumpAnchor.current.holds()) return;
-              jumpAnchor.current.release();
-              jumpScrollTarget.current = null;
-            }}
-            onScrollEndDrag={(event) => {
-              pinnedScrollBack.current.onDragEnd();
-              updatePinnedScroll(event);
-            }}
-            onMomentumScrollEnd={updatePinnedScroll}
-          >
-            {loadEarlierControl}
-            {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
-              renderMessageRow(message, { enableJump: true, index }),
-            )}
-            {pinnedNewerCursor === null ? failedSendBubbles : null}
-            {errorNotice}
-            {pinnedNewerCursor === null ? (
-              workingFooter
-            ) : loadingNewer ? (
-              <ActivityIndicator color={tokens.mutedForeground} style={{ marginVertical: 12 }} />
-            ) : null}
-          </ScrollView>
-        ) : (
-          <FlatList
-            key={threadKey}
-            ref={scroll}
-            data={liveItems}
-            inverted
-            keyExtractor={threadItemKey}
-            // This callback tracks every row input, including reply, reaction and highlight state.
-            extraData={renderMessageRow}
-            style={messageListStyles.list}
-            // Swiping down hides the keyboard; on iOS it follows the finger.
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-            // Inverted, so the bottom padding is the visual top, clear of the transparent header.
-            contentContainerStyle={listContentStyle}
-            // Follow changes to the recovery card while already at the newest content.
-            maintainVisibleContentPosition={liveMessageListPosition}
-            scrollEventThrottle={16}
-            onScrollBeginDrag={(event) => {
-              clearTimeout(scrollIdleTimer.current);
-              nativeMomentumActive.current = false;
-              scrollBehavior.current.onUserDragStart();
-              liveScrollBack.current.onDragStart(event.nativeEvent);
-            }}
-            onScroll={(event) => {
-              if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
-                KeyboardController.dismiss();
-              }
-              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
-            }}
-            // Keep tracking after release: a fling can cross the threshold mid-momentum.
-            onScrollEndDrag={(event) => {
-              updateUserScroll(event);
-              scrollBehavior.current.onUserDragEnd();
-              liveScrollBack.current.onDragEnd();
-              scheduleScrollIdle();
-            }}
-            onMomentumScrollBegin={() => {
-              nativeMomentumActive.current = true;
-              scheduleScrollIdle();
-            }}
-            onMomentumScrollEnd={(event) => {
-              nativeMomentumActive.current = false;
-              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
-              clearTimeout(scrollIdleTimer.current);
-              performScroll(scrollBehavior.current.onUserMomentumEnd());
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
-            onLayout={(event) => {
-              performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
-            onContentSizeChange={(_, height) => {
-              publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
-              if (loadingOlderContent.current) {
-                loadingOlderContent.current = false;
-                return;
-              }
-              const blocked = Boolean(
-                jumpScrollTarget.current ||
-                  (pinnedAroundRef.current &&
-                    ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                      (pinnedAroundRef.current.groupId &&
-                        pinnedAroundRef.current.groupId === groupId))) ||
-                  expandedHistoryThread.current === snap?.threadId,
-              );
-              performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
-            ListFooterComponent={loadEarlierControl}
-            ListHeaderComponent={
-              <View onLayout={() => performScroll(scrollBehavior.current.onLayout())}>
+    <View ref={keyboardLayout.container} onLayout={keyboardLayout.onLayout} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
+        // move frames, such as when a pushed screen closes with its own keyboard up.
+        behavior="padding"
+        keyboardVerticalOffset={keyboardLayout.offset}
+        style={{
+          flex: 1,
+          backgroundColor: tokens.background,
+          paddingHorizontal: 20 + columnInset,
+        }}
+      >
+        {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
+        <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
+          {showPinnedPage ? (
+            <ThreadScrollSurface
+              key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
+            >
+              <ScrollView
+                key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
+                ref={pinnedScroll}
+                style={{ flex: 1 }}
+                // A pinned page always shows the floating jump button (44pt, 12pt from the
+                // bottom), so its last message must be able to scroll clear of it.
+                contentContainerStyle={{
+                  paddingTop: headerHeight + 8,
+                  paddingBottom: 12 + 44 + 16,
+                }}
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                maintainVisibleContentPosition={messageListPosition}
+                scrollEventThrottle={16}
+                onLayout={(event) => {
+                  pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
+                  loadNewerNearEnd();
+                }}
+                onContentSizeChange={(_, height) => {
+                  pinnedScrollMetrics.current.content = height;
+                  const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
+                  if (jumpOffset != null) scrollPinnedTo(jumpOffset);
+                  const armedAt = joinPinnedAfterLayout.current;
+                  if (armedAt != null && height !== armedAt) {
+                    joinPinnedAfterLayout.current = null;
+                    if (
+                      !jumpAnchor.current.holds() &&
+                      pinnedAroundRef.current?.newerCursor == null &&
+                      pinnedNearEnd()
+                    ) {
+                      showLatest();
+                      return;
+                    }
+                  }
+                  loadNewerNearEnd();
+                }}
+                onScroll={(event) => {
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                  pinnedScrollMetrics.current = {
+                    offset: contentOffset.y,
+                    viewport: layoutMeasurement.height,
+                    content: contentSize.height,
+                  };
+                  if (
+                    pinnedScrollBack.current.onScroll(event.nativeEvent) &&
+                    Platform.OS === "ios"
+                  ) {
+                    KeyboardController.dismiss();
+                  }
+                  loadNewerNearEnd();
+                }}
+                onScrollBeginDrag={(event) => {
+                  pinnedScrollBack.current.onDragStart(event.nativeEvent);
+                  newerLoadFailed.current = false;
+                  if (!jumpAnchor.current.holds()) return;
+                  jumpAnchor.current.release();
+                  jumpScrollTarget.current = null;
+                }}
+                onScrollEndDrag={(event) => {
+                  pinnedScrollBack.current.onDragEnd();
+                  updatePinnedScroll(event);
+                }}
+                onMomentumScrollEnd={updatePinnedScroll}
+              >
+                {loadEarlierControl}
+                {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
+                  renderMessageRow(message, { enableJump: true, index }),
+                )}
+                {pinnedNewerCursor === null ? failedSendBubbles : null}
                 {errorNotice}
-                {failedSendBubbles}
-                {workingFooter}
-              </View>
-            }
-            renderItem={renderItem}
-          />
-        )}
-        {showPinnedPage || threadScrollState.detached ? (
-          <View style={{ position: "absolute", end: 0, bottom: 12 }}>
-            <ScrollToBottomButton
-              accessibilityLabel={
-                threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
-              }
-              onPress={() => {
-                if (showPinnedPage) {
-                  showLatest();
-                  return;
+                {pinnedNewerCursor === null ? (
+                  workingFooter
+                ) : loadingNewer ? (
+                  <ActivityIndicator
+                    color={tokens.mutedForeground}
+                    style={{ marginVertical: 12 }}
+                  />
+                ) : null}
+              </ScrollView>
+            </ThreadScrollSurface>
+          ) : (
+            <ThreadScrollSurface key={`live:${threadKey}`}>
+              <FlatList
+                key={threadKey}
+                ref={scroll}
+                data={liveItems}
+                inverted
+                keyExtractor={threadItemKey}
+                // This callback tracks every row input, including reply, reaction and highlight state.
+                extraData={renderMessageRow}
+                style={messageListStyles.list}
+                // Swiping down hides the keyboard; on iOS it follows the finger.
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                // Inverted, so the bottom padding is the visual top, clear of the transparent header.
+                contentContainerStyle={listContentStyle}
+                // Follow changes to the recovery card while already at the newest content.
+                maintainVisibleContentPosition={liveMessageListPosition}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={(event) => {
+                  clearTimeout(scrollIdleTimer.current);
+                  nativeMomentumActive.current = false;
+                  scrollBehavior.current.onUserDragStart();
+                  liveScrollBack.current.onDragStart(event.nativeEvent);
+                }}
+                onScroll={(event) => {
+                  if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                    KeyboardController.dismiss();
+                  }
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+                }}
+                // Keep tracking after release: a fling can cross the threshold mid-momentum.
+                onScrollEndDrag={(event) => {
+                  updateUserScroll(event);
+                  scrollBehavior.current.onUserDragEnd();
+                  liveScrollBack.current.onDragEnd();
+                  scheduleScrollIdle();
+                }}
+                onMomentumScrollBegin={() => {
+                  nativeMomentumActive.current = true;
+                  scheduleScrollIdle();
+                }}
+                onMomentumScrollEnd={(event) => {
+                  nativeMomentumActive.current = false;
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+                  clearTimeout(scrollIdleTimer.current);
+                  performScroll(scrollBehavior.current.onUserMomentumEnd());
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                onLayout={(event) => {
+                  performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                onContentSizeChange={(_, height) => {
+                  publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
+                  if (loadingOlderContent.current) {
+                    loadingOlderContent.current = false;
+                    return;
+                  }
+                  const blocked = Boolean(
+                    jumpScrollTarget.current ||
+                      (pinnedAroundRef.current &&
+                        ((pinnedAroundRef.current.botId &&
+                          pinnedAroundRef.current.botId === botId) ||
+                          (pinnedAroundRef.current.groupId &&
+                            pinnedAroundRef.current.groupId === groupId))) ||
+                      expandedHistoryThread.current === snap?.threadId,
+                  );
+                  performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                ListFooterComponent={loadEarlierControl}
+                ListHeaderComponent={
+                  <View onLayout={() => performScroll(scrollBehavior.current.onLayout())}>
+                    {errorNotice}
+                    {failedSendBubbles}
+                    {workingFooter}
+                  </View>
                 }
-                performScroll(scrollBehavior.current.jumpToLatest());
-                publishThreadScrollState(scrollBehavior.current.state());
-              }}
-            />
-            {threadScrollState.unread ? (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  top: 3,
-                  end: 3,
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: tokens.primary,
+                renderItem={renderItem}
+              />
+            </ThreadScrollSurface>
+          )}
+          {showPinnedPage || threadScrollState.detached ? (
+            <View style={{ position: "absolute", end: 0, bottom: 12 }}>
+              <ScrollToBottomButton
+                accessibilityLabel={
+                  threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
+                }
+                onPress={() => {
+                  if (showPinnedPage) {
+                    showLatest();
+                    return;
+                  }
+                  performScroll(scrollBehavior.current.jumpToLatest());
+                  publishThreadScrollState(scrollBehavior.current.state());
                 }}
               />
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-      {fetchErrorNotice}
-      {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
-      <Animated.View
-        style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
-      >
-        {/* Fades messages out immediately above the composer. */}
-        <View pointerEvents="none" style={styles.composerFade} />
-        {replyTarget ? (
-          <GlassSurface
-            style={{
-              marginTop: 12,
-              borderRadius: 999,
-              paddingStart: 16,
-              paddingEnd: 10,
-              paddingVertical: 8,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-            }}
-            fallbackStyle={{
-              borderRadius: 14,
-              borderWidth: 1,
-              borderColor: tokens.border,
-              backgroundColor: tokens.card,
-              paddingStart: 12,
-              paddingEnd: 12,
-              paddingVertical: 10,
-            }}
-          >
-            <ComposerReplyPreview
-              author={
-                replyTarget.role === "user"
-                  ? t("You")
-                  : (memberName(snap?.members, replyTarget.botId) ?? displayName ?? t("Bot"))
-              }
-              quote={replyQuote}
-              text={previewMessageText(replyTarget)}
-              attachment={replyAttachment(replyTarget.blocks)}
-              threadTarget={artifactTarget}
-            />
-            <ReplyDismissButton
-              onPress={() => {
-                setReplyTarget(null);
-                setReplyQuote(null);
-              }}
-            />
-          </GlassSurface>
-        ) : null}
-        {attachmentNotice ? (
-          <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
-            {attachmentNotice}
-          </Text>
-        ) : null}
-        {activePendingAttachments.length ? (
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 8,
-              marginTop: 12,
-            }}
-          >
-            {activePendingAttachments.map((attachment) => (
-              <View
-                key={attachment.id}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 8,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: tokens.border,
-                  backgroundColor: tokens.card,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                }}
-              >
-                {attachment.previewUri ? (
-                  <Image
-                    source={{ uri: attachment.previewUri }}
-                    style={{ width: 28, height: 28, borderRadius: 6 }}
-                  />
-                ) : (
-                  <NativeSymbol
-                    ios="paperclip"
-                    android="attach"
-                    size={16}
-                    color={tokens.mutedForeground}
-                  />
-                )}
-                <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
-                  {attachment.name}
-                </Text>
-                <Pressable
-                  accessibilityLabel={t("Remove {name}", { name: attachment.name })}
-                  onPress={() =>
-                    setPendingAttachments((current) =>
-                      current.filter((item) => item.id !== attachment.id),
-                    )
-                  }
-                >
-                  <NativeSymbol
-                    ios="xmark"
-                    android="close"
-                    size={14}
-                    color={tokens.mutedForeground}
-                  />
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        <ThreadComposer
-          key={threadKey}
-          ref={composerRef}
-          agentSkills={agentSkills}
-          composerMentionTargets={composerMentionTargets}
-          composerPrompt={composerPrompt}
-          replyTargetId={replyTarget?.id}
-          replyQuote={replyQuote}
-          attachmentIds={activePendingAttachments.map((attachment) => attachment.id)}
-          botId={botId}
-          onCall={onCall}
-          working={working}
-          sending={sending}
-          styles={styles}
-          attachActions={attachActions}
-          attachFrom={attachFrom}
-          send={send}
-          stop={stop}
-          startVoiceCall={startVoiceCall}
-          onSlashAction={runSlashAction}
-        />
-      </Animated.View>
-      {botActionsOpen ? (
-        <Modal
-          visible
-          transparent
-          animationType="fade"
-          onRequestClose={() => setBotActionsOpen(false)}
-        >
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              padding: 24,
-              backgroundColor: tokens.overlay,
-            }}
-          >
-            <Pressable
-              accessibilityLabel={t("Cancel")}
-              onPress={() => setBotActionsOpen(false)}
-              style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
-            />
-            <View
-              accessibilityViewIsModal
-              style={{ backgroundColor: tokens.popover, borderRadius: 24, paddingVertical: 12 }}
-            >
-              {botActions.map((action) => (
-                <Pressable
-                  key={action.text}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setBotActionsOpen(false);
-                    action.onPress();
+              {threadScrollState.unread ? (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    end: 3,
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: tokens.primary,
                   }}
-                  style={{ minHeight: 56, justifyContent: "center", paddingHorizontal: 24 }}
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+        {fetchErrorNotice}
+        {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
+        <Animated.View
+          style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
+        >
+          {/* Fades messages out immediately above the composer. */}
+          <View pointerEvents="none" style={styles.composerFade} />
+          {replyTarget ? (
+            <GlassSurface
+              style={{
+                marginTop: 12,
+                borderRadius: 999,
+                paddingStart: 16,
+                paddingEnd: 10,
+                paddingVertical: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+              fallbackStyle={{
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: tokens.glassStroke,
+                backgroundColor: tokens.glassFill,
+                paddingStart: 12,
+                paddingEnd: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <ComposerReplyPreview
+                author={
+                  replyTarget.role === "user"
+                    ? t("You")
+                    : (memberName(snap?.members, replyTarget.botId) ?? displayName ?? t("Bot"))
+                }
+                quote={replyQuote}
+                text={previewMessageText(replyTarget)}
+                attachment={replyAttachment(replyTarget.blocks)}
+                threadTarget={artifactTarget}
+              />
+              <ReplyDismissButton
+                onPress={() => {
+                  setReplyTarget(null);
+                  setReplyQuote(null);
+                }}
+              />
+            </GlassSurface>
+          ) : null}
+          {attachmentNotice ? (
+            <Text style={{ color: tokens.warning, marginTop: 12, fontSize: 13 }}>
+              {attachmentNotice}
+            </Text>
+          ) : null}
+          {activePendingAttachments.length ? (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {activePendingAttachments.map((attachment) => (
+                <View
+                  key={attachment.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: tokens.border,
+                    backgroundColor: tokens.card,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                  }}
                 >
-                  <Text
-                    style={{
-                      color: action.destructive ? tokens.destructive : tokens.popoverForeground,
-                      fontSize: 16,
-                    }}
-                  >
-                    {action.text}
+                  {attachment.previewUri ? (
+                    <Image
+                      source={{ uri: attachment.previewUri }}
+                      style={{ width: 28, height: 28, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <NativeSymbol
+                      ios="paperclip"
+                      android="attach"
+                      size={16}
+                      color={tokens.mutedForeground}
+                    />
+                  )}
+                  <Text style={{ color: tokens.foreground, maxWidth: 140 }} numberOfLines={1}>
+                    {attachment.name}
                   </Text>
-                </Pressable>
+                  <Pressable
+                    accessibilityLabel={t("Remove {name}", { name: attachment.name })}
+                    onPress={() =>
+                      setPendingAttachments((current) =>
+                        current.filter((item) => item.id !== attachment.id),
+                      )
+                    }
+                  >
+                    <NativeSymbol
+                      ios="xmark"
+                      android="close"
+                      size={14}
+                      color={tokens.mutedForeground}
+                    />
+                  </Pressable>
+                </View>
               ))}
             </View>
+          ) : null}
+          <ThreadComposer
+            onFocus={keyboardLayout.onFocus}
+            key={threadKey}
+            ref={composerRef}
+            agentSkills={agentSkills}
+            composerMentionTargets={composerMentionTargets}
+            composerPrompt={composerPrompt}
+            replyTargetId={replyTarget?.id}
+            replyQuote={replyQuote}
+            attachmentIds={activePendingAttachments.map((attachment) => attachment.id)}
+            botId={botId}
+            onCall={onCall}
+            working={working}
+            sending={sending}
+            styles={styles}
+            attachActions={attachActions}
+            attachFrom={attachFrom}
+            send={send}
+            stop={stop}
+            startVoiceCall={startVoiceCall}
+            onSlashAction={runSlashAction}
+          />
+        </Animated.View>
+        {botActionsOpen ? (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            onRequestClose={() => setBotActionsOpen(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                padding: 24,
+                backgroundColor: tokens.overlay,
+              }}
+            >
+              <Pressable
+                accessibilityLabel={t("Cancel")}
+                onPress={() => setBotActionsOpen(false)}
+                style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
+              />
+              <View
+                accessibilityViewIsModal
+                style={{ backgroundColor: tokens.popover, borderRadius: 24, paddingVertical: 12 }}
+              >
+                {botActions.map((action) => (
+                  <Pressable
+                    key={action.text}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setBotActionsOpen(false);
+                      action.onPress();
+                    }}
+                    style={{ minHeight: 56, justifyContent: "center", paddingHorizontal: 24 }}
+                  >
+                    <Text
+                      style={{
+                        color: action.destructive ? tokens.destructive : tokens.popoverForeground,
+                        fontSize: 16,
+                      }}
+                    >
+                      {action.text}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </Modal>
+        ) : null}
+        {selectableText !== null ? (
+          <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
+        ) : null}
+        <RunErrorSheet
+          details={runErrorDetailsOpen ? runError : null}
+          onClose={() => setRunErrorDetailsOpen(false)}
+          onConnection={openErrorConnection}
+          onModel={(snap?.run?.botId ?? botId) ? openErrorModel : undefined}
+        />
+        {markdownPreview && artifactTarget ? (
+          <MarkdownArtifactPreview
+            threadTarget={artifactTarget}
+            target={markdownPreview}
+            onClose={() => setMarkdownPreview(null)}
+          />
+        ) : null}
+        {quoteTarget ? (
+          <QuoteSheet
+            message={quoteTarget}
+            onCancel={() => setQuoteTarget(null)}
+            onQuote={(excerpt) => {
+              setReplyTarget(quoteTarget);
+              setReplyQuote(excerpt);
+              setQuoteTarget(null);
+            }}
+          />
+        ) : null}
+        {headerHeight > 0 ? (
+          <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight }]}>
+            <View style={styles.headerFadeEdge} />
           </View>
-        </Modal>
-      ) : null}
-      {selectableText !== null ? (
-        <SelectTextSheet text={selectableText} onClose={() => setSelectableText(null)} />
-      ) : null}
-      <RunErrorSheet
-        details={runErrorDetailsOpen ? runError : null}
-        onClose={() => setRunErrorDetailsOpen(false)}
-        onConnection={openErrorConnection}
-        onModel={(snap?.run?.botId ?? botId) ? openErrorModel : undefined}
-      />
-      {markdownPreview && artifactTarget ? (
-        <MarkdownArtifactPreview
-          threadTarget={artifactTarget}
-          target={markdownPreview}
-          onClose={() => setMarkdownPreview(null)}
-        />
-      ) : null}
-      {quoteTarget ? (
-        <QuoteSheet
-          message={quoteTarget}
-          onCancel={() => setQuoteTarget(null)}
-          onQuote={(excerpt) => {
-            setReplyTarget(quoteTarget);
-            setReplyQuote(excerpt);
-            setQuoteTarget(null);
-          }}
-        />
-      ) : null}
-      {headerHeight > 0 ? (
-        <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight }]}>
-          <View style={styles.headerFadeEdge} />
-        </View>
-      ) : null}
-    </KeyboardAvoidingView>
+        ) : null}
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -2923,8 +2978,7 @@ function QuoteSheet({
               onChangeText={() => setRevision((value) => value + 1)}
               style={{
                 color: tokens.foreground,
-                fontSize: 15.5,
-                lineHeight: 23,
+                ...typeScale.body,
                 padding: 0,
                 marginTop: index === 0 ? 0 : 12,
                 textAlignVertical: "top",
@@ -3009,7 +3063,12 @@ type MessageRowActions = {
   select: (text: string) => void;
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => void;
-  answer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
+  answer: (
+    message: MobileMessage,
+    answer: string,
+    username?: string,
+    dismiss?: boolean,
+  ) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
   previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
@@ -3032,6 +3091,7 @@ type MessageRowProps = {
   readOnly: boolean;
   onCall: boolean;
   canAnswer: boolean;
+  canDismiss: boolean;
   highlighted: boolean;
   separator: boolean;
   replyAuthor: string;
@@ -3048,6 +3108,15 @@ type MessageRowProps = {
   index: number;
 };
 
+function isWideAskBlock(blocks: MobileMessage["blocks"]) {
+  return blocks.some(isSecretAskBlock);
+}
+
+// Connect cards fill the bubble width instead of shrinking to their button.
+function hasAppConnectBlock(blocks: MobileMessage["blocks"]) {
+  return blocks.some((block) => block.kind === "app_connect");
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   actions,
@@ -3060,6 +3129,7 @@ const MessageRow = memo(function MessageRow({
   readOnly,
   onCall,
   canAnswer,
+  canDismiss,
   highlighted,
   separator,
   replyAuthor,
@@ -3119,6 +3189,11 @@ const MessageRow = memo(function MessageRow({
       if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
     };
     const react = (reaction: MessageReaction) => actions.react(message, reaction);
+    // VoiceOver reads the bubble as one element and can't reach a code block's copy button.
+    const codeBlocks = message.role === "user" ? [] : markdownCodeBlocks(blockText(message));
+    const copyCode = () => {
+      if (codeBlocks[0]) void Clipboard.setStringAsync(codeBlocks[0]).catch(() => undefined);
+    };
     const menuActions = [
       ...(!readOnly ? [{ name: "reply", text: t("Reply"), onPress: reply }] : []),
       ...(includeQuote ? [{ name: "quote", text: t("Quote"), onPress: quote }] : []),
@@ -3143,6 +3218,9 @@ const MessageRow = memo(function MessageRow({
       ...(includeSpeak ? [{ name: "speak", text: t("Speak message"), onPress: speakMessage }] : []),
       ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
       { name: "copy", text: t("Copy"), onPress: copy },
+      ...(codeBlocks.length === 1
+        ? [{ name: "copyCode", text: t("Copy code"), onPress: copyCode }]
+        : []),
     ];
     const menu = buildMessageContextMenu({
       labels: {
@@ -3274,12 +3352,18 @@ const MessageRow = memo(function MessageRow({
         ) : null}
         <View
           style={{
-            width: isCenteredAgentEvent(message.blocks) ? "100%" : undefined,
-            maxWidth: isCenteredAgentEvent(message.blocks)
-              ? "100%"
-              : activityBotId
-                ? undefined
-                : "90%",
+            width:
+              isCenteredAgentEvent(message.blocks) || isWideAskBlock(message.blocks)
+                ? "100%"
+                : hasAppConnectBlock(message.blocks) && !activityBotId
+                  ? "90%"
+                  : undefined,
+            maxWidth:
+              isCenteredAgentEvent(message.blocks) || isWideAskBlock(message.blocks)
+                ? "100%"
+                : activityBotId
+                  ? undefined
+                  : "90%",
             flex: activityBotId ? 1 : undefined,
             flexShrink: 1,
           }}
@@ -3297,12 +3381,15 @@ const MessageRow = memo(function MessageRow({
           )}
           <MessageContextMenu
             actions={menu}
+            fullWidth={isWideAskBlock(message.blocks) || hasAppConnectBlock(message.blocks)}
             maxWidth={
-              isCenteredAgentEvent(message.blocks)
-                ? columnWidth - 40
-                : activityBotId
-                  ? columnWidth - 40 - (inGroup ? 28 : 36)
-                  : (columnWidth - 40) * 0.9
+              isWideAskBlock(message.blocks)
+                ? columnWidth - 40 - (activityBotId ? (inGroup ? 28 : 36) : 0)
+                : isCenteredAgentEvent(message.blocks)
+                  ? columnWidth - 40
+                  : activityBotId
+                    ? columnWidth - 40 - (inGroup ? 28 : 36)
+                    : (columnWidth - 40) * 0.9
             }
             colorScheme={colorScheme}
             onAction={onMenuAction}
@@ -3317,6 +3404,7 @@ const MessageRow = memo(function MessageRow({
                 bots={bots}
                 members={members}
                 canAnswer={canAnswer}
+                canDismiss={canDismiss}
                 onAnswer={actions.answer}
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}
@@ -3345,8 +3433,6 @@ const MessageRow = memo(function MessageRow({
                   style={{
                     color: tokens.foreground,
                     backgroundColor: tokens.muted,
-                    borderColor: tokens.border,
-                    borderWidth: 1,
                     borderRadius: 16,
                     paddingHorizontal: 8,
                     paddingVertical: 2,
@@ -3373,6 +3459,7 @@ const MessageBubble = memo(function MessageBubble({
   message,
   members,
   canAnswer,
+  canDismiss,
   onAnswer,
   onOpenBot,
   onOpenComputer,
@@ -3390,7 +3477,13 @@ const MessageBubble = memo(function MessageBubble({
   message: MobileMessage;
   members?: MobileSnapshot["members"];
   canAnswer: boolean;
-  onAnswer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
+  canDismiss: boolean;
+  onAnswer: (
+    message: MobileMessage,
+    answer: string,
+    username?: string,
+    dismiss?: boolean,
+  ) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
@@ -3439,12 +3532,16 @@ const MessageBubble = memo(function MessageBubble({
           ask={ask}
           actionProps={actionProps}
           canAnswer={canAnswer}
+          canDismiss={canDismiss}
           onAnswer={(answer, username) => onAnswer(message, answer, username)}
+          onDismiss={() => onAnswer(message, "", undefined, true)}
         />
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3568,8 +3665,6 @@ const MessageBubble = memo(function MessageBubble({
         style={{
           width: "90%",
           borderRadius: 18,
-          borderWidth: 1,
-          borderColor: tokens.border,
           backgroundColor: tokens.card,
           paddingHorizontal: 16,
           paddingVertical: 14,
@@ -3582,13 +3677,13 @@ const MessageBubble = memo(function MessageBubble({
             gap: 8,
           }}
         >
-          <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
+          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
             {safeDisplayName(special.name, t("subagent"))}
           </Text>
           <Text
             style={{
               color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              fontSize: 13,
+              ...typeScale.caption,
             }}
           >
             {running
@@ -3601,7 +3696,7 @@ const MessageBubble = memo(function MessageBubble({
           </Text>
         </View>
         {special.task ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, fontSize: 13.5 }}>
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
             {special.task}
           </Text>
         ) : null}
@@ -3643,32 +3738,30 @@ const MessageBubble = memo(function MessageBubble({
         style={{
           width: "90%",
           borderRadius: 18,
-          borderWidth: 1,
-          borderColor: tokens.border,
           backgroundColor: tokens.card,
           paddingHorizontal: 16,
           paddingVertical: 14,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-          <Text style={{ color: tokens.cardForeground, fontSize: 15, fontWeight: "600" }}>
+          <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
             {title}
           </Text>
           <Text
             style={{
               color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              fontSize: 13,
+              ...typeScale.caption,
             }}
           >
             {statusLabel}
           </Text>
         </View>
         {prHref ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, fontSize: 14.5 }}>
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
             {t("Pull request")}
           </Text>
         ) : special.branch ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, fontSize: 13.5 }}>
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
             {special.branch}
           </Text>
         ) : null}
@@ -3686,8 +3779,6 @@ const MessageBubble = memo(function MessageBubble({
         style={{
           width: "90%",
           borderRadius: 18,
-          borderWidth: 1,
-          borderColor: tokens.border,
           backgroundColor: tokens.card,
           paddingHorizontal: 16,
           paddingVertical: 14,
@@ -3701,10 +3792,12 @@ const MessageBubble = memo(function MessageBubble({
             gap: 8,
           }}
         >
-          <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
+          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
             {special.name || t("Bot")}
           </Text>
-          <Text style={{ color: removed ? tokens.destructive : tokens.success, fontSize: 13 }}>
+          <Text
+            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
+          >
             {special.status === "archived"
               ? t("archived")
               : special.status === "deleted"
@@ -3712,14 +3805,7 @@ const MessageBubble = memo(function MessageBubble({
                 : t("bot")}
           </Text>
         </View>
-        <Text
-          style={{
-            color: tokens.mutedForeground,
-            marginTop: 8,
-            fontSize: 14.5,
-            lineHeight: 21,
-          }}
-        >
+        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
           {removed
             ? special.status === "archived"
               ? t("Archived. Chat, memory, and files kept.")
@@ -3737,6 +3823,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3766,8 +3854,6 @@ const MessageBubble = memo(function MessageBubble({
             // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
             borderRadius: 18,
-            borderWidth: 1,
-            borderColor: tokens.border,
             backgroundColor: tokens.card,
             paddingHorizontal: 16,
             paddingVertical: 14,
@@ -3782,10 +3868,7 @@ const MessageBubble = memo(function MessageBubble({
           ) : (
             <>
               {askBlock.text ? (
-                <Text
-                  {...actionProps}
-                  style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
-                >
+                <Text {...actionProps} style={{ color: tokens.foreground, ...typeScale.cardTitle }}>
                   {askBlock.instructionUpdate
                     ? t("Update instructions?")
                     : plainAskTitle(askBlock.text)}
@@ -3798,9 +3881,12 @@ const MessageBubble = memo(function MessageBubble({
                     color:
                       askBlock.detailFormat === "text" ? tokens.foreground : tokens.mutedForeground,
                     marginTop: askBlock.text ? 8 : 0,
-                    fontSize: askBlock.detailFormat === "text" ? 15.5 : 12.5,
-                    fontFamily: askBlock.detailFormat === "text" ? undefined : "Menlo",
-                    lineHeight: askBlock.detailFormat === "text" ? 23 : 20,
+                    // Commands and an approval's tool arguments read as code; a bot's own note
+                    // under its question is text.
+                    ...(askBlock.detailFormat === "code" ||
+                    (!askBlock.detailFormat && askBlock.approvalEffectId)
+                      ? { ...typeScale.caption, fontFamily: "Menlo" }
+                      : typeScale.secondary),
                   }}
                 >
                   {askBlock.detail}
@@ -3812,8 +3898,8 @@ const MessageBubble = memo(function MessageBubble({
                   style={{
                     color: askBlock.answer === "deny" ? tokens.mutedForeground : tokens.success,
                     marginTop: 12,
-                    fontSize: 13.5,
-                    fontWeight: "600",
+                    ...typeScale.secondary,
+                    fontWeight: fontWeight.medium,
                   }}
                 >
                   {askBlock.instructionUpdate
@@ -3835,7 +3921,7 @@ const MessageBubble = memo(function MessageBubble({
               ) : (
                 <Text
                   {...actionProps}
-                  style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+                  style={{ color: tokens.mutedForeground, marginTop: 12, ...typeScale.caption }}
                 >
                   {t("No longer active")}
                 </Text>
@@ -3847,6 +3933,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3888,22 +3976,14 @@ const MessageBubble = memo(function MessageBubble({
         style={{
           maxWidth: "100%",
           borderRadius: 20,
-          borderWidth: 1,
-          borderColor: tokens.border,
-          backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
+          backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
           paddingHorizontal: 14,
           paddingVertical: 12,
           gap: 8,
         }}
       >
         {speaker ? (
-          <Text
-            style={{
-              color: speakerColor ?? tokens.mutedForeground,
-              fontSize: 12.5,
-              fontWeight: "600",
-            }}
-          >
+          <Text style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}>
             {speaker}
           </Text>
         ) : null}
@@ -3925,9 +4005,7 @@ const MessageBubble = memo(function MessageBubble({
                 artifactId={attachment.artifactId}
                 name={attachment.name ?? t("Image")}
                 mimeType={attachment.mimeType ?? "image/png"}
-                labelColor={
-                  message.role === "user" ? tokens.secondaryForeground : tokens.foreground
-                }
+                labelColor={message.role === "user" ? tokens.chatUserForeground : tokens.foreground}
                 pressableProps={actionProps}
                 onOpen={() =>
                   onPreviewImage({
@@ -3956,7 +4034,7 @@ const MessageBubble = memo(function MessageBubble({
               >
                 <Text
                   style={{
-                    color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
+                    color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
                     fontSize: 15,
                   }}
                 >
@@ -3972,6 +4050,7 @@ const MessageBubble = memo(function MessageBubble({
               artifactId={attachment.artifactId}
               name={attachment.name ?? t("File")}
               mimeType={attachment.mimeType!}
+              labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
             />
           ) : (
             <Pressable
@@ -3998,7 +4077,7 @@ const MessageBubble = memo(function MessageBubble({
             >
               <Text
                 style={{
-                  color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
+                  color: message.role === "user" ? tokens.chatUserForeground : tokens.foreground,
                   fontSize: 15,
                 }}
               >
@@ -4007,7 +4086,8 @@ const MessageBubble = memo(function MessageBubble({
               {formatFileSize(attachment.size) ? (
                 <Text
                   style={{
-                    color: tokens.mutedForeground,
+                    color:
+                      message.role === "user" ? tokens.chatUserForeground : tokens.mutedForeground,
                     marginTop: 4,
                     fontSize: 13,
                   }}
@@ -4022,6 +4102,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -4088,6 +4170,8 @@ const MessageBubble = memo(function MessageBubble({
         <AppConnectCard
           key={`${block.provider}-${index}`}
           botId={cardBotId}
+          threadId={message.threadId}
+          messageId={message.id}
           block={block}
           accessibilityActions={actionProps.accessibilityActions}
           onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -4119,8 +4203,9 @@ function MessageTextCard({
         flexShrink: 1,
         minWidth: 0,
         maxWidth: "100%",
-        backgroundColor: message.role === "user" ? tokens.secondary : tokens.muted,
-        padding: 12,
+        backgroundColor: message.role === "user" ? tokens.chatUser : tokens.muted,
+        paddingHorizontal: 14,
+        paddingVertical: 9,
         borderRadius: 20,
       }}
     >
@@ -4128,8 +4213,7 @@ function MessageTextCard({
         <Text
           style={{
             color: speakerColor ?? tokens.mutedForeground,
-            fontSize: 12.5,
-            fontWeight: "600",
+            ...typeScale.footnote,
             marginBottom: 4,
           }}
         >
@@ -4188,8 +4272,6 @@ function AgentEventLabel({
             width: "100%",
             marginTop: 6,
             borderRadius: 14,
-            borderWidth: 1,
-            borderColor: tokens.border,
             backgroundColor: tokens.card,
             paddingHorizontal: 14,
             paddingVertical: 10,
@@ -4207,12 +4289,17 @@ function AgentEventLabel({
 function AskBlock({
   ask,
   canAnswer,
+  canDismiss,
   onAnswer,
+  onDismiss,
   actionProps,
 }: {
   ask: Extract<MobileMessage["blocks"][number], { kind: "ask" }>;
   canAnswer: boolean;
+  canDismiss: boolean;
   onAnswer: (answer: string, username?: string) => Promise<void>;
+  /** Turns down a secret request without a value. */
+  onDismiss: () => Promise<void>;
   actionProps: MessageActionProps;
 }) {
   const tokens = useMobileTokens();
@@ -4224,9 +4311,13 @@ function AskBlock({
   const sheetSession = useRef(0);
   const session = sheetSession.current;
   const [saved, setSaved] = useState(false);
-  const answered = saved || ask.status === "answered";
+  const [dismissed, setDismissed] = useState(false);
+  const answered = saved || dismissed || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
+  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // the card without fields or buttons.
+  const ownerOnly = secretInput && Boolean(ask.credential) && !canDismiss;
   const incomplete = secretInput ? answer.length === 0 : !answer.trim();
   const secretLabel =
     ask.purpose === "password"
@@ -4235,6 +4326,21 @@ function AskBlock({
         ? t("API key")
         : t("Code");
   const submitLabel = secretInput ? t("Save") : t("Send answer");
+
+  async function dismiss() {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    setAnswer("");
+    try {
+      await onDismiss();
+      setDismissed(true);
+    } catch {
+      setError(t("Could not send answer"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function submit() {
     if (submitting) return;
@@ -4258,10 +4364,8 @@ function AskBlock({
   return (
     <View
       style={{
-        width: "90%",
+        width: secretInput ? "100%" : "90%",
         borderRadius: 18,
-        borderWidth: 1,
-        borderColor: tokens.border,
         backgroundColor: tokens.card,
         paddingHorizontal: 16,
         paddingVertical: 14,
@@ -4271,32 +4375,55 @@ function AskBlock({
       <Text
         {...actionProps}
         numberOfLines={secretInput ? 2 : undefined}
-        style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
+        style={{ color: tokens.foreground, ...typeScale.cardTitle }}
       >
         {plainAskTitle(ask.text)}
       </Text>
       {secretInput && ask.credential ? (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
           {secretDestinationLabel(ask.credential)}
         </Text>
       ) : null}
       {ask.detail && !secretInput ? (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>{ask.detail}</Text>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>{ask.detail}</Text>
       ) : null}
       {answered ? (
-        <Text style={{ color: tokens.success, fontSize: 14 }}>
-          {secretInput ? t("Saved") : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
-        </Text>
-      ) : canAnswer && loginInput ? (
-        <NativeActionButton
-          label={t("Continue")}
-          fill={false}
-          onPress={() => {
-            sheetSession.current += 1;
-            setSheetOpen(true);
+        <Text
+          style={{
+            // Dismissed reads like a declined approval, not a success.
+            color: dismissed || ask.dismissed ? tokens.mutedForeground : tokens.success,
+            ...typeScale.secondary,
+            fontWeight: fontWeight.medium,
+            ...(secretInput ? { marginTop: 12 } : null),
           }}
-          style={{ alignSelf: "flex-end" }}
-        />
+        >
+          {secretInput
+            ? t(dismissed || ask.dismissed ? "Dismissed" : "Saved")
+            : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
+        </Text>
+      ) : canAnswer && ownerOnly ? null : canAnswer && loginInput ? (
+        <View style={askInputStyles.buttons}>
+          <NativeActionButton
+            label={t("Continue")}
+            disabled={submitting}
+            fill={secretInput}
+            style={secretInput ? askInputStyles.button : undefined}
+            onPress={() => {
+              sheetSession.current += 1;
+              setSheetOpen(true);
+            }}
+          />
+          {canDismiss ? (
+            <NativeActionButton
+              label={t("Dismiss")}
+              disabled={submitting}
+              fill={secretInput}
+              style={secretInput ? askInputStyles.button : undefined}
+              prominence="secondary"
+              onPress={() => void dismiss()}
+            />
+          ) : null}
+        </View>
       ) : canAnswer ? (
         <>
           <TextInput
@@ -4304,7 +4431,7 @@ function AskBlock({
             value={answer}
             onChangeText={setAnswer}
             placeholder={secretInput ? secretLabel : t("Type your answer")}
-            placeholderTextColor={tokens.mutedForeground}
+            placeholderTextColor={tokens.faintForeground}
             secureTextEntry={secretInput}
             autoComplete="off"
             {...(secretInput ? secretFieldTraits(ask.purpose, ask.credential) : {})}
@@ -4312,29 +4439,48 @@ function AskBlock({
             autoCapitalize={secretInput ? "none" : "sentences"}
             editable={!submitting}
             onSubmitEditing={() => void submit()}
-            style={[askInputStyles.field, { borderColor: tokens.border, color: tokens.foreground }]}
+            style={[
+              askInputStyles.field,
+              secretInput ? { alignSelf: "stretch" } : undefined,
+              { borderColor: tokens.border, color: tokens.foreground },
+            ]}
           />
-          <NativeActionButton
-            label={submitLabel}
-            disabled={incomplete}
-            busy={submitting}
-            fill={false}
-            onPress={() => void submit()}
-            style={{ alignSelf: "flex-end" }}
-          />
+          <View style={askInputStyles.buttons}>
+            <NativeActionButton
+              label={submitLabel}
+              disabled={incomplete}
+              busy={submitting}
+              fill={secretInput}
+              style={secretInput ? askInputStyles.button : undefined}
+              onPress={() => void submit()}
+            />
+            {secretInput && canDismiss ? (
+              <NativeActionButton
+                label={t("Dismiss")}
+                disabled={submitting}
+                fill={secretInput}
+                style={secretInput ? askInputStyles.button : undefined}
+                prominence="secondary"
+                onPress={() => void dismiss()}
+              />
+            ) : null}
+          </View>
         </>
       ) : (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+        <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
           {t("Waiting for this bot’s response.")}
         </Text>
       )}
-      {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
+      {error ? (
+        <Text style={{ color: tokens.destructive, ...typeScale.caption }}>{error}</Text>
+      ) : null}
       {sheetOpen && loginInput && ask.credential ? (
         <SecretAskSheet
           title={plainAskTitle(ask.text)}
           destination={secretDestinationLabel(ask.credential)}
-          // Once any save is accepted the open sheet clears its own fields, then closes itself.
-          pending={canAnswer && !answered}
+          // Once any save is accepted, or the viewer is no longer the run's user, the open sheet
+          // clears its own fields, then closes itself.
+          pending={canAnswer && !answered && !ownerOnly}
           onClose={() => {
             if (session === sheetSession.current) setSheetOpen(false);
           }}
@@ -4356,5 +4502,17 @@ const askInputStyles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 9,
+  },
+  button: {
+    flex: 1,
+    minWidth: 100,
+  },
+  // Wraps at large text sizes so neither button is pushed off the card.
+  buttons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    alignItems: "center",
+    gap: 6,
   },
 });

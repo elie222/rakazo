@@ -171,7 +171,7 @@ describe("scripted runtime", () => {
 });
 
 describe("builtin tools", () => {
-  it("keeps every fleet tool out of helper tool lists", () => {
+  it("keeps every bot management tool out of helper tool lists", () => {
     for (const name of FLEET_TOOL_NAMES) expect(DELEGATION_TOOL_NAMES.has(name), name).toBe(true);
   });
 

@@ -1,9 +1,11 @@
+import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -34,6 +36,7 @@ import {
   deleteAccount,
   fetchAccountSecurity,
   loadSessionToken,
+  passwordResetCapabilities,
   requestAccountDeletionCode,
   rpc,
   selectedSpaceId,
@@ -48,7 +51,7 @@ import {
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { promptAccountDeletion } from "../../lib/delete-account-prompt";
-import { useI18n } from "../../lib/i18n";
+import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
   canPostPromotedNotifications,
@@ -58,8 +61,17 @@ import {
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
-import { native, useThemedStyles } from "../../lib/native";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
+import type { MobilePasskey } from "../../lib/passkey";
+import {
+  addPasskey,
+  deletePasskey,
+  listPasskeys,
+  passkeysAvailable,
+  renamePasskey,
+} from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
+import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -70,6 +82,8 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
+import { promptSectionName } from "../../lib/section-name-prompt";
+import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
 import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
@@ -99,10 +113,27 @@ export default function Account() {
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
-  const [notificationPending, setNotificationPending] = useState(false);
+  const notificationQueue = useRef<ReturnType<
+    typeof createQueuedSave<LiveNotificationSettings>
+  > | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [passkeys, setPasskeys] = useState<MobilePasskey[] | null>(null);
+  const [passkeyPending, setPasskeyPending] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyLoadError, setPasskeyLoadError] = useState<string | null>(null);
+  // A failed load keeps the section, with Add and a retry, instead of hiding it.
+  const loadPasskeys = useCallback(async () => {
+    setPasskeyLoadError(null);
+    try {
+      setPasskeys(await listPasskeys());
+    } catch (err) {
+      setPasskeys((current) => current ?? []);
+      setPasskeyLoadError(errorText(err, t("Could not continue")));
+    }
+  }, [t]);
+  const colorScheme = useResolvedAppearance();
   const [archivedCount, setArchivedCount] = useState(0);
   // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
   const archivedCounts = useRef({ bots: 0, groups: 0 });
@@ -206,28 +237,33 @@ export default function Account() {
     }
   }
 
-  async function updateNotifications(next: LiveNotificationSettings) {
-    const previous = notifications;
-    setNotifications(next);
-    setNotificationPending(true);
+  function updateNotifications(next: LiveNotificationSettings) {
+    notificationQueue.current ??= createQueuedSave(notifications, {
+      onChange: setNotifications,
+      equals: (a, b) =>
+        a.liveConnection === b.liveConnection &&
+        a.messages === b.messages &&
+        a.scheduledTasks === b.scheduledTasks &&
+        a.needsAttention === b.needsAttention,
+      save: async (settings) => {
+        await setLiveNotificationSettings(
+          settings,
+          currentApiBase(),
+          await loadSessionToken(),
+          selectedSpaceId() ?? "",
+        );
+      },
+      onSaved: async (settings) => {
+        if (settings.liveConnection && !(await canPostPromotedNotifications())) {
+          await openPromotedNotificationSettings();
+        }
+        await registerPushToken();
+      },
+      onError: (cause) =>
+        setNotificationError(errorText(cause, t("Could not update notifications"))),
+    });
     setNotificationError(null);
-    try {
-      await setLiveNotificationSettings(
-        next,
-        currentApiBase(),
-        await loadSessionToken(),
-        selectedSpaceId() ?? "",
-      );
-      if (next.liveConnection && !(await canPostPromotedNotifications())) {
-        await openPromotedNotificationSettings();
-      }
-      await registerPushToken();
-    } catch (cause) {
-      setNotifications(previous);
-      setNotificationError(errorText(cause, t("Could not update notifications")));
-    } finally {
-      setNotificationPending(false);
-    }
+    notificationQueue.current.update(next);
   }
 
   async function securityAction(run: () => Promise<void>) {
@@ -245,7 +281,46 @@ export default function Account() {
     void fetchAccountSecurity()
       .then(setSecurity)
       .catch(() => undefined);
-  }, []);
+    void passwordResetCapabilities()
+      .then(async (capabilities) => {
+        if (await passkeysAvailable(capabilities)) await loadPasskeys();
+      })
+      .catch(() => undefined);
+  }, [loadPasskeys]);
+
+  async function passkeyAction(run: () => Promise<unknown>) {
+    setPasskeyPending(true);
+    setPasskeyError(null);
+    try {
+      await run();
+      await loadPasskeys();
+    } catch (err) {
+      setPasskeyError(errorText(err, t("Could not continue")));
+    } finally {
+      setPasskeyPending(false);
+    }
+  }
+
+  function passkeyMenuAction(passkey: MobilePasskey, name: string, action: string) {
+    if (action === "rename") {
+      promptSectionName({
+        title: t("Rename"),
+        cancelLabel: t("Cancel"),
+        submitLabel: t("Save"),
+        defaultValue: passkey.name ?? undefined,
+        onSubmit: (next) => void passkeyAction(() => renamePasskey(passkey.id, next)),
+      });
+    } else if (action === "delete") {
+      Alert.alert(t("Delete {name}?", { name }), undefined, [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Delete"),
+          style: "destructive",
+          onPress: () => void passkeyAction(() => deletePasskey(passkey.id)),
+        },
+      ]);
+    }
+  }
 
   function closeDeletePrompt() {
     if (pending) return;
@@ -353,6 +428,68 @@ export default function Account() {
           </SettingsGroup>
         ) : null}
 
+        {passkeys ? (
+          <SettingsGroup accessibilityLabel={t("Passkeys")} label={t("Passkeys")}>
+            {passkeys.map((passkey) => {
+              const name = passkey.name ?? t("Passkey");
+              const created = passkey.createdAt ? new Date(passkey.createdAt) : null;
+              return (
+                <MenuView
+                  key={passkey.id}
+                  actions={[
+                    // Alert.prompt, which renames, exists only on iOS.
+                    ...(Platform.OS === "ios" ? [{ id: "rename", title: t("Rename") }] : []),
+                    { id: "delete", title: t("Delete"), attributes: { destructive: true } },
+                  ]}
+                  colorScheme={colorScheme}
+                  onPressAction={(event) =>
+                    passkeyMenuAction(passkey, name, event.nativeEvent.event)
+                  }
+                  title={name}
+                >
+                  <SettingsRow
+                    accessible
+                    accessibilityRole="button"
+                    detail={
+                      created && !Number.isNaN(created.getTime())
+                        ? created.toLocaleDateString(dateLocaleForUi(locale), {
+                            dateStyle: "medium",
+                          })
+                        : undefined
+                    }
+                    dimmed={passkeyPending}
+                    title={name}
+                  />
+                </MenuView>
+              );
+            })}
+            <SettingsRow
+              accessibilityRole="button"
+              disabled={passkeyPending}
+              dimmed={passkeyPending}
+              onPress={() => void passkeyAction(addPasskey)}
+              title={t("Add passkey")}
+            />
+            {passkeyLoadError ? (
+              <>
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {passkeyLoadError}
+                </Text>
+                <SettingsRow
+                  accessibilityRole="button"
+                  onPress={() => void loadPasskeys()}
+                  title={t("Retry")}
+                />
+              </>
+            ) : null}
+            {passkeyError ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {passkeyError}
+              </Text>
+            ) : null}
+          </SettingsGroup>
+        ) : null}
+
         <View accessibilityLabel={t("Appearance")} style={styles.section}>
           <SettingsLabel>{t("Appearance")}</SettingsLabel>
           <NativeSegmentedControl
@@ -427,7 +564,7 @@ export default function Account() {
             <SettingsSwitch
               label={t("Live working status")}
               value={notifications.liveConnection}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(liveConnection) =>
                 void updateNotifications({ ...notifications, liveConnection })
               }
@@ -436,13 +573,13 @@ export default function Account() {
               label={t("Agent messages")}
               detail={t("Replies and completed work")}
               value={notifications.messages}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
               value={notifications.scheduledTasks}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(scheduledTasks) =>
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
@@ -451,7 +588,7 @@ export default function Account() {
               label={t("Needs attention")}
               detail={t("Questions, approvals, takeover")}
               value={notifications.needsAttention}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(needsAttention) =>
                 void updateNotifications({ ...notifications, needsAttention })
               }
@@ -471,34 +608,27 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/models")}
-            title={t("Models")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/voice")}
-            title={t("Voice")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/integrations")}
-            title={t("Integrations")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/ai-data-sharing")}
-            title={t("AI data sharing")}
-          />
+          {(
+            [
+              { title: t("Artifacts"), href: "/artifacts" },
+              { title: t("Models"), href: "/models" },
+              { title: t("Voice"), href: "/voice" },
+              { title: t("Integrations"), href: "/integrations" },
+              { title: t("AI data sharing"), href: "/ai-data-sharing" },
+            ] as const
+          ).map(({ title, href }) => (
+            <SettingsRow
+              key={href}
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // Artifacts lives on the root stack, so it closes the sheet before opening.
+              onPress={() =>
+                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+              }
+              title={title}
+            />
+          ))}
           {me?.isDeploymentOwner ? (
             <SettingsRow
               accessibilityRole="button"

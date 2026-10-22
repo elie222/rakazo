@@ -1,8 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import type { ReactElement } from "react";
+import { cloneElement, useState } from "react";
+import type { ViewProps } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
+import { Chevron } from "./row-accessories";
 
 export type MenuPickerChoice = { key: string; label: string };
 
@@ -18,67 +21,114 @@ export function MenuPickerMenu({
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
-  children: ReactNode;
+  children: ReactElement<ViewProps>;
 }) {
   const colorScheme = useResolvedAppearance();
+  // Native menu hosts size to their contents, so measure outside the host.
+  const [width, setWidth] = useState<number>();
   return (
-    <MenuView
-      actions={choices.map((choice) => ({
-        // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
-        id: `choice:${choice.key}`,
-        title: choice.label,
-        state: choice.key === value ? "on" : "off",
-      }))}
-      colorScheme={colorScheme}
-      onPressAction={(event) => {
-        const id = event.nativeEvent.event;
-        if (id.startsWith("choice:")) onChange(id.slice("choice:".length));
-      }}
-      title={label}
+    <View
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={menuStyles.fullWidth}
     >
-      {children}
-    </MenuView>
+      <MenuView
+        style={menuStyles.fullWidth}
+        actions={choices.map((choice) => ({
+          // MenuView reports an empty id as the title, so prefix keys to keep "" distinct.
+          id: `choice:${choice.key}`,
+          title: choice.label,
+          state: choice.key === value ? "on" : "off",
+        }))}
+        colorScheme={colorScheme}
+        onPressAction={(event) => {
+          const id = event.nativeEvent.event;
+          if (id.startsWith("choice:")) onChange(id.slice("choice:".length));
+        }}
+        title={label}
+      >
+        {cloneElement(children, { style: [children.props.style, menuStyles.fullWidth, { width }] })}
+      </MenuView>
+    </View>
   );
 }
 
-/** A list row that opens a native menu of choices; the current one carries the system checkmark. */
+const menuStyles = StyleSheet.create({
+  fullWidth: { alignSelf: "stretch" },
+});
+
+/**
+ * A list row that opens a native menu of choices; the current one carries the system checkmark.
+ * With `onPress` it pushes a list instead, for choices too many for a menu.
+ */
 export function MenuPicker({
   label,
   choices,
   value,
   onChange,
+  onPress,
   divider = false,
+  plain = false,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
+  onPress?: () => void;
   divider?: boolean;
+  plain?: boolean;
 }) {
   const styles = useThemedStyles(createStyles);
+  const tokens = useMobileTokens();
+  const rowStyle = [styles.row, plain && { paddingHorizontal: 0, minHeight: 44 }];
   const current = choices.find((choice) => choice.key === value)?.label ?? choices[0]?.label ?? "";
-  return (
-    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
-      <View
-        accessibilityLabel={label}
-        accessibilityRole="button"
-        accessibilityValue={{ text: current }}
-        accessible
-        style={[styles.row, divider && styles.divider]}
+  const row = {
+    accessibilityLabel: label,
+    accessibilityRole: "button",
+    accessibilityValue: { text: current },
+    accessible: true,
+  } as const;
+  const content = (
+    <>
+      <Text style={[styles.label, plain && { color: tokens.mutedForeground, fontSize: 14 }]}>
+        {label}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.value, plain && { color: tokens.foreground, fontSize: 14 }]}
       >
-        <Text style={styles.label}>{label}</Text>
-        <Text numberOfLines={1} style={styles.value}>
-          {current}
-        </Text>
+        {current}
+      </Text>
+      {onPress ? (
+        <Chevron />
+      ) : (
         <NativeSymbol
           android="chevron-expand"
           color={native.tertiaryLabel}
           ios="chevron.up.chevron.down"
           size={13}
         />
+      )}
+    </>
+  );
+  if (onPress) {
+    return (
+      <Pressable
+        {...row}
+        onPress={onPress}
+        style={({ pressed }) => [rowStyle, divider && styles.divider, pressed && styles.pressed]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  const menu = (
+    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
+      <View {...row} style={rowStyle}>
+        {content}
       </View>
     </MenuPickerMenu>
   );
+  return divider ? <View style={styles.divider}>{menu}</View> : menu;
 }
 
 function createStyles() {
@@ -103,6 +153,9 @@ function createStyles() {
       color: native.secondaryLabel,
       textAlign: "right",
       fontSize: 16,
+    },
+    pressed: {
+      backgroundColor: native.fillPressed,
     },
   });
 }

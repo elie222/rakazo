@@ -1,4 +1,17 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Update required": "Update vereist",
+  Update: "Bijwerken",
+  Provider: "Provider",
+  "No matching providers": "Geen overeenkomende providers",
+  "To:": "Aan:",
+  Next: "Volgende",
+  "Ex: Project Falcon": "Bijv. Project Falcon",
+  "Search bots": "Bots zoeken",
+  "About {label}": "Over {label}",
+  "Manage the bots it creates": "De bots beheren die deze bot maakt",
+  "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
+    "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring.",
+
   Resets: "Resetdatum",
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
@@ -21,8 +34,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Update from {name}": "Update van {name}",
   "{name} asked: {text}": "{name} vraagt: {text}",
   "{name} asked": "{name} vraagt",
-  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
-    "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed.",
   "Too many attempts. Try again in a few minutes.":
     "Te veel pogingen. Probeer het over een paar minuten opnieuw.",
   "The server had a problem. Try again in a moment.":
@@ -331,9 +342,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Group not found": "Groep niet gevonden",
   Members: "Leden",
   "Could not create group": "Groep aanmaken mislukt",
-  "Create group": "Groep aanmaken",
   "Creating…": "Bezig met aanmaken…",
-  "Name this group": "Geef deze groep een naam",
   "Could not create space": "Space aanmaken mislukt",
   "Create space": "Space aanmaken",
   "Customer support": "Klantenservice",
@@ -356,7 +365,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Profile: "Profiel",
   Routines: "Routines",
   "Could not load routines": "Routines laden mislukt",
-  "Booting {label}": "{label} opstarten",
   Bot: "Bot",
   "Close computer": "Computer sluiten",
   "Computer keyboard": "Computertoetsenbord",
@@ -390,7 +398,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Connect API key": "API-sleutel koppelen",
   "Connect MCP server {name}": "MCP-server {name} koppelen",
   "Connected and using {label}.": "Gekoppeld en gebruikt {label}.",
-  "Connected · {label}": "Gekoppeld · {label}",
   "Connected. Its tools are available from your next message.":
     "Gekoppeld. Zijn tools zijn beschikbaar vanaf je volgende bericht.",
   "Context limit": "Contextlimiet",
@@ -633,6 +640,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Save section name": "Sectienaam opslaan",
   "Section name": "Sectienaam",
   "Silence notifications": "Meldingen dempen",
+  Pinned: "Vastgezet",
   Unassigned: "Niet toegewezen",
   Unpin: "Vastzetten opheffen",
   "Could not update computer": "Computer bijwerken mislukt",
@@ -729,23 +737,19 @@ export const NL_MESSAGES: Record<string, string> = {
   "Use an http or https URL": "Gebruik een http- of https-URL",
   "Android blocked notifications.": "Android heeft meldingen geblokkeerd.",
   "Could not reach the server": "De server is niet bereikbaar",
+  "Request timed out": "Time-out bij verzoek",
   "Enter a password": "Voer een wachtwoord in",
   "Enter a valid email": "Voer een geldig e-mailadres in",
   "Something went wrong. Try again.": "Er is iets misgegaan. Probeer het opnieuw.",
   "Could not play that clip.": "Dat fragment kon niet worden afgespeeld.",
-  "Add connected model": "Verbonden model toevoegen",
-  "Add connected models to use them as backups.":
-    "Voeg verbonden modellen toe om ze als back-up te gebruiken.",
+  "Add backup model": "Back-upmodel toevoegen",
+  "Move down": "Omlaag",
+  "Move up": "Omhoog",
+  "Tried in order if the active model fails.":
+    "Worden op volgorde geprobeerd als het actieve model faalt.",
   "Backup models": "Back-upmodellen",
-  "Backup models saved.": "Back-upmodellen opgeslagen.",
-  "Connect a provider to add backups.": "Koppel een aanbieder om back-ups toe te voegen.",
   "Could not load backup models": "Back-upmodellen laden mislukt",
   "Could not save backup models": "Back-upmodellen opslaan mislukt",
-  "Maximum of 10 backup models.": "Maximaal 10 back-upmodellen.",
-  "Move {model} down": "{model} omlaag verplaatsen",
-  "Move {model} up": "{model} omhoog verplaatsen",
-  "Remove {model}": "{model} verwijderen",
-  "Save backups": "Back-ups opslaan",
   "Space changed. Reload Models to refresh backup models.":
     "De space is gewijzigd. Herlaad Modellen om de back-upmodellen te vernieuwen.",
   "Space changed. Reload Models before saving backups.":
@@ -754,10 +758,10 @@ export const NL_MESSAGES: Record<string, string> = {
     "Er is een aanmeldpagina geopend — voer daar deze code in:",
   "All providers": "Alle aanbieders",
   Copied: "Gekopieerd",
+  "Copy code": "Code kopiëren",
   "Could not disconnect this provider": "Deze aanbieder loskoppelen mislukt",
   "Default ({level})": "Standaard ({level})",
   "Disconnected {provider}.": "{provider} losgekoppeld.",
-  "Save limits": "Limieten opslaan",
   "Sign in again": "Opnieuw aanmelden",
   "Thinking: {level}": "Denkt: {level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -855,7 +859,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Remove photo": "Foto verwijderen",
   Shape: "Vorm",
   "Shape {number}": "Vorm {number}",
-  "Fleet management": "Vlootbeheer",
   "Try again": "Opnieuw proberen",
   "Your session expired": "Je sessie is verlopen",
   "The server had a problem": "Er is een probleem met de server",
@@ -883,4 +886,15 @@ export const NL_MESSAGES: Record<string, string> = {
     "Het antwoord van deze bot stopte bij de maandlimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
   "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
     "Het antwoord van deze bot stopte bij de gebruikslimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
+  "Sign in with passkey": "Aanmelden met passkey",
+  Passkeys: "Passkeys",
+  Passkey: "Passkey",
+  "Add passkey": "Passkey toevoegen",
+  Rename: "Naam wijzigen",
+  "Add a passkey for faster sign-in?": "Passkey toevoegen om sneller aan te melden?",
+  "Couldn't start the computer": "De computer kon niet worden gestart",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "Er ging iets mis tijdens het opstarten. Probeer het over een moment opnieuw.",
+  "Your voice provider is out of credit.": "Je spraakaanbieder heeft geen tegoed meer.",
+  "Your voice provider key was rejected.": "Je spraakaanbieder heeft de sleutel geweigerd.",
 };

@@ -118,6 +118,21 @@ describe("Boat API errors", () => {
     expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
   });
 
+  it("stops waiting to retry an unsent request once the caller cancels", async () => {
+    const controller = new AbortController();
+    const call = vi.fn(async (_request: unknown, _init: RequestInit) => {
+      controller.abort();
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("connect refused"), { code: "ECONNREFUSED" }),
+      });
+    });
+    const wrapped = wrapBoatCall(call, "fake-key", true);
+    await expect(wrapped({}, { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(call).toHaveBeenCalledOnce();
+  });
+
   it("does not replace cancellation and network errors", async () => {
     const cancelled = new DOMException("Cancelled", "AbortError");
     const call = wrapBoatCall(async () => {

@@ -4,13 +4,13 @@ import { transparentColor } from "./color.js";
 
 describe("transparentColor", () => {
   it("keeps the hue of six-digit backgrounds", () => {
-    expect(transparentColor(darkTokens.background)).toBe("rgba(11, 12, 14, 0)");
-    expect(transparentColor(lightTokens.background)).toBe("rgba(250, 250, 248, 0)");
+    expect(transparentColor(darkTokens.background)).toBe("rgba(20, 20, 20, 0)");
+    expect(transparentColor(lightTokens.background)).toBe("rgba(252, 252, 252, 0)");
   });
 
   it("reads rgba palette colors and drops their alpha", () => {
-    expect(transparentColor(darkTokens.overlay)).toBe("rgba(4, 4, 5, 0)");
-    expect(transparentColor(lightTokens.overlay)).toBe("rgba(20, 20, 22, 0)");
+    expect(transparentColor(darkTokens.overlay)).toBe("rgba(0, 0, 0, 0)");
+    expect(transparentColor(lightTokens.overlay)).toBe("rgba(0, 0, 0, 0)");
     expect(transparentColor("rgb(1, 2, 3)")).toBe("rgba(1, 2, 3, 0)");
   });
 

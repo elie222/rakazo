@@ -25,6 +25,7 @@ export type ThreadComposerHandle = {
 
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
+  onFocus?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
   composerPrompt: string;
@@ -46,6 +47,7 @@ type ThreadComposerProps = {
 
 export function ThreadComposer({
   ref,
+  onFocus,
   agentSkills,
   composerMentionTargets,
   composerPrompt,
@@ -320,6 +322,8 @@ export function ThreadComposer({
             borderRadius: 22,
             flexDirection: "row",
             alignItems: "flex-end",
+            // Keeps text clear of the call/send pill even when it runs to the trailing edge (RTL).
+            gap: 8,
             paddingStart: 16,
             paddingEnd: 8,
           }}
@@ -431,13 +435,14 @@ export function ThreadComposer({
                     end: 0,
                     fontSize: 17,
                     lineHeight: 22,
-                    color: tokens.mutedForeground,
+                    color: tokens.faintForeground,
                   }}
                 >
                   {composerPrompt}
                 </Text>
               ) : null}
               <TextInput
+                onFocus={onFocus}
                 value={draft}
                 onChangeText={updateDraft}
                 accessibilityLabel={composerPrompt}
@@ -521,7 +526,7 @@ export function ThreadComposer({
             <GlassSurface
               shape="circle"
               style={styles.circleButton}
-              fallbackStyle={{ borderColor: tokens.border, borderWidth: 1 }}
+              fallbackStyle={{ borderColor: tokens.glassStroke, borderWidth: 1 }}
             >
               <NativeSymbol ios="stop.fill" android="stop" size={15} color={tokens.foreground} />
             </GlassSurface>

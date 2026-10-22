@@ -1,0 +1,224 @@
+import { Trans, useLingui } from "@lingui/react/macro";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  Input,
+} from "@rakazo/ui-web";
+import { useEffect, useState } from "react";
+import { authClient } from "../lib/auth";
+import {
+  passkeyErrorText,
+  passkeysChanged,
+  usePasskeysSupported,
+  usePasskeysVersion,
+} from "../lib/passkeys";
+import { formatRelativeTime } from "../lib/relative-time";
+
+type PasskeyRow = { id: string; name?: string | null; createdAt: Date | string };
+
+/** The account's passkeys, shown only where this browser can use them. */
+export function PasskeySettings() {
+  const supported = usePasskeysSupported();
+  // Reloads after this page adds or removes a passkey anywhere, the sidebar offer included.
+  const version = usePasskeysVersion();
+  const [attempt, setAttempt] = useState(0);
+  return supported ? (
+    <PasskeyList key={`${version}:${attempt}`} onRetry={() => setAttempt((value) => value + 1)} />
+  ) : null;
+}
+
+function PasskeyList({ onRetry }: { onRetry: () => void }) {
+  const { t } = useLingui();
+  const [passkeys, setPasskeys] = useState<PasskeyRow[]>([]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState<PasskeyRow | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void authClient.passkey.listUserPasskeys().then(
+      (result) => {
+        if (!active) return;
+        setLoadFailed(!result.data);
+        if (result.data) setPasskeys(result.data);
+      },
+      () => {
+        if (active) setLoadFailed(true);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function run(action: () => Promise<{ error?: unknown }>): Promise<boolean> {
+    setPending(true);
+    setError(null);
+    try {
+      const result = await action();
+      if (result.error) {
+        setError(passkeyErrorText(result.error, t`Could not continue`));
+        return false;
+      }
+      // Remounts this list with fresh data and closes the offer if it is open.
+      passkeysChanged();
+      return true;
+    } catch {
+      setError(t`Could not reach the server`);
+      return false;
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function rename() {
+    if (!renaming) return;
+    const name = renaming.name.trim();
+    if (!name) return;
+    if (await run(() => authClient.passkey.updatePasskey({ id: renaming.id, name }))) {
+      setRenaming(null);
+    }
+  }
+
+  async function remove() {
+    if (!deleting) return;
+    const { id } = deleting;
+    if (await run(() => authClient.passkey.deletePasskey({ id }))) setDeleting(null);
+  }
+
+  return (
+    <section className="rounded-xl border border-border px-4 py-4" data-testid="passkey-settings">
+      <h3 className="text-[15px] font-medium text-foreground">
+        <Trans>Passkeys</Trans>
+      </h3>
+      {loadFailed ? (
+        <div role="alert" className="mt-3 flex items-center gap-2 text-[13.5px] text-destructive">
+          <Trans>Could not load</Trans>
+          <Button variant="outline" size="xs" onClick={onRetry}>
+            <Trans>Retry</Trans>
+          </Button>
+        </div>
+      ) : null}
+      {passkeys.length > 0 ? (
+        <ul className="mt-3 divide-y divide-border">
+          {passkeys.map((passkey) => (
+            <li key={passkey.id} className="flex min-h-11 items-center gap-2 py-2">
+              {renaming?.id === passkey.id ? (
+                <form
+                  className="flex flex-1 items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void rename();
+                  }}
+                >
+                  <Input
+                    aria-label={t`Rename`}
+                    value={renaming.name}
+                    maxLength={100}
+                    autoFocus
+                    onChange={(event) => setRenaming({ id: passkey.id, name: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setRenaming(null);
+                    }}
+                    className="h-8 flex-1"
+                  />
+                  <Button type="submit" size="sm" disabled={pending || !renaming.name.trim()}>
+                    <Trans>Save</Trans>
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setRenaming(null)}>
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </form>
+              ) : (
+                <>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-foreground/75">
+                    {passkeyLabel(passkey, t`Passkey`)}
+                  </span>
+                  <span className="shrink-0 text-[12.5px] text-muted-foreground">
+                    {formatRelativeTime(new Date(passkey.createdAt).toISOString())}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={pending}
+                    onClick={() => setRenaming({ id: passkey.id, name: passkey.name ?? "" })}
+                  >
+                    <Trans>Rename</Trans>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={pending}
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleting(passkey)}
+                  >
+                    <Trans>Delete</Trans>
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {error && !deleting ? (
+        <p role="alert" className="mt-3 text-[12.5px] text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <Button
+        variant="secondary"
+        className="mt-3 rounded-full"
+        disabled={pending}
+        onClick={() => void run(() => authClient.passkey.addPasskey())}
+      >
+        <Trans>Add passkey</Trans>
+      </Button>
+      {deleting ? (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !pending) {
+              setDeleting(null);
+              setError(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t`Delete "${passkeyLabel(deleting, t`Passkey`)}"?`}</AlertDialogTitle>
+              <AlertDialogDescription>
+                <Trans>This can't be undone.</Trans>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {error ? <p className="text-[13.5px] text-destructive">{error}</p> : null}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pending}>
+                <Trans>Cancel</Trans>
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={pending}
+                onClick={() => void remove()}
+              >
+                {pending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+    </section>
+  );
+}
+
+function passkeyLabel(passkey: PasskeyRow, fallback: string): string {
+  return passkey.name?.trim() || fallback;
+}

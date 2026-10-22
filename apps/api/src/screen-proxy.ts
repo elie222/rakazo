@@ -7,6 +7,7 @@ import {
   SCREEN_TARGET_ENDPOINT,
 } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
 import { requestBodyLimit } from "./request-body-limit.js";
 
@@ -36,27 +37,30 @@ export function mountScreenTarget(app: Hono, prisma: PrismaClient, secret: strin
     const capability = openScreenCapability(body.path, secret);
     if (!capability) return c.body(null, 403);
     const { scope, target } = capability;
-    const bot = await prisma.bot.findFirst({
-      where: {
-        id: scope.botId,
-        computerId: scope.computerId,
-        archivedAt: null,
-        screenGeneration: scope.botGeneration,
-      },
-      select: {
-        computer: {
-          select: {
-            screenGeneration: true,
-            providerRef: true,
-            state: true,
-            controlHolder: true,
-            controlLeaseId: true,
-            controlBotId: true,
-            controlLeaseExpiresAt: true,
+    // The sealed capability, not a session, names the bot and computer.
+    const bot = await runAsSystem("check a screen proxy capability", () =>
+      prisma.bot.findFirst({
+        where: {
+          id: scope.botId,
+          computerId: scope.computerId,
+          archivedAt: null,
+          screenGeneration: scope.botGeneration,
+        },
+        select: {
+          computer: {
+            select: {
+              screenGeneration: true,
+              providerRef: true,
+              state: true,
+              controlHolder: true,
+              controlLeaseId: true,
+              controlBotId: true,
+              controlLeaseExpiresAt: true,
+            },
           },
         },
-      },
-    });
+      }),
+    );
     const computer = bot?.computer;
     if (
       !computer ||

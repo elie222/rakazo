@@ -7,6 +7,13 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import { buildIdAt } from "@rakazo/contracts/client-build";
+import {
+  appContentSecurityPolicy,
+  CSP_REPORTING_ENDPOINTS,
+  contentSecurityPolicyFor,
+  parseContentSecuritySources,
+} from "@rakazo/contracts/content-security-policy";
 import {
   safeScreenProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
@@ -14,11 +21,21 @@ import {
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import type { PreviewServer, ViteDevServer } from "vite";
+import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
-import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./src/novnc-html.js";
+import { appendForwardedFor } from "./src/forwarded-for.js";
+import { missingAssetMiddleware } from "./src/missing-asset.js";
+import {
+  collectNovncHtml,
+  injectNovncStorageShim,
+  isNovncPage,
+  MAX_NOVNC_HTML_BYTES,
+  novncPageRequestHeaders,
+  rewrittenNovncHeaders,
+  shouldInjectNovncStorageShim,
+} from "./src/novnc-html.js";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -96,9 +113,10 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       res.end("Invalid or expired screen capability");
       return;
     }
+    const forwarded = safeProxyHeaders(req.headers);
     const headers = {
-      ...safeProxyHeaders(req.headers),
-      ...(isCreateOSNovncHost(target.hostname) ? { "accept-encoding": "identity" } : {}),
+      // The storage shim rewrites the page, so ask for all of it, uncompressed.
+      ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
       host: `${target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
@@ -166,7 +184,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
             });
           }
           const responseHeaders = safeScreenProxyResponseHeaders(incoming.headers);
-          if (shouldInjectNovncStorageShim(responseHeaders, target.hostname)) {
+          if (shouldInjectNovncStorageShim(responseHeaders, target.path)) {
             const declaredLength = Number(incoming.headers["content-length"] ?? 0);
             if (Number.isFinite(declaredLength) && declaredLength > MAX_NOVNC_HTML_BYTES) {
               finishUnavailable("html_too_large");
@@ -178,8 +196,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
                 const body = injectNovncStorageShim(html);
-                delete responseHeaders["content-length"];
-                res.writeHead(incoming.statusCode ?? 502, responseHeaders);
+                res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })
               .catch(() => {
@@ -367,39 +384,33 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 }
 
-const NOVNC_STORAGE_SHIM_HOSTS = [".app.sb.createos.sh"];
-
-function isCreateOSNovncHost(hostname: string) {
-  return NOVNC_STORAGE_SHIM_HOSTS.some((suffix) => hostname.endsWith(suffix));
-}
-
-function shouldInjectNovncStorageShim(headers: http.IncomingHttpHeaders, hostname: string) {
-  if (!isCreateOSNovncHost(hostname)) return false;
-  if (headers["content-encoding"]) return false;
-  const contentType = String(headers["content-type"] ?? "").toLowerCase();
-  return contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
-}
-
-function injectNovncStorageShim(html: string) {
-  const shim = `<script>
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: {
-    getItem() { return null; },
-    setItem() {},
-    removeItem() {},
-    clear() {},
-  },
-});
-</script>`;
-  return html.includes("<head>")
-    ? html.replace("<head>", `<head>${shim}`)
-    : html.replace(/<script\b/i, `${shim}<script`);
-}
-
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
+  // Names this build in every API request; the dev server has none, so the handshake stays off.
+  const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
+  const apiProxy = Object.fromEntries(
+    [
+      "/api",
+      "/rpc",
+      // Native app domain association, served by the API from deployment settings.
+      "/.well-known/apple-app-site-association",
+      "/.well-known/assetlinks.json",
+    ].map((path) => [
+      path,
+      {
+        target: api,
+        changeOrigin: true,
+        // Append the hop this proxy saw, so the API never mistakes a caller's own header for its
+        // address. The API reads past this hop only when it is listed in TRUSTED_PROXIES.
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq, req) => {
+            proxyReq.setHeader("x-forwarded-for", appendForwardedFor(req));
+          });
+        },
+      } satisfies ProxyOptions,
+    ]),
+  );
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const allowedHosts = [
     previewHost,
@@ -420,12 +431,58 @@ export default defineConfig(({ mode }) => {
   const desktopStackToken =
     process.env.RAKAZO_DESKTOP_STACK_TOKEN ?? rootEnv.RAKAZO_DESKTOP_STACK_TOKEN ?? "";
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
+  // Invalid origins throw here, so the server refuses to start rather than serve a wider policy.
+  const appPolicy = appContentSecurityPolicy({
+    scriptSrc: parseContentSecuritySources(
+      "RAKAZO_CSP_SCRIPT_SRC",
+      process.env.RAKAZO_CSP_SCRIPT_SRC ?? rootEnv.RAKAZO_CSP_SCRIPT_SRC,
+    ),
+    connectSrc: parseContentSecuritySources(
+      "RAKAZO_CSP_CONNECT_SRC",
+      process.env.RAKAZO_CSP_CONNECT_SRC ?? rootEnv.RAKAZO_CSP_CONNECT_SRC,
+    ),
+  });
   return {
+    define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
+      {
+        // The API reads this to name the deployed build, and a tab fetches it to confirm the
+        // server already serves a newer build before it reloads.
+        name: "rakazo-build-id",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "build-id", source: `${buildId}\n` });
+        },
+      },
       react(),
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),
       tailwindcss(),
+      {
+        // Production only: the dev server injects inline scripts for React Refresh.
+        name: "rakazo-content-security-policy",
+        configurePreviewServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/", appPolicy);
+            if (policy) {
+              res.setHeader("content-security-policy", policy);
+              res.setHeader("reporting-endpoints", CSP_REPORTING_ENDPOINTS);
+            }
+            next();
+          });
+        },
+      },
+      {
+        name: "rakazo-missing-asset-404",
+        configurePreviewServer({ config, middlewares }) {
+          middlewares.use(
+            missingAssetMiddleware(
+              path.resolve(config.root, config.build.outDir, config.build.assetsDir),
+              `${config.base}${config.build.assetsDir}/`,
+            ),
+          );
+        },
+      },
       {
         name: "rakazo-desktop-stack-probe",
         configureServer: (server) => attachDesktopStackProbe(server, desktopStackToken, imageTag),
@@ -457,19 +514,13 @@ export default defineConfig(({ mode }) => {
       port: webPort,
       strictPort: true,
       allowedHosts,
-      proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
-      },
+      proxy: apiProxy,
     },
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
       allowedHosts,
-      proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
-      },
+      proxy: apiProxy,
     },
   };
 });

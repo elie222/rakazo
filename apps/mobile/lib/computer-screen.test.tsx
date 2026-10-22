@@ -23,11 +23,12 @@ const picker = vi.hoisted(() => ({
 vi.mock("react-native", () => {
   function MockView(props: {
     children?: ReactNode;
-    style?: { flexDirection?: string; flex?: number; alignSelf?: string };
+    style?: { flexDirection?: string; flex?: number; alignSelf?: string; color?: string };
   }) {
     return createElement(
       "div",
       {
+        "data-color": props.style?.color,
         "data-direction": props.style?.flexDirection,
         "data-flex": props.style?.flex,
         "data-align-self": props.style?.alignSelf,
@@ -41,6 +42,8 @@ vi.mock("react-native", () => {
     onPress?: () => void;
     accessibilityLabel?: string;
     accessibilityRole?: string;
+    accessibilityState?: { busy?: boolean };
+    disabled?: boolean;
   }) {
     return createElement(
       "button",
@@ -48,6 +51,8 @@ vi.mock("react-native", () => {
         type: "button",
         role: props.accessibilityRole,
         "aria-label": props.accessibilityLabel,
+        "aria-busy": props.accessibilityState?.busy,
+        disabled: props.disabled,
         onClick: () => props.onPress?.(),
       },
       props.children,
@@ -59,6 +64,8 @@ vi.mock("react-native", () => {
   }
 
   return {
+    ActivityIndicator: (props: { size?: string }) =>
+      createElement("progress", { "data-size": props.size }),
     AppState: {
       addEventListener: (_type: string, listener: (state: string) => void) => {
         appState.listeners.add(listener);
@@ -121,10 +128,22 @@ vi.mock("../lib/orientation", () => ({
 
 vi.mock("../components/native-action-button", () => {
   return {
-    NativeActionButton: (props: { label: string; onPress: () => void; prominence?: string }) =>
+    NativeActionButton: (props: {
+      label: string;
+      onPress: () => void;
+      prominence?: string;
+      size?: string;
+      disabled?: boolean;
+    }) =>
       createElement(
         "button",
-        { type: "button", "data-prominence": props.prominence, onClick: props.onPress },
+        {
+          type: "button",
+          "data-prominence": props.prominence,
+          "data-size": props.size,
+          disabled: props.disabled,
+          onClick: props.onPress,
+        },
         props.label,
       ),
   };
@@ -178,6 +197,7 @@ vi.mock("./native", () => ({
     muted: "muted",
     mutedForeground: "muted-foreground",
     primary: "primary",
+    destructive: "destructive",
     success: "success",
   }),
 }));
@@ -255,7 +275,7 @@ describe("computer screen", () => {
   }
 
   function preview(view: HTMLElement) {
-    const element = view.querySelector<HTMLElement>('[aria-label="Open computer"]');
+    const element = view.querySelector<HTMLButtonElement>('[aria-label="Open computer"]');
     if (!element) throw new Error("missing preview");
     return element;
   }
@@ -339,9 +359,10 @@ describe("computer screen", () => {
     expect(statusLabel(view).dataset.alignSelf).toBeUndefined();
   });
 
-  it("puts Take control under the status at accessibility text sizes", async () => {
-    // At AX5 the native button took the row and the label wrapped one letter per line.
-    textScale.fontScale = 3.571;
+  it("puts Take control under the status once text reaches its largest size", async () => {
+    // Text stops growing at xxxLarge but the native button doesn't: at AX5 it took the row and
+    // the label wrapped one letter per line.
+    textScale.fontScale = 1.353;
     respond(botWorking);
     const view = await render();
 
@@ -368,7 +389,7 @@ describe("computer screen", () => {
     const callsBefore = rpc.mock.calls.length;
 
     // The native picker keeps a stale height when the row above restacks.
-    textScale.fontScale = 3.571;
+    textScale.fontScale = 1.353;
     act(() => {
       root?.render(<Computer />);
     });
@@ -433,5 +454,264 @@ describe("computer screen", () => {
     expect(view.querySelector("section iframe")?.getAttribute("data-elements-hidden")).toBe(
       "false",
     );
+  });
+  describe("while the computer boots", () => {
+    const stopped: ComputerStatus = { ...botWorking, state: "stopped", busyBotName: null };
+    const idle: ComputerStatus = { ...botWorking, busyBotName: null };
+    let status: ComputerStatus;
+    let boots: { resolve: () => void; reject: (error: Error) => void }[];
+
+    beforeEach(() => {
+      boots = [];
+      status = stopped;
+      rpc.mockImplementation(async (method: string) => {
+        if (method === "computer/status") return status;
+        if (method === "computer/screenUrl")
+          return { url: status.state === "running" ? "https://screen.example.test/embed" : null };
+        if (method === "computer/boot")
+          return new Promise<void>((resolve, reject) => boots.push({ resolve, reject }));
+        return {};
+      });
+    });
+
+    function previewButton(view: HTMLElement) {
+      const element = view.querySelector<HTMLButtonElement>('button[role="button"]');
+      if (!element) throw new Error("missing preview");
+      return element;
+    }
+
+    function tryAgain(view: HTMLElement) {
+      return Array.from(view.querySelectorAll("button")).find(
+        (button) => button.textContent === "Try again",
+      );
+    }
+
+    async function finishBoot(next: ComputerStatus) {
+      status = next;
+      await act(async () => boots.at(-1)?.resolve());
+      await settle();
+    }
+
+    it("shows the boot in the preview, without covering Back, and blocks a second start", async () => {
+      const view = await render();
+
+      expect(calls("computer/boot")).toHaveLength(1);
+      expect(view.querySelector("section")).toBeNull();
+      expect(view.querySelector("progress")?.getAttribute("data-size")).toBe("large");
+      expect(view.textContent).toContain("Booting live desktop…");
+      expect(previewButton(view).disabled).toBe(true);
+      expect(previewButton(view).getAttribute("aria-label")).toBe("Booting live desktop…");
+      expect(previewButton(view).getAttribute("aria-busy")).toBe("true");
+      expect(takeControlButtons(view)[0]?.disabled).toBe(true);
+      expect(picker.props?.disabled).toBe(true);
+
+      await finishBoot(idle);
+
+      expect(view.querySelector("section")).toBeNull();
+      expect(view.querySelector("progress")).toBeNull();
+      expect(view.querySelector("iframe")).not.toBeNull();
+      expect(preview(view).disabled).toBe(false);
+      expect(takeControlButtons(view)[0]?.disabled).toBe(false);
+      expect(picker.props?.disabled).toBe(false);
+    });
+
+    it("opens the full window once a tapped boot finishes", async () => {
+      status = { ...stopped, state: "suspended" };
+      const view = await render();
+      expect(calls("computer/boot")).toEqual([]);
+
+      await act(async () => preview(view).click());
+      await settle();
+      expect(view.querySelector("section")).toBeNull();
+      expect(view.querySelector("progress")).not.toBeNull();
+
+      await finishBoot(idle);
+
+      expect(view.querySelector("section")).not.toBeNull();
+      expect(calls("computer/takeover")).toEqual([]);
+    });
+
+    it("leaves the boot to finish on the server when the screen closes", async () => {
+      await render();
+      expect(calls("computer/boot")).toHaveLength(1);
+      act(() => root?.unmount());
+      root = undefined;
+      const callsBefore = rpc.mock.calls.length;
+
+      status = idle;
+      await act(async () => boots[0]?.resolve());
+      await settle();
+
+      expect(rpc.mock.calls.length).toBe(callsBefore);
+    });
+
+    it.each([
+      new Error("Internal server error"),
+      Object.assign(new Error("Service failed"), { status: 500 }),
+      new Error("HTTP 503 Service unavailable"),
+      new Error("Network request failed"),
+      new Error("Request timed out"),
+    ])("shows friendly recovery for %s", async (error) => {
+      const view = await render();
+      await act(async () => boots[0]?.reject(error));
+      await settle();
+
+      const title = Array.from(view.querySelectorAll("[data-color]")).find(
+        (element) => element.textContent === "Couldn't start the computer",
+      );
+      expect(title?.getAttribute("data-color")).toBe("destructive");
+      expect(view.textContent).toContain(
+        "Something went wrong while it was starting. Try again in a moment.",
+      );
+      expect(view.textContent).not.toContain(error.message);
+      expect(tryAgain(view)?.getAttribute("data-prominence")).toBe("primary");
+      expect(tryAgain(view)?.getAttribute("data-size")).toBe("default");
+      expect(tryAgain(view)?.disabled).toBe(false);
+    });
+
+    it.each([
+      new Error("Network request failed"),
+      Object.assign(new Error("Service failed"), { status: 500 }),
+    ])("explains retry after a running computer's reconnect fails: %s", async (error) => {
+      status = idle;
+      const view = await render();
+      expect(calls("computer/boot")).toHaveLength(1);
+      await act(async () => boots[0]?.reject(error));
+      await settle();
+
+      expect(view.textContent).not.toContain("Couldn't start the computer");
+      expect(view.textContent).toContain(
+        "Something went wrong while it was starting. Try again in a moment.",
+      );
+      expect(tryAgain(view)?.disabled).toBe(false);
+    });
+
+    it("offers Try again after a failed boot", async () => {
+      const view = await render();
+      expect(tryAgain(view)).toBeUndefined();
+
+      await act(async () => boots[0]?.reject(new Error("Computer is busy")));
+      await settle();
+
+      expect(view.textContent).toContain("Computer is busy");
+      expect(view.querySelector("progress")).toBeNull();
+      expect(preview(view).disabled).toBe(false);
+      expect(tryAgain(view)).toBeDefined();
+
+      await act(async () => tryAgain(view)?.click());
+      await settle();
+      expect(calls("computer/boot")).toHaveLength(2);
+      expect(tryAgain(view)).toBeUndefined();
+      expect(view.textContent).not.toContain("Computer is busy");
+      expect(view.querySelector("progress")).not.toBeNull();
+
+      await finishBoot(idle);
+      expect(view.textContent).not.toContain("Computer is busy");
+      expect(view.querySelector("iframe")).not.toBeNull();
+    });
+
+    it("keeps a failed boot's error and Try again through later status checks", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const view = await render();
+        await act(async () => boots[0]?.reject(new Error("Computer is busy")));
+        await settle();
+
+        // The next poll reads a stopped computer with no screen and no error of its own.
+        await act(async () => vi.advanceTimersByTime(2000));
+        await settle();
+        expect(calls("computer/screenUrl").length).toBeGreaterThan(0);
+        expect(view.textContent).toContain("Computer is busy");
+        expect(tryAgain(view)).toBeDefined();
+
+        status = { ...stopped, state: "error" };
+        await act(async () => vi.advanceTimersByTime(2000));
+        await settle();
+        expect(view.textContent).toContain("Computer failed to boot");
+        expect(tryAgain(view)).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("drops Try again once a later status shows the computer running", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const view = await render();
+        await act(async () => boots[0]?.reject(new Error("Computer is busy")));
+        await settle();
+        expect(tryAgain(view)).toBeDefined();
+
+        // Another client started it.
+        status = idle;
+        await act(async () => vi.advanceTimersByTime(2000));
+        await settle();
+        expect(view.querySelector("iframe")).not.toBeNull();
+        expect(tryAgain(view)).toBeUndefined();
+        expect(calls("computer/boot")).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("reports a takeover that times out on a running computer", async () => {
+      status = idle;
+      const base = rpc.getMockImplementation()!;
+      rpc.mockImplementation((method: string, ...rest: unknown[]) =>
+        method === "computer/takeover"
+          ? Promise.reject(
+              Object.defineProperty(new Error("Request timed out"), "name", {
+                value: "TimeoutError",
+              }),
+            )
+          : base(method, ...rest),
+      );
+      const view = await render();
+      await act(async () => boots[0]?.resolve());
+      await settle();
+      expect(view.querySelector("iframe")).not.toBeNull();
+      const bootsBefore = calls("computer/boot").length;
+
+      await act(async () => takeControlButtons(view)[0]?.click());
+      await settle();
+
+      expect(calls("computer/takeover")).toHaveLength(1);
+      expect(calls("computer/boot")).toHaveLength(bootsBefore);
+      expect(view.textContent).toContain("Request timed out");
+      expect(view.textContent).not.toContain("Couldn't start the computer");
+      expect(tryAgain(view)).toBeUndefined();
+      expect(view.querySelector("section")).toBeNull();
+    });
+
+    it("keeps following the boot after the request times out", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const view = await render();
+        const timeout = Object.defineProperty(new Error("Request timed out"), "name", {
+          value: "TimeoutError",
+        });
+        status = { ...stopped, state: "booting" };
+        await act(async () => boots[0]?.reject(timeout));
+        await settle();
+
+        expect(view.textContent).not.toContain("Request timed out");
+        expect(view.textContent).not.toContain("Could not reach the server");
+        expect(tryAgain(view)).toBeUndefined();
+
+        await act(async () => vi.advanceTimersByTime(2000));
+        await settle();
+        expect(view.querySelector("progress")).not.toBeNull();
+        expect(view.textContent).toContain("Booting live desktop…");
+
+        status = idle;
+        await act(async () => vi.advanceTimersByTime(2000));
+        await settle();
+        expect(view.querySelector("progress")).toBeNull();
+        expect(view.querySelector("iframe")).not.toBeNull();
+        expect(calls("computer/boot")).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

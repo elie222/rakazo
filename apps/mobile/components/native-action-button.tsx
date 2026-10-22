@@ -1,8 +1,9 @@
-import { ActivityIndicator, Pressable, Text } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text } from "react-native";
 import type { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens } from "../lib/native";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
+import { androidRipple, withAlpha } from "../lib/ripple";
 import { NativeSymbol } from "./native-symbol";
 
 /** Android (and non-iOS) form buttons. iOS uses the SwiftUI button in the platform file. */
@@ -30,7 +31,11 @@ export function NativeActionButton({
   const compact = prominence === "plain" || prominence === "quiet";
   const colors =
     variant === "text"
-      ? { background: "transparent", label: tokens.link, border: undefined }
+      ? {
+          background: "transparent",
+          label: prominence === "destructive" ? tokens.destructive : tokens.link,
+          border: undefined,
+        }
       : variant === "rectangular"
         ? {
             background: effectiveProminence === "primary" ? tokens.primary : tokens.card,
@@ -47,13 +52,14 @@ export function NativeActionButton({
       accessibilityState={actionAccessibilityState(inactive, selected)}
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
+      android_ripple={androidRipple(withAlpha(colors.label, 0.2))}
       onPress={onPress}
       style={({ pressed }) => [
         {
           flexDirection: "row",
           gap: icon && label ? 6 : undefined,
           minHeight:
-            variant === "rectangular"
+            variant === "rectangular" || (variant === "text" && prominence === "destructive")
               ? 44
               : variant === "text" || small || compact
                 ? undefined
@@ -69,9 +75,10 @@ export function NativeActionButton({
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,
           borderColor: colors.border,
-          opacity: inactive ? 0.45 : pressed ? 0.7 : 1,
+          opacity: inactive ? 0.45 : pressed && Platform.OS !== "android" ? 0.7 : 1,
         },
         style,
+        Platform.OS === "android" && { overflow: "hidden" },
       ]}
     >
       {busy ? (
@@ -126,7 +133,7 @@ function buttonColors(
   }
   if (prominence === "destructive" && fill) {
     return {
-      background: tokens.destructive,
+      background: tokens.destructiveFill,
       label: tokens.destructiveForeground,
       border: undefined,
     };

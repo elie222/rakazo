@@ -8,6 +8,10 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
   it("reconnects a real listener and signals durable catch-up for a missed notification", async () => {
     const pool = new Pool({ connectionString: databaseUrl! });
+    // The runtime login cannot create tables, so the owner adds the scratch table.
+    const owner = new Pool({
+      connectionString: process.env.DATABASE_MIGRATION_URL ?? databaseUrl!,
+    });
     const table = `realtime_contract_events_${process.pid}_${Date.now()}`;
     const listenerClients: Client[] = [];
     const signals: string[] = [];
@@ -16,7 +20,10 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
     let drainError: unknown;
     let draining = Promise.resolve();
 
-    await pool.query(`CREATE TABLE ${table} (id bigserial PRIMARY KEY, body text NOT NULL)`);
+    const { rows } = await pool.query<{ role: string }>("SELECT current_user AS role");
+    await owner.query(`CREATE TABLE ${table} (id bigserial PRIMARY KEY, body text NOT NULL)`);
+    await owner.query(`GRANT SELECT, INSERT ON ${table} TO "${rows[0]!.role}"`);
+    await owner.query(`GRANT USAGE ON SEQUENCE ${table}_id_seq TO "${rows[0]!.role}"`);
     const realtime = new PostgresRealtimeFanout({
       connectionString: databaseUrl!,
       publisher: {
@@ -78,7 +85,8 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
       await unsubscribe();
     } finally {
       await realtime.close();
-      await pool.query(`DROP TABLE IF EXISTS ${table}`).catch(() => undefined);
+      await owner.query(`DROP TABLE IF EXISTS ${table}`).catch(() => undefined);
+      await owner.end();
       await pool.end();
     }
   });

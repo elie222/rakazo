@@ -232,6 +232,10 @@ describe("runtime context policy", () => {
       result("shell-1", "shell", shellOutput),
       call("shell-2", "shell"),
       result("shell-2", "shell", shellOutput),
+      call("shell-3", "shell"),
+      result("shell-3", "shell", shellOutput),
+      call("shell-4", "shell"),
+      result("shell-4", "shell", shellOutput),
     );
     const policy = createRuntimeContextPolicy({
       ...request,
@@ -251,8 +255,61 @@ describe("runtime context policy", () => {
     expect(body("read")).toBe(skill);
     expect(body("shell-1")).toContain("[Earlier result shortened after you read it");
     expect(body("shell-1")).not.toContain("unavailable");
-    expect(body("shell-2")).toBe(shellOutput);
+    for (const id of ["shell-2", "shell-3", "shell-4"]) {
+      expect(body(id)).toBe(shellOutput);
+    }
   });
+  it.each([65_536, 10_000])(
+    "retains individual parallel results within a %i budget",
+    (contextWindow) => {
+      const { request, context } = fixture(0);
+      const bodies = Array.from({ length: 4 }, (_, i) => `${i}: ${"evidence ".repeat(400)}`);
+      context.messages.push({
+        role: "assistant",
+        content: bodies.slice(0, 3).map((_, i) => ({
+          type: "toolCall",
+          id: `call-${i}`,
+          name: "shell",
+          arguments: {},
+        })),
+        timestamp: 101,
+      } as Message);
+      for (const [i, body] of bodies.entries()) {
+        if (i === 3)
+          context.messages.push({
+            role: "assistant",
+            content: [{ type: "toolCall", id: `call-${i}`, name: "shell", arguments: {} }],
+            timestamp: 102,
+          } as Message);
+        context.messages.push({
+          role: "toolResult",
+          toolCallId: `call-${i}`,
+          toolName: "shell",
+          content: [{ type: "text", text: body }],
+          isError: false,
+          timestamp: 102,
+        });
+      }
+      context.messages.push({
+        role: "assistant",
+        content: [{ type: "text", text: "Continue" }],
+        timestamp: 103,
+      } as Message);
+      const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+      const selected = policy.prepareContext(context, { ...model, contextWindow, maxTokens: 1024 });
+      const results = selected.messages.filter((message) => message.role === "toolResult");
+      expect(results).toHaveLength(4);
+      for (const [i, result] of results.entries()) {
+        if ((contextWindow === 65_536 && i > 0) || i === 3)
+          expect(result.content).toEqual([{ type: "text", text: bodies[i] }]);
+        else
+          expect(JSON.stringify(result.content)).toContain(
+            "Earlier result shortened after you read it",
+          );
+      }
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(contextWindow - 1024);
+    },
+  );
   it("leaves the baseline provider payload untouched", () => {
     const { request, context } = fixture();
     const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "current" });
@@ -350,9 +407,9 @@ describe("runtime context policy", () => {
     );
     expect(after.messages.at(-1)).toEqual(steered.messages.at(-1));
     expect(after.messages.length).toBe(before.messages.length + 1);
-    // History is still bounded and old tool evidence is still shortened.
+    // History is still bounded and recent tool evidence remains whole.
     expect(after.messages.length).toBeLessThan(steered.messages.length);
-    expect(JSON.stringify(after.messages)).toContain("[Earlier result shortened after you read it");
+    expect(JSON.stringify(after.messages)).toContain(shellOutput);
   });
   it.each(["snapshots", "cache-aware"] as const)(
     "retains already-short history without lookup navigation under %s",

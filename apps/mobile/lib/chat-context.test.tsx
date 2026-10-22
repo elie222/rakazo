@@ -39,15 +39,22 @@ vi.mock("react-native", () => ({
     onPress,
     accessibilityRole,
     selectable,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityRole?: string;
     selectable?: boolean;
+    style?: { color?: string };
   }) =>
     createElement(
       "span",
-      { onClick: onPress, role: accessibilityRole, "data-selectable": selectable },
+      {
+        onClick: onPress,
+        role: accessibilityRole,
+        "data-selectable": selectable,
+        "data-color": style?.color,
+      },
       children,
     ),
 }));
@@ -69,6 +76,8 @@ it("reads a nonselectable date heading", () => {
   expect(container.textContent).toContain("2:20 PM");
   expect(container.firstElementChild?.getAttribute("role")).toBe("header");
   expect(container.firstElementChild?.getAttribute("data-selectable")).toBe("false");
+  // A timestamp separator is tertiary text.
+  expect(container.firstElementChild?.getAttribute("data-color")).toBe(lightTokens.faintForeground);
 });
 it("navigates to the authoritative reply target and hides subsequent lines", () => {
   const onJump = vi.fn();

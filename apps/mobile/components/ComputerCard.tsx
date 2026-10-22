@@ -1,5 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ViewProps } from "react-native";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
@@ -16,8 +17,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   header: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
-  state: { flexShrink: 1, fontSize: 13 },
-  title: { fontSize: 15, fontWeight: "600" },
+  state: { flexShrink: 1, ...typeScale.caption },
+  title: typeScale.cardTitle,
 });
 
 export function ComputerCard({

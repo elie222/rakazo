@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { embeddableScreenUrl, loadComputerScreen, screenIframeSandbox } from "./computer-screen";
+import {
+  bootComputerOnce,
+  embeddableScreenUrl,
+  loadComputerScreen,
+  screenIframeSandbox,
+} from "./computer-screen";
 
 describe("computer screen requests", () => {
   it("shows connection failures and lets a successful retry clear them", async () => {
@@ -91,6 +96,13 @@ describe("embeddableScreenUrl", () => {
     expect(embeddableScreenUrl("http://localhost:6080/vnc.html")).toBeNull();
   });
 
+  it("serves the screen proxy from the page origin", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost:5173/chat" } });
+    expect(embeddableScreenUrl("http://127.0.0.1:5173/novnc/session/view/1.x/vnc.html?a=1")).toBe(
+      "http://localhost:5173/novnc/session/view/1.x/vnc.html?a=1",
+    );
+  });
+
   it("keeps a non-local screen even when the port differs", () => {
     vi.stubGlobal("window", { location: { href: "http://localhost:5173/" } });
     expect(embeddableScreenUrl("https://screen.example:6080/vnc.html")).toBe(
@@ -110,5 +122,74 @@ describe("screenIframeSandbox", () => {
       "allow-scripts allow-pointer-lock",
     );
     expect(screenIframeSandbox("http://127.0.0.1:5173/vnc.html")).toBeUndefined();
+  });
+});
+
+function pendingBoot() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("computer boot ownership", () => {
+  it("starts B independently and refuses a second A after switching A to B to A", async () => {
+    const inFlight = new Map<string, symbol>();
+    const a = pendingBoot();
+    const b = pendingBoot();
+    const duplicate = vi.fn();
+    const first = bootComputerOnce(inFlight, "a", () => a.promise);
+    const second = bootComputerOnce(inFlight, "b", () => b.promise);
+    await bootComputerOnce(inFlight, "a", duplicate);
+    expect(duplicate).not.toHaveBeenCalled();
+    b.resolve();
+    await second;
+    expect(inFlight.has("a")).toBe(true);
+    a.resolve();
+    await first;
+    await bootComputerOnce(inFlight, "a", duplicate);
+    expect(duplicate).toHaveBeenCalledOnce();
+    expect(inFlight.size).toBe(0);
+  });
+
+  it("lets takeover proceed while a boot request is in flight", async () => {
+    const inFlight = new Map<string, symbol>();
+    const boot = pendingBoot();
+    const first = bootComputerOnce(inFlight, "a", () => boot.promise);
+    const duplicateBoot = vi.fn();
+    const takeover = vi.fn();
+    await bootComputerOnce(inFlight, "a", duplicateBoot);
+    await takeover();
+    expect(duplicateBoot).not.toHaveBeenCalled();
+    expect(takeover).toHaveBeenCalledOnce();
+    expect(inFlight.has("a")).toBe(true);
+    boot.resolve();
+    await first;
+  });
+
+  it("allows a retry after failure", async () => {
+    const inFlight = new Map<string, symbol>();
+    const a = pendingBoot();
+    const first = bootComputerOnce(inFlight, "a", () => a.promise);
+    const rejected = expect(first).rejects.toThrow("Boot failed");
+    a.reject(new Error("Boot failed"));
+    await rejected;
+    const retry = vi.fn();
+    await bootComputerOnce(inFlight, "a", retry);
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("does not release a replacement owner's marker when an older request finishes", async () => {
+    const inFlight = new Map<string, symbol>();
+    const a = pendingBoot();
+    const first = bootComputerOnce(inFlight, "a", () => a.promise);
+    const replacement = Symbol("replacement");
+    inFlight.set("a", replacement);
+    a.resolve();
+    await first;
+    expect(inFlight.get("a")).toBe(replacement);
   });
 });

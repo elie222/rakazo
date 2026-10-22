@@ -35,6 +35,7 @@ model User {
   timezone                    String?
   sessions                    Session[]
   accounts                    Account[]
+  passkeys                    Passkey[]
   members                     Member[]
   invitations                 Invitation[]
   modelCredentials            UserModelCredential[]
@@ -101,6 +102,26 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+/// Better Auth WebAuthn credentials. `publicKey` is the base64 COSE key.
+model Passkey {
+  id           String    @id
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime? @default(now())
+  aaguid       String?
+
+  @@unique([credentialID])
+  @@index([userId])
+  @@map("passkey")
 }
 
 /// Better Auth credential rate limits. `lastRequest` is epoch milliseconds.
@@ -252,6 +273,22 @@ model Space {
   @@map("spaces")
 }
 
+/// A space's data encryption key, wrapped by a master key. There is no foreign key:
+/// keys are created on their own connection, possibly before the space row commits.
+/// A trigger deletes them with the space, which crypto-shreds anything left behind.
+model SpaceKey {
+  id          String   @id
+  spaceId     String
+  version     Int
+  masterKeyId String
+  wrappedKey  String
+  createdAt   DateTime @default(now())
+
+  @@unique([spaceId, version])
+  @@index([masterKeyId])
+  @@map("space_keys")
+}
+
 model SpaceMember {
   id               String                 @id
   spaceId          String
@@ -303,6 +340,26 @@ model DeploymentSettings {
   updatedAt                       DateTime @updatedAt
 
   @@map("deployment_settings")
+}
+
+/// Append-only security audit trail. No foreign keys, so an account deletion
+/// keeps the record of what happened; retention pruning is the only delete.
+/// Never stores message content, secrets, or tokens.
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  type      String
+  userId    String?
+  spaceId   String?
+  ip        String?
+  userAgent String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([ip, createdAt])
+  @@index([userId, createdAt])
+  @@map("security_events")
 }
 
 model UserModelCredential {
@@ -431,7 +488,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
-  fleetManagement        Boolean @default(false)
+  fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
@@ -566,6 +623,8 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
+  searchTokens     Int[]
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -575,6 +634,7 @@ model Message {
   @@unique([threadId, clientNonce])
   @@index([threadId, seq])
   @@index([replyToMessageId])
+  @@index([searchTokens], type: Gin)
   @@map("messages")
 }
 
@@ -1176,11 +1236,17 @@ model McpServer {
   command       String?
   args          Json              @default("[]")
   env           Json              @default("{}")
+  files         Json              @default("{}")
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
+  /// Last launch/discovery outcome: unknown | installing | ok | error.
+  healthStatus    String          @default("unknown")
+  healthMessage   String?
+  healthToolCount Int?
+  healthCheckedAt DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   assignments   BotMcpServer[]

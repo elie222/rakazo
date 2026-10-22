@@ -147,6 +147,8 @@ export type ConnectedModelChoice = {
   provider: string;
   modelId: string;
   label: string;
+  providerLabel?: string;
+  modelLabel?: string;
 };
 
 type CatalogModelRef = {
@@ -230,6 +232,8 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
     provider: credential.provider,
     modelId,
     label: `${credential.label} · ${modelId}`,
+    providerLabel: credential.label,
+    modelLabel: modelId,
   };
 }
 
@@ -241,6 +245,8 @@ function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedMo
       provider: entry.provider,
       modelId,
       label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+      providerLabel: entry.providerName ?? entry.provider,
+      modelLabel: entry.label,
     };
   });
 }
@@ -329,6 +335,87 @@ export function filterModelCatalog(
   if (!query.trim()) return entries;
   return entries.filter((entry) =>
     matchesSearchQuery(query, entry.label, entry.id, entry.providerName ?? entry.provider),
+  );
+}
+
+/** Model lists longer than this get a search field. */
+export const MODEL_SEARCH_THRESHOLD = 10;
+
+export type ChatModelChoice = {
+  key: string;
+  label: string;
+  provider?: string;
+  modelId?: string;
+  providerLabel?: string;
+  modelLabel?: string;
+  title?: string;
+  detail?: string;
+};
+
+/** Filter on full labels before shortening rows; saved/default choices stay first. */
+export function groupModelChoices(choices: readonly ChatModelChoice[], query: string) {
+  const sections: { key: string; heading?: string; data: ChatModelChoice[] }[] = [];
+  for (const choice of filterModelChoices(choices, query)) {
+    // The catalog has no vendor field. Its display convention is "Vendor: Model".
+    const vendor = choice.modelLabel?.match(/^([^:]+): (.+)$/);
+    const heading = choice.providerLabel
+      ? [choice.providerLabel, vendor?.[1]].filter(Boolean).join(" · ")
+      : undefined;
+    const key = heading ? `provider:${heading}` : "ungrouped";
+    let section = sections.find((entry) => entry.key === key);
+    if (!section) {
+      section = { key, heading, data: [] };
+      if (heading) sections.push(section);
+      else sections.unshift(section);
+    }
+    section.data.push({
+      ...choice,
+      title: choice.title ?? vendor?.[2] ?? choice.modelLabel ?? choice.label,
+    });
+  }
+  return sections;
+}
+
+/**
+ * A chat's model picker: the space default (key ""), then a saved model no
+ * connection offers any more, then every connected model.
+ */
+export function chatModelChoices(
+  connected: readonly ConnectedModelChoice[],
+  selectedKey: string,
+  spaceDefaultLabel: string,
+): ChatModelChoice[] {
+  const choices: ChatModelChoice[] = [{ key: "", label: spaceDefaultLabel }];
+  if (selectedKey && !connected.some((option) => option.key === selectedKey)) {
+    const saved = parseModelOptionKey(selectedKey);
+    choices.push({
+      key: selectedKey,
+      label: saved?.modelId ?? selectedKey,
+      provider: saved?.provider,
+      modelId: saved?.modelId,
+    });
+  }
+  return choices.concat(connected);
+}
+
+/**
+ * Match a choice by label, model id, provider id, or (for a model that names its provider) the
+ * provider's display name; a blank query keeps every choice. A choice without a provider only
+ * uses providerLabel as a section heading, so that heading is not searched.
+ */
+export function filterModelChoices<C extends ChatModelChoice>(
+  choices: readonly C[],
+  query: string,
+): readonly C[] {
+  if (!query.trim()) return choices;
+  return choices.filter((choice) =>
+    matchesSearchQuery(
+      query,
+      choice.label,
+      choice.modelId,
+      choice.provider,
+      choice.provider ? choice.providerLabel : undefined,
+    ),
   );
 }
 

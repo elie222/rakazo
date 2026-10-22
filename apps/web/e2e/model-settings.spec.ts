@@ -7,6 +7,7 @@ import {
   captureScreenshot,
   chooseOption,
   completeOnboarding,
+  expandAdvancedSection,
   openUserSettings,
   rpc,
   signup,
@@ -35,8 +36,6 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await page.getByPlaceholder("Search providers").fill("openrouter");
   await page.getByRole("button", { name: /^OpenRouter( |$)/ }).click();
   const backups = page.getByTestId("model-backups");
-  await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
-  await expect(backups.getByLabel("Add connected model")).toBeVisible();
   await expect(page.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
 
@@ -45,7 +44,8 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Connect API key", exact: true }).click();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
-  await expect(backups.getByLabel("Add connected model")).toBeVisible();
+  const addBackup = backups.getByRole("button", { name: "Add backup model" });
+  await expect(addBackup).toBeVisible();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(model).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-2-connected");
@@ -88,6 +88,20 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await expect(search).toBeFocused();
   await page.getByPlaceholder("Search providers").click();
   await expect(popup).toBeHidden();
+
+  // Choosing a backup saves it at once; there is no separate save step.
+  await addBackup.click();
+  const backupMenu = page.getByRole("menu");
+  await expect(backupMenu).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-4-backup-menu-open");
+  const backupItem = backupMenu.getByRole("menuitem").first();
+  const backupLabel = (await backupItem.innerText()).trim();
+  await backupItem.click();
+  await expect(backupMenu).toBeHidden();
+  await expect(backups.getByTestId("model-backup-1")).toContainText(backupLabel);
+  await expect.poll(async () => (await rpc<unknown[]>(page, "models/backups", {})).length).toBe(1);
+  await backups.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-5-backup-added");
 });
 
 test("custom connections persist reasoning support and bot thinking", async ({
@@ -170,9 +184,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
   const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   // NativeSelect sits inside a wrapping <label>, so label text includes option
   // copy and getByLabel(..., { exact: true }) misses the control. Use the
   // combobox accessible name, matching other model E2E tests.
@@ -194,9 +206,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await page.reload();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   await expect(settings).toBeVisible();
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   await expect(thinking).toHaveValue("low");
 });
 
@@ -359,9 +369,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
     const settings = page.getByTestId("bot-settings");
     await expect(settings).toBeVisible();
-    await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-    });
+    await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
     // The Model select sits inside its wrapping <label>, so the label text includes
     // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
     const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
@@ -764,90 +772,80 @@ test("catalog models keep a space default thinking level per saved model", async
   expect(updated.find((entry) => entry.provider === "anthropic")?.thinkingLevel).toBeUndefined();
 });
 
-test("saves and reloads an ordered backup model list for connected models", async ({
-  page,
-}, testInfo) => {
+test("chat settings search a long model list", async ({ page }, testInfo) => {
   const stamp = Date.now();
-  await signup(page, `backup-models-${stamp}@rakazo.test`, "password12", `Backups ${stamp}`);
+  await signup(page, `chat-model-search-${stamp}@rakazo.test`, "password12", `Search ${stamp}`);
   await completeOnboarding(page);
 
   const catalog = await rpc<
     Array<{
       provider: string;
+      providerName?: string;
       id: string;
       label: string;
-      providerName?: string;
       placeholder?: boolean;
     }>
   >(page, "models/list", {});
-  const targets = ["anthropic", "openai"].map((provider) => {
-    const model = catalog.find((entry) => entry.provider === provider && !entry.placeholder);
-    expect(model, `expected a ${provider} catalog entry`).toBeDefined();
-    return model!;
-  });
-  // Fake credentials exercise the connected-model picker without calling a provider.
-  for (const model of targets) {
-    await rpc(page, "models/connect", {
-      provider: model.provider,
-      apiKey: `fake-backup-${model.provider}-key`,
-      modelId: model.id,
-    });
-  }
-
-  const settings = await openUserSettings(page, "models");
-  const panel = settings.getByTestId("model-backups");
-  await panel.scrollIntoViewIfNeeded();
-  await expect(panel).toBeVisible();
-  await expect(panel.getByText("Add connected models to use them as backups.")).toBeVisible();
-  const picker = panel.getByRole("combobox", { name: "Add connected model" });
-  const firstValue = JSON.stringify([targets[0]!.provider, targets[0]!.id]);
-  const secondValue = JSON.stringify([targets[1]!.provider, targets[1]!.id]);
-  await picker.selectOption(firstValue);
-  await panel.getByRole("button", { name: "Add", exact: true }).click();
-  await picker.selectOption(secondValue);
-  await panel.getByRole("button", { name: "Add", exact: true }).click();
-
-  const firstLabel = `${targets[0]!.providerName ?? targets[0]!.provider} · ${targets[0]!.label}`;
-  const secondLabel = `${targets[1]!.providerName ?? targets[1]!.provider} · ${targets[1]!.label}`;
-  await panel.getByRole("button", { name: `Move ${secondLabel} up` }).click();
-  const rows = panel.locator('[data-testid^="model-backup-"]');
-  await expect(rows.nth(0)).toContainText(secondLabel);
-  await expect(rows.nth(1)).toContainText(firstLabel);
-  await panel.scrollIntoViewIfNeeded();
-  await expect(panel).toBeInViewport();
-
-  const savedResponse = page.waitForResponse(
-    (response) => response.url().includes("/rpc/models/setBackups") && response.ok(),
+  const openRouter = catalog.filter(
+    (entry) => entry.provider === "openrouter" && !entry.placeholder,
   );
-  await panel.getByRole("button", { name: "Save backups", exact: true }).click();
-  await savedResponse;
-  await expect(panel.getByText("Backup models saved.")).toBeVisible();
-  expect(await rpc(page, "models/backups", {})).toEqual([
-    { provider: targets[1]!.provider, modelId: targets[1]!.id },
-    { provider: targets[0]!.provider, modelId: targets[0]!.id },
-  ]);
+  expect(openRouter.length).toBeGreaterThan(10);
+  const target = openRouter.find((entry) => entry.id.startsWith("anthropic/")) ?? openRouter[0]!;
+  // A fake key lists the whole OpenRouter catalogue without calling OpenRouter.
+  await rpc(page, "models/connect", {
+    provider: "openrouter",
+    apiKey: "fake-openrouter-key",
+    modelId: target.id,
+  });
 
   await page.reload();
-  const reloadedSettings = await openUserSettings(page, "models");
-  const reloadedPanel = reloadedSettings.getByTestId("model-backups");
-  await reloadedPanel.scrollIntoViewIfNeeded();
-  const reloadedRows = reloadedPanel.locator('[data-testid^="model-backup-"]');
-  await expect(reloadedRows.nth(0)).toContainText(secondLabel);
-  await expect(reloadedRows.nth(1)).toContainText(firstLabel);
-  await reloadedPanel.scrollIntoViewIfNeeded();
-  await expect(reloadedPanel).toBeInViewport();
-  await testInfo.attach("settings-backup-models-control", {
-    body: await reloadedPanel.screenshot({ animations: "disabled" }),
-    contentType: "image/png",
-  });
-  await captureScreenshot(page, testInfo, "settings-backup-models-order");
-  await reloadedPanel.getByRole("button", { name: `Remove ${firstLabel}` }).click();
-  const removalResponse = page.waitForResponse(
-    (response) => response.url().includes("/rpc/models/setBackups") && response.ok(),
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
+  const model = settings
+    .locator("label")
+    .filter({ hasText: /^Model/ })
+    .getByRole("button");
+  await expect(model).toHaveText(/^Space default/);
+  await model.click();
+
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeFocused();
+  const options = page.locator('[data-slot="command-list"]').getByRole("option");
+  await expect(options).toHaveCount(openRouter.length + 1);
+  // Rows show names, so this provider prefix can only match the model ids.
+  const anthropicIds = openRouter.filter((entry) => entry.id.includes("anthropic/")).length;
+  expect(anthropicIds).toBeGreaterThan(0);
+  await search.fill("ANTHROPIC/");
+  await expect(options).toHaveCount(anthropicIds);
+  await captureScreenshot(page, testInfo, "chat-settings-model-search");
+
+  await search.fill("no model is called this");
+  await expect(options).toHaveCount(0);
+  await expect(page.getByText("No matching models")).toBeVisible();
+  await captureScreenshot(page, testInfo, "chat-settings-model-search-empty");
+
+  await search.fill(target.id);
+  const targetLabel = `${target.providerName ?? target.provider} · ${target.label}`;
+  await page
+    .locator('[data-slot="command-list"]')
+    .getByRole("option", { name: targetLabel, exact: true })
+    .click();
+  await expect(search).toBeHidden();
+  await expect(model).toHaveText(targetLabel);
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
   );
-  await reloadedPanel.getByRole("button", { name: "Save backups", exact: true }).click();
-  await removalResponse;
-  expect(await rpc(page, "models/backups", {})).toEqual([
-    { provider: targets[1]!.provider, modelId: targets[1]!.id },
-  ]);
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  const bots = await rpc<Array<{ name: string; modelProvider?: string; modelId?: string }>>(
+    page,
+    "bots/list",
+    {},
+  );
+  expect(bots.find((bot) => bot.name === "Chief")).toMatchObject({
+    modelProvider: "openrouter",
+    modelId: target.id,
+  });
 });

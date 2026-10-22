@@ -8,6 +8,7 @@ import { NativeActionButton as FallbackButton } from "../components/native-actio
 import { NativeActionButton as IosButton } from "../components/native-action-button.ios";
 
 const platform = vi.hoisted(() => ({ OS: "ios", Version: 26 }));
+const pressable = vi.hoisted(() => vi.fn());
 const swiftButton = vi.hoisted(() => vi.fn());
 const swiftLabel = vi.hoisted(() => vi.fn());
 const appearance = vi.hoisted(() => ({ value: "light" as "light" | "dark" }));
@@ -24,22 +25,27 @@ vi.mock("react-native", () => ({
     style,
     accessibilityState,
     accessibilityLabel,
+    android_ripple,
   }: {
     children: ReactNode;
+    android_ripple?: { color: string; foreground: boolean };
     accessibilityState?: { selected?: boolean; disabled?: boolean };
     accessibilityLabel?: string;
     style: (state: { pressed: boolean }) => CSSProperties[];
-  }) => (
-    <button
-      type="button"
-      aria-label={accessibilityLabel}
-      aria-pressed={accessibilityState?.selected}
-      disabled={accessibilityState?.disabled}
-      style={Object.assign({}, ...style({ pressed: false }))}
-    >
-      {children}
-    </button>
-  ),
+  }) => {
+    pressable({ android_ripple });
+    return (
+      <button
+        type="button"
+        aria-label={accessibilityLabel}
+        aria-pressed={accessibilityState?.selected}
+        disabled={accessibilityState?.disabled}
+        style={Object.assign({}, ...style({ pressed: false }))}
+      >
+        {children}
+      </button>
+    );
+  },
   Text: ({ children, style }: { children: ReactNode; style: CSSProperties }) => (
     <span style={style}>{children}</span>
   ),
@@ -48,7 +54,11 @@ vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => <i /> }));
 vi.mock("./native", () => ({
   useMobileTokens: () => tokensForAppearance(appearance.value),
   useResolvedAppearance: () => appearance.value,
-  native: { label: tokensForAppearance("light").foreground },
+  native: {
+    get label() {
+      return tokensForAppearance(appearance.value).foreground;
+    },
+  },
 }));
 vi.mock("@expo/ui/swift-ui", () => ({
   Host: (props: { children: ReactNode }) => {
@@ -83,6 +93,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
       "font",
       "foregroundStyle",
       "frame",
+      "padding",
       "progressViewStyle",
       "tint",
     ].map((name) => [name, modifier(name)]),
@@ -90,6 +101,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
 });
 
 beforeEach(() => {
+  platform.OS = "ios";
   appearance.value = "light";
   swiftButton.mockClear();
   swiftLabel.mockClear();
@@ -152,6 +164,27 @@ describe("iOS action styling", () => {
       );
       expect(swiftButton.mock.lastCall?.[0].label).toBe("Done");
       expect(swiftText).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    "fills destructive actions with the solid red in dark mode (fill %s)",
+    (fill) => {
+      // The text red is pale in dark mode, so the white label lost contrast on it.
+      appearance.value = "dark";
+      renderToStaticMarkup(
+        <IosButton label="Delete group" prominence="destructive" fill={fill} onPress={() => {}} />,
+      );
+      const { modifiers, role } = swiftButton.mock.lastCall![0];
+      expect(role).toBe("destructive");
+      expect(modifiers).toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructiveFill,
+      });
+      expect(modifiers).not.toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructive,
+      });
     },
   );
 
@@ -314,5 +347,80 @@ describe("compact native actions", () => {
     expect(host.querySelector("button")?.getAttribute("aria-label")).toBe("Keyboard");
     expect(host.querySelector("button")?.style.backgroundColor).toBe("transparent");
     expect(host.querySelector("i")).not.toBeNull();
+  });
+});
+
+describe("Android action feedback", () => {
+  it.each(["light", "dark"] as const)(
+    "clips custom corners and uses label alpha in %s mode",
+    (scheme) => {
+      platform.OS = "android";
+      appearance.value = scheme;
+      for (const prominence of ["primary", "quiet", "plain"] as const) {
+        const host = document.createElement("div");
+        host.innerHTML = renderToStaticMarkup(
+          <FallbackButton
+            label="Create"
+            prominence={prominence}
+            style={{ borderRadius: 24, overflow: "visible" }}
+            onPress={() => {}}
+          />,
+        );
+        expect(host.querySelector("button")!.style.borderRadius).toBe("24px");
+        expect(host.querySelector("button")!.style.overflow).toBe("hidden");
+        const label = host.querySelector("span")!;
+        const channels = label.style.color.match(/\d+/g)!.slice(0, 3).join(", ");
+        expect(pressable.mock.lastCall?.[0].android_ripple).toEqual({
+          color: `rgba(${channels}, 0.2)`,
+          foreground: true,
+        });
+      }
+    },
+  );
+});
+
+describe("destructive text actions", () => {
+  it.each(["light", "dark"] as const)("uses red text and a 44pt target in %s mode", (scheme) => {
+    appearance.value = scheme;
+    renderToStaticMarkup(
+      <IosButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    expect(swiftButton.mock.lastCall?.[0]).toMatchObject({
+      role: "destructive",
+      modifiers: expect.arrayContaining([
+        { name: "buttonStyle", value: "plain" },
+        { name: "accessibilityLabel", value: "Disconnect" },
+      ]),
+    });
+    expect(swiftText.mock.lastCall?.[0].modifiers).toEqual(
+      expect.arrayContaining([
+        { name: "foregroundStyle", value: tokensForAppearance(scheme).destructive },
+        { name: "frame", value: { minHeight: 44 } },
+      ]),
+    );
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      <FallbackButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    const button = host.querySelector("button")!;
+    expect(button.getAttribute("aria-label")).toBe("Disconnect");
+    expect(button.style.minHeight).toBe("44px");
+    expect(button.style.backgroundColor).toBe("transparent");
+    expect(button.style.borderWidth).toBe("0px");
+    const expected = document.createElement("span");
+    expected.style.color = tokensForAppearance(scheme).destructive;
+    expect(host.querySelector("span")!.style.color).toBe(expected.style.color);
   });
 });

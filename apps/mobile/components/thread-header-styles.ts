@@ -18,8 +18,8 @@ export function createThreadHeaderStyles() {
     },
     titleCapsuleFill: {
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      borderColor: tokens.glassStroke,
+      backgroundColor: tokens.glassFill,
     },
     title: {
       color: tokens.foreground,
@@ -39,8 +39,8 @@ export function createThreadHeaderStyles() {
     },
     composerFill: {
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      borderColor: tokens.glassStroke,
+      backgroundColor: tokens.glassFill,
     },
     headerFade: {
       position: "absolute",

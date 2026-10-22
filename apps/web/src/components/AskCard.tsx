@@ -17,8 +17,9 @@ function formatAnsweredState(
   secret: boolean,
   outcome?: "created" | "cancelled",
   actions?: AskBlock["actions"],
+  dismissed?: boolean,
 ): string {
-  if (secret) return t`Saved`;
+  if (secret) return dismissed ? t`Dismissed` : t`Saved`;
   if (!answer) return t`Answered`;
   if (!approval) return t`Answered: ${selectedAskActionLabel(answer, actions)}`;
   if (outcome === "created") return t`Created`;
@@ -33,11 +34,12 @@ function approvalActionLabel(
   id: string,
   fallback: string,
   outcome?: "created" | "cancelled",
+  site?: string,
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
   if (id === "allow") return t`Allow once`;
-  if (id === "always") return t`Always allow this tool`;
+  if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
 }
@@ -51,20 +53,30 @@ function secretFieldLabel(purpose: AskBlock["purpose"]): string {
 export function AskCard({
   block,
   canAnswer,
+  canDismiss,
   onAnswer,
+  onDismiss,
 }: {
   block: AskBlock;
   canAnswer: boolean;
+  canDismiss: boolean;
   onAnswer: (text: string, username?: string) => Promise<void>;
+  /** Turns down a secret request without a value. */
+  onDismiss: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
+  const [dismissed, setDismissed] = useState(false);
+  const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
   const [username, setUsername] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
+  const answered = block.status === "answered" || acceptedAnswer !== undefined || dismissed;
+  const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
+  const displayedDismissed = block.status === "answered" ? block.dismissed : dismissed;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
   const displayActions = block.instructionUpdate
@@ -73,6 +85,9 @@ export function AskCard({
       )
     : askActions;
   const secretInput = isSecretAskBlock(block);
+  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // the card without fields or buttons.
+  const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
 
@@ -90,6 +105,7 @@ export function AskCard({
     }
     try {
       await onAnswer(submitValue, submitUsername);
+      setAcceptedAnswer(secretInput ? "" : submitValue);
     } catch (err) {
       // A secret answer's failure may echo the secret, so never show its message.
       setError(
@@ -97,6 +113,22 @@ export function AskCard({
           ? t`Could not submit this answer`
           : errorText(err, t`Could not submit this answer`),
       );
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function dismissSecret() {
+    if (submitting) return;
+    setPendingAction("dismiss");
+    setError(null);
+    setAnswer("");
+    setUsername("");
+    try {
+      await onDismiss();
+      setDismissed(true);
+    } catch {
+      setError(t`Could not submit this answer`);
     } finally {
       setPendingAction(null);
     }
@@ -144,7 +176,7 @@ export function AskCard({
             ? "instruction-approval-card"
             : undefined
       }
-      className="w-full min-w-0 max-w-xl rounded-2xl border border-border bg-card px-5 py-4"
+      className={`w-full min-w-0 ${secretInput ? "" : "max-w-xl "}rounded-2xl border border-border bg-card px-5 py-4`}
     >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         {block.instructionUpdate ? (
@@ -174,7 +206,7 @@ export function AskCard({
           {block.detail}
         </pre>
       ) : null}
-      {block.instructionUpdate && editing && canAnswer && block.status !== "answered" ? (
+      {block.instructionUpdate && editing && canAnswer && !answered ? (
         <form
           className="mt-3 space-y-2"
           onSubmit={(event) => {
@@ -195,33 +227,34 @@ export function AskCard({
             <Trans>Cancel</Trans>
           </Button>
         </form>
-      ) : block.status === "answered" ? (
+      ) : answered ? (
         <div
-          className={`mt-3.5 text-[13.5px] font-medium ${block.answer === "deny" ? "text-muted-foreground" : "text-success"}`}
+          className={`mt-3.5 text-[13.5px] font-medium ${displayedAnswer === "deny" || displayedDismissed ? "text-muted-foreground" : "text-success"}`}
         >
           {block.instructionUpdate
-            ? block.answer === "deny"
+            ? displayedAnswer === "deny"
               ? t`Dismissed`
               : t`Allowed once`
             : formatAnsweredState(
-                block.answer,
+                displayedAnswer,
                 Boolean(approvalActions),
                 secretInput,
-                approvalActions?.find((action) => action.id === block.answer)?.outcome,
+                approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
                 askActions,
+                displayedDismissed,
               )}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
-      ) : askActions?.length ? (
+      ) : ownerOnly ? null : askActions?.length ? (
         <div className={approvalActions ? "mt-3.5 flex flex-wrap gap-2" : "mt-3.5 space-y-1.5"}>
           {displayActions?.map((action) => (
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
-              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start"}`}
+              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start border-input bg-secondary"}`}
               disabled={submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate
@@ -241,7 +274,7 @@ export function AskCard({
                     t`Dismiss`
                   )
                 ) : (
-                  approvalActionLabel(action.id, action.label, action.outcome)
+                  approvalActionLabel(action.id, action.label, action.outcome, block.site)
                 )
               ) : (
                 action.label
@@ -259,6 +292,7 @@ export function AskCard({
         >
           {loginInput ? (
             <Input
+              className="w-full"
               aria-label={t`Username`}
               autoComplete="off"
               spellCheck={false}
@@ -269,6 +303,7 @@ export function AskCard({
             />
           ) : null}
           <Input
+            className="w-full"
             aria-label={secretLabel}
             type="password"
             autoComplete="off"
@@ -278,13 +313,26 @@ export function AskCard({
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={secretLabel}
           />
-          <Button
-            type="submit"
-            className="self-start"
-            disabled={answer.length === 0 || (loginInput && !username.trim()) || submitting}
-          >
-            {submitting ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              className="h-auto min-w-0 flex-1 whitespace-normal"
+              disabled={answer.length === 0 || (loginInput && !username.trim()) || submitting}
+            >
+              {pendingAction === "submit" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+            </Button>
+            {canDismiss ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-w-0 flex-1 whitespace-normal"
+                disabled={submitting}
+                onClick={() => void dismissSecret()}
+              >
+                <Trans>Dismiss</Trans>
+              </Button>
+            ) : null}
+          </div>
         </form>
       ) : editing ? (
         <form

@@ -4,15 +4,20 @@ import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakaz
 import {
   BotAvatar,
   Button,
+  buttonVariants,
   Field,
   FieldLabel,
   Input,
   Label,
   NativeSelect,
   NativeSelectOption,
+  OptionSelect,
   Switch,
   Toggle,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
@@ -20,10 +25,11 @@ import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
-import { ListboxSelect } from "../components/ListboxSelect";
+import { PasskeySettings } from "../components/PasskeySettings";
 import type { ServerUpdateLoad } from "../components/SoftwareUpdateSection";
 import { hasServerUpdates, SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
+import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
   getBotsSidebarDensity,
   setBotsSidebarDensity,
@@ -169,6 +175,8 @@ export function GeneralSettingsPanels({
         <ChangePasswordSection email={email} />
       ) : null}
 
+      <PasskeySettings />
+
       {messagingEnabled && onOpenMessaging ? (
         <section className="rounded-xl border border-border px-4 py-4">
           <h3 className="text-[15px] font-medium text-foreground">
@@ -195,28 +203,31 @@ export function GeneralSettingsPanels({
           <span id={sidebarDensityLabelId} className="text-[13px] text-foreground/75">
             <Trans>Sidebar density</Trans>
           </span>
-          <fieldset
+          <ToggleGroup
             aria-labelledby={sidebarDensityLabelId}
             data-testid="bots-sidebar-density-select"
-            className="grid min-w-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+            value={[sidebarDensity]}
+            onValueChange={([next]) => {
+              if (next) setBotsSidebarDensity(next as BotsSidebarDensity);
+            }}
+            spacing={1}
+            className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
           >
-            <Toggle
+            <ToggleGroupItem
+              value="comfortable"
               data-testid="bots-sidebar-density-comfortable"
-              pressed={sidebarDensity === "comfortable"}
-              onPressedChange={() => setBotsSidebarDensity("comfortable")}
               className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               <Trans>Comfortable</Trans>
-            </Toggle>
-            <Toggle
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="compact"
               data-testid="bots-sidebar-density-compact"
-              pressed={sidebarDensity === "compact"}
-              onPressedChange={() => setBotsSidebarDensity("compact")}
               className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               <Trans>Compact</Trans>
-            </Toggle>
-          </fieldset>
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </section>
 
@@ -307,20 +318,17 @@ export function GeneralSettingsPanels({
       </section>
 
       {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
+        <Link to="/integrations/setup" className={buttonVariants({ variant: "outline" })}>
           <Trans>Server integrations</Trans>
-        </Button>
+        </Link>
       ) : null}
 
-      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-          <span className="block text-[15px] text-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
+      <Disclosure
+        data-testid="advanced-settings"
+        className="group rounded-xl border border-border"
+        summary={<Trans>Advanced</Trans>}
+        summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75"
+      >
         <div className="border-t border-border px-4 pb-5">
           <div className="flex items-start gap-3 pt-5">
             <Switch
@@ -386,7 +394,7 @@ export function GeneralSettingsPanels({
             </Label>
           </div>
         </div>
-      </details>
+      </Disclosure>
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>
@@ -601,23 +609,27 @@ function AppearancePicker({
   ];
 
   return (
-    <fieldset
+    <ToggleGroup
       aria-label={t`Appearance`}
       data-testid="ui-appearance-select"
-      className="mt-3 grid min-w-0 grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+      value={[value]}
+      onValueChange={([next]) => {
+        if (next) onChange(next as AppearancePreference);
+      }}
+      spacing={1}
+      className="mt-3 grid w-full min-w-0 grid-cols-3 rounded-lg bg-muted p-1"
     >
       {options.map((option) => (
-        <Toggle
+        <ToggleGroupItem
           key={option.value}
+          value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          pressed={option.value === value}
-          onPressedChange={() => onChange(option.value)}
           className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
         >
           {option.label}
-        </Toggle>
+        </ToggleGroupItem>
       ))}
-    </fieldset>
+    </ToggleGroup>
   );
 }
 
@@ -630,13 +642,13 @@ function UiLocalePicker({
 }) {
   const { t } = useLingui();
   return (
-    <ListboxSelect
+    <OptionSelect
       className="mt-3"
-      testId="ui-locale-select"
-      label={t`Language`}
+      data-testid="ui-locale-select"
+      aria-label={t`Language`}
       options={UI_LOCALES.map((code) => ({ value: code, label: UI_LOCALE_LABELS[code] }))}
       value={value}
-      onChange={onChange}
+      onValueChange={onChange}
     />
   );
 }

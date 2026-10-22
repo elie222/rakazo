@@ -94,6 +94,8 @@ jobs:
       - run: pnpm db:generate
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Install age for the encrypted backup round trip
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends age
       - run: pnpm test
       - name: Host operations safety tests
         run: python3 infra/compose/host-safeguards.test.py
@@ -341,4 +343,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$SSH_USER@$SSH_HOST" deploy-main
+            "$SSH_USER@$SSH_HOST" "deploy-main $GITHUB_SHA"

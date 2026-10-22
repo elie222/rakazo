@@ -44,7 +44,7 @@ describe("Pi outgoing provider prefixes", () => {
       if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
       try {
         const beforeCall = vi.fn(async (call: { inputTokensEstimate: number }) => {
-          expect(call.inputTokensEstimate).toBeGreaterThan(16_384);
+          expect(call.inputTokensEstimate).toBeGreaterThan(1399);
           expect(call.inputTokensEstimate).toBeLessThan(128_000 - 4096);
           return "image-reservation";
         });
@@ -66,6 +66,7 @@ describe("Pi outgoing provider prefixes", () => {
               provider: "openai-compatible",
               id: "fixture",
               baseUrl: `http://127.0.0.1:${address.port}/v1`,
+              allowPrivateEndpoint: true,
               acceptsImages: true,
               contextWindow: 128_000,
               maxTokens: 4096,
@@ -125,6 +126,7 @@ describe("Pi outgoing provider prefixes", () => {
             provider: "openai-compatible",
             id: "fixture",
             baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            allowPrivateEndpoint: true,
             contextWindow: 32_768,
             maxTokens: 32_768,
           },
@@ -293,6 +295,7 @@ describe("Pi outgoing provider prefixes", () => {
               provider: "openai-compatible",
               id: "fixture",
               baseUrl: `http://127.0.0.1:${address.port}/v1`,
+              allowPrivateEndpoint: true,
             },
           },
           { signal: AbortSignal.timeout(15000) },

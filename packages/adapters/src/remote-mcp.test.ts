@@ -162,35 +162,42 @@ describe("remote MCP URL policy", () => {
     ).rejects.toThrow("private address");
   });
 
-  it("allows Tailscale MagicDNS hosts that resolve to CGNAT addresses", async () => {
+  it("rejects MagicDNS hosts for users without the private-endpoint escape", async () => {
     const magicDns = "https://box.tail12345.ts.net/openapi.json";
     await expect(
       assertSafeRemoteUrl(magicDns, async () => [{ address: "100.64.1.2", family: 4 as const }]),
-    ).resolves.toEqual(new URL(magicDns));
+    ).rejects.toThrow("private address");
+    await expect(
+      assertSafeRemoteUrl(
+        magicDns,
+        async () => [{ address: "fd7a:115c:a1e0:ab12:4843:cd96:6265:6667", family: 6 as const }],
+        { allowPrivateEndpoint: false },
+      ),
+    ).rejects.toThrow("private address");
 
     const safeLookup = createSafeLookup(async () => [{ address: "100.119.57.55", family: 4 }]);
-    const result = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
-      safeLookup("box.tail12345.ts.net", { family: 0, all: false }, (error, address, family) => {
-        if (error) reject(error);
-        else resolve({ address: String(address), family });
+    const error = await new Promise<Error | null>((resolve) => {
+      safeLookup("box.tail12345.ts.net", { family: 0, all: false }, (lookupError) => {
+        resolve(lookupError);
       });
     });
-    expect(result).toEqual({ address: "100.119.57.55", family: 4 });
+    expect(error).toMatchObject({ message: "Connector URL resolves to a private address" });
   });
 
-  it("allows the IPv6 half of a MagicDNS answer", async () => {
+  it("allows both halves of a MagicDNS answer with the private-endpoint escape", async () => {
     // MagicDNS answers with the node's fd7a:115c:a1e0::/48 ULA alongside its
     // CGNAT address, so rejecting the ULA rejects every tailnet host.
     const magicDns = "https://box.tail12345.ts.net/mcp";
+    const policy = { allowPrivateEndpoint: true };
     const addresses = [
       { address: "fd7a:115c:a1e0:ab12:4843:cd96:6265:6667", family: 6 as const },
       { address: "100.64.1.2", family: 4 as const },
     ];
-    await expect(assertSafeRemoteUrl(magicDns, async () => addresses)).resolves.toEqual(
+    await expect(assertSafeRemoteUrl(magicDns, async () => addresses, policy)).resolves.toEqual(
       new URL(magicDns),
     );
 
-    const safeLookup = createSafeLookup(async () => addresses);
+    const safeLookup = createSafeLookup(async () => addresses, policy);
     const resolved = await new Promise<unknown>((resolve, reject) => {
       safeLookup("box.tail12345.ts.net", { family: 0, all: true }, (error, entries) => {
         if (error) reject(error);

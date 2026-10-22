@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunErrorSheet, useRunError } from "../components/run-error-sheet";
 import { ThreadErrorNotice } from "../components/thread-error-notice";
 
+const viewProps = vi.hoisted(() => [] as { style?: unknown; accessibilityRole?: string }[]);
 vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 402, fontScale: 1 }),
   StyleSheet: { create: (styles: unknown) => styles },
@@ -29,7 +30,10 @@ vi.mock("react-native", () => ({
     ),
   Modal: ({ children }: { children: ReactNode }) =>
     createElement("dialog", { open: true }, children),
-  View: ({ children }: { children: ReactNode }) => createElement("div", null, children),
+  View: (props: { children: ReactNode; style?: unknown; accessibilityRole?: string }) => {
+    viewProps.push(props);
+    return createElement("div", null, props.children);
+  },
   ScrollView: ({ children }: { children: ReactNode }) => createElement("div", null, children),
   Text: ({ children }: { children: ReactNode }) => createElement("p", null, children),
   Platform: { OS: "ios" },
@@ -41,7 +45,7 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./native", () => ({
   native: {},
-  useMobileTokens: () => ({}),
+  useMobileTokens: () => ({ card: "token-card" }),
   useResolvedAppearance: () => "light",
 }));
 vi.mock("./i18n", () => ({
@@ -213,10 +217,7 @@ it.each([false, true])("keeps history fetch errors visible (provider failure: %s
   const testFileUrl = import.meta.url;
   const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
   const noticeStart = source.indexOf("  const visibleRunError =");
-  const notice = source.slice(
-    noticeStart,
-    source.indexOf("  return (\n    <KeyboardAvoidingView", noticeStart),
-  );
+  const notice = source.slice(noticeStart, source.indexOf("  return (\n    <View", noticeStart));
   const footerStart = source.indexOf("{pinnedNewerCursor === null ? failedSendBubbles : null}");
   const footer = source.slice(footerStart, source.indexOf("</ScrollView>", footerStart));
   const scope = {
@@ -288,4 +289,14 @@ it("keeps fetch failures outside both native scrolling lists", () => {
   }
   visit(source);
   expect(notices).toBe(1);
+});
+
+it("draws the error notice as a filled card without an outline", () => {
+  viewProps.length = 0;
+  mount(createElement(ThreadErrorNotice, { error: "Run failed", summary: null }));
+  const card = viewProps.find((props) => props.accessibilityRole === "alert");
+  const style = Object.assign({}, ...[card?.style].flat(2));
+  expect(style.backgroundColor).toBe("token-card");
+  expect(style).not.toHaveProperty("borderWidth");
+  expect(style).not.toHaveProperty("borderColor");
 });

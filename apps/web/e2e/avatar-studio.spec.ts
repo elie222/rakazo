@@ -16,8 +16,8 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   const studio = page.getByTestId("avatar-studio");
   await expect(studio).toBeVisible();
   await expect(studio.getByText("Avatar Studio", { exact: true })).toBeVisible();
-  await expect(studio.getByRole("button", { name: "Bot", exact: true })).toBeVisible();
-  await expect(studio.getByRole("button", { name: "Upload", exact: true })).toBeVisible();
+  await expect(studio.getByRole("tab", { name: "Bot", exact: true })).toBeVisible();
+  await expect(studio.getByRole("tab", { name: "Upload", exact: true })).toBeVisible();
   await expect(studio.getByRole("button", { name: "Generate" })).toHaveCount(0);
   await expect(studio.getByTestId("avatar-studio-bot-tab")).toBeVisible();
   await expect(studio.getByText("Shape", { exact: true })).toBeVisible();

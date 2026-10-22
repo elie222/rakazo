@@ -6,8 +6,8 @@ export const MODEL_STREAM_TIMEOUT_MS = 120_000;
 export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * `timeoutMs` bounds only time-to-headers; the SSE body that follows is
- * unbounded. A Codex stream silent this long is a dead connection — reasoning
- * models emit thinking deltas continuously while generating.
+ * unbounded. Bound silence for every provider so a stalled stream can fail
+ * and advance the configured fallback chain.
  */
 export const MODEL_STREAM_IDLE_TIMEOUT_MS = 180_000;
 export const DEFAULT_MODEL_STREAM_MAX_RETRIES = 1;

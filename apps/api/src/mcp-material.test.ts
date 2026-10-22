@@ -111,6 +111,267 @@ describe("buildMcpUpdateMaterial", () => {
     expect(result).toEqual({ action: "store", material: {} });
   });
 
+  describe("pre-registered OAuth client", () => {
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "x",
+      name: "x",
+      endpoint: "https://mcp.example.test",
+      headers: {},
+    };
+    const connected = {
+      oauthClient: { client_id: "client-a", client_secret: "secret-a" },
+      oauth: { tokens: { access_token: "t" } },
+    };
+
+    it("stores extra authorization parameters and treats a change as a new client", () => {
+      const stored = {
+        oauthClient: { client_id: "client-a", authorization_params: "access_type=offline" },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(stored, {
+          ...remote,
+          oauthClient: { clientId: "client-a", authorizationParams: "access_type=offline" },
+        }),
+      ).toEqual({ action: "store", material: { ...stored, headers: {} } });
+      expect(
+        buildMcpUpdateMaterial(stored, {
+          ...remote,
+          oauthClient: {
+            clientId: "client-a",
+            authorizationParams: "access_type=offline&prompt=consent",
+          },
+        }),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: {
+            client_id: "client-a",
+            authorization_params: "access_type=offline&prompt=consent",
+          },
+        },
+      });
+    });
+
+    it("stores a client supplied on update", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          {},
+          { ...remote, oauthClient: { clientId: "client-a", clientSecret: "secret-a" } },
+        ),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: { client_id: "client-a", client_secret: "secret-a" },
+        },
+      });
+    });
+
+    it("keeps the client and its grant when the update leaves the client out", () => {
+      expect(buildMcpUpdateMaterial(connected, remote)).toEqual({
+        action: "store",
+        material: { ...connected, headers: {} },
+      });
+    });
+
+    it("keeps the stored secret and grant when the same client ID is resent without one", () => {
+      expect(
+        buildMcpUpdateMaterial(connected, { ...remote, oauthClient: { clientId: "client-a" } }),
+      ).toEqual({ action: "store", material: { ...connected, headers: {} } });
+    });
+
+    it("drops the grant when the client changes, since its tokens belong to the old client", () => {
+      expect(
+        buildMcpUpdateMaterial(connected, {
+          ...remote,
+          oauthClient: { clientId: "client-b", clientSecret: "secret-b" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: { client_id: "client-b", client_secret: "secret-b" },
+        },
+      });
+    });
+
+    it("does not carry the old secret over to a different client ID", () => {
+      expect(
+        buildMcpUpdateMaterial(connected, { ...remote, oauthClient: { clientId: "client-b" } }),
+      ).toEqual({
+        action: "store",
+        material: { headers: {}, oauthClient: { client_id: "client-b" } },
+      });
+    });
+
+    it("keeps the client's authorization server binding until the client changes", () => {
+      const bound = {
+        oauthClient: {
+          client_id: "client-a",
+          client_secret: "secret-a",
+          authorization_server: "https://auth.example.test/",
+        },
+      };
+      expect(
+        buildMcpUpdateMaterial(bound, { ...remote, oauthClient: { clientId: "client-a" } }),
+      ).toEqual({ action: "store", material: { ...bound, headers: {} } });
+      expect(
+        buildMcpUpdateMaterial(bound, {
+          ...remote,
+          oauthClient: { clientId: "client-a", clientSecret: "rotated" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: { headers: {}, oauthClient: { client_id: "client-a", client_secret: "rotated" } },
+      });
+    });
+
+    it("removes the client and its grant when the update clears it", () => {
+      expect(buildMcpUpdateMaterial(connected, { ...remote, oauthClient: null })).toEqual({
+        action: "store",
+        material: {},
+      });
+    });
+
+    it("stores the scope and drops it when the update leaves it empty", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          {},
+          { ...remote, oauthClient: { clientId: "client-a", scope: "mail.read mail.send" } },
+        ),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: { client_id: "client-a", scope: "mail.read mail.send" },
+        },
+      });
+      expect(
+        buildMcpUpdateMaterial({}, { ...remote, oauthClient: { clientId: "client-a", scope: "" } }),
+      ).toEqual({
+        action: "store",
+        material: { headers: {}, oauthClient: { client_id: "client-a" } },
+      });
+    });
+
+    it("drops the grant when the scope changes, since its tokens carry the old scope", () => {
+      const scoped = {
+        oauthClient: { client_id: "client-a", client_secret: "secret-a", scope: "mail.read" },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(scoped, {
+          ...remote,
+          oauthClient: { clientId: "client-a", scope: "mail.read mail.send" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: {
+            client_id: "client-a",
+            client_secret: "secret-a",
+            scope: "mail.read mail.send",
+          },
+        },
+      });
+    });
+
+    describe("stdio authorization server", () => {
+      const stdio = {
+        transport: "stdio" as const,
+        slug: "x",
+        name: "x",
+        command: "/bin/mcp",
+        env: { TOKEN: "{{oauth.access_token}}" },
+      };
+      const bound = {
+        oauthClient: {
+          client_id: "client-a",
+          client_secret: "secret-a",
+          authorization_server: "https://accounts.example.test/",
+          scope: "mail.read",
+        },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      const sameClient = {
+        clientId: "client-a",
+        scope: "mail.read",
+        authorizationServer: "https://accounts.example.test",
+      };
+
+      it("stores the normalized authorization server", () => {
+        expect(buildMcpUpdateMaterial({}, { ...stdio, oauthClient: sameClient })).toEqual({
+          action: "store",
+          material: {
+            env: stdio.env,
+            oauthClient: {
+              client_id: "client-a",
+              scope: "mail.read",
+              authorization_server: "https://accounts.example.test/",
+            },
+          },
+        });
+      });
+
+      it("keeps the grant when the same client is resent unchanged", () => {
+        expect(buildMcpUpdateMaterial(bound, { ...stdio, oauthClient: sameClient })).toEqual({
+          action: "store",
+          material: { ...bound, env: stdio.env },
+        });
+      });
+
+      it("drops the grant when the authorization server changes", () => {
+        expect(
+          buildMcpUpdateMaterial(bound, {
+            ...stdio,
+            oauthClient: { ...sameClient, authorizationServer: "https://login.example.test" },
+          }),
+        ).toEqual({
+          action: "store",
+          material: {
+            env: stdio.env,
+            oauthClient: {
+              client_id: "client-a",
+              client_secret: "secret-a",
+              scope: "mail.read",
+              authorization_server: "https://login.example.test/",
+            },
+          },
+        });
+      });
+    });
+
+    it("keeps a remote client's first-use binding when the same client is resent", () => {
+      const bound = {
+        oauthClient: {
+          client_id: "client-a",
+          scope: "mail.read",
+          authorization_server: "https://auth.example.test/",
+        },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(bound, {
+          ...remote,
+          oauthClient: { clientId: "client-a", scope: "mail.read" },
+        }),
+      ).toEqual({ action: "store", material: { ...bound, headers: {} } });
+    });
+
+    it("keeps the client when only the static credential is cleared", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { ...connected, secret: "token" },
+          { ...remote, clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: connected });
+    });
+  });
+
   it("replaces headers on update and leaves env untouched when the transport cannot express it", () => {
     const result = buildMcpUpdateMaterial(
       { secret: "s", env: { OLD: "x" }, headers: { Authorization: "a" } },
@@ -125,6 +386,86 @@ describe("buildMcpUpdateMaterial", () => {
     expect(result).toEqual({
       action: "store",
       material: { secret: "s", env: { OLD: "x" }, headers: { Authorization: "b" } },
+    });
+  });
+
+  describe("stdio credential files", () => {
+    const stdio = {
+      transport: "stdio" as const,
+      slug: "x",
+      name: "x",
+      command: "npx",
+      args: [],
+      env: {},
+    };
+    const template = '{"refresh_token":"{{oauth.refresh_token}}"}';
+
+    it("stores supplied files with the rest of the material", () => {
+      expect(
+        buildMcpUpdateMaterial({}, { ...stdio, files: { CREDENTIALS_PATH: template } }),
+      ).toEqual({ action: "store", material: { env: {}, files: { CREDENTIALS_PATH: template } } });
+    });
+
+    it("replaces the stored files with the supplied set", () => {
+      const result = buildMcpUpdateMaterial(
+        { files: { OLD_PATH: "old", CREDENTIALS_PATH: "old" } },
+        { ...stdio, files: { CREDENTIALS_PATH: template } },
+      );
+      expect(result).toEqual({
+        action: "store",
+        material: { env: {}, files: { CREDENTIALS_PATH: template } },
+      });
+    });
+
+    it("keeps the stored files when the update omits them", () => {
+      const result = buildMcpUpdateMaterial(
+        { files: { CREDENTIALS_PATH: template } },
+        { ...stdio, env: { A: "b" } },
+      );
+      expect(result).toEqual({
+        action: "store",
+        material: { env: { A: "b" }, files: { CREDENTIALS_PATH: template } },
+      });
+    });
+
+    it("removes the files when an empty set is supplied", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { secret: "s", files: { CREDENTIALS_PATH: template } },
+          { ...stdio, files: {} },
+        ),
+      ).toEqual({ action: "store", material: { secret: "s", env: {} } });
+    });
+
+    it("drops the files when the static credential is cleared", () => {
+      const oauthClient = { client_id: "client-a" };
+      expect(
+        buildMcpUpdateMaterial(
+          { oauthClient, files: { CREDENTIALS_PATH: template } },
+          { ...stdio, files: { CREDENTIALS_PATH: template }, clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: { oauthClient } });
+      expect(
+        buildMcpUpdateMaterial(
+          { files: { CREDENTIALS_PATH: template } },
+          { ...stdio, clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: {} });
+    });
+
+    it("drops the files when the server is no longer stdio", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { secret: "s", files: { CREDENTIALS_PATH: template } },
+          {
+            transport: "streamable_http",
+            slug: "x",
+            name: "x",
+            endpoint: "https://mcp.example.test",
+            headers: {},
+          },
+        ),
+      ).toEqual({ action: "store", material: { secret: "s", headers: {} } });
     });
   });
 });

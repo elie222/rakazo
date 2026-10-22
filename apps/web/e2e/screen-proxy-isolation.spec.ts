@@ -4,6 +4,7 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import { createServer, type Plugin, preview, type ViteDevServer } from "vite";
@@ -25,6 +26,21 @@ const screenHtml = `<!doctype html><title>Fake screen</title>
     asset: loaded,
     cookie: attempt(() => document.cookie),
     storage: attempt(() => localStorage.getItem('app-data')),
+    session: attempt(() => { sessionStorage.setItem('k', 'v'); return sessionStorage.getItem('k'); }),
+    // A blank child frame shares this opaque origin but not the shim, so it reaches the real
+    // getter. Only a SecurityError proves the sandbox blocked it.
+    realStorage: (() => {
+      const frame = document.createElement('iframe');
+      document.documentElement.append(frame);
+      try {
+        frame.contentWindow.localStorage;
+        return 'readable';
+      } catch (error) {
+        return error.name;
+      } finally {
+        frame.remove();
+      }
+    })(),
     parent: attempt(() => parent.document.title),
     api: await fetch('/session', { credentials: 'include' }).then(r => r.text()).catch(() => 'blocked'),
   };
@@ -54,6 +70,7 @@ for (const mode of ["development", "preview"] as const) {
   test.describe(`screen response isolation in ${mode}`, () => {
     let origin: string;
     let screenUrl: string;
+    let otherPageUrl: string;
     let stop: () => Promise<void>;
 
     let authorized = true;
@@ -75,6 +92,14 @@ for (const mode of ["development", "preview"] as const) {
           }
           res.setHeader("Content-Type", "text/javascript");
           res.end('export const loaded = "module loaded";');
+        } else if (req.headers["if-modified-since"] || req.headers["if-none-match"]) {
+          // Like a static file server: a browser holding any copy gets 304 and keeps it.
+          res.writeHead(304).end();
+        } else if (/\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""))) {
+          // Like a provider edge: compress HTML whenever the client allows it.
+          res.setHeader("Content-Type", "text/html");
+          res.setHeader("Content-Encoding", "gzip");
+          res.end(gzipSync(screenHtml));
         } else {
           res.setHeader("Content-Type", "text/html");
           res.end(screenHtml);
@@ -101,10 +126,16 @@ for (const mode of ["development", "preview"] as const) {
       };
       function installApp(server: Pick<ViteDevServer, "middlewares">) {
         server.middlewares.use((req, res, next) => {
+          // A script file, not inline: in preview the app's CSP applies to this page too.
           if (req.url === "/app") {
             res.setHeader("Content-Type", "text/html");
             res.end(
-              '<!doctype html><title>Fake app</title><body><script>localStorage.setItem("app-data", "private-app-data"); document.cookie = "app-session=fake-session; Path=/";</script></body>',
+              '<!doctype html><title>Fake app</title><body><script src="/app.js"></script></body>',
+            );
+          } else if (req.url === "/app.js") {
+            res.setHeader("Content-Type", "text/javascript");
+            res.end(
+              'localStorage.setItem("app-data", "private-app-data"); document.cookie = "app-session=fake-session; Path=/";',
             );
           } else if (req.url === "/session") {
             res.setHeader("Content-Type", "application/json");
@@ -144,7 +175,14 @@ for (const mode of ["development", "preview"] as const) {
         if ("listen" in server) await listen(server.httpServer!);
         origin = `http://127.0.0.1:${(server.httpServer!.address() as AddressInfo).port}`;
         // Exercise the same capability issuer used by the production API, with a configured web origin.
-        screenUrl = addScreenProxyCapability(`${upstreamOrigin}/embed.html`, secret, origin, scope);
+        // A loopback upstream serving /vnc.html stands in for E2B, Daytona, Boat and Railway.
+        screenUrl = addScreenProxyCapability(`${upstreamOrigin}/vnc.html`, secret, origin, scope);
+        otherPageUrl = addScreenProxyCapability(
+          `${upstreamOrigin}/other.html`,
+          secret,
+          origin,
+          scope,
+        );
         stop = async () => {
           await server.close();
           await close(upstream);
@@ -175,7 +213,9 @@ for (const mode of ["development", "preview"] as const) {
         asset: "module loaded",
         socket: "ok",
         cookie: "blocked",
-        storage: "blocked",
+        storage: null,
+        session: "v",
+        realStorage: "SecurityError",
         api: "blocked",
       });
       expect(response?.headers()["content-security-policy"]).toContain(
@@ -186,6 +226,33 @@ for (const mode of ["development", "preview"] as const) {
       ).toBe("fake-session");
     });
 
+    test("a browser holding an old copy still gets the rewritten page, never stored", async ({
+      request,
+    }) => {
+      const response = await request.get(screenUrl, {
+        headers: {
+          "if-modified-since": "Wed, 21 Oct 2026 01:05:20 GMT",
+          "if-none-match": '"cached"',
+        },
+      });
+      expect(response.status()).toBe(200);
+      expect(response.headers()["cache-control"]).toBe("no-store");
+      expect(response.headers()["last-modified"]).toBeUndefined();
+      expect(await response.text()).toContain("const items = new Map()");
+    });
+
+    test("HTML that is not a noVNC page is passed through unchanged", async ({ page }) => {
+      await page.goto(`${origin}/app`);
+      const response = await page.goto(otherPageUrl);
+      await expect(page.locator("body")).toContainText('"socket":"ok"');
+      expect(response?.headers()["content-encoding"]).toBe("gzip");
+      expect(JSON.parse(await page.locator("body").innerText())).toMatchObject({
+        storage: "blocked",
+        session: "blocked",
+        realStorage: "SecurityError",
+      });
+    });
+
     test("revocation blocks replay and closes an already connected socket", async ({
       page,
       request,
@@ -194,7 +261,7 @@ for (const mode of ["development", "preview"] as const) {
       await page.evaluate(async (url) => {
         const target = new URL(url);
         target.protocol = "ws:";
-        target.pathname = target.pathname.replace("/embed.html", "/hold");
+        target.pathname = target.pathname.replace("/vnc.html", "/hold");
         const socket = new WebSocket(target);
         const state = window as unknown as { screenClosed: boolean };
         state.screenClosed = false;
@@ -223,7 +290,11 @@ for (const mode of ["development", "preview"] as const) {
       test(`iframe remains isolated with sandbox attribute ${sandbox ?? "absent"}`, async ({
         page,
       }) => {
-        await page.goto(`${origin}/app`);
+        const app = await page.goto(`${origin}/app`);
+        // The app's own policy must still let it frame the screen proxy.
+        if (mode === "preview") {
+          expect(app?.headers()["content-security-policy"]).toContain("frame-src 'self'");
+        }
         await page.evaluate(
           ({ url, sandbox }) => {
             const frame = document.createElement("iframe");
@@ -239,7 +310,9 @@ for (const mode of ["development", "preview"] as const) {
           asset: "module loaded",
           socket: "ok",
           cookie: "blocked",
-          storage: "blocked",
+          storage: null,
+          session: "v",
+          realStorage: "SecurityError",
           parent: "blocked",
           api: "blocked",
         });
