@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Update required": "Требуется обновление",
+  Update: "Обновить",
   Provider: "Провайдер",
   "No matching providers": "Подходящие провайдеры не найдены",
   "To:": "Кому:",
@@ -761,19 +763,14 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not save that preference": "Не удалось сохранить эту настройку",
   Username: "Имя пользователя",
   // app/(settings)/models.tsx
-  "Add connected model": "Добавить подключённую модель",
-  "Add connected models to use them as backups.":
-    "Добавьте подключённые модели, чтобы использовать их как резервные.",
+  "Add backup model": "Добавить резервную модель",
+  "Move down": "Переместить ниже",
+  "Move up": "Переместить выше",
+  "Tried in order if the active model fails.":
+    "Используются по порядку, если активная модель не отвечает.",
   "Backup models": "Резервные модели",
-  "Backup models saved.": "Резервные модели сохранены.",
-  "Connect a provider to add backups.": "Подключите провайдера, чтобы добавить резервные модели.",
   "Could not load backup models": "Не удалось загрузить резервные модели.",
   "Could not save backup models": "Не удалось сохранить резервные модели.",
-  "Maximum of 10 backup models.": "Можно добавить не более 10 резервных моделей.",
-  "Move {model} down": "Переместить {model} ниже",
-  "Move {model} up": "Переместить {model} выше",
-  "Remove {model}": "Удалить {model}",
-  "Save backups": "Сохранить резервные модели",
   "Space changed. Reload Models to refresh backup models.":
     "Пространство изменилось. Перезагрузите раздел «Модели», чтобы обновить резервные модели.",
   "Space changed. Reload Models before saving backups.":

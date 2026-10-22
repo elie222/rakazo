@@ -435,6 +435,17 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "connect_app",
+    description:
+      "Show an inline card to connect an app in this chat when you need an unconnected app or the user asks to connect one. Then wait for the user instead of directing them elsewhere.",
+    inputSchema: {
+      type: "object",
+      properties: { app: { type: "string", minLength: 1, maxLength: 100 } },
+      required: ["app"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "ask_user",
     description:
       "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",

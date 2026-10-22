@@ -36,7 +36,7 @@ export function MessageContextMenu({
       <Pressable
         accessible={false}
         onLongPress={onLongPress}
-        style={{ maxWidth: "100%", flexShrink: 1 }}
+        style={{ maxWidth: "100%", width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
       >
         {children}
       </Pressable>

@@ -389,6 +389,71 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
+  it("waits for a resume another job already started instead of failing", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+    api.setState(computer.id, "archived");
+    resume.mockImplementationOnce(async ({ sandboxId }) => {
+      // The other resume finishes while this one is refused.
+      api.setState(sandboxId, "provisioning");
+      throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
+    });
+
+    expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    expect(resume).toHaveBeenCalledOnce();
+  });
+
+  it("retries a request that never reached Boat once, whatever the call", async () => {
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    const timeout = Object.assign(new Error("Connect Timeout Error"), {
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    const unreached = [
+      new Error("The request failed", { cause: new TypeError("fetch failed", { cause: timeout }) }),
+      // Boat's proxy could not connect to the sandbox machine.
+      boatError(502, "sandbox_direct_failed", "connect ECONNREFUSED 192.0.2.1:21034"),
+    ];
+    for (const failure of unreached) {
+      run.mockRejectedValueOnce(failure);
+      const events = [];
+      for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+        events.push(event);
+      }
+      expect(events).toEqual([
+        { type: "stdout", data: "awake\n" },
+        { type: "exit", code: 0 },
+      ]);
+    }
+  });
+
+  it("retries a Boat server error once for reads but never resends a command", async () => {
+    const lookup = FakeBoatApi.prototype.get;
+    const get = vi.spyOn(FakeBoatApi.prototype, "get");
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    get.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    get.mockImplementation(lookup);
+
+    await provider.stop(computer, context);
+    expect(api.state(computer.id)).toBe("archived");
+
+    await provider.prepare(computer, context);
+    run.mockClear();
+    run.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    const error = await (async () => {
+      for await (const _ of provider.execute(computer, { argv: ["true"] }, context)) {
+        // drain
+      }
+    })().catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 500");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("keeps an errored sandbox when Boat refuses recover without a known code", async () => {
     const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
     const { api, provider, computer } = await boat();

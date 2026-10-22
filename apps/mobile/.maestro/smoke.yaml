@@ -14,6 +14,9 @@ name: Rakazo mobile smoke
 - assertVisible: "Sign in to Rakazo"
 - tapOn: "Email"
 - inputText: ${RAKAZO_E2E_EMAIL}
+- tapOn:
+    text: "Use password"
+    optional: true
 - tapOn: "Password"
 - inputText: ${RAKAZO_E2E_PASSWORD}
 - hideKeyboard

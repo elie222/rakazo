@@ -1,3 +1,4 @@
+import { MenuView } from "@expo/ui/community/menu";
 import type { ModelBackupChoice, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import {
   backupChoiceKey,
@@ -51,7 +52,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
-import { SettingsRow } from "../../components/settings-group";
+import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import type {
   ApiRequestContext,
   MobileMe,
@@ -67,7 +68,11 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../../lib/model-auth";
-import { mobileBackupScopeIsCurrent } from "../../lib/model-backups";
+import {
+  mobileBackupScopeIsCurrent,
+  pendingMobileBackupSaves,
+  queueMobileBackupSave,
+} from "../../lib/model-backups";
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
@@ -153,19 +158,17 @@ export default function Models() {
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [backupModels, setBackupModels] = useState<ModelBackupChoice[]>([]);
-  const [savedBackupModels, setSavedBackupModels] = useState<ModelBackupChoice[]>([]);
   const [backupLoading, setBackupLoading] = useState(true);
   const [backupReady, setBackupReady] = useState(false);
-  const [backupSaving, setBackupSaving] = useState(false);
+  const backupModelsRef = useRef<ModelBackupChoice[]>([]);
   const backupReadyRef = useRef(false);
   const backupLoadingRef = useRef(true);
-  const backupSavingRef = useRef(false);
+  backupModelsRef.current = backupModels;
   backupReadyRef.current = backupReady;
   backupLoadingRef.current = backupLoading;
-  backupSavingRef.current = backupSaving;
   const [backupError, setBackupError] = useState<string | null>(null);
-  const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const backupRequestGenerationRef = useRef(0);
+  const confirmedBackupModelsRef = useRef<ModelBackupChoice[]>([]);
   const meRef = useRef<MobileMe | null>(null);
   meRef.current = me;
   const [feedbackAnchor, setFeedbackAnchor] = useState<FeedbackAnchor>("connection");
@@ -302,9 +305,7 @@ export default function Models() {
       setBackupReady(false);
       setBackupLoading(true);
       setBackupModels([]);
-      setSavedBackupModels([]);
       setBackupError(null);
-      setBackupNotice(null);
       try {
         const requestContext: ApiRequestContext = await captureApiRequestContext();
         const currentMe = await rpc<MobileMe>("me", {}, { requestContext });
@@ -321,6 +322,8 @@ export default function Models() {
         ) {
           throw new Error(t("Space changed. Reload Models to refresh backup models."));
         }
+        // Edits made before a reload may still be saving; read the list they leave behind.
+        await pendingMobileBackupSaves(expected);
         const saved = await rpc<ModelBackupChoice[]>("models/backups", {}, { requestContext });
         const liveMe = meRef.current;
         if (
@@ -338,7 +341,7 @@ export default function Models() {
         ) {
           return;
         }
-        setSavedBackupModels([...saved]);
+        confirmedBackupModelsRef.current = [...saved];
         setBackupModels([...saved]);
         backupReadyRef.current = true;
         setBackupReady(true);
@@ -378,14 +381,10 @@ export default function Models() {
         cancelInFlightWork();
         backupReadyRef.current = false;
         backupLoadingRef.current = true;
-        backupSavingRef.current = false;
         setBackupModels([]);
-        setSavedBackupModels([]);
         setBackupReady(false);
         setBackupLoading(true);
-        setBackupSaving(false);
         setBackupError(null);
-        setBackupNotice(null);
       };
     }, [cancelInFlightWork, load, loadBackupModels]),
   );
@@ -422,8 +421,11 @@ export default function Models() {
   const addableBackupOptions = backupOptions.filter(
     (option) => !currentBackupKeys.has(backupChoiceKey(option)),
   );
-  const backupDirty = !sameBackupChoices(savedBackupModels, backupModels);
-  const backupLocked = !backupReady || backupLoading || backupSaving;
+  const canAddBackup =
+    backupReady &&
+    !backupLoading &&
+    backupModels.length < MAX_MODEL_BACKUPS &&
+    addableBackupOptions.length > 0;
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const selectedProviderLabel = selected?.providerName ?? selected?.provider;
@@ -473,7 +475,7 @@ export default function Models() {
   const subscriptionSignIn = selected?.signIn !== undefined;
   // Effort levels for the staged catalog model — "off" stays out, matching the
   // model settings and per-bot Thinking pickers.
-  const catalogThinkingLevels =
+  const catalogThinkingLevels: ThinkingLevel[] =
     !isOpenAiCompatible && selected
       ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
@@ -1038,6 +1040,7 @@ export default function Models() {
                 onPress={() => {
                   presentMessageActionSheet({
                     title: t("Reasoning effort"),
+                    selected: [null, ...THINKING_LEVEL_OPTIONS].indexOf(thinkingLevel),
                     cancel: t("Cancel"),
                     more: t("More"),
                     colorScheme,
@@ -1235,6 +1238,7 @@ export default function Models() {
               onPress={() => {
                 presentMessageActionSheet({
                   title: t("Thinking"),
+                  selected: [null, ...catalogThinkingLevels].indexOf(thinkingLevel),
                   cancel: t("Cancel"),
                   more: t("More"),
                   colorScheme,
@@ -1459,34 +1463,60 @@ export default function Models() {
       </>
     ) : null;
 
-  function addBackupChoice(choice: ModelBackupChoice) {
-    if (backupLoadingRef.current || !backupReadyRef.current || backupSavingRef.current) return;
-    setBackupModels((current) => {
-      if (
-        backupLoadingRef.current ||
-        !backupReadyRef.current ||
-        backupSavingRef.current ||
-        current.length >= MAX_MODEL_BACKUPS ||
-        current.some((entry) => backupChoiceKey(entry) === backupChoiceKey(choice))
-      ) {
-        return current;
-      }
-      return [...current, { provider: choice.provider, modelId: choice.modelId }];
-    });
+  function editBackupModels(edit: (current: ModelBackupChoice[]) => ModelBackupChoice[]) {
+    if (!me || backupLoadingRef.current || !backupReadyRef.current) return;
+    const current = backupModelsRef.current;
+    const next = edit(current);
+    if (sameBackupChoices(current, next)) return;
+    backupModelsRef.current = next;
+    setBackupModels(next);
     setBackupError(null);
-    setBackupNotice(null);
+    const scope = { userId: me.userId, spaceId: me.spaceId };
+    const requestGeneration = backupRequestGenerationRef.current;
+    // The write targets the Space selected now, even if it runs after the user leaves.
+    const requestContext = captureApiRequestContext();
+    requestContext.catch(() => undefined);
+    const screenIsCurrent = () => {
+      const live = meRef.current;
+      return (
+        live !== null &&
+        mobileBackupScopeIsCurrent({
+          expectedUserId: scope.userId,
+          expectedSpaceId: scope.spaceId,
+          currentUserId: live.userId,
+          currentSpaceId: live.spaceId,
+          selectedSpaceId: selectedSpaceId(),
+          requestGeneration,
+          currentGeneration: backupRequestGenerationRef.current,
+        })
+      );
+    };
+    void queueMobileBackupSave(scope, async () => {
+      const context = await requestContext;
+      const currentMe = await rpc<MobileMe>("me", {}, { requestContext: context });
+      if (currentMe.userId !== scope.userId || currentMe.spaceId !== scope.spaceId) {
+        throw new Error(t("Space changed. Reload Models before saving backups."));
+      }
+      await rpc("models/setBackups", next, { requestContext: context });
+    }).then(
+      (saved) => {
+        if (saved && screenIsCurrent()) confirmedBackupModelsRef.current = next;
+      },
+      (err: unknown) => {
+        if (!screenIsCurrent()) return;
+        backupModelsRef.current = confirmedBackupModelsRef.current;
+        setBackupModels(confirmedBackupModelsRef.current);
+        const message = err instanceof Error ? err.message : t("Could not save backup models");
+        setBackupError(message);
+        AccessibilityInfo.announceForAccessibility(message);
+      },
+    );
   }
 
   function openBackupModelPicker() {
-    if (
-      backupLoadingRef.current ||
-      !backupReadyRef.current ||
-      backupSavingRef.current ||
-      backupModels.length >= MAX_MODEL_BACKUPS
-    )
-      return;
+    if (!canAddBackup) return;
     pushModelPicker({
-      title: t("Add connected model"),
+      title: t("Add backup model"),
       selectedKey: "",
       choices: addableBackupOptions.map((option) => ({
         key: backupChoiceKey(option),
@@ -1496,83 +1526,38 @@ export default function Models() {
         provider: option.provider,
         modelId: option.modelId,
       })),
-      onSelect: (choice) => {
-        if (choice.provider && choice.modelId) {
-          addBackupChoice({ provider: choice.provider, modelId: choice.modelId });
-        }
+      onSelect: ({ provider, modelId }) => {
+        if (!provider || !modelId) return;
+        const choice = { provider, modelId };
+        editBackupModels((current) =>
+          current.length >= MAX_MODEL_BACKUPS ||
+          current.some((entry) => backupChoiceKey(entry) === backupChoiceKey(choice))
+            ? current
+            : [...current, choice],
+        );
       },
     });
   }
 
-  function backupRowLabel(choice: ModelBackupChoice) {
+  function backupMenuAction(key: string, action: string) {
+    editBackupModels((current) => {
+      const index = current.findIndex((entry) => backupChoiceKey(entry) === key);
+      if (action === "moveUp") return moveBackupChoice(current, index, -1);
+      if (action === "moveDown") return moveBackupChoice(current, index, 1);
+      if (action === "remove") return current.filter((entry) => backupChoiceKey(entry) !== key);
+      return current;
+    });
+  }
+
+  function backupRow(choice: ModelBackupChoice) {
     const option = backupOptionByKey.get(backupChoiceKey(choice));
     const entry = catalog.find(
       (candidate) => candidate.provider === choice.provider && candidate.id === choice.modelId,
     );
-    const providerName = option?.providerName ?? entry?.providerName ?? choice.provider;
-    const label = option?.label ?? entry?.label ?? choice.modelId;
-    return { label: `${providerName} · ${label}`, connected: Boolean(option) };
-  }
-
-  async function saveBackupModels() {
-    if (
-      !me ||
-      !backupDirty ||
-      backupLoadingRef.current ||
-      !backupReadyRef.current ||
-      backupSavingRef.current
-    )
-      return;
-    const expected = { userId: me.userId, spaceId: me.spaceId };
-    const requestGeneration = backupRequestGenerationRef.current;
-    const choices = backupModels.map((choice) => ({ ...choice }));
-    backupSavingRef.current = true;
-    setBackupSaving(true);
-    setBackupError(null);
-    setBackupNotice(null);
-    try {
-      const requestContext: ApiRequestContext = await captureApiRequestContext();
-      const currentMe = await rpc<MobileMe>("me", {}, { requestContext });
-      if (
-        !mobileBackupScopeIsCurrent({
-          expectedUserId: expected.userId,
-          expectedSpaceId: expected.spaceId,
-          currentUserId: currentMe.userId,
-          currentSpaceId: currentMe.spaceId,
-          selectedSpaceId: selectedSpaceId(),
-          requestGeneration,
-          currentGeneration: backupRequestGenerationRef.current,
-        })
-      ) {
-        throw new Error(t("Space changed. Reload Models before saving backups."));
-      }
-      await rpc("models/setBackups", choices, { requestContext });
-      const liveMe = meRef.current;
-      if (
-        !liveMe ||
-        !mobileBackupScopeIsCurrent({
-          expectedUserId: expected.userId,
-          expectedSpaceId: expected.spaceId,
-          currentUserId: liveMe.userId,
-          currentSpaceId: liveMe.spaceId,
-          selectedSpaceId: selectedSpaceId(),
-          requestGeneration,
-          currentGeneration: backupRequestGenerationRef.current,
-        })
-      ) {
-        return;
-      }
-      setSavedBackupModels(choices);
-      setBackupNotice(t("Backup models saved."));
-    } catch (err) {
-      if (requestGeneration !== backupRequestGenerationRef.current) return;
-      setBackupError(err instanceof Error ? err.message : t("Could not save backup models"));
-    } finally {
-      if (requestGeneration === backupRequestGenerationRef.current) {
-        backupSavingRef.current = false;
-        setBackupSaving(false);
-      }
-    }
+    return {
+      label: option?.label ?? entry?.label ?? choice.modelId,
+      detail: option ? option.providerName : t("Not connected"),
+    };
   }
 
   const saveRow =
@@ -1703,145 +1688,69 @@ export default function Models() {
           feedback
         )}
 
-        <View style={styles.backupSection}>
-          <Text style={styles.backupTitle}>{t("Backup models")}</Text>
-          {backupLoading ? (
-            <ActivityIndicator color={native.secondaryLabel} />
-          ) : backupModels.length ? (
-            <View style={styles.backupCard}>
+        {backupError || (backupReady && (backupModels.length > 0 || canAddBackup)) ? (
+          <View style={styles.backupSection}>
+            <SettingsGroup
+              accessibilityLabel={t("Backup models")}
+              footer={t("Tried in order if the active model fails.")}
+              label={t("Backup models")}
+            >
               {backupModels.map((choice, index) => {
-                const row = backupRowLabel(choice);
                 const key = backupChoiceKey(choice);
+                const row = backupRow(choice);
+                const actions = [
+                  ...(index > 0 ? [{ id: "moveUp", title: t("Move up") }] : []),
+                  ...(index < backupModels.length - 1
+                    ? [{ id: "moveDown", title: t("Move down") }]
+                    : []),
+                  { id: "remove", title: t("Remove"), attributes: { destructive: true } },
+                ];
                 return (
-                  <View key={key} style={styles.backupRow}>
-                    <View style={styles.backupCopy}>
-                      <Text style={styles.backupModelLabel}>
-                        {index + 1}. {row.label}
-                      </Text>
-                      {!row.connected ? (
-                        <Text style={styles.backupUnavailable}>{t("Not connected")}</Text>
-                      ) : null}
-                    </View>
-                    <View style={styles.backupActions}>
-                      <NativeActionButton
-                        accessibilityLabel={t("Move {model} up", { model: row.label })}
-                        disabled={index === 0 || backupLocked}
-                        onPress={() => {
-                          if (
-                            backupLoadingRef.current ||
-                            !backupReadyRef.current ||
-                            backupSavingRef.current
-                          )
-                            return;
-                          setBackupModels((current) =>
-                            moveBackupChoice(
-                              current,
-                              current.findIndex((entry) => backupChoiceKey(entry) === key),
-                              -1,
-                            ),
-                          );
-                          setBackupError(null);
-                          setBackupNotice(null);
-                        }}
-                        label="↑"
-                        prominence="quiet"
-                      />
-                      <NativeActionButton
-                        accessibilityLabel={t("Move {model} down", { model: row.label })}
-                        disabled={index === backupModels.length - 1 || backupLocked}
-                        onPress={() => {
-                          if (
-                            backupLoadingRef.current ||
-                            !backupReadyRef.current ||
-                            backupSavingRef.current
-                          )
-                            return;
-                          setBackupModels((current) =>
-                            moveBackupChoice(
-                              current,
-                              current.findIndex((entry) => backupChoiceKey(entry) === key),
-                              1,
-                            ),
-                          );
-                          setBackupError(null);
-                          setBackupNotice(null);
-                        }}
-                        label="↓"
-                        prominence="quiet"
-                      />
-                      <NativeActionButton
-                        accessibilityLabel={t("Remove {model}", { model: row.label })}
-                        disabled={backupLocked}
-                        onPress={() => {
-                          if (
-                            backupLoadingRef.current ||
-                            !backupReadyRef.current ||
-                            backupSavingRef.current
-                          )
-                            return;
-                          setBackupModels((current) =>
-                            current.filter((entry) => backupChoiceKey(entry) !== key),
-                          );
-                          setBackupError(null);
-                          setBackupNotice(null);
-                        }}
-                        label={t("Remove")}
-                        prominence="quiet"
-                      />
-                    </View>
-                  </View>
+                  <MenuView
+                    key={key}
+                    actions={actions}
+                    colorScheme={colorScheme}
+                    onPressAction={(event) => backupMenuAction(key, event.nativeEvent.event)}
+                    title={row.label}
+                  >
+                    <SettingsRow
+                      accessible
+                      accessibilityActions={actions.map((action) => ({
+                        name: action.id,
+                        label: action.title,
+                      }))}
+                      accessibilityRole="button"
+                      detail={row.detail}
+                      onAccessibilityAction={(event) =>
+                        backupMenuAction(key, event.nativeEvent.actionName)
+                      }
+                      title={row.label}
+                    />
+                  </MenuView>
                 );
               })}
-            </View>
-          ) : (
-            <Text style={styles.secondary}>
-              {addableBackupOptions.length
-                ? t("Add connected models to use them as backups.")
-                : t("Connect a provider to add backups.")}
-            </Text>
-          )}
-          {backupModels.length >= MAX_MODEL_BACKUPS ? (
-            <Text style={styles.backupUnavailable}>{t("Maximum of 10 backup models.")}</Text>
-          ) : null}
-          <NativeActionButton
-            accessibilityLabel={t("Add connected model")}
-            disabled={
-              backupLocked ||
-              backupModels.length >= MAX_MODEL_BACKUPS ||
-              addableBackupOptions.length === 0
-            }
-            onPress={openBackupModelPicker}
-            label={t("Add connected model")}
-            prominence="secondary"
-          />
-          <NativeActionButton
-            accessibilityLabel={t("Save backups")}
-            disabled={!backupDirty || backupLocked}
-            onPress={() => void saveBackupModels()}
-            label={backupSaving ? t("Saving…") : t("Save backups")}
-            prominence="primary"
-          />
-          {backupError ? (
-            <View style={{ gap: 8 }}>
-              <Text accessibilityRole="alert" style={styles.error}>
-                {backupError}
-              </Text>
-              {!backupReady && !backupLoading && me ? (
-                <NativeActionButton
-                  disabled={backupLoading || backupSaving}
-                  onPress={() => void loadBackupModels(me)}
-                  label={t("Retry")}
-                  prominence="secondary"
+              {canAddBackup ? (
+                <SettingsRow
+                  accessibilityRole="button"
+                  onPress={openBackupModelPicker}
+                  title={t("Add backup model")}
                 />
               ) : null}
-            </View>
-          ) : null}
-          {backupNotice ? (
-            <Text accessibilityRole="text" style={styles.secondary}>
-              {backupNotice}
-            </Text>
-          ) : null}
-        </View>
+              {backupError ? (
+                <Text accessibilityRole="alert" style={styles.backupError}>
+                  {backupError}
+                </Text>
+              ) : null}
+              {backupError && !backupReady && !backupLoading && me ? (
+                <SettingsRow
+                  accessibilityRole="button"
+                  onPress={() => void loadBackupModels(me)}
+                  title={t("Retry")}
+                />
+              ) : null}
+            </SettingsGroup>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -1900,50 +1809,13 @@ function createModelsStyles() {
       overflow: "hidden",
     },
     backupSection: {
-      gap: 12,
       marginTop: 16,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: native.fillPressed,
-      paddingTop: 14,
     },
-    backupTitle: {
-      color: native.label,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    backupCard: {
-      marginTop: 10,
-      borderRadius: 14,
-      backgroundColor: native.fill,
-      overflow: "hidden",
-    },
-    backupRow: {
-      minHeight: 56,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: native.fillPressed,
-    },
-    backupCopy: {
-      flex: 1,
-      minWidth: 0,
-    },
-    backupModelLabel: {
-      color: native.label,
-      fontSize: 14,
-    },
-    backupUnavailable: {
-      color: native.tertiaryLabel,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    backupActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 2,
+    backupError: {
+      color: tokens.destructive,
+      fontSize: 15,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
     },
     providerCopy: {
       flex: 1,

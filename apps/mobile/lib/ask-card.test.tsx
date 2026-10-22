@@ -486,8 +486,10 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     "activityBotId",
     "inGroup",
     "columnWidth",
+    "appConnect",
     `const message = { blocks: [] };
      const isWideAskBlock = () => wide;
+     const hasAppConnectBlock = () => appConnect;
      const isCenteredAgentEvent = () => false;
      return {
        wrapper: { ${wrapperSource.slice(0, wrapperSource.indexOf("}}"))} },
@@ -508,6 +510,11 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.wrapper.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuWidth).toBe(avatar ? 360 - gutter : 324);
   }
+  // Connect cards take the full bubble width rather than shrinking to their button.
+  const card = measure(false, undefined, false, 400, true);
+  expect(card.wrapper.width).toBe("90%");
+  expect(card.wrapper.maxWidth).toBe("90%");
+  expect(card.menuWidth).toBe(324);
 });
 
 it.each([

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, expandAdvancedSection, signup } from "./helpers";
 
 const credentialsTemplate = `{
   "installed": {
@@ -98,9 +98,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await page.getByTestId("integrations-advanced").evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
   await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
 
@@ -234,9 +232,7 @@ test("shows MCP server health, error details, and tests the connection on demand
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await page.getByTestId("integrations-advanced").evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
   await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
 
@@ -248,9 +244,10 @@ test("shows MCP server health, error details, and tests the connection on demand
 
   // The raw log hides behind a disclosure, rendered left-to-right and scrollable.
   const details = page.getByTestId("mcp-health-details");
-  await expect(details).not.toHaveAttribute("open", "");
-  await details.locator("summary").click();
-  await expect(details.locator("summary")).toContainText("Error details");
+  const detailsTrigger = details.getByRole("button", { name: "Error details" });
+  await expect(detailsTrigger).toHaveAttribute("aria-expanded", "false");
+  await detailsTrigger.click();
+  await expect(detailsTrigger).toHaveAttribute("aria-expanded", "true");
   const log = details.locator("pre");
   await expect(log).toBeVisible();
   await expect(log).toHaveAttribute("dir", "ltr");
@@ -299,9 +296,7 @@ test("polls the server list while a stdio package is installing", async ({ page 
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await page.getByTestId("integrations-advanced").evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
 
   const health = page.getByTestId("mcp-health");

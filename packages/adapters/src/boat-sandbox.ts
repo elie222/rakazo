@@ -28,7 +28,7 @@ import type {
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatApiError, boatResponseError, callerSignal, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
@@ -79,7 +79,11 @@ export type BoatSandboxSdk = Pick<
 };
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
-const BOAT_NOT_RUNNING_CODES = new Set(["sandbox_not_ready", "machine_not_running"]);
+const BOAT_NOT_RUNNING_CODES = new Set([
+  "sandbox_not_ready",
+  "machine_not_running",
+  "sandbox_resuming",
+]);
 
 interface BoatCommandResult {
   stdout: string;
@@ -514,7 +518,8 @@ export class BoatSandboxProvider implements SandboxProvider {
   /**
    * Boat archives a sandbox by itself when its TTL runs out, and then refuses work with
    * `sandbox_not_ready` without running it; a machine that stopped underneath it answers
-   * `machine_not_running`. Wake or recover it and try once more.
+   * `machine_not_running`, and one still waking answers `sandbox_resuming`. Wake or recover
+   * it and try once more.
    */
   private async whenRunnable<Result>(
     id: string,
@@ -533,10 +538,15 @@ export class BoatSandboxProvider implements SandboxProvider {
   }
 
   private async resume(id: string, signal?: AbortSignal): Promise<void> {
-    await this.client.resume(
-      { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
-      { signal },
-    );
+    try {
+      await this.client.resume(
+        { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
+        { signal },
+      );
+    } catch (error) {
+      // Another job's resume is already bringing it up; the caller waits for that one.
+      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming") throw error;
+    }
   }
 
   /** Boat's documented way out of the `error` state: power-cycle the machine, or resume. */
@@ -913,11 +923,12 @@ function boatSandboxGone(sandboxId: string, cause?: unknown): Error {
 
 /** Turns raw SDK failures into actionable errors, rate limits, and gone sandboxes. */
 function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
-  const get = wrapBoatCall(api.get.bind(api), apiKey);
+  const get = wrapBoatCall(api.get.bind(api), apiKey, true);
   const sandboxCall = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
     call: (...args: Args) => Promise<Result>,
+    idempotent = false,
   ) => {
-    const wrapped = wrapBoatCall(call, apiKey);
+    const wrapped = wrapBoatCall(call, apiKey, idempotent);
     return async (...args: Args): Promise<Result> => {
       try {
         return await wrapped(...args);
@@ -965,20 +976,21 @@ function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
         throw error;
       }
     };
+  // Reads, URL grants, TTL updates, and whole-file writes are safe to send twice.
   return {
-    artifactRaw: sandboxCall(api.artifactRaw.bind(api)),
+    artifactRaw: sandboxCall(api.artifactRaw.bind(api), true),
     command: sandboxCall(api.command.bind(api)),
-    commandStatus: sandboxCall(api.commandStatus.bind(api)),
+    commandStatus: sandboxCall(api.commandStatus.bind(api), true),
     create: startCall("create", wrapBoatCall(api.create.bind(api), apiKey)),
-    createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api)),
-    createUploadUrl: sandboxCall(api.createUploadUrl.bind(api)),
-    get: sandboxCall(api.get.bind(api)),
-    hostPort: sandboxCall(api.hostPort.bind(api)),
+    createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
+    createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
+    get: sandboxCall(api.get.bind(api), true),
+    hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
     resume: startCall("resume", sandboxCall(api.resume.bind(api))),
     stop: sandboxCall(api.stop.bind(api)),
-    update: sandboxCall(api.update.bind(api)),
-    writeFile: sandboxCall(api.writeFile.bind(api)),
+    update: sandboxCall(api.update.bind(api), true),
+    writeFile: sandboxCall(api.writeFile.bind(api), true),
     deleteSandbox: api.deleteSandbox.bind(api),
   };
 }
@@ -1039,11 +1051,6 @@ async function sandboxMissing(
   } catch (error) {
     return error instanceof BoatApiError && error.response.status === 404;
   }
-}
-
-function callerSignal(init: unknown): AbortSignal | undefined {
-  const signal = (init as RequestInit | undefined)?.signal;
-  return signal instanceof AbortSignal ? signal : undefined;
 }
 
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {

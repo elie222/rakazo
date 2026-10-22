@@ -1,6 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
-import { isUnauthorizedError } from "./http-response.js";
+import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 type ThreadHead = { threadId: string; cursor: number };
 type SnapshotRecovery =
@@ -28,9 +28,11 @@ export async function runThreadSubscription(options: {
 }): Promise<void> {
   const { signal } = options;
   const stopped = Symbol("stopped");
-  // A 401 means the session is gone: retrying cannot succeed and only polls the server.
-  let unauthorized = false;
-  const isStopped = () => signal.aborted || unauthorized;
+  // A 401 (session gone), 426 (build retired) or other 4xx is the server's answer: retrying
+  // cannot succeed and only polls the server. A 429 may ask for a longer wait.
+  let refused = false;
+  let lastFailure: unknown;
+  const isStopped = () => signal.aborted || refused;
   const snapshotAbort = new AbortController();
   let activeAttempt: AbortController | undefined;
   // Reusing a pending cancellation promise would retain every frame raced against it.
@@ -55,11 +57,19 @@ export async function runThreadSubscription(options: {
     snapshotAbort.abort(signal.reason);
   };
   const noteFailure = (error: unknown) => {
-    if (isUnauthorizedError(error)) {
-      unauthorized = true;
+    // Keep whichever failure asked for the longer wait (a 429's Retry-After).
+    if (retryDelayMs(error, 0) >= retryDelayMs(lastFailure, 0)) lastFailure = error;
+    if (!isRetryableError(error)) {
+      refused = true;
       onAbort();
     }
     return null;
+  };
+  const wait = async (ms: number, abort: AbortSignal) => {
+    const delay = retryDelayMs(lastFailure, ms);
+    lastFailure = undefined;
+    await abortableDelay(delay, abort);
+    return !isStopped() && !abort.aborted;
   };
   signal.addEventListener("abort", onAbort, { once: true });
   if (signal.aborted) onAbort();
@@ -73,7 +83,7 @@ export async function runThreadSubscription(options: {
       initial = await untilAborted(options.loadHead().catch(noteFailure), signal);
       if (initial === stopped || isStopped()) return;
       if (initial) break;
-      await abortableDelay(headRetryMs, signal);
+      if (!(await wait(headRetryMs, signal))) return;
       headRetryMs = Math.min(headRetryMs * 2, 5_000);
     }
     if (!initial || isStopped()) return;
@@ -105,8 +115,7 @@ export async function runThreadSubscription(options: {
       snapshotTask = (async () => {
         let snapshotRetryMs = 250;
         while (!snapshotAbort.signal.aborted) {
-          await abortableDelay(snapshotRetryMs, snapshotAbort.signal);
-          if (snapshotAbort.signal.aborted) return;
+          if (!(await wait(snapshotRetryMs, snapshotAbort.signal))) return;
           await untilAborted(options.refresh().catch(noteFailure), snapshotAbort.signal);
           if (snapshotAbort.signal.aborted) return;
           commitRecovery();
@@ -185,7 +194,7 @@ export async function runThreadSubscription(options: {
           void iterator.return?.(undefined).catch(() => {});
         }
       } catch (error) {
-        // Short of a 401, reconnect from the last durable event after a transport failure.
+        // Reconnect from the last durable event after a transient failure.
         noteFailure(error);
       } finally {
         attempt.abort();
@@ -200,7 +209,7 @@ export async function runThreadSubscription(options: {
         if (isStopped()) return;
         commitRecovery();
         if (generation !== attemptGeneration) continue;
-        await abortableDelay(retryMs, reconnect.signal);
+        await wait(retryMs, reconnect.signal);
       } finally {
         reconnect.abort();
         activeAttempt = undefined;

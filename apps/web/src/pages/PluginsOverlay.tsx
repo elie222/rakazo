@@ -778,11 +778,11 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              <details
+              <Disclosure
                 data-testid="integrations-advanced"
                 className="group mt-8"
-                onToggle={(event) => {
-                  if (!(event.currentTarget as HTMLDetailsElement).open) {
+                onOpenChange={(open) => {
+                  if (!open) {
                     setSourceKind(null);
                     setSetupOpen(false);
                     setSourceError(null);
@@ -794,16 +794,9 @@ export function PluginsOverlay({
                     setAuthName("x-api-key");
                   }
                 }}
+                summary={<Trans>Advanced</Trans>}
+                summaryClassName="w-full flex items-center justify-between gap-3 text-[14px] text-muted-foreground"
               >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
-                  <span className="text-muted-foreground">
-                    <Trans>Advanced</Trans>
-                  </span>
-                  <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-                    ›
-                  </span>
-                </summary>
-
                 <div className="mt-4 space-y-4">
                   {catalogFeedEnabled ? (
                     <Card data-testid="integrations-catalog-feed">
@@ -1147,7 +1140,7 @@ export function PluginsOverlay({
                     ) : null}
                   </div>
                 </div>
-              </details>
+              </Disclosure>
             </>
           )}
         </div>

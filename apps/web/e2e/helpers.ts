@@ -101,6 +101,13 @@ export async function showPasswordForm(page: Page) {
   if (await usePassword.isVisible()) await usePassword.click();
 }
 
+/** Open Advanced through its trigger, preserving an already-expanded section. */
+export async function expandAdvancedSection(section: Locator) {
+  const trigger = section.getByRole("button", { name: "Advanced", exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) === "false") await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+}
+
 /** Waits for sidebar folds to finish so drag-and-drop targets have stopped moving. */
 export async function waitForSidebarTransitions(page: Page) {
   // Base UI starts a fold a frame after the toggle, so let it begin before polling.

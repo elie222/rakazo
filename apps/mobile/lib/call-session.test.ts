@@ -861,6 +861,28 @@ describe("mobile call session on a timer", () => {
     vi.mocked(subscribeThread).mockReset();
   });
 
+  it("stops the call feed when the server refuses it but keeps retrying a 503", async () => {
+    const { rpc, subscribeThread } = await import("./api");
+    const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+    vi.mocked(rpc).mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
+    vi.mocked(subscribeThread)
+      .mockRejectedValueOnce(httpError(503))
+      .mockRejectedValueOnce(httpError(403))
+      .mockResolvedValue(undefined as never);
+    const fake = fakes();
+    const { watch: _watch, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await tick();
+    expect(subscribeThread).toHaveBeenCalledTimes(1);
+
+    await tick(500);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
+    await tick(20_000);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
+    vi.mocked(rpc).mockReset();
+    vi.mocked(subscribeThread).mockReset();
+  });
+
   it("does not hang up after a farewell whose send was blocked by consent", async () => {
     const fake = fakes({ onDevice: true });
     fake.send.mockRejectedValueOnce(new AiConsentBlocked("consent denied"));

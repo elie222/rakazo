@@ -81,6 +81,21 @@ describe("computer update presentation", () => {
     expect(list).toHaveBeenCalledTimes(3);
     stop();
   });
+  it("stops polling when the server refuses this build", async () => {
+    vi.useFakeTimers();
+    const list = vi.fn(async (): Promise<ComputerUpdate[]> => {
+      throw Object.assign(new Error("Update required"), { status: 426 });
+    });
+    const stop = createComputerUpdates({
+      list,
+      start: async () => update,
+      dismiss: async () => {},
+      releaseInterrupted: async () => {},
+    }).watch();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(list).toHaveBeenCalledTimes(1);
+    stop();
+  });
   it("keeps polling through other failures", async () => {
     vi.useFakeTimers();
     const list = vi.fn(async (): Promise<ComputerUpdate[]> => {

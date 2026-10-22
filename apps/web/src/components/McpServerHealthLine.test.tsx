@@ -54,15 +54,16 @@ describe("McpServerHealthLine", () => {
   it("puts the failure log in a collapsed, left-to-right, scrollable block", () => {
     const html = render({ status: "error", message: "npm ERR! 404\n  at <script>" });
     expect(html).toContain("Not working");
-    expect(html).toMatch(/<details[^>]*data-testid="mcp-health-details"/);
-    expect(html).not.toMatch(/<details[^>]* open/);
+    expect(html).toContain('data-testid="mcp-health-details"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Error details");
     expect(html).toMatch(/<pre dir="ltr"[^>]*max-h-40[^>]*overflow-auto/);
     // Raw log text is escaped, never interpreted as markup.
     expect(html).toContain("&lt;script&gt;");
   });
 
   it("omits the details disclosure when there is no message", () => {
-    expect(render({ status: "error" })).not.toContain("<details");
+    expect(render({ status: "error" })).not.toContain('data-testid="mcp-health-details"');
   });
 
   it("says so when the server was never checked", () => {

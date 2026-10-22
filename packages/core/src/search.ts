@@ -41,6 +41,21 @@ export function matchesSearchQuery(
   return fields.some((field) => field?.toLowerCase().includes(q));
 }
 
+/**
+ * Escape the characters a SQL `LIKE` pattern treats as wildcards, so a search
+ * matches the text the user typed. `matchesSearchQuery` compares literally:
+ * without this a `%` or `_` would widen the match, and a `\` would swallow the
+ * character after it.
+ */
+export function escapeSearchWildcards(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/** Escape string content as rendered in JSONB text, then escape SQL LIKE wildcards. */
+export function escapeJsonSearchWildcards(value: string): string {
+  return escapeSearchWildcards(JSON.stringify(value).slice(1, -1));
+}
+
 export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
   const q = query.trim().toLowerCase();
   if (!q) return text.slice(0, maxLen);

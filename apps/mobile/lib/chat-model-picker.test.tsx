@@ -41,6 +41,18 @@ const mocks = vi.hoisted(() => ({
   setParams: vi.fn(),
   setOptions: vi.fn(),
   announce: vi.fn(),
+  backups: [] as { provider: string; modelId: string }[] | Promise<unknown>,
+  menus: new Map<
+    string,
+    {
+      actions: { id: string; title: string }[];
+      onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    }
+  >(),
+  rowAccessibilityActions: new Map<
+    string,
+    (event: { nativeEvent: { actionName: string } }) => void
+  >(),
 }));
 
 const catalog = Array.from({ length: 11 }, (_, index) => ({
@@ -85,6 +97,8 @@ vi.mock("./api", () => ({
       };
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
     if (procedure === "bots/update") return mocks.update(input);
+    if (procedure === "models/backups") return mocks.backups;
+    if (procedure === "models/setBackups") return result;
     if (procedure === "bots/get")
       return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
     if (procedure === "me")
@@ -329,6 +343,22 @@ vi.mock("./i18n", () => {
   return { t, useI18n: () => ({ t }) };
 });
 vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({
+    label,
+    footer,
+    children,
+  }: {
+    label?: string;
+    footer?: string;
+    children: ReactNode;
+  }) =>
+    createElement(
+      "section",
+      { "aria-label": label },
+      createElement("header", {}, label),
+      children,
+      footer,
+    ),
   SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
   SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
   SettingsRow: ({
@@ -342,7 +372,11 @@ vi.mock("../components/settings-group", () => ({
     accessibilityValue,
     disabled,
     chevron,
+    accessibilityActions,
+    onAccessibilityAction,
   }: {
+    accessibilityActions?: { name: string; label: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     disabled?: boolean;
     chevron?: "right" | "down";
     value?: string;
@@ -353,10 +387,12 @@ vi.mock("../components/settings-group", () => ({
     accessibilityState?: { selected?: boolean; expanded?: boolean };
     onPress: () => void;
     trailing: ReactNode;
-  }) =>
-    createElement(
+  }) => {
+    if (onAccessibilityAction) mocks.rowAccessibilityActions.set(title, onAccessibilityAction);
+    return createElement(
       "button",
       {
+        "data-accessibility-actions": accessibilityActions?.map((action) => action.label).join(),
         type: "button",
         "aria-label": accessibilityLabel ?? title,
         "data-settings-row": true,
@@ -371,7 +407,8 @@ vi.mock("../components/settings-group", () => ({
       value,
       detail ? createElement("small", {}, detail) : null,
       trailing,
-    ),
+    );
+  },
 }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("./bot-avatar-edit", () => ({
@@ -421,8 +458,20 @@ vi.mock("../components/row-accessories", () => ({
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("@expo/ui/community/menu", () => ({
-  MenuView: ({ title, children }: { title: string; children: ReactNode }) =>
-    createElement("section", { "data-menu": title }, children),
+  MenuView: ({
+    title,
+    actions,
+    onPressAction,
+    children,
+  }: {
+    title: string;
+    actions: { id: string; title: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    children: ReactNode;
+  }) => {
+    mocks.menus.set(title, { actions, onPressAction });
+    return createElement("section", { "data-menu": title }, children);
+  },
 }));
 
 let root: Root;
@@ -443,6 +492,10 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.backups = [];
+  mocks.rpc.mockReset();
+  mocks.menus.clear();
+  mocks.rowAccessibilityActions.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -999,25 +1052,171 @@ describe("connection settings model picker", () => {
     expect(modelRow()).toBeNull();
   });
 
-  it("uses the shared searchable picker to add a backup and saves only on Save backups", async () => {
+  const backup = (index: number) => ({ provider: "openrouter", modelId: `vendor/model-${index}` });
+  const backupRows = () =>
+    [
+      ...container.querySelectorAll<HTMLElement>('section[aria-label="Backup models"] [data-menu]'),
+    ].map((row) => row.textContent);
+  const backupSaves = () =>
+    mocks.rpc.mock.calls
+      .filter(([procedure]) => procedure === "models/setBackups")
+      .map(([, input]) => input);
+  const menuAction = async (title: string, action: string) =>
+    act(async () => mocks.menus.get(title)!.onPressAction({ nativeEvent: { event: action } }));
+
+  it("adds a backup from the shared searchable picker and saves it immediately", async () => {
     await renderModels();
-    const add = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Add connected model",
+    expect(container.textContent).toContain("Tried in order if the active model fails.");
+    expect(buttonWithText("Save backups")).toBeUndefined();
+    const add = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add backup model"]',
     )!;
-    expect(add).toBeDefined();
     act(() => add.click());
-    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add connected model" });
+    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add backup model" });
     expect(pickerRows()).toHaveLength(11);
     searchModels("vendor/model-4");
-    act(() => pickerRows()[0]!.click());
-    expect(container.textContent).toContain("1. OpenRouter · Model 4");
-    const save = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Save backups",
-    )!;
-    await act(async () => save.click());
-    expect(mocks.rpc).toHaveBeenCalledWith("models/setBackups", [
-      { provider: "openrouter", modelId: "vendor/model-4" },
+    await act(async () => pickerRows()[0]!.click());
+    expect(backupRows()).toEqual(["Model 4OpenRouter"]);
+    expect(backupSaves()).toEqual([[backup(4)]]);
+  });
+
+  it("saves each move and removal immediately with the full list", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    expect(mocks.menus.get("Model 2")!.actions.map((action) => action.id)).toEqual([
+      "moveDown",
+      "remove",
     ]);
+    expect(mocks.menus.get("Model 3")!.actions.map((action) => action.id)).toEqual([
+      "moveUp",
+      "moveDown",
+      "remove",
+    ]);
+    expect(mocks.menus.get("Model 4")!.actions.map((action) => action.id)).toEqual([
+      "moveUp",
+      "remove",
+    ]);
+    expect(
+      container
+        .querySelector('[data-menu="Model 3"] button')
+        ?.getAttribute("data-accessibility-actions"),
+    ).toBe("Move up,Move down,Remove");
+    await menuAction("Model 2", "moveDown");
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter", "Model 4OpenRouter"]);
+    await act(async () =>
+      mocks.rowAccessibilityActions.get("Model 4")!({ nativeEvent: { actionName: "remove" } }),
+    );
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter"]);
+    expect(backupSaves()).toEqual([
+      [backup(3), backup(2), backup(4)],
+      [backup(3), backup(2)],
+    ]);
+  });
+
+  const holdFirstSave = () => {
+    const first: { finish: () => void; fail: (error: Error) => void } = {
+      finish: () => undefined,
+      fail: () => undefined,
+    };
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/setBackups" && backupSaves().length === 1
+        ? new Promise<void>((resolve, reject) => {
+            first.finish = resolve;
+            first.fail = reject;
+          })
+        : undefined,
+    );
+    return first;
+  };
+  const backupLoads = () =>
+    mocks.rpc.mock.calls.filter(([procedure]) => procedure === "models/backups").length;
+  const leaveModels = () => {
+    act(() => root.unmount());
+    root = createRoot(container);
+  };
+
+  it("runs saves one at a time in edit order", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "moveDown");
+    await menuAction("Model 4", "remove");
+    expect(backupSaves()).toEqual([[backup(3), backup(2), backup(4)]]);
+    await act(async () => first.finish());
+    expect(backupSaves()).toEqual([
+      [backup(3), backup(2), backup(4)],
+      [backup(3), backup(2)],
+    ]);
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter"]);
+  });
+
+  it("drops edits queued behind a failed save and reverts to the saved list", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    await menuAction("Model 3", "remove");
+    await act(async () => first.fail(new Error("Save failed")));
+    expect(backupSaves()).toEqual([[backup(3), backup(4)]]);
+    expect(backupRows()).toEqual(["Model 2OpenRouter", "Model 3OpenRouter", "Model 4OpenRouter"]);
+    expect(container.textContent).toContain("Save failed");
+  });
+
+  it("keeps saving accepted edits after leaving Models", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    await menuAction("Model 3", "remove");
+    leaveModels();
+    await act(async () => first.finish());
+    expect(backupSaves()).toEqual([[backup(3), backup(4)], [backup(4)]]);
+  });
+
+  it("waits for pending saves before reloading backups", async () => {
+    mocks.backups = [backup(2), backup(3)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    leaveModels();
+    mocks.backups = [backup(3)];
+    await renderModels();
+    expect(backupLoads()).toBe(1);
+    expect(container.textContent).not.toContain("Backup models");
+    await act(async () => first.finish());
+    expect(backupLoads()).toBe(2);
+    expect(backupRows()).toEqual(["Model 3OpenRouter"]);
+  });
+
+  it("reverts to the saved list and shows the error when a save fails", async () => {
+    mocks.backups = [backup(2), backup(3)];
+    await renderModels();
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/setBackups" ? Promise.reject(new Error("Save failed")) : undefined,
+    );
+    await menuAction("Model 2", "remove");
+    expect(backupSaves()).toEqual([[backup(3)]]);
+    expect(backupRows()).toEqual(["Model 2OpenRouter", "Model 3OpenRouter"]);
+    expect(container.textContent).toContain("Save failed");
+    expect(mocks.announce).toHaveBeenCalledWith("Save failed");
+  });
+
+  it("hides backups while loading and when there is nothing to configure", async () => {
+    mocks.backups = new Promise(() => undefined);
+    await renderModels();
+    expect(container.textContent).not.toContain("Backup models");
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.backups = [];
+    mocks.connected = false;
+    await renderModels();
+    expect(container.textContent).not.toContain("Backup models");
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.backups = [backup(2)];
+    await renderModels();
+    expect(backupRows()).toEqual(["Model 2Not connected"]);
+    expect(container.querySelector('button[aria-label="Add backup model"]')).toBeNull();
   });
 });
 
