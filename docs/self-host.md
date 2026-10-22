@@ -195,10 +195,15 @@ password, and grants it the `rakazo_app` role. When migrations run as a role wit
 `CREATEROLE`, as on some managed Postgres, create the login yourself and
 `GRANT rakazo_app TO <login>`.
 
-Messages, events, threads, memory, artifacts, secrets, model and voice credentials, and skills have
-row-level security. Each signed-in request sees only its Space's rows, plus the user's own
-account-level credentials. A query that leaves out its Space filter returns nothing from other
-Spaces. Background jobs, reconcilers and webhooks run in a named system scope (`runAsSystem` in
+Messages, events, threads, memory, artifacts, secrets, model and voice credentials, skills, bots,
+runs, tasks, routines, connections, MCP servers and sign-ins, computers, boards and tickets,
+messaging identities and outbox, external conversations, steering messages, usage, scratchpad
+items and approval rules have row-level security. Each signed-in request sees only its Space's
+rows, plus the user's own account-level credentials. A query that leaves out its Space filter
+returns nothing from other Spaces. A background job that acts for one run, routine, computer,
+skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
+backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
+the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
 `packages/db`). The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
 graphile-worker turns on row-level security for them, and `pnpm db:migrate` adds a policy that
 gives the app login every row.
@@ -583,6 +588,21 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
+### Client updates
+
+Every web build is named by the UTC time it was built (`YYYYMMDDHHMMSS`). The web app sends its
+build on each `/rpc` request in `x-rakazo-client-build` (`web/20261022093015`; the mobile app sends
+`mobile/` and the time its JavaScript bundle was built), and the API answers with the web build in
+its own image in `x-rakazo-build`. An open tab that sees a newer build reloads at a safe moment:
+while hidden, on its next navigation, or after a few idle minutes with nothing typed.
+
+To retire old clients immediately, set `RAKAZO_MIN_CLIENT_BUILD` on the API, for example
+`web=20261022093015` or `web=20261022093015,mobile=20261001000000`, and restart it. Older clients
+get HTTP 426 `CLIENT_UPDATE_REQUIRED`: the web app reloads, and the mobile app offers its update.
+Read the current build from the `x-rakazo-build` header of any `/rpc` response. Requests that name
+no build, such as webhooks and API tools, are never refused. A malformed value stops the API from
+starting rather than being ignored.
+
 ### Client addresses
 
 Sessions, logs, and security events carry the caller's address. The API believes a forwarded
@@ -905,6 +925,59 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 
 For provider configuration and health checks, see the [provider setup guide](./self-host-sandbox-providers.md).
 
+## Content encryption
+
+Rakazo encrypts chat messages, thread events, compacted history summaries, memory documents and
+their revisions, and uploaded or generated files before they reach PostgreSQL or `DATA_DIR`.
+Names, ids, timestamps and other metadata stay readable. Credentials are always encrypted,
+whatever this setting says. Details and the threat model are in
+[content encryption](./content-encryption.md).
+
+**The key.** Content is encrypted under keys derived from `ENCRYPTION_KEY` (and
+`ENCRYPTION_MASTER_KEYS`, if set). Without them, a backup of the database and `DATA_DIR` cannot
+be read, by you or by anyone else. `install-images.sh` says so once, when it generates the key:
+
+```text
+Back up ENCRYPTION_KEY from /path/to/rakazo/.env. Encrypted content cannot be recovered without it.
+```
+
+It never prints the key. Store a copy somewhere other than the server and its backups.
+
+**The switch.** `CONTENT_ENCRYPTION=on|off` in `.env`:
+
+| Install | Unset means |
+| --- | --- |
+| Compose files, published images, Railway | `on` |
+| Desktop app, **This computer** | `off` (the computer's disk encryption covers it) |
+| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off` |
+
+With `off`, new content and files are stored readable, so you can query your own database
+directly and a lost key cannot lose them. Content encrypted earlier still reads with the key, so
+switching off never makes data unreadable. To convert it too, run `content-encryption decrypt`.
+Any other value stops the API and worker at startup.
+
+To switch on later, set `CONTENT_ENCRYPTION=on`, restart, then encrypt what was stored while
+it was off. From the published-images folder (other stacks use their own Compose file):
+
+```bash
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api content-encryption migrate
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api content-encryption status
+```
+
+Search works in both modes and while rows are mixed.
+
+**Reading your data.** `content-encryption export` writes decrypted threads, messages, memory
+documents and revisions as JSON lines. It reads the whole database by default; narrow it with
+`--space <id>`, `--thread <id>` or `--bot <id>`. It only reads.
+
+```bash
+docker compose -f docker-compose.images.yml exec -T api \
+  pnpm -s --filter @rakazo/api content-encryption export --bot <bot id> > rakazo-export.jsonl
+```
+
+The export is plaintext: store it like the database itself. Files are not included; use
+`content-encryption decrypt` to make them readable on disk.
+
 ## Backup
 
 ```bash
@@ -1153,7 +1226,7 @@ release: add first, and drop or rename only in a later deploy. Build and
 start are time-limited so a stuck build fails the deploy instead of holding its lock; a deploy that
 finds the lock held exits non-zero. A deploy refuses to start with less than
 `RAKAZO_DEPLOY_MIN_FREE_GB` (default `5`) free, and after a healthy rollout it removes untagged
-images and build cache unused for a day, keeping the previous images tagged `rakazo-rollback`.
+images and trims the build cache to `RAKAZO_DEPLOY_BUILD_CACHE_GB` (8 GB by default), keeping the previous images tagged `rakazo-rollback`.
 For a checkout outside `/srv/rakazo`, put `RAKAZO_DEPLOY_DIR=/absolute/path` (and any of these
 settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. The launcher runs
 `infra/compose/deploy-main.sh` from `origin/main`, so deploy changes apply on the next deploy; only

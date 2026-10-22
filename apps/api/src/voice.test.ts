@@ -1,7 +1,9 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import * as db from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -491,6 +493,60 @@ describe("synthesizeVoice", () => {
     await synthesizeVoice(deps, actor, { text: "Hello" });
 
     expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ model: undefined });
+  });
+
+  it.each([
+    ["VOICE_OUT_OF_CREDIT", 402],
+    ["VOICE_KEY_REJECTED", 403],
+  ] as const)("answers %s from the provider with HTTP %i and a warning", async (code, status) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const synthesize = vi
+      .fn()
+      .mockRejectedValue(
+        new VoiceAccountError(code, "Fish Audio says this account is out of credit."),
+      );
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const prisma = {
+      spaceVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: true,
+          voiceId: "voice-1",
+          speechModel: null,
+          credential: {
+            id: "cred-1",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "secret-1",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
+    } as unknown as VoiceDeps;
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, deps, async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    });
+
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toEqual({
+      error: "Fish Audio says this account is out of credit.",
+      code,
+    });
+    expect(sink.events.map((event) => event.level)).toEqual(["warn"]);
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   });
 });
 

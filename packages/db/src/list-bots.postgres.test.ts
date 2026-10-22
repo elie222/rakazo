@@ -4,7 +4,7 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { createRepos } from "./repos.js";
-import { runAsSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -99,10 +99,12 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     const actor = actorFor(owner);
     const repos = createRepos(prisma);
     // The messaging fixture's own bot is not one of the three seeded chats.
-    await prisma.bot.update({
-      where: { id: provisioned.botId },
-      data: { archivedAt: new Date("2026-01-01T00:00:00.000Z") },
-    });
+    await runAsSystem("test fixture", () =>
+      prisma.bot.update({
+        where: { id: provisioned.botId },
+        data: { archivedAt: new Date("2026-01-01T00:00:00.000Z") },
+      }),
+    );
     const longBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Long")));
     const peerBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Peer")));
     const shortBot = await runAsTenant(owner, () => repos.createBot(actor, botInput("Short")));
@@ -139,10 +141,12 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address: ownerAddress } });
+      await asSystem(prisma).messagingIdentity.deleteMany({
+        where: { provider, address: ownerAddress },
+      });
       if (owner) {
-        await prisma.organization.deleteMany({ where: { id: owner.spaceId } });
-        await prisma.user.deleteMany({ where: { id: owner.userId } });
+        await asSystem(prisma).organization.deleteMany({ where: { id: owner.spaceId } });
+        await asSystem(prisma).user.deleteMany({ where: { id: owner.userId } });
       }
     }
     await close?.();
@@ -206,10 +210,13 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
 
   it("keeps an archived bot on the archived roster with the same preview", async () => {
     const actor = actorFor(owner);
-    const short = await prisma.bot.findFirstOrThrow({
+    const short = await asSystem(prisma).bot.findFirstOrThrow({
       where: { spaceId: owner.spaceId, userId: owner.userId, name: "Short" },
     });
-    await prisma.bot.update({ where: { id: short.id }, data: { archivedAt: new Date() } });
+    await asSystem(prisma).bot.update({
+      where: { id: short.id },
+      data: { archivedAt: new Date() },
+    });
 
     const [active, archived] = await runAsTenant(owner, () => {
       const repos = createRepos(prisma);

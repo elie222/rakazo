@@ -47,6 +47,7 @@ describe("LocalArtifactStore", () => {
   });
 });
 
+/** A key ring over in-memory keys; `withWrites` gives another ring over the same keys. */
 function memoryKeys() {
   const rows: SpaceKeyRecord[] = [];
   const store: SpaceKeyStore = {
@@ -59,8 +60,45 @@ function memoryKeys() {
     rowContext: async () => undefined,
     sampleByMasterKey: async () => [],
   };
-  return new ContentKeyRing(new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]), store);
+  const provider = new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]);
+  return Object.assign(new ContentKeyRing(provider, store), {
+    withWrites: (encryptWrites: boolean) => new ContentKeyRing(provider, store, { encryptWrites }),
+  });
 }
+
+describe("LocalArtifactStore with encryption off", () => {
+  it("writes plaintext and still reads files sealed while encryption was on", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-artifacts-"));
+    dirs.push(root);
+    const on = memoryKeys();
+    const off = on.withWrites(false);
+    const sealedBytes = new TextEncoder().encode("sealed while on");
+    const sealed = await new LocalArtifactStore(root, on).put(
+      { name: "on.txt", mimeType: "text/plain", bytes: sealedBytes },
+      context,
+    );
+    const store = new LocalArtifactStore(root, off);
+    const plain = await store.put(
+      {
+        name: "off.txt",
+        mimeType: "text/plain",
+        bytes: new TextEncoder().encode("plain while off"),
+      },
+      context,
+    );
+    expect(await readFile(path.join(root, "artifacts", "space-1", plain.id), "utf8")).toBe(
+      "plain while off",
+    );
+    expect(new TextDecoder().decode(await store.get(sealed.id, context))).toBe("sealed while on");
+    expect(await store.fileCounts()).toMatchObject({ sealed: 1, plaintext: 1 });
+
+    // Switching back on seals new files and the migration seals the rest.
+    const again = new LocalArtifactStore(root, on);
+    expect(await again.rewriteFile("space-1", plain.id, "encrypt")).toBe("rewritten");
+    expect(await again.fileCounts()).toMatchObject({ sealed: 2, plaintext: 0 });
+    expect(new TextDecoder().decode(await again.get(plain.id, context))).toBe("plain while off");
+  });
+});
 
 describe("LocalArtifactStore with content keys", () => {
   async function setup() {

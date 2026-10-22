@@ -5,7 +5,7 @@ import { createDb } from "./client.js";
 import { createGroupRepos } from "./groups.js";
 import { provisionMessagingIdentity } from "./messaging.js";
 import { createRepos } from "./repos.js";
-import { runAsSystem, runAsTenant } from "./row-security.js";
+import { asSystem, runAsSystem, runAsTenant } from "./row-security.js";
 import { createSpaceForMember } from "./spaces.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -107,7 +107,7 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
       email: "groups-preview@example.com",
       isDeploymentOwner: false,
     };
-    await prisma.bot.update({
+    await asSystem(prisma).bot.update({
       where: { id: provisioned.botId },
       data: { archivedAt: new Date("2026-01-01T00:00:00.000Z") },
     });
@@ -135,10 +135,12 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
 
   afterAll(async () => {
     if (prisma) {
-      await prisma.messagingIdentity.deleteMany({ where: { provider, address: ownerAddress } });
+      await asSystem(prisma).messagingIdentity.deleteMany({
+        where: { provider, address: ownerAddress },
+      });
       if (owner) {
-        await prisma.organization.deleteMany({ where: { id: owner.spaceId } });
-        await prisma.user.deleteMany({ where: { id: owner.userId } });
+        await asSystem(prisma).organization.deleteMany({ where: { id: owner.spaceId } });
+        await asSystem(prisma).user.deleteMany({ where: { id: owner.userId } });
       }
     }
     await close?.();

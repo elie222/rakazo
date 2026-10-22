@@ -1,4 +1,8 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Update required": "Update vereist",
+  Update: "Bijwerken",
+  Provider: "Provider",
+  "No matching providers": "Geen overeenkomende providers",
   "To:": "Aan:",
   Next: "Volgende",
   "Ex: Project Falcon": "Bijv. Project Falcon",
@@ -394,7 +398,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Connect API key": "API-sleutel koppelen",
   "Connect MCP server {name}": "MCP-server {name} koppelen",
   "Connected and using {label}.": "Gekoppeld en gebruikt {label}.",
-  "Connected · {label}": "Gekoppeld · {label}",
   "Connected. Its tools are available from your next message.":
     "Gekoppeld. Zijn tools zijn beschikbaar vanaf je volgende bericht.",
   "Context limit": "Contextlimiet",
@@ -739,19 +742,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "Enter a valid email": "Voer een geldig e-mailadres in",
   "Something went wrong. Try again.": "Er is iets misgegaan. Probeer het opnieuw.",
   "Could not play that clip.": "Dat fragment kon niet worden afgespeeld.",
-  "Add connected model": "Verbonden model toevoegen",
-  "Add connected models to use them as backups.":
-    "Voeg verbonden modellen toe om ze als back-up te gebruiken.",
+  "Add backup model": "Back-upmodel toevoegen",
+  "Move down": "Omlaag",
+  "Move up": "Omhoog",
+  "Tried in order if the active model fails.":
+    "Worden op volgorde geprobeerd als het actieve model faalt.",
   "Backup models": "Back-upmodellen",
-  "Backup models saved.": "Back-upmodellen opgeslagen.",
-  "Connect a provider to add backups.": "Koppel een aanbieder om back-ups toe te voegen.",
   "Could not load backup models": "Back-upmodellen laden mislukt",
   "Could not save backup models": "Back-upmodellen opslaan mislukt",
-  "Maximum of 10 backup models.": "Maximaal 10 back-upmodellen.",
-  "Move {model} down": "{model} omlaag verplaatsen",
-  "Move {model} up": "{model} omhoog verplaatsen",
-  "Remove {model}": "{model} verwijderen",
-  "Save backups": "Back-ups opslaan",
   "Space changed. Reload Models to refresh backup models.":
     "De space is gewijzigd. Herlaad Modellen om de back-upmodellen te vernieuwen.",
   "Space changed. Reload Models before saving backups.":
@@ -764,7 +762,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not disconnect this provider": "Deze aanbieder loskoppelen mislukt",
   "Default ({level})": "Standaard ({level})",
   "Disconnected {provider}.": "{provider} losgekoppeld.",
-  "Save limits": "Limieten opslaan",
   "Sign in again": "Opnieuw aanmelden",
   "Thinking: {level}": "Denkt: {level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -898,4 +895,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Couldn't start the computer": "De computer kon niet worden gestart",
   "Something went wrong while it was starting. Try again in a moment.":
     "Er ging iets mis tijdens het opstarten. Probeer het over een moment opnieuw.",
+  "Your voice provider is out of credit.": "Je spraakaanbieder heeft geen tegoed meer.",
+  "Your voice provider key was rejected.": "Je spraakaanbieder heeft de sleutel geweigerd.",
 };

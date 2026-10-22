@@ -1,3 +1,4 @@
+import { appConnectedInput } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { appConnectPresentation } from "./app-connect.js";
 
@@ -22,4 +23,18 @@ describe("appConnectPresentation", () => {
     expect(view.showAuthorize).toBe(false);
     expect(view.actionLabel).toBe("Connected");
   });
+});
+
+it("marks a normal chat card using the message thread", () => {
+  expect(
+    appConnectedInput("bot", "normal-chat", {
+      kind: "app_connect",
+      connectorId: "fake",
+      provider: "gmail",
+      name: "Gmail",
+      description: "",
+      logo: null,
+      status: "pending",
+    }),
+  ).toEqual({ botId: "bot", threadId: "normal-chat", connectorId: "fake", provider: "gmail" });
 });

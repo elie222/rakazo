@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
@@ -85,18 +86,26 @@ export class ComputerLimitError extends Error {
  * intermediate reference must not count against the final live set.
  */
 async function countInUseComputersForUser(
-  prisma: ComputerDb,
+  prisma: ComputerDb & Partial<Pick<PrismaClient, "$queryRaw">>,
   userId: string,
   excludeBotId?: string,
 ): Promise<number> {
-  return prisma.computer.count({
-    where: {
-      userId,
-      bots: {
-        some: excludeBotId ? { archivedAt: null, id: { not: excludeBotId } } : { archivedAt: null },
+  const count = () =>
+    prisma.computer.count({
+      where: {
+        userId,
+        bots: {
+          some: excludeBotId
+            ? { archivedAt: null, id: { not: excludeBotId } }
+            : { archivedAt: null },
+        },
       },
-    },
-  });
+    });
+  // The quota is per person, so it counts the computers of all their Spaces.
+  const reason = "computer quota across the user's Spaces";
+  return prisma.$queryRaw
+    ? runAsSystemInTransaction(prisma as Pick<PrismaClient, "$queryRaw">, reason, count)
+    : runAsSystem(reason, count);
 }
 
 /**

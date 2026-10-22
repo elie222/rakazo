@@ -6,7 +6,10 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray) => strings.join(""),
+    i18n: { locale: "en" },
+  }),
 }));
 
 vi.mock("@rakazo/ui-web", () => ({

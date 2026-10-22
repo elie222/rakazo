@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug } from "@rakazo/core";
+import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import {
   Badge,
   Button,
@@ -27,6 +27,7 @@ import {
   Toggle,
   toast,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { McpServerHealthLine } from "../components/McpServerHealthLine";
@@ -142,7 +143,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
         .then((next) => {
           if (!cancelled) setServers(next);
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          if (!isRetryableError(error)) clearInterval(timer);
+        });
     }, INSTALL_POLL_MS);
     return () => {
       cancelled = true;
@@ -457,18 +460,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                     />
                   </Field>
                 )}
-                <details className="group rounded-xl border border-border">
-                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm text-foreground">
-                    <span>
-                      <Trans>Advanced</Trans>
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="text-muted-foreground transition-transform group-open:rotate-90"
-                    >
-                      ›
-                    </span>
-                  </summary>
+                <Disclosure
+                  className="group rounded-xl border border-border"
+                  summary={<Trans>Advanced</Trans>}
+                  summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
+                >
                   <div className="space-y-4 border-t border-border p-3">
                     <Field>
                       <FieldLabel htmlFor="mcp-secret">
@@ -672,7 +668,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       </>
                     ) : null}
                   </div>
-                </details>
+                </Disclosure>
                 {bots.length > 0 ? (
                   <Field>
                     <FieldTitle>

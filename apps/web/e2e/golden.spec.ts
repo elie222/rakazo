@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  expandAdvancedSection,
   realSandboxTimeout,
   rpc,
   showPasswordForm,
@@ -210,6 +211,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue("Work");
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
+  await page
+    .getByTestId("connection-tools")
+    .getByText(/tools?$/)
+    .click();
+  await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11a3-plugin-tools");
+
   await page.getByRole("button", { name: "Close integrations" }).click();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
@@ -250,9 +258,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const browseMcp = page.getByRole("button", { name: "Browse MCP servers", exact: true });
   await expect(browseMcp).toBeHidden();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   await expect(
     advanced.getByRole("button", { name: "Browse MCP servers", exact: true }),
   ).toBeVisible();
@@ -353,6 +359,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   }
   await gear.click();
+  await expandAdvancedSection(page.getByTestId("bot-settings"));
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;

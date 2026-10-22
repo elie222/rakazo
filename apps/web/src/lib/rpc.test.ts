@@ -8,8 +8,30 @@ import {
   selectSpace,
 } from "./rpc.js";
 
+const notify = vi.hoisted(() => vi.fn());
+vi.mock("./auth", () => ({ authClient: { $store: { notify } } }));
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  notify.mockClear();
+});
+
+describe("signed-out responses", () => {
+  it("rechecks the session when the server answers 401, and only then", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await expect(rpc.me()).rejects.toMatchObject({ status: 401 });
+    expect(notify).toHaveBeenCalledWith("$sessionSignal");
+
+    notify.mockClear();
+    fetch.mockImplementation(async () =>
+      Response.json({ json: { code: "INTERNAL_SERVER_ERROR", status: 500 } }, { status: 500 }),
+    );
+    await expect(rpc.me()).rejects.toMatchObject({ status: 500 });
+    expect(notify).not.toHaveBeenCalled();
+  });
 });
 
 describe("space selection storage", () => {

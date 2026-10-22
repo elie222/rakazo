@@ -40,6 +40,54 @@ export function runAsSystem<T>(reason: string, fn: () => T | PromiseLike<T>): Pr
   return within({ kind: "system", reason }, fn);
 }
 
+/**
+ * The same client with every call run as an explicit system context, for test
+ * fixtures and assertions that have no request or job around them. Code under
+ * test keeps the context its request or job gives it.
+ */
+export function asSystem<T extends object>(client: T, reason = "test fixture"): T {
+  return new Proxy(client, {
+    get(target, key) {
+      const value = Reflect.get(target, key);
+      if (typeof value === "function") {
+        return (...args: unknown[]) =>
+          runAsSystem(reason, () => Reflect.apply(value, target, args));
+      }
+      if (value && typeof value === "object") return asSystem(value, reason);
+      return value;
+    },
+  });
+}
+
+type SqlClient = Pick<PrismaClient, "$queryRaw">;
+
+/**
+ * runAsSystem for a step inside an interactive transaction a tenant opened: the
+ * transaction's connection keeps the settings it was checked out with, so this
+ * turns the bypass on for `fn` and back afterwards. Name why, as for runAsSystem.
+ */
+export async function runAsSystemInTransaction<T>(
+  tx: SqlClient,
+  reason: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const [previous] = await tx.$queryRaw<Array<{ bypass: string | null }>>`
+    SELECT current_setting('app.rls_bypass', true) AS bypass`;
+  const restore = () =>
+    tx.$queryRaw`SELECT set_config('app.rls_bypass', ${previous?.bypass ?? "off"}, true)`;
+  await tx.$queryRaw`SELECT set_config('app.rls_bypass', 'on', true)`;
+  let result: T;
+  try {
+    result = await within({ kind: "system", reason }, fn);
+  } catch (error) {
+    // A failed statement aborts the transaction, which drops the local setting anyway.
+    await restore().catch(() => undefined);
+    throw error;
+  }
+  await restore();
+  return result;
+}
+
 // Prisma operations are lazy and start when awaited. Await inside the scope so
 // an operation returned from `fn` still runs with this context.
 function within<T>(context: DbContext, fn: () => T | PromiseLike<T>): Promise<T> {
@@ -61,23 +109,51 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UserVoiceCredential",
   "TaughtSkill",
   "AgentSkill",
+  "Bot",
+  "Run",
+  "Task",
+  "Routine",
+  "Connection",
+  "McpServer",
+  "McpOAuthSession",
+  "BotMcpServer",
+  "Computer",
+  "Board",
+  "Ticket",
+  "TicketComment",
+  "MessagingIdentity",
+  "MessagingOutbound",
+  "ExternalConversation",
+  "ExternalMessage",
+  "SteeringMessage",
+  "UsageRecord",
+  "ScratchpadItem",
+  "ActionApprovalRule",
+  "SecurityEvent",
 ]);
 
-type Settings = [spaceId: string, userId: string, bypass: "on" | "off"];
+/**
+ * The policy generation this release enforces. Policies added for a newer
+ * generation stay open to a connection that does not claim it, which is the
+ * previous release while it runs beside this one during a deploy.
+ */
+const RLS_VERSION = "2";
+
+type Settings = [spaceId: string, userId: string, bypass: "on" | "off", version: string];
 
 function settingsFor(context: DbContext | undefined): Settings {
-  if (context?.kind === "tenant") return [context.spaceId, context.userId, "off"];
-  return ["", "", context?.kind === "system" ? "on" : "off"];
+  if (context?.kind === "tenant") return [context.spaceId, context.userId, "off", RLS_VERSION];
+  return ["", "", context?.kind === "system" ? "on" : "off", RLS_VERSION];
 }
 
 const SET_SESSION =
-  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false)";
-const CLEAN = settingsFor(undefined).join("\u0000");
+  "SELECT set_config('app.space_id', $1, false), set_config('app.user_id', $2, false), set_config('app.rls_bypass', $3, false), set_config('app.rls_version', $4, false)";
 const applied = new WeakMap<PoolClient, string>();
 
 async function applySettings(client: PoolClient, settings: Settings): Promise<void> {
   const key = settings.join("\u0000");
-  if ((applied.get(client) ?? CLEAN) === key) return;
+  // A new connection has none of the settings yet, the version included.
+  if (applied.get(client) === key) return;
   // Forget the old value first: if this fails, the next checkout sets it again.
   applied.delete(client);
   await client.query(SET_SESSION, settings);
@@ -133,7 +209,7 @@ export function installDbContext(pool: Pool): void {
 }
 
 const LOCAL_SETTINGS = (settings: Settings) =>
-  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true)`;
+  Prisma.sql`SELECT set_config('app.space_id', ${settings[0]}, true), set_config('app.user_id', ${settings[1]}, true), set_config('app.rls_bypass', ${settings[2]}, true), set_config('app.rls_version', ${settings[3]}, true)`;
 
 // A wrapped read keeps the pool's checkout timeout and no run limit it did not
 // have before, instead of Prisma's 2s/5s transaction defaults.

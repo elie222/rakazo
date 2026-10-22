@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let fontScale = 1;
@@ -45,13 +46,18 @@ vi.mock("react-native", () => {
     accessibilityValue?: { text?: string };
     accessibilityState?: { expanded?: boolean };
     style?: unknown;
+    android_ripple?: unknown;
   }) {
+    const pressedStyle =
+      typeof props.style === "function" ? props.style({ pressed: true }) : props.style;
     const style = typeof props.style === "function" ? props.style({ pressed: false }) : props.style;
     return createElement(
       "button",
       {
         type: "button",
         "data-style": JSON.stringify(style ?? null),
+        "data-pressed-style": JSON.stringify(pressedStyle ?? null),
+        "data-ripple": JSON.stringify(props.android_ripple ?? null),
         disabled: props.disabled,
         role: props.accessibilityRole,
         "aria-label": props.accessibilityLabel,
@@ -83,6 +89,7 @@ vi.mock("react-native", () => {
   }
 
   return {
+    Platform: { OS: "ios" },
     Pressable: MockPressable,
     Switch: MockSwitch,
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 0.5 },
@@ -131,6 +138,7 @@ describe("settings group", () => {
 
   beforeEach(() => {
     fontScale = 1;
+    Platform.OS = "ios";
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
 
@@ -141,6 +149,7 @@ describe("settings group", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+    Platform.OS = "ios";
   });
 
   function render(node: ReactNode) {
@@ -232,6 +241,23 @@ describe("settings group", () => {
 
     act(() => view.querySelector("button")?.click());
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it.each(["android", "ios"] as const)("uses platform press feedback on %s", (platform) => {
+    Platform.OS = platform;
+    const view = render(<SettingsRow onPress={() => undefined} title="Models" />);
+    const row = view.querySelector("button")!;
+    const pressedStyle = Object.assign({}, ...JSON.parse(row.dataset.pressedStyle ?? "[]"));
+
+    if (platform === "android") {
+      expect(JSON.parse(row.dataset.ripple ?? "null")).toEqual({
+        foreground: true,
+        color: expect.any(String),
+      });
+      expect(pressedStyle.backgroundColor).not.toBe("fill-pressed");
+    } else {
+      expect(pressedStyle.backgroundColor).toBe("fill-pressed");
+    }
   });
 
   it("keeps rows at least 44 pt tall", () => {

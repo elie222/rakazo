@@ -1,7 +1,7 @@
 import { readBoundedResponseBytes, speechLocaleTag } from "@rakazo/core";
 import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
-import { errorText } from "./user-error.js";
+import { errorText, voiceAccountErrorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -576,7 +576,10 @@ export class Dictation {
       const body = await readTranscriptionBody(res, abort.signal);
       if (this.token !== mine) return;
       if (!res.ok) {
-        this.failListening(mine, body.error ?? "Could not transcribe that recording.");
+        this.failListening(
+          mine,
+          voiceAccountErrorText(body) ?? body.error ?? "Could not transcribe that recording.",
+        );
         return;
       }
       // The recorder captures fresh audio, so matching words are intentional repetitions.
@@ -645,7 +648,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 async function readTranscriptionBody(
   response: Response,
   signal: AbortSignal,
-): Promise<{ text?: string; error?: string }> {
+): Promise<{ text?: string; error?: string; code?: string }> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > MAX_TRANSCRIPTION_RESPONSE_BYTES) {
     cancelResponse(response);
@@ -659,7 +662,7 @@ async function readTranscriptionBody(
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     return parsed && typeof parsed === "object"
-      ? (parsed as { text?: string; error?: string })
+      ? (parsed as { text?: string; error?: string; code?: string })
       : {};
   } catch {
     return {};

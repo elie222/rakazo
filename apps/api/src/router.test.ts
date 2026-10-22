@@ -2383,7 +2383,7 @@ describe("connections.complete", () => {
     );
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
-    async function complete(connectionId = row.id) {
+    async function complete(connectionId = row.id, signal?: AbortSignal) {
       const { response } = await handler.handle(
         new Request("http://127.0.0.1/rpc/connections/complete", {
           method: "POST",
@@ -2399,6 +2399,7 @@ describe("connections.complete", () => {
               email: "user@rakazo.test",
               isDeploymentOwner: true,
             },
+            signal,
           },
         },
       );
@@ -2431,6 +2432,21 @@ describe("connections.complete", () => {
     });
     expect(connector.connectionReady).not.toHaveBeenCalled();
     expect(securityEvents()).toEqual([]);
+  });
+
+  it("finishes removing a superseded remote after the poll that triggered it is aborted", async () => {
+    const { complete, connector, row } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    const poll = new AbortController();
+    poll.abort();
+
+    await expect(complete(row.id, poll.signal)).resolves.toMatchObject({
+      body: { json: { status: "revoked" } },
+    });
+    expect(connector.revoke).toHaveBeenCalledWith(
+      "request-1",
+      expect.objectContaining({ signal: expect.objectContaining({ aborted: false }) }),
+    );
   });
 
   it("records one credential event per connection, not per poll", async () => {
@@ -6659,6 +6675,51 @@ describe("boards.rename", () => {
       where: { id: "board-1" },
       data: { name: "Launch" },
     });
+  });
+});
+
+describe("boards.tickets.list", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function listDeps() {
+    const findMany = vi.fn(async () => []);
+    const prisma = {
+      board: {
+        findUnique: vi.fn(async () => ({
+          id: "board-1",
+          spaceId: "workspace-1",
+          name: "Personal",
+          ticketPrefix: "RAK",
+          nextNumber: 2,
+          createdAt: new Date("2026-06-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+        })),
+      },
+      ticket: { findMany },
+    } as unknown as PrismaClient;
+    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    return { findMany, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  it("searches ticket text for the characters the user typed, not SQL wildcards", async () => {
+    const { findMany, handler } = listDeps();
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/tickets/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { q: "50%_off" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    expect(response?.status).toBe(200);
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where?.OR?.[0]?.title?.contains).toBe("50\\%\\_off");
+    expect(where?.OR?.[1]?.description?.contains).toBe("50\\%\\_off");
   });
 });
 

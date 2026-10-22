@@ -161,6 +161,11 @@ describe("BotSettings help", () => {
   it("keeps row explainers behind help without changing the management switch", async () => {
     const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
     await renderSettings(onSave, { ...bot, fleetManagement: false });
+    const advanced = container.querySelector<HTMLButtonElement>(
+      '[data-testid="bot-settings-advanced"] button[aria-expanded]',
+    );
+    await act(async () => advanced?.click());
+    expect(advanced?.getAttribute("aria-expanded")).toBe("true");
     const label = [...container.querySelectorAll("label")].find(
       (entry) => entry.textContent === "Manage the bots it creates",
     );

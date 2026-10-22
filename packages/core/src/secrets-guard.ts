@@ -24,6 +24,20 @@ export function isDevSecretAllowed(env: NodeJS.ProcessEnv = process.env): boolea
   return nodeEnv === "development" || nodeEnv === "test";
 }
 
+/**
+ * `CONTENT_ENCRYPTION=on|off`: whether new content is encrypted at rest. Reads
+ * decrypt existing ciphertext either way, so switching off never strands data.
+ * Unset, it is on, except in local development (`NODE_ENV=development` or
+ * `RAKAZO_ALLOW_DEV_SECRETS=1`). Tests keep the server default.
+ */
+export function resolveContentEncryption(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.CONTENT_ENCRYPTION?.trim().toLowerCase();
+  if (value === "on") return true;
+  if (value === "off") return false;
+  if (value) throw new Error('CONTENT_ENCRYPTION must be "on" or "off".');
+  return env.NODE_ENV !== "development" && env.RAKAZO_ALLOW_DEV_SECRETS !== "1";
+}
+
 export function resolveAuthSecret(env: NodeJS.ProcessEnv = process.env): string {
   const value = env.BETTER_AUTH_SECRET;
   if (value === undefined || !value.trim()) {

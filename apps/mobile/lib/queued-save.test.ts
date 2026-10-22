@@ -141,6 +141,18 @@ describe("queued save", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  it("reports a failed flush until a subsequent edit succeeds", async () => {
+    const error = new Error("offline");
+    const save = vi.fn().mockRejectedValueOnce(error).mockResolvedValue(undefined);
+    const queue = createQueuedSave<boolean>(false, { save, onChange: vi.fn(), onError: vi.fn() });
+    queue.update(true);
+    await expect(queue.flush()).rejects.toBe(error);
+    await expect(queue.flush()).rejects.toBe(error);
+    queue.update(true);
+    await expect(queue.flush()).resolves.toBeUndefined();
+    expect(save.mock.calls).toEqual([[true], [true]]);
+  });
+
   it("accepts a new confirmed baseline after a reload", async () => {
     const onChange = vi.fn();
     const queue = createQueuedSave<boolean>(false, {

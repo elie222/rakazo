@@ -16,8 +16,8 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 
-import { dictation } from "../lib/dictation";
-import { Composer } from "./Shell";
+import { dictation } from "../../lib/dictation";
+import { Composer } from "./composer";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;

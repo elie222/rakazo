@@ -1,4 +1,8 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Update required": "Update erforderlich",
+  Update: "Aktualisieren",
+  Provider: "Anbieter",
+  "No matching providers": "Keine passenden Anbieter",
   "To:": "An:",
   Next: "Weiter",
   "Ex: Project Falcon": "Z. B. Projekt Falcon",
@@ -410,7 +414,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
-  "Connected · {label}": "Verbunden · {label}",
   "Connected. Its tools are available from your next message.":
     "Verbunden. Seine Tools sind ab deiner nächsten Nachricht verfügbar.",
   "Context limit": "Kontextlimit",
@@ -780,19 +783,14 @@ export const DE_MESSAGES: Record<string, string> = {
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/(settings)/models.tsx
-  "Add connected model": "Verbundenes Modell hinzufügen",
-  "Add connected models to use them as backups.":
-    "Füge verbundene Modelle hinzu, um sie als Backups zu verwenden.",
+  "Add backup model": "Backup-Modell hinzufügen",
+  "Move down": "Nach unten",
+  "Move up": "Nach oben",
+  "Tried in order if the active model fails.":
+    "Werden der Reihe nach versucht, wenn das aktive Modell ausfällt.",
   "Backup models": "Backup-Modelle",
-  "Backup models saved.": "Backup-Modelle gespeichert.",
-  "Connect a provider to add backups.": "Verbinde einen Anbieter, um Backups hinzuzufügen.",
   "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
   "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
-  "Maximum of 10 backup models.": "Maximal 10 Backup-Modelle.",
-  "Move {model} down": "{model} nach unten verschieben",
-  "Move {model} up": "{model} nach oben verschieben",
-  "Remove {model}": "{model} entfernen",
-  "Save backups": "Backups speichern",
   "Space changed. Reload Models to refresh backup models.":
     "Der Space wurde gewechselt. Lade Modelle neu, um die Backups zu aktualisieren.",
   "Space changed. Reload Models before saving backups.":
@@ -805,7 +803,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not disconnect this provider": "Anbieter konnte nicht getrennt werden",
   "Default ({level})": "Standard ({level})",
   "Disconnected {provider}.": "{provider} getrennt.",
-  "Save limits": "Limits speichern",
   "Sign in again": "Erneut anmelden",
   "Thinking: {level}": "Denkmodus: {level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -942,4 +939,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Couldn't start the computer": "Der Computer konnte nicht gestartet werden",
   "Something went wrong while it was starting. Try again in a moment.":
     "Beim Starten ist etwas schiefgelaufen. Versuche es in einem Moment erneut.",
+  "Your voice provider is out of credit.": "Dein Stimmanbieter hat kein Guthaben mehr.",
+  "Your voice provider key was rejected.": "Der Schlüssel deines Stimmanbieters wurde abgelehnt.",
 };

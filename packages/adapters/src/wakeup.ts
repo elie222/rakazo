@@ -83,9 +83,10 @@ export class GraphileJobPublisher implements JobPublisher {
 }
 
 /**
- * Job payloads carry only ids, and handlers resolve the tenant from the rows
- * they load, so jobs run as system rather than inheriting whichever request
- * enqueued them (the in-memory queue's timers would otherwise keep its tenant).
+ * Job payloads carry only ids. Dispatch starts as system rather than inheriting
+ * whichever request enqueued the job (the in-memory queue's timers would otherwise
+ * keep its tenant); each handler then narrows to the tenant of the row it acts for
+ * (see createBackgroundJobHandlers).
  */
 function dispatchJob(handlers: BackgroundJobHandlers, name: string, payload: unknown) {
   return runAsSystem(`background job ${name}`, () =>

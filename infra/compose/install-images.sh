@@ -214,6 +214,7 @@ download() {
 }
 
 create_env() {
+  local generated_encryption_key=false
   umask 077
   temporary_file=$(mktemp "./${ENV_FILE}.tmp.XXXXXX")
 
@@ -230,6 +231,7 @@ create_env() {
         ;;
       "ENCRYPTION_KEY=")
         printf 'ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)"
+        generated_encryption_key=true
         ;;
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
@@ -247,6 +249,10 @@ create_env() {
   mv -- "$temporary_file" "$ENV_FILE"
   temporary_file=""
   echo "Created .env with random secrets."
+  # Name the variable and file only: the key itself never reaches the terminal or its logs.
+  if [[ "$generated_encryption_key" == true ]]; then
+    echo "Back up ENCRYPTION_KEY from ${PWD}/${ENV_FILE}. Encrypted content cannot be recovered without it."
+  fi
 }
 
 # Secrets added after a .env was created. Append them so an upgrade still starts,

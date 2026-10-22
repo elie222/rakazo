@@ -1,11 +1,12 @@
+export { AppMarkStack } from "./app-mark-stack.js";
 export { type AvatarStyle, AvatarStyleProvider, useAvatarStyle } from "./avatar-style.js";
 export {
+  BOT_AVATAR_COLORS,
+  BOT_MASCOT_SHAPES,
   BotAvatar,
-  DEFAULT_GROK_BOT_COLOR,
+  BotShapePreview,
+  DEFAULT_BOT_AVATAR_COLOR,
   defaultBotAvatarValue,
-  GROK_BOT_COLORS,
-  GROK_MASCOT_SHAPES,
-  GrokShapePreview,
   parseBotAvatar,
   resolvePersonaColorDef,
   resolvePersonaShape,

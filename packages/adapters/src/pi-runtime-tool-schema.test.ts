@@ -281,7 +281,7 @@ describe("update_bot parameters", () => {
   });
 });
 
-describe("fleet tool parameters", () => {
+describe("bot management tool parameters", () => {
   const wireFor = (name: string) => {
     const tool = builtinAgentTools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`missing ${name}`);

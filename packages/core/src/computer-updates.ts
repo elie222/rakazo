@@ -1,4 +1,5 @@
 import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
+import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 /** Shared polling and local presentation state; the server owns operation lifetime. */
 export function createComputerUpdates(client: {
@@ -17,6 +18,7 @@ export function createComputerUpdates(client: {
   };
   const poll = async (epoch: number) => {
     const stamp = revision;
+    let failure: unknown;
     try {
       const updates = await client.list();
       if (epoch !== generation || stamp !== revision) return;
@@ -26,12 +28,17 @@ export function createComputerUpdates(client: {
         openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
       };
       emit();
-    } catch {
-      /* Keep the last known operation through transient connection failures. */
+    } catch (error) {
+      // Keep the last known operation through transient failures; a 401 or other refusal stops
+      // polling until the next watch, since asking again cannot change the answer.
+      failure = error;
     } finally {
       if (epoch === generation) {
         clearTimeout(timer);
-        timer = setTimeout(() => void poll(epoch), state.updates.length ? 1500 : 15000);
+        if (failure === undefined || isRetryableError(failure)) {
+          const delay = retryDelayMs(failure, state.updates.length ? 1500 : 15000);
+          timer = setTimeout(() => void poll(epoch), delay);
+        }
       }
     }
   };

@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RoutineHistory } from "@rakazo/contracts";
-import { normalizeRunError } from "@rakazo/core";
+import { isRetryableError, normalizeRunError } from "@rakazo/core";
 import { Button, Collapsible, CollapsibleContent } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -32,6 +32,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
+    // A non-retryable answer stops polling until the routine or revision changes.
+    let refused = false;
     generation.current += 1;
     setHistory(null);
     setFailed(false);
@@ -45,7 +47,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
-      } catch {
+      } catch (error) {
+        refused = !isRetryableError(error);
         if (!cancelled) setFailed(true);
       }
     }
@@ -71,7 +74,8 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         hasLoadedOlder.current = false;
         setHistory(page);
         setFailed(false);
-      } catch {
+      } catch (error) {
+        refused = !isRetryableError(error);
         if (
           !cancelled &&
           request === generation.current &&
@@ -80,12 +84,12 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         )
           setFailed(true);
       } finally {
-        if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+        if (!cancelled && !refused) timer = window.setTimeout(() => void poll(), 15_000);
       }
     }
 
     void loadFirstPage().then(() => {
-      if (!cancelled) timer = window.setTimeout(() => void poll(), 15_000);
+      if (!cancelled && !refused) timer = window.setTimeout(() => void poll(), 15_000);
     });
     return () => {
       cancelled = true;

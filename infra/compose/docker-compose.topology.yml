@@ -87,6 +87,7 @@ services:
       BETTER_AUTH_URL: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       WEB_ORIGIN: http://127.0.0.1:${TOPOLOGY_API_PORT:-3199}
       ENCRYPTION_KEY: topology-only-encryption-key-at-least-32-characters
+      CONTENT_ENCRYPTION: "on"
       SANDBOX_SUPERVISOR_URL: http://supervisor:7091
       SANDBOX_SUPERVISOR_TOKEN: topology-only-supervisor-token-at-least-32-characters
       SIGNUPS_ENABLED: "true"
