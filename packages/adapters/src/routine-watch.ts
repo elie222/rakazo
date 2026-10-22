@@ -10,8 +10,8 @@ import type {
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
-import type { ActionApprovalRule } from "@rakazo/core";
-import { connectorKindFromToolName, watchToolRefusal } from "@rakazo/core";
+import type { ActionApprovalRule, ToolHookRunner } from "@rakazo/core";
+import { connectorKindFromToolName, toolHookBlockedError, watchToolRefusal } from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -50,6 +50,8 @@ export type RoutineWatchDeps = {
   events: ThreadEvents;
   dataDir?: string;
   connector?: ConnectorProvider;
+  /** Operator checkpoints; a watch's tool call goes through them like a bot's own. */
+  toolHooks?: ToolHookRunner;
   /** The shell tool's desktop-protection guard: why a command is refused on a graphical computer. */
   commandRefusal?: (command: string) => string | undefined;
 };
@@ -523,6 +525,17 @@ async function readTool(
     })) as ActionApprovalRule[],
   });
   if (refusal) throw new RoutineWatchError(refusal);
+  // A watch runs on a schedule with arguments a bot chose, so the run counts as tainted.
+  const hookCall = deps.toolHooks && {
+    tool: toolName,
+    executionId: ctx.operationId,
+    args: watch.args ?? {},
+    run: { id: routine.id, botId: routine.botId, trigger: "routine_watch", tainted: true },
+  };
+  if (deps.toolHooks && hookCall) {
+    const gate = await deps.toolHooks.before(hookCall);
+    if (gate.blocked) throw new RoutineWatchError(toolHookBlockedError(gate.blocked).error);
+  }
   let data: unknown;
   let failure: string | null = null;
   try {
@@ -533,6 +546,9 @@ async function readTool(
   } catch (error) {
     failure = errorText(error);
   }
+  // A withheld result is an error object, which the check below turns into a failed watch.
+  if (deps.toolHooks && hookCall && !failure)
+    data = (await deps.toolHooks.after(hookCall, data)).result;
   if (data && typeof data === "object") {
     const result = data as { isError?: boolean; error?: unknown };
     if (result.isError === true || result.error != null)
