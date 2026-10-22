@@ -133,7 +133,7 @@ rollback() {
   trap - ERR
   echo "Deployment failed; restoring the previous revision ${previous_revision}." >&2
   git reset --hard "${previous_revision}"
-  compose "${ROLLBACK_TIMEOUT}" build
+  compose "${ROLLBACK_TIMEOUT}" build --build-arg "GIT_SHA=${previous_revision}"
   roll_out
   apply_caddyfile "${target_revision}" "${previous_revision}"
   exit 1
@@ -176,7 +176,7 @@ if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' .env; then
   echo "Added POSTGRES_APP_PASSWORD to .env."
 fi
 compose 1m config --quiet
-compose "${BUILD_TIMEOUT}" build
+compose "${BUILD_TIMEOUT}" build --build-arg "GIT_SHA=${target_revision}"
 roll_out
 apply_caddyfile "${previous_revision}" "${target_revision}"
 

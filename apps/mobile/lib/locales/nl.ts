@@ -341,8 +341,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not load group": "Groep laden mislukt",
   "Could not save group": "Groep opslaan mislukt",
   "Delete group": "Groep verwijderen",
-  "Delete this group? Bots and their solo threads are kept.":
-    "Deze groep verwijderen? Bots en hun eigen threads blijven behouden.",
+  "Bots and their own chats stay.": "Bots en hun eigen chats blijven behouden.",
   "Group name": "Groepsnaam",
   "Group not found": "Groep niet gevonden",
   Members: "Leden",

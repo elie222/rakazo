@@ -349,8 +349,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load group": "Gruppe konnte nicht geladen werden",
   "Could not save group": "Gruppe konnte nicht gespeichert werden",
   "Delete group": "Gruppe löschen",
-  "Delete this group? Bots and their solo threads are kept.":
-    "Diese Gruppe löschen? Bots und ihre eigenen Threads bleiben erhalten.",
+  "Bots and their own chats stay.": "Bots und ihre eigenen Chats bleiben erhalten.",
   "Group name": "Gruppenname",
   "Group not found": "Gruppe nicht gefunden",
   Members: "Mitglieder",

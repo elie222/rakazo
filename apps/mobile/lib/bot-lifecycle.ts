@@ -45,6 +45,22 @@ export function confirmDeleteBot(
   );
 }
 
+export function confirmDeleteGroup(group: { id: string; name: string }, onDeleted: () => void) {
+  Alert.alert(t("Delete {name}?", { name: group.name }), t("Bots and their own chats stay."), [
+    { text: t("Cancel"), style: "cancel" },
+    {
+      text: t("Delete"),
+      style: "destructive",
+      onPress: () =>
+        void rpc("groups/remove", { groupId: group.id })
+          .then(onDeleted)
+          .catch((err) =>
+            Alert.alert(t("Could not delete group"), errorText(err, t("Try again."))),
+          ),
+    },
+  ]);
+}
+
 export async function restoreArchivedBot(botId: string): Promise<void> {
   await rpc("bots/restore", { botId });
 }
