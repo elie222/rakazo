@@ -63,10 +63,8 @@ class RakazoNotificationService : Service() {
   private val knownCompleted = mutableSetOf<String>()
   private val alertedAttention = mutableSetOf<String>()
   private var historySpaceId: String? = null
-  /** Keystore decryption is expensive; a service generation reuses one token. */
-  @Volatile private var cachedToken: String? = null
-  /** Last seen-run set written to disk, so an unchanged poll does not write again. */
-  private var persistedSeen: Set<String>? = null
+  private val tokenCache = PollTokenCache()
+  private val historyWrites = PollHistoryWrites()
 
   override fun onCreate() {
     super.onCreate()
@@ -81,7 +79,7 @@ class RakazoNotificationService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val generation = synchronized(sessionLock) {
-      if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) cachedToken = null
+      if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
@@ -96,7 +94,7 @@ class RakazoNotificationService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
-    cachedToken = null
+    tokenCache.reset()
     scope.cancel()
     super.onDestroy()
   }
@@ -104,7 +102,7 @@ class RakazoNotificationService : Service() {
   private suspend fun poll(generation: Long) {
     var selectedAvatarStyle: String? = null
     val startedAt = SystemClock.elapsedRealtime()
-    var failures = 0
+    val cadence = PollCadence()
     while (scope.isActive) {
       val storage = NotificationStorage(this)
       val settings = storage.settings
@@ -117,9 +115,9 @@ class RakazoNotificationService : Service() {
         stopIfCurrent(generation)
         return
       }
-      val token = cachedToken ?: storage.token.also {
-        if (!runIfCurrent(generation) { cachedToken = it }) return
-      }
+      val token = tokenCache.getOrLoad({ storage.token }) { cache ->
+        runIfCurrent(generation, cache)
+      } ?: return
       if (token.isBlank()) {
         stopIfCurrent(generation)
         return
@@ -160,12 +158,11 @@ class RakazoNotificationService : Service() {
             }
             knownCompleted.retainAll(recent.map { it.runId }.toSet())
             val nextSeen = knownCompleted.toSet()
-            if (!seeded || nextSeen != persistedSeen) {
+            historyWrites.persistIfChanged(seeded, nextSeen) { seen ->
               getSharedPreferences(STATE_PREFERENCES, MODE_PRIVATE).edit()
-                .putStringSet(SEEN_RUNS, nextSeen)
+                .putStringSet(SEEN_RUNS, seen)
                 .putBoolean(SEEN_RUNS_SEEDED, true)
                 .apply()
-              persistedSeen = nextSeen
             }
             if (settings.needsAttention) {
               active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
@@ -209,30 +206,23 @@ class RakazoNotificationService : Service() {
           stopIfCurrent(generation)
           return
         }
-        failures = 0
+        cadence.success()
       } catch (error: ApiException) {
         if (error.status == 401) {
           stopIfCurrent(generation)
           return
         }
-        failures = (failures + 1).coerceAtMost(MAX_BACKOFF_STEPS)
+        cadence.failure()
       } catch (_: IOException) {
-        failures = (failures + 1).coerceAtMost(MAX_BACKOFF_STEPS)
+        cadence.failure()
       } catch (_: RuntimeException) {
-        failures = (failures + 1).coerceAtMost(MAX_BACKOFF_STEPS)
+        cadence.failure()
       }
-      // Failures back off from the slow cadence; success uses upstream's fast/slow design.
-      val delayMs = if (failures > 0) {
-        minOf(
-          MAX_BACKOFF_MS,
-          SLOW_POLL_INTERVAL_MS * (1L shl failures.coerceAtMost(MAX_BACKOFF_STEPS)),
-        ) + Random.nextLong(0, 1_000)
-      } else {
-        // Long runs poll slowly so the radio can idle; a reopened app restarts the fast window.
-        // New completions filling the bounded page need the fast cadence; old history does not.
-        val fast = recentPageBusy || SystemClock.elapsedRealtime() - startedAt < FAST_POLL_WINDOW_MS
-        if (fast) POLL_INTERVAL_MS else SLOW_POLL_INTERVAL_MS
-      }
+      val delayMs = cadence.delayMs(
+        SystemClock.elapsedRealtime() - startedAt,
+        recentPageBusy,
+        if (cadence.hasFailures) Random.nextLong(0, 1_000) else 0,
+      )
       delay(delayMs)
     }
   }
@@ -252,7 +242,7 @@ class RakazoNotificationService : Service() {
       if (historySpaceId != spaceId) {
         knownCompleted.clear()
         alertedAttention.clear()
-        persistedSeen = null
+        historyWrites.reset()
         if (state.getString(SEEN_RUNS_SPACE_ID, null) == spaceId) {
           knownCompleted += state.getStringSet(SEEN_RUNS, emptySet()).orEmpty()
         } else {
@@ -410,12 +400,7 @@ class RakazoNotificationService : Service() {
     private const val ACTION_THREAD_CHANGED = "com.rakazo.notifications.THREAD_CHANGED"
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
     private const val RECENT_LIMIT = 20 // Keep in sync with apps/api/src/runs.ts.
-    private const val POLL_INTERVAL_MS = 8_000L
-    private const val SLOW_POLL_INTERVAL_MS = 30_000L
-    private const val FAST_POLL_WINDOW_MS = 60_000L
     private const val EXTRA_RESET_TOKEN = "com.rakazo.notifications.RESET_TOKEN"
-    private const val MAX_BACKOFF_MS = 120_000L
-    private const val MAX_BACKOFF_STEPS = 3
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"

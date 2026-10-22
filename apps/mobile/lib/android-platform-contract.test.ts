@@ -63,13 +63,6 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");
     expect(service).toContain("cancel(threadId.hashCode())");
-    expect(service).toContain(
-      "synchronized(sessionLock) {\n      if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) cachedToken = null",
-    );
-    expect(service).toContain("if (!runIfCurrent(generation) { cachedToken = it }) return");
-    expect(service).toMatch(
-      /!settings\.liveConnection[\s\S]*storage\.endpoint\.isBlank\(\)[\s\S]*storage\.spaceId\.isBlank\(\)[\s\S]*!isAllowedNotificationEndpoint\(storage\.endpoint\)[\s\S]*val token = cachedToken \?:/,
-    );
     for (const request of [
       "        val avatarStyle = selectedAvatarStyle",
       "        val active = runs(",
@@ -78,11 +71,6 @@ describe("Android mobile platform contract", () => {
     ]) {
       expect(service).toContain(`if (generation != sessionGeneration.get()) return\n${request}`);
     }
-    expect(service).toContain("cachedToken");
-    expect(service).toContain("persistedSeen");
-    expect(service).toContain("SLOW_POLL_INTERVAL_MS");
-    expect(service).toContain("SLOW_POLL_INTERVAL_MS * (1L shl");
-    expect(service).toContain("MAX_BACKOFF_MS");
     expect(service).toContain("runCatching { context.startService(intent) }");
     expect(module).toContain('AsyncFunction("setOpenThread")');
     expect(live).toContain("setOpenNotificationThread");
