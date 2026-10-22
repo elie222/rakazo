@@ -10,6 +10,9 @@ export interface TurnCheckpoint {
   systemPrompt: string;
   pendingToolCallId: string;
   messages: Message[];
+  historyMessageIds?: string[];
+  /** Executor-assigned occurrences include canonical arguments and the paused call. */
+  effectOccurrences?: Array<{ executionId: string; fingerprint: string; occurrence: number }>;
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */
   executionMode?: "parallel" | "sequential";
 }

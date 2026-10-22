@@ -269,6 +269,14 @@ describe("paused turn context", () => {
               );
               expect(pending).toBeGreaterThan(evidence);
               expect(JSON.stringify(request.messages[pending])).toContain("fixture-resumed");
+              if (pause === "ask_user") {
+                const wire = JSON.stringify(request.messages);
+                expect(wire).toContain("answer-image.png");
+                expect(wire).toContain("data:image/png;base64,AQID");
+                expect(wire).toContain("new-thread-text");
+                expect(wire.match(/steering-text/g)).toHaveLength(1);
+                expect(wire).toContain("data:image/png;base64,BAUG");
+              }
             },
             response: { type: "text", text: "Done." },
           },
@@ -284,7 +292,7 @@ describe("paused turn context", () => {
         prompt: "Read the fixture then complete the next step.",
         history: [{ id: "fixture-history", role: "user", content: "Earlier fixture context" }],
         tools: builtinAgentTools.filter((tool) => ["read_file", pendingName].includes(tool.name)),
-        model: model.model,
+        model: { ...model.model, acceptsImages: true },
         onCheckpoint: async (snapshot) => {
           capture = snapshot;
         },
@@ -303,6 +311,44 @@ describe("paused turn context", () => {
           new PiAgentRuntime().run({
             ...request,
             turnCheckpoint: checkpoint,
+            ...(pause === "ask_user"
+              ? {
+                  history: [
+                    ...request.history,
+                    {
+                      id: "answer-message",
+                      role: "user" as const,
+                      content: "answer-image.png",
+                      images: [
+                        {
+                          name: "answer-image.png",
+                          mimeType: "image/png" as const,
+                          data: new Uint8Array([1, 2, 3]),
+                        },
+                      ],
+                    },
+                    { id: "new-thread-message", role: "user" as const, content: "new-thread-text" },
+                    { id: "steering-message", role: "user" as const, content: "steering-text" },
+                  ],
+                  claimSteering: async (seen: string[]) =>
+                    seen.includes("steering")
+                      ? []
+                      : [
+                          {
+                            id: "steering",
+                            messageId: "steering-message",
+                            text: "steering-text",
+                            images: [
+                              {
+                                name: "steering.png",
+                                mimeType: "image/png" as const,
+                                data: new Uint8Array([4, 5, 6]),
+                              },
+                            ],
+                          },
+                        ],
+                }
+              : {}),
             resumeToolResult: { content: [{ type: "text", text: "fixture-resumed" }] },
             executeTool: async (_name, callArgs) => {
               executions.push(callArgs);
@@ -316,6 +362,7 @@ describe("paused turn context", () => {
         );
       } finally {
         await model.close();
+        model.assertComplete();
       }
     },
   );

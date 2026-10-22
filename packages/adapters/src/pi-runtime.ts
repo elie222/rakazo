@@ -313,6 +313,19 @@ export class PiAgentRuntime implements AgentRuntime {
             request.prompt,
             request.sourceMessageId,
           );
+        const representedHistoryIds = new Set(
+          restored
+            ? (restored.historyMessageIds ??
+                history.flatMap((message) => {
+                  const id = (message as Message & { rakazoMessageId?: string }).rakazoMessageId;
+                  return id ? [id] : [];
+                }))
+            : [
+                ...request.history.flatMap((message) => (message.id ? [message.id] : [])),
+                ...(request.sourceMessageId ? [request.sourceMessageId] : []),
+                ...initialSteering.map((item) => item.messageId),
+              ],
+        );
         const initialPrompt = initialSteering.length
           ? `${request.prompt}\n\nAdditional user context:\n${initialSteering
               .map((item) => item.text)
@@ -474,6 +487,7 @@ export class PiAgentRuntime implements AgentRuntime {
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return undefined;
             seenSteeringIds.push(...steering.map((item) => item.id));
+            for (const item of steering) representedHistoryIds.add(item.messageId);
             for (const item of steering) {
               const images = toPiImages(item.images);
               agent.steer({
@@ -522,6 +536,7 @@ export class PiAgentRuntime implements AgentRuntime {
             pendingToolCallId: toolCallId,
             executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
             messages: messages as Message[],
+            historyMessageIds: [...representedHistoryIds],
           };
           await request.onCheckpoint(() => {
             const completed = new Set(
@@ -781,7 +796,14 @@ export class PiAgentRuntime implements AgentRuntime {
             }
             restoringCalls = false;
             if (!host.pausePending) {
+              const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
+                (message) => message.id && !representedHistoryIds.has(message.id),
+              );
+              agent.state.messages.push(...toHistory(addedHistory, ""));
+              for (const message of addedHistory)
+                if (message.id) representedHistoryIds.add(message.id);
               for (const item of initialSteering) {
+                representedHistoryIds.add(item.messageId);
                 const images = toPiImages(item.images);
                 agent.state.messages.push({
                   role: "user",
@@ -1034,6 +1056,11 @@ export function modelsForRequest(
 }
 
 function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
+  return namedAgentTools(toolDefs).map(({ tool, name }) => toAgentTool(tool, host, name));
+}
+
+/** Shared canonical mapping for checkpoint validation and runtime exposure. */
+export function namedAgentTools(toolDefs: readonly ConnectorTool[]) {
   // Registration order is incidental. Canonicalize before allocating collision suffixes
   // so both provider-visible names and JSON schema serialization stay stable.
   const canonicalJson = (value: unknown): unknown => {
@@ -1068,7 +1095,7 @@ function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): Agent
     )
     .map(({ tool }) => tool);
   const names = normalizeAgentToolNames(ordered);
-  return ordered.map((tool, index) => toAgentTool(tool, host, names[index]!));
+  return ordered.map((tool, index) => ({ tool, name: names[index]! }));
 }
 
 /**

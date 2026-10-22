@@ -349,6 +349,7 @@ import {
   serializeModelSecret,
   withModelCredentialLock,
 } from "./pi-oauth.js";
+import { namedAgentTools } from "./pi-runtime.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
@@ -4532,7 +4533,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const pendingTurnCheckpoints = new Map<string, () => string>();
         const persistTurnCheckpoint = async (executionId?: string) => {
           const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
-          if (capture) await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, capture());
+          if (capture) {
+            const saved = JSON.parse(capture());
+            saved.effectOccurrences = [...effectOccurrences].map(([executionId, entry]) => ({
+              executionId,
+              ...entry,
+            }));
+            await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+          }
         };
         let handedOff = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
@@ -4633,10 +4641,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
 
         const mutatingEffectOccurrences = new Map<string, number>();
+        const effectOccurrences = new Map<string, { fingerprint: string; occurrence: number }>();
         const consumedEffectIds = new Set<string>();
-        const nextMutatingEffectOccurrence = (toolName: string, args: Record<string, unknown>) => {
+        const nextMutatingEffectOccurrence = (
+          toolName: string,
+          args: Record<string, unknown>,
+          executionId: string,
+        ) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
+          const previous = effectOccurrences.get(executionId);
+          if (previous?.fingerprint === fingerprint) return previous.occurrence;
           const occurrence = mutatingEffectOccurrences.get(fingerprint) ?? 0;
+          effectOccurrences.set(executionId, { fingerprint, occurrence });
           mutatingEffectOccurrences.set(fingerprint, occurrence + 1);
           return occurrence;
         };
@@ -5045,7 +5061,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const occurrence =
             name === "request_secret" || name === "connect_app"
               ? 0
-              : nextMutatingEffectOccurrence(replayEffectToolName, args);
+              : nextMutatingEffectOccurrence(replayEffectToolName, args, executionId);
           const effectKey =
             usesApprovalKey && occurrence === 0
               ? approvalEffectKey(runId, replayEffectToolName, args)
@@ -7453,7 +7469,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 message.role === "toolResult" ? [message.toolCallId] : [],
               ),
             );
-            const available = new Set(tools.map((tool) => tool.name));
+            const namedTools = namedAgentTools(tools);
+            const available = new Set(namedTools.map((tool) => tool.name));
             if (
               saved.messages.some(
                 (message) =>
@@ -7467,8 +7484,33 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       !available.has(call.name),
                   ),
               )
-            )
+            ) {
               turnCheckpoint = undefined;
+            } else if (saved.effectOccurrences) {
+              for (const { executionId, fingerprint, occurrence } of saved.effectOccurrences) {
+                effectOccurrences.set(executionId, { fingerprint, occurrence });
+                mutatingEffectOccurrences.set(
+                  fingerprint,
+                  Math.max(mutatingEffectOccurrences.get(fingerprint) ?? 0, occurrence + 1),
+                );
+              }
+            } else {
+              // Older snapshots have no executor assignments. Retained completed
+              // calls still reserve their occurrences before pending calls run.
+              for (const message of saved.messages) {
+                if (message.role !== "assistant") continue;
+                for (const call of message.content) {
+                  if (call.type !== "toolCall" || !completed.has(call.id)) continue;
+                  const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
+                  if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
+                    nextMutatingEffectOccurrence(
+                      tool.name,
+                      call.arguments,
+                      JSON.stringify(["pi-tool", "main", call.id]),
+                    );
+                }
+              }
+            }
           } catch {
             // Incompatible transcripts use the existing canonical approval replay.
             // Decryption happens earlier and must still fail closed.
@@ -7740,7 +7782,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 pendingTurnCheckpoints.set(executionId, capture);
               },
               resumeToolResult: {
-                content: [{ type: "text", text: takeoverResume?.promptNote ?? task.prompt }],
+                content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
               },
               script,
               allowSilentEmpty: allowSilentEmptyRun,

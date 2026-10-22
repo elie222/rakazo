@@ -18,7 +18,7 @@ vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
   }),
 }));
 
-function fixture(model: AgentRunModel, encryptedCheckpoint = false) {
+function fixture(model: AgentRunModel, encryptedCheckpoint = false, toolName = "fixture_write") {
   const run = {
     id: "fixture-run",
     botId: "fixture-bot",
@@ -59,7 +59,7 @@ function fixture(model: AgentRunModel, encryptedCheckpoint = false) {
           : undefined,
       actionApprovalRule: {
         findMany: async () => [
-          { effect: "require_approval", matchKind: "tool", matchValue: "fixture_write" },
+          { effect: "require_approval", matchKind: "tool", matchValue: toolName },
         ],
       },
       message: {
@@ -237,7 +237,7 @@ function fixture(model: AgentRunModel, encryptedCheckpoint = false) {
     connector: {
       discoverTools: async () => [
         {
-          name: "fixture_write",
+          name: toolName,
           description: "Write the fixture",
           inputSchema: {
             type: "object",
@@ -287,6 +287,115 @@ function fixture(model: AgentRunModel, encryptedCheckpoint = false) {
 }
 
 describe("executor paused transcript", () => {
+  it.each(["allow", "deny"])(
+    "%s keeps checkpoint storage separate from action effects",
+    async (answer) => {
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "pending-action",
+              name: "fixture_write",
+              arguments: { content: "approved-fixture" },
+            },
+          },
+          {
+            expect(request) {
+              const result = request.messages.find((m) => m.tool_call_id === "pending-action");
+              expect(result).toBeDefined();
+              if (answer === "allow") expect(result?.content).toContain("fixture-approved-result");
+              else expect(result?.content).toContain("denied");
+            },
+            response: { type: "text", text: "Done." },
+          },
+        ],
+      });
+      try {
+        const state = fixture(model.model);
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        expect(state.writes).not.toHaveBeenCalled();
+        expect(state.effects).toHaveLength(2);
+        expect(state.effects.map((effect) => [effect.kind, effect.status])).toEqual([
+          ["fixture_write", "intended"],
+          ["runtime_checkpoint", "runtime_checkpoint"],
+        ]);
+        for (const effect of state.effects)
+          if (effect.status === "intended")
+            effect.status = answer === "allow" ? "approved" : "denied";
+        state.run.status = "queued";
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        model.assertComplete();
+        expect(state.writes).toHaveBeenCalledTimes(answer === "allow" ? 1 : 0);
+        expect(state.effects).toHaveLength(1);
+        expect(state.effects[0]).toMatchObject({
+          kind: "fixture_write",
+          status: answer === "allow" ? "completed" : "denied",
+        });
+      } finally {
+        await model.close();
+      }
+    },
+  );
+  it.each([
+    ["fixture_write", false],
+    ["fixture.write", false],
+    ["fixture_write", true],
+  ] as const)(
+    "runs an approved later identical occurrence once with %s (legacy snapshot: %s)",
+    async (toolName, legacy) => {
+      const wireName = toolName.replace(".", "_");
+      const args = { content: "same-fixture" };
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: { type: "tool", id: "earlier", name: wireName, arguments: args },
+          },
+          { expect() {}, response: { type: "tool", id: "later", name: wireName, arguments: args } },
+          {
+            expect(request) {
+              expect(request.messages.find((m) => m.tool_call_id === "earlier")).toBeDefined();
+              expect(request.messages.find((m) => m.tool_call_id === "later")?.content).toContain(
+                "fixture-approved-result",
+              );
+            },
+            response: { type: "text", text: "Done." },
+          },
+        ],
+      });
+      try {
+        const state = fixture(model.model, false, toolName);
+        // The first call also pauses; approve it, then pause on the identical second call.
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        for (const effect of state.effects)
+          if (effect.status === "intended") effect.status = "approved";
+        state.run.status = "queued";
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        expect(state.writes).toHaveBeenCalledTimes(1);
+        expect(state.pauseRunForInput).toHaveBeenCalledTimes(2);
+        if (legacy) {
+          const checkpoint = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+          const saved = JSON.parse(String(checkpoint.result));
+          delete saved.effectOccurrences;
+          checkpoint.result = JSON.stringify(saved);
+        }
+        for (const effect of state.effects)
+          if (effect.status === "intended") effect.status = "approved";
+        state.run.status = "queued";
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        model.assertComplete();
+        expect(state.writes).toHaveBeenCalledTimes(2);
+        expect(state.effects.filter((effect) => effect.kind === toolName)).toHaveLength(2);
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "completed" }),
+        );
+      } finally {
+        await model.close();
+      }
+    },
+  );
   it("keeps parallel checkpoint captures bound to the pausing call on resume", async () => {
     let releaseLate!: () => void;
     const late = new Promise<void>((resolve) => {
@@ -434,16 +543,17 @@ describe("executor paused transcript", () => {
       }
     },
   );
-  it.each(["ask_user", "approval", "request_takeover"])(
+  it.each(["ask_user", "approval", "normalized-approval", "request_takeover"])(
     "restores %s through the real executor before opening the model",
     async (pause) => {
-      const name = pause === "approval" ? "fixture_write" : pause;
-      const args =
-        pause === "approval"
-          ? { content: "exact-approved-content" }
-          : pause === "request_takeover"
-            ? { reason: "Complete the fixture step" }
-            : { question: "Which fixture?", options: ["One", "Two"] };
+      const approval = pause === "approval" || pause === "normalized-approval";
+      const toolName = pause === "normalized-approval" ? "fixture.write" : "fixture_write";
+      const name = approval ? "fixture_write" : pause;
+      const args = approval
+        ? { content: "exact-approved-content" }
+        : pause === "request_takeover"
+          ? { reason: "Complete the fixture step" }
+          : { question: "Which fixture?", options: ["One", "Two"] };
       const model = await startModelEmulator({
         steps: [
           {
@@ -471,8 +581,7 @@ describe("executor paused transcript", () => {
                 (message) => message.role === "tool" && message.tool_call_id === "pending",
               );
               expect(result).toBeDefined();
-              if (pause === "approval")
-                expect(JSON.stringify(result)).toContain("fixture-approved-result");
+              if (approval) expect(JSON.stringify(result)).toContain("fixture-approved-result");
               if (pause === "ask_user") expect(JSON.stringify(result)).toContain("Two");
             },
             response: { type: "text", text: "Done." },
@@ -480,7 +589,7 @@ describe("executor paused transcript", () => {
         ],
       });
       try {
-        const state = fixture(model.model);
+        const state = fixture(model.model, false, toolName);
         await state.executor.continueRun(state.run.id, "fixture-worker");
         expect(
           pause === "request_takeover" ? state.pauseRunForTakeover : state.pauseRunForInput,
@@ -503,7 +612,7 @@ describe("executor paused transcript", () => {
           JSON.stringify(state.finalizeRun.mock.calls),
         ).toHaveBeenCalledOnce();
         expect(state.effects.some((effect) => effect.kind === "runtime_checkpoint")).toBe(false);
-        if (pause === "approval") {
+        if (approval) {
           expect(state.writes).toHaveBeenCalledOnce();
           expect(state.writes.mock.calls[0]).toEqual([{ content: "exact-approved-content" }]);
         }
