@@ -18,7 +18,12 @@ vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
   }),
 }));
 
-function fixture(model: AgentRunModel, encryptedCheckpoint = false, toolName = "fixture_write") {
+function fixture(
+  model: AgentRunModel,
+  encryptedCheckpoint = false,
+  toolName = "fixture_write",
+  requireApproval = true,
+) {
   const run = {
     id: "fixture-run",
     botId: "fixture-bot",
@@ -59,7 +64,11 @@ function fixture(model: AgentRunModel, encryptedCheckpoint = false, toolName = "
           : undefined,
       actionApprovalRule: {
         findMany: async () => [
-          { effect: "require_approval", matchKind: "tool", matchValue: toolName },
+          {
+            effect: requireApproval ? "require_approval" : "allow",
+            matchKind: "tool",
+            matchValue: toolName,
+          },
         ],
       },
       message: {
@@ -333,6 +342,76 @@ describe("executor paused transcript", () => {
           kind: "fixture_write",
           status: answer === "allow" ? "completed" : "denied",
         });
+      } finally {
+        await model.close();
+      }
+    },
+  );
+  it.each([false, true])(
+    "executes identical writes with a reused provider call ID once each (approval pauses: %s)",
+    async (approvalPauses) => {
+      const args = { content: "same-fixture" };
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: { type: "tool", id: "reused", name: "fixture_write", arguments: args },
+          },
+          {
+            expect(request) {
+              expect(request.messages.filter((m) => m.tool_call_id === "reused")).toHaveLength(1);
+            },
+            response: { type: "tool", id: "reused", name: "fixture_write", arguments: args },
+          },
+          {
+            expect(request) {
+              const results = request.messages.filter((m) => m.tool_call_id === "reused");
+              expect(results).toHaveLength(2);
+              for (const result of results)
+                expect(result.content).toContain("fixture-approved-result");
+            },
+            response: { type: "text", text: "Done." },
+          },
+        ],
+      });
+      try {
+        const state = fixture(model.model, false, "fixture_write", approvalPauses);
+        await state.executor.continueRun(state.run.id, "fixture-worker");
+        if (approvalPauses) {
+          for (let occurrence = 0; occurrence < 2; occurrence++) {
+            expect(state.run.status).toBe("waiting_input");
+            expect(state.writes).toHaveBeenCalledTimes(occurrence);
+            expect(state.pauseRunForInput).toHaveBeenCalledTimes(occurrence + 1);
+            const pending = state.effects.filter((effect) => effect.status === "intended");
+            expect(pending).toHaveLength(1);
+            pending[0]!.status = "approved";
+            // Neither restored arguments nor continuation text may replace approval.
+            const checkpoint = state.effects.find(
+              (effect) => effect.kind === "runtime_checkpoint",
+            )!;
+            const saved = JSON.parse(String(checkpoint.result));
+            const pendingMessage = saved.messages.findLast(
+              (message: { role: string }) => message.role === "assistant",
+            );
+            pendingMessage.content.find((call: { id: string }) => call.id === "reused").arguments =
+              {
+                content: "different-content",
+              };
+            checkpoint.result = JSON.stringify(saved);
+            state.task.prompt = "Write different-content instead.";
+            state.run.status = "queued";
+            await state.executor.continueRun(state.run.id, "fixture-worker");
+          }
+        }
+        model.assertComplete();
+        expect(state.writes.mock.calls).toEqual([[args], [args]]);
+        const actions = state.effects.filter((effect) => effect.kind === "fixture_write");
+        expect(actions).toHaveLength(2);
+        expect(new Set(actions.map((effect) => effect.idempotencyKey)).size).toBe(2);
+        expect(actions.every((effect) => effect.status === "completed")).toBe(true);
+        expect(state.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "completed" }),
+        );
       } finally {
         await model.close();
       }

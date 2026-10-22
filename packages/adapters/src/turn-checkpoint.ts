@@ -1,4 +1,4 @@
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message, ToolCall } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
@@ -50,4 +50,17 @@ export function restoreTurnCheckpoint(
         ? messages
         : withoutThinkingFrom(messages, 0),
   };
+}
+
+/** Match results in transcript order: wire IDs may repeat in later responses. */
+export function unresolvedTurnCheckpointCalls(messages: Message[]): ToolCall[] {
+  const pending = new Map<string, ToolCall>();
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const call of message.content) if (call.type === "toolCall") pending.set(call.id, call);
+    } else if (message.role === "toolResult") {
+      pending.delete(message.toolCallId);
+    }
+  }
+  return [...pending.values()];
 }

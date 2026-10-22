@@ -375,7 +375,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
-import { restoreTurnCheckpoint } from "./turn-checkpoint.js";
+import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -4535,10 +4535,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
           if (capture) {
             const saved = JSON.parse(capture());
-            saved.effectOccurrences = [...effectOccurrences].map(([executionId, entry]) => ({
-              executionId,
-              ...entry,
-            }));
+            saved.effectOccurrences = effectOccurrences;
             await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
           }
         };
@@ -4641,7 +4638,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
 
         const mutatingEffectOccurrences = new Map<string, number>();
-        const effectOccurrences = new Map<string, { fingerprint: string; occurrence: number }>();
+        const effectOccurrences: Array<{
+          executionId: string;
+          fingerprint: string;
+          occurrence: number;
+        }> = [];
+        let restoredPendingEffect: (typeof effectOccurrences)[number] | undefined;
         const consumedEffectIds = new Set<string>();
         const nextMutatingEffectOccurrence = (
           toolName: string,
@@ -4649,10 +4651,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           executionId: string,
         ) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
-          const previous = effectOccurrences.get(executionId);
-          if (previous?.fingerprint === fingerprint) return previous.occurrence;
+          const previous = restoredPendingEffect;
+          if (previous?.executionId === executionId) {
+            restoredPendingEffect = undefined;
+            if (previous.fingerprint === fingerprint) return previous.occurrence;
+          }
           const occurrence = mutatingEffectOccurrences.get(fingerprint) ?? 0;
-          effectOccurrences.set(executionId, { fingerprint, occurrence });
+          effectOccurrences.push({ executionId, fingerprint, occurrence });
           mutatingEffectOccurrences.set(fingerprint, occurrence + 1);
           return occurrence;
         };
@@ -7464,11 +7469,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               provider: runModelProvider,
               id: runModelId,
             });
-            const completed = new Set(
-              saved.messages.flatMap((message) =>
-                message.role === "toolResult" ? [message.toolCallId] : [],
-              ),
-            );
+            const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
             const namedTools = namedAgentTools(tools);
             const available = new Set(namedTools.map((tool) => tool.name));
             if (
@@ -7478,7 +7479,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   message.content.some(
                     (call) =>
                       call.type === "toolCall" &&
-                      !completed.has(call.id) &&
+                      unresolved.has(call) &&
                       (saved.executionMode === "sequential" ||
                         call.id === saved.pendingToolCallId) &&
                       !available.has(call.name),
@@ -7487,8 +7488,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ) {
               turnCheckpoint = undefined;
             } else if (saved.effectOccurrences) {
-              for (const { executionId, fingerprint, occurrence } of saved.effectOccurrences) {
-                effectOccurrences.set(executionId, { fingerprint, occurrence });
+              effectOccurrences.push(...saved.effectOccurrences);
+              const pendingExecutionId = JSON.stringify([
+                "pi-tool",
+                "main",
+                saved.pendingToolCallId,
+              ]);
+              // Provider IDs can repeat in later responses. Only the restored
+              // pending call may consume its saved assignment, exactly once.
+              restoredPendingEffect = saved.effectOccurrences.findLast(
+                (entry) => entry.executionId === pendingExecutionId,
+              );
+              for (const { fingerprint, occurrence } of saved.effectOccurrences) {
                 mutatingEffectOccurrences.set(
                   fingerprint,
                   Math.max(mutatingEffectOccurrences.get(fingerprint) ?? 0, occurrence + 1),
@@ -7500,7 +7511,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               for (const message of saved.messages) {
                 if (message.role !== "assistant") continue;
                 for (const call of message.content) {
-                  if (call.type !== "toolCall" || !completed.has(call.id)) continue;
+                  if (call.type !== "toolCall" || unresolved.has(call)) continue;
                   const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
                   if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
                     nextMutatingEffectOccurrence(
@@ -7795,6 +7806,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       runSecrets.push(...values),
                     ),
               onToolCompleted: (completion) => {
+                if (restoredPendingEffect?.executionId === completion.executionId)
+                  restoredPendingEffect = undefined;
                 if (!completion.paused) pendingTurnCheckpoints.delete(completion.executionId);
                 return appendToolCompletionAudit(
                   deps,

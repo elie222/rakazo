@@ -93,7 +93,11 @@ import {
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
 import { textContentArg } from "./tool-text.js";
-import { restoreTurnCheckpoint, serializeTurnCheckpoint } from "./turn-checkpoint.js";
+import {
+  restoreTurnCheckpoint,
+  serializeTurnCheckpoint,
+  unresolvedTurnCheckpointCalls,
+} from "./turn-checkpoint.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
@@ -539,19 +543,11 @@ export class PiAgentRuntime implements AgentRuntime {
             historyMessageIds: [...representedHistoryIds],
           };
           await request.onCheckpoint(() => {
-            const completed = new Set(
-              messages.flatMap((message) =>
-                message.role === "toolResult" ? [message.toolCallId] : [],
-              ),
-            );
+            const unresolved = new Set(unresolvedTurnCheckpointCalls(messages as Message[]));
             const siblings = messages.flatMap((message) =>
               message.role === "assistant"
                 ? message.content.flatMap((call) => {
-                    if (
-                      call.type !== "toolCall" ||
-                      call.id === toolCallId ||
-                      completed.has(call.id)
-                    )
+                    if (call.type !== "toolCall" || call.id === toolCallId || !unresolved.has(call))
                       return [];
                     const result = finishedCalls.get(call.id);
                     return result ? [result] : [];
@@ -601,6 +597,7 @@ export class PiAgentRuntime implements AgentRuntime {
             await piSession?.appendMessage(event.message);
           }
           if (event.type === "tool_execution_start") {
+            finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
             // Live activity feedback: without this the thread shows a bare
@@ -706,18 +703,14 @@ export class PiAgentRuntime implements AgentRuntime {
           if (restored) {
             // Complete unresolved calls before another model choice. The executor
             // still enforces canonical approved arguments, routes and idempotency.
-            const completed = new Set(
-              history.flatMap((message) =>
-                message.role === "toolResult" ? [message.toolCallId] : [],
-              ),
-            );
+            const unresolved = new Set(unresolvedTurnCheckpointCalls(history as Message[]));
             if (restored.executionMode !== "sequential") {
               for (const message of [...history]) {
                 if (message.role !== "assistant") continue;
                 for (const call of message.content) {
                   if (
                     call.type !== "toolCall" ||
-                    completed.has(call.id) ||
+                    !unresolved.has(call) ||
                     call.id === restored.pendingToolCallId
                   )
                     continue;
@@ -734,7 +727,7 @@ export class PiAgentRuntime implements AgentRuntime {
                     isError: true,
                     timestamp: Date.now(),
                   });
-                  completed.add(call.id);
+                  unresolved.delete(call);
                 }
               }
             }
@@ -742,7 +735,7 @@ export class PiAgentRuntime implements AgentRuntime {
             for (const message of [...history]) {
               if (message.role !== "assistant") continue;
               for (const call of message.content) {
-                if (call.type !== "toolCall" || completed.has(call.id)) continue;
+                if (call.type !== "toolCall" || !unresolved.has(call)) continue;
                 const tool = tools.find((candidate) => candidate.name === call.name);
                 if (!tool) throw new Error("Pending checkpoint tool is no longer available");
                 const interaction =
@@ -787,7 +780,7 @@ export class PiAgentRuntime implements AgentRuntime {
                   isError: result.isError ?? false,
                   timestamp: Date.now(),
                 });
-                completed.add(call.id);
+                unresolved.delete(call);
                 toolCalls += 1;
                 await piSession?.appendMessage(agent.state.messages.at(-1)!);
                 if ("terminate" in result && result.terminate) break;
