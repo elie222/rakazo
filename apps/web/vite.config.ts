@@ -45,6 +45,7 @@ import {
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
+const SCREEN_UPSTREAM_TIMEOUT_MS = 20_000;
 const screenLog = createServiceLogger({ service: "rakazo-web" });
 
 function screenPolicy(url: string | undefined) {
@@ -159,7 +160,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         return;
       }
       res.statusCode = 502;
-      res.end("Screen unavailable");
+      res.end(`Screen unavailable (${reason})`);
     };
     function requestUpstream() {
       if (res.destroyed) return;
@@ -208,6 +209,15 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           incoming.pipe(res);
         },
       );
+      // A silent upstream would leave the frame blank for as long as the browser waits. The limit
+      // covers only the wait for response headers; a slow or idle body after that keeps flowing.
+      const request = upstream;
+      const headersTimer = setTimeout(() => {
+        finishUnavailable("upstream_timeout");
+        request.destroy();
+      }, SCREEN_UPSTREAM_TIMEOUT_MS);
+      request.once("response", () => clearTimeout(headersTimer));
+      request.once("close", () => clearTimeout(headersTimer));
       upstream.on("error", (error) => {
         if (
           retryable &&

@@ -8,6 +8,7 @@ import {
   Redirect,
   useFocusEffect,
   useGlobalSearchParams,
+  useIsFocused,
   useNavigation,
   usePathname,
   useRouter,
@@ -93,6 +94,7 @@ import type { CollapsedSections } from "../lib/collapsed-sections";
 import { loadCollapsedSections, saveCollapsedSections } from "../lib/collapsed-sections";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
+import { useForegroundPoll } from "../lib/foreground-poll";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, formatThreadTime } from "../lib/inbox";
 import { retainInboxValue } from "../lib/inbox-retention";
@@ -119,6 +121,7 @@ import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { offerPasskeyOnce } from "../lib/passkey";
+import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { androidRipple } from "../lib/ripple";
@@ -199,6 +202,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
   const { t, locale } = useI18n();
+  const isFocused = useIsFocused();
   const [day, setDay] = useState(() => new Date().setHours(0, 0, 0, 0));
   useFocusEffect(
     useCallback(() => {
@@ -419,22 +423,9 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     };
   }, [hasSession]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasSession) return;
-      let cancelled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const tick = async () => {
-        const loaded = AppState.currentState === "active" ? await loadBots() : undefined;
-        if (!cancelled && loaded !== false) timer = setTimeout(() => void tick(), 5_000);
-      };
-      void tick();
-      return () => {
-        cancelled = true;
-        if (timer !== undefined) clearTimeout(timer);
-      };
-    }, [hasSession, loadBots]),
-  );
+  // The embedded pane is visible beside the chat, so it keeps polling even when
+  // the chat route owns focus.
+  useForegroundPoll(loadBots, INBOX_POLL_INTERVAL_MS, hasSession && (embedded || isFocused));
 
   const spaceId = me?.spaceId;
   // Another space's count never shows while this space's is loading.
@@ -478,26 +469,17 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }
   }, [activityMode, hasSession]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!hasSession || !activityMode) return;
-      let cancelled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+  useForegroundPoll(
+    loadActivity,
+    ACTIVITY_POLL_INTERVAL_MS,
+    hasSession && activityMode && (embedded || isFocused),
+  );
 
-      const tick = async () => {
-        const loaded = await loadActivity();
-        if (!cancelled && loaded !== false) {
-          timer = setTimeout(() => void tick(), 15_000);
-        }
-      };
-
-      void tick();
-      return () => {
-        cancelled = true;
-        activityRequestId.current += 1;
-        if (timer !== undefined) clearTimeout(timer);
-      };
-    }, [activityMode, hasSession, loadActivity]),
+  useEffect(
+    () => () => {
+      activityRequestId.current += 1;
+    },
+    [activityMode, hasSession],
   );
 
   const visible = useMemo(

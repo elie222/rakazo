@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { Bell, PanelLeftClose } from "lucide-react";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
+import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import type { Panel } from "../../lib/right-panel-state";
@@ -9,6 +9,7 @@ import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
 
 export function SidebarHeader({
+  mini = false,
   activityMode,
   toggleActivityMode,
   setBotsSidebarCollapsedPref,
@@ -19,6 +20,7 @@ export function SidebarHeader({
   setNewSpaceOpen,
   setPickerInfoTopic,
 }: {
+  mini?: boolean;
   activityMode: boolean;
   toggleActivityMode: () => void;
   setBotsSidebarCollapsedPref: (collapsed: boolean) => void;
@@ -31,13 +33,17 @@ export function SidebarHeader({
 }) {
   const { t } = useLingui();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   return (
-    <div className="app-drag flex items-center justify-between px-[18px] pb-3 pt-4">
+    <div
+      className={`app-drag flex items-center pb-3 pt-4 ${mini ? "flex-col gap-3 px-1" : "justify-between px-[18px]"}`}
+    >
       <WindowChrome />
-      <div className="relative flex items-center gap-2.5">
+      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-2.5"}`}>
         <IconTooltip label={t`Activity`}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             aria-label={t`Activity`}
             aria-pressed={activityMode}
             data-activity-mode={activityMode ? "on" : "off"}
@@ -54,23 +60,28 @@ export function SidebarHeader({
               fill={activityMode ? "currentColor" : "none"}
               aria-hidden="true"
             />
-          </button>
+          </Button>
         </IconTooltip>
-        <IconTooltip label={t`Minimize bots`}>
-          <button
-            type="button"
+        <IconTooltip label={toggleLabel}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             className="app-no-drag hidden h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75 md:inline-flex"
-            aria-label={t`Minimize bots`}
-            data-testid="minimize-bots-sidebar"
-            onClick={() => setBotsSidebarCollapsedPref(true)}
+            aria-label={toggleLabel}
+            data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
+            onClick={() => setBotsSidebarCollapsedPref(!mini)}
           >
-            <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
-          </button>
+            {mini ? (
+              <PanelLeftOpen size={15} strokeWidth={1.8} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={15} strokeWidth={1.8} aria-hidden="true" />
+            )}
+          </Button>
         </IconTooltip>
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
           <IconTooltip label={t`Create`}>
             <PopoverTrigger
-              className="app-no-drag text-[21px] text-muted-foreground/70 hover:text-foreground/75"
+              className="app-no-drag flex size-7 items-center justify-center rounded-full text-[21px] text-muted-foreground/70 outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
             >

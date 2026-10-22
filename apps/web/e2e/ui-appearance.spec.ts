@@ -143,7 +143,9 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
   await captureScreenshot(page, testInfo, "sidebar-footer-menu");
   await page.keyboard.press("Escape");
   await page.getByTestId("minimize-bots-sidebar").click();
-  await expect(footer).not.toBeInViewport();
+  await expect(footer).toBeInViewport();
+  await expect(page.getByTestId("bots-sidebar")).toHaveCSS("width", "80px");
+  await expect(page.getByTestId("user-menu-trigger")).toBeVisible();
   await page.getByTestId("restore-bots-sidebar").click();
   await expect(footer).toBeInViewport();
 });

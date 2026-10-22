@@ -58,6 +58,7 @@ import {
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
+import { liveModelSibling } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { codexComputeResidency } from "./pi-oauth.js";
@@ -757,14 +758,16 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
     model = models.getModel("openrouter", modelId);
   }
   if (
-    !model &&
     provider === "openrouter" &&
+    !model &&
     modelId &&
     ((envDefaultProvider === "openrouter" && modelId === envDefaultModel) ||
       modelConfig.contextWindow !== undefined)
   ) {
     model = configuredOpenRouterModel(modelId, modelConfig.contextWindow);
   }
+  // Saved generic limits and deployment defaults take precedence over inferred siblings.
+  model ??= liveModelSibling(models, provider, modelId);
   if (model && (modelConfig.contextWindow !== undefined || modelConfig.maxTokens !== undefined)) {
     model = {
       ...model,

@@ -10,6 +10,7 @@ import {
   isRetryableError,
   latestSpokenCallReply,
   retryDelayMs,
+  speechLocaleTag,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
@@ -644,7 +645,7 @@ function productionDeps(): CallDeps {
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
-  await dictation.listen({ ...handlers, signal, lang: getActiveUiLocale() });
+  await dictation.listen({ ...handlers, signal, lang: speechLocaleTag(getActiveUiLocale()) });
   return true;
 }
 

@@ -59,11 +59,13 @@ test("create opens form, then empty chat; picker lists bots; sidebar collapses",
   await page.getByTestId("minimize-bots-sidebar").click();
   await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "true");
 
+  await expect(page.getByTestId("bots-sidebar")).toHaveCSS("width", "80px");
+  await edge.hover();
   const box = await edge.boundingBox();
   expect(box).toBeTruthy();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box!.x + 80, box!.y + box!.height / 2, { steps: 8 });
+  await page.mouse.move(box!.x + 180, box!.y + box!.height / 2, { steps: 8 });
   await page.mouse.up();
   await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "false");
   await captureScreenshot(page, testInfo, "bots-sidebar-expanded");

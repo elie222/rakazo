@@ -35,12 +35,14 @@ import type {
   McpOAuthSummary,
   MemoryProviderResolver,
   PiOAuthLogins,
+  ProviderCatalogCache,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
 } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   applyCodexLiveCatalog,
+  applyProviderLiveCatalog,
   applyTeachingDesktopInput,
   archiveBot,
   assertSafeRemoteUrl,
@@ -102,6 +104,8 @@ import {
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
+  providerCatalogCache,
+  providerLiveCatalogsForSpace,
   provisionComputer,
   queueComputerUpdate,
   recordMcpServerHealth,
@@ -114,6 +118,7 @@ import {
   revokeScreenControl,
   routineRunModelPin,
   sanitizeComposioError,
+  savedCatalogSelections,
   savePushToken,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
@@ -664,6 +669,7 @@ export interface RouterDeps {
   oauthLogins: PiOAuthLogins;
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;
+  providerCatalog?: ProviderCatalogCache;
   /** Site icons for links; defaults to the per-process cache that fetches them. */
   favicons?: FaviconResolver;
   /**
@@ -994,6 +1000,30 @@ export function createRouter(deps: RouterDeps) {
     deps.refreshExpiredModelCredential ??
     ((scope: { userId: string; spaceId: string }, secretId: string, provider: string) =>
       kickModelCredentialRefresh(deps.prisma, deps.secrets, scope, secretId, provider));
+  const catalogForSpace = async (actor: Actor) => {
+    const auth = await modelCredentialAuthKindsForSpace(deps.prisma, deps.secrets, actor);
+    const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
+    const [live, providerLive] = await Promise.all([
+      codexLiveCatalogsForSpace(deps.prisma, deps.secrets, actor, auth, codexCatalog, {
+        // An expired bearer yields no catalog this round; kick the runtime's
+        // locked refresh so the next read can see the account's real list.
+        onExpiredToken: (secretId) =>
+          refreshExpiredCredential(actor, secretId, CHATGPT_OAUTH_PROVIDER),
+      }),
+      providerLiveCatalogsForSpace(
+        deps.prisma,
+        deps.secrets,
+        actor,
+        auth,
+        deps.providerCatalog ?? providerCatalogCache,
+      ),
+    ]);
+    const codexMerged = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
+    const selected = providerLive.size
+      ? await savedCatalogSelections(deps.prisma, actor.userId)
+      : new Set<string>();
+    return applyProviderLiveCatalog(codexMerged, auth, providerLive, selected);
+  };
   const groupRepos = createGroupRepos(deps.prisma);
   const taughtSkills = createTaughtSkillsService({
     prisma: deps.prisma,
@@ -1390,26 +1420,7 @@ export function createRouter(deps: RouterDeps) {
     },
     models: {
       list: authed.models.list.handler(async ({ context }) => {
-        const auth = await modelCredentialAuthKindsForSpace(
-          deps.prisma,
-          deps.secrets,
-          context.actor,
-        );
-        const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
-        const live = await codexLiveCatalogsForSpace(
-          deps.prisma,
-          deps.secrets,
-          context.actor,
-          auth,
-          codexCatalog,
-          {
-            // An expired bearer yields no catalog this round; kick the runtime's
-            // locked refresh so the next read can see the account's real list.
-            onExpiredToken: (secretId) =>
-              refreshExpiredCredential(context.actor, secretId, CHATGPT_OAUTH_PROVIDER),
-          },
-        );
-        const catalog = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
+        const catalog = await catalogForSpace(context.actor);
         // The scripted fixture only exists to drive the scripted runtime; a real
         // runtime cannot execute it, so it stays out of the user-facing catalog.
         return deps.env.agentRuntime === "scripted" ? [...catalog, scriptedCatalogEntry] : catalog;
@@ -1471,24 +1482,7 @@ export function createRouter(deps: RouterDeps) {
       ),
       setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
         if (input.length > 0) {
-          const auth = await modelCredentialAuthKindsForSpace(
-            deps.prisma,
-            deps.secrets,
-            context.actor,
-          );
-          const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
-          const live = await codexLiveCatalogsForSpace(
-            deps.prisma,
-            deps.secrets,
-            context.actor,
-            auth,
-            codexCatalog,
-            {
-              onExpiredToken: (secretId) =>
-                refreshExpiredCredential(context.actor, secretId, CHATGPT_OAUTH_PROVIDER),
-            },
-          );
-          const catalog = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
+          const catalog = await catalogForSpace(context.actor);
           for (const choice of input) {
             const credential = await findModelCredential(
               deps.prisma,
@@ -1936,6 +1930,9 @@ export function createRouter(deps: RouterDeps) {
             },
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
+        );
+        (deps.providerCatalog ?? providerCatalogCache).invalidate(
+          canonicalPiProviderId(input.provider),
         );
         return { ok: true as const };
       }),
@@ -3753,7 +3750,7 @@ export function createRouter(deps: RouterDeps) {
             });
           }
         }
-        await assertRoutineModel(deps, context.actor, input);
+        await assertRoutineModel(deps, context.actor, input, codexCatalog);
         // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
         let nextRunAt: Date | null = null;
         if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
@@ -3844,7 +3841,7 @@ export function createRouter(deps: RouterDeps) {
               : existing.thinkingLevel
             : input.thinkingLevel;
         if (modelChanged) {
-          await assertRoutineModel(deps, context.actor, { modelProvider, modelId });
+          await assertRoutineModel(deps, context.actor, { modelProvider, modelId }, codexCatalog);
         }
         const watch = input.watch === undefined ? parseRoutineWatch(existing.watch) : input.watch;
         if (input.watch) {
@@ -7525,6 +7522,7 @@ async function persistModelCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
+  (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   return modelCredentialDto(cred, input.plaintext);
 }
 
@@ -7668,6 +7666,7 @@ async function assertRoutineModel(
   deps: RouterDeps,
   actor: Actor,
   model: { modelProvider?: string | null; modelId?: string | null },
+  codexCatalog: CodexLiveCatalog,
 ) {
   if (!model.modelProvider || !model.modelId) return;
   const message = await validateConnectedModelChoice(
@@ -7676,6 +7675,7 @@ async function assertRoutineModel(
     actor,
     model.modelProvider,
     model.modelId,
+    { codexCatalog },
   );
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }

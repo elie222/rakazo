@@ -2634,10 +2634,6 @@ msgstr "Luister naar een voorbeeld"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "Hoi, zo klink ik als ik antwoorden hardop voorlees."
 
-#: src/pages/Shell.tsx
-msgid "Hide bots"
-msgstr "Bots verbergen"
-
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Wachtwoord verbergen"
@@ -4120,6 +4116,10 @@ msgstr "Je wachtwoord opnieuw instellen"
 msgid "Resetting…"
 msgstr "Bezig met opnieuw instellen…"
 
+#: src/pages/shell/sidebar-layout.tsx
+msgid "Resize bots sidebar"
+msgstr ""
+
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Paneel van grootte veranderen"
@@ -4483,7 +4483,7 @@ msgstr "Gedeelde skills"
 msgid "Show all"
 msgstr "Alles tonen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "Bots tonen"
 

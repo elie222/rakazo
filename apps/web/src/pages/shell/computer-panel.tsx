@@ -13,6 +13,7 @@ type ComputerPanelProps = {
   computer: ComputerStatus | null;
   computerOpen: boolean;
   embeddedScreenUrl: string | null;
+  screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
   booting: boolean;
@@ -35,6 +36,7 @@ export function ComputerPanel({
   computer,
   computerOpen,
   embeddedScreenUrl,
+  screenFrameRef,
   computerScreenError,
   computerBooting,
   booting,
@@ -68,6 +70,7 @@ export function ComputerPanel({
         ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
           <iframe
             title={t`Bot screen preview`}
+            ref={screenFrameRef}
             src={embeddedScreenUrl}
             sandbox={screenIframeSandbox(embeddedScreenUrl)}
             className="h-full w-full border-0 bg-black"

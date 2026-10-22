@@ -60,13 +60,14 @@ import {
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
+  Sidebar,
   Spinner,
   toast,
 } from "@rakazo/ui-web";
+import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import {
   Menu,
   Monitor,
-  PanelLeftOpen,
   Pencil,
   Phone,
   Plus,
@@ -114,11 +115,7 @@ import {
   getBotsSidebarDensity,
   subscribeBotsSidebarDensity,
 } from "../lib/bots-sidebar-density-pref";
-import {
-  BOTS_SIDEBAR_EDGE_DRAG_PX,
-  readBotsSidebarCollapsed,
-  writeBotsSidebarCollapsed,
-} from "../lib/bots-sidebar-pref";
+import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
 import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   requestBrowserNotificationPermission,
@@ -136,9 +133,18 @@ import {
   getComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
-import { bootComputerOnce, embeddableScreenUrl, loadComputerScreen } from "../lib/computer-screen";
+import {
+  bootComputerOnce,
+  embeddableScreenUrl,
+  isProxiedScreenUrl,
+  loadComputerScreen,
+  probeScreen,
+  SCREEN_FRAME_LOAD_TIMEOUT_MS,
+  screenFrameError,
+  screenFrameMessage,
+  screenFrameStarted,
+} from "../lib/computer-screen";
 import { connectedAppMarks } from "../lib/connected-apps";
-import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import {
@@ -214,12 +220,12 @@ import {
 import type { RosterDropTarget } from "./shell/roster-drop";
 import { resolveRosterDrop } from "./shell/roster-drop";
 import { SidebarHeader } from "./shell/sidebar-header";
+import { BotsSidebarLayout } from "./shell/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar-roster";
 import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { Transcript } from "./shell/transcript";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
-import { WindowChrome } from "./WindowChrome";
 
 const READ_ALOUD_TOAST = "read-aloud-error";
 
@@ -514,9 +520,8 @@ function SpaceShell() {
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   const focusPromptAbortRef = useRef<AbortController | null>(null);
   const focusPromptBotIdRef = useRef<string | null>(null);
-  const botsSidebarEdgeDragRef = useRef<{ startX: number; mode: "expand" | "collapse" } | null>(
-    null,
-  );
+  const isMobileSidebar = useIsMobile();
+  const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [pickerInfoTopic, setPickerInfoTopic] = useState<"group" | "space" | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -645,6 +650,44 @@ function SpaceShell() {
   const [computerErrorFromScreen, setComputerErrorFromScreen] = useState(false);
   const computerErrorFromScreenRef = useRef(false);
   computerErrorFromScreenRef.current = computerErrorFromScreen;
+  // The framed screen cannot be inspected from here. The proxy says when it refuses the page,
+  // and the page reports its own state; nothing past "loading" by the timeout means it stalled.
+  const [screenFrame, setScreenFrame] = useState<HTMLIFrameElement | null>(null);
+  const [screenLoadError, setScreenLoadError] = useState<string | null>(null);
+  const screenFrameReported = useRef(false);
+  useEffect(() => {
+    // Only a mounted frame resets the error: its own failure unmounts it, and Retry remounts it.
+    if (!screenFrame) return;
+    setScreenLoadError(null);
+    screenFrameReported.current = false;
+    const url = embeddableScreenUrl(screenUrl);
+    if (!isProxiedScreenUrl(url)) return;
+    let cancelled = false;
+    const fallback = t`Could not connect to the computer screen`;
+    void probeScreen(url, fallback).then((error) => {
+      if (!cancelled && error && !screenFrameReported.current) setScreenLoadError(error);
+    });
+    const timer = setTimeout(() => {
+      if (!cancelled && !screenFrameReported.current) setScreenLoadError(fallback);
+    }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [screenFrame, screenUrl]);
+  useEffect(() => {
+    if (!screenFrame) return;
+    const fallback = t`Could not connect to the computer screen`;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== screenFrame.contentWindow) return;
+      const message = screenFrameMessage(event.data);
+      if (!message) return;
+      if (screenFrameStarted(message)) screenFrameReported.current = true;
+      setScreenLoadError(screenFrameError(message, fallback));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [screenFrame]);
   useEffect(() => {
     if (!computerOpen) {
       setComputerViewport(null);
@@ -726,6 +769,9 @@ function SpaceShell() {
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   computerOpenRef.current = computerOpen;
   computerBotIdRef.current = computerBotId ?? active?.id;
+  useEffect(() => {
+    setScreenLoadError(null);
+  }, [computerBot?.id, screenUrl]);
   const activeGroup = groups.find((group) => group.id === groupId);
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
@@ -1526,11 +1572,11 @@ function SpaceShell() {
   );
   const sidebarGroups = useMemo(
     () =>
-      sidebarGroupsForSpaces(sidebarSpaces, query, {
+      sidebarGroupsForSpaces(sidebarSpaces, miniSidebar ? "" : query, {
         pinned: t`Pinned`,
         unassigned: t`Unassigned`,
       }),
-    [sidebarSpaces, query, t],
+    [sidebarSpaces, query, miniSidebar, t],
   );
   // The Dock badge ignores the roster search box: a filter must not hide unread chats.
   const unreadChatCount = useMemo(
@@ -2834,9 +2880,11 @@ function SpaceShell() {
   const computerFailure =
     computerError && !hideScreenLoadError
       ? computerError
-      : !booting && computer?.state === "error"
-        ? t`Computer failed to boot`
-        : null;
+      : screenLoadError
+        ? screenLoadError
+        : !booting && computer?.state === "error"
+          ? t`Computer failed to boot`
+          : null;
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
       <p className="text-destructive">{computerFailure}</p>
@@ -2845,6 +2893,7 @@ function SpaceShell() {
         size="sm"
         onClick={() => {
           if (!computerBot) return;
+          setScreenLoadError(null);
           if (computer?.state === "running") {
             // An explicit retry clears any error; background screen reads clear only their own.
             setComputerError(null);
@@ -2991,10 +3040,14 @@ function SpaceShell() {
     />
   ) : null;
   const shell = (
-    <div
+    <BotsSidebarLayout
+      userId={userId}
+      collapsed={botsSidebarCollapsed}
+      onCollapsedChange={setBotsSidebarCollapsedPref}
+      computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}
-      className="relative flex h-full min-w-0 overflow-hidden bg-background text-foreground/90"
+      className="relative flex h-full min-h-0 min-w-0 overflow-hidden bg-background text-foreground/90 [&[data-resizing-sidebar]_*[data-slot=sidebar-gap]]:transition-none [&[data-resizing-sidebar]_*[data-slot=sidebar-container]]:transition-none"
       onTouchStartCapture={(event) => {
         if (
           mobileSidebarOpen ||
@@ -3056,25 +3109,28 @@ function SpaceShell() {
           mobileSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
-      <aside
+      <Sidebar
+        collapsible={isMobileSidebar ? "none" : "icon"}
+        side={document.documentElement.dir === "rtl" ? "right" : "left"}
         data-testid="bots-sidebar"
         data-space-switch="sidebar"
+        inert={isMobileSidebar && !mobileSidebarOpen ? true : undefined}
+        aria-hidden={isMobileSidebar && !mobileSidebarOpen ? true : undefined}
         data-bots-sidebar-density={botsSidebarDensity}
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
-        inert={botsSidebarCollapsed && !mobileSidebarOpen ? true : undefined}
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[transform,width,opacity] md:static md:z-auto ${
-          mobileSidebarOpen
-            ? "translate-x-0"
-            : "max-md:-translate-x-full max-md:rtl:translate-x-full"
-        } ${
-          botsSidebarCollapsed
-            ? "md:w-0 md:max-w-0 md:overflow-hidden md:border-e-0 md:opacity-0 md:pointer-events-none"
-            : "md:w-[316px]"
-        }`}
+        className={
+          isMobileSidebar
+            ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
+            : "h-full overflow-hidden border-sidebar-border"
+        }
       >
         <SidebarHeader
+          mini={miniSidebar}
           activityMode={activityMode}
-          toggleActivityMode={toggleActivityMode}
+          toggleActivityMode={() => {
+            if (miniSidebar) setBotsSidebarCollapsedPref(false);
+            toggleActivityMode();
+          }}
           setBotsSidebarCollapsedPref={setBotsSidebarCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileSidebarOpen}
@@ -3083,53 +3139,72 @@ function SpaceShell() {
           setNewSpaceOpen={setNewSpaceOpen}
           setPickerInfoTopic={setPickerInfoTopic}
         />
-        <InputGroup
-          data-testid="sidebar-search"
-          className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
-        >
-          <InputGroupAddon>
-            <Search size={16} strokeWidth={1.8} aria-hidden="true" />
-          </InputGroupAddon>
-          <InputGroupInput
-            value={activityMode ? activityFilters.query : query}
-            onChange={(e) => {
-              if (activityMode) setActivityFilters({ ...activityFilters, query: e.target.value });
-              else setQuery(e.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (activityMode && event.key === "Escape") {
-                setActivityFilters({ ...activityFilters, query: "" });
-              }
-            }}
-            placeholder={activityMode ? t`Search runs` : t`Search`}
-            aria-label={activityMode ? t`Search runs` : t`Search`}
-            autoComplete="off"
-            name="sidebar-search"
-          />
-          {activityMode ? (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-sm"
-                aria-label={t`Filters`}
-                aria-expanded={activityFiltersExpanded}
-                aria-controls={activityFiltersId}
-                onClick={() => setActivityFiltersExpanded((expanded) => !expanded)}
-                className="relative rounded-lg"
-              >
-                <SlidersHorizontal size={16} aria-hidden="true" />
-                {activityFilterCount > 0 ? (
-                  <span
-                    data-testid="activity-filter-indicator"
-                    aria-hidden="true"
-                    className="absolute end-1 top-1 size-1.5 rounded-full bg-primary"
-                  />
-                ) : null}
-              </InputGroupButton>
+        {miniSidebar ? (
+          <IconTooltip label={t`Search`}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t`Search`}
+              className="mx-auto mb-3"
+              onClick={() => {
+                setBotsSidebarCollapsedPref(false);
+                requestAnimationFrame(() =>
+                  document.querySelector<HTMLInputElement>('input[name="sidebar-search"]')?.focus(),
+                );
+              }}
+            >
+              <Search size={16} aria-hidden="true" />
+            </Button>
+          </IconTooltip>
+        ) : (
+          <InputGroup
+            data-testid="sidebar-search"
+            className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
+          >
+            <InputGroupAddon>
+              <Search size={16} strokeWidth={1.8} aria-hidden="true" />
             </InputGroupAddon>
-          ) : null}
-        </InputGroup>
+            <InputGroupInput
+              value={activityMode ? activityFilters.query : query}
+              onChange={(e) => {
+                if (activityMode) setActivityFilters({ ...activityFilters, query: e.target.value });
+                else setQuery(e.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (activityMode && event.key === "Escape") {
+                  setActivityFilters({ ...activityFilters, query: "" });
+                }
+              }}
+              placeholder={activityMode ? t`Search runs` : t`Search`}
+              aria-label={activityMode ? t`Search runs` : t`Search`}
+              autoComplete="off"
+              name="sidebar-search"
+            />
+            {activityMode ? (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-sm"
+                  aria-label={t`Filters`}
+                  aria-expanded={activityFiltersExpanded}
+                  aria-controls={activityFiltersId}
+                  onClick={() => setActivityFiltersExpanded((expanded) => !expanded)}
+                  className="relative rounded-lg"
+                >
+                  <SlidersHorizontal size={16} aria-hidden="true" />
+                  {activityFilterCount > 0 ? (
+                    <span
+                      data-testid="activity-filter-indicator"
+                      aria-hidden="true"
+                      className="absolute end-1 top-1 size-1.5 rounded-full bg-primary"
+                    />
+                  ) : null}
+                </InputGroupButton>
+              </InputGroupAddon>
+            ) : null}
+          </InputGroup>
+        )}
         <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
-          {showSpaceSearch ? (
+          {showSpaceSearch && !miniSidebar ? (
             <SpaceSearchResults
               hits={searchHits}
               loading={searchLoading}
@@ -3137,7 +3212,7 @@ function SpaceShell() {
             />
           ) : (
             <>
-              {activityMode ? (
+              {activityMode && !miniSidebar ? (
                 <ActivityList
                   filters={activityFilters}
                   onFiltersChange={setActivityFilters}
@@ -3151,6 +3226,7 @@ function SpaceShell() {
                 />
               ) : null}
               <SidebarRoster
+                mini={miniSidebar}
                 sidebarGroups={sidebarGroups}
                 collapsedSidebarSections={collapsedSidebarSections}
                 collapsedRosterParents={collapsedRosterParents}
@@ -3184,18 +3260,23 @@ function SpaceShell() {
               />
             </>
           )}
-          <ArchivedChats
-            archivedBots={archivedBots}
-            archivedGroups={archivedGroups}
-            showSpaceSearch={showSpaceSearch}
-            rpc={rpc}
-            refreshBots={refreshBots}
-            setDeleteTarget={setDeleteTarget}
-            setDeleteGroupTarget={setDeleteGroupTarget}
-          />
+          <div className={miniSidebar ? "hidden" : "contents"}>
+            <ArchivedChats
+              archivedBots={archivedBots}
+              archivedGroups={archivedGroups}
+              showSpaceSearch={showSpaceSearch}
+              rpc={rpc}
+              refreshBots={refreshBots}
+              setDeleteTarget={setDeleteTarget}
+              setDeleteGroupTarget={setDeleteGroupTarget}
+            />
+          </div>
         </div>
-        <PasskeyOffer />
+        <div className={miniSidebar ? "hidden" : "contents"}>
+          <PasskeyOffer />
+        </div>
         <SidebarFooter
+          mini={miniSidebar}
           logos={footerLogos}
           name={userName}
           initials={initials}
@@ -3206,7 +3287,10 @@ function SpaceShell() {
             setMenuOpen(open);
             if (!open) setLogOutError(null);
           }}
-          onIntegrations={() => setPluginsOpen(true)}
+          onIntegrations={() => {
+            setMenuOpen(false);
+            setPluginsOpen(true);
+          }}
           onBoard={
             bootstrapMe?.ticketBoardEnabled
               ? () => {
@@ -3236,53 +3320,7 @@ function SpaceShell() {
           signingOut={signingOut}
           logOutError={logOutError}
         />
-      </aside>
-
-      {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
-      {computerOpen ? null : (
-        <button
-          type="button"
-          data-testid="bots-sidebar-edge"
-          aria-label={botsSidebarCollapsed ? t`Show bots` : t`Hide bots`}
-          aria-pressed={!botsSidebarCollapsed}
-          className={`absolute inset-y-0 z-50 hidden w-2 cursor-ew-resize touch-none border-0 bg-transparent p-0 md:block ${
-            botsSidebarCollapsed ? "start-0" : "start-[308px]"
-          }`}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            botsSidebarEdgeDragRef.current = {
-              startX: event.clientX,
-              mode: botsSidebarCollapsed ? "expand" : "collapse",
-            };
-          }}
-          onPointerMove={(event) => {
-            const drag = botsSidebarEdgeDragRef.current;
-            if (!drag) return;
-            const rtl =
-              typeof document !== "undefined" &&
-              document.documentElement.getAttribute("dir") === "rtl";
-            const delta = rtl ? drag.startX - event.clientX : event.clientX - drag.startX;
-            if (drag.mode === "expand" && delta >= BOTS_SIDEBAR_EDGE_DRAG_PX) {
-              botsSidebarEdgeDragRef.current = null;
-              setBotsSidebarCollapsedPref(false);
-            } else if (drag.mode === "collapse" && delta <= -BOTS_SIDEBAR_EDGE_DRAG_PX) {
-              botsSidebarEdgeDragRef.current = null;
-              setBotsSidebarCollapsedPref(true);
-            }
-          }}
-          onPointerUp={(event) => {
-            const drag = botsSidebarEdgeDragRef.current;
-            botsSidebarEdgeDragRef.current = null;
-            if (!drag) return;
-            if (Math.abs(event.clientX - drag.startX) < BOTS_SIDEBAR_EDGE_DRAG_PX) {
-              setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
-            }
-          }}
-          onPointerCancel={() => {
-            botsSidebarEdgeDragRef.current = null;
-          }}
-        />
-      )}
+      </Sidebar>
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main
@@ -3301,8 +3339,6 @@ function SpaceShell() {
         ) : null}
         <div className="app-drag flex items-center justify-between border-b border-sidebar-border px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
-            {/* Collapsed bots sidebar: this header is the leading edge for window chrome. */}
-            {botsSidebarCollapsed && desktopBridge() ? <WindowChrome /> : null}
             <button
               type="button"
               aria-label={t`Open navigation`}
@@ -3311,19 +3347,6 @@ function SpaceShell() {
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
-            {botsSidebarCollapsed ? (
-              <IconTooltip label={t`Show bots`}>
-                <button
-                  type="button"
-                  data-testid="restore-bots-sidebar"
-                  aria-label={t`Show bots`}
-                  onClick={() => setBotsSidebarCollapsedPref(false)}
-                  className="app-no-drag hidden h-8 w-8 shrink-0 place-items-center rounded-lg text-foreground/75 hover:bg-accent md:grid"
-                >
-                  <PanelLeftOpen size={19} strokeWidth={1.7} aria-hidden="true" />
-                </button>
-              </IconTooltip>
-            ) : null}
             <button
               type="button"
               data-testid="bot-settings-trigger"
@@ -3513,7 +3536,6 @@ function SpaceShell() {
       />
 
       <ResizableSidePanel
-        botsSidebarCollapsed={botsSidebarCollapsed}
         open={Boolean(panel && (active || activeGroup || panel === "create"))}
         panel={panel ?? "closed"}
       >
@@ -3574,6 +3596,7 @@ function SpaceShell() {
                 computer={computer}
                 computerOpen={computerOpen}
                 embeddedScreenUrl={embeddedScreenUrl}
+                screenFrameRef={setScreenFrame}
                 computerScreenError={computerScreenError}
                 computerBooting={computerBooting}
                 booting={booting}
@@ -4041,6 +4064,7 @@ function SpaceShell() {
           runStatus={snapshot?.run?.status}
           sendError={sendError}
           embeddedScreenUrl={embeddedScreenUrl}
+          screenFrameRef={setScreenFrame}
           computerScreenError={computerScreenError}
           computerBooting={computerBooting}
           onStopTeaching={stopTeaching}
@@ -4054,7 +4078,7 @@ function SpaceShell() {
           onClose={() => setComputerOpen(false)}
         />
       ) : null}
-    </div>
+    </BotsSidebarLayout>
   );
 
   return (

@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Gauge,
   LogOut,
+  Plug,
   Settings,
   Smartphone,
   SquareKanban,
@@ -24,6 +25,7 @@ import { useSidebarUpdate } from "./DesktopUpdates";
 import { IconTooltip } from "./IconTooltip";
 
 type Props = {
+  mini?: boolean;
   name: string;
   initials: string | null;
   image?: string | null;
@@ -47,6 +49,7 @@ export function sidebarMarkCount(availableWidth: number) {
 }
 
 export function SidebarFooter({
+  mini = false,
   name,
   initials,
   image,
@@ -88,11 +91,11 @@ export function SidebarFooter({
     observer.observe(label);
     measure();
     return () => observer.disconnect();
-  }, []);
+  }, [mini]);
   return (
     <div
       data-testid="sidebar-footer"
-      className="flex shrink-0 items-center gap-2 bg-transparent px-2.5 py-3"
+      className={`flex shrink-0 items-center gap-2 bg-transparent py-3 ${mini ? "flex-col px-1" : "px-2.5"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
@@ -129,6 +132,16 @@ export function SidebarFooter({
                 <p className="truncate text-xs text-muted-foreground">{email}</p>
               ) : null}
             </div>
+            {mini ? (
+              <Button
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={onIntegrations}
+              >
+                <Plug className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Connect apps</Trans>
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"
@@ -200,17 +213,19 @@ export function SidebarFooter({
           </PopoverContent>
         ) : null}
       </Popover>
-      <Button
-        variant="outline"
-        ref={pillRef}
-        onClick={onIntegrations}
-        className="h-9 min-w-0 flex-1 justify-between rounded-full bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
-      >
-        <span ref={labelRef} className="min-w-0 truncate">
-          <Trans>Connect apps</Trans>
-        </span>
-        <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
-      </Button>
+      {!mini ? (
+        <Button
+          variant="outline"
+          ref={pillRef}
+          onClick={onIntegrations}
+          className="h-9 min-w-0 flex-1 justify-between rounded-full bg-sidebar-accent hover:border-foreground/30 hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+        >
+          <span ref={labelRef} className="min-w-0 truncate">
+            <Trans>Connect apps</Trans>
+          </span>
+          <AppMarkStack marks={logos.slice(0, markCount)} ringClassName="ring-sidebar-accent" />
+        </Button>
+      ) : null}
       {update.available ? (
         <IconTooltip label={t`Install update`}>
           <Button

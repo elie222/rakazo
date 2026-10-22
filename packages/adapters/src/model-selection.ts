@@ -18,6 +18,7 @@ import {
 } from "./pi-catalog-availability.js";
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
+import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
@@ -29,6 +30,22 @@ export function isCatalogModelChoice(provider: string, modelId: string) {
   return [...listPiCatalog(), scriptedCatalogEntry].some(
     (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
   );
+}
+
+async function credentialLiveListsModel(
+  prisma: PrismaClient,
+  secrets: Pick<SecretStore, "load">,
+  userId: string,
+  secretId: string,
+  provider: string,
+  modelId: string,
+  codex?: CodexLiveCatalog,
+): Promise<boolean> {
+  if (await providerLiveListsModel(prisma, secrets, userId, secretId, provider, modelId))
+    return true;
+  if (provider !== "openai-codex" || !codex || !liveCatalogEntry(provider, modelId)) return false;
+  const secret = await loadModelSecret(prisma, secrets, userId, secretId);
+  return secret ? codexLiveListsModel(codex, userId, secret, modelId) : false;
 }
 
 export function defaultCatalogModelId(
@@ -120,7 +137,20 @@ export async function modelCredentialAuthKindsForSpace(
     secretId: string;
     modelSpecific: boolean;
   }> = [];
-  for (const entry of listPiCatalog()) {
+  const slots = [
+    ...listPiCatalog(),
+    ...preferences.flatMap((preference) =>
+      preference.modelId
+        ? [
+            {
+              provider: canonicalPiProviderId(preference.credential.provider),
+              id: preference.modelId,
+            },
+          ]
+        : [],
+    ),
+  ];
+  for (const entry of slots) {
     if (!connectedProviders.has(entry.provider)) continue;
     const choice = chooseModelCredential({
       provider: entry.provider,
@@ -382,6 +412,7 @@ async function loadModelSecret(
 }
 
 export type ConnectedModelResolution = {
+  codexCatalog?: CodexLiveCatalog;
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
 };
@@ -480,7 +511,17 @@ export async function validateBotModelChange(
       model,
     );
     if (!credential) return { ok: false, error: "Connect that model provider first" };
-    const inCatalog = isCatalogModelChoice(provider, model);
+    const inCatalog =
+      isCatalogModelChoice(provider, model) ||
+      (await credentialLiveListsModel(
+        deps.prisma,
+        deps.secretStore,
+        input.userId,
+        credential.secretId,
+        provider,
+        model,
+        deps.codexCatalog,
+      ));
     if (provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       const error = await validateConnectedModelChoice(
         deps.prisma,
@@ -634,7 +675,18 @@ export async function validateConnectedModelChoice(
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return isCatalogModelChoice(provider, modelId) ? undefined : "Unknown model for that provider";
+    return isCatalogModelChoice(provider, modelId) ||
+      (await credentialLiveListsModel(
+        prisma,
+        secretStore,
+        actor.userId,
+        credential.secretId,
+        provider,
+        modelId,
+        resolution.codexCatalog,
+      ))
+      ? undefined
+      : "Unknown model for that provider";
   }
   const savedChoice = await prisma.spaceModelPreference.findFirst({
     where: {
@@ -729,6 +781,7 @@ export function pinnedModelCredentialError(
   if (
     modelId &&
     !isCatalogModelChoice(choice.modelProvider, modelId) &&
+    !liveCatalogEntry(choice.modelProvider, modelId) &&
     credential.defaultModel !== modelId
   ) {
     return "Unknown model for that provider";

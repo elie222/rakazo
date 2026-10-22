@@ -18,6 +18,7 @@ import {
 import { ChevronDown, CircleAlert, Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { Suspense } from "react";
+import { IconTooltip } from "../../components/IconTooltip";
 import type { BotsSidebarDensity } from "../../lib/bots-sidebar-density-pref";
 import {
   compactRosterStatusLabel,
@@ -58,6 +59,7 @@ export function SidebarRoster({
   reorderRosterBot,
   activeSnapshot,
   botMenuContent,
+  mini = false,
 }: {
   sidebarGroups: ReturnType<
     typeof sidebarGroupsForSpaces<Space["bots"][number], Space["groups"][number]>
@@ -91,16 +93,20 @@ export function SidebarRoster({
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
   activeSnapshot: ThreadSnapshot | null;
   botMenuContent: ReactNode;
+  mini?: boolean;
 }) {
   const { t } = useLingui();
   return (
     <>
-      {sidebarGroups.map((group) => {
+      {sidebarGroups.map((group, groupIndex) => {
         const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
         const groupBotIds = group.bots.flatMap((item) =>
           item.kind === "bot" ? [item.chat.id] : [],
         );
-        const nestedRows = nestRosterByParent(group.bots, collapsedRosterParents);
+        const nestedRows = nestRosterByParent(
+          group.bots,
+          mini ? new Set() : collapsedRosterParents,
+        );
         const treeActive = nestedRows.some((row) => row.depth > 0 || row.hasChildren);
         const rosterParent = new Map(
           nestedRows.map((row) => [row.item.chat.id, row.parentId] as const),
@@ -127,12 +133,14 @@ export function SidebarRoster({
         return (
           <Collapsible
             key={group.key}
-            open={!collapsed}
-            onOpenChange={() => toggleSidebarSection(group.key)}
+            open={mini || !collapsed}
+            onOpenChange={() => {
+              if (!mini) toggleSidebarSection(group.key);
+            }}
             data-sidebar-group={group.key}
-            className="flex flex-col gap-0.5"
+            className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
           >
-            {group.title || hasSpaceActions ? (
+            {!mini && (group.title || hasSpaceActions) ? (
               // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
               <div
                 role="group"
@@ -260,7 +268,9 @@ export function SidebarRoster({
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent className="flex flex-col gap-0.5">
+            <CollapsibleContent
+              className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
+            >
               {nestedRows.map(({ item, depth, hasChildren, parentId }) => {
                 const parentCollapsed = hasChildren && collapsedRosterParents.has(item.chat.id);
                 const selected =
@@ -274,7 +284,7 @@ export function SidebarRoster({
                   (rosterHasUndismissedRunError(item.chat.runErrorId, dismissedRunErrorIds) ||
                     (active?.id === item.chat.id && Boolean(displayedRunError)));
                 const compactStatusLabel =
-                  compact && item.kind === "bot"
+                  (compact || mini) && item.kind === "bot"
                     ? rowError
                       ? t`Error`
                       : compactRosterStatusLabel(item.chat.status)
@@ -303,6 +313,234 @@ export function SidebarRoster({
                   groupBotIds.includes(draggedBotId ?? "") &&
                   rosterParent.get(draggedBotId ?? "") === parentId;
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const avatar =
+                  item.kind === "bot" ? (
+                    <BotAvatar
+                      color={item.chat.color}
+                      identity={item.chat.id}
+                      size={mini ? 32 : compact ? 28 : 38}
+                      status={item.chat.status}
+                    />
+                  ) : (
+                    <GroupAvatar
+                      members={
+                        item.chat.id === activeSnapshot?.groupId
+                          ? (activeSnapshot.members ?? item.chat.members)
+                          : item.chat.members
+                      }
+                      size={mini ? 32 : compact ? 28 : 38}
+                    />
+                  );
+                const chatTrigger = (
+                  <ContextMenuTrigger
+                    render={<button type="button" />}
+                    draggable={item.kind === "bot"}
+                    data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
+                    data-roster-unread={item.chat.unread ? "true" : undefined}
+                    data-roster-error={rowError && (compact || mini) ? "true" : undefined}
+                    data-roster-depth={item.kind === "bot" && treeActive ? depth : undefined}
+                    aria-current={selected ? "page" : undefined}
+                    aria-label={mini ? item.chat.name : undefined}
+                    aria-describedby={
+                      mini
+                        ? [
+                            item.chat.unread ? `roster-unread-${item.kind}-${item.chat.id}` : null,
+                            compactStatusLabel
+                              ? `roster-status-${item.kind}-${item.chat.id}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        : undefined
+                    }
+                    aria-keyshortcuts={
+                      item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+                    }
+                    onDragStart={(event) => {
+                      if (item.kind !== "bot") return;
+                      setDraggedBotId(item.chat.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", item.chat.id);
+                    }}
+                    onDragOver={(event) => {
+                      if (!rowDropTarget || !rosterDropAction(rowDropTarget, rowSameParent)) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      if (rosterDropKey !== rowDropKey) setRosterDropKey(rowDropKey);
+                    }}
+                    onDragLeave={() => {
+                      if (rosterDropKey === rowDropKey) setRosterDropKey(null);
+                    }}
+                    onDrop={(event) => {
+                      if (!rowDropTarget) return;
+                      event.preventDefault();
+                      applyRosterDrop(rowDropTarget, rowSameParent, groupBotIds);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedBotId(null);
+                      setRosterDropKey(null);
+                    }}
+                    data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
+                    onKeyDown={(event) => {
+                      if (
+                        item.kind !== "bot" ||
+                        !event.altKey ||
+                        (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+                      )
+                        return;
+                      const siblings = siblingBotIds(parentId);
+                      const index = siblings.indexOf(item.chat.id);
+                      const target = siblings[index + (event.key === "ArrowUp" ? -1 : 1)];
+                      if (!target) return;
+                      event.preventDefault();
+                      reorderRosterBot(item.chat.id, target, groupBotIds);
+                    }}
+                    onClick={() => {
+                      openSpaceChat(
+                        item.chat.spaceId,
+                        item.kind === "bot" ? `/app/${item.chat.id}` : `/app/g/${item.chat.id}`,
+                      );
+                    }}
+                    // Focus the row so closing the menu returns focus here.
+                    onContextMenu={(event) => event.currentTarget.focus()}
+                    className={`flex items-center ${
+                      mini
+                        ? "mx-auto size-12 justify-center rounded-xl"
+                        : compact
+                          ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
+                          : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
+                    } text-start ${
+                      item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
+                    } ${
+                      selected || rosterDropKey === rowDropKey
+                        ? "bg-sidebar-accent"
+                        : "group-hover/row:bg-sidebar-accent"
+                    }`}
+                    style={
+                      treeActive && !mini
+                        ? { paddingInlineStart: `${24 + depth * 14}px` }
+                        : undefined
+                    }
+                  >
+                    {mini ? (
+                      <span className="relative shrink-0">
+                        {avatar}
+                        {rowError ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -end-0.5 bottom-0 size-2 rounded-full bg-destructive ring-2 ring-sidebar"
+                          />
+                        ) : null}
+                        {compactStatusLabel ? (
+                          <span
+                            className="sr-only"
+                            id={`roster-status-${item.kind}-${item.chat.id}`}
+                          >
+                            {compactStatusLabel}
+                          </span>
+                        ) : null}
+                        {item.chat.unread ? (
+                          <>
+                            <span
+                              aria-hidden="true"
+                              data-roster-unread-dot
+                              className="absolute -end-0.5 top-0 size-2 rounded-full bg-unread ring-2 ring-sidebar"
+                            />
+                            <span
+                              id={`roster-unread-${item.kind}-${item.chat.id}`}
+                              className="sr-only"
+                            >
+                              <Trans> (unread)</Trans>
+                            </span>
+                          </>
+                        ) : null}
+                      </span>
+                    ) : (
+                      avatar
+                    )}
+                    {!mini ? (
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                            <span
+                              dir="auto"
+                              data-roster-bot-name={item.kind === "bot" ? "" : undefined}
+                              className={`min-w-0 truncate text-[14px] text-foreground ${
+                                item.chat.unread ? "font-semibold" : "font-medium"
+                              }`}
+                            >
+                              {item.chat.name}
+                            </span>
+                            {item.chat.unread ? (
+                              <span className="sr-only">
+                                <Trans> (unread)</Trans>
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {!compact ? (
+                              <span className="text-[11.5px] text-muted-foreground/60 tabular-nums">
+                                {formatRosterTime(item.chat.updatedAt)}
+                              </span>
+                            ) : null}
+                            {item.chat.unread ? (
+                              <span
+                                aria-hidden="true"
+                                data-roster-unread-dot
+                                className="inline-block h-2 w-2 rounded-full bg-unread"
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                        {!compact && item.kind === "bot" && item.chat.title ? (
+                          <div className="mt-1 flex">
+                            <span className="max-w-full truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                              {item.chat.title}
+                            </span>
+                          </div>
+                        ) : null}
+                        {compact ? (
+                          compactStatusLabel ? (
+                            <div
+                              dir="auto"
+                              data-roster-status={
+                                rowError
+                                  ? "error"
+                                  : item.kind === "bot"
+                                    ? item.chat.status
+                                    : undefined
+                              }
+                              className={`mt-0.5 flex items-center gap-1 text-[11.5px] ${
+                                rowError
+                                  ? "font-medium text-destructive"
+                                  : workStatusLabel
+                                    ? "font-semibold text-status-working"
+                                    : "font-medium text-foreground/75"
+                              }`}
+                            >
+                              {rowError ? <CircleAlert size={12} aria-hidden="true" /> : null}
+                              <span>{compactStatusLabel}</span>
+                            </div>
+                          ) : null
+                        ) : (
+                          <div
+                            dir="auto"
+                            data-roster-preview={!workStatusLabel ? "true" : undefined}
+                            className={`mt-1 line-clamp-2 text-[12.5px] break-words whitespace-normal ${
+                              workStatusLabel
+                                ? "font-semibold text-status-working"
+                                : item.chat.unread
+                                  ? "font-medium text-foreground/75"
+                                  : "text-muted-foreground/60"
+                            }`}
+                          >
+                            {rosterLine}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </ContextMenuTrigger>
+                );
                 return (
                   <div
                     key={`${item.kind}:${item.chat.id}`}
@@ -311,7 +549,7 @@ export function SidebarRoster({
                       opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
                     }}
                   >
-                    {hasChildren ? (
+                    {hasChildren && !mini ? (
                       <span
                         className="absolute inset-y-0 z-10 flex w-3.5 items-center justify-center"
                         style={{ insetInlineStart: `${10 + depth * 14}px` }}
@@ -352,177 +590,19 @@ export function SidebarRoster({
                         )
                       }
                     >
-                      <ContextMenuTrigger
-                        render={<button type="button" />}
-                        draggable={item.kind === "bot"}
-                        data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
-                        data-roster-unread={item.chat.unread ? "true" : undefined}
-                        data-roster-error={rowError && compact ? "true" : undefined}
-                        data-roster-depth={item.kind === "bot" && treeActive ? depth : undefined}
-                        aria-current={selected ? "page" : undefined}
-                        aria-keyshortcuts={
-                          item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
-                        }
-                        onDragStart={(event) => {
-                          if (item.kind !== "bot") return;
-                          setDraggedBotId(item.chat.id);
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", item.chat.id);
-                        }}
-                        onDragOver={(event) => {
-                          if (!rowDropTarget || !rosterDropAction(rowDropTarget, rowSameParent))
-                            return;
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                          if (rosterDropKey !== rowDropKey) setRosterDropKey(rowDropKey);
-                        }}
-                        onDragLeave={() => {
-                          if (rosterDropKey === rowDropKey) setRosterDropKey(null);
-                        }}
-                        onDrop={(event) => {
-                          if (!rowDropTarget) return;
-                          event.preventDefault();
-                          applyRosterDrop(rowDropTarget, rowSameParent, groupBotIds);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedBotId(null);
-                          setRosterDropKey(null);
-                        }}
-                        data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
-                        onKeyDown={(event) => {
-                          if (
-                            item.kind !== "bot" ||
-                            !event.altKey ||
-                            (event.key !== "ArrowUp" && event.key !== "ArrowDown")
-                          )
-                            return;
-                          const siblings = siblingBotIds(parentId);
-                          const index = siblings.indexOf(item.chat.id);
-                          const target = siblings[index + (event.key === "ArrowUp" ? -1 : 1)];
-                          if (!target) return;
-                          event.preventDefault();
-                          reorderRosterBot(item.chat.id, target, groupBotIds);
-                        }}
-                        onClick={() => {
-                          openSpaceChat(
-                            item.chat.spaceId,
-                            item.kind === "bot" ? `/app/${item.chat.id}` : `/app/g/${item.chat.id}`,
-                          );
-                        }}
-                        // Focus the row so closing the menu returns focus here.
-                        onContextMenu={(event) => event.currentTarget.focus()}
-                        className={`flex w-full items-center ${
-                          compact
-                            ? "min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
-                            : "gap-3 rounded-xl px-2.5 py-[10px]"
-                        } text-start ${
-                          item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
-                        } ${
-                          selected || rosterDropKey === rowDropKey
-                            ? "bg-sidebar-accent"
-                            : "group-hover/row:bg-sidebar-accent"
-                        }`}
-                        style={
-                          treeActive ? { paddingInlineStart: `${24 + depth * 14}px` } : undefined
-                        }
-                      >
-                        {item.kind === "bot" ? (
-                          <BotAvatar
-                            color={item.chat.color}
-                            identity={item.chat.id}
-                            size={compact ? 28 : 38}
-                            status={item.chat.status}
-                          />
-                        ) : (
-                          <GroupAvatar
-                            members={
-                              item.chat.id === activeSnapshot?.groupId
-                                ? (activeSnapshot.members ?? item.chat.members)
-                                : item.chat.members
-                            }
-                            size={compact ? 28 : 38}
-                          />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                              <span
-                                dir="auto"
-                                data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                                className={`min-w-0 truncate text-[14px] text-foreground ${
-                                  item.chat.unread ? "font-semibold" : "font-medium"
-                                }`}
-                              >
-                                {item.chat.name}
-                              </span>
-                              {item.chat.unread ? (
-                                <span className="sr-only">
-                                  <Trans> (unread)</Trans>
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              {!compact ? (
-                                <span className="text-[11.5px] text-muted-foreground/60 tabular-nums">
-                                  {formatRosterTime(item.chat.updatedAt)}
-                                </span>
-                              ) : null}
-                              {item.chat.unread ? (
-                                <span
-                                  aria-hidden="true"
-                                  data-roster-unread-dot
-                                  className="inline-block h-2 w-2 rounded-full bg-unread"
-                                />
-                              ) : null}
-                            </div>
-                          </div>
-                          {!compact && item.kind === "bot" && item.chat.title ? (
-                            <div className="mt-1 flex">
-                              <span className="max-w-full truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
-                                {item.chat.title}
-                              </span>
-                            </div>
-                          ) : null}
-                          {compact ? (
-                            compactStatusLabel ? (
-                              <div
-                                dir="auto"
-                                data-roster-status={
-                                  rowError
-                                    ? "error"
-                                    : item.kind === "bot"
-                                      ? item.chat.status
-                                      : undefined
-                                }
-                                className={`mt-0.5 flex items-center gap-1 text-[11.5px] ${
-                                  rowError
-                                    ? "font-medium text-destructive"
-                                    : workStatusLabel
-                                      ? "font-semibold text-status-working"
-                                      : "font-medium text-foreground/75"
-                                }`}
-                              >
-                                {rowError ? <CircleAlert size={12} aria-hidden="true" /> : null}
-                                <span>{compactStatusLabel}</span>
-                              </div>
-                            ) : null
-                          ) : (
-                            <div
-                              dir="auto"
-                              data-roster-preview={!workStatusLabel ? "true" : undefined}
-                              className={`mt-1 line-clamp-2 text-[12.5px] break-words whitespace-normal ${
-                                workStatusLabel
-                                  ? "font-semibold text-status-working"
-                                  : item.chat.unread
-                                    ? "font-medium text-foreground/75"
-                                    : "text-muted-foreground/60"
-                              }`}
-                            >
-                              {rosterLine}
-                            </div>
-                          )}
-                        </div>
-                      </ContextMenuTrigger>
+                      {mini ? (
+                        <IconTooltip
+                          label={
+                            compactStatusLabel
+                              ? `${item.chat.name}: ${compactStatusLabel}`
+                              : item.chat.name
+                          }
+                        >
+                          {chatTrigger}
+                        </IconTooltip>
+                      ) : (
+                        chatTrigger
+                      )}
                       {botMenu?.kind === item.kind && botMenu.id === item.chat.id ? (
                         <Suspense fallback={null}>{botMenuContent}</Suspense>
                       ) : null}

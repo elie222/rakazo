@@ -2634,10 +2634,6 @@ msgstr "השמעת דוגמה"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "היי, כך אשמע כשאקריא תשובות בקול."
 
-#: src/pages/Shell.tsx
-msgid "Hide bots"
-msgstr "הסתרת הבוטים"
-
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "הסתרת הסיסמה"
@@ -4120,6 +4116,10 @@ msgstr "איפוס הסיסמה"
 msgid "Resetting…"
 msgstr "מאפס…"
 
+#: src/pages/shell/sidebar-layout.tsx
+msgid "Resize bots sidebar"
+msgstr ""
+
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "שינוי גודל החלונית"
@@ -4483,7 +4483,7 @@ msgstr "מיומנויות משותפות"
 msgid "Show all"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "הצגת בוטים"
 

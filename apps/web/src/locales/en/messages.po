@@ -2634,10 +2634,6 @@ msgstr "Hear a sample"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "Hi, this is how I'll sound when I read replies out loud."
 
-#: src/pages/Shell.tsx
-msgid "Hide bots"
-msgstr "Hide bots"
-
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Hide password"
@@ -4120,6 +4116,10 @@ msgstr "Reset your password"
 msgid "Resetting…"
 msgstr "Resetting…"
 
+#: src/pages/shell/sidebar-layout.tsx
+msgid "Resize bots sidebar"
+msgstr "Resize bots sidebar"
+
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "Resize panel"
@@ -4483,7 +4483,7 @@ msgstr "Shared skills"
 msgid "Show all"
 msgstr "Show all"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "Show bots"
 

@@ -37,6 +37,7 @@ export function createComputerRefresh(options: {
   onInitialError: (error: unknown) => void;
 }) {
   let active = false;
+  let paused = false;
   let revision = 0;
   let lifetime = 0;
   let activeActions = 0;
@@ -64,7 +65,7 @@ export function createComputerRefresh(options: {
 
   function schedule() {
     clearTimeout(timer);
-    if (!active || activeActions > 0 || pendingRevision === revision) return;
+    if (!active || paused || activeActions > 0 || pendingRevision === revision) return;
     timer = setTimeout(() => void refresh({ poll: true }).catch(() => undefined), 2000);
   }
 
@@ -111,6 +112,18 @@ export function createComputerRefresh(options: {
       screenLoaded = false;
     },
     isActive: () => active,
+    /** Stop the poll timer while the app is in the background. */
+    pause() {
+      paused = true;
+      invalidate();
+    },
+    /** Resume immediately after returning to the foreground. */
+    resume() {
+      if (!active || !paused) return;
+      paused = false;
+      if (activeActions === 0) void refresh().catch(() => undefined);
+      else schedule();
+    },
     beginAction() {
       const started = active;
       const actionLifetime = lifetime;
@@ -135,6 +148,7 @@ export function createComputerRefresh(options: {
     },
     start() {
       active = true;
+      paused = false;
       const initial = refresh();
       const initialRevision = revision;
       void initial.catch((error) => {
@@ -146,6 +160,7 @@ export function createComputerRefresh(options: {
     },
     dispose() {
       active = false;
+      paused = false;
       lifetime += 1;
       activeActions = 0;
       screenLoaded = false;

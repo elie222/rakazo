@@ -119,19 +119,22 @@ it("shows a readable run error with raw details, while preserving send errors", 
   expect(error?.querySelector("details")).toBeNull();
 });
 
-it("links the missing-model send error to model settings", () => {
-  const onOpenModels = vi.fn();
-  renderComposer(async () => true, { sendError: MODEL_REQUIRED_SEND_ERROR, onOpenModels });
-  const link = container?.querySelector<HTMLButtonElement>(
-    '[data-testid="composer-error-open-models"]',
-  );
-  expect(link?.textContent).toBe(MODEL_REQUIRED_SEND_ERROR);
-  act(() => link?.click());
-  expect(onOpenModels).toHaveBeenCalledOnce();
+it.each([MODEL_REQUIRED_SEND_ERROR, `  ${MODEL_REQUIRED_SEND_ERROR}  `])(
+  "links the missing-model send error to model settings: %s",
+  (sendError) => {
+    const onOpenModels = vi.fn();
+    renderComposer(async () => true, { sendError, onOpenModels });
+    const link = container?.querySelector<HTMLButtonElement>(
+      '[data-testid="composer-error-open-models"]',
+    );
+    expect(link?.textContent).toBe(sendError);
+    act(() => link?.click());
+    expect(onOpenModels).toHaveBeenCalledOnce();
 
-  rerenderComposer({ sendError: "Could not send the message." });
-  expect(container?.querySelector('[data-testid="composer-error-open-models"]')).toBeNull();
-});
+    rerenderComposer({ sendError: "Could not send the message." });
+    expect(container?.querySelector('[data-testid="composer-error-open-models"]')).toBeNull();
+  },
+);
 
 function pickAttachment() {
   const input = container?.querySelector<HTMLInputElement>('input[type="file"]');

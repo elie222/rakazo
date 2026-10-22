@@ -32,6 +32,7 @@ type ComputerOverlayProps = {
   runStatus?: Run["status"];
   sendError: string | null;
   embeddedScreenUrl: string | null;
+  screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
   onStopTeaching: () => void | Promise<void>;
@@ -56,6 +57,7 @@ export function ComputerOverlay({
   runStatus,
   sendError,
   embeddedScreenUrl,
+  screenFrameRef,
   computerScreenError,
   computerBooting,
   onStopTeaching,
@@ -183,6 +185,7 @@ export function ComputerOverlay({
             <>
               <iframe
                 title={t`Bot screen`}
+                ref={screenFrameRef}
                 src={embeddedScreenUrl}
                 sandbox={screenIframeSandbox(embeddedScreenUrl)}
                 className="h-full w-full border-0 bg-black"

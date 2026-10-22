@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
-import { MODEL_REQUIRED_SEND_ERROR, normalizeRunError } from "@rakazo/core";
+import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
 import { X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
@@ -68,7 +68,7 @@ export function ComposerError({
       className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
     >
       <div className="min-w-0 flex-1">
-        {sendError === MODEL_REQUIRED_SEND_ERROR ? (
+        {isModelRequiredSendError(sendError) ? (
           <button
             type="button"
             data-testid="composer-error-open-models"
