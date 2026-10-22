@@ -107,3 +107,34 @@ it("keeps each concurrent connection test busy until its own request finishes", 
     await act(async () => root.unmount());
   }
 });
+
+it.each([
+  [403, 2],
+  [404, 2],
+  [503, 5],
+])("after a %i install poll, list requests total %i", async (status, requests) => {
+  vi.useFakeTimers();
+  const installing = {
+    id: "one",
+    name: "one",
+    transport: "stdio",
+    oauthStatus: "none",
+    health: { status: "installing" },
+    enabled: true,
+  } as McpServer;
+  mocks.list
+    .mockReset()
+    .mockResolvedValueOnce([installing])
+    .mockRejectedValueOnce(Object.assign(new Error("Refused"), { status }))
+    .mockResolvedValue([installing]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<McpServersOverlay onClose={() => {}} />));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(mocks.list).toHaveBeenCalledTimes(requests);
+  } finally {
+    await act(async () => root.unmount());
+    vi.useRealTimers();
+  }
+});

@@ -26,6 +26,7 @@ const screenHtml = `<!doctype html><title>Fake screen</title>
     asset: loaded,
     cookie: attempt(() => document.cookie),
     storage: attempt(() => localStorage.getItem('app-data')),
+    session: attempt(() => { sessionStorage.setItem('k', 'v'); return sessionStorage.getItem('k'); }),
     // A blank child frame shares this opaque origin but not the shim, so it reaches the real
     // getter. Only a SecurityError proves the sandbox blocked it.
     realStorage: (() => {
@@ -213,6 +214,7 @@ for (const mode of ["development", "preview"] as const) {
         socket: "ok",
         cookie: "blocked",
         storage: null,
+        session: "v",
         realStorage: "SecurityError",
         api: "blocked",
       });
@@ -246,6 +248,7 @@ for (const mode of ["development", "preview"] as const) {
       expect(response?.headers()["content-encoding"]).toBe("gzip");
       expect(JSON.parse(await page.locator("body").innerText())).toMatchObject({
         storage: "blocked",
+        session: "blocked",
         realStorage: "SecurityError",
       });
     });
@@ -308,6 +311,7 @@ for (const mode of ["development", "preview"] as const) {
           socket: "ok",
           cookie: "blocked",
           storage: null,
+          session: "v",
           realStorage: "SecurityError",
           parent: "blocked",
           api: "blocked",

@@ -41,7 +41,10 @@ vi.mock("dockerode", () => ({
   },
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
-vi.mock("./egress-probe.js", () => ({ verifyRestrictedEgress: mocks.verifyRestrictedEgress }));
+vi.mock("./egress-probe.js", () => ({
+  EgressNotEnforced: class EgressNotEnforced extends Error {},
+  verifyRestrictedEgress: mocks.verifyRestrictedEgress,
+}));
 vi.mock("node:fs/promises", async (importOriginal) => ({
   ...(await importOriginal<typeof NodeFsPromises>()),
   mkdir: vi.fn(),
@@ -580,6 +583,34 @@ describe("restricted egress rekeying", () => {
     expect(existing.start).not.toHaveBeenCalled();
     expect(mocks.docker.createContainer).not.toHaveBeenCalled();
     expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+  });
+
+  it("auto egress stays open only after a probe shows the rules are missing", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "auto");
+    const { existing } = setupExisting(computerNetworkNameFor("bot"));
+    const { EgressNotEnforced } = await import("./egress-probe.js");
+    mocks.verifyRestrictedEgress
+      .mockRejectedValueOnce(new Error("probe timed out"))
+      .mockRejectedValueOnce(new EgressNotEnforced("a computer bridge reached the host"));
+
+    // A probe that could not finish decides nothing: refuse, and probe again next time.
+    const refused = await provision();
+    expect(refused.status).toBe(500);
+    expect(existing.start).not.toHaveBeenCalled();
+
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({ Id: "bot-network", Options: {} }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    });
+    mocks.docker.createNetwork.mockResolvedValue({});
+    const opened = await provision();
+    expect(await opened.clone().text()).not.toMatch(/probe/);
+    expect(opened.status).toBe(200);
+    // The completed answer is kept: no third probe.
+    await provision();
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
   });
 
   it("resumes a computer whose network has the named bridge", async () => {

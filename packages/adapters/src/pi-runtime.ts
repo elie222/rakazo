@@ -90,6 +90,7 @@ import {
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
 import { textContentArg } from "./tool-text.js";
+import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
@@ -915,7 +916,7 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "computer_act") return "Operating the computer";
   if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
   if (toolName === "create_space") return `Creating space: ${detail(record.name)}`;
-  if (toolName === "list_fleet") return "Checking the fleet";
+  if (toolName === "list_fleet") return "Checking your bots";
   if (toolName === "create_group") return `Creating group: ${detail(record.name)}`;
   if (toolName === "update_group")
     return `Updating group: ${detail(record.group_name ?? record.name)}`;
@@ -2720,8 +2721,8 @@ export function isCodexModel(model: Pick<Model<Api>, "api" | "provider">): boole
   return model.provider === "openai-codex" || model.api === "openai-codex-responses";
 }
 
-/** Abort reason recorded when a Codex stream goes silent past the idle bound. */
-export const CODEX_STREAM_IDLE_TIMEOUT_MESSAGE = "Codex stream idle timeout";
+/** Abort reason recorded when a model stream goes silent past the idle bound. */
+export const MODEL_STREAM_IDLE_TIMEOUT_MESSAGE = "Model stream idle timeout";
 
 export interface StreamIdleWatchdog {
   /** Composed abort signal to hand to the provider request. */
@@ -2752,7 +2753,7 @@ export interface StreamIdleWatchdog {
  * so when the watchdog fired the wrapper relabels the terminal error as an
  * idle timeout rather than a caller abort.
  */
-export function codexStreamIdleWatchdog(
+export function modelStreamIdleWatchdog(
   upstream: AbortSignal | undefined,
   idleTimeoutMs: number = MODEL_STREAM_IDLE_TIMEOUT_MS,
 ): StreamIdleWatchdog {
@@ -2771,7 +2772,7 @@ export function codexStreamIdleWatchdog(
       timer = undefined;
       if (controller.signal.aborted) return;
       timedOut = true;
-      controller.abort(new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE));
+      controller.abort(new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE));
     }, idleTimeoutMs);
     timer.unref?.();
   };
@@ -2798,7 +2799,7 @@ export function codexStreamIdleWatchdog(
       ? {
           ...message,
           stopReason: "error",
-          errorMessage: CODEX_STREAM_IDLE_TIMEOUT_MESSAGE,
+          errorMessage: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
         }
       : message;
 
@@ -2859,7 +2860,7 @@ function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Res
       const outcome = await Promise.race([read, timeout]);
       clear();
       if (outcome.kind === "timeout") {
-        const error = new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE);
+        const error = new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
         void reader.cancel(error).catch(() => undefined);
         controller.error(error);
         return;
@@ -2886,12 +2887,18 @@ function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Res
   });
 }
 
-function codexRequestFetch(
+function modelRequestFetch(
   fetchImpl: ModelsSimpleStreamOptions["fetch"],
   idleTimeoutMs: number,
 ): NonNullable<ModelsSimpleStreamOptions["fetch"]> {
   return async (input, init) => {
-    const response = fetchImpl ? await fetchImpl(input, init) : await globalThis.fetch(input, init);
+    // Compatible providers attach a package undici Agent after this wrapper is
+    // installed. Pair that dispatcher without replacing other providers' fetch.
+    const transport =
+      init && "dispatcher" in init
+        ? fetchPairedWithDispatcher(fetchImpl)
+        : (fetchImpl ?? globalThis.fetch);
+    const response = await transport(input, init);
     return boundRetryableErrorBody(response, idleTimeoutMs);
   };
 }
@@ -2906,23 +2913,21 @@ export function reliableModelStream(
   runStream?: (options: ModelsSimpleStreamOptions) => AssistantMessageEventStream,
   cacheRetention?: ModelsSimpleStreamOptions["cacheRetention"],
 ): AssistantMessageEventStream {
-  const watchdog = isCodexModel(model) ? codexStreamIdleWatchdog(options?.signal) : undefined;
+  const watchdog = modelStreamIdleWatchdog(options?.signal);
   try {
     const preparedOptions = reliableStreamOptions(
       model,
-      watchdog
-        ? {
-            ...options,
-            signal: watchdog.signal,
-            fetch: codexRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
-            // Only a 2xx arms the shared watchdog. Error bodies are bounded by
-            // the fetch wrapper, and a caller-supplied hook still sees every status.
-            onResponse: (response, requestModel) => {
-              if (response.status >= 200 && response.status < 300) watchdog.ping();
-              return options?.onResponse?.(response, requestModel);
-            },
-          }
-        : options,
+      {
+        ...options,
+        signal: watchdog.signal,
+        fetch: modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
+        // Only a 2xx arms the shared watchdog. Error bodies are bounded by
+        // the fetch wrapper, and a caller-supplied hook still sees every status.
+        onResponse: (response, requestModel) => {
+          if (response.status >= 200 && response.status < 300) watchdog.ping();
+          return options?.onResponse?.(response, requestModel);
+        },
+      },
       configuredMaxTokens,
       accessToken,
       cacheRetention,
@@ -2930,9 +2935,9 @@ export function reliableModelStream(
     const stream = runStream
       ? runStream(preparedOptions)
       : models.streamSimple(model, context, preparedOptions);
-    return watchdog ? watchdog.wrap(stream) : stream;
+    return watchdog.wrap(stream);
   } catch (error) {
-    watchdog?.dispose();
+    watchdog.dispose();
     throw error;
   }
 }

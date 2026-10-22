@@ -16,6 +16,8 @@ esac
 readonly DOWNLOAD_BASE
 
 readonly COMPOSE_FILE="docker-compose.images.yml"
+# Optional operator overlay, layered after the base file the way Compose itself does by default.
+readonly OVERRIDE_FILE="docker-compose.override.yml"
 readonly ENV_EXAMPLE=".env.images.example"
 readonly ENV_FILE=".env"
 readonly EGRESS_SCRIPT="restrict-computer-egress.sh"
@@ -212,6 +214,7 @@ download() {
 }
 
 create_env() {
+  local generated_encryption_key=false
   umask 077
   temporary_file=$(mktemp "./${ENV_FILE}.tmp.XXXXXX")
 
@@ -228,6 +231,7 @@ create_env() {
         ;;
       "ENCRYPTION_KEY=")
         printf 'ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)"
+        generated_encryption_key=true
         ;;
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
@@ -245,6 +249,10 @@ create_env() {
   mv -- "$temporary_file" "$ENV_FILE"
   temporary_file=""
   echo "Created .env with random secrets."
+  # Name the variable and file only: the key itself never reaches the terminal or its logs.
+  if [[ "$generated_encryption_key" == true ]]; then
+    echo "Back up ENCRYPTION_KEY from ${PWD}/${ENV_FILE}. Encrypted content cannot be recovered without it."
+  fi
 }
 
 # Secrets added after a .env was created. Append them so an upgrade still starts,
@@ -258,7 +266,7 @@ add_missing_secrets() {
 }
 
 validate_required_secrets() {
-  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f - config --environment <<'YAML' | awk '
+  if ! docker compose --env-file "$ENV_FILE" "${compose_files[@]}" -f - config --environment <<'YAML' | awk '
     BEGIN {
       required["POSTGRES_PASSWORD"] = 1
       required["POSTGRES_APP_PASSWORD"] = 1
@@ -297,6 +305,18 @@ YAML
   then
     fail "set every required secret in .env to a non-empty value."
   fi
+}
+
+# The Compose file passes each container only the settings it names. Say which .env settings it
+# does not name, such as TELEGRAM_BOT_TOKEN_<NAME>, rather than let an upgrade drop them silently.
+warn_unpassed_settings() {
+  local key unpassed=""
+  while IFS= read -r key; do
+    [[ "$key" == COMPOSE_* ]] || grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
+  done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
+  [[ -n "$unpassed" ]] || return 0
+  echo "Warning: no container receives these .env settings:${unpassed}." >&2
+  echo "List them in an override file; see Settings with names you choose in docs/self-host.md." >&2
 }
 
 # Why this host cannot take the restricted-egress firewall rules; empty when it can.
@@ -340,6 +360,14 @@ configure_computer_egress() {
 download "$COMPOSE_FILE"
 download "$ENV_EXAMPLE"
 
+compose_files=(-f "$COMPOSE_FILE")
+override_present=""
+if [[ -f "$OVERRIDE_FILE" ]]; then
+  compose_files+=(-f "$OVERRIDE_FILE")
+  override_present=1
+  echo "Using ${OVERRIDE_FILE}."
+fi
+
 if [[ -e "$ENV_FILE" ]]; then
   echo "Keeping existing .env."
   add_missing_secrets
@@ -348,6 +376,7 @@ else
 fi
 
 validate_required_secrets
+warn_unpassed_settings
 
 if [[ "$prepare_only" == true ]]; then
   echo "Rakazo files are ready. Edit .env, then run: bash install-images.sh"
@@ -360,7 +389,7 @@ prepare_proxy_env
 if [[ "$pull_never" == true ]]; then
   echo "Skipping image pull (--pull-never / --offline); images must already be on this Docker host."
 else
-  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+  if ! docker compose --env-file "$ENV_FILE" "${compose_files[@]}" pull; then
     fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
   fi
 fi
@@ -378,9 +407,9 @@ fi
 # bash 3.2 + set -u: "${arr[@]}" aborts when arr is empty.
 if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
   echo "Waiting for healthy services."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"} --wait --wait-timeout 300
+  docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"} --wait --wait-timeout 300
 else
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
+  docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
 
 echo "Rakazo is starting at http://127.0.0.1:5173"

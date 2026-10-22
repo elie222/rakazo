@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-test.describe.configure({ mode: "serial" });
-
-test("agent-attached files appear as downloadable cards", async ({ page }, testInfo) => {
+test("agent-attached files appear as cards with previews and downloads", async ({
+  page,
+}, testInfo) => {
   const stamp = Date.now();
   await signup(page, `artifact-card-${stamp}@rakazo.test`, "password12", "Artifact Card");
   await completeOnboarding(page);
@@ -22,16 +22,9 @@ test("agent-attached files appear as downloadable cards", async ({ page }, testI
   await fileCard.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("result.txt");
-});
 
-test("agent-attached Markdown opens a rendered preview and can be downloaded", async ({
-  page,
-}, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `markdown-preview-${stamp}@rakazo.test`, "password12", "Markdown Preview");
-  await completeOnboarding(page);
-
-  const composer = page.getByPlaceholder(/Message/);
+  // Markdown opens a rendered preview and can be downloaded.
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(
     "write path notes/preview.md and attach it to the thread says # Project preview",
   );
@@ -54,35 +47,30 @@ test("agent-attached Markdown opens a rendered preview and can be downloaded", a
   await expect(closeButton).toBeFocused();
   await captureScreenshot(page, testInfo, "markdown-preview-open");
 
-  const downloadPromise = page.waitForEvent("download");
+  const markdownDownloadPromise = page.waitForEvent("download");
   await downloadButton.click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("preview.md");
+  const markdownDownload = await markdownDownloadPromise;
+  expect(markdownDownload.suggestedFilename()).toBe("preview.md");
 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(previewButton).toBeFocused();
-});
 
-test("agent-attached HTML renders in the sandboxed preview", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `html-preview-${stamp}@rakazo.test`, "password12", "HTML Preview");
-  await completeOnboarding(page);
-
-  const composer = page.getByPlaceholder(/Message/);
+  // HTML renders in the sandboxed preview.
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 });
   await composer.fill(
     "write path notes/page.html and attach it to the thread says <h1>Rendered page</h1><p id=ran></p><script>document.getElementById('ran').textContent = 'script ran'</script>",
   );
   await page.keyboard.press("Enter");
 
-  const previewButton = page.getByRole("button", { name: "Preview page.html" });
-  await expect(previewButton).toBeVisible({ timeout: 30_000 });
-  await previewButton.click();
+  const htmlPreviewButton = page.getByRole("button", { name: "Preview page.html" });
+  await expect(htmlPreviewButton).toBeVisible({ timeout: 30_000 });
+  await htmlPreviewButton.click();
 
-  const dialog = page.getByRole("dialog", { name: "page.html" });
-  await expect(dialog).toBeVisible();
+  const htmlDialog = page.getByRole("dialog", { name: "page.html" });
+  await expect(htmlDialog).toBeVisible();
   // The viewer loads the network shell, which renders the document in a nested sandboxed frame.
-  const shell = dialog.locator('iframe[title="page.html"]');
+  const shell = htmlDialog.locator('iframe[title="page.html"]');
   await expect(shell).toHaveAttribute("src", "/html-viewer.html");
   const preview = shell.contentFrame().locator("iframe#preview").contentFrame();
   await expect(preview.getByRole("heading", { name: "Rendered page" })).toBeVisible();

@@ -37,7 +37,7 @@ describe("agent content negotiation", () => {
     const response = markdownResponse("# Rakazo\n");
     expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
     expect(response.headers.get("link")).toBe(
-      '</llms.txt>; rel="describedby"; type="text/plain"',
+      '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"',
     );
     expect(response.headers.get("vary")).toBe("Accept, Accept-Encoding");
     await expect(response.text()).resolves.toBe("# Rakazo\n");

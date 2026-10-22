@@ -48,6 +48,7 @@ describe("appearance preference", () => {
     expect(tokensForAppearance("light")).toBe(lightTokens);
     for (const key of Object.keys(darkTokens) as (keyof ColorTokens)[]) {
       if (
+        key === "chatUserForeground" ||
         key === "destructiveForeground" ||
         key === "destructiveFill" ||
         key === "faviconPlate" ||
@@ -56,6 +57,9 @@ describe("appearance preference", () => {
         continue;
       expect(darkTokens[key], key).not.toBe(lightTokens[key]);
     }
+    // Link icons keep a white plate in both themes; the light user bubble is near-black.
+    expect(lightTokens.faviconPlate).toBe("#FFFFFF");
+    expect(darkTokens.faviconPlate).toBe("#FFFFFF");
   });
 
   it("keeps working-state blue in its own semantic token across themes", () => {
@@ -122,7 +126,31 @@ function contrastRatio(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-describe("dark palette contrast", () => {
+describe("light palette readability", () => {
+  it.each(["background", "card", "muted"] as const)(
+    "keeps faint text readable and lighter than secondary text on %s",
+    (surface) => {
+      const faint = contrastRatio(lightTokens.faintForeground, lightTokens[surface]);
+      const secondary = contrastRatio(lightTokens.mutedForeground, lightTokens[surface]);
+      expect(faint).toBeGreaterThanOrEqual(3);
+      expect(secondary - faint).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it("separates grouped cells at least as much as the iOS grouped palette", () => {
+    expect(contrastRatio(lightTokens.card, lightTokens.background)).toBeGreaterThanOrEqual(
+      contrastRatio("#FFFFFF", "#F2F2F7"),
+    );
+  });
+
+  it("keeps enabled password actions readable", () => {
+    expect(
+      contrastRatio(lightTokens.primaryForeground, lightTokens.primary),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("dark palette readability", () => {
   // The destructive fill follows the system palette; ordinary body text meets AA.
   it.each(["background", "card", "muted"] as const)(
     "keeps faint text readable on %s",
@@ -138,7 +166,15 @@ describe("dark palette contrast", () => {
       expect(contrastRatio(color, surface)).toBeGreaterThanOrEqual(3);
     }
   });
+});
 
+describe.each([
+  ["dark", darkTokens],
+  ["light", lightTokens],
+] as const)("%s palette contrast", (_name, palette: ColorTokens) => {
+  // Opaque text tokens on the surfaces they are drawn on. Secondary and faint text are
+  // translucent system label colours and white on the solid red fill is 3.9:1, so the
+  // palette matches the iOS design there instead of 4.5:1; they are not listed.
   const pairs: [keyof ColorTokens, keyof ColorTokens][] = [
     ["foreground", "background"],
     ["foreground", "dialog"],
@@ -158,7 +194,7 @@ describe("dark palette contrast", () => {
   ];
 
   it.each(pairs)("%s on %s meets WCAG AA (4.5:1)", (text, surface) => {
-    expect(contrastRatio(darkTokens[text], darkTokens[surface])).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(palette[text], palette[surface])).toBeGreaterThanOrEqual(4.5);
   });
 });
 

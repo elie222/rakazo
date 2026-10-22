@@ -23,7 +23,7 @@ const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const CREATE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW;
 const HEAD_BYTES = 512;
 
-export type ArtifactKeys = Pick<ContentKeyRing, "current" | "byId">;
+export type ArtifactKeys = Pick<ContentKeyRing, "current" | "byId" | "encryptWrites">;
 
 async function* once(bytes: Uint8Array) {
   yield bytes;
@@ -58,8 +58,8 @@ async function writeAll(handle: FileHandle, chunks: AsyncIterable<Uint8Array>) {
 
 /**
  * Artifact bytes on local disk. With keys, files are sealed with the space's
- * current key in 64 KiB authenticated segments; files written before
- * encryption stay readable until `sealFile` rewrites them.
+ * current key in 64 KiB authenticated segments, unless the keys have
+ * `encryptWrites` off; plaintext files stay readable either way.
  */
 export class LocalArtifactStore implements ArtifactStore {
   constructor(
@@ -94,7 +94,7 @@ export class LocalArtifactStore implements ArtifactStore {
     const id = randomUUID();
     const dir = path.join(this.root, "artifacts", context.spaceId);
     await mkdir(dir, { recursive: true });
-    const key = this.keys ? await this.keys.current(context.spaceId) : undefined;
+    const key = this.keys?.encryptWrites ? await this.keys.current(context.spaceId) : undefined;
     const handle = await open(path.join(dir, id), CREATE_FLAGS, 0o600);
     try {
       if (key) await writeAll(handle, sealArtifact(key, id, once(artifact.bytes)));

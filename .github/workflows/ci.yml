@@ -343,4 +343,4 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$SSH_USER@$SSH_HOST" deploy-main
+            "$SSH_USER@$SSH_HOST" "deploy-main $GITHUB_SHA"

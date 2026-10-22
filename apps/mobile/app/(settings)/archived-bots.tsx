@@ -13,7 +13,7 @@ import { confirmDeleteBot } from "../../lib/bot-lifecycle";
 import { useFloatingHeaderInset } from "../../lib/floating-header";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
-import { closeSettingsSheet } from "../../lib/settings-sheet";
+import { openFromSettingsSheet } from "../../lib/settings-sheet";
 import { errorText } from "../../lib/user-error";
 
 export default function ArchivedBots() {
@@ -156,8 +156,7 @@ export default function ArchivedBots() {
       // Left or dismissed while loading, even if back since: a later sheet must not close for it.
       if (generation !== focusGeneration.current) return;
       // The thread is not a settings page, so it opens on the root stack once the sheet closes.
-      closeSettingsSheet();
-      router.push({
+      openFromSettingsSheet(router, {
         pathname: "/thread",
         params: { botId: bot.id, name: bot.name, readOnly: "1" },
       });

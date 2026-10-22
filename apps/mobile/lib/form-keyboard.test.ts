@@ -10,14 +10,17 @@ const scrollViewProps = (source: string) => {
 describe("form keyboard handling", () => {
   // The keyboard covered the primary button at the end of these forms, and the form could not
   // scroll it clear, so it could only be reached after dismissing the keyboard.
-  it("New group keeps Create group on top of the keyboard", () => {
+  it("New group keeps Skip/Create reachable above the keyboard and submits on Return", () => {
     const source = screen("new-group.tsx");
-    const label = 'label={pending ? t("Creating…") : t("Create group")}';
     const avoidingView = source.slice(source.indexOf("<KeyboardAvoidingView"));
     expect(avoidingView).toContain('behavior="padding"');
-    // The button sits below the scroll view, not at the end of its content.
-    expect(source.indexOf(label)).toBeGreaterThan(source.indexOf("</ScrollView>"));
+    // The scroll view sits inside the avoiding view, so it shrinks above the keyboard.
+    expect(source.indexOf("<ScrollView")).toBeGreaterThan(source.indexOf("<KeyboardAvoidingView"));
     expect(scrollViewProps(source)).toContain('keyboardShouldPersistTaps="handled"');
+    // Next lives in the floating header, so the keyboard never covers it.
+    expect(source).toContain("headerRight:");
+    expect(source).toContain('returnKeyType="done"');
+    expect(source).toContain("onSubmitEditing={() => void create()}");
   });
 
   it.each(["group-settings.tsx", "bot-settings.tsx", "new.tsx"])(

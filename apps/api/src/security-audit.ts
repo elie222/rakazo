@@ -27,11 +27,6 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "mcp.oauth.disconnect": { type: "credential.deleted", kind: "mcp_oauth", fields: ["serverId"] },
   "capabilities.install": { type: "credential.created", kind: "connector", fields: ["kind"] },
   "capabilities.remove": { type: "credential.deleted", kind: "connector", fields: ["id"] },
-  "connections.complete": {
-    type: "credential.created",
-    kind: "connection",
-    fields: ["connectionId"],
-  },
   "connections.revoke": {
     type: "credential.deleted",
     kind: "connection",
@@ -73,6 +68,23 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "approvalRules.remove": { type: "approval.policy.changed", fields: ["id"] },
   "autoReview.set": { type: "approval.policy.changed", fields: ["enabled"] },
 };
+
+/**
+ * A connection becoming connected. Clients poll `connections.complete`, so the handler records
+ * this on the transition instead of the table recording every call.
+ */
+export function connectionCreatedEvent(
+  procedure: "connections.begin" | "connections.catalog" | "connections.complete",
+  connectionId: string,
+  actor: { userId: string; spaceId: string },
+): SecurityEventInput {
+  return {
+    type: "credential.created",
+    userId: actor.userId,
+    spaceId: actor.spaceId,
+    metadata: { procedure, kind: "connection", connectionId },
+  };
+}
 
 /** The event for a procedure that just succeeded, or undefined when it is not audited. */
 export function procedureSecurityEvent(

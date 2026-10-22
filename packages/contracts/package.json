@@ -10,6 +10,11 @@
       "default": "./src/index.ts"
     },
     "./local-settings": "./src/local-settings.js",
+    "./client-build": {
+      "types": "./src/client-build.ts",
+      "development": "./src/client-build.ts",
+      "default": "./src/client-build.ts"
+    },
     "./content-security-policy": {
       "types": "./src/content-security-policy.ts",
       "development": "./src/content-security-policy.ts",

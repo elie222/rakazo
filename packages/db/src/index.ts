@@ -10,6 +10,7 @@ export * from "./client.js";
 export * from "./computers.js";
 export * from "./content-crypto.js";
 export * from "./content-encryption.js";
+export * from "./content-export.js";
 export * from "./content-keys.js";
 export * from "./content-migration.js";
 export * from "./credential-secrets.js";

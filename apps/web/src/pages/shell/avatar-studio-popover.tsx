@@ -1,8 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
+  BOT_AVATAR_COLORS,
   BotAvatar,
-  DEFAULT_GROK_BOT_COLOR,
+  BotShapePreview,
+  DEFAULT_BOT_AVATAR_COLOR,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -10,16 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
   defaultBotAvatarValue,
-  GROK_BOT_COLORS,
-  GrokShapePreview,
   parseBotAvatar,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@rakazo/ui-web";
+import { Button } from "@rakazo/ui-web/components/ui/button";
 import { Check, Pencil, Upload, X } from "lucide-react";
-import { type ClipboardEvent, type DragEvent, useRef, useState } from "react";
+import type { ClipboardEvent, DragEvent } from "react";
+import { useRef, useState } from "react";
 
 export interface AvatarStudioPopoverProps {
   value: string;
@@ -44,7 +46,7 @@ export function AvatarStudioPopover({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsed = parseBotAvatar(value, identity);
-  const currentColor = parsed.color || DEFAULT_GROK_BOT_COLOR;
+  const currentColor = parsed.color || DEFAULT_BOT_AVATAR_COLOR;
   const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
 
   function selectShape(shapeIndex: number) {
@@ -146,14 +148,16 @@ export function AvatarStudioPopover({
             <DialogDescription className="sr-only">
               <Trans>Choose a bot shape, color, or upload an image</Trans>
             </DialogDescription>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               type="button"
               onClick={() => setOpen(false)}
-              className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-full text-muted-foreground"
               aria-label={t`Close`}
             >
               <X size={16} />
-            </button>
+            </Button>
           </DialogHeader>
 
           <div className="flex flex-col items-center justify-center py-2">
@@ -175,13 +179,15 @@ export function AvatarStudioPopover({
                 </TabsTrigger>
               </TabsList>
 
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={restoreDefaultAvatar}
-                className="px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="text-xs text-muted-foreground"
               >
                 <Trans>Reset</Trans>
-              </button>
+              </Button>
             </div>
 
             <TabsContent value="bot" className="space-y-4 pt-1" data-testid="avatar-studio-bot-tab">
@@ -190,7 +196,9 @@ export function AvatarStudioPopover({
                   <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
                     <Trans>Shape</Trans>
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     data-testid="avatar-studio-default"
                     aria-pressed={isDefaultLook}
@@ -202,11 +210,11 @@ export function AvatarStudioPopover({
                     }`}
                   >
                     <Trans>Default</Trans>
-                  </button>
+                  </Button>
                 </div>
                 <div className="grid grid-cols-4 place-items-center gap-2">
                   {[0, 1, 2, 3, 4, 5, 6, 7].map((shapeIndex) => (
-                    <GrokShapePreview
+                    <BotShapePreview
                       key={shapeIndex}
                       shapeIndex={shapeIndex}
                       color={currentColor}
@@ -222,7 +230,7 @@ export function AvatarStudioPopover({
                   <Trans>Color</Trans>
                 </div>
                 <div className="grid grid-cols-6 place-items-center gap-2">
-                  {GROK_BOT_COLORS.map((color) => {
+                  {BOT_AVATAR_COLORS.map((color) => {
                     const selected =
                       currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
                     return (
@@ -286,14 +294,10 @@ export function AvatarStudioPopover({
           </Tabs>
 
           <DialogFooter className="border-border sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent"
-            >
+            <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(false)}>
               <Check size={14} />
               <Trans>Done</Trans>
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -20,6 +20,22 @@ skill playbooks and recordings, and bot instruction history. Names and other
 metadata stay plaintext: bot, group, file and thread names, routine prompts,
 memory paths, timestamps, ids, block kinds and statuses.
 
+## Turning it off
+
+`CONTENT_ENCRYPTION=off` stores new content and files in plaintext; `on` (the
+default for server installs) encrypts them. Reads decrypt existing ciphertext
+in both modes, and search matches plaintext, encrypted and mixed rows. A
+message rewritten while off drops its search tokens, so it matches its new
+text. `content-encryption decrypt` converts what is still encrypted, and
+`content-encryption migrate` encrypts everything after switching back on
+(`migrate`, `rotate` and `reencrypt` always encrypt, whatever the setting).
+Defaults and commands are in [self-hosting](./self-host.md#content-encryption).
+
+`content-encryption export [--space <id>] [--thread <id>] [--bot <id>] [--output <file>]`
+writes decrypted threads (with their summary), messages, memory documents and
+revisions as JSON lines, to stdout or to a new owner-only file. It is
+read-only and runs across spaces.
+
 ## How it works
 
 - **Envelope encryption.** Each space has a random 256-bit data key, stored in

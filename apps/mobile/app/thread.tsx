@@ -30,6 +30,7 @@ import {
   groupVoiceChats,
   isApprovalAskBlock,
   isPeerReceiptBlocks,
+  isRetryableError,
   isRunTerminalEvent,
   isRunWaitingOnUser,
   isRunWorking,
@@ -42,6 +43,7 @@ import {
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
+  retryDelayMs,
   displayName as safeDisplayName,
   selectedAskActionLabel,
   threadWindowMessages,
@@ -135,6 +137,7 @@ import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
+import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
@@ -231,6 +234,7 @@ import {
   subscribeSessionGeneration,
 } from "../lib/session";
 import { setInboxHidden, useSplitView } from "../lib/split-view";
+import { threadEdgeOptions } from "../lib/thread-edges";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
@@ -332,7 +336,7 @@ export default function ThreadRoute() {
         .catch((error) => {
           if (!cancelled && !notified) Alert.alert(t("Could not continue"), errorText(error));
           notified = true;
-          if (!cancelled) timer = setTimeout(verify, 5_000);
+          if (!cancelled && isRetryableError(error)) timer = setTimeout(verify, 5_000);
         });
     verify();
     return () => {
@@ -885,12 +889,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     navigation.setOptions({
       title: displayName || t("Thread"),
       headerTitleAlign: "center",
-      // Inversion swaps the visual edges, so both are hidden. The sides must be hidden too:
-      // on an iOS 26 device the side effect of the inverted list covers the whole list and
-      // dims every message. "hidden" for top and bottom leaves the sides at "automatic".
-      headerTransparent: iosAtLeast(26),
-      ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
-      scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" },
+      ...threadEdgeOptions(),
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -1510,6 +1509,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
+        let failure: unknown;
         try {
           liveSubscribed.current = true;
           await subscribeThread(
@@ -1563,18 +1563,30 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             },
             abort.signal,
           );
-        } catch {
+        } catch (error) {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
+          failure = error;
         } finally {
           if (liveSubscriptionGeneration.current === subscriptionGeneration) {
             liveSubscribed.current = false;
           }
         }
-        if (abort.signal.aborted) break;
+        // A 4xx other than 408/429 is the server's answer; reconnecting only polls it.
+        if (abort.signal.aborted || !isRetryableError(failure)) break;
+        let refreshFailure: unknown;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-          await refresh().catch(() => undefined);
+          refreshFailure = await refresh().then(
+            () => undefined,
+            (error: unknown) => error,
+          );
+          if (!isRetryableError(refreshFailure)) break;
         }
-        await abortableDelay(retryMs, abort.signal);
+        // Wait as long as either request was asked to (a 429's Retry-After).
+        const delay = Math.max(
+          retryDelayMs(failure, retryMs),
+          retryDelayMs(refreshFailure, retryMs),
+        );
+        await abortableDelay(delay, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
     })();
@@ -1616,15 +1628,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     const refreshDelay = () =>
       threadRefreshDelayMs(snap?.run?.status, { liveSubscribed: liveSubscribed.current });
     const tick = async () => {
+      let failure: unknown;
       if (
         AppState.currentState === "active" &&
         navigation.isFocused() &&
         !jumpScrollTarget.current &&
         !expandedHistoryThread.current
       ) {
-        await refresh().catch(() => undefined);
+        await refresh().catch((error: unknown) => {
+          failure = error;
+        });
       }
-      if (!cancelled) {
+      if (!cancelled && isRetryableError(failure)) {
         timer = setTimeout(() => void tick(), refreshDelay());
       }
     };
@@ -2468,153 +2483,169 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
         <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
           {showPinnedPage ? (
-            <ScrollView
-              key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
-              ref={pinnedScroll}
-              style={{ flex: 1 }}
-              // A pinned page always shows the floating jump button (44pt, 12pt from the
-              // bottom), so its last message must be able to scroll clear of it.
-              contentContainerStyle={{ paddingTop: headerHeight + 8, paddingBottom: 12 + 44 + 16 }}
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-              maintainVisibleContentPosition={messageListPosition}
-              scrollEventThrottle={16}
-              onLayout={(event) => {
-                pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
-                loadNewerNearEnd();
-              }}
-              onContentSizeChange={(_, height) => {
-                pinnedScrollMetrics.current.content = height;
-                const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
-                if (jumpOffset != null) scrollPinnedTo(jumpOffset);
-                const armedAt = joinPinnedAfterLayout.current;
-                if (armedAt != null && height !== armedAt) {
-                  joinPinnedAfterLayout.current = null;
+            <ThreadScrollSurface
+              key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
+            >
+              <ScrollView
+                key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
+                ref={pinnedScroll}
+                style={{ flex: 1 }}
+                // A pinned page always shows the floating jump button (44pt, 12pt from the
+                // bottom), so its last message must be able to scroll clear of it.
+                contentContainerStyle={{
+                  paddingTop: headerHeight + 8,
+                  paddingBottom: 12 + 44 + 16,
+                }}
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                maintainVisibleContentPosition={messageListPosition}
+                scrollEventThrottle={16}
+                onLayout={(event) => {
+                  pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
+                  loadNewerNearEnd();
+                }}
+                onContentSizeChange={(_, height) => {
+                  pinnedScrollMetrics.current.content = height;
+                  const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
+                  if (jumpOffset != null) scrollPinnedTo(jumpOffset);
+                  const armedAt = joinPinnedAfterLayout.current;
+                  if (armedAt != null && height !== armedAt) {
+                    joinPinnedAfterLayout.current = null;
+                    if (
+                      !jumpAnchor.current.holds() &&
+                      pinnedAroundRef.current?.newerCursor == null &&
+                      pinnedNearEnd()
+                    ) {
+                      showLatest();
+                      return;
+                    }
+                  }
+                  loadNewerNearEnd();
+                }}
+                onScroll={(event) => {
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+                  pinnedScrollMetrics.current = {
+                    offset: contentOffset.y,
+                    viewport: layoutMeasurement.height,
+                    content: contentSize.height,
+                  };
                   if (
-                    !jumpAnchor.current.holds() &&
-                    pinnedAroundRef.current?.newerCursor == null &&
-                    pinnedNearEnd()
+                    pinnedScrollBack.current.onScroll(event.nativeEvent) &&
+                    Platform.OS === "ios"
                   ) {
-                    showLatest();
+                    KeyboardController.dismiss();
+                  }
+                  loadNewerNearEnd();
+                }}
+                onScrollBeginDrag={(event) => {
+                  pinnedScrollBack.current.onDragStart(event.nativeEvent);
+                  newerLoadFailed.current = false;
+                  if (!jumpAnchor.current.holds()) return;
+                  jumpAnchor.current.release();
+                  jumpScrollTarget.current = null;
+                }}
+                onScrollEndDrag={(event) => {
+                  pinnedScrollBack.current.onDragEnd();
+                  updatePinnedScroll(event);
+                }}
+                onMomentumScrollEnd={updatePinnedScroll}
+              >
+                {loadEarlierControl}
+                {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
+                  renderMessageRow(message, { enableJump: true, index }),
+                )}
+                {pinnedNewerCursor === null ? failedSendBubbles : null}
+                {errorNotice}
+                {pinnedNewerCursor === null ? (
+                  workingFooter
+                ) : loadingNewer ? (
+                  <ActivityIndicator
+                    color={tokens.mutedForeground}
+                    style={{ marginVertical: 12 }}
+                  />
+                ) : null}
+              </ScrollView>
+            </ThreadScrollSurface>
+          ) : (
+            <ThreadScrollSurface key={`live:${threadKey}`}>
+              <FlatList
+                key={threadKey}
+                ref={scroll}
+                data={liveItems}
+                inverted
+                keyExtractor={threadItemKey}
+                // This callback tracks every row input, including reply, reaction and highlight state.
+                extraData={renderMessageRow}
+                style={messageListStyles.list}
+                // Swiping down hides the keyboard; on iOS it follows the finger.
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                // Inverted, so the bottom padding is the visual top, clear of the transparent header.
+                contentContainerStyle={listContentStyle}
+                // Follow changes to the recovery card while already at the newest content.
+                maintainVisibleContentPosition={liveMessageListPosition}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={(event) => {
+                  clearTimeout(scrollIdleTimer.current);
+                  nativeMomentumActive.current = false;
+                  scrollBehavior.current.onUserDragStart();
+                  liveScrollBack.current.onDragStart(event.nativeEvent);
+                }}
+                onScroll={(event) => {
+                  if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                    KeyboardController.dismiss();
+                  }
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+                }}
+                // Keep tracking after release: a fling can cross the threshold mid-momentum.
+                onScrollEndDrag={(event) => {
+                  updateUserScroll(event);
+                  scrollBehavior.current.onUserDragEnd();
+                  liveScrollBack.current.onDragEnd();
+                  scheduleScrollIdle();
+                }}
+                onMomentumScrollBegin={() => {
+                  nativeMomentumActive.current = true;
+                  scheduleScrollIdle();
+                }}
+                onMomentumScrollEnd={(event) => {
+                  nativeMomentumActive.current = false;
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+                  clearTimeout(scrollIdleTimer.current);
+                  performScroll(scrollBehavior.current.onUserMomentumEnd());
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                onLayout={(event) => {
+                  performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                onContentSizeChange={(_, height) => {
+                  publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
+                  if (loadingOlderContent.current) {
+                    loadingOlderContent.current = false;
                     return;
                   }
+                  const blocked = Boolean(
+                    jumpScrollTarget.current ||
+                      (pinnedAroundRef.current &&
+                        ((pinnedAroundRef.current.botId &&
+                          pinnedAroundRef.current.botId === botId) ||
+                          (pinnedAroundRef.current.groupId &&
+                            pinnedAroundRef.current.groupId === groupId))) ||
+                      expandedHistoryThread.current === snap?.threadId,
+                  );
+                  performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+                  publishThreadScrollState(scrollBehavior.current.state());
+                }}
+                ListFooterComponent={loadEarlierControl}
+                ListHeaderComponent={
+                  <View onLayout={() => performScroll(scrollBehavior.current.onLayout())}>
+                    {errorNotice}
+                    {failedSendBubbles}
+                    {workingFooter}
+                  </View>
                 }
-                loadNewerNearEnd();
-              }}
-              onScroll={(event) => {
-                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-                pinnedScrollMetrics.current = {
-                  offset: contentOffset.y,
-                  viewport: layoutMeasurement.height,
-                  content: contentSize.height,
-                };
-                if (pinnedScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
-                  KeyboardController.dismiss();
-                }
-                loadNewerNearEnd();
-              }}
-              onScrollBeginDrag={(event) => {
-                pinnedScrollBack.current.onDragStart(event.nativeEvent);
-                newerLoadFailed.current = false;
-                if (!jumpAnchor.current.holds()) return;
-                jumpAnchor.current.release();
-                jumpScrollTarget.current = null;
-              }}
-              onScrollEndDrag={(event) => {
-                pinnedScrollBack.current.onDragEnd();
-                updatePinnedScroll(event);
-              }}
-              onMomentumScrollEnd={updatePinnedScroll}
-            >
-              {loadEarlierControl}
-              {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
-                renderMessageRow(message, { enableJump: true, index }),
-              )}
-              {pinnedNewerCursor === null ? failedSendBubbles : null}
-              {errorNotice}
-              {pinnedNewerCursor === null ? (
-                workingFooter
-              ) : loadingNewer ? (
-                <ActivityIndicator color={tokens.mutedForeground} style={{ marginVertical: 12 }} />
-              ) : null}
-            </ScrollView>
-          ) : (
-            <FlatList
-              key={threadKey}
-              ref={scroll}
-              data={liveItems}
-              inverted
-              keyExtractor={threadItemKey}
-              // This callback tracks every row input, including reply, reaction and highlight state.
-              extraData={renderMessageRow}
-              style={messageListStyles.list}
-              // Swiping down hides the keyboard; on iOS it follows the finger.
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-              // Inverted, so the bottom padding is the visual top, clear of the transparent header.
-              contentContainerStyle={listContentStyle}
-              // Follow changes to the recovery card while already at the newest content.
-              maintainVisibleContentPosition={liveMessageListPosition}
-              scrollEventThrottle={16}
-              onScrollBeginDrag={(event) => {
-                clearTimeout(scrollIdleTimer.current);
-                nativeMomentumActive.current = false;
-                scrollBehavior.current.onUserDragStart();
-                liveScrollBack.current.onDragStart(event.nativeEvent);
-              }}
-              onScroll={(event) => {
-                if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
-                  KeyboardController.dismiss();
-                }
-                if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
-              }}
-              // Keep tracking after release: a fling can cross the threshold mid-momentum.
-              onScrollEndDrag={(event) => {
-                updateUserScroll(event);
-                scrollBehavior.current.onUserDragEnd();
-                liveScrollBack.current.onDragEnd();
-                scheduleScrollIdle();
-              }}
-              onMomentumScrollBegin={() => {
-                nativeMomentumActive.current = true;
-                scheduleScrollIdle();
-              }}
-              onMomentumScrollEnd={(event) => {
-                nativeMomentumActive.current = false;
-                if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
-                clearTimeout(scrollIdleTimer.current);
-                performScroll(scrollBehavior.current.onUserMomentumEnd());
-                publishThreadScrollState(scrollBehavior.current.state());
-              }}
-              onLayout={(event) => {
-                performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
-                publishThreadScrollState(scrollBehavior.current.state());
-              }}
-              onContentSizeChange={(_, height) => {
-                publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
-                if (loadingOlderContent.current) {
-                  loadingOlderContent.current = false;
-                  return;
-                }
-                const blocked = Boolean(
-                  jumpScrollTarget.current ||
-                    (pinnedAroundRef.current &&
-                      ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                        (pinnedAroundRef.current.groupId &&
-                          pinnedAroundRef.current.groupId === groupId))) ||
-                    expandedHistoryThread.current === snap?.threadId,
-                );
-                performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
-                publishThreadScrollState(scrollBehavior.current.state());
-              }}
-              ListFooterComponent={loadEarlierControl}
-              ListHeaderComponent={
-                <View onLayout={() => performScroll(scrollBehavior.current.onLayout())}>
-                  {errorNotice}
-                  {failedSendBubbles}
-                  {workingFooter}
-                </View>
-              }
-              renderItem={renderItem}
-            />
+                renderItem={renderItem}
+              />
+            </ThreadScrollSurface>
           )}
           {showPinnedPage || threadScrollState.detached ? (
             <View style={{ position: "absolute", end: 0, bottom: 12 }}>
@@ -3070,6 +3101,11 @@ function isWideAskBlock(blocks: MobileMessage["blocks"]) {
   return blocks.some(isSecretAskBlock);
 }
 
+// Connect cards fill the bubble width instead of shrinking to their button.
+function hasAppConnectBlock(blocks: MobileMessage["blocks"]) {
+  return blocks.some((block) => block.kind === "app_connect");
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   actions,
@@ -3308,7 +3344,9 @@ const MessageRow = memo(function MessageRow({
             width:
               isCenteredAgentEvent(message.blocks) || isWideAskBlock(message.blocks)
                 ? "100%"
-                : undefined,
+                : hasAppConnectBlock(message.blocks) && !activityBotId
+                  ? "90%"
+                  : undefined,
             maxWidth:
               isCenteredAgentEvent(message.blocks) || isWideAskBlock(message.blocks)
                 ? "100%"
@@ -3332,7 +3370,7 @@ const MessageRow = memo(function MessageRow({
           )}
           <MessageContextMenu
             actions={menu}
-            fullWidth={isWideAskBlock(message.blocks)}
+            fullWidth={isWideAskBlock(message.blocks) || hasAppConnectBlock(message.blocks)}
             maxWidth={
               isWideAskBlock(message.blocks)
                 ? columnWidth - 40 - (activityBotId ? (inGroup ? 28 : 36) : 0)
@@ -3491,6 +3529,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3772,6 +3812,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3880,6 +3922,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -3995,6 +4039,7 @@ const MessageBubble = memo(function MessageBubble({
               artifactId={attachment.artifactId}
               name={attachment.name ?? t("File")}
               mimeType={attachment.mimeType!}
+              labelColor={message.role === "user" ? tokens.chatUserForeground : undefined}
             />
           ) : (
             <Pressable
@@ -4046,6 +4091,8 @@ const MessageBubble = memo(function MessageBubble({
           <AppConnectCard
             key={`${block.provider}-${index}`}
             botId={cardBotId}
+            threadId={message.threadId}
+            messageId={message.id}
             block={block}
             accessibilityActions={actionProps.accessibilityActions}
             onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -4112,6 +4159,8 @@ const MessageBubble = memo(function MessageBubble({
         <AppConnectCard
           key={`${block.provider}-${index}`}
           botId={cardBotId}
+          threadId={message.threadId}
+          messageId={message.id}
           block={block}
           accessibilityActions={actionProps.accessibilityActions}
           onAccessibilityAction={actionProps.onAccessibilityAction}

@@ -125,6 +125,26 @@ it("shows failures honestly, preserves previous results and recovers on the next
     await view.close();
   }
 });
+it.each([
+  [403, 2],
+  [404, 2],
+  [503, 5],
+])("after a %i poll, history requests total %i", async (status, requests) => {
+  vi.useFakeTimers();
+  api.history
+    .mockResolvedValueOnce(page([run]))
+    .mockRejectedValueOnce(Object.assign(new Error("Refused"), { status }))
+    .mockResolvedValue(page([run]));
+  const view = await mounted();
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain("Could not load");
+    await act(async () => vi.advanceTimersByTimeAsync(45_000));
+    expect(api.history).toHaveBeenCalledTimes(requests);
+  } finally {
+    await view.close();
+  }
+});
 it("discards a response from the previous routine", async () => {
   let finish!: (rows: RoutineRun[]) => void;
   api.history

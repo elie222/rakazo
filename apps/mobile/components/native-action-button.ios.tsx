@@ -62,7 +62,13 @@ export function NativeActionButton({
           weight: rectangular ? "semibold" : "medium",
         }),
         foregroundStyle(
-          rectangular ? (primary ? tokens.primaryForeground : tokens.foreground) : tokens.link,
+          rectangular
+            ? primary
+              ? tokens.primaryForeground
+              : tokens.foreground
+            : prominence === "destructive"
+              ? tokens.destructive
+              : tokens.link,
         ),
         ...(rectangular ? [fixedSize({ horizontal: false, vertical: true })] : []),
         padding({ horizontal: rectangular ? 16 : 0, vertical: rectangular ? 12 : 8 }),
@@ -75,7 +81,8 @@ export function NativeActionButton({
               ),
             ]
           : []),
-        ...(rectangular ? [frame({ minHeight: 44 })] : []),
+        // Rectangular buttons and the destructive text action (Disconnect) keep a 44pt target.
+        ...(rectangular || prominence === "destructive" ? [frame({ minHeight: 44 })] : []),
         ...(rectangular
           ? [
               background(

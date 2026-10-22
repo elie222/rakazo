@@ -74,6 +74,56 @@ describe("useForegroundPoll", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["foreground", "enabled"])(
+    "waits for a pending poll across %s changes",
+    async (change) => {
+      let resolve!: () => void;
+      const run = vi.fn(
+        () =>
+          new Promise<void>((done) => {
+            resolve = done;
+          }),
+      );
+      act(() => root.render(<Harness enabled run={run} />));
+      expect(run).toHaveBeenCalledOnce();
+
+      for (const active of [false, true]) {
+        act(() => {
+          if (change === "enabled") {
+            root.render(<Harness enabled={active} run={run} />);
+          } else {
+            app.state = active ? "active" : "background";
+            for (const listener of app.listeners) listener(app.state);
+          }
+        });
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(run).toHaveBeenCalledOnce();
+
+      await act(async () => resolve());
+      expect(run).toHaveBeenCalledOnce();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(999);
+      });
+      expect(run).toHaveBeenCalledOnce();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(run).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("stops after a non-retryable failure", async () => {
+    const run = vi.fn(async () => false);
+    act(() => root.render(<Harness enabled run={run} />));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("pauses in the background and runs once on return", async () => {
     const run = vi.fn(async () => undefined);
     act(() => root.render(<Harness enabled run={run} />));

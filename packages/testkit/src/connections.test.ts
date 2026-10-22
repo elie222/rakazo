@@ -220,7 +220,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       provider: "GMAIL",
       displayName: "Personal",
     });
-    const row = await handles.prisma.connection.findUniqueOrThrow({
+    const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: work.connectionId },
     });
     fake.setStatus(row.providerRef!, "EXPIRED");
@@ -241,7 +241,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     // Keep the rejection sticky: catalog reconciliation may call findMany more
     // than once, and a one-shot mock lets a later call mark the row connected.
     const failure = vi
-      .spyOn(handles.prisma.connection, "findMany")
+      .spyOn(asSystem(handles.prisma).connection, "findMany")
       .mockRejectedValue(new Error("simulated reconciliation failure"));
 
     // Scope to composio so a parallel managed provider cannot consume the one-shot findMany reject.
@@ -656,7 +656,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   });
 
   async function createConnection(owner: Actor, provider: string) {
-    return handles.prisma.connection.create({
+    return asSystem(handles.prisma).connection.create({
       data: {
         spaceId: owner.spaceId,
         userId: owner.userId,
@@ -669,7 +669,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   }
 
   async function statuses(ids: string[]) {
-    return handles.prisma.connection.findMany({
+    return asSystem(handles.prisma).connection.findMany({
       where: { id: { in: ids } },
       select: { id: true, status: true },
       orderBy: { createdAt: "asc" },

@@ -892,7 +892,7 @@ private fun flattenTableRows(text: String): String {
  * `plainTextFromMarkdown`; intentionally lossy — the body is a preview,
  * not the message.
  */
-private fun markdownToPreview(markdown: String): String {
+internal fun markdownToPreview(markdown: String): String {
   // Payloads use a fixed one-char token alphabet: literal mark characters in
   // the source are stashed first so tokens can never collide, token length is
   // constant regardless of input, and payload count is bounded by input size —

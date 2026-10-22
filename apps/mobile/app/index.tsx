@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
-import { accountDisplay, isRunWorking } from "@rakazo/core";
+import { accountDisplay, isRetryableError, isRunWorking } from "@rakazo/core";
 import { botColors, fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import {
@@ -124,6 +124,7 @@ import { offerPasskeyOnce } from "../lib/passkey";
 import { ACTIVITY_POLL_INTERVAL_MS, INBOX_POLL_INTERVAL_MS } from "../lib/poll-cadence";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
+import { androidRipple } from "../lib/ripple";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import { setSearchInbox } from "../lib/search-inbox";
 import { promptSectionName } from "../lib/section-name-prompt";
@@ -376,6 +377,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         kind: loadFailureKind(err),
         message: errorText(err, t("Could not load bots")),
       });
+      // False when the server refused rather than failed: asking again only polls it.
+      return isRetryableError(err);
     } finally {
       if (requestId === inboxRequestId.current) setInboxLoading(false);
     }
@@ -458,9 +461,11 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       const next = await fetchSpaceActivity();
       if (requestId !== activityRequestId.current) return;
       setActivity(next);
-    } catch {
+    } catch (error) {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
+      // False when the server refused rather than failed: asking again only polls it.
+      return isRetryableError(error);
     }
   }, [activityMode, hasSession]);
 
@@ -753,12 +758,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           icon: { type: "sfSymbol" as const, name: activityMode ? "bell.fill" : "bell" },
           selected: activityMode,
           onPress: toggleActivityMode,
-        },
-        {
-          type: "button" as const,
-          accessibilityLabel: t("Artifacts"),
-          icon: { type: "sfSymbol" as const, name: "square.stack.3d.up" },
-          onPress: () => router.push("/artifacts"),
         },
         {
           type: "button" as const,
@@ -1265,12 +1264,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               />
             </HeaderButton>
             <HeaderButton
-              accessibilityLabel={t("Artifacts")}
-              onPress={() => router.push("/artifacts")}
-            >
-              <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
-            </HeaderButton>
-            <HeaderButton
               testID="home-search-button"
               accessibilityLabel={t("Search")}
               onPress={() => router.push("/search")}
@@ -1563,19 +1556,21 @@ function ConversationRow({
         if (name === "toggleChildren") onToggleChildren?.();
         else if (action) onAction?.(action);
       }}
+      android_ripple={androidRipple()}
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
         compact ? styles.compactRow : null,
         selected ? styles.rowSelected : null,
+        selected && Platform.OS === "android" && { overflow: "hidden" },
         depth > 0
           ? {
               paddingInlineStart:
                 (compact ? COMPACT_INBOX_ROW.padding : INBOX_ROW.padding) + depth * 16,
             }
           : null,
-        pressed && styles.rowPressed,
+        pressed && Platform.OS !== "android" && styles.rowPressed,
       ]}
     >
       {hasChildren ? (

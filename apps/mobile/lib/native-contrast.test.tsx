@@ -1,4 +1,4 @@
-import { darkTokens } from "@rakazo/ui-tokens";
+import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const appearance = vi.hoisted(() => ({
@@ -16,12 +16,15 @@ vi.mock("./appearance", () => ({
   getCachedAppearancePreference: () => appearance.preference,
   mobileTokens: () =>
     appearance.realTokens
-      ? darkTokens
+      ? appearance.resolved === "dark"
+        ? darkTokens
+        : lightTokens
       : {
           background: "token-background",
           border: "token-border",
           card: "token-card",
           faintForeground: "token-faint",
+          mutedForeground: "token-secondary",
           muted: "token-muted",
         },
   resolveMobileAppearance: () => appearance.resolved,
@@ -45,13 +48,13 @@ describe("grouped colours", () => {
     expect(native.groupedCell).toBe("token-card");
   });
 
-  it("keeps the system grouped colours in light and the tokens when Light is forced", () => {
+  it("uses the token page and card in light too, in System and forced Light", () => {
     appearance.resolved = "light";
-    expect(native.groupedPage).toBe("platform:systemGroupedBackground");
-    expect(native.groupedCell).toBe("platform:secondarySystemGroupedBackground");
+    expect(native.groupedPage).toBe("token-background");
+    expect(native.groupedCell).toBe("token-card");
 
     appearance.preference = "light";
-    expect(native.groupedPage).toBe("token-muted");
+    expect(native.groupedPage).toBe("token-background");
     expect(native.groupedCell).toBe("token-card");
   });
 });
@@ -69,10 +72,12 @@ describe("text, fills and separators", () => {
   });
 
   it("falls back to faint text for tertiary labels and the muted fill for quiet chips", () => {
-    expect(native.tertiaryLabel).toBe("platform:tertiaryLabel");
+    expect(native.secondaryLabel).toBe("token-secondary");
+    expect(native.tertiaryLabel).toBe("token-faint");
     expect(native.quietFill).toBe("platform:quaternarySystemFill");
 
     appearance.preference = "light";
+    expect(native.secondaryLabel).toBe("token-secondary");
     expect(native.tertiaryLabel).toBe("token-faint");
     expect(native.quietFill).toBe("token-muted");
   });
@@ -84,11 +89,16 @@ it.each(["system", "dark"] as const)("uses readable faint text in %s dark mode",
   expect(native.tertiaryLabel).toBe("token-faint");
 });
 
-it.each(["system", "dark"] as const)(
-  "keeps tertiary labels above 3:1 on grouped dark surfaces in %s",
-  (preference) => {
+it.each([
+  ["system", "dark"],
+  ["dark", "dark"],
+  ["system", "light"],
+  ["light", "light"],
+] as const)(
+  "keeps tertiary labels above 3:1 on grouped surfaces in %s / %s",
+  (preference, resolved) => {
     appearance.preference = preference;
-    appearance.resolved = "dark";
+    appearance.resolved = resolved;
     appearance.realTokens = true;
     try {
       for (const surface of [native.groupedPage, native.groupedCell]) {
@@ -107,7 +117,10 @@ it.each(["system", "dark"] as const)(
                 (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
             );
           }, 0);
-        const ratio = (luminance(composite) + 0.05) / (luminance(backdrop) + 0.05);
+        const foreground = luminance(composite);
+        const background = luminance(backdrop);
+        const ratio =
+          (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
         expect(ratio).toBeGreaterThanOrEqual(3);
       }
     } finally {

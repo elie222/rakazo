@@ -2272,14 +2272,13 @@ describe("connections.complete", () => {
         const tx = {
           $executeRaw: vi.fn().mockResolvedValue(undefined),
           connection: {
-            findFirst: vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(null),
-            findMany: vi.fn().mockResolvedValue([]),
-            update: vi
+            findFirst: vi
               .fn()
-              .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-                ...row,
-                ...data,
-              })),
+              .mockResolvedValueOnce(row)
+              .mockResolvedValueOnce(null)
+              .mockResolvedValueOnce({ ...row, status: "connected" }),
+            findMany: vi.fn().mockResolvedValue([]),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
         };
         return fn(tx);
@@ -2328,6 +2327,218 @@ describe("connections.complete", () => {
       expect.objectContaining({ spaceId: "workspace-1", userId: "user-1" }),
     );
     expect(connectionReady).toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  function pollFixture(status: string) {
+    const row = {
+      id: "conn-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      connectorId: "composio",
+      provider: "gmail",
+      displayName: "Gmail",
+      providerRef: "gmail",
+      status,
+      createdAt: new Date("2026-08-26T00:00:00.000Z"),
+    };
+    const connection = {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === row.id ? { ...row } : null,
+      ),
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(
+        async ({ where, data }: { where: { status?: string }; data: Partial<typeof row> }) => {
+          if (where.status && where.status !== row.status) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      ),
+    };
+    const client = { connection, $executeRaw: vi.fn(async () => undefined) };
+    const prisma = {
+      ...client,
+      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+    } as unknown as PrismaClient;
+    const connector = {
+      complete: vi.fn(),
+      revoke: vi.fn(),
+      connectionReady: vi.fn(async () => true),
+    };
+    const handler = new RPCHandler(
+      createRouter({
+        prisma,
+        connectors: { managed: () => connector },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps),
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    async function complete(connectionId = row.id, signal?: AbortSignal) {
+      const { response } = await handler.handle(
+        new Request("http://127.0.0.1/rpc/connections/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { connectionId } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "workspace-1",
+              userId: "user-1",
+              email: "user@rakazo.test",
+              isDeploymentOwner: true,
+            },
+            signal,
+          },
+        },
+      );
+      return { status: response.status, body: await response.json() };
+    }
+    const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
+    return { complete, connector, securityEvents, row };
+  }
+
+  it("records nothing but keeps the account id when the catalog connected the row first", async () => {
+    const { complete, connector, securityEvents, row } = pollFixture("pending");
+    // The catalog flips the row while complete is checking with the provider.
+    connector.connectionReady.mockImplementation(async () => {
+      row.status = "connected";
+      return true;
+    });
+    Object.assign(connector, { connectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("reports a superseded connection as revoked instead of failing", async () => {
+    const { complete, connector, securityEvents } = pollFixture("revoked");
+
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { id: "conn-1", status: "revoked" } },
+    });
+    expect(connector.connectionReady).not.toHaveBeenCalled();
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("finishes removing a superseded remote after the poll that triggered it is aborted", async () => {
+    const { complete, connector, row } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    const poll = new AbortController();
+    poll.abort();
+
+    await expect(complete(row.id, poll.signal)).resolves.toMatchObject({
+      body: { json: { status: "revoked" } },
+    });
+    expect(connector.revoke).toHaveBeenCalledWith(
+      "request-1",
+      expect.objectContaining({ signal: expect.objectContaining({ aborted: false }) }),
+    );
+  });
+
+  it("records one credential event per connection, not per poll", async () => {
+    const { complete, securityEvents } = pollFixture("pending");
+
+    for (let poll = 0; poll < 3; poll += 1) {
+      await expect(complete()).resolves.toMatchObject({
+        status: 200,
+        body: { json: { status: "connected" } },
+      });
+    }
+    expect(securityEvents()).toHaveLength(1);
+    expect(securityEvents()[0]).toMatchObject({
+      "security.event.type": "credential.created",
+      "security.event.metadata": {
+        procedure: "connections.complete",
+        kind: "connection",
+        connectionId: "conn-1",
+      },
+    });
+  });
+
+  it("records the credential once when the catalog finds the app connected", async () => {
+    const row = { id: "conn-1", provider: "gmail", displayName: "Gmail", status: "pending" };
+    const connection = {
+      findMany: vi.fn(async () => [{ ...row }]),
+      updateMany: vi.fn(async ({ where }: { where: { id?: string; status: string } }) => {
+        if (where.id !== row.id || row.status !== where.status) return { count: 0 };
+        row.status = "connected";
+        return { count: 1 };
+      }),
+    };
+    const prisma = {
+      connection,
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({ connection })),
+    } as unknown as PrismaClient;
+    const provider = {
+      describe: () => ({ id: "composio" }),
+      catalog: vi.fn(async () => [
+        {
+          connectorId: "composio",
+          slug: "gmail",
+          name: "Gmail",
+          logo: null,
+          connected: true,
+          noAuth: false,
+        },
+      ]),
+    };
+    const client = createRouterClient(
+      createRouter({
+        prisma,
+        connectors: { managed: () => provider },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps),
+      {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "user-1",
+            email: "user@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      },
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    await client.connections.catalog({ connectorId: "composio" });
+    await client.connections.catalog({ connectorId: "composio" });
+
+    const events = sink.events.filter((event) => event.message === "security.event");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      "security.event.type": "credential.created",
+      "security.event.metadata": { procedure: "connections.catalog", connectionId: "conn-1" },
+    });
+  });
+
+  it("records nothing while the connection is still pending", async () => {
+    const { complete, connector, securityEvents } = pollFixture("pending");
+    connector.connectionReady.mockResolvedValue(false);
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    expect(securityEvents()).toEqual([]);
   });
 });
 
@@ -6464,6 +6675,51 @@ describe("boards.rename", () => {
       where: { id: "board-1" },
       data: { name: "Launch" },
     });
+  });
+});
+
+describe("boards.tickets.list", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function listDeps() {
+    const findMany = vi.fn(async () => []);
+    const prisma = {
+      board: {
+        findUnique: vi.fn(async () => ({
+          id: "board-1",
+          spaceId: "workspace-1",
+          name: "Personal",
+          ticketPrefix: "RAK",
+          nextNumber: 2,
+          createdAt: new Date("2026-06-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+        })),
+      },
+      ticket: { findMany },
+    } as unknown as PrismaClient;
+    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    return { findMany, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  it("searches ticket text for the characters the user typed, not SQL wildcards", async () => {
+    const { findMany, handler } = listDeps();
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/tickets/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { q: "50%_off" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    expect(response?.status).toBe(200);
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where?.OR?.[0]?.title?.contains).toBe("50\\%\\_off");
+    expect(where?.OR?.[1]?.description?.contains).toBe("50\\%\\_off");
   });
 });
 

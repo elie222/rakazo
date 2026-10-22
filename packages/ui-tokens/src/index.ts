@@ -28,6 +28,7 @@ export type ColorTokens = {
   secondary: string;
   secondaryForeground: string;
   chatUser: string;
+  /** White in both themes: the user bubble is a solid fill (light grey in dark, near-black in light). */
   chatUserForeground: string;
   muted: string;
   mutedForeground: string;
@@ -49,7 +50,7 @@ export type ColorTokens = {
   sidebarAccent: string;
   sidebarAccentForeground: string;
   link: string;
-  /** Backing behind a link's site icon. White in both themes so dark logos stay visible. */
+  /** Backing behind a link's site icon. White in both themes so dark logos stay visible on any bubble. */
   faviconPlate: string;
   success: string;
   warning: string;
@@ -105,44 +106,44 @@ export const darkTokens = {
 } as const satisfies ColorTokens;
 
 export const lightTokens = {
-  background: "#FAFAF8",
+  background: "#FCFCFC",
   dialog: "#FFFFFF",
-  foreground: "#1A1A1A",
-  card: "#FFFFFF",
-  cardForeground: "#1A1A1A",
+  foreground: "#000000",
+  card: "#EFEFEF",
+  cardForeground: "#000000",
   popover: "#FFFFFF",
-  popoverForeground: "#1A1A1A",
+  popoverForeground: "#000000",
   glassFill: "#FFFFFF",
   glassStroke: "#14141416",
-  primary: "#1A1A1A",
-  primaryForeground: "#F1F1EF",
+  primary: "#000000",
+  primaryForeground: "#FFFFFF",
   secondary: "#7676801F",
-  secondaryForeground: "#1A1A1A",
-  chatUser: "#E2E2DC",
-  chatUserForeground: "#1A1A1A",
-  muted: "#F0F0ED",
-  mutedForeground: "#6C6C70",
-  faintForeground: "#3C3C434D",
-  accent: "#EAEAE6",
-  accentForeground: "#1A1A1A",
-  destructive: "#DC2626",
+  secondaryForeground: "#000000",
+  chatUser: "#0B0B0B",
+  chatUserForeground: "#FFFFFF",
+  muted: "#F2F2F1",
+  mutedForeground: "#3C3C43B3",
+  faintForeground: "#3C3C4394",
+  accent: "#78788029",
+  accentForeground: "#000000",
+  destructive: "#CE2C31",
   destructiveFill: "#E5484D",
   destructiveForeground: "#FFFFFF",
   border: "#14141414",
   input: "#3C3C434A",
   ring: "#6C6C70",
-  sidebar: "#ECECE9",
-  sidebarForeground: "#1A1A1A",
+  sidebar: "#F7F7F7",
+  sidebarForeground: "#000000",
   sidebarBorder: "#14141414",
   sidebarAccent: "#FFFFFF",
-  sidebarAccentForeground: "#1A1A1A",
-  link: "#2563EB",
+  sidebarAccentForeground: "#000000",
+  link: "#0C64C1",
   faviconPlate: "#FFFFFF",
-  success: "#228B3B",
-  warning: "#B7791F",
-  statusWorking: "#2563EB",
+  success: "#007041",
+  warning: "#885A07",
+  statusWorking: "#0C64C1",
   unread: "#006CEB",
-  overlay: "rgba(20, 20, 22, 0.45)",
+  overlay: "rgba(0, 0, 0, 0.19)",
   scrollbar: "#C8C8C4",
   scrollbarHover: "#A8A8A4",
 } as const satisfies ColorTokens;

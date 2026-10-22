@@ -37,6 +37,10 @@ export interface RakazoDesktopOAuthCallback {
 }
 
 export interface RakazoDesktop {
+  /** Optional for compatibility with older desktop releases. */
+  badge?: {
+    set: (count: number) => Promise<boolean>;
+  };
   computer?: {
     requestAccess: () => Promise<boolean>;
     revokeAccess: () => Promise<void>;

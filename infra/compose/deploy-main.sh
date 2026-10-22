@@ -19,6 +19,8 @@ UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
 ROLLBACK_TIMEOUT="${RAKAZO_DEPLOY_ROLLBACK_TIMEOUT:-8m}"
 # Free disk a deploy needs before it builds.
 MIN_FREE_GB="${RAKAZO_DEPLOY_MIN_FREE_GB:-5}"
+BUILD_CACHE_GB="${RAKAZO_DEPLOY_BUILD_CACHE_GB:-8}"
+[[ "${BUILD_CACHE_GB}" =~ ^[0-9]+$ ]] || { echo "RAKAZO_DEPLOY_BUILD_CACHE_GB must be a whole number" >&2; exit 1; }
 [[ "${MIN_FREE_GB}" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "RAKAZO_DEPLOY_MIN_FREE_GB must be a whole number" >&2; exit 1; }
 
 cd "${APP_DIR}"
@@ -142,7 +144,9 @@ trap rollback ERR
 previous_images="$(compose 1m images -q 2>/dev/null | sort -u)" || previous_images="unknown"
 
 # Runs after a healthy rollout. Tags the previous images so they survive, then drops untagged
-# images and build cache unused for a day. Cleanup is time-limited and never fails the deploy.
+# images and trims the build cache to a fixed size (RAKAZO_DEPLOY_BUILD_CACHE_GB, default 8): a
+# time window let a busy day of deploys pile up tens of gigabytes. Cleanup is time-limited and
+# never fails the deploy.
 prune_docker() {
   local id kept=true
   if [[ "${previous_images}" == unknown ]]; then
@@ -160,7 +164,7 @@ prune_docker() {
   else
     echo "Could not tag the previous images; skipping image prune to keep them." >&2
   fi
-  timeout 5m sudo docker builder prune --all --force --filter until=24h >/dev/null ||
+  timeout 5m sudo docker builder prune --force --keep-storage "${BUILD_CACHE_GB}GB" >/dev/null ||
     echo "Build cache prune failed; continuing." >&2
 }
 

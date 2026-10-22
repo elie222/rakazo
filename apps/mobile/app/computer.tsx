@@ -1,5 +1,5 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
-import { displayName } from "@rakazo/core";
+import { displayName, isRetryableError } from "@rakazo/core";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -265,9 +265,13 @@ export default function Computer() {
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
-    const ping = () => void rpc("computer/heartbeat", { botId }).catch(() => undefined);
-    ping();
+    // A refused heartbeat (403, 404, 426...) stops until the computer's state changes.
+    const ping = () =>
+      void rpc("computer/heartbeat", { botId }).catch((error: unknown) => {
+        if (!isRetryableError(error)) clearInterval(timer);
+      });
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
+    ping();
     return () => clearInterval(timer);
   }, [botId, computer?.state]);
 

@@ -587,6 +587,9 @@ export class LocalStackController {
         // install root firewall rules on Linux either, so the stack would refuse
         // every computer. This computer is the person's own machine.
         SANDBOX_COMPUTER_EGRESS: "open",
+        // Content stays on this computer, under its own disk encryption; a lost key
+        // would otherwise lose every conversation. Existing ciphertext still reads.
+        CONTENT_ENCRYPTION: "off",
         ...(this.currentStackToken === null
           ? {}
           : { RAKAZO_DESKTOP_STACK_TOKEN: this.currentStackToken }),

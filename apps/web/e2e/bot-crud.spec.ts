@@ -99,6 +99,8 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const teamComputer = settings.getByRole("button", { name: "Team" });
   const openWork = settings.getByTestId("bot-scratchpad");
   await expect(teamComputer).toBeHidden();
+  await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeHidden();
+  await expect(settings.getByRole("switch", { name: "Manage the bots it creates" })).toBeHidden();
   await expect(modelSelect).toBeHidden();
   await expect(openWork).toBeHidden();
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toBeVisible();
@@ -117,6 +119,8 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("switch", { name: "web_search" })).toBeChecked();
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
+  await expect(settings.getByRole("switch", { name: "Read replies aloud" })).toBeVisible();
+  await expect(settings.getByRole("switch", { name: "Manage the bots it creates" })).toBeVisible();
   await expect(openWork).toBeVisible();
   await expect(modelSelect).toBeVisible();
   await expect(modelSelect).toContainText("Space default");
@@ -194,9 +198,9 @@ test("bot management switch persists and settings help is accessible", async ({
 }, testInfo) => {
   await signup(
     page,
-    `fleet-management-${Date.now()}@rakazo.test`,
+    `bot-management-${Date.now()}@rakazo.test`,
     "password12",
-    "Fleet Management",
+    "Manage the bots it creates",
   );
   await completeOnboarding(page);
   await page.goto("/app");
@@ -210,7 +214,7 @@ test("bot management switch persists and settings help is accessible", async ({
   };
 
   const fleetSwitch = await openAdvanced();
-  await expect(fleetSwitch).not.toBeChecked();
+  await expect(fleetSwitch).toBeChecked();
   const help = page.getByRole("button", { name: "About Manage the bots it creates" });
   const explanation =
     "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.";
@@ -239,12 +243,12 @@ test("bot management switch persists and settings help is accessible", async ({
   await page.keyboard.press("Escape");
   await expect(tooltip).toHaveCount(0);
   await fleetSwitch.click();
-  await expect(fleetSwitch).toBeChecked();
+  await expect(fleetSwitch).not.toBeChecked();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
 
   await page.reload();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   const reloadedSwitch = await openAdvanced();
-  await expect(reloadedSwitch).toBeChecked();
+  await expect(reloadedSwitch).not.toBeChecked();
 });

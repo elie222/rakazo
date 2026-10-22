@@ -22,6 +22,8 @@ x-app-environment: &app-environment
   DATA_DIR: /data
   ENCRYPTION_KEY:
   ENCRYPTION_MASTER_KEYS:
+  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL:
@@ -326,6 +328,7 @@ services:
       TEAM_CHAT_JUDGE_PROVIDER:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
+      RAKAZO_MIN_CLIENT_BUILD:
     expose:
       - "3100"
     volumes:

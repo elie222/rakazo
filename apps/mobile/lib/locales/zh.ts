@@ -1,4 +1,12 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Update required": "需要更新",
+  Update: "更新",
+  Provider: "提供商",
+  "No matching providers": "没有匹配的提供商",
+  "To:": "收件人：",
+  Next: "下一步",
+  "Ex: Project Falcon": "例如：猎鹰计划",
+  "Search bots": "搜索 Bot",
   "About {label}": "关于{label}",
   "Manage the bots it creates": "管理它创建的机器人",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -251,7 +259,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
   "Connect Treg": "连接 Treg",
   Connected: "已连接",
-  "Connected · {label}": "已连接 · {label}",
   "Connected and using {label}.": "已连接并正在使用 {label}。",
   "Connected. Its tools are available from your next message.":
     "已连接。从你的下一条消息起即可使用它的工具。",
@@ -338,7 +345,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not update reaction": "无法更新反应",
   "Couldn't update avatars": "无法更新头像",
   Create: "创建",
-  "Create group": "创建群组",
   "Create section": "创建分组",
   "Create space": "创建空间",
   Creating: "创建中",
@@ -443,7 +449,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Move to": "移动到",
   Name: "名称",
   "Name this bot": "为这个 Bot 命名",
-  "Name this group": "为这个群组命名",
   "Needs attention": "需要处理",
   "Needs input": "等待输入",
   "Needs takeover": "等待接管",
@@ -730,18 +735,13 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not save that preference": "无法保存该设置",
   Username: "用户名",
   // app/(settings)/models.tsx
-  "Add connected model": "添加已连接模型",
-  "Add connected models to use them as backups.": "添加已连接模型作为备用模型。",
+  "Add backup model": "添加备用模型",
+  "Move down": "下移",
+  "Move up": "上移",
+  "Tried in order if the active model fails.": "当前模型失败时按顺序尝试。",
   "Backup models": "备用模型",
-  "Backup models saved.": "备用模型已保存。",
-  "Connect a provider to add backups.": "连接提供商后即可添加备用模型。",
   "Could not load backup models": "无法加载备用模型。",
   "Could not save backup models": "无法保存备用模型。",
-  "Maximum of 10 backup models.": "最多可添加 10 个备用模型。",
-  "Move {model} down": "将 {model} 下移",
-  "Move {model} up": "将 {model} 上移",
-  "Remove {model}": "移除 {model}",
-  "Save backups": "保存备用模型",
   "Space changed. Reload Models to refresh backup models.":
     "空间已更改。重新加载“模型”以刷新备用模型。",
   "Space changed. Reload Models before saving backups.":
@@ -753,7 +753,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not disconnect this provider": "无法断开此提供商",
   "Default ({level})": "默认（{level}）",
   "Disconnected {provider}.": "已断开 {provider}。",
-  "Save limits": "保存限制",
   "Sign in again": "重新登录",
   "Thinking: {level}": "思考：{level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -903,4 +902,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Couldn't start the computer": "无法启动电脑",
   "Something went wrong while it was starting. Try again in a moment.":
     "启动时出了点问题。请稍后重试。",
+  "Your voice provider is out of credit.": "你的语音提供方额度已用完。",
+  "Your voice provider key was rejected.": "你的语音提供方拒绝了该密钥。",
 };

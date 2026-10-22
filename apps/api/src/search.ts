@@ -1,12 +1,14 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
 import {
   displayName,
+  escapeJsonSearchWildcards,
+  escapeSearchWildcards,
   extractLinksFromText,
   matchesSearchQuery,
   snippetAroundMatch,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { contentEncryptionOf, Prisma } from "@rakazo/db";
+import { contentEncryptionOf, INDEXED_MESSAGE, Prisma, UNINDEXED_MESSAGE } from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
 /** Cap name matches so content hits (messages/files/links/routines) keep most of the budget. */
@@ -21,21 +23,22 @@ const UNINDEXED_SCAN_LIMIT = 200;
  * on rows that are still plaintext.
  */
 async function messageMatch(prisma: PrismaClient, spaceId: string, query: string) {
-  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${query}%`}`;
+  const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
-  const tokenSets = (await encryption.messageSearchTokens(spaceId, query, "prefix")).filter(
-    (tokens) => tokens.length,
-  );
+  const keyTokens = await encryption.messageSearchTokens(spaceId, query, "prefix");
+  // No keys: nothing in the space was ever encrypted (encryption off from the start).
+  if (!keyTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
+  const tokenSets = keyTokens.filter((tokens) => tokens.length);
   if (!tokenSets.length)
     return {
-      sql: Prisma.sql`(m."searchTokens" IS NOT NULL OR ${plaintext})`,
+      sql: Prisma.sql`(${INDEXED_MESSAGE} OR ${plaintext})`,
       limit: UNINDEXED_SCAN_LIMIT,
       pages: 1,
     };
   const encrypted = tokenSets.map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
   return {
-    sql: Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(m."searchTokens" IS NULL AND ${plaintext})`], " OR ")})`,
+    sql: Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(${UNINDEXED_MESSAGE} AND ${plaintext})`], " OR ")})`,
     limit: SEARCH_LIMIT * 4,
     // Candidates can share the query's words without containing the phrase, so
     // keep fetching until results fill or candidates run out, within a bound.
@@ -85,6 +88,10 @@ export async function querySpaceSearch(
 ): Promise<SearchHit[]> {
   const query = q.trim();
   if (!query) return [];
+  // The database side has to match the text the user typed, the way
+  // `matchesSearchQuery` does in memory: a `%` or `_` would otherwise widen
+  // the match, and a `\` would swallow the character after it.
+  const likeQuery = escapeSearchWildcards(query);
 
   const conversationHits: SearchHit[] = [];
   const contentHits: SearchHit[] = [];
@@ -111,9 +118,9 @@ export async function querySpaceSearch(
       userId: actor.userId,
       archivedAt: null,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { title: { contains: likeQuery, mode: "insensitive" } },
+        { description: { contains: likeQuery, mode: "insensitive" } },
       ],
     },
     take: CONVERSATION_HIT_LIMIT,
@@ -136,7 +143,7 @@ export async function querySpaceSearch(
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     take: CONVERSATION_HIT_LIMIT,
   });
@@ -162,7 +169,7 @@ export async function querySpaceSearch(
       userId: actor.userId,
       groupId: null,
       botId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
       bot: { archivedAt: null },
     },
     include: { bot: { select: { name: true } } },
@@ -201,7 +208,7 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       groupId: { not: null },
-      name: { contains: query, mode: "insensitive" },
+      name: { contains: likeQuery, mode: "insensitive" },
     },
     include: { group: { select: { name: true } } },
     take: SEARCH_LIMIT,
@@ -239,8 +246,8 @@ export async function querySpaceSearch(
       spaceId: actor.spaceId,
       userId: actor.userId,
       OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { prompt: { contains: query, mode: "insensitive" } },
+        { name: { contains: likeQuery, mode: "insensitive" } },
+        { prompt: { contains: likeQuery, mode: "insensitive" } },
       ],
       bot: { archivedAt: null },
     },

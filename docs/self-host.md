@@ -88,14 +88,14 @@ supervisor at startup naming the variable, rather than surfacing later as a fail
 
 ### Restricted computer egress
 
-Docker computers default to restricted egress: the public internet (browsing, DNS, apt, git
+Restricted egress gives Docker computers the public internet (browsing, DNS, apt, git
 over SSH) but not the Docker host, the LAN, or link-local cloud metadata such as
 `169.254.169.254`, which on a cloud VM would hand instance credentials to anything a bot runs.
 
 It takes two parts:
 
-1. `SANDBOX_COMPUTER_EGRESS=restricted`, the Compose default, gives each computer network a
-   deterministic host bridge name (`rakazo-c…`) instead of a generic `br-*`.
+1. `SANDBOX_COMPUTER_EGRESS=restricted` gives each computer network a deterministic host
+   bridge name (`rakazo-c…`) instead of a generic `br-*`.
 2. The host ruleset, applied once per Docker host:
 
    ```bash
@@ -114,7 +114,14 @@ It takes two parts:
 Before the first restricted computer starts, the supervisor checks that the host drops
 connections from a `rakazo-c*` bridge. Without the ruleset, computers fail to start with an
 error naming the script instead of running unrestricted; run the script (no restart needed)
-or set `SANDBOX_COMPUTER_EGRESS=open` and recreate the supervisor. A host-run supervisor
+or set `SANDBOX_COMPUTER_EGRESS=open` and recreate the supervisor.
+
+When `SANDBOX_COMPUTER_EGRESS` is unset, the Compose files use `auto`: the supervisor runs the
+same check and uses restricted egress if the ruleset is in place, otherwise open egress with a
+warning in its log. It keeps the first completed answer; a check that could not finish (a Docker
+error or timeout) fails that computer's start and runs again on the next one. An install from before the ruleset existed therefore
+keeps working when it upgrades. After installing the ruleset, recreate the supervisor, or set
+`restricted` to refuse computers whenever the rules are missing. A host-run supervisor
 (`pnpm dev`) and the desktop app's **This computer** stack default to open: Docker Desktop
 keeps its bridges in a VM the host rules cannot reach.
 
@@ -188,10 +195,15 @@ password, and grants it the `rakazo_app` role. When migrations run as a role wit
 `CREATEROLE`, as on some managed Postgres, create the login yourself and
 `GRANT rakazo_app TO <login>`.
 
-Messages, events, threads, memory, artifacts, secrets, model and voice credentials, and skills have
-row-level security. Each signed-in request sees only its Space's rows, plus the user's own
-account-level credentials. A query that leaves out its Space filter returns nothing from other
-Spaces. Background jobs, reconcilers and webhooks run in a named system scope (`runAsSystem` in
+Messages, events, threads, memory, artifacts, secrets, model and voice credentials, skills, bots,
+runs, tasks, routines, connections, MCP servers and sign-ins, computers, boards and tickets,
+messaging identities and outbox, external conversations, steering messages, usage, scratchpad
+items and approval rules have row-level security. Each signed-in request sees only its Space's
+rows, plus the user's own account-level credentials. A query that leaves out its Space filter
+returns nothing from other Spaces. A background job that acts for one run, routine, computer,
+skill, thread or cloud agent runs as that row's Space and user, so agent tools get the same
+backstop. Security events are written and read only in system scope. Reconcilers, queue sweeps,
+the messaging outbox drain and webhooks run in a named system scope (`runAsSystem` in
 `packages/db`). The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
 graphile-worker turns on row-level security for them, and `pnpm db:migrate` adds a policy that
 gives the app login every row.
@@ -576,18 +588,36 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
+### Client updates
+
+Every web build is named by the UTC time it was built (`YYYYMMDDHHMMSS`). The web app sends its
+build on each `/rpc` request in `x-rakazo-client-build` (`web/20261022093015`; the mobile app sends
+`mobile/` and the time its JavaScript bundle was built), and the API answers with the web build in
+its own image in `x-rakazo-build`. An open tab that sees a newer build reloads at a safe moment:
+while hidden, on its next navigation, or after a few idle minutes with nothing typed.
+
+To retire old clients immediately, set `RAKAZO_MIN_CLIENT_BUILD` on the API, for example
+`web=20261022093015` or `web=20261022093015,mobile=20261001000000`, and restart it. Older clients
+get HTTP 426 `CLIENT_UPDATE_REQUIRED`: the web app reloads, and the mobile app offers its update.
+Read the current build from the `x-rakazo-build` header of any `/rpc` response. Requests that name
+no build, such as webhooks and API tools, are never refused. A malformed value stops the API from
+starting rather than being ignored.
+
 ### Client addresses
 
 Sessions, logs, and security events carry the caller's address. The API believes a forwarded
 header only when the TCP peer is in `TRUSTED_PROXIES` (IPs, CIDR ranges, or hostnames such as a
 Compose service name). It reads that header (`CLIENT_IP_HEADER`, default `x-forwarded-for`) right
 to left past trusted hops. Anyone else is the TCP peer, so a client cannot choose its own address.
-Compose sets `TRUSTED_PROXIES` to the hop in front of the API: `caddy` in production, `web`
-elsewhere. The web app's `/api` proxy appends the address it saw, so with only `web` trusted the
-API records the address of whatever connects to the web container, such as your host proxy. To
-record each client instead, also trust that proxy's address as the web container sees it, and make
-sure that proxy overwrites or appends `X-Forwarded-For`. For any other layout, list every proxy
-between the internet and the API.
+Unset, `TRUSTED_PROXIES` in a container is `local-networks`: loopback and every network the API
+has an interface on. Outside a container it is loopback only, since the host's networks can hold
+direct clients. `none` trusts no proxy. In Compose those networks are the stack's own, which hold the web container and the network
+gateway a reverse proxy on the Docker host connects from, so a host proxy that sets
+`X-Forwarded-For` (Caddy does; nginx needs `proxy_set_header X-Forwarded-For
+$proxy_add_x_forwarded_for`) is believed without configuration. Bot computers are never on those
+networks, so they cannot choose an address. Production Compose sets `caddy` instead. For any
+other layout, list every proxy between the internet and the API. Sign-in rate limits count per
+client address, so a proxy that is not believed makes every user share one limit.
 
 Caddy resolves the client first. `Caddyfile.prod` takes the TCP peer and overwrites
 `X-Forwarded-For` with it. Behind a CDN, Caddy has to trust the CDN's ranges and read its client
@@ -830,7 +860,25 @@ Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider
 
 Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
 
-The Compose files pass the API and worker only the settings each one reads, listed by name, rather than the whole `.env`. A setting whose name you choose, such as `TELEGRAM_BOT_TOKEN_<NAME>`, therefore needs its own line: add it under `api` and `worker` `environment` in an override file layered after the base file (and in `RAKAZO_COMPOSE_FILE` when the updater is enabled), with no value so Compose fills it from `.env`.
+### Settings with names you choose
+
+The Compose files pass the API and worker only the settings each one reads, listed by name, rather than the whole `.env`. A setting whose name you choose, such as `TELEGRAM_BOT_TOKEN_<NAME>`, therefore needs its own line: add it under `api` and `worker` `environment` in an override file layered after the base file (and in `RAKAZO_COMPOSE_FILE` when the updater is enabled), with no value so Compose fills it from `.env`. `install-images.sh` names any `.env` setting that no container receives.
+
+```yaml
+# docker-compose.override.yml
+services:
+  api:
+    environment:
+      TELEGRAM_BOT_TOKEN_SUPPORT:
+      TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT:
+  worker:
+    environment:
+      TELEGRAM_BOT_TOKEN_SUPPORT:
+      TELEGRAM_WEBHOOK_SECRET_TOKEN_SUPPORT:
+```
+
+`install-images.sh` layers a `docker-compose.override.yml` next to it automatically. In your own
+commands, add `-f docker-compose.override.yml` after the base file.
 
 ## Choosing a computer provider
 
@@ -876,6 +924,59 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
   configured, or when a remote provider is selected without its API key).
 
 For provider configuration and health checks, see the [provider setup guide](./self-host-sandbox-providers.md).
+
+## Content encryption
+
+Rakazo encrypts chat messages, thread events, compacted history summaries, memory documents and
+their revisions, and uploaded or generated files before they reach PostgreSQL or `DATA_DIR`.
+Names, ids, timestamps and other metadata stay readable. Credentials are always encrypted,
+whatever this setting says. Details and the threat model are in
+[content encryption](./content-encryption.md).
+
+**The key.** Content is encrypted under keys derived from `ENCRYPTION_KEY` (and
+`ENCRYPTION_MASTER_KEYS`, if set). Without them, a backup of the database and `DATA_DIR` cannot
+be read, by you or by anyone else. `install-images.sh` says so once, when it generates the key:
+
+```text
+Back up ENCRYPTION_KEY from /path/to/rakazo/.env. Encrypted content cannot be recovered without it.
+```
+
+It never prints the key. Store a copy somewhere other than the server and its backups.
+
+**The switch.** `CONTENT_ENCRYPTION=on|off` in `.env`:
+
+| Install | Unset means |
+| --- | --- |
+| Compose files, published images, Railway | `on` |
+| Desktop app, **This computer** | `off` (the computer's disk encryption covers it) |
+| Source checkout with `NODE_ENV=development` or `RAKAZO_ALLOW_DEV_SECRETS=1` | `off` |
+
+With `off`, new content and files are stored readable, so you can query your own database
+directly and a lost key cannot lose them. Content encrypted earlier still reads with the key, so
+switching off never makes data unreadable. To convert it too, run `content-encryption decrypt`.
+Any other value stops the API and worker at startup.
+
+To switch on later, set `CONTENT_ENCRYPTION=on`, restart, then encrypt what was stored while
+it was off. From the published-images folder (other stacks use their own Compose file):
+
+```bash
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api content-encryption migrate
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api content-encryption status
+```
+
+Search works in both modes and while rows are mixed.
+
+**Reading your data.** `content-encryption export` writes decrypted threads, messages, memory
+documents and revisions as JSON lines. It reads the whole database by default; narrow it with
+`--space <id>`, `--thread <id>` or `--bot <id>`. It only reads.
+
+```bash
+docker compose -f docker-compose.images.yml exec -T api \
+  pnpm -s --filter @rakazo/api content-encryption export --bot <bot id> > rakazo-export.jsonl
+```
+
+The export is plaintext: store it like the database itself. Files are not included; use
+`content-encryption decrypt` to make them readable on disk.
 
 ## Backup
 
@@ -1125,7 +1226,7 @@ release: add first, and drop or rename only in a later deploy. Build and
 start are time-limited so a stuck build fails the deploy instead of holding its lock; a deploy that
 finds the lock held exits non-zero. A deploy refuses to start with less than
 `RAKAZO_DEPLOY_MIN_FREE_GB` (default `5`) free, and after a healthy rollout it removes untagged
-images and build cache unused for a day, keeping the previous images tagged `rakazo-rollback`.
+images and trims the build cache to `RAKAZO_DEPLOY_BUILD_CACHE_GB` (8 GB by default), keeping the previous images tagged `rakazo-rollback`.
 For a checkout outside `/srv/rakazo`, put `RAKAZO_DEPLOY_DIR=/absolute/path` (and any of these
 settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. The launcher runs
 `infra/compose/deploy-main.sh` from `origin/main`, so deploy changes apply on the next deploy; only
@@ -1233,7 +1334,8 @@ Product contracts stay compatible across cloud and self-hosted.
 ### Upgrading to the separate app database login
 
 Releases with [database roles](#database-roles) need `POSTGRES_APP_PASSWORD` in `.env`. The
-desktop app, `install-images.sh` and `infra/compose/deploy-main.sh` add it when it is missing.
+desktop app, `install-images.sh`, the updater sidecar and `infra/compose/deploy-main.sh` add it
+when it is missing.
 Elsewhere, add it yourself (`openssl rand -hex 16`) before you pull, or Compose stops at config
 validation with `Set POSTGRES_APP_PASSWORD in .env`. On first start, the API creates the
 `rakazo_app` login, and the API and worker then connect as it. Nothing else changes, and the
@@ -1245,8 +1347,10 @@ restart the API and worker. Role attributes are not inherited, so granting it to
 nothing for a separate login. The app then runs as before, with a startup warning, and later
 migrations leave that login alone. Undo it with
 `NOBYPASSRLS` and another restart, then search the API and worker logs for
-`violates row-level security` and `without a tenant or system context`. Rolling back to an older release works without changes: it
-ignores the extra variable and connects as the owner.
+`violates row-level security` and `without a tenant or system context`. An older release ignores
+the extra variable and connects as the owner, but releases from the same day also encrypt content
+at rest: run `content-encryption decrypt` before rolling back past them
+([content encryption](./content-encryption.md#rollout)), or older releases show ciphertext.
 
 ### Space privacy-boundary migration
 

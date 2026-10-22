@@ -362,6 +362,8 @@ describe("LocalStackController", () => {
       expect(call.env.SANDBOX_HOST_URL).toBe(hostComputer.url);
       expect(call.env.SANDBOX_HOST_TOKEN).toBe(hostComputer.token);
       expect(call.env.SANDBOX_COMPUTER_EGRESS).toBe("open");
+      // The laptop's disk encryption covers content; a lost key must not lose it.
+      expect(call.env.CONTENT_ENCRYPTION).toBe("off");
     }
     expect(
       await controller({

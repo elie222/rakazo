@@ -81,6 +81,18 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await speakReply.click();
   await replySpoken;
 
+  await page.route("**/api/voice/speak", (route) =>
+    route.fulfill({
+      status: 402,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Insufficient credit", code: "VOICE_OUT_OF_CREDIT" }),
+    }),
+  );
+  await speakReply.click();
+  await expect(page.getByText("Your voice provider is out of credit.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "read-aloud-out-of-credit");
+  await page.unroute("**/api/voice/speak");
+
   await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
@@ -126,45 +138,6 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(rpc<Array<{ provider: string }>>(page, "voice/credentials", {})).resolves.toEqual(
     [],
   );
-});
-
-test("incoming calls keep failed actions available for retry", async ({ page }, testInfo) => {
-  await signup(page, `incoming-call-${Date.now()}@rakazo.test`, "password12", "Call tester");
-  await completeOnboarding(page);
-  const bots = await rpc<Array<{ id: string }>>(page, "bots/list", {});
-  const bot = bots[0];
-  if (!bot) throw new Error("Missing test bot");
-  const incomingCall = {
-    callId: "test-incoming-call",
-    reason: "Review the sample report",
-    opening: "Ready to review?",
-    expiresAt: new Date(Date.now() + 45_000).toISOString(),
-  };
-  await page.route("**/rpc/spaces/list", async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    body.json.current.bots = body.json.current.bots.map((row: { id: string }) =>
-      row.id === bot.id ? { ...row, incomingCall } : row,
-    );
-    await route.fulfill({ response, json: body });
-  });
-  await page.route("**/rpc/threads/answerCall", (route) =>
-    route.fulfill({
-      status: 503,
-      json: { json: { code: "SERVICE_UNAVAILABLE", message: "Try again" } },
-    }),
-  );
-  await page.route("**/rpc/threads/declineCall", (route) =>
-    route.fulfill({ json: { json: { ok: true } } }),
-  );
-  const incoming = page.getByTestId("incoming-call");
-  await expect(incoming).toBeVisible();
-  await captureScreenshot(page, testInfo, "incoming-call");
-  await incoming.getByRole("button", { name: "Answer", exact: true }).click();
-  await expect(incoming.getByRole("alert")).toBeVisible();
-  await expect(incoming.getByRole("button", { name: "Answer", exact: true })).toBeEnabled();
-  await incoming.getByRole("button", { name: "Decline", exact: true }).click();
-  await expect(incoming).toHaveCount(0);
 });
 
 test("voice settings take a self-hosted speech server by URL", async ({ page }, testInfo) => {

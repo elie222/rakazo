@@ -60,17 +60,45 @@ describe("noVNC storage shim gate", () => {
     expect(bare.indexOf("localStorage")).toBeLessThan(bare.indexOf('src="app.js"'));
   });
 
-  it("keeps values for the life of the page", () => {
+  function runShim() {
     const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
-    const window = {} as { localStorage: Storage };
+    const listeners: ((event: unknown) => void)[] = [];
+    const window = {
+      addEventListener: (_type: string, listener: (event: unknown) => void) => {
+        listeners.push(listener);
+      },
+    } as unknown as { localStorage: Storage; sessionStorage: Storage };
     new Function("window", script)(window);
-    window.localStorage.setItem("setting", "value");
-    expect(window.localStorage.getItem("setting")).toBe("value");
-    window.localStorage.removeItem("setting");
-    expect(window.localStorage.getItem("setting")).toBeNull();
-    window.localStorage.setItem("other", 1 as unknown as string);
-    window.localStorage.clear();
-    expect(window.localStorage.getItem("other")).toBeNull();
+    return { window, listeners };
+  }
+
+  it("keeps values for the life of the page in both storages", () => {
+    const { window } = runShim();
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      storage.setItem("setting", "value");
+      expect(storage.getItem("setting")).toBe("value");
+      storage.removeItem("setting");
+      expect(storage.getItem("setting")).toBeNull();
+      storage.setItem("other", 1 as unknown as string);
+      storage.clear();
+      expect(storage.getItem("other")).toBeNull();
+    }
+    window.localStorage.setItem("only", "local");
+    expect(window.sessionStorage.getItem("only")).toBeNull();
+  });
+
+  it("keeps extension script errors away from noVNC's error page", () => {
+    const { listeners } = runShim();
+    expect(listeners).toHaveLength(1);
+    const stopped = (filename: string) => {
+      let stop = false;
+      listeners[0]?.({ filename, stopImmediatePropagation: () => (stop = true) });
+      return stop;
+    };
+    expect(stopped("chrome-extension://abc/content.js")).toBe(true);
+    expect(stopped("moz-extension://abc/content.js")).toBe(true);
+    expect(stopped("https://screen.example/core/rfb.js")).toBe(false);
+    expect(stopped("")).toBe(false);
   });
 });
 

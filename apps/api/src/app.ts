@@ -14,7 +14,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError, VoiceAccountError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -77,6 +77,7 @@ import {
 } from "@rakazo/adapters";
 import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
+import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupAllowlistBootUpdate, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -114,9 +115,11 @@ import { mountAppAssociation, nativePasskeys } from "./app-association.js";
 import { storeInboundAttachment } from "./artifacts.js";
 import { createBillingService } from "./billing.js";
 import { mountBillingRoutes } from "./billing-webhook.js";
+import { clientBuildMiddleware, readDeployedWebBuild } from "./client-build.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
+  defaultTrustedProxies,
   requestClientIp,
   withClientIp,
 } from "./client-ip.js";
@@ -146,7 +149,7 @@ import {
   settleWithTimeout,
   TEAM_CHAT_STARTUP_SHUTDOWN_MS,
 } from "./team-chat-startup.js";
-import { mountVoiceHttpRoutes } from "./voice.js";
+import { mountVoiceHttpRoutes, voiceAccountErrorStatus } from "./voice.js";
 import { mountWebhookHttpRoutes } from "./webhook.js";
 
 /**
@@ -230,11 +233,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     : createDb(env.databaseUrl, {
         poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 4),
         applicationName: "rakazo-api",
+        encryptContent: env.contentEncryption,
       });
   let { prisma } = created;
   // Built before anything listens, so a bad TRUSTED_PROXIES entry stops startup.
   const clientIp = createClientIpResolver({
-    trustedProxies: env.trustedProxies,
+    // Unset trusts the proxies a stack is built with: on loopback or on the API's own networks.
+    // Trusting none would make the web proxy every client, one sign-in rate-limit bucket for all.
+    trustedProxies: env.trustedProxies.length > 0 ? env.trustedProxies : defaultTrustedProxies(),
     header: env.clientIpHeader,
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
@@ -675,6 +681,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         return isTrustedOrigin(origin, env) ? origin : "";
       },
       credentials: true,
+      exposeHeaders: [SERVER_BUILD_HEADER],
     }),
   );
   // Session and account replies must never be stored by a client or an HTTP cache.
@@ -753,6 +760,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return actor && { actor, sessionId: session.session.id };
   };
   const sessionActor = async (request: Request) => (await requestSession(request))?.actor ?? null;
+  app.use(
+    "/rpc/*",
+    clientBuildMiddleware({
+      webBuild: readDeployedWebBuild(),
+      minimums: env.minimumClientBuilds ?? {},
+    }),
+  );
   app.use("/rpc/*", async (c, next) => {
     const session = await requestSession(c.req.raw);
     const actor = session?.actor ?? null;
@@ -1210,8 +1224,25 @@ function emptyAuthBodyAsJson(request: Request) {
  * The cause chain matters as much as the message: undici and most SDKs report a bare
  * "fetch failed" and keep the host and errno one level down.
  */
-/** Log the failure, then give a provider rate limit its own status instead of a generic 500. */
+/** Log the failure, then give known failures their own status instead of a generic 500. */
 export function handleRpcError(error: unknown, path: readonly string[]): void {
+  // A missing or foreign resource is the caller's mistake (a stale client, a deleted bot),
+  // not a server failure, so it is a warning rather than an error report.
+  if (error instanceof IsolationError) {
+    getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
+    throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  // The user's own voice account is out of credit or rejected the key: theirs to fix.
+  if (error instanceof VoiceAccountError) {
+    getLogger().warn(`rpc ${path.join("/")} voice provider account rejected the request`, {
+      reason: error.code,
+    });
+    throw new ORPCError(error.code, {
+      status: voiceAccountErrorStatus(error.code),
+      message: error.message,
+      cause: error,
+    });
+  }
   logUnexpectedRpcError(error, path);
   if (error instanceof SandboxRateLimitError) {
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });

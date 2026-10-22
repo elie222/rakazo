@@ -27,6 +27,7 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
@@ -1144,9 +1145,9 @@ export class McpOAuthBroker {
         this.discardPending(sessionId, pending);
       }
     }
-    await this.prisma.mcpOAuthSession.deleteMany({
-      where: { createdAt: { lt: new Date(cutoff) } },
-    });
+    await runAsSystem("expire abandoned MCP sign-ins in every Space", () =>
+      this.prisma.mcpOAuthSession.deleteMany({ where: { createdAt: { lt: new Date(cutoff) } } }),
+    );
   }
 
   private discardPending(sessionId: string, pending: Pending): void {

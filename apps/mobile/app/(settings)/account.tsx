@@ -71,6 +71,7 @@ import {
   renamePasskey,
 } from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
+import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -82,6 +83,7 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
+import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
 import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
@@ -111,7 +113,9 @@ export default function Account() {
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
-  const [notificationPending, setNotificationPending] = useState(false);
+  const notificationQueue = useRef<ReturnType<
+    typeof createQueuedSave<LiveNotificationSettings>
+  > | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -233,28 +237,33 @@ export default function Account() {
     }
   }
 
-  async function updateNotifications(next: LiveNotificationSettings) {
-    const previous = notifications;
-    setNotifications(next);
-    setNotificationPending(true);
+  function updateNotifications(next: LiveNotificationSettings) {
+    notificationQueue.current ??= createQueuedSave(notifications, {
+      onChange: setNotifications,
+      equals: (a, b) =>
+        a.liveConnection === b.liveConnection &&
+        a.messages === b.messages &&
+        a.scheduledTasks === b.scheduledTasks &&
+        a.needsAttention === b.needsAttention,
+      save: async (settings) => {
+        await setLiveNotificationSettings(
+          settings,
+          currentApiBase(),
+          await loadSessionToken(),
+          selectedSpaceId() ?? "",
+        );
+      },
+      onSaved: async (settings) => {
+        if (settings.liveConnection && !(await canPostPromotedNotifications())) {
+          await openPromotedNotificationSettings();
+        }
+        await registerPushToken();
+      },
+      onError: (cause) =>
+        setNotificationError(errorText(cause, t("Could not update notifications"))),
+    });
     setNotificationError(null);
-    try {
-      await setLiveNotificationSettings(
-        next,
-        currentApiBase(),
-        await loadSessionToken(),
-        selectedSpaceId() ?? "",
-      );
-      if (next.liveConnection && !(await canPostPromotedNotifications())) {
-        await openPromotedNotificationSettings();
-      }
-      await registerPushToken();
-    } catch (cause) {
-      setNotifications(previous);
-      setNotificationError(errorText(cause, t("Could not update notifications")));
-    } finally {
-      setNotificationPending(false);
-    }
+    notificationQueue.current.update(next);
   }
 
   async function securityAction(run: () => Promise<void>) {
@@ -555,7 +564,7 @@ export default function Account() {
             <SettingsSwitch
               label={t("Live working status")}
               value={notifications.liveConnection}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(liveConnection) =>
                 void updateNotifications({ ...notifications, liveConnection })
               }
@@ -564,13 +573,13 @@ export default function Account() {
               label={t("Agent messages")}
               detail={t("Replies and completed work")}
               value={notifications.messages}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
               value={notifications.scheduledTasks}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(scheduledTasks) =>
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
@@ -579,7 +588,7 @@ export default function Account() {
               label={t("Needs attention")}
               detail={t("Questions, approvals, takeover")}
               value={notifications.needsAttention}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(needsAttention) =>
                 void updateNotifications({ ...notifications, needsAttention })
               }
@@ -599,34 +608,27 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/models")}
-            title={t("Models")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/voice")}
-            title={t("Voice")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/integrations")}
-            title={t("Integrations")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/ai-data-sharing")}
-            title={t("AI data sharing")}
-          />
+          {(
+            [
+              { title: t("Artifacts"), href: "/artifacts" },
+              { title: t("Models"), href: "/models" },
+              { title: t("Voice"), href: "/voice" },
+              { title: t("Integrations"), href: "/integrations" },
+              { title: t("AI data sharing"), href: "/ai-data-sharing" },
+            ] as const
+          ).map(({ title, href }) => (
+            <SettingsRow
+              key={href}
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // Artifacts lives on the root stack, so it closes the sheet before opening.
+              onPress={() =>
+                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+              }
+              title={title}
+            />
+          ))}
           {me?.isDeploymentOwner ? (
             <SettingsRow
               accessibilityRole="button"

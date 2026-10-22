@@ -2,9 +2,10 @@ import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
 import type { PressableProps } from "react-native";
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
+import { androidRipple } from "../lib/ripple";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { NativeSwitch } from "./native-switch";
 import { Chevron } from "./row-accessories";
@@ -88,7 +89,14 @@ export function SettingsRow({
   const stacked = useStackedSettings();
   const end = (
     <>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
+      {value ? (
+        <Text
+          numberOfLines={stacked ? undefined : 1}
+          style={[styles.value, !stacked && styles.inlineValue]}
+        >
+          {value}
+        </Text>
+      ) : null}
       {trailing}
     </>
   );
@@ -115,6 +123,10 @@ export function SettingsRow({
     return (
       <View
         accessible={props.accessible}
+        accessibilityActions={props.accessibilityActions}
+        accessibilityLabel={props.accessibilityLabel}
+        accessibilityRole={props.accessibilityRole}
+        onAccessibilityAction={props.onAccessibilityAction}
         style={[styles.row, stacked && styles.compactRow, dimmed && styles.dimmed]}
       >
         {content}
@@ -124,10 +136,11 @@ export function SettingsRow({
   return (
     <Pressable
       {...props}
+      android_ripple={androidRipple()}
       style={({ pressed }) => [
         styles.row,
         stacked && styles.compactRow,
-        pressed && styles.pressed,
+        pressed && Platform.OS !== "android" && styles.pressed,
         dimmed && styles.dimmed,
       ]}
     >
@@ -197,7 +210,9 @@ function createSettingsStyles() {
       backgroundColor: native.groupedCell,
     },
     separator: {
-      height: StyleSheet.hairlineWidth,
+      // iOS draws sheets scaled down slightly, which makes a one-pixel line fall between
+      // pixels and vanish at some offsets. Two pixels always leave at least one visible.
+      height: StyleSheet.hairlineWidth * 2,
       marginStart: 16,
       backgroundColor: native.separator,
     },
@@ -219,6 +234,8 @@ function createSettingsStyles() {
     detail: { color: native.secondaryLabel, ...typeScale.caption },
     destructive: { color: tokens.destructive },
     value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
+    // A long value truncates instead of pushing the title out of the row.
+    inlineValue: { maxWidth: "60%" },
     pressed: { backgroundColor: native.fillPressed },
     dimmed: { opacity: 0.45 },
   });

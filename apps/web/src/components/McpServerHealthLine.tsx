@@ -1,5 +1,6 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { McpServerHealth } from "@rakazo/contracts";
+import { Disclosure } from "@rakazo/ui-web";
 import { CircleCheck, CircleDashed, LoaderCircle, TriangleAlert } from "lucide-react";
 import { formatRelativeTime } from "../lib/relative-time";
 
@@ -88,20 +89,19 @@ export function McpServerHealthLine({
           </span>
         </p>
         {health.message ? (
-          <details data-testid="mcp-health-details" className="group mt-1.5">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-muted-foreground">
-              <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-                ›
-              </span>
-              <Trans>Error details</Trans>
-            </summary>
+          <Disclosure
+            data-testid="mcp-health-details"
+            className="mt-1.5"
+            summary={<Trans>Error details</Trans>}
+            summaryClassName="text-[11px] text-muted-foreground"
+          >
             <pre
               dir="ltr"
               className="rk-scroll mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted p-2 text-start font-mono text-[11px] leading-snug text-foreground wrap-anywhere"
             >
               {health.message}
             </pre>
-          </details>
+          </Disclosure>
         ) : null}
       </div>
     );

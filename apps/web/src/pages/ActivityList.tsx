@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { isAgedStuckWork } from "@rakazo/core";
+import { isAgedStuckWork, isRetryableError } from "@rakazo/core";
 import {
   Button,
   Collapsible,
@@ -67,6 +67,7 @@ export function ActivityList({
         timer = undefined;
       }
       void (async () => {
+        let retry = true;
         try {
           const [active, recent] = await Promise.all([
             rpc.runs.list({ filter: "active" }),
@@ -77,12 +78,13 @@ export function ActivityList({
           setRecentRuns(recent.runs);
           setError(null);
         } catch (err) {
+          retry = isRetryableError(err);
           if (cancelled || requestId !== generation) return;
           setError(err instanceof Error ? err.message : t`Could not load activity`);
         } finally {
           if (!cancelled && requestId === generation) {
             setLoading(false);
-            timer = window.setTimeout(load, 15_000);
+            if (retry) timer = window.setTimeout(load, 15_000);
           }
         }
       })();

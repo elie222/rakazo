@@ -23,6 +23,8 @@ x-app-environment: &app-environment
   DATA_DIR: /data
   ENCRYPTION_KEY:
   ENCRYPTION_MASTER_KEYS:
+  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL: ${API_URL:-http://127.0.0.1:5173}
@@ -297,7 +299,7 @@ services:
       SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
-      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-restricted}
+      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
@@ -361,8 +363,9 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
-      # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host.md.
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
+      # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
+      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      TRUSTED_PROXIES:
       CLIENT_IP_HEADER:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -390,6 +393,7 @@ services:
       TEAM_CHAT_JUDGE_PROVIDER:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
+      RAKAZO_MIN_CLIENT_BUILD:
     ports:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:

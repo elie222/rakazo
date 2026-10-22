@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { clearThread, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import { asSystem, clearThread, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
@@ -136,7 +136,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
         clearThread(prisma, { spaceId: id, botId: bot.id, threadId: thread.id }),
       );
     const wakes = () =>
-      prisma.run.findMany({ where: { threadId: thread.id, trigger: "cloud_agent" } });
+      asSystem(prisma).run.findMany({ where: { threadId: thread.id, trigger: "cloud_agent" } });
     const finish = async (agentId: string) => {
       wire.complete((await state(agentId)).remoteId!);
       await poll(agentId);
@@ -273,7 +273,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     const h = await setup();
     const id = await h.launch();
     await h.poll(id);
-    await prisma.bot.delete({ where: { id: h.bot.id } });
+    await asSystem(prisma).bot.delete({ where: { id: h.bot.id } });
     await h.poll(id);
     expect(await h.state(id)).toMatchObject({ status: "cancelled", nextPollAt: null });
   });

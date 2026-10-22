@@ -17,24 +17,24 @@ import {
   isCatalogItemConnected,
 } from "@rakazo/core";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  Collapsible,
-  CollapsibleContent,
   Dialog,
   DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Disclosure,
   Input,
   NativeSelect,
   NativeSelectOption,
   Spinner,
 } from "@rakazo/ui-web";
-import { ChevronDown, ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { connectedAppMarks } from "../lib/connected-apps";
@@ -45,6 +45,15 @@ import { errorText } from "../lib/user-error";
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
 
 type ConnectionTool = { name: string; description: string };
+
+/** "GMAIL_SEND_EMAIL" under Gmail reads as "Send email": the app is already the page title. */
+function toolLabel(name: string, item: ConnectionCatalogItem) {
+  const prefix = `${item.slug}_`;
+  const bare = name.toLowerCase().startsWith(prefix.toLowerCase())
+    ? name.slice(prefix.length)
+    : name;
+  return humanizeToolName(bare);
+}
 
 function markConnected(
   items: ConnectionCatalogItem[],
@@ -97,7 +106,6 @@ export function PluginsOverlay({
   const [detailKey, setDetailKey] = useState<{ connectorId: string; slug: string } | null>(null);
   const [tools, setTools] = useState<ConnectionTool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
 
@@ -189,7 +197,6 @@ export function PluginsOverlay({
 
   function openDetail(item: ConnectionCatalogItem) {
     setCatalogError(null);
-    setToolsOpen(true);
     setDetailKey({ connectorId: item.connectorId, slug: item.slug });
   }
 
@@ -551,97 +558,75 @@ export function PluginsOverlay({
           </Button>
         </div>
 
-        <Card data-testid="connection-accounts">
-          <CardHeader>
-            <CardTitle>
-              <Trans>Accounts</Trans>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {accounts.map((row) => (
-              <div key={row.id} className="flex items-center gap-2">
-                <Input
-                  value={labelDrafts[row.id] ?? row.displayName}
-                  aria-label={t`Account label`}
-                  className="h-9 rounded-lg px-3 text-[13px]"
-                  onChange={(event) =>
-                    setLabelDrafts((current) => ({ ...current, [row.id]: event.target.value }))
+        <section data-testid="connection-accounts" className="space-y-1">
+          {accounts.map((row) => (
+            <div key={row.id} className="group/account flex items-center gap-2">
+              <Input
+                value={labelDrafts[row.id] ?? row.displayName}
+                aria-label={t`Account label`}
+                className="h-9 rounded-lg border-transparent bg-transparent px-2 text-[14px] shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
+                onChange={(event) =>
+                  setLabelDrafts((current) => ({ ...current, [row.id]: event.target.value }))
+                }
+                onBlur={() => void renameAccount(row)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
                   }
-                  onBlur={() => void renameAccount(row)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-9 shrink-0 rounded-full px-2 text-[12px]"
-                  size="sm"
-                  disabled={pending === row.id || uninstalling}
-                  onClick={() => void revokeAccount(row, item)}
-                >
-                  {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
-                </Button>
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="secondary"
-              className="rounded-full"
-              size="sm"
-              disabled={connecting || uninstalling}
-              onClick={() => void connect(item)}
-            >
-              {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="connection-tools">
-          <button
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 shrink-0 rounded-full px-2.5 text-[12px] text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+                size="sm"
+                disabled={pending === row.id || uninstalling}
+                onClick={() => void revokeAccount(row, item)}
+              >
+                {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
+              </Button>
+            </div>
+          ))}
+          <Button
             type="button"
-            className="flex w-full items-center justify-between gap-3 px-6 py-4 text-left"
-            onClick={() => setToolsOpen((open) => !open)}
-            aria-expanded={toolsOpen}
+            variant="ghost"
+            className="h-9 rounded-lg px-2 text-[14px] text-muted-foreground"
+            size="sm"
+            disabled={connecting || uninstalling}
+            onClick={() => void connect(item)}
           >
-            <span className="text-base font-medium text-foreground">
-              {toolsLoading ? (
+            <Plus />
+            {connecting ? <Trans>Adding…</Trans> : <Trans>Add another</Trans>}
+          </Button>
+        </section>
+
+        {toolsLoading || tools.length > 0 ? (
+          <Disclosure
+            data-testid="connection-tools"
+            className="px-2"
+            summaryClassName="text-[13px] text-muted-foreground"
+            summary={
+              toolsLoading ? (
                 <Trans>Tools</Trans>
               ) : (
                 <Plural value={toolCount} one="# tool" other="# tools" />
-              )}
-            </span>
-            <ChevronDown
-              aria-hidden="true"
-              className={`size-4 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none ${toolsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          <Collapsible open={toolsOpen} className="contents">
-            <CollapsibleContent className="flex flex-col">
-              <CardContent className="border-t border-border pt-3">
-                {toolsLoading ? (
-                  <p className="text-sm text-muted-foreground">
-                    <Trans>Loading tools…</Trans>
-                  </p>
-                ) : tools.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    <Trans>No tools available.</Trans>
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {tools.map((tool) => (
-                      <li key={tool.name} className="text-sm text-foreground">
-                        {humanizeToolName(tool.name)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
+              )
+            }
+          >
+            <div className="flex flex-wrap gap-1.5 pt-3">
+              {tools.map((tool) => (
+                <Badge
+                  key={tool.name}
+                  variant="secondary"
+                  className="h-6 px-2.5 text-[12px] font-normal"
+                  title={tool.description || undefined}
+                >
+                  {toolLabel(tool.name, item)}
+                </Badge>
+              ))}
+            </div>
+          </Disclosure>
+        ) : null}
       </div>
     );
   }
@@ -793,11 +778,11 @@ export function PluginsOverlay({
                 </div>
               ) : null}
 
-              <details
+              <Disclosure
                 data-testid="integrations-advanced"
                 className="group mt-8"
-                onToggle={(event) => {
-                  if (!(event.currentTarget as HTMLDetailsElement).open) {
+                onOpenChange={(open) => {
+                  if (!open) {
                     setSourceKind(null);
                     setSetupOpen(false);
                     setSourceError(null);
@@ -809,16 +794,9 @@ export function PluginsOverlay({
                     setAuthName("x-api-key");
                   }
                 }}
+                summary={<Trans>Advanced</Trans>}
+                summaryClassName="w-full flex items-center justify-between gap-3 text-[14px] text-muted-foreground"
               >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-muted-foreground">
-                  <span className="text-muted-foreground">
-                    <Trans>Advanced</Trans>
-                  </span>
-                  <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-                    ›
-                  </span>
-                </summary>
-
                 <div className="mt-4 space-y-4">
                   {catalogFeedEnabled ? (
                     <Card data-testid="integrations-catalog-feed">
@@ -1162,7 +1140,7 @@ export function PluginsOverlay({
                     ) : null}
                   </div>
                 </div>
-              </details>
+              </Disclosure>
             </>
           )}
         </div>

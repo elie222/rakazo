@@ -1,4 +1,5 @@
 import type { ComputerStatus } from "@rakazo/contracts";
+import { isRetryableError } from "@rakazo/core";
 import { SCREEN_URL_RENEW_MS, screenRenewReadAt } from "./computer";
 
 export { SCREEN_URL_RENEW_MS };
@@ -73,6 +74,7 @@ export function createComputerRefresh(options: {
     const requestRevision = revision;
     pendingRevision = requestRevision;
     const current = () => active && requestRevision === revision;
+    let failure: unknown;
     try {
       const status = await options.readStatus();
       if (!current()) return;
@@ -93,10 +95,12 @@ export function createComputerRefresh(options: {
       options.onReady();
       return status;
     } catch (error) {
+      failure = error;
       if (current()) throw error;
     } finally {
       if (pendingRevision === requestRevision) pendingRevision = undefined;
-      if (current()) schedule();
+      // A refused read (403, 404, 426...) is the server's answer: wait for an explicit refresh.
+      if (current() && isRetryableError(failure)) schedule();
     }
   }
 

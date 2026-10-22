@@ -5,6 +5,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
+  expandAdvancedSection,
   realSandboxTimeout,
   rpc,
   signup,
@@ -133,7 +134,7 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
-test("opening and releasing the computer keep a view-only stream with maintenance available", async ({
+test("opening and releasing the computer keep a view-only stream; a failed release can be retried", async ({
   page,
 }, testInfo) => {
   await signup(page, `view-only-${Date.now()}@rakazo.test`, "password12", "Computer");
@@ -177,19 +178,9 @@ test("opening and releasing the computer keep a view-only stream with maintenanc
   await checkViewOnly();
   expect(takeovers).toBe(1);
   await captureScreenshot(page, testInfo, "computer-released-view-only");
-  await chrome.getByRole("button", { name: "Close computer" }).click();
-  await expect(chrome).toBeHidden();
-});
 
-test("a failed control release keeps the computer open for retry", async ({ page }, testInfo) => {
-  await signup(page, `team-release-${Date.now()}@rakazo.test`, "password12", "Team Release");
-  await completeOnboarding(page);
-  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
-  await page.getByTestId("computer-preview").hover();
-  await page.getByTestId("computer-preview-open").click();
-  const chrome = page.getByTestId("computer-chrome");
-  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
-  const release = chrome.getByRole("button", { name: "Release control", exact: true });
+  // A release that fails keeps the computer open so it can be retried.
+  await take.click();
   await expect(release).toBeVisible();
   await page.route("**/rpc/computer/release", (route) =>
     route.fulfill({ status: 500, body: "release unavailable" }),
@@ -200,8 +191,9 @@ test("a failed control release keeps the computer open for retry", async ({ page
   await captureScreenshot(page, testInfo, "48-team-computer-release-retry");
   await page.unroute("**/rpc/computer/release");
   await release.click();
-  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(take).toBeVisible();
+  await chrome.getByRole("button", { name: "Close computer" }).click();
+  await expect(chrome).toBeHidden();
 });
 
 test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
@@ -303,9 +295,7 @@ async function setComputerMode(
   const settings = page.getByTestId("bot-settings");
   await expect(settings.locator("label:has-text('Name') input")).toHaveValue(botName);
   const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   await settings
     .getByRole("button", { name: mode === "team" ? "Team" : "Private", exact: true })
     .click();

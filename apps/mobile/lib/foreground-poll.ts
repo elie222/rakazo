@@ -13,21 +13,23 @@ export function useForegroundPoll(
   const foreground = useAppForeground();
   const runRef = useRef(run);
   runRef.current = run;
+  const pendingRef = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     if (!enabled || !foreground) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let running = false;
 
     const tick = async () => {
-      if (cancelled || running) return;
-      running = true;
+      if (cancelled) return;
+      const pending = pendingRef.current ?? (async () => runRef.current())();
+      pendingRef.current = pending;
+      let loaded: unknown;
       try {
-        await runRef.current();
+        loaded = await pending;
       } finally {
-        running = false;
-        if (!cancelled) timer = setTimeout(() => void tick(), intervalMs);
+        if (pendingRef.current === pending) pendingRef.current = null;
+        if (!cancelled && loaded !== false) timer = setTimeout(() => void tick(), intervalMs);
       }
     };
 

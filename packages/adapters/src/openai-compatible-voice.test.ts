@@ -326,6 +326,20 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     ).rejects.toThrow("speaking failed: Model not found");
   });
 
+  it("reads an insufficient_quota 429 as spent credit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "No credits", code: "insufficient_quota" } }),
+          { status: 429 },
+        ),
+      );
+    await expect(
+      provider(fetchMock).synthesize({ text: "Hi", voiceId: "af_heart", apiKey: keyless }, ctx),
+    ).rejects.toMatchObject({ code: "VOICE_OUT_OF_CREDIT" });
+  });
+
   it("asks for OpenAI JSON transcripts and names iPhone recordings as m4a", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"text":" hello there "}'));
     const result = await provider(fetchMock).transcribe(

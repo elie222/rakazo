@@ -117,7 +117,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
       await expect
         .poll(
           async () => {
-            const run = await handles.prisma.run.findUnique({
+            const run = await asSystem(handles.prisma).run.findUnique({
               where: { id: sent.runId },
               select: { status: true },
             });
