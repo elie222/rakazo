@@ -772,12 +772,16 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
 
 it("sets inbox rows and section headings in the shared type scale", () => {
   const stylesSource = source.slice(source.indexOf("function createHomeStyles()"));
+  const headerDimensions = source.slice(
+    source.indexOf("const HEADER_BUTTON_HEIGHT ="),
+    source.indexOf("// A list narrower"),
+  );
   const rowDimensions = source.slice(
     source.indexOf("const INBOX_ROW ="),
     source.indexOf("\n", source.indexOf("const COMPACT_INBOX_ROW =")),
   );
   const compiled = ts.transpileModule(
-    `${rowDimensions}\n${stylesSource}\nreturn createHomeStyles;`,
+    `${headerDimensions}\n${rowDimensions}\n${stylesSource}\nreturn createHomeStyles;`,
     {
       compilerOptions: { target: ts.ScriptTarget.ES2022 },
     },

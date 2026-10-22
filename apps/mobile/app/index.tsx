@@ -94,6 +94,8 @@ import { confirmDeleteBot, confirmDeleteGroup } from "../lib/bot-lifecycle";
 import type { CollapsedSections } from "../lib/collapsed-sections";
 import { loadCollapsedSections, saveCollapsedSections } from "../lib/collapsed-sections";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
+import type { CreateAction } from "../lib/create-chooser";
+import { createMenuActions, isCreateAction } from "../lib/create-chooser";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { useForegroundPoll } from "../lib/foreground-poll";
 import { t, useI18n } from "../lib/i18n";
@@ -140,6 +142,9 @@ import type { LoadFailureKind } from "../lib/user-error";
 import { errorText, loadFailureKind } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
+const HEADER_BUTTON_HEIGHT = 40;
+// Lower the Android menu anchor while the negative margin preserves the header layout.
+const CREATE_MENU_GAP = 6;
 // A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
 const TAGLESS_LIST_WIDTH = 360;
 const CompactRowsContext = createContext(false);
@@ -713,7 +718,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   }, [openChat, refreshBots, t]);
 
   const runCreateAction = useCallback(
-    (action: "bot" | "group" | "space") => {
+    (action: CreateAction) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       if (action === "bot") void createQuickBot();
       else if (action === "group") router.push("/new-group");
@@ -722,18 +727,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     [createQuickBot, router],
   );
 
-  const openCreateChooser = useCallback(() => {
-    Alert.alert(
-      t("Create"),
-      undefined,
-      [
-        { text: t("New bot"), onPress: () => runCreateAction("bot") },
-        { text: t("New group"), onPress: () => runCreateAction("group") },
-        { text: t("New space"), onPress: () => runCreateAction("space") },
-      ],
-      { cancelable: true },
-    );
-  }, [runCreateAction, t]);
+  const createActions = createMenuActions(t, Platform.OS);
 
   useLayoutEffect(() => {
     if (!nativeHeader) return;
@@ -1281,36 +1275,29 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
             >
               <NativeSymbol ios="magnifyingglass" android="search" size={17} />
             </HeaderButton>
-            {Platform.OS === "android" ? (
-              // A plain button: the native Android menu trigger collapses to zero width when the
-              // installed app binary is older than the JS update, which hid the only way to create.
-              <HeaderButton accessibilityLabel={t("Create")} onPress={openCreateChooser}>
-                <NativeSymbol ios="plus" android="add" size={18} />
-              </HeaderButton>
-            ) : (
-              <MenuView
-                actions={[
-                  { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
-                  { id: "group", title: t("New group"), image: "person.2" },
-                  { id: "space", title: t("New space"), image: "square.grid.2x2" },
-                ]}
-                colorScheme={appearance}
-                onPressAction={({ nativeEvent }) => {
-                  const action = nativeEvent.event;
-                  if (action === "bot" || action === "group" || action === "space") {
-                    runCreateAction(action);
-                  }
-                }}
+            <MenuView
+              actions={createActions}
+              {...(Platform.OS === "android" ? { style: { marginBottom: -CREATE_MENU_GAP } } : {})}
+              colorScheme={appearance}
+              onPressAction={({ nativeEvent }) => {
+                const action = nativeEvent.event;
+                if (isCreateAction(action)) {
+                  runCreateAction(action);
+                }
+              }}
+            >
+              <View
+                accessibilityLabel={t("Create")}
+                accessibilityRole="button"
+                style={
+                  Platform.OS === "android"
+                    ? [styles.headerButton, styles.createMenuAnchor]
+                    : styles.headerButton
+                }
               >
-                <View
-                  accessibilityLabel={t("Create")}
-                  accessibilityRole="button"
-                  style={styles.headerButton}
-                >
-                  <NativeSymbol ios="plus" android="add" size={18} />
-                </View>
-              </MenuView>
-            )}
+                <NativeSymbol ios="plus" android="add" size={18} />
+              </View>
+            </MenuView>
           </View>
         </View>
       )}
@@ -2015,11 +2002,15 @@ function createHomeStyles() {
     },
     headerButton: {
       width: 40,
-      height: 40,
+      height: HEADER_BUTTON_HEIGHT,
       borderRadius: 20,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
+    },
+    createMenuAnchor: {
+      height: HEADER_BUTTON_HEIGHT + CREATE_MENU_GAP,
+      paddingBottom: CREATE_MENU_GAP,
     },
     headerButtonActive: {
       backgroundColor: native.fill,

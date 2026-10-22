@@ -44,6 +44,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("archived chats row", () => {
   let compact = false;
+  const headerDimensions = slice("const HEADER_BUTTON_HEIGHT =", "// A list narrower");
   const dimensions = slice("const INBOX_ROW =", "function ConversationRow(");
   const styles = new Function(
     "mobileTokens",
@@ -52,7 +53,7 @@ describe("archived chats row", () => {
     "typeScale",
     "fontWeight",
     compile(
-      `${dimensions}\n${source.slice(source.indexOf("function createHomeStyles()"))}\nreturn createHomeStyles();`,
+      `${headerDimensions}\n${dimensions}\n${source.slice(source.indexOf("function createHomeStyles()"))}\nreturn createHomeStyles();`,
     ),
   )(() => ({}), { create: (value: unknown) => value }, {}, typeScale, fontWeight);
   const ArchivedChatsRow = new Function(
