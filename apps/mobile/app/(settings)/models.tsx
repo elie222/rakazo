@@ -1208,6 +1208,7 @@ export default function Models() {
                   modelId: entry.id,
                   provider: entry.provider,
                   providerLabel: entry.providerName ?? entry.provider,
+                  images: entry.images,
                 })),
                 onSelect: (choice) => {
                   const entry = modelsForProvider.find((model) => model.id === choice.key);

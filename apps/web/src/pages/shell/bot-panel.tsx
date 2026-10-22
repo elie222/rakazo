@@ -327,12 +327,16 @@ export function BotSettings({
     ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
     : "";
 
+  const defaultEntry = me?.defaultModel
+    ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
+    : undefined;
   const modelChoices = chatModelChoices(
     connectedOptions,
     selectedModelKey,
     me?.defaultModel
-      ? `${t`Space default`} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+      ? `${t`Space default`} (${defaultEntry?.label ?? me.defaultModel})`
       : t`Space default`,
+    defaultEntry?.images,
   );
 
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
@@ -783,11 +787,11 @@ function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
-function catalogLabel(
+function catalogEntry(
   catalog: ModelCatalogEntry[],
   provider: string | null | undefined,
   modelId: string,
 ) {
   if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
+  return catalog.find((entry) => entry.provider === provider && entry.id === modelId);
 }

@@ -952,7 +952,9 @@ msgstr ""
 msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
+#: src/components/TextOnlyMark.tsx
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
 

@@ -952,7 +952,9 @@ msgstr "कॉल हो रही है…"
 msgid "Can't reach the server."
 msgstr "सर्वर तक नहीं पहुंचा जा सका।"
 
+#: src/components/TextOnlyMark.tsx
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "तस्वीरें नहीं पढ़ सकता"
 

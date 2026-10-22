@@ -202,6 +202,24 @@ describe("connected model choices", () => {
     ]);
   });
 
+  it("carries whether a catalog model reads images, and leaves custom ids unknown", () => {
+    const catalog = [
+      { provider: "openrouter", id: "text-only", label: "Text Only", images: false },
+      { provider: "openrouter", id: "sees", label: "Sees", images: true },
+      { provider: "openrouter", id: "unknown", label: "Unknown" },
+    ];
+    const choices = connectedModelChoices(
+      [{ provider: "openrouter", label: "OpenRouter" }],
+      catalog,
+    );
+    expect(choices.map((choice) => choice.images)).toEqual([false, true, undefined]);
+    const custom = connectedModelChoices(
+      [{ provider: "openrouter", label: "OpenRouter", enabledModelIds: ["text-only"] }],
+      catalog,
+    );
+    expect(custom[0]?.images).toBeUndefined();
+  });
+
   it("rewrites a catalog id that is only a display label", () => {
     const choices = connectedModelChoices(
       [{ provider: "deepseek", label: "DeepSeek", modelId: "deepseek-flash" }],
@@ -415,6 +433,15 @@ describe("chat model choices", () => {
       { key: "", label: "Space default" },
       ...connected,
     ]);
+  });
+
+  it("marks the space default with its model's image support", () => {
+    expect(chatModelChoices(connected, "", "Space default", false)[0]).toEqual({
+      key: "",
+      label: "Space default",
+      images: false,
+    });
+    expect(chatModelChoices(connected, "", "Space default")[0]?.images).toBeUndefined();
   });
 
   it("matches the label, model id, or provider, ignoring case", () => {

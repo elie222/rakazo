@@ -334,6 +334,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",
   "Space default": "Space-Standard",
+  "Can't read images": "Kann keine Bilder lesen",
   Thinking: "Denkmodus",
   Title: "Titel",
   "What this bot is for": "Wofür dieser Bot gedacht ist",

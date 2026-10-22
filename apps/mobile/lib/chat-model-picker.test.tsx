@@ -369,6 +369,7 @@ vi.mock("../components/settings-group", () => ({
     trailing,
     value,
     accessibilityLabel,
+    accessibilityHint,
     accessibilityValue,
     disabled,
     chevron,
@@ -381,6 +382,7 @@ vi.mock("../components/settings-group", () => ({
     chevron?: "right" | "down";
     value?: string;
     accessibilityLabel?: string;
+    accessibilityHint?: string;
     accessibilityValue?: { text: string };
     title: string;
     detail?: string;
@@ -395,6 +397,7 @@ vi.mock("../components/settings-group", () => ({
         "data-accessibility-actions": accessibilityActions?.map((action) => action.label).join(),
         type: "button",
         "aria-label": accessibilityLabel ?? title,
+        "aria-description": accessibilityHint,
         "data-settings-row": true,
         "data-chevron": chevron,
         "aria-expanded": accessibilityState?.expanded,
@@ -455,6 +458,7 @@ vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("../components/row-accessories", () => ({
   Chevron: () => null,
   Checkmark: () => createElement("i", { "data-checkmark": true }),
+  TextOnlyMark: () => createElement("i", { "data-text-only": true }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("@expo/ui/community/menu", () => ({
@@ -1390,6 +1394,30 @@ describe("shared model picker presentation", () => {
     searchModels("unknown");
     expect(container.textContent).toBe("No matching models");
     expect(mocks.announce).toHaveBeenCalledWith("No matching models");
+  });
+
+  it("marks models that cannot read images and announces it", async () => {
+    await act(async () =>
+      root.render(
+        <ModelPickerList
+          choices={[
+            { key: "text", label: "Text only", images: false },
+            { key: "vision", label: "Vision", images: true },
+            { key: "custom", label: "Custom" },
+          ]}
+          selectedKey="text"
+          onSelect={() => undefined}
+        />,
+      ),
+    );
+    const [textOnly, vision, custom] = pickerRows();
+    expect(textOnly?.querySelector("[data-text-only]")).not.toBeNull();
+    expect(textOnly?.querySelector("[data-checkmark]")).not.toBeNull();
+    expect(textOnly?.getAttribute("aria-description")).toBe("Can't read images");
+    for (const row of [vision, custom]) {
+      expect(row?.querySelector("[data-text-only]")).toBeNull();
+      expect(row?.hasAttribute("aria-description")).toBe(false);
+    }
   });
 
   it("renders loading and load errors", async () => {

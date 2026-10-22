@@ -327,6 +327,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Save: "Opslaan",
   "Saving…": "Bezig met opslaan…",
   "Space default": "Spacestandaard",
+  "Can't read images": "Kan afbeeldingen niet lezen",
   Thinking: "Denkt",
   Title: "Titel",
   "What this bot is for": "Waarvoor deze bot is",
