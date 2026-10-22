@@ -888,11 +888,19 @@ increase the cumulative cap was subsequently approved at USD 5, leaving
 USD 4.061721915 before the full qualification. See `docs/evals/history-findings.md` for the preserved
 comparison, per-question accounting, and failed diagnostics.
 
-Context retention update (#1618): a context rebuild keeps the last three tool
-results whole, counting individual results (including parallel calls), and shortens
-older eligible results with the existing deterministic ~1 KB rule once they leave
-that fixed window. If the candidate exceeds the model input budget, it falls back
-to the previous shortening and context-selection logic. History, skill and bot instruction
-exceptions remain unchanged. Between rebuilds, the previously sent transcript stays
-byte-identical for prompt caching; results are not repeatedly shortened on each call.
-The unread tool group remains protected even when steering follows its results.
+Context retention update (#1863): a context rebuild retains tool results whole,
+newest first, within three quarters of the available model input budget after
+reserving output and fixed instructions/tool schemas. The last three individual
+results (including parallel calls) remain the minimum retention window. Only
+older eligible results outside that budget use the deterministic ~1 KB shortening
+rule. This applies equally to direct tools and lazy connector catalog wrappers;
+no connector-specific names or result payload fields control retention. If the
+candidate still exceeds the full input budget, the existing shortening and
+context-selection fallback applies. History, skill and fleet instruction
+exceptions remain unchanged; builtins are exposed separately from connector
+catalogs and cannot resolve through their wrappers. Once a shortened result is
+sent, later rebuilds in the same run reuse it even when more space is available.
+Speculative rebuilds do not advance this boundary. Between rebuilds, the sent
+transcript stays byte-identical for prompt caching. The unread tool group remains
+protected even when steering follows its results, and the runtime's 12,000-character
+result cap is unchanged.
