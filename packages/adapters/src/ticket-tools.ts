@@ -27,10 +27,19 @@ function coerceInputStatus(value: string) {
   const parsed = TicketStatusSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
-async function botInSpace(deps: TicketToolDeps, spaceId: string, botId: string) {
+/**
+ * An assignee must be one of the acting user's own bots, as the HTTP API
+ * requires through `repos.getBot`. Assigning wakes the bot, which runs as its
+ * owner, so another member's bot in the same space is not a valid target.
+ */
+async function ownBotInSpace(
+  deps: TicketToolDeps,
+  input: { spaceId: string; userId: string },
+  botId: string,
+) {
   return Boolean(
     await deps.prisma.bot.findFirst({
-      where: { id: botId, spaceId, archivedAt: null },
+      where: { id: botId, spaceId: input.spaceId, userId: input.userId, archivedAt: null },
       select: { id: true },
     }),
   );
@@ -145,7 +154,7 @@ export async function createTicket(
   input: {
     spaceId: string;
     botId?: string;
-    userId?: string;
+    userId: string;
     title: string;
     description?: string;
     priority?: string;
@@ -159,8 +168,7 @@ export async function createTicket(
   });
   if (!parsed.success) return { error: "Invalid ticket." };
   const data = parsed.data;
-  if (!(await botInSpace(deps, input.spaceId, data.assigneeBotId)))
-    return { error: "Unknown bot." };
+  if (!(await ownBotInSpace(deps, input, data.assigneeBotId))) return { error: "Unknown bot." };
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const row = await deps.prisma.$transaction(async (tx) => {
     const number = await allocateTicketNumber(tx, board.id);
@@ -174,7 +182,7 @@ export async function createTicket(
         priority: data.priority,
         assigneeBotId: data.assigneeBotId,
         createdByBotId: input.botId ?? null,
-        createdByUserId: input.userId ?? null,
+        createdByUserId: input.userId,
       },
     });
   });
@@ -193,6 +201,7 @@ export async function updateTicket(
   input: {
     spaceId: string;
     botId?: string;
+    userId: string;
     id: string;
     title?: string;
     description?: string | null;
@@ -205,7 +214,7 @@ export async function updateTicket(
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
   if (!parsed.success) return { error: "Invalid ticket." };
   const data = parsed.data;
-  if (data.assigneeBotId && !(await botInSpace(deps, input.spaceId, data.assigneeBotId)))
+  if (data.assigneeBotId && !(await ownBotInSpace(deps, input, data.assigneeBotId)))
     return { error: "Unknown bot." };
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const result = await deps.prisma.$transaction(async (tx) => {

@@ -4,6 +4,7 @@ import { readBoundedResponseBytes } from "@rakazo/core";
 import { Agent } from "undici";
 import {
   createAddressCheckedLookup,
+  egressRefused,
   isPrivateAddress,
   type ResolvedAddress,
   type ResolveHostname,
@@ -69,9 +70,14 @@ export async function assertSafeWebUrl(
   }
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isBlockedHostname(hostname)) {
-    throw new Error("URL targets a private or internal host");
+    throw egressRefused(hostname, new Error("URL targets a private or internal host"));
   }
-  assertPublicAddresses(await withAbort(resolve(hostname), signal));
+  const addresses = await withAbort(resolve(hostname), signal);
+  try {
+    assertPublicAddresses(addresses);
+  } catch (error) {
+    throw egressRefused(hostname, error);
+  }
   return url;
 }
 

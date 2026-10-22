@@ -86,14 +86,18 @@ function CopyButton({ read, label }: { read: () => string; label: string }) {
   );
 }
 
-function CodeBlock(props: React.ComponentPropsWithoutRef<"pre">) {
+function CodeBlock({
+  copyable,
+  ...props
+}: React.ComponentPropsWithoutRef<"pre"> & { copyable: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
-  const readCode = useCallback(() => preRef.current?.textContent ?? "", []);
+  // The parser ends a fence's code with a newline the author didn't write.
+  const readCode = useCallback(() => (preRef.current?.textContent ?? "").replace(/\n$/, ""), []);
 
   return (
     <div className="rk-chat-markdown-pre-wrap">
       <pre {...props} ref={preRef} />
-      <CopyButton read={readCode} label="Copy code" />
+      {copyable ? <CopyButton read={readCode} label="Copy code" /> : null}
     </div>
   );
 }
@@ -101,9 +105,17 @@ function CodeBlock(props: React.ComponentPropsWithoutRef<"pre">) {
 /** Original markdown while streaming, before any display-only closing fence is appended. */
 const StreamingSourceContext = createContext<string | undefined>(undefined);
 
+function codeElement(node: MarkdownHast | undefined) {
+  return node?.children?.find((child) => child.tagName === "code");
+}
+
+function codeText(code: MarkdownHast | undefined) {
+  return (code?.children ?? []).map((child) => child.value ?? "").join("");
+}
+
 /** The source of a ```mermaid fence, or undefined for any other block. */
 function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined {
-  const code = node?.children?.find((child) => child.tagName === "code");
+  const code = codeElement(node);
   const classNames = code?.properties?.className;
   const language = Array.isArray(classNames)
     ? classNames.find((name) => typeof name === "string" && name.startsWith("language-"))
@@ -111,7 +123,7 @@ function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined 
   if (typeof language !== "string" || !isMermaidFence(language.slice("language-".length))) {
     return undefined;
   }
-  const source = (code?.children ?? []).map((child) => child.value ?? "").join("");
+  const source = codeText(code);
   return source.trim() ? source.trimEnd() : undefined;
 }
 
@@ -144,7 +156,9 @@ function MarkdownPre({
 }: React.ComponentPropsWithoutRef<"pre"> & { node?: MarkdownHast }) {
   const streamingSource = useContext(StreamingSourceContext);
   const diagram = mermaidFenceSource(node);
-  if (diagram === undefined) return <CodeBlock {...props} />;
+  // An empty fence has nothing to copy.
+  const codeBlock = <CodeBlock {...props} copyable={/\S/.test(codeText(codeElement(node)))} />;
+  if (diagram === undefined) return codeBlock;
   // Parser offsets identify the fence inside quotes and lists too. Inspect the original source,
   // since a display-only closing fence must never trigger a diagram render.
   if (streamingSource !== undefined) {
@@ -161,10 +175,10 @@ function MarkdownPre({
       opening[1][0] !== closing[1][0] ||
       closing[1].length < opening[1].length
     ) {
-      return <CodeBlock {...props} />;
+      return codeBlock;
     }
   }
-  return <MermaidDiagram source={diagram} fallback={<CodeBlock {...props} />} />;
+  return <MermaidDiagram source={diagram} fallback={codeBlock} />;
 }
 
 type EnclosingLink = false | "open" | "rejected";
@@ -438,10 +452,15 @@ function LinkFavicon({ href }: { href: string }) {
 function WebsiteLink({
   href,
   children,
+  className,
   ...props
 }: React.ComponentPropsWithoutRef<"a"> & { href: string; children: ReactNode }) {
   return (
-    <ConfirmableAnchor {...props} href={href} className="rk-chat-link">
+    <ConfirmableAnchor
+      {...props}
+      href={href}
+      className={className ? `rk-chat-link ${className}` : "rk-chat-link"}
+    >
       <LinkFavicon href={href} />
       {/* bdi: direction characters in a label cannot reorder the text around the link. */}
       <bdi className="rk-chat-link-label">{children}</bdi>
@@ -504,11 +523,11 @@ export function LinkifiedText({ children }: { children: string }) {
         part.type === "text" ? (
           part.value
         ) : linkFaviconOrigin(part.href) ? (
-          <WebsiteLink key={index} href={part.href}>
+          <WebsiteLink key={index} href={part.href} className="rk-chat-link-in-bubble">
             {linkLabel(part.value, part.href)}
           </WebsiteLink>
         ) : (
-          <ConfirmableAnchor key={index} href={part.href} className="text-link underline">
+          <ConfirmableAnchor key={index} href={part.href} className="underline">
             {part.value}
           </ConfirmableAnchor>
         ),

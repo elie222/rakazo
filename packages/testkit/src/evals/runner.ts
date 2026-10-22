@@ -7,6 +7,7 @@ import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
+import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
@@ -84,6 +85,8 @@ export async function runTrial(
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
   let handles: EvalApp | undefined;
+  // The harness observes product state outside any request or job.
+  let db: EvalApp["prisma"] | undefined;
   let cookie = "";
   let botId = "";
   let seededThreadId: string | undefined;
@@ -104,14 +107,14 @@ export async function runTrial(
   let clearedToolCount = 0;
   const seenUsage = new Map<string, LedgerCall>();
   const countCurrentTools = () =>
-    handles!.prisma.event.count({
+    db!.event.count({
       where: { spaceId: { in: actors.map((actor) => actor.spaceId) }, type: "agent.tool.called" },
     });
   // Clearing removes conversation events while the durable usage ledger remains.
   // Deduplicate observed records by id so multi-turn totals and budgets never reset.
   const captureTools = async () => {
-    if (!handles) return seenTools.size;
-    const events = await handles.prisma.event.findMany({
+    if (!db) return seenTools.size;
+    const events = await db.event.findMany({
       where: {
         spaceId: { in: actors.map((actor) => actor.spaceId) },
         type: "agent.tool.called",
@@ -126,8 +129,8 @@ export async function runTrial(
     return seenTools.size;
   };
   const captureUsage = async () => {
-    if (!handles) return;
-    const usage = await handles.prisma.usageRecord.findMany({
+    if (!db) return;
+    const usage = await db.usageRecord.findMany({
       where: { OR: actorScopes(actors) },
     });
     for (const row of usage)
@@ -141,11 +144,13 @@ export async function runTrial(
   };
   try {
     handles = await options.createApp(services, messaging, { notifications, realtime });
-    realtime.attach(handles.prisma);
+    const prisma = asSystem(handles.prisma);
+    db = prisma;
+    realtime.attach(prisma);
     if (scenario.routine && handles.notifications !== notifications)
       throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
     const trial = handles;
-    const { app, prisma } = trial;
+    const { app } = trial;
     const setupActor = async () => {
       const signup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -611,7 +616,7 @@ export async function runTrial(
     const memories = await rpc<Array<{ content: string }>>(handles.app, cookie, "memory/list", {
       botId,
     });
-    const routines = await handles.prisma.routine.findMany({
+    const routines = await prisma.routine.findMany({
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true },
     });
@@ -702,7 +707,7 @@ export async function runTrial(
       }
       try {
         if (seededThreadId) {
-          const state = await handles.prisma.thread.findUnique({
+          const state = await db!.thread.findUnique({
             where: { id: seededThreadId },
             select: {
               historyCompactedUpToSeq: true,
@@ -714,7 +719,7 @@ export async function runTrial(
             result.historyPreparationState = {
               beforeCursor: scenario.history?.summary?.upToSeq ?? null,
               afterCursor: state.historyCompactedUpToSeq,
-              remainingMessages: await handles.prisma.message.count({
+              remainingMessages: await db!.message.count({
                 where: {
                   threadId: seededThreadId,
                   ...(state.historyCompactedUpToSeq !== null
@@ -863,6 +868,7 @@ export async function cleanupActors(
   actors: readonly EvalActor[],
 ): Promise<void> {
   if (!actors.length) return;
+  const prisma = asSystem(handles.prisma);
   const failures: unknown[] = [];
   const scopes = actorScopes(actors);
   let stable = false;
@@ -877,7 +883,7 @@ export async function cleanupActors(
     }));
     let runsBeforeStop: Array<{ id: string }> = [];
     try {
-      await handles.prisma.routine.updateMany({
+      await prisma.routine.updateMany({
         where: { OR: scopes },
         data: { active: false, nextRunAt: null },
       });
@@ -886,12 +892,12 @@ export async function cleanupActors(
     }
 
     try {
-      bots = await findScopeBots(handles.prisma, actors);
+      bots = await findScopeBots(prisma, actors);
     } catch (error) {
       failures.push(error);
     }
     try {
-      runsBeforeStop = await handles.prisma.run.findMany({
+      runsBeforeStop = await prisma.run.findMany({
         where: { OR: scopes },
         select: { id: true },
       });
@@ -914,7 +920,7 @@ export async function cleanupActors(
 
     let runsAfterStop: Array<{ id: string }> = [];
     try {
-      runsAfterStop = await handles.prisma.run.findMany({
+      runsAfterStop = await prisma.run.findMany({
         where: { OR: scopes },
         select: { id: true },
       });
@@ -941,17 +947,17 @@ export async function cleanupActors(
     let runsAfter: Array<{ id: string; status: string }> | undefined;
     let activeRoutineCount: number | undefined;
     try {
-      await handles.prisma.routine.updateMany({
+      await prisma.routine.updateMany({
         where: { OR: scopes },
         data: { active: false, nextRunAt: null },
       });
       [botsAfter, runsAfter, activeRoutineCount] = await Promise.all([
-        findScopeBots(handles.prisma, actors),
-        handles.prisma.run.findMany({
+        findScopeBots(prisma, actors),
+        prisma.run.findMany({
           where: { OR: scopes },
           select: { id: true, status: true },
         }),
-        handles.prisma.routine.count({ where: { OR: scopes, active: true } }),
+        prisma.routine.count({ where: { OR: scopes, active: true } }),
       ]);
     } catch (error) {
       failures.push(error);

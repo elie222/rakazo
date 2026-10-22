@@ -6,6 +6,7 @@ import type {
   MessagingChannelMembership,
   MessagingStatus,
 } from "@rakazo/contracts";
+import { isRetryableError } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -90,8 +91,9 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
           setLinkRequest(null);
           await refresh();
         }
-      } catch {
+      } catch (error) {
         // A transient failure can be retried while the code is valid.
+        if (!isRetryableError(error)) active = false;
       } finally {
         if (active) poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
       }

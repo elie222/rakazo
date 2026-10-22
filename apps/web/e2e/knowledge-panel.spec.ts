@@ -17,20 +17,25 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
-  // A second shared document that the user can delete later in this test.
+  // A second shared document that the user can delete later in this test. Saving shared
+  // memory from chat writes directly, without an approval card.
   const retiredPath = "projects/retired.md";
+  const retiredContent = `Retired project ${stamp}`;
   const setupComposer = page.getByRole("combobox", { name: "Message Chief" });
-  await setupComposer.fill(`save shared memory ${retiredPath} with: Retired project ${stamp}`);
+  await setupComposer.fill(`save shared memory ${retiredPath} with: ${retiredContent}`);
   await setupComposer.press("Enter");
   await expect
     .poll(
       async () =>
-        (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).some(
+        (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
           (doc) => doc.path === retiredPath,
-        ),
+        )?.content,
       { timeout: 30_000 },
     )
-    .toBe(true);
+    .toBe(retiredContent);
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Deny", exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Review before saving shared memory/)).toHaveCount(0);
 
   // Space-wide documents live in Settings → Memory. Open that before bot
   // settings so the Knowledge Memory tab cannot steal this click.

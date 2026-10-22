@@ -64,6 +64,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
       browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
       displayStart: 1,
       portStart: SCREEN_PORT,
+      // The provider port proxy reaches the isolated sandbox through its network interface.
+      bindHost: "0.0.0.0",
     }),
     run: async (computer, command, context) => {
       const result = await this.run(computer, command, context);

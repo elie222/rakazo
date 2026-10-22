@@ -1,7 +1,9 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import * as db from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -125,6 +127,12 @@ describe("voice HTTP routes", () => {
 });
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
+
+/** Fixtures save as the deployment owner, who may use local speech servers. */
+const serializeAsOwner = (
+  input: Parameters<typeof adapters.serializeOpenAiCompatibleVoiceSecret>[0],
+  previous?: string,
+) => adapters.serializeOpenAiCompatibleVoiceSecret(input, previous, { allowPrivate: true });
 
 function makeDisconnectDeps(
   overrides: {
@@ -486,6 +494,60 @@ describe("synthesizeVoice", () => {
 
     expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ model: undefined });
   });
+
+  it.each([
+    ["VOICE_OUT_OF_CREDIT", 402],
+    ["VOICE_KEY_REJECTED", 403],
+  ] as const)("answers %s from the provider with HTTP %i and a warning", async (code, status) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const synthesize = vi
+      .fn()
+      .mockRejectedValue(
+        new VoiceAccountError(code, "Fish Audio says this account is out of credit."),
+      );
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+    const prisma = {
+      spaceVoicePreference: {
+        findFirst: vi.fn().mockResolvedValue({
+          isDefault: true,
+          voiceId: "voice-1",
+          speechModel: null,
+          credential: {
+            id: "cred-1",
+            userId: actor.userId,
+            provider: "fish-audio",
+            secretId: "secret-1",
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        }),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "cipher" }),
+      },
+    };
+    const deps = {
+      prisma,
+      secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
+    } as unknown as VoiceDeps;
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, deps, async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    });
+
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toEqual({
+      error: "Fish Audio says this account is out of credit.",
+      code,
+    });
+    expect(sink.events.map((event) => event.level)).toEqual(["warn"]);
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
 });
 
 describe("voiceCredentialPlaintext", () => {
@@ -501,6 +563,7 @@ describe("voiceCredentialPlaintext", () => {
   it("stores a self-hosted server's address and models without a key", () => {
     const plaintext = voiceCredentialPlaintext({
       provider: "openai-compatible",
+      allowPrivateEndpoint: true,
       plaintext: "",
       baseUrl: "http://100.64.0.10:8810",
       ttsModel: "kokoro",
@@ -514,12 +577,13 @@ describe("voiceCredentialPlaintext", () => {
   });
 
   it("keeps the stored key when reconnecting to the same server with the key left blank", () => {
-    const previousPlaintext = adapters.serializeOpenAiCompatibleVoiceSecret({
+    const previousPlaintext = serializeAsOwner({
       baseUrl: "http://100.64.0.10:8810",
       apiKey: "local-test-key",
     });
     const plaintext = voiceCredentialPlaintext({
       provider: "openai-compatible",
+      allowPrivateEndpoint: true,
       plaintext: "",
       baseUrl: "http://100.64.0.10:8810/v1",
       previousPlaintext,
@@ -531,6 +595,7 @@ describe("voiceCredentialPlaintext", () => {
     expect(() =>
       voiceCredentialPlaintext({
         provider: "openai-compatible",
+        allowPrivateEndpoint: true,
         plaintext: "",
         baseUrl: "https://speech.example.com",
       }),
@@ -539,7 +604,7 @@ describe("voiceCredentialPlaintext", () => {
 });
 
 describe("voiceCredentialServer", () => {
-  const plaintext = adapters.serializeOpenAiCompatibleVoiceSecret({
+  const plaintext = serializeAsOwner({
     baseUrl: "http://100.64.0.10:8810",
     apiKey: "local-test-key",
     ttsModel: "kokoro",
@@ -594,18 +659,18 @@ describe("voiceCredentialServer", () => {
 });
 
 describe("voiceChoicesChanged", () => {
-  const first = adapters.serializeOpenAiCompatibleVoiceSecret({
+  const first = serializeAsOwner({
     baseUrl: "http://100.64.0.10:8810",
   });
-  const sameWithKey = adapters.serializeOpenAiCompatibleVoiceSecret({
+  const sameWithKey = serializeAsOwner({
     baseUrl: "http://100.64.0.10:8810/v1",
     apiKey: "local-test-key",
   });
-  const otherModel = adapters.serializeOpenAiCompatibleVoiceSecret({
+  const otherModel = serializeAsOwner({
     baseUrl: "http://100.64.0.10:8810",
     ttsModel: "kokoro",
   });
-  const otherServer = adapters.serializeOpenAiCompatibleVoiceSecret({
+  const otherServer = serializeAsOwner({
     baseUrl: "http://100.64.0.11:8880",
   });
 
@@ -637,7 +702,7 @@ describe("persistVoiceCredential", () => {
   ])(
     "re-picks voices for every space when the self-hosted $change changes",
     async ({ previous: before, next }) => {
-      const previous = adapters.serializeOpenAiCompatibleVoiceSecret(before);
+      const previous = serializeAsOwner(before);
       vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({
         verify: vi.fn().mockResolvedValue({ ok: true }),
         listVoices: vi.fn().mockResolvedValue([
@@ -668,6 +733,9 @@ describe("persistVoiceCredential", () => {
       };
       const deps = {
         prisma: {
+          deploymentSettings: {
+            findUnique: vi.fn().mockResolvedValue({ ownerUserId: actor.userId }),
+          },
           secret: { findFirst: vi.fn().mockResolvedValue({ id: "old-secret", ciphertext: "c" }) },
           $transaction: vi.fn((run: (client: typeof tx) => unknown) => run(tx)),
         },
@@ -700,6 +768,28 @@ describe("persistVoiceCredential", () => {
       });
     },
   );
+});
+
+it("refuses a private speech server for a user who is not the deployment owner", async () => {
+  const verify = vi.fn();
+  vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ verify } as never);
+  try {
+    await expect(
+      persistVoiceCredential(
+        {
+          prisma: {
+            userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(null) },
+            deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner" }) },
+          },
+        } as unknown as VoiceDeps,
+        actor,
+        { provider: "openai-compatible", plaintext: "", baseUrl: "http://127.0.0.1:8880" },
+      ),
+    ).rejects.toThrow(adapters.PRIVATE_MODEL_ENDPOINT_MESSAGE);
+    expect(verify).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 
 it.each([

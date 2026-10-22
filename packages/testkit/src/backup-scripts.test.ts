@@ -38,6 +38,7 @@ function fixture() {
     "scripts/backup.sh",
     "scripts/restore.sh",
     "infra/compose/backup-prod.sh",
+    "infra/compose/backup-drill.sh",
   ]) {
     let source = readFileSync(path.join(repoRoot, script), "utf8");
     if (script.endsWith("backup-prod.sh")) {
@@ -63,6 +64,9 @@ if (args[0] === "inspect") {
 } else if (args.includes("pg_dump")) {
   if (process.env.FAIL_DUMP === "1") process.exit(2);
   console.log("CREATE TABLE example (id integer);");
+} else if (args.includes("sh") && args.at(-1).startsWith("pg_restore --list ")) {
+  fs.readFileSync(0);
+  if (process.env.FAIL_VERIFY === "1") process.exit(1);
 } else if (args.includes("sh")) {
   if (!args.at(-1).startsWith("pg_dump ")) process.exit(91);
   if (process.env.FAIL_DUMP === "1") process.exit(2);
@@ -71,6 +75,8 @@ if (args[0] === "inspect") {
     while (written < 65536) written += fs.writeSync(1, Buffer.alloc(65536 - written));
   }
   console.log("fake custom-format dump");
+} else if (args.includes("psql") && args.includes("-c")) {
+  // restore.sh pre-creates the runtime role the dump's grants name.
 } else if (args.includes("psql")) {
   fs.writeFileSync(process.env.SQL_INPUT, fs.readFileSync(0));
   if (process.env.FAIL_SQL === "1") {
@@ -78,9 +84,6 @@ if (args[0] === "inspect") {
     // psql normally exits successfully after SQL errors unless explicitly told to stop.
     process.exit(args.includes("--set=ON_ERROR_STOP=on") ? 3 : 0);
   }
-} else if (args.includes("pg_restore")) {
-  fs.readFileSync(0);
-  if (process.env.FAIL_VERIFY === "1") process.exit(1);
 } else if (args.includes("ps")) {
   console.log("example-api-container");
 } else if (!args.includes("up") && !args.includes("pg_isready")) {
@@ -95,6 +98,7 @@ if (args[0] === "inspect") {
     `#!/bin/bash
 set -eu
 if [[ "$1" == "-czf" && "\${OVERSIZE_ARCHIVE:-0}" == "1" ]]; then
+  if [[ "$2" == - ]]; then exec dd if=/dev/zero bs=65536 count=1; fi
   exec dd if=/dev/zero of="$2" bs=65536 count=1
 fi
 if [[ "$1" == "-czf" && "$*" == *" -C "* && -n "\${FAIL_TAR:-}" ]]; then
@@ -115,8 +119,15 @@ fi
     `#!/usr/bin/env -S node --
 const fs = require("node:fs");
 const crypto = require("node:crypto");
-for (const file of process.argv.slice(2)) {
-  console.log(crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "  " + file);
+const hash = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const args = process.argv.slice(2);
+if (args[0] === "--check") {
+  for (const line of fs.readFileSync(args.at(-1), "utf8").trim().split("\\n")) {
+    const [sum, file] = line.split("  ");
+    if (hash(file) !== sum) process.exit(1);
+  }
+} else {
+  for (const file of args) console.log(hash(file) + "  " + file);
 }
 `,
   );
@@ -129,12 +140,75 @@ echo "/dev/fake 104857600 0 \${FREE_KB:-52428800} 0% /"
 `,
   );
   chmodSync(path.join(bin, "df"), 0o755);
+  // Offline stand-in for age: a recognizable header, recipients, then the payload in base64, so
+  // tests can tell sealed files from plaintext. Decryption needs a listed recipient's identity.
+  write(
+    path.join(bin, "age"),
+    `#!/usr/bin/env -S node --
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const value = (flag) => args.flatMap((arg, i) => (arg === flag ? [args[i + 1]] : []));
+const lines = (file) => fs.readFileSync(file, "utf8").split("\\n").map((l) => l.trim());
+if (args.includes("--decrypt")) {
+  const [header, payload = ""] = fs.readFileSync(args.at(-1), "utf8").split("\\n---\\n");
+  const keys = value("-i").flatMap(lines).flatMap((l) => l.match(/^# public key: (\\S+)$/)?.slice(1) ?? []);
+  if (!keys.some((key) => header.split("\\n").includes("-> fake " + key))) process.exit(1);
+  process.stdout.write(Buffer.from(payload, "base64"));
+} else {
+  const recipients = [...value("-r"), ...value("-R").flatMap(lines).filter((l) => l && !l.startsWith("#"))];
+  if (!recipients.length || recipients.some((r) => !r.startsWith("age1"))) process.exit(1);
+  const sealed = ["age-encryption.org/v1", ...recipients.map((r) => "-> fake " + r), "---", fs.readFileSync(0).toString("base64")].join("\\n");
+  value("-o").length ? fs.writeFileSync(value("-o")[0], sealed) : process.stdout.write(sealed);
+}
+`,
+  );
+  chmodSync(path.join(bin, "age"), 0o755);
+  // rclone stand-in: "name:path" maps to a local directory; FAIL_RCLONE fails one subcommand.
+  write(
+    path.join(bin, "rclone"),
+    `#!/bin/bash
+set -eu
+echo "$*" >> "$RCLONE_LOG"
+[[ "\${FAIL_RCLONE:-}" != "$1" ]] || exit 1
+local_path() { echo "$FAKE_REMOTE/\${1#*:}"; }
+command="$1"; shift
+paths=(); exclude=""
+while (($#)); do
+  case "$1" in
+    --exclude) exclude="\${2#/}"; shift 2 ;;
+    --max-depth) shift 2 ;;
+    --one-way|-R|--) shift ;;
+    *) paths+=("$1"); shift ;;
+  esac
+done
+case "$command" in
+  copy)
+    target="$(local_path "\${paths[1]}")"; mkdir -p "$target"
+    for file in "\${paths[0]}"/*; do [[ "\${file##*/}" == "$exclude" ]] || cp "$file" "$target/"; done ;;
+  copyto) target="$(local_path "\${paths[1]}")"; mkdir -p "\${target%/*}"; cp "\${paths[0]}" "$target" ;;
+  check) for file in "\${paths[0]}"/*; do [[ "\${file##*/}" == "$exclude" ]] || cmp -s "$file" "$(local_path "\${paths[1]}")/\${file##*/}"; done ;;
+  lsf)
+    cd "$(local_path "\${paths[0]}")"
+    find . -mindepth 1 -maxdepth 2 | sed 's|^\\./||' | while read -r entry; do
+      if [[ -d "$entry" ]]; then echo "$entry/"; else echo "$entry"; fi
+    done ;;
+  purge) rm -rf -- "$(local_path "\${paths[0]}")" ;;
+  *) exit 2 ;;
+esac
+`,
+  );
+  chmodSync(path.join(bin, "rclone"), 0o755);
+  // The restore drill's pg_restore: accepts only the fake dump's plaintext.
+  write(path.join(bin, "pg_restore"), `#!/bin/bash\ngrep -q "custom-format dump"\n`);
+  chmodSync(path.join(bin, "pg_restore"), 0o755);
   // No inherited deployment settings, credentials, or executable search paths.
   const env = {
     PATH: [bin, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter),
     COMMAND_LOG: path.join(root, "commands.jsonl"),
     SQL_INPUT: path.join(root, "input.sql"),
     FAKE_APPDATA: path.join(root, "appdata"),
+    FAKE_REMOTE: path.join(root, "remote"),
+    RCLONE_LOG: path.join(root, "rclone.log"),
   };
   return {
     root,
@@ -240,7 +314,9 @@ describe("development restore failures", () => {
         FAIL_SQL: fail ? "1" : "0",
       });
       expect(result.status).toBe(fail ? 3 : 0);
-      const command = f.commands().find((args) => args.includes("psql"));
+      const psql = f.commands().filter((args) => args.includes("psql"));
+      expect(psql[0]?.at(-1)).toContain("CREATE ROLE rakazo_app NOLOGIN");
+      const command = psql.find((args) => args.includes("--single-transaction"));
       expect(command).toEqual(
         expect.arrayContaining([
           "-X",
@@ -536,5 +612,260 @@ exec /usr/bin/sync "$@"
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_KEEP: "0" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("RAKAZO_BACKUP_KEEP");
+  });
+
+  it("warns that a backup without recipients is plaintext", () => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("not encrypted");
+    const snapshot = result.stdout.trim().split("written to ")[1];
+    expect(readdirSync(snapshot).sort()).toEqual([
+      "SHA256SUMS",
+      "SOURCE_SIZE_KB",
+      "appdata.tgz",
+      "rakazo.dump",
+    ]);
+  });
+});
+
+const recipients = "age1fakeprimary age1fakerecovery";
+const identity = "# public key: age1fakerecovery\nAGE-SECRET-KEY-FAKE\n";
+
+function snapshotOf(result: { stdout: string }) {
+  return result.stdout.split("written to ")[1].split("\n")[0];
+}
+
+describe("encrypted production backups", { timeout: 20_000 }, () => {
+  it.each([false, true])(
+    "streams every artifact through age without plaintext on disk (file: %s)",
+    (fromFile) => {
+      const f = fixture();
+      const file = path.join(f.root, "recipients.txt");
+      write(file, `# backup keys\n${recipients.split(" ").join("\n")}\n`);
+      const result = f.run(
+        "infra/compose/backup-prod.sh",
+        [],
+        fromFile
+          ? { RAKAZO_BACKUP_AGE_RECIPIENTS_FILE: file }
+          : { RAKAZO_BACKUP_AGE_RECIPIENTS: recipients },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).not.toContain("not encrypted");
+      const snapshot = snapshotOf(result);
+      expect(readdirSync(snapshot).sort()).toEqual([
+        "SHA256SUMS",
+        "SOURCE_SIZE_KB",
+        "appdata.tgz.age",
+        "rakazo.dump.age",
+      ]);
+      for (const name of ["rakazo.dump.age", "appdata.tgz.age"]) {
+        const sealed = readFileSync(path.join(snapshot, name), "utf8");
+        expect(sealed.startsWith("age-encryption.org/v1\n-> fake age1fakeprimary\n")).toBe(true);
+        expect(sealed).toContain("-> fake age1fakerecovery");
+      }
+      expect(readFileSync(path.join(snapshot, "rakazo.dump.age"), "utf8")).not.toContain(
+        "custom-format dump",
+      );
+      expect(readFileSync(path.join(snapshot, "SHA256SUMS"), "utf8")).toContain("rakazo.dump.age");
+      expect(existsSync(path.join(f.snapshots, ".encrypted"))).toBe(true);
+
+      // The drill runs where the private key lives and rejects any other identity.
+      const key = path.join(f.root, "backup.key");
+      write(key, identity);
+      const drill = f.run("infra/compose/backup-drill.sh", [snapshot, key]);
+      expect(drill.status, drill.stderr).toBe(0);
+      expect(drill.stdout).toContain("decrypts and verifies");
+      write(key, "# public key: age1someoneelse\n");
+      expect(f.run("infra/compose/backup-drill.sh", [snapshot, key]).status).not.toBe(0);
+    },
+  );
+
+  it("fails the drill when a sealed file was altered", () => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+    });
+    const snapshot = snapshotOf(result);
+    write(path.join(snapshot, "appdata.tgz.age"), "age-encryption.org/v1\ntampered");
+    const key = path.join(f.root, "backup.key");
+    write(key, identity);
+    expect(f.run("infra/compose/backup-drill.sh", [snapshot, key]).status).not.toBe(0);
+  });
+
+  it.each([
+    [{ RAKAZO_BACKUP_AGE_RECIPIENTS: "not-a-recipient" }, "age rejected"],
+    [{ RAKAZO_BACKUP_AGE_RECIPIENTS_FILE: "/nonexistent/recipients" }, "not a readable"],
+  ])("refuses broken recipient settings before any backup commands: %j", (settings, message) => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], settings);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+    expect(f.commands()).toEqual([]);
+    expect(existsSync(f.snapshots)).toBe(false);
+  });
+
+  it("refuses plaintext after encryption was configured unless explicitly allowed", () => {
+    const f = fixture();
+    const first = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+    });
+    expect(first.status, first.stderr).toBe(0);
+    const before = snapshotNames(f.snapshots).sort();
+    const commandsBefore = f.commands().length;
+
+    const refused = f.run("infra/compose/backup-prod.sh");
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("refusing to write plaintext");
+    expect(f.commands()).toHaveLength(commandsBefore);
+    expect(snapshotNames(f.snapshots).sort()).toEqual(before);
+
+    // A later stamp, so this run never collides with the first one's second.
+    write(path.join(f.root, "bin/date"), "#!/bin/bash\necho 20991231T000000Z\n");
+    chmodSync(path.join(f.root, "bin/date"), 0o755);
+    const allowed = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_ALLOW_PLAINTEXT: "1",
+    });
+    expect(allowed.status, allowed.stderr).toBe(0);
+    expect(allowed.stderr).toContain("not encrypted");
+    expect(existsSync(path.join(snapshotOf(allowed), "rakazo.dump"))).toBe(true);
+  });
+
+  it("does not publish a snapshot when sealing fails", () => {
+    const f = fixture();
+    // age accepts the recipients during preflight, then fails while writing.
+    write(
+      path.join(f.root, "bin/age"),
+      `#!/bin/bash\n[[ "$*" != *" -o "* ]] || { cat >/dev/null; exit 1; }\n`,
+    );
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("Verified Rakazo backup");
+    expect(snapshotNames(f.snapshots)).toEqual([]);
+    expect(existsSync(path.join(f.snapshots, ".encrypted"))).toBe(false);
+  });
+
+  it.each([{ FAIL_VERIFY: "1" }, { FAIL_TAR: "2" }])(
+    "verifies the plaintext stream without the private key: %j",
+    (failure) => {
+      const f = fixture();
+      const result = f.run("infra/compose/backup-prod.sh", [], {
+        RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+        ...failure,
+      });
+      expect(result.status).not.toBe(0);
+      expect(snapshotNames(f.snapshots)).toEqual([]);
+    },
+  );
+});
+
+describe("off-site copies", { timeout: 20_000 }, () => {
+  const remote = "offsite:rakazo/";
+  const remoteDir = (f: ReturnType<typeof fixture>) => path.join(f.env.FAKE_REMOTE, "rakazo");
+  const rcloneCalls = (f: ReturnType<typeof fixture>) =>
+    existsSync(f.env.RCLONE_LOG) ? readFileSync(f.env.RCLONE_LOG, "utf8").trim().split("\n") : [];
+
+  it("uploads sealed files with checksums last and prunes only older remote snapshots", () => {
+    const f = fixture();
+    for (const stamp of ["20261014T000000Z", "20261015T000000Z", "20261016T000000Z"])
+      write(path.join(remoteDir(f), stamp, "SHA256SUMS"), "sums");
+    write(path.join(remoteDir(f), "20261017T000000Z/rakazo.dump.age"), "partial");
+    write(path.join(remoteDir(f), "notes/keep.txt"), "not a snapshot");
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+      RAKAZO_BACKUP_OFFSITE_REMOTE: remote,
+      RAKAZO_BACKUP_OFFSITE_KEEP: "2",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const stamp = path.basename(snapshotOf(result));
+    expect(result.stdout).toContain(`Copied to offsite:rakazo/${stamp}`);
+    expect(readdirSync(path.join(remoteDir(f), stamp)).sort()).toEqual(
+      readdirSync(snapshotOf(result)).sort(),
+    );
+    expect(readdirSync(remoteDir(f)).sort()).toEqual(["20261016T000000Z", "notes", stamp].sort());
+    const calls = rcloneCalls(f).map((line) => line.split(" ")[0]);
+    expect(calls.slice(0, 3)).toEqual(["copy", "check", "copyto"]);
+    expect(rcloneCalls(f)[2]).toContain(`${stamp}/SHA256SUMS`);
+  });
+
+  it("leaves remote retention to the destination when the off-site keep is 0", () => {
+    const f = fixture();
+    write(path.join(remoteDir(f), "20261014T000000Z/SHA256SUMS"), "sums");
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+      RAKAZO_BACKUP_OFFSITE_REMOTE: remote,
+      RAKAZO_BACKUP_OFFSITE_KEEP: "0",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(path.join(remoteDir(f), "20261014T000000Z"))).toBe(true);
+    expect(rcloneCalls(f).some((line) => /^(lsf|purge) /.test(line))).toBe(false);
+  });
+
+  it.each([
+    [{ FAIL_RCLONE: "copy" }, "upload"],
+    [{ FAIL_RCLONE: "check" }, "verification"],
+    [{ RAKAZO_BACKUP_AGE_RECIPIENTS: "" }, "off-site copies require RAKAZO_BACKUP_AGE_RECIPIENTS"],
+  ])("keeps the verified local snapshot but fails the run: %j", (settings, message) => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipients,
+      RAKAZO_BACKUP_OFFSITE_REMOTE: remote,
+      ...settings,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Verified Rakazo backup");
+    expect(result.stderr).toContain(`Off-site copy failed: ${message}`);
+    expect(existsSync(path.join(snapshotOf(result), "SHA256SUMS"))).toBe(true);
+    if (message.includes("require")) expect(rcloneCalls(f)).toEqual([]);
+    // An unverified remote copy never gets the completion marker retention counts.
+    const copy = path.join(remoteDir(f), path.basename(snapshotOf(result)), "SHA256SUMS");
+    expect(existsSync(copy)).toBe(false);
+  });
+
+  it.each(["-1", "08"])("rejects an invalid off-site retention: %s", (keep) => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_OFFSITE_KEEP: keep });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("RAKAZO_BACKUP_OFFSITE_KEEP");
+  });
+});
+
+// Real age is optional locally and in CI; the fake above keeps the suite offline and deterministic.
+const realAge = ["age", "age-keygen"].every(
+  (tool) => spawnSync("/bin/sh", ["-c", `command -v ${tool}`]).status === 0,
+);
+
+describe.skipIf(!realAge)("encrypted production backups with real age", { timeout: 20_000 }, () => {
+  it("round-trips through a real age identity", () => {
+    const f = fixture();
+    const tools = path.join(f.root, "real-age");
+    mkdirSync(tools);
+    for (const tool of ["age", "age-keygen"]) {
+      const located = execFileSync("/bin/sh", ["-c", `command -v ${tool}`], { encoding: "utf8" });
+      symlinkSync(located.trim(), path.join(tools, tool));
+    }
+    rmSync(path.join(f.root, "bin/age"));
+    const key = path.join(f.root, "backup.key");
+    execFileSync(path.join(tools, "age-keygen"), ["-o", key], { stdio: "ignore" });
+    const recipient = execFileSync(path.join(tools, "age-keygen"), ["-y", key], {
+      encoding: "utf8",
+    }).trim();
+    const PATH = `${tools}${path.delimiter}${f.env.PATH}`;
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      PATH,
+      RAKAZO_BACKUP_AGE_RECIPIENTS: recipient,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const snapshot = snapshotOf(result);
+    const dump = execFileSync(
+      path.join(tools, "age"),
+      ["--decrypt", "-i", key, path.join(snapshot, "rakazo.dump.age")],
+      { encoding: "utf8" },
+    );
+    expect(dump).toContain("fake custom-format dump");
+    const drill = f.run("infra/compose/backup-drill.sh", [snapshot, key], { PATH });
+    expect(drill.status, drill.stderr).toBe(0);
   });
 });

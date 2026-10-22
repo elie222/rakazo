@@ -13,6 +13,12 @@ const linking = vi.hoisted(() => ({
 
 const i18n = vi.hoisted(() => ({ isRTL: false }));
 
+// The iOS text size, as React Native reports it.
+const windowSize = vi.hoisted(() => ({ fontScale: 1 }));
+
+// The module's Text, which the app replaces with a capped one after this package has loaded.
+const reactNativeText = vi.hoisted(() => ({ current: undefined as unknown }));
+
 // The load handler of each rendered Image, so a test can report its decoded size.
 const imageLoads = vi.hoisted(
   () =>
@@ -59,7 +65,8 @@ vi.mock("react-native", async () => {
       for (const key of dataKeys) {
         const value = rest[key] ?? flattened[key];
         if (value !== undefined && value !== null && value !== false) {
-          data[`data-${kebab(key)}`] = value === true ? "true" : value;
+          data[`data-${kebab(key)}`] =
+            value === true ? "true" : Array.isArray(value) ? value.join(" ") : value;
         }
       }
       for (const key of booleanKeys) {
@@ -102,6 +109,25 @@ vi.mock("react-native", async () => {
       );
     };
 
+  reactNativeText.current = mockComponent("rn-text", [
+    "accessibilityRole",
+    "accessibilityLabel",
+    "textDecorationLine",
+    "textDecorationColor",
+    "color",
+    "fontWeight",
+    "fontFamily",
+    "fontSize",
+    "lineHeight",
+    "fontVariant",
+    "backgroundColor",
+    "borderWidth",
+    "textAlign",
+    "writingDirection",
+    "width",
+    "maxFontSizeMultiplier",
+  ]);
+
   return {
     View: mockComponent("rn-view", [
       "minWidth",
@@ -121,22 +147,20 @@ vi.mock("react-native", async () => {
       "flexGrow",
       "flexDirection",
       "overflow",
+      "borderRadius",
+      "borderLeftWidth",
+      "alignItems",
+      "alignSelf",
+      "position",
+      "top",
+      "marginLeft",
+      "marginRight",
       "accessibilityElementsHidden",
       "importantForAccessibility",
     ]),
-    Text: mockComponent("rn-text", [
-      "accessibilityRole",
-      "accessibilityLabel",
-      "textDecorationLine",
-      "color",
-      "fontWeight",
-      "fontFamily",
-      "fontSize",
-      "lineHeight",
-      "textAlign",
-      "writingDirection",
-      "width",
-    ]),
+    get Text() {
+      return reactNativeText.current;
+    },
     ScrollView: mockComponent(
       "rn-scroll-view",
       ["horizontal", "borderColor", "borderWidth"],
@@ -173,21 +197,25 @@ vi.mock("react-native", async () => {
     Linking: linking,
     Alert: { alert },
     I18nManager: i18n,
+    useWindowDimensions: () => windowSize,
   };
 });
 
-import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
+import { darkTokens, lightTokens, MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import { themes } from "prism-react-renderer";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { Platform, Pressable } from "react-native";
+import type { TextProps } from "react-native";
+import { Platform, Pressable, StyleSheet } from "react-native";
 import type { LinkFavicons, MermaidDiagramProps } from "./markdown.native";
 import {
   ChatMarkdown,
+  CodeCopyButtonContext,
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
   MermaidDiagramContext,
+  markdownCodeBlocks,
   RemoteImagesContext,
   RemoteMarkdownImage,
 } from "./markdown.native";
@@ -207,6 +235,47 @@ const CONTENT_SIZED_TABLE = `| ID | City | Notes |
 
 function numericWidths(html: string) {
   return [...html.matchAll(/data-width="(\d+(?:\.\d+)?)"/g)].map((match) => Number(match[1]));
+}
+
+// The data attributes of the innermost text element holding exactly `content`.
+function textStyle(html: string, content: string) {
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const text = [...document.querySelectorAll("rn-text")]
+    .reverse()
+    .find((element) => element.textContent === content);
+  if (!text) throw new Error(`no text "${content}"`);
+  return Object.fromEntries(
+    [...text.attributes]
+      .filter((attribute) => attribute.name.startsWith("data-"))
+      .map((a) => [a.name, a.value]),
+  );
+}
+
+const BULLET_DOT = 'rn-view[data-width="5"][data-height="5"]';
+
+function bulletDots(html: string) {
+  return [...new DOMParser().parseFromString(html, "text/html").querySelectorAll(BULLET_DOT)];
+}
+
+// The view around a bullet dot, which also holds the line that centres it.
+function isBulletDot(element: Element | null | undefined) {
+  return [...(element?.children ?? [])].some((child) => child.matches(BULLET_DOT));
+}
+
+// The view around an ordered-list number.
+function isNumberColumn(element: Element | null | undefined) {
+  const number = element?.firstElementChild;
+  return (
+    element?.tagName.toLowerCase() === "rn-view" &&
+    number?.tagName.toLowerCase() === "rn-text" &&
+    /^\d+[.)]$/.test(number.textContent ?? "")
+  );
+}
+
+function numberColumns(html: string) {
+  return [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("rn-view")].filter(
+    isNumberColumn,
+  );
 }
 
 function tableRows(html: string) {
@@ -265,7 +334,7 @@ describe("native markdown tables", () => {
     expect(city).toBeGreaterThan(96);
     expect(city).toBeLessThan(notes ?? 0);
     expect(notes).toBeLessThan(400);
-    expect(html.match(/data-font-weight="600"/g)).toHaveLength(3);
+    expect(html.match(/data-font-weight="500"/g)).toHaveLength(3);
     expect(html).toContain('data-flex-shrink="0"');
   });
 
@@ -293,7 +362,7 @@ describe("native markdown tables", () => {
           null,
       );
     expect(rows()).toHaveLength(2);
-    expect(notesHeights()).toEqual(["33", "33"]);
+    expect(notesHeights()).toEqual(["28", "28"]);
 
     const notesStart = (rows()[0]?.cells ?? [])
       .slice(0, -1)
@@ -372,34 +441,43 @@ describe("native markdown tables", () => {
     ["light", lightTokens],
     ["dark", darkTokens],
   ] as const)(
-    "draws table, quote and divider rules that show on the %s bot bubble",
+    "draws table, quote, list and divider colours on the %s bot bubble",
     (scheme, palette) => {
       const html = renderToStaticMarkup(
         <ChatMarkdown palette={palette} colorScheme={scheme}>
-          {`${THREE_COLUMN_TABLE}\n\n> A quote\n\n---`}
+          {`${THREE_COLUMN_TABLE}\n\n> A quote\n\n- An item\n\n---`}
         </ChatMarkdown>,
       );
-      const rule = palette.mutedForeground;
       const hairline = "1";
       expect(html).toMatch(
         new RegExp(
-          `<rn-scroll-view[^>]*data-border-color="${rule}"[^>]*data-border-width="${hairline}"`,
+          `<rn-scroll-view[^>]*data-border-color="${palette.input}"[^>]*data-border-width="${hairline}"`,
         ),
       );
       const rows = html.match(
         new RegExp(
-          `<rn-view[^>]*data-border-color="${rule}"[^>]*data-border-bottom-width="${hairline}"`,
+          `<rn-view[^>]*data-border-color="${palette.input}"[^>]*data-border-bottom-width="${hairline}"`,
           "g",
         ),
       );
       expect(rows).toHaveLength(3);
-      expect(html).toContain(`data-border-left-color="${rule}"`);
+      expect(html).toContain(`data-border-left-color="${palette.faintForeground}"`);
       expect(html).toMatch(
-        new RegExp(`<rn-view[^>]*data-background-color="${rule}"[^>]*data-height="${hairline}"`),
+        new RegExp(
+          `<rn-view[^>]*data-background-color="${palette.border}"[^>]*data-height="${hairline}"`,
+        ),
       );
-      // The bubble is filled with `muted`; a rule in that color is invisible.
-      expect(html).not.toContain(`data-border-color="${palette.muted}"`);
-      expect(html).not.toContain(`data-border-left-color="${palette.muted}"`);
+      const texts = [
+        ...new DOMParser().parseFromString(html, "text/html").querySelectorAll("rn-text"),
+      ];
+      const colorOf = (label: string) =>
+        texts.findLast((text) => text.textContent === label)?.getAttribute("data-color");
+      expect(colorOf("Name")).toBe(palette.foreground);
+      expect(colorOf("Alice")).toBe(palette.mutedForeground);
+      expect(colorOf("A quote")).toBe(palette.mutedForeground);
+      expect(bulletDots(html)[0]?.getAttribute("data-background-color")).toBe(
+        palette.faintForeground,
+      );
     },
   );
 
@@ -434,8 +512,8 @@ describe("native markdown tables", () => {
         ].join("\n")}
       </ChatMarkdown>,
     );
-    expect(html).toContain('data-gap="10"');
-    expect(html).toMatch(/data-border-left-color="[^"]+"[^>]*data-gap="10"/);
+    expect(html).toContain('data-gap="8"');
+    expect(html).toMatch(/data-border-left-color="[^"]+"[^>]*data-gap="8"/);
     expect(html).not.toContain('data-margin-top="10"');
     expect(html).not.toContain('data-margin-bottom="9"');
     expect(html).not.toContain('data-margin-bottom="5"');
@@ -459,10 +537,14 @@ describe("native markdown code blocks", () => {
       for (const token of tokens) {
         expect(token).not.toBeNull();
         expect(token?.getAttribute("data-color")).toBe(themes.oneLight.plain.color);
-        for (const attribute of ["data-font-family", "data-font-size", "data-line-height"]) {
+        for (const attribute of ["data-font-family", "data-font-size"]) {
           expect(token?.getAttribute(attribute)).toBeTruthy();
           expect(token?.getAttribute(attribute)).toBe(tokens[0]?.getAttribute(attribute));
         }
+        // Code keeps the monospaced font's own line spacing, so a blank line is as tall as the rest.
+        expect(token?.getAttribute("data-line-height")).toBe(
+          tokens[0]?.getAttribute("data-line-height"),
+        );
       }
     },
   );
@@ -519,6 +601,117 @@ describe("native markdown code blocks", () => {
       root.unmount();
     });
     container.remove();
+  });
+});
+
+describe("native markdown code copy", () => {
+  // Stands in for the app's copy button, recording the code it would copy.
+  function ProbeCopyButton({ code }: { code: string }) {
+    return createElement("copy-probe", { "data-code": code });
+  }
+
+  function renderWithCopy(markdown: string, props: { streaming?: boolean } = {}) {
+    const html = renderToStaticMarkup(
+      <CodeCopyButtonContext.Provider value={ProbeCopyButton}>
+        <ChatMarkdown palette={lightTokens} colorScheme="light" {...props}>
+          {markdown}
+        </ChatMarkdown>
+      </CodeCopyButtonContext.Provider>,
+    );
+    return new DOMParser().parseFromString(html, "text/html");
+  }
+
+  it.each([
+    ["a fence", "```ts\nconst a = 1;\n\n  return a;\n```", "const a = 1;\n\n  return a;"],
+    ["a fence without a language", "```\nnpm install\n```", "npm install"],
+    ["an indented block", "Run:\n\n    line one\n      line two\n", "line one\n  line two"],
+    [
+      "a mermaid fence shown as code",
+      "```mermaid\ngraph LR\n  A --> B\n```",
+      "graph LR\n  A --> B",
+    ],
+  ])("gives %s a copy button for its exact code", (_case, markdown, code) => {
+    const document = renderWithCopy(markdown);
+    const probes = document.querySelectorAll("copy-probe");
+    expect(probes).toHaveLength(1);
+    expect(probes[0]?.getAttribute("data-code")).toBe(code);
+  });
+
+  it("keeps the button inside the block's frame, beside the code rather than in its scroll view", () => {
+    for (const markdown of ["```ts\nconst a = 1;\n```", "    const a = 1;"]) {
+      const probe = renderWithCopy(markdown).querySelector("copy-probe");
+      expect(probe?.closest("rn-scroll-view")).toBeNull();
+      const row = probe?.parentElement;
+      expect(row?.getAttribute("data-flex-direction")).toBe("row");
+      expect(row?.querySelector("rn-scroll-view")).not.toBeNull();
+      const frame = row?.parentElement;
+      expect(frame?.getAttribute("data-border-width")).toBeTruthy();
+      expect(frame?.getAttribute("data-background-color")).toBe(lightTokens.secondary);
+    }
+  });
+
+  it("draws an indented block with the Text the app installs after this package loads", () => {
+    // As the app's text-size cap does when it starts.
+    const original = reactNativeText.current as (props: TextProps) => ReactNode;
+    reactNativeText.current = (props: TextProps) =>
+      createElement(original, { ...props, maxFontSizeMultiplier: MAX_FONT_SCALE });
+    try {
+      const html = renderToStaticMarkup(<ChatMarkdown>{"Run:\n\n    npm test"}</ChatMarkdown>);
+      expect(textStyle(html, "npm test")["data-max-font-size-multiplier"]).toBe(
+        String(MAX_FONT_SCALE),
+      );
+    } finally {
+      reactNativeText.current = original;
+    }
+  });
+
+  it("moves an indented block's frame off its text", () => {
+    const text = renderWithCopy("    const a = 1;").querySelector("rn-scroll-view rn-text");
+    expect(text?.textContent).toBe("const a = 1;");
+    expect(text?.getAttribute("data-border-width")).toBeNull();
+    expect(text?.getAttribute("data-background-color")).toBeNull();
+  });
+
+  it("shows the button while a reply streams", () => {
+    expect(
+      renderWithCopy("```ts\nconst live = true;", { streaming: true }).querySelector("copy-probe"),
+    ).not.toBeNull();
+  });
+
+  it("gives inline code and an empty fence no button", () => {
+    const blankFence = "```ts\n\n\n```";
+    expect(renderWithCopy(blankFence).querySelector("copy-probe")).toBeNull();
+    expect(markdownCodeBlocks(blankFence)).toEqual([]);
+    expect(renderWithCopy("Run `npm test` first.").querySelector("copy-probe")).toBeNull();
+    expect(renderWithCopy("```ts\n```").querySelector("copy-probe")).toBeNull();
+  });
+
+  it("lists the code of every block that gets a button, and nothing else", () => {
+    const markdown = [
+      "Run `npm test` first.",
+      "```ts\nconst a = 1;\n\n  return a;\n```",
+      "```\n```",
+      "> ```\n> quoted\n> ```",
+      "- item\n\n      indented in a list",
+      "```mermaid\ngraph LR\n  A --> B\n```",
+    ].join("\n\n");
+    const probes = [...renderWithCopy(markdown).querySelectorAll("copy-probe")].map((probe) =>
+      probe.getAttribute("data-code"),
+    );
+    expect(markdownCodeBlocks(markdown)).toEqual([
+      "const a = 1;\n\n  return a;",
+      "quoted",
+      "indented in a list",
+      "graph LR\n  A --> B",
+    ]);
+    expect(markdownCodeBlocks(markdown)).toEqual(probes);
+    expect(markdownCodeBlocks("No code here, only `inline`.")).toEqual([]);
+  });
+
+  it("draws no button when the app supplies none", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"```\nnpm test\n```"}</ChatMarkdown>);
+    expect(html).not.toContain("<copy-probe");
+    expect(html).toContain("npm test");
   });
 });
 
@@ -619,7 +812,208 @@ describe("native markdown lists", () => {
     expect(html).toContain("1.");
     expect(html).toContain("2.");
     // One bullet for the outer item, none for the nested numbered items.
-    expect(html.split("\u00B7").length - 1).toBe(1);
+    expect(bulletDots(html)).toHaveLength(1);
+  });
+
+  it("marks bullets with a 5pt dot centred on the first line, 26pt before the text", () => {
+    const dots = bulletDots(renderToStaticMarkup(<ChatMarkdown>{"- one\n- two"}</ChatMarkdown>));
+    expect(dots).toHaveLength(2);
+    expect(dots[0]?.getAttribute("data-border-radius")).toBe("2.5");
+    // Centred on an invisible line in the body style, so it follows the text size, in a marker
+    // only as tall as that line, so a wrapped item keeps its dot on the first line.
+    const marker = dots[0]?.parentElement;
+    expect(marker?.getAttribute("data-align-self")).toBe("flex-start");
+    expect(marker?.getAttribute("data-flex-direction")).toBe("row");
+    expect(marker?.getAttribute("data-align-items")).toBe("center");
+    // No offset against the item: a percentage would resolve against the wrapped item's height.
+    expect(dots[0]?.hasAttribute("data-position")).toBe(false);
+    expect(dots[0]?.hasAttribute("data-top")).toBe(false);
+    const line = dots[0]?.parentElement?.querySelector("rn-text");
+    expect(line?.textContent).toBe("\u200B");
+    expect(line?.getAttribute("data-line-height")).toBe("22");
+    expect(line?.getAttribute("data-font-size")).toBe("17");
+    // Markers sit back in the faint colour so the text leads.
+    expect(dots[0]?.getAttribute("data-background-color")).toBe(darkTokens.faintForeground);
+    // 13 + 5 + 8: the dot ends where a one-digit number ends.
+    expect(dots[0]?.parentElement?.getAttribute("data-margin-left")).toBe("13");
+    expect(dots[0]?.parentElement?.getAttribute("data-margin-right")).toBe("8");
+  });
+
+  it("draws the bullet dot in the list-marker colour", () => {
+    const markerColor = "#7A7A80";
+    const create = vi
+      .spyOn(StyleSheet, "create")
+      // The message styles gain a list-marker colour, as a colour theme would set it.
+      .mockImplementation((styles) =>
+        "body" in styles ? { ...styles, bullet_list_icon: { color: markerColor } } : styles,
+      );
+    try {
+      const dots = bulletDots(
+        renderToStaticMarkup(<ChatMarkdown palette={{ ...darkTokens }}>{"- one"}</ChatMarkdown>),
+      );
+      expect(dots[0]?.getAttribute("data-background-color")).toBe(markerColor);
+    } finally {
+      create.mockRestore();
+    }
+  });
+
+  it("puts a short list's numbers in an 18pt column, 8pt before the text", () => {
+    const columns = numberColumns(
+      renderToStaticMarkup(<ChatMarkdown>{"1. one\n2. two\n3. three"}</ChatMarkdown>),
+    );
+    expect(columns).toHaveLength(3);
+    for (const column of columns) {
+      expect(column.getAttribute("data-min-width")).toBe("18");
+      expect(column.getAttribute("data-margin-right")).toBe("8");
+      expect(column.getAttribute("data-align-items")).toBe("flex-end");
+    }
+  });
+
+  it("widens the number column for the whole list once it reaches 10, so item text lines up", () => {
+    const columns = numberColumns(
+      renderToStaticMarkup(
+        <ChatMarkdown>
+          {Array.from({ length: 10 }, (_, i) => `${i + 1}. item`).join("\n")}
+        </ChatMarkdown>,
+      ),
+    );
+    expect(columns.map((column) => column.textContent)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `${i + 1}.`),
+    );
+    const widths = new Set(columns.map((column) => Number(column.getAttribute("data-min-width"))));
+    expect(widths.size).toBe(1);
+    expect([...widths][0]).toBeGreaterThan(18);
+  });
+
+  it("separates list items by 8pt", () => {
+    for (const markdown of ["- one\n- two", "1. one\n2. two"]) {
+      const document = new DOMParser().parseFromString(
+        renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>),
+        "text/html",
+      );
+      const firstItem = [...document.querySelectorAll("rn-view")].find(
+        (view) => isBulletDot(view.firstElementChild) || isNumberColumn(view.firstElementChild),
+      );
+      expect(firstItem?.parentElement?.getAttribute("data-gap")).toBe("8");
+    }
+  });
+
+  // iOS font scales: the default, xxxLarge and the second accessibility size.
+  it.each([
+    ["10 items at the default text size", 1, 10, ".", 24],
+    ["100 items at the default text size", 1, 100, ".", 33],
+    ["10 items at the largest standard text size", 1.353, 10, ".", 32],
+    // Text stops growing at the largest standard size, and the column with it.
+    ["10 items at an accessibility text size", 2.143, 10, ".", 32],
+    ["10 items numbered 1) at an accessibility text size", 2.143, 10, ")", 34],
+  ])(
+    "gives every number in a list of %s one column, as wide as its longest number",
+    (_, fontScale, count, markup, width) => {
+      windowSize.fontScale = fontScale;
+      try {
+        const columns = numberColumns(
+          renderToStaticMarkup(
+            <ChatMarkdown>
+              {Array.from({ length: count }, (_, i) => `${i + 1}${markup} item`).join("\n")}
+            </ChatMarkdown>,
+          ),
+        );
+        expect(columns).toHaveLength(count);
+        for (const column of columns) {
+          expect(column.getAttribute("data-min-width")).toBe(String(width));
+        }
+      } finally {
+        windowSize.fontScale = 1;
+      }
+    },
+  );
+
+  it("numbers ordered lists at 15pt in tabular figures", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"9. nine\n10. ten"}</ChatMarkdown>);
+    expect(textStyle(html, "10.")).toMatchObject({
+      "data-font-size": "15",
+      "data-line-height": "22",
+      "data-font-variant": "tabular-nums",
+    });
+  });
+});
+
+describe("native markdown type", () => {
+  it("sets bot and user message text at 17pt on a 22pt line", () => {
+    const bot = renderToStaticMarkup(<ChatMarkdown>{"Plain reply."}</ChatMarkdown>);
+    expect(textStyle(bot, "Plain reply.")).toMatchObject({
+      "data-font-size": "17",
+      "data-line-height": "22",
+    });
+    const user = renderToStaticMarkup(
+      <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link} palette={darkTokens}>
+        {"Plain message."}
+      </LinkifiedText>,
+    );
+    expect(textStyle(user, "Plain message.")).toMatchObject({
+      "data-font-size": "17",
+      "data-line-height": "22",
+    });
+  });
+
+  it("draws headings and bold text in semibold", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"# One\n\n## Two\n\n### Three\n\n#### Four\n\nSome **bold** text."}
+      </ChatMarkdown>,
+    );
+    const heading = (size: string, lineHeight: string) => ({
+      "data-font-size": size,
+      "data-line-height": lineHeight,
+      "data-font-weight": "600",
+    });
+    expect(textStyle(html, "One")).toMatchObject(heading("22", "26"));
+    expect(textStyle(html, "Two")).toMatchObject(heading("19", "23"));
+    expect(textStyle(html, "Three")).toMatchObject(heading("17", "22"));
+    expect(textStyle(html, "Four")).toMatchObject(heading("15", "19"));
+    expect(textStyle(html, "bold")).toMatchObject({ "data-font-weight": "600" });
+  });
+
+  it("sets inline code in the system monospaced font at 14pt without a chip", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"Run `pnpm test` now."}</ChatMarkdown>);
+    expect(textStyle(html, "pnpm test")).toMatchObject({
+      "data-font-family": "ui-monospace",
+      "data-font-size": "14",
+      "data-background-color": "transparent",
+      "data-border-width": "0",
+    });
+  });
+
+  it("sets code blocks in the system monospaced font at 14pt with the font's own line spacing, in a rounded box", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"```\nconst a = 1;\n```"}</ChatMarkdown>);
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const token = [...document.querySelectorAll("rn-text")].find((text) =>
+      text.textContent?.includes("const"),
+    );
+    expect(token?.getAttribute("data-font-family")).toBe("ui-monospace");
+    expect(token?.getAttribute("data-font-size")).toBe("14");
+    expect(token?.hasAttribute("data-line-height")).toBe(false);
+    expect(
+      document.querySelector("rn-view[data-border-radius]")?.getAttribute("data-border-radius"),
+    ).toBe("10");
+  });
+
+  it("sets table headers in medium and cells at 14pt on an 18pt line", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{THREE_COLUMN_TABLE}</ChatMarkdown>);
+    expect(textStyle(html, "Status")).toMatchObject({
+      "data-font-size": "14",
+      "data-line-height": "18",
+      "data-font-weight": "500",
+    });
+    expect(textStyle(html, "queued")).toMatchObject({
+      "data-font-size": "14",
+      "data-line-height": "18",
+    });
+  });
+
+  it("draws a 3pt quote bar", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"> Quoted."}</ChatMarkdown>);
+    expect(html).toMatch(/data-border-left-color="[^"]+"[^>]*data-border-left-width="3"/);
   });
 });
 
@@ -937,13 +1331,14 @@ describe("message direction", () => {
     );
     const items = [...document.querySelectorAll("rn-view")].filter((view) => {
       const marker = view.firstElementChild;
-      return marker?.tagName.toLowerCase() === "rn-text" && /^(\u00B7|\d\.)$/.test(textOf(marker));
+      return isBulletDot(marker) || isNumberColumn(marker);
     });
     expect(
       items.map((item) => [
         textOf(item.lastElementChild),
         item.getAttribute("data-flex-direction"),
-        item.firstElementChild?.getAttribute("data-writing-direction") ?? null,
+        item.firstElementChild?.querySelector("rn-text")?.getAttribute("data-writing-direction") ??
+          null,
       ]),
     ).toEqual([
       ["פריט ראשון", "row-reverse", "rtl"],
@@ -959,7 +1354,7 @@ describe("message direction", () => {
       [...botTextGroups(markdown).document.querySelectorAll("rn-view")]
         .filter(
           (view) =>
-            textOf(view.firstElementChild) === "\u00B7" &&
+            isBulletDot(view.firstElementChild) &&
             textOf(view.lastElementChild) === "Install the CLI.",
         )
         .map((view) => view.outerHTML);
@@ -984,6 +1379,19 @@ describe("message direction", () => {
     for (const text of code) expect(text.outerHTML).not.toMatch(directionAttributes);
   });
 
+  it("fills code blocks with the secondary fill, not the page colour", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"    indented();\n\n```\nfenced();\n```"}</ChatMarkdown>,
+    );
+    expect(html).toContain(`data-background-color="${darkTokens.secondary}"`);
+    expect(html).not.toContain(`data-background-color="${darkTokens.background}"`);
+  });
+
+  it("fills a fence once, so its header and code do not stack the translucent fill", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{"```ts\nfenced();\n```"}</ChatMarkdown>);
+    expect(html.split(`data-background-color="${darkTokens.secondary}"`)).toHaveLength(2);
+  });
+
   it("keeps a left-to-right bot message laid out as before", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown>
@@ -999,7 +1407,7 @@ describe("message direction", () => {
       // React Native mirrors `right` in a right-to-left layout, so it lands on the left.
       expect(userBubble("Hello there.").root?.getAttribute("data-text-align")).toBe("right");
       expect(userBubble("שלום").html).not.toMatch(directionAttributes);
-      const { document } = botTextGroups("- Install the CLI.");
+      const { document } = botTextGroups("1. Install the CLI.");
       expect(document.querySelector('rn-view[data-flex-direction="row-reverse"]')).not.toBeNull();
       expect(document.querySelector('rn-text[data-writing-direction="ltr"]')).not.toBeNull();
     } finally {
@@ -1160,7 +1568,7 @@ describe("native website links", () => {
       .at(-1);
     expect(bold?.getAttribute("data-color")).toBe(darkTokens.foreground);
     expect(bold?.getAttribute("data-text-decoration-line")).toBe("underline");
-    expect(bold?.getAttribute("data-font-weight")).toBe("700");
+    expect(bold?.getAttribute("data-font-weight")).toBe("600");
     const plain = [...(link?.querySelectorAll("rn-text") ?? [])]
       .filter((text) => text.textContent === " label")
       .at(-1);
@@ -1227,6 +1635,22 @@ describe("native website links", () => {
     const mail = view.links().find((link) => link.textContent === "mail");
     expect(mail?.getAttribute("data-color")).toBe(darkTokens.link);
     await view.cleanup();
+  });
+
+  it("underlines a user-message link in the bubble's text colour", () => {
+    const html = renderToStaticMarkup(
+      <LinkifiedText
+        color={darkTokens.chatUserForeground}
+        linkColor={darkTokens.chatUserForeground}
+        palette={darkTokens}
+      >
+        {"see https://example.com/docs"}
+      </LinkifiedText>,
+    );
+    expect(html).toContain(
+      `data-text-decoration-line="underline" data-text-decoration-color="${darkTokens.chatUserForeground}"`,
+    );
+    expect(html).not.toContain(`data-text-decoration-color="${darkTokens.input}"`);
   });
 
   it("draws the tile in user messages, in the message's own colour", async () => {

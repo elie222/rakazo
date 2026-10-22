@@ -1,11 +1,19 @@
 import type { RunStatus } from "@rakazo/contracts";
 
-export const ACTIVE_RUN_STATUSES = [
+/** Runs the bot is working on, which the chat shows as working. */
+export const WORKING_RUN_STATUSES = [
   "queued",
   "leased",
   "running",
+] as const satisfies readonly RunStatus[];
+/** Runs paused on the user: an answer, an approval, or a computer takeover. Their card is the state. */
+export const WAITING_ON_USER_RUN_STATUSES = [
   "waiting_input",
   "waiting_takeover",
+] as const satisfies readonly RunStatus[];
+export const ACTIVE_RUN_STATUSES = [
+  ...WORKING_RUN_STATUSES,
+  ...WAITING_ON_USER_RUN_STATUSES,
 ] as const satisfies readonly RunStatus[];
 /** Runs that hold new work in the queue. A pending card holds no compute. */
 export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
@@ -55,6 +63,14 @@ export function assertTransition(from: RunStatus, to: RunStatus): void {
 
 export function isActive(status: RunStatus): boolean {
   return (ACTIVE_RUN_STATUSES as readonly RunStatus[]).includes(status);
+}
+
+export function isRunWorking(status: string | null | undefined): boolean {
+  return WORKING_RUN_STATUSES.some((working) => working === status);
+}
+
+export function isRunWaitingOnUser(status: string | null | undefined): boolean {
+  return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
 }
 
 export function isTerminal(status: RunStatus): boolean {

@@ -17,6 +17,7 @@ import type {
 import {
   accountSecuritySchema,
   authCapabilitiesSchema,
+  CLIENT_UPDATE_REQUIRED_STATUS,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -33,6 +34,7 @@ import {
   isUnreachableStatus,
   mergeThreadHistory,
   messagingProviderLabel,
+  parseRetryAfter,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -64,12 +66,7 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import {
-  authErrorText,
-  authResponseErrorText,
-  errorText,
-  sessionSaveErrorText,
-} from "./user-error";
+import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -468,11 +465,22 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
+let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+  headers: () => ({}),
+  onUpdateRequired: () => {},
+};
+
+/** The app names its build on every request and decides what a refused build does. */
+export function configureClientBuild(options: typeof clientBuild): void {
+  clientBuild = options;
+}
+
 export async function authHeaders(
   spaceId: string | null = selectedSpaceId(),
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   };
@@ -578,7 +586,7 @@ export async function passwordResetCapabilities(): Promise<PasswordResetCapabili
 }
 
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/request-password-reset`,
     {
       method: "POST",
@@ -587,7 +595,10 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     },
     {},
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not send reset email")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not send reset email")),
+    );
 }
 
 /** Revoking other sessions also refuses this one until the replacement is saved. */
@@ -606,7 +617,7 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   const headers = await authHeaders();
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${apiBase}/api/auth/change-password`,
     {
       method: "POST",
@@ -619,7 +630,10 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     },
     {},
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not change password")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not change password")),
+    );
   // Revoking other sessions also revokes this one; keep the replacement the server issued.
   const token = tokenFromAuthResponse(response, body);
   if (!token) return;
@@ -717,7 +731,7 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export async function deleteAccount(password?: string, token?: string) {
   await rpc("notifications/unregisterPush").catch(() => undefined);
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
     {
       method: "POST",
@@ -731,7 +745,9 @@ export async function deleteAccount(password?: string, token?: string) {
     {},
   );
   if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not delete account")));
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not delete account")),
+    );
   }
   await clearSessionToken();
   await clearSpace();
@@ -848,7 +864,7 @@ export async function rpc<T>(
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
-      const error = parsed.json as { message?: unknown } | undefined;
+      const error = parsed.json as { message?: unknown; code?: unknown } | undefined;
       const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the
@@ -936,7 +952,7 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw Object.defineProperty(new Error(message), "status", { value: res.status });
+      throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (
@@ -1097,8 +1113,12 @@ export function mobileThreadRefreshResult(input: {
   activeBotId: string | undefined;
   activeGroupId: string | undefined;
 }): { commit: boolean; snapshot: MobileSnapshot | null } {
+  // Live events may advance the screen while this snapshot is in flight.
   const commit =
-    input.requestGeneration === input.currentGeneration && shouldApplyMobileThreadRefresh(input);
+    input.requestGeneration === input.currentGeneration &&
+    shouldApplyMobileThreadRefresh(input) &&
+    (input.onScreen?.threadId !== input.fetched.threadId ||
+      (input.fetched.cursor ?? -1) >= (input.onScreen.cursor ?? -1));
   return { commit, snapshot: commit ? input.fetched : input.onScreen };
 }
 
@@ -1183,6 +1203,20 @@ type ThreadEvent = {
 /** No frame at all for this long means the stream is half-open; the server beats far faster. */
 export const IDLE_TIMEOUT_MS = 45_000;
 
+/**
+ * A failed response as an error the shared retry policy can read: its status, oRPC code, and any
+ * Retry-After. A 426 also asks the user to update, from whichever request noticed it.
+ */
+function httpError(message: string, res: Response, code?: string): Error {
+  if (res.status === CLIENT_UPDATE_REQUIRED_STATUS) clientBuild.onUpdateRequired();
+  return Object.defineProperties(new Error(message), {
+    status: { value: res.status },
+    // oRPC's error code; a proxy's bare 404 has none.
+    code: { value: code },
+    retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
+  });
+}
+
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -1208,7 +1242,10 @@ export async function subscribeThread(
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  if (!res.ok || !res.body) {
+    cancelResponseBody(res);
+    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1458,6 +1495,8 @@ export function applyMobileThreadEvent(
     const seq = typeof event.payload?.seq === "number" ? event.payload.seq : known?.seq;
     const next: MobileMessage = {
       id,
+      // Inline cards act on the message's thread, so live messages need it too.
+      threadId: known?.threadId ?? prev.threadId,
       // The seq lets a send that is still on screen as "Sending…" recognize its echo.
       ...(seq === undefined ? {} : { seq }),
       createdAt: known?.createdAt ?? event.createdAt,
@@ -1517,7 +1556,7 @@ export async function fetchAccountSecurity(): Promise<AccountSecurity> {
 }
 
 export async function requestAccountDeletionCode(): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/request-account-deletion`,
     {
       method: "POST",
@@ -1530,5 +1569,8 @@ export async function requestAccountDeletionCode(): Promise<void> {
     },
     null,
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not continue")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not continue")),
+    );
 }

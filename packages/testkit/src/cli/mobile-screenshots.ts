@@ -5,8 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import {
-  ComposioEmulator,
+  ComposioConnector,
   EmailEmulator,
+  FakeComposioClient,
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
@@ -67,7 +68,7 @@ async function main() {
     dataDir: DATA_DIR,
     apiHost: "0.0.0.0",
     apiUrl: HOST_API_URL,
-    composio: new ComposioEmulator(),
+    composio: new ComposioConnector({ client: new FakeComposioClient() }),
     pipedream,
     email: new EmailEmulator(),
     remoteConnectors: {
@@ -86,7 +87,9 @@ async function main() {
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
-    for (const { name: flow, window } of FLOWS) {
+    for (const { name: flow, window } of process.env.MOBILE_KEYBOARD_ONLY === "true"
+      ? [{ name: "keyboard-lifecycle", window: undefined }]
+      : FLOWS) {
       // A failed reset is reported without hiding why the flow failed.
       let flowFailed = false;
       let flowError: unknown;

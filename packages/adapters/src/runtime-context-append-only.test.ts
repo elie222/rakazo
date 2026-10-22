@@ -502,7 +502,11 @@ describe("append-only run transcript boundaries", () => {
     expect(extendsPrevious(first, second)).toBe(true);
     expect(JSON.stringify(second)).not.toContain("Earlier result shortened after you read it");
 
-    // Force a rebuild by changing instructions after the result has been read.
+    run.act(second, "c", "ok");
+    run.act(run.send(), "d", "ok");
+    run.send();
+
+    // Force a rebuild after a leaves the three-result window.
     run.state.systemPrompt = "Changed instructions";
     const rebuilt = run.send();
     const result = rebuilt.messages.find(
@@ -512,7 +516,7 @@ describe("append-only run transcript boundaries", () => {
     expect(serialized.split("Earlier result shortened after you read it")).toHaveLength(2);
     expect(serialized).not.toContain("unavailable");
     expect(staleThinking(rebuilt)).toEqual([]);
-    run.act(rebuilt, "c", "ok");
+    run.act(rebuilt, "e", "ok");
     const next = run.send();
     expect(extendsPrevious(rebuilt, next)).toBe(true);
     expect(
@@ -606,6 +610,45 @@ describe("append-only run transcript boundaries", () => {
       expect(JSON.stringify(context)).toContain("Current objective");
     }
   });
+
+  it.each(["retrieval", "snapshots"] as const)(
+    "keeps the unread tool step after steering forces a %s window rebuild",
+    (contextStrategy) => {
+      const window = 40_000;
+      const run = driver(
+        request(
+          {
+            contextStrategy,
+            model: { provider: "synthetic-provider", id: "synthetic-model", contextWindow: window },
+          },
+          contextStrategy === "snapshots" ? 30 : 0,
+        ),
+      );
+      const previous = run.send();
+      run.act(previous, "pending", "huge ".repeat(12_000));
+      run.messages.push({ role: "user", content: "Also check the summary", timestamp: 4 });
+      expect(size({ ...previous, messages: run.messages })).toBeGreaterThan(window);
+      const next = run.send();
+      expect(size(next)).toBeLessThanOrEqual(window - model.maxTokens);
+      expect(
+        next.messages.find((message) => message.role === "assistant")?.content ?? [],
+      ).toContainEqual({
+        type: "toolCall",
+        id: "pending",
+        name: "shell",
+        arguments: {},
+      });
+      const result = next.messages.find((message) => message.role === "toolResult");
+      expect(result).toMatchObject({ toolCallId: "pending" });
+      expect(JSON.stringify(result?.content)).toContain("Tool result truncated");
+      expect(JSON.stringify(result?.content)).not.toContain("Earlier result shortened");
+      expect(next.messages.at(-1)).toMatchObject({
+        role: "user",
+        content: "Also check the summary",
+      });
+      expect(staleThinking(next)).toEqual([]);
+    },
+  );
 
   it("rebuilds when the newest result alone overflows the window", () => {
     const window = 40_000;

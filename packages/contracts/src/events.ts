@@ -121,8 +121,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     // an ask persisted before an owner toggles the private-HTTP flag still
     // validates on replay.
     credential: botSecretDestinationSchema({ allowPrivateHttpOrigin: true }).optional(),
+    /** On a fetch approval, the site an "always" answer allows. */
+    site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
+    /** A secret request the user dismissed instead of answering. */
+    dismissed: z.literal(true).optional(),
     actions: z
       .array(
         z.object({

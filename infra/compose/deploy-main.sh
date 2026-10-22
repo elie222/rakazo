@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build and roll out origin/main on the single-VM production stack.
 #
-# Install as /usr/local/sbin/rakazo-deploy-main and run it as the deploy user, for example
-# from CI through an SSH forced command. The deploy user needs passwordless sudo for Docker.
+# Runs as the deploy user through deploy-launcher.sh, which is installed as the CI forced command
+# and always runs this file from origin/main. The deploy user needs passwordless sudo for Docker.
 set -Eeuo pipefail
 
 # A forced SSH command carries no environment, so read the checkout path from a root-owned file.
@@ -19,6 +19,8 @@ UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
 ROLLBACK_TIMEOUT="${RAKAZO_DEPLOY_ROLLBACK_TIMEOUT:-8m}"
 # Free disk a deploy needs before it builds.
 MIN_FREE_GB="${RAKAZO_DEPLOY_MIN_FREE_GB:-5}"
+BUILD_CACHE_GB="${RAKAZO_DEPLOY_BUILD_CACHE_GB:-8}"
+[[ "${BUILD_CACHE_GB}" =~ ^[0-9]+$ ]] || { echo "RAKAZO_DEPLOY_BUILD_CACHE_GB must be a whole number" >&2; exit 1; }
 [[ "${MIN_FREE_GB}" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "RAKAZO_DEPLOY_MIN_FREE_GB must be a whole number" >&2; exit 1; }
 
 cd "${APP_DIR}"
@@ -36,6 +38,60 @@ compose() {
 
 healthy() {
   curl --fail --silent --show-error --max-time 15 "${RAKAZO_HEALTH_URL}" >/dev/null
+}
+
+# Waits for a container's own health check, or for it to run when its revision has none (a
+# rollback can restore one). A container that fails is removed so the containers it was meant to
+# replace keep serving.
+container_healthy() {
+  local container="$1" state="" deadline=$((SECONDS + 300))
+  while ((SECONDS < deadline)); do
+    # A container that exits keeps its last health status, so check that it still runs.
+    state="$(sudo docker inspect --format \
+      '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' "${container}")"
+    case "${state}" in
+      "running healthy" | running) return 0 ;;
+      "running starting" | created*) ;;
+      *) break ;;
+    esac
+    sleep "${RAKAZO_DEPLOY_HEALTH_INTERVAL:-1}"
+  done
+  echo "Container ${container} did not become healthy (${state:-unknown})." >&2
+  sudo docker rm --force "${container}" >/dev/null || true
+  return 1
+}
+
+# Replaces the API and web without a gap: one new container starts beside the running ones, and
+# the old ones stop only once it passes its health check. Caddy dials whichever container
+# answers, so requests keep flowing through a deploy. Every other service is then reconciled
+# normally; the replaced containers already match the new configuration and stay as they are.
+roll_out() {
+  local service old new
+  for service in api web; do
+    old="$(compose 1m ps --all --quiet "${service}")"
+    if [[ -z "${old}" ]]; then
+      # Nothing to keep serving, so start it with its dependencies (the database on a new host).
+      compose "${UP_TIMEOUT}" up -d --wait "${service}"
+      continue
+    fi
+    compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
+      --scale "${service}=$(($(wc -w <<<"${old}") + 1))" "${service}"
+    new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${old}")"
+    container_healthy "${new}"
+    # shellcheck disable=SC2086 # one container ID per word
+    sudo docker stop --time 30 ${old} >/dev/null
+    # shellcheck disable=SC2086
+    sudo docker rm ${old} >/dev/null
+  done
+  compose "${UP_TIMEOUT}" up -d --remove-orphans
+}
+
+# Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a
+# changed Caddyfile only applies when the container is recreated.
+apply_caddyfile() {
+  if ! git diff --quiet "$1" "$2" -- infra/compose/Caddyfile.prod; then
+    compose "${UP_TIMEOUT}" up -d --no-deps --force-recreate caddy
+  fi
 }
 
 exec 9>"${APP_DIR}/.deploy.lock"
@@ -60,7 +116,8 @@ done
 
 previous_revision="$(git rev-parse HEAD)"
 git fetch --quiet --prune origin main
-target_revision="$(git rev-parse origin/main)"
+# The launcher pins the commit its copy of this script came from.
+target_revision="$(git rev-parse --verify "${RAKAZO_DEPLOY_REVISION:-origin/main}^{commit}")"
 
 # Written only after a healthy rollout. A reset can make HEAD match before containers change.
 deployed_revision=""
@@ -76,7 +133,9 @@ rollback() {
   trap - ERR
   echo "Deployment failed; restoring the previous revision ${previous_revision}." >&2
   git reset --hard "${previous_revision}"
-  compose "${ROLLBACK_TIMEOUT}" up -d --build --remove-orphans
+  compose "${ROLLBACK_TIMEOUT}" build
+  roll_out
+  apply_caddyfile "${target_revision}" "${previous_revision}"
   exit 1
 }
 trap rollback ERR
@@ -85,7 +144,9 @@ trap rollback ERR
 previous_images="$(compose 1m images -q 2>/dev/null | sort -u)" || previous_images="unknown"
 
 # Runs after a healthy rollout. Tags the previous images so they survive, then drops untagged
-# images and build cache unused for a day. Cleanup is time-limited and never fails the deploy.
+# images and trims the build cache to a fixed size (RAKAZO_DEPLOY_BUILD_CACHE_GB, default 8): a
+# time window let a busy day of deploys pile up tens of gigabytes. Cleanup is time-limited and
+# never fails the deploy.
 prune_docker() {
   local id kept=true
   if [[ "${previous_images}" == unknown ]]; then
@@ -103,14 +164,21 @@ prune_docker() {
   else
     echo "Could not tag the previous images; skipping image prune to keep them." >&2
   fi
-  timeout 5m sudo docker builder prune --all --force --filter until=24h >/dev/null ||
+  timeout 5m sudo docker builder prune --force --keep-storage "${BUILD_CACHE_GB}GB" >/dev/null ||
     echo "Build cache prune failed; continuing." >&2
 }
 
 git reset --hard "${target_revision}"
+# The app's own database login (subject to row-level security) needs a password
+# that older .env files do not have. Appending one leaves existing lines alone.
+if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' .env; then
+  printf '\nPOSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)" >>.env
+  echo "Added POSTGRES_APP_PASSWORD to .env."
+fi
 compose 1m config --quiet
 compose "${BUILD_TIMEOUT}" build
-compose "${UP_TIMEOUT}" up -d --remove-orphans
+roll_out
+apply_caddyfile "${previous_revision}" "${target_revision}"
 
 for _ in {1..30}; do
   if healthy; then

@@ -10,7 +10,11 @@ import {
   phoneCallSettings,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  runAsSystem,
+} from "@rakazo/db";
 
 const REASON_MAX = 120;
 const OPENING_MAX = 240;
@@ -119,9 +123,10 @@ export async function settleCallRequest(
       ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
     };
     const blocks = [next, ...before.slice(1)];
-    // Compare-and-set on the stored blocks: a concurrent settle leaves this one a no-op.
+    // Compare-and-set on the stored status (a plaintext copy beside the encrypted
+    // block): a concurrent settle leaves this one a no-op.
     const updated = await tx.message.updateMany({
-      where: { id: message.id, blocks: { equals: message.blocks as Prisma.InputJsonValue } },
+      where: { id: message.id, blocks: { path: ["0", "status"], equals: block.status } },
       data: { blocks: blocks as Prisma.InputJsonValue },
     });
     if (updated.count !== 1) return null;
@@ -155,51 +160,55 @@ export async function requestUserCall(
   if (!deps.phoneCallsEnabled) return { error: "Calls are disabled." };
   const request = newCallRequest({ ...input, phoneCallRingSeconds: deps.phoneCallRingSeconds });
   if ("error" in request) return request;
-  const result = await deps.prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`call:${run.userId}`}, 0))::text`;
-    const target = await tx.thread.findFirst({
-      where: {
-        id: run.threadId,
-        spaceId: run.spaceId,
-        userId: run.userId,
+  // The call cooldown is per person across all their Spaces; every other read and
+  // write here names the run's own thread.
+  const result = await runAsSystem("check the call cooldown across the user's Spaces", () =>
+    deps.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`call:${run.userId}`}, 0))::text`;
+      const target = await tx.thread.findFirst({
+        where: {
+          id: run.threadId,
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botId: run.botId,
+          groupId: null,
+          externalConversationId: null,
+          bot: { userId: run.userId, spaceId: run.spaceId, archivedAt: null },
+        },
+        select: { id: true },
+      });
+      if (!target) return { error: "Calls require the bot's own one-to-one chat." };
+      const refusal = await callRequestRefusal(tx, {
+        ...run,
+        groupChat: false,
+        phoneCallCooldownMinutes: deps.phoneCallCooldownMinutes,
+      });
+      if (refusal) return { error: refusal };
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: run.threadId,
         botId: run.botId,
-        groupId: null,
-        externalConversationId: null,
-        bot: { userId: run.userId, spaceId: run.spaceId, archivedAt: null },
-      },
-      select: { id: true },
-    });
-    if (!target) return { error: "Calls require the bot's own one-to-one chat." };
-    const refusal = await callRequestRefusal(tx, {
-      ...run,
-      groupChat: false,
-      phoneCallCooldownMinutes: deps.phoneCallCooldownMinutes,
-    });
-    if (refusal) return { error: refusal };
-    const message = await createThreadMessageInTransaction(tx, {
-      threadId: run.threadId,
-      botId: run.botId,
-      runId: run.id,
-      role: "bot",
-      blocks: request.blocks,
-      clientNonce: request.clientNonce,
-      markUnread: true,
-    });
-    const event = await appendEventInTransaction(tx, {
-      spaceId: run.spaceId,
-      threadId: run.threadId,
-      botId: run.botId,
-      runId: run.id,
-      type: "thread.message.created",
-      payload: {
-        messageId: message.id,
+        runId: run.id,
         role: "bot",
         blocks: request.blocks,
-        callId: request.callId,
-      },
-    });
-    return { eventSeq: event.seq };
-  });
+        clientNonce: request.clientNonce,
+        markUnread: true,
+      });
+      const event = await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        runId: run.id,
+        type: "thread.message.created",
+        payload: {
+          messageId: message.id,
+          role: "bot",
+          blocks: request.blocks,
+          callId: request.callId,
+        },
+      });
+      return { eventSeq: event.seq };
+    }),
+  );
   if ("error" in result) return result;
   await deps.events.notify(run.threadId, result.eventSeq).catch(() => undefined);
   try {

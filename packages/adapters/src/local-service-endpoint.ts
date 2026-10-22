@@ -2,7 +2,12 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { isCloudMetadataHost, isLocalMcpHost } from "@rakazo/contracts";
 import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
-import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
+import {
+  egressRefused,
+  isCloudMetadataAddress,
+  isLinkLocalAddress,
+  isPrivateAddress,
+} from "./network-address.js";
 import { createPrivateNetworkFetch, isPrivateRemoteMcpHostname } from "./remote-mcp.js";
 import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
 
@@ -76,9 +81,9 @@ function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
 /** Literals and metadata names. Hostnames are classified by pinLocalServiceHost. */
 export function assertLocalServiceBaseUrlSync(baseUrl: string): void {
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
-  if (isBlockedHost(host)) throw new Error(BLOCKED_TARGET_ERROR);
+  if (isBlockedHost(host)) throw egressRefused(host, new Error(BLOCKED_TARGET_ERROR));
   if (isLocalMcpHost(host) || isPrivateRemoteMcpHostname(host)) return;
-  if (isIP(host) !== 0) throw new Error(LOCAL_NETWORK_ERROR);
+  if (isIP(host) !== 0) throw egressRefused(host, new Error(LOCAL_NETWORK_ERROR));
 }
 
 /**
@@ -97,7 +102,7 @@ export async function pinLocalServiceHost(
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
   if (isLocalMcpHost(host)) return undefined;
   if (options.allowPrivateEndpoint !== true) {
-    throw new MemoryProviderDeploymentOwnerRequiredError();
+    throw egressRefused(host, new MemoryProviderDeploymentOwnerRequiredError());
   }
   if (isIP(host) !== 0) return undefined;
   const resolve = options.resolveHostname ?? defaultResolveHostname;
@@ -107,7 +112,11 @@ export async function pinLocalServiceHost(
   } catch {
     throw new Error(LOCAL_NETWORK_ERROR);
   }
-  assertPrivateLanAddresses(addresses);
+  try {
+    assertPrivateLanAddresses(addresses);
+  } catch (error) {
+    throw egressRefused(host, error);
+  }
   return addresses.map((entry) => ({ address: entry.address, family: entry.family }));
 }
 

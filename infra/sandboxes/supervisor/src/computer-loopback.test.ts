@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     listNetworks: vi.fn(),
   },
   assertHomeWritable: vi.fn(),
+  verifyRestrictedEgress: vi.fn(),
 }));
 vi.mock("dockerode", () => ({
   default: class {
@@ -40,6 +41,10 @@ vi.mock("dockerode", () => ({
   },
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
+vi.mock("./egress-probe.js", () => ({
+  EgressNotEnforced: class EgressNotEnforced extends Error {},
+  verifyRestrictedEgress: mocks.verifyRestrictedEgress,
+}));
 vi.mock("node:fs/promises", async (importOriginal) => ({
   ...(await importOriginal<typeof NodeFsPromises>()),
   mkdir: vi.fn(),
@@ -51,6 +56,7 @@ let screenPort: string;
 beforeEach(async () => {
   vi.resetModules();
   vi.resetAllMocks();
+  mocks.verifyRestrictedEgress.mockResolvedValue(undefined);
   vi.stubEnv("HOSTNAME", "");
   vi.stubEnv("DATA_DIR", "/tmp/rakazo-loopback-test");
   vi.stubEnv("SANDBOX_SCREEN_NETWORK", "published");
@@ -564,6 +570,47 @@ describe("restricted egress rekeying", () => {
     expect(await response.json()).toMatchObject({ resumed: false, id: "replacement" });
     expect(existing.remove).toHaveBeenCalledWith({ force: true });
     expect(existing.start).not.toHaveBeenCalled();
+  });
+
+  it("refuses restricted computers until the host ruleset is verified", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    const { existing } = setupExisting(computerNetworkNameFor("bot"));
+    mocks.verifyRestrictedEgress.mockRejectedValueOnce(new Error("egress is not enforced"));
+
+    const response = await provision();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "egress is not enforced" });
+    expect(existing.start).not.toHaveBeenCalled();
+    expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+  });
+
+  it("auto egress stays open only after a probe shows the rules are missing", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "auto");
+    const { existing } = setupExisting(computerNetworkNameFor("bot"));
+    const { EgressNotEnforced } = await import("./egress-probe.js");
+    mocks.verifyRestrictedEgress
+      .mockRejectedValueOnce(new Error("probe timed out"))
+      .mockRejectedValueOnce(new EgressNotEnforced("a computer bridge reached the host"));
+
+    // A probe that could not finish decides nothing: refuse, and probe again next time.
+    const refused = await provision();
+    expect(refused.status).toBe(500);
+    expect(existing.start).not.toHaveBeenCalled();
+
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({ Id: "bot-network", Options: {} }),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      connect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    });
+    mocks.docker.createNetwork.mockResolvedValue({});
+    const opened = await provision();
+    expect(await opened.clone().text()).not.toMatch(/probe/);
+    expect(opened.status).toBe(200);
+    // The completed answer is kept: no third probe.
+    await provision();
+    expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);
   });
 
   it("resumes a computer whose network has the named bridge", async () => {

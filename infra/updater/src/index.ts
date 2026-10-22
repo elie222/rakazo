@@ -42,6 +42,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import type { UpdaterConfig } from "./updater-logic.js";
 import {
+  missingSecretAssignments,
   readTagState,
   resolveUpdaterConfig,
   truncateOutput,
@@ -674,6 +675,7 @@ export function createUpdaterApp(
 
       try {
         await writeEnvAssignments({
+          ...missingSecretAssignments(await readEnvFile()),
           [IMAGE_TAG_ENV]: toTag,
           [PREVIOUS_IMAGE_TAG_ENV]: input.fromTag,
         });

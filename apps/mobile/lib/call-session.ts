@@ -7,7 +7,9 @@ import {
   isCallBargeIn,
   isFarewell,
   isInterimCallBargeIn,
+  isRetryableError,
   latestSpokenCallReply,
+  retryDelayMs,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
@@ -31,7 +33,7 @@ import {
 } from "./call-sounds";
 import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
-import { errorText } from "./user-error";
+import { errorText, voiceAccountErrorText } from "./user-error";
 import { speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
@@ -708,8 +710,16 @@ async function transcribeClip(clip: CallClip, signal: AbortSignal): Promise<stri
     body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
     signal,
   });
-  const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-  if (!res.ok) throw new Error(errorText(body.error ?? "", t("Could not transcribe that.")));
+  const body = (await res.json().catch(() => ({}))) as {
+    text?: string;
+    error?: string;
+    code?: string;
+  };
+  if (!res.ok) {
+    throw new Error(
+      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not transcribe that.")),
+    );
+  }
   return body.text ?? "";
 }
 
@@ -745,6 +755,7 @@ function watchReplies(
     let lastSeen: string | null = null;
     let cursor = 0;
     let retry = FEED_RETRY_MIN_MS;
+    let failure: unknown;
     // The stream returns on an idle timeout as well as on a real failure, and a call
     // outlives both: pick it back up from the last seq until the caller hangs up. The
     // first snapshot is loaded in here too, so a failed load retries instead of
@@ -789,12 +800,15 @@ function watchReplies(
           controller.signal,
         );
         retry = FEED_RETRY_MIN_MS;
-      } catch {
-        if (controller.signal.aborted) return;
+        failure = undefined;
+      } catch (error) {
+        // A 4xx other than 408/429 is the server's answer; asking again only polls it.
+        if (controller.signal.aborted || !isRetryableError(error)) return;
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);
+        failure = error;
       }
       if (controller.signal.aborted) return;
-      await abortableDelay(retry, controller.signal);
+      await abortableDelay(retryDelayMs(failure, retry), controller.signal);
     }
   })().catch(() => undefined);
   return () => controller.abort();

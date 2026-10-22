@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { settleCallRequest } from "./call-request.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
@@ -22,6 +23,28 @@ import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
+
+type Tenant = { spaceId: string; userId: string };
+
+/**
+ * A job that acts for one run, routine, computer, skill, thread or cloud agent runs
+ * as that row's tenant, so row-level security keeps it, and every tool it runs, in
+ * the owner's Space even where a query forgets to filter. The owner comes from one
+ * narrow system read; when the row is gone there is nothing left to act on.
+ */
+function asOwner<Key, P extends Key>(
+  owner: (payload: Key) => Promise<Tenant | null>,
+  handler: (payload: P) => Promise<void>,
+): (payload: P) => Promise<void> {
+  return async (payload) => {
+    const tenant = await runAsSystem("find the tenant a background job acts for", () =>
+      owner(payload),
+    );
+    if (tenant) await runAsTenant(tenant, () => handler(payload));
+  };
+}
+
+const OWNER = { spaceId: true, userId: true } as const;
 
 export function createBackgroundJobHandlers(deps: {
   executor: ReturnType<typeof createRunExecutor>;
@@ -40,78 +63,99 @@ export function createBackgroundJobHandlers(deps: {
   cloudAgent?: CloudAgentConnection | null;
   notifications?: ExpoPushProvider;
 }): BackgroundJobHandlers {
-  const deliverMessaging = async (runId?: string) => {
-    if (!deps.messaging) return;
-    await deliverMessagingOutbound(
-      { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
-      { runId },
-      {
-        operationId: `messaging.deliver:${runId ?? "drain"}`,
-        traceId: `messaging.deliver:${runId ?? "drain"}`,
-        spaceId: "",
-        userId: "",
-        signal: new AbortController().signal,
-      },
+  const messagingDeps = deps.messaging
+    ? { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs }
+    : undefined;
+  // The outbox holds every Space's pending sends, so draining it is cross-tenant.
+  const drainMessaging = async () => {
+    if (!messagingDeps) return;
+    await runAsSystem("drain the messaging outbox across Spaces", () =>
+      deliverMessagingOutbound(
+        messagingDeps,
+        {},
+        {
+          operationId: "messaging.deliver:drain",
+          traceId: "messaging.deliver:drain",
+          spaceId: "",
+          userId: "",
+          signal: new AbortController().signal,
+        },
+      ),
     );
   };
+  const run = ({ runId }: { runId: string }) =>
+    deps.prisma.run.findUnique({ where: { id: runId }, select: OWNER });
+  const routine = ({ routineId }: { routineId: string }) =>
+    deps.prisma.routine.findUnique({ where: { id: routineId }, select: OWNER });
+  const computer = ({ computerId }: { computerId: string }) =>
+    deps.prisma.computer.findUnique({ where: { id: computerId }, select: OWNER });
+  const thread = ({ threadId }: { threadId: string }) =>
+    deps.prisma.thread.findUnique({ where: { id: threadId }, select: OWNER });
+  const skill = ({ skillId }: { skillId: string }) =>
+    deps.prisma.taughtSkill.findUnique({ where: { id: skillId }, select: OWNER });
+  const cloudAgent = ({ agentId }: { agentId: string }) =>
+    deps.prisma.cloudAgent.findUnique({ where: { id: agentId }, select: OWNER });
+  const updatedComputer = async ({ updateId }: { updateId: string }) =>
+    (
+      await deps.prisma.computerUpdate.findUnique({
+        where: { id: updateId },
+        select: { computer: { select: OWNER } },
+      })
+    )?.computer ?? null;
 
   return {
-    "run.continue": async (payload) => {
+    "run.continue": asOwner(run, async (payload) => {
       await deps.executor.continueRun(payload.runId, deps.workerId);
       // Automatic messaging mirror: once the run's bot messages are durable,
       // copy them into the outbox. Never let mirror failures fail the run.
-      if (deps.messaging) {
-        await mirrorMessagingOutbound(
-          { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs },
-          payload.runId,
-        );
+      if (messagingDeps) {
+        await mirrorMessagingOutbound(messagingDeps, payload.runId);
         await deps.jobs.enqueue(messagingDeliverJob()).catch(async (error) => {
           getLogger().error("messaging.deliver enqueue error", error);
-          await deliverMessaging();
+          await drainMessaging();
         });
       }
+    }),
+    "messaging.deliver": async ({ runId }) => {
+      if (runId && messagingDeps) {
+        await asOwner(run, () => mirrorMessagingOutbound(messagingDeps, runId))({ runId });
+      }
+      await drainMessaging();
     },
-    "messaging.deliver": async (payload) => {
-      await deliverMessaging(payload.runId);
-    },
-    "routine.wakeup": async (payload) => {
+    "routine.wakeup": asOwner(routine, async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
-    },
-    "routine.retry": async (payload) => {
+    }),
+    "routine.retry": asOwner(run, async (payload) => {
       await deps.executor.retryRoutineRun(payload.runId);
-    },
-    "computer.update": async ({ updateId }) => {
+    }),
+    "computer.update": asOwner(updatedComputer, async ({ updateId }) => {
       await performComputerUpdate(deps, updateId);
-    },
-    "computer.sleep": async (payload) => {
+    }),
+    "computer.sleep": asOwner(computer, async (payload) => {
       await sleepComputerIfIdle(deps, payload.computerId);
-    },
-    "computer.control-expire": async (payload) => {
+    }),
+    "computer.control-expire": asOwner(computer, async (payload) => {
       if (await expireComputerControl(deps, payload.computerId, payload.leaseId)) {
         scheduleComputerSleep(deps.jobs, payload.computerId);
       }
-    },
-    "skill.teaching-expire": async (payload) => {
+    }),
+    "skill.teaching-expire": asOwner(skill, async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
-    },
-    "call.expire": async (payload) => {
+    }),
+    "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
-    },
-    "cloud_agent.poll": async (payload) => {
+    }),
+    "cloud_agent.poll": asOwner(cloudAgent, async (payload) => {
       await pollCloudAgent(
-        {
-          prisma: deps.prisma,
-          jobs: deps.jobs,
-          events: deps.events,
-          cloudAgent: deps.cloudAgent,
-        },
+        { prisma: deps.prisma, jobs: deps.jobs, events: deps.events, cloudAgent: deps.cloudAgent },
         payload,
       );
-    },
+    }),
+    // A receipt belongs to a device's push token, not to a Space.
     "push.receipt": async (payload) => {
-      await deps.notifications?.checkReceipt(payload);
+      await runAsSystem("check a push receipt", () => deps.notifications?.checkReceipt(payload));
     },
-    "history.compact": async (payload) => {
+    "history.compact": asOwner(thread, async (payload) => {
       // Retrieval policies use stored context without paid message-count compaction.
       // Skip legacy backlog work after a policy change.
       if (deps.executor.contextStrategy && deps.executor.contextStrategy !== "current") return;
@@ -127,6 +171,6 @@ export function createBackgroundJobHandlers(deps: {
         },
         payload.threadId,
       );
-    },
+    }),
   };
 }

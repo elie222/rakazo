@@ -141,6 +141,15 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
+  if (lower.includes("can you check my gmail inbox?")) {
+    return [
+      {
+        assistant: "Connect Gmail and I’ll check your inbox.",
+        toolCalls: [{ name: "connect_app", args: { app: "gmail" } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("silent routine fixture")) {
     return [
       {
@@ -203,11 +212,11 @@ export function inferScript(
   }
   const childEdit = childEditCalls(prompt);
   if (childEdit) {
-    return [{ assistant: "updating the fleet.", toolCalls: childEdit, complete: true }];
+    return [{ assistant: "updating your bots.", toolCalls: childEdit, complete: true }];
   }
   const fleet = fleetCall(prompt);
   if (fleet) {
-    return [{ assistant: "updating the fleet.", toolCalls: [fleet], complete: true }];
+    return [{ assistant: "updating your bots.", toolCalls: [fleet], complete: true }];
   }
   if (
     lower.includes("launch a cloud agent") ||
@@ -273,6 +282,16 @@ export function inferScript(
               },
             },
           },
+        ],
+      },
+    ];
+  }
+  if (lower.includes("fetch approval card")) {
+    return [
+      {
+        assistant: "i will read that page.",
+        toolCalls: [
+          { name: "web_fetch", args: { url: "https://docs.example.test/page?q=fixture" } },
         ],
       },
     ];
@@ -627,7 +646,7 @@ function fleetCall(prompt: string): { name: string; args: Record<string, unknown
   const target = (kind: string, name: string) => ({
     [kind.toLowerCase() === "group" ? "group_name" : "bot_name"]: clean(name),
   });
-  const listed = /\blist the fleet(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
+  const listed = /\blist the bots you manage(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
   if (listed) return { name: "list_fleet", args: listed[1] ? { bot_id: listed[1] } : {} };
   const created = /create a group named\s+([^\n<&]+?)\s+with\s+([^\n<&]+)/i.exec(prompt);
   if (created) {
@@ -724,7 +743,7 @@ function childEditCalls(
   if (renamed)
     return [{ name: "update_bot", args: { bot_id: renamed[1], name: clean(renamed[2]!) } }];
   // Some providers send every omitted optional field as an empty string.
-  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank fleet fields/i.exec(prompt);
+  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank bot management fields/i.exec(prompt);
   if (blank) return [{ name: "update_bot", args: { name: clean(blank[1]!), bot_id: "" } }];
   return undefined;
 }

@@ -1,5 +1,6 @@
 import type { ReplyPreview } from "@rakazo/contracts";
 import { replyLabel } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { Pressable, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
@@ -59,7 +60,7 @@ export function ReplyLine({
       <Text
         numberOfLines={1}
         selectable={false}
-        style={{ flexShrink: 1, color: tokens.mutedForeground, fontSize: 12.5 }}
+        style={{ flexShrink: 1, color: tokens.mutedForeground, ...typeScale.footnote }}
       >
         {unavailable ? t("Original message unavailable") : `${author}: ${text}`}
       </Text>

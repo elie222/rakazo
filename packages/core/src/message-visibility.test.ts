@@ -323,12 +323,22 @@ describe("user-visible messages", () => {
           status: "pending",
         },
       ]),
+      message("connect", "run-ticket", [
+        {
+          kind: "app_connect",
+          provider: "gmail",
+          name: "Gmail",
+          description: "",
+          logo: null,
+          status: "pending",
+        },
+      ]),
       message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
       message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
-    ).toEqual(["ask", "computer", "approval", "user"]);
+    ).toEqual(["ask", "computer", "approval", "connect", "user"]);
   });
 });

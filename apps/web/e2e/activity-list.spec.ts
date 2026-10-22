@@ -234,6 +234,8 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
   const aside = page.locator("aside").first();
   const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
   await activityToggle.click();
+  // The list refreshes every 15s; drive that poll with a controlled clock.
+  await page.clock.install();
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityRow(page, "Chief")).toBeVisible({ timeout: 20_000 });
@@ -247,13 +249,15 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
   await activitySearch.fill("Chief");
 
   phase = "empty";
-  await expect(activityRow(page, "Chief")).toHaveCount(0, { timeout: 25_000 });
+  await page.clock.fastForward(15_000);
+  await expect(activityRow(page, "Chief")).toHaveCount(0);
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");
 
   phase = "fail";
+  await page.clock.fastForward(15_000);
   const retry = page.getByRole("button", { name: "Try again" });
-  await expect(retry).toBeVisible({ timeout: 25_000 });
+  await expect(retry).toBeVisible();
   await expect(aside.getByText("No runs match these filters.")).toHaveCount(0);
   await expect(activitySearch).toHaveValue("Chief");
 

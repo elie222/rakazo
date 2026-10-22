@@ -33,7 +33,6 @@ export type HomeCopy = {
     copyFailed: string;
   };
   selfHost: {
-    eyebrow: string;
     heading: string;
     copy: string;
     worksWith: string;
@@ -370,8 +369,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "Copy failed. Try again.",
     },
     selfHost: {
-      eyebrow: "Self-hosted",
-      heading: "Run it on your computer",
+      heading: "Self-hosted",
       copy: "Your machine, your models, your control.",
       worksWith: "Works with",
       mock: { model: "Model", weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
@@ -394,7 +392,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: EN_ROSTER,
     },
     testimonials: {
-      heading: "Testimonials",
+      heading: "People love it",
       pause: "Pause",
       play: "Play",
       items: TESTIMONIALS,
@@ -491,8 +489,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "Kopieren fehlgeschlagen. Erneut versuchen.",
     },
     selfHost: {
-      eyebrow: "Self-hosted",
-      heading: "Läuft auf deinem Computer",
+      heading: "Self-hosted",
       copy: "Deine Maschine, deine Modelle, deine Kontrolle.",
       worksWith: "Funktioniert mit",
       mock: { model: "Modell", weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
@@ -515,7 +512,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: DE_ROSTER,
     },
     testimonials: {
-      heading: "Kundenstimmen",
+      heading: "Die Leute lieben es",
       pause: "Pause",
       play: "Weiter",
       items: TESTIMONIALS,
@@ -615,8 +612,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "복사 실패. 다시 시도하세요.",
     },
     selfHost: {
-      eyebrow: "셀프 호스트",
-      heading: "내 컴퓨터에서 실행",
+      heading: "셀프 호스트",
       copy: "컴퓨터도, 모델도, 제어권도 내 손에.",
       worksWith: "지원 모델·서비스",
       mock: { model: "모델", weekdays: "평일 9:00", approval: "승인 필요", approve: "승인", deny: "거부" },
@@ -639,7 +635,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: KO_ROSTER,
     },
     testimonials: {
-      heading: "후기",
+      heading: "다들 좋아해요",
       pause: "일시정지",
       play: "재생",
       items: TESTIMONIALS,
@@ -739,8 +735,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copyFailed: "复制失败。请重试。",
     },
     selfHost: {
-      eyebrow: "自托管",
-      heading: "在你的电脑上运行",
+      heading: "自托管",
       copy: "电脑、模型、控制权，都归你。",
       worksWith: "支持",
       mock: { model: "模型", weekdays: "工作日 9:00", approval: "需要审批", approve: "批准", deny: "拒绝" },
@@ -763,7 +758,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: ZH_ROSTER,
     },
     testimonials: {
-      heading: "用户评价",
+      heading: "大家都爱它",
       pause: "暂停",
       play: "播放",
       items: TESTIMONIALS,

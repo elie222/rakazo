@@ -277,12 +277,16 @@ export async function snapshotSessionToken(): Promise<{ ok: true; value: string 
   }
 }
 
+/**
+ * The server only accepts a signed bearer. `set-auth-token` and the session cookie are signed on
+ * every server version; the body token is signed only by servers that refuse unsigned bearers.
+ */
 export function tokenFromAuthResponse(res: Response, body: unknown) {
-  const fromJson = jsonToken(body);
-  if (fromJson) return fromJson;
   const cookies = res.headers.get("set-cookie") ?? "";
-  const encoded = cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
-  if (!encoded) return "";
+  const encoded =
+    res.headers.get("set-auth-token") ||
+    cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
+  if (!encoded) return jsonToken(body);
   try {
     return decodeURIComponent(encoded);
   } catch {

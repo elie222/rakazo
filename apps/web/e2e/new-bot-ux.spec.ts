@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  captureScreenshot,
-  completeOnboarding,
-  createBotFromPicker,
-  openNewBot,
-  rpc,
-  signup,
-} from "./helpers";
+import { captureScreenshot, completeOnboarding, createBotFromPicker, rpc, signup } from "./helpers";
 
 test("create opens form, then empty chat; picker lists bots; sidebar collapses", async ({
   page,
@@ -38,7 +31,13 @@ test("create opens form, then empty chat; picker lists bots; sidebar collapses",
   await captureScreenshot(page, testInfo, "create-bot-form");
 
   await form.locator("label:has-text('Name') input").fill("New Bot");
+  await form.locator("label:has-text('Title') input").fill("Finds sources");
+  await form.locator("label:has-text('Description') textarea").fill("Briefs from the web.");
+  const create = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/create") && response.ok(),
+  );
   await form.getByRole("button", { name: "Create", exact: true }).click();
+  await create;
   await page.waitForURL(/\/app\/[^/]+$/);
   await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
@@ -68,17 +67,8 @@ test("create opens form, then empty chat; picker lists bots; sidebar collapses",
   await page.mouse.up();
   await expect(page.getByTestId("bots-sidebar")).toHaveAttribute("data-collapsed", "false");
   await captureScreenshot(page, testInfo, "bots-sidebar-expanded");
-});
-
-test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `picker-info-${stamp}@rakazo.test`, "password12", "Picker Info");
-  await completeOnboarding(page);
-  await page.goto("/app");
-  await page.waitForURL(/\/app\/[^/]+$/);
 
   await page.getByTestId("create-menu-trigger").click();
-  const picker = page.getByTestId("bot-create-picker");
   await expect(picker).toBeVisible();
 
   await picker.getByTestId("create-new-group").hover();
@@ -109,9 +99,19 @@ test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "picker-space-info-dialog");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+
+  await createBotFromPicker(page, { name: "Private Bot", computerMode: "dedicated" });
+  await expect(page.getByPlaceholder("Message Private Bot")).toBeVisible();
+  await captureScreenshot(page, testInfo, "create-private-computer-bot");
+
+  const botId = page.url().split("/").pop()!;
+  const bots = await rpc<Array<{ id: string; computerMode: string }>>(page, "bots/list", {});
+  expect(bots.find((bot) => bot.id === botId)?.computerMode).toBe("dedicated");
 });
 
-test("a stale sidebar refresh cannot leave a newly created bot", async ({ page }, testInfo) => {
+test("a stale roster refresh started before creation keeps the new bot selected", async ({
+  page,
+}, testInfo) => {
   await signup(page, `stale-create-${Date.now()}@rakazo.test`, "password12", "Stale Create");
   await completeOnboarding(page);
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
@@ -162,6 +162,12 @@ test("a stale sidebar refresh cannot leave a newly created bot", async ({ page }
     await expect(composer).toBeEditable();
     expect(new URL(page.url()).pathname).toBe(createdPath);
     await captureScreenshot(page, testInfo, "new-bot-stale-refresh");
+    // The create flow's final refresh follows the stale response, without masking a redirect.
+    const freshRoster = page.waitForResponse("**/rpc/spaces/list");
+    releaseStart();
+    await freshRoster;
+    await expect(page).toHaveURL((url) => url.pathname === createdPath);
+    await expect(composer).toBeEditable();
   } finally {
     releaseList();
     releaseStart();
@@ -208,94 +214,4 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   ).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
-});
-
-test("a roster refresh started before creation keeps the new bot selected", async ({ page }) => {
-  await signup(page, `create-refresh-${Date.now()}@rakazo.test`, "password12", "Create Refresh");
-  await completeOnboarding(page);
-
-  let releaseRoster!: () => void;
-  let rosterReady!: () => void;
-  const rosterGate = new Promise<void>((resolve) => {
-    releaseRoster = resolve;
-  });
-  const staleRosterReady = new Promise<void>((resolve) => {
-    rosterReady = resolve;
-  });
-  await page.route(
-    "**/rpc/spaces/list",
-    async (route) => {
-      const response = await route.fetch();
-      rosterReady();
-      await rosterGate;
-      await route.fulfill({ response });
-    },
-    { times: 1 },
-  );
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await staleRosterReady;
-
-  let releaseStart!: () => void;
-  const startGate = new Promise<void>((resolve) => {
-    releaseStart = resolve;
-  });
-  await page.route("**/rpc/onboarding/start", async (route) => {
-    await startGate;
-    await route.continue();
-  });
-  await createBotFromPicker(page, { name: "Later Bot" });
-  const newBotUrl = page.url();
-  const staleDelivered = page.waitForResponse("**/rpc/spaces/list");
-  releaseRoster();
-  await staleDelivered;
-  // The create flow's final refresh follows the stale response, without masking a redirect.
-  const freshRoster = page.waitForResponse("**/rpc/spaces/list");
-  releaseStart();
-  await freshRoster;
-  await expect(page).toHaveURL(newBotUrl);
-  await expect(
-    page.getByRole("combobox", { name: "Message Later Bot", exact: true }),
-  ).toBeEditable();
-});
-
-test("plus picker can create a Private computer bot", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `new-bot-private-${stamp}@rakazo.test`, "password12", "New Bot Private");
-  await completeOnboarding(page);
-  await page.goto("/app");
-  await page.waitForURL(/\/app\/[^/]+$/);
-
-  await createBotFromPicker(page, { computerMode: "dedicated" });
-  await expect(page.getByPlaceholder("Message New Bot")).toBeVisible();
-  await captureScreenshot(page, testInfo, "create-private-computer-bot");
-
-  const botId = page.url().split("/").pop()!;
-  const bots = await rpc<Array<{ id: string; computerMode: string }>>(page, "bots/list", {});
-  expect(bots.find((bot) => bot.id === botId)?.computerMode).toBe("dedicated");
-});
-
-test("second bot from plus opens create form before persist", async ({ page }, testInfo) => {
-  const stamp = Date.now();
-  await signup(page, `second-bot-form-${stamp}@rakazo.test`, "password12", "Second Bot Form");
-  await completeOnboarding(page);
-  await page.goto("/app");
-  await page.waitForURL(/\/app\/[^/]+$/);
-
-  await openNewBot(page);
-  const form = page.getByTestId("create-bot-form");
-  await expect(form).toBeVisible();
-  await form.locator("label:has-text('Name') input").fill("Researcher");
-  await form.locator("label:has-text('Title') input").fill("Finds sources");
-  await form.locator("label:has-text('Description') textarea").fill("Briefs from the web.");
-  await captureScreenshot(page, testInfo, "second-bot-create-form");
-
-  const create = page.waitForResponse(
-    (response) => response.url().includes("/rpc/bots/create") && response.ok(),
-  );
-  await form.getByRole("button", { name: "Create", exact: true }).click();
-  await create;
-  await page.waitForURL(/\/app\/[^/]+$/);
-  await expect(page.getByPlaceholder("Message Researcher")).toBeVisible();
-  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
-  await captureScreenshot(page, testInfo, "second-bot-created");
 });

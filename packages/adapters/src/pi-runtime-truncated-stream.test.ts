@@ -65,6 +65,7 @@ it("recovers from an empty truncated completion without replaying a completed to
           provider: "openai-compatible",
           id: "fixture",
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          allowPrivateEndpoint: true,
         },
       },
       { signal: AbortSignal.timeout(15_000) },

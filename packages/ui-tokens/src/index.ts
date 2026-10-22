@@ -20,17 +20,26 @@ export type ColorTokens = {
   cardForeground: string;
   popover: string;
   popoverForeground: string;
+  /** Fill and hairline where native Liquid Glass is unavailable (Android, iOS before 26). */
+  glassFill: string;
+  glassStroke: string;
   primary: string;
   primaryForeground: string;
   secondary: string;
   secondaryForeground: string;
   chatUser: string;
+  /** White in both themes: the user bubble is a solid fill (light grey in dark, near-black in light). */
   chatUserForeground: string;
   muted: string;
   mutedForeground: string;
+  /** Tertiary text: placeholders, list markers, quote bars, timestamps. */
+  faintForeground: string;
   accent: string;
   accentForeground: string;
+  /** Destructive text and outlines. */
   destructive: string;
+  /** Solid destructive fill (Hang up, a filled Delete); its text is `destructiveForeground`. */
+  destructiveFill: string;
   destructiveForeground: string;
   border: string;
   input: string;
@@ -41,88 +50,100 @@ export type ColorTokens = {
   sidebarAccent: string;
   sidebarAccentForeground: string;
   link: string;
-  /** Backing behind a link's site icon. White in both themes so dark logos stay visible. */
+  /** Backing behind a link's site icon. White in both themes so dark logos stay visible on any bubble. */
   faviconPlate: string;
   success: string;
   warning: string;
   statusWorking: string;
+  /** Unread dot. The one blue in the inbox, in both themes. */
+  unread: string;
   overlay: string;
   scrollbar: string;
   scrollbarHover: string;
 };
 
 export const darkTokens = {
-  background: "#0B0C0E",
-  dialog: "#0E0F11",
-  foreground: "#ECECEE",
-  card: "#141518",
-  cardForeground: "#ECECEE",
-  popover: "#141518",
-  popoverForeground: "#ECECEE",
-  primary: "#F1F1EF",
-  primaryForeground: "#0B0C0E",
-  secondary: "#18191E",
-  secondaryForeground: "#ECECEE",
-  chatUser: "#22242B",
-  chatUserForeground: "#ECECEE",
-  muted: "#141518",
-  mutedForeground: "#85858A",
-  accent: "#1A1B20",
-  accentForeground: "#ECECEE",
-  destructive: "#EF4444",
+  background: "#141414",
+  dialog: "#1E1E1E",
+  foreground: "#FFFFFF",
+  card: "#202020",
+  cardForeground: "#FFFFFF",
+  popover: "#202020",
+  popoverForeground: "#FFFFFF",
+  glassFill: "#2C2C2E",
+  glassStroke: "#FCFCFC26",
+  primary: "#FFFFFF",
+  primaryForeground: "#000000",
+  secondary: "#7676803D",
+  secondaryForeground: "#FFFFFF",
+  chatUser: "#5C5C5C",
+  chatUserForeground: "#FFFFFF",
+  muted: "#202020",
+  mutedForeground: "#EBEBF599",
+  faintForeground: "#EBEBF573",
+  accent: "#78788052",
+  accentForeground: "#FFFFFF",
+  destructive: "#FF9592",
+  destructiveFill: "#E5484D",
   destructiveForeground: "#FFFFFF",
-  border: "#1E2026",
-  input: "#27292F",
+  border: "#FCFCFC14",
+  input: "#54545899",
   ring: "#3B82F6",
-  sidebar: "#111215",
-  sidebarForeground: "#ECECEE",
-  sidebarBorder: "#1C1D22",
-  sidebarAccent: "#222429",
-  sidebarAccentForeground: "#ECECEE",
-  link: "#3B82F6",
+  sidebar: "#1E1E1E",
+  sidebarForeground: "#FFFFFF",
+  sidebarBorder: "#FCFCFC14",
+  sidebarAccent: "#2B2B2E",
+  sidebarAccentForeground: "#FFFFFF",
+  link: "#459FFE",
   faviconPlate: "#FFFFFF",
-  success: "#4ECB71",
-  warning: "#E9C46A",
-  statusWorking: "#3B82F6",
-  overlay: "rgba(4, 4, 5, 0.72)",
+  success: "#3FA266",
+  warning: "#DB941E",
+  statusWorking: "#459FFE",
+  unread: "#006CEB",
+  overlay: "rgba(0, 0, 0, 0.28)",
   scrollbar: "#1E2026",
   scrollbarHover: "#2E313A",
 } as const satisfies ColorTokens;
 
 export const lightTokens = {
-  background: "#FAFAF8",
+  background: "#FCFCFC",
   dialog: "#FFFFFF",
-  foreground: "#1A1A1A",
-  card: "#FFFFFF",
-  cardForeground: "#1A1A1A",
+  foreground: "#000000",
+  card: "#EFEFEF",
+  cardForeground: "#000000",
   popover: "#FFFFFF",
-  popoverForeground: "#1A1A1A",
-  primary: "#1A1A1A",
-  primaryForeground: "#F1F1EF",
-  secondary: "#F0F0ED",
-  secondaryForeground: "#1A1A1A",
-  chatUser: "#E2E2DC",
-  chatUserForeground: "#1A1A1A",
-  muted: "#F0F0ED",
-  mutedForeground: "#6C6C70",
-  accent: "#EAEAE6",
-  accentForeground: "#1A1A1A",
-  destructive: "#DC2626",
+  popoverForeground: "#000000",
+  glassFill: "#FFFFFF",
+  glassStroke: "#14141416",
+  primary: "#000000",
+  primaryForeground: "#FFFFFF",
+  secondary: "#7676801F",
+  secondaryForeground: "#000000",
+  chatUser: "#0B0B0B",
+  chatUserForeground: "#FFFFFF",
+  muted: "#F2F2F1",
+  mutedForeground: "#3C3C43B3",
+  faintForeground: "#3C3C4394",
+  accent: "#78788029",
+  accentForeground: "#000000",
+  destructive: "#CE2C31",
+  destructiveFill: "#E5484D",
   destructiveForeground: "#FFFFFF",
-  border: "#DCDCD6",
-  input: "#EAEAE6",
+  border: "#14141414",
+  input: "#3C3C434A",
   ring: "#6C6C70",
-  sidebar: "#ECECE9",
-  sidebarForeground: "#1A1A1A",
-  sidebarBorder: "#E8E8E4",
+  sidebar: "#F7F7F7",
+  sidebarForeground: "#000000",
+  sidebarBorder: "#14141414",
   sidebarAccent: "#FFFFFF",
-  sidebarAccentForeground: "#1A1A1A",
-  link: "#2563EB",
+  sidebarAccentForeground: "#000000",
+  link: "#0C64C1",
   faviconPlate: "#FFFFFF",
-  success: "#228B3B",
-  warning: "#B7791F",
-  statusWorking: "#2563EB",
-  overlay: "rgba(20, 20, 22, 0.45)",
+  success: "#007041",
+  warning: "#885A07",
+  statusWorking: "#0C64C1",
+  unread: "#006CEB",
+  overlay: "rgba(0, 0, 0, 0.19)",
   scrollbar: "#C8C8C4",
   scrollbarHover: "#A8A8A4",
 } as const satisfies ColorTokens;
@@ -131,6 +152,28 @@ export const lightTokens = {
 export const tokens = darkTokens;
 
 export const RADIUS = "0.75rem";
+
+export const fontWeight = { regular: "400", medium: "500", semibold: "600" } as const;
+
+/**
+ * Native text styles on the system font, in points: iOS body text is 17/22. Titles use the
+ * font's own line spacing, written out so they don't inherit a smaller body line height.
+ */
+export const typeScale = {
+  title: { fontSize: 22, lineHeight: 26, fontWeight: fontWeight.semibold },
+  headline: { fontSize: 19, lineHeight: 23, fontWeight: fontWeight.semibold },
+  cardTitle: { fontSize: 17, lineHeight: 22, fontWeight: fontWeight.medium },
+  body: { fontSize: 17, lineHeight: 22 },
+  secondary: { fontSize: 15, lineHeight: 19 },
+  caption: { fontSize: 14, lineHeight: 18 },
+  footnote: { fontSize: 12, lineHeight: 16 },
+} as const;
+
+/**
+ * Text grows with the iOS text size until body text reaches 23pt, the xxxLarge size. Larger
+ * accessibility sizes keep that size, so message bubbles, rows and cards keep their layout.
+ */
+export const MAX_FONT_SCALE = 23 / typeScale.body.fontSize;
 
 export const botColors = [
   "#3EC5A8",

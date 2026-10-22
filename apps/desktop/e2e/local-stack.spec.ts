@@ -408,7 +408,7 @@ test("a saved local target is the exact origin authenticated before reuse", asyn
   }
 });
 
-test("an existing stack .env is never rewritten", async () => {
+test("an existing stack .env keeps its lines and gains only added secrets", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
   const sentinel = "POSTGRES_PASSWORD=keep-me\nSENTINEL=1\n";
@@ -422,7 +422,9 @@ test("an existing stack .env is never rewritten", async () => {
   const appWindow = await appWindowPromise;
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
 
-  await expect(readFile(path.join(stackDir, ".env"), "utf8")).resolves.toBe(sentinel);
+  const env = await readFile(path.join(stackDir, ".env"), "utf8");
+  expect(env.startsWith(sentinel)).toBe(true);
+  expect(env.slice(sentinel.length)).toMatch(/^POSTGRES_APP_PASSWORD=[0-9a-f]{32}\n$/);
 });
 
 test("exhausted address pools explain recovery", async () => {

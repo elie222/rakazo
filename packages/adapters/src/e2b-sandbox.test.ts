@@ -676,6 +676,9 @@ describe("E2B computer backend", () => {
       context,
     );
     expect(control.url).toContain("6100-desktop.test");
+    expect(command.mock.calls.some(([value]) => String(value).includes("0.0.0.0:6100 8>&-"))).toBe(
+      true,
+    );
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
     await provider.setScreenControl(computer, false, context, "lease-1");
     await screen.close();
@@ -781,6 +784,9 @@ describe("E2B computer backend", () => {
       researcher,
     );
     expect(control.url).toContain("6100-desktop.test");
+    expect(command.mock.calls.some(([value]) => String(value).includes("0.0.0.0:6100 8>&-"))).toBe(
+      true,
+    );
     expect(new URL(control.url!).searchParams.get("path")).toBe("websockify?token=lease-1");
 
     await provider.writeFile(

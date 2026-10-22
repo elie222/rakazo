@@ -1,3 +1,4 @@
+import type { ConnectedAccountStatus, ToolRouterCreateSessionConfig } from "@composio/core";
 import { Composio } from "@composio/core";
 import type {
   AdapterContext,
@@ -12,12 +13,29 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import {
   composioToolkitDirectory,
+  createToolkitDirectoryCache,
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
-type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
+type SdkSession = Awaited<ReturnType<Composio["create"]>>;
+
+/** The tool-router session surface the connector uses. */
+export type ComposioSession = Pick<
+  SdkSession,
+  "sessionId" | "toolkits" | "tools" | "execute" | "authorize"
+>;
+
+/** The Composio SDK surface the connector uses; offline tests inject a stateful fake. */
+export type ComposioClient = {
+  create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession>;
+  sessions: { use(sessionId: string): Promise<ComposioSession> };
+  connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
+};
+
+/** Account states the user can only leave by reconnecting. */
+const RECONNECT_STATUSES: ConnectedAccountStatus[] = ["EXPIRED", "INACTIVE", "FAILED", "REVOKED"];
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
   return Boolean(apiKey) && !isVitestRuntime();
@@ -316,8 +334,16 @@ export function planLiveConnectionSync(
 }
 
 export class ComposioConnector implements ComposioProvider {
-  constructor(private readonly apiKey?: string) {}
-  private client: Composio | undefined;
+  private client: ComposioClient | undefined;
+  private readonly apiKey: string | undefined;
+  /** An injected client has its own catalog, so it must not share the process-wide cache. */
+  private readonly directoryCache: typeof composioToolkitDirectory;
+
+  constructor(options: { apiKey?: string; client?: ComposioClient } = {}) {
+    this.apiKey = options.apiKey;
+    this.client = options.client;
+    this.directoryCache = options.client ? createToolkitDirectoryCache() : composioToolkitDirectory;
+  }
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
@@ -454,7 +480,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private async directory(): Promise<ToolkitDirectoryEntry[]> {
-    return composioToolkitDirectory.get(() => this.loadDirectory());
+    return this.directoryCache.get(() => this.loadDirectory());
   }
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
@@ -480,6 +506,10 @@ export class ComposioConnector implements ComposioProvider {
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
     return this.listConnectedSlugs(context.userId);
+  }
+
+  async listReconnectRefs(context: AdapterContext): Promise<string[]> {
+    return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
@@ -645,7 +675,7 @@ export class ComposioConnector implements ComposioProvider {
     try {
       // A successful list is the allowlist, including empty. Only a thrown
       // lookup leaves filtering skipped so an outage does not strip every pin.
-      return new Set(await this.activeAccountIds(userId, toolkits));
+      return new Set(await this.accountIds(userId, toolkits, ["ACTIVE"]));
     } catch {
       return null;
     }
@@ -657,7 +687,7 @@ export class ComposioConnector implements ComposioProvider {
     requestOptions?: { signal?: AbortSignal },
   ): Promise<string[]> {
     try {
-      const ids = await this.activeAccountIds(userId, [slug], requestOptions);
+      const ids = await this.accountIds(userId, [slug], ["ACTIVE"], requestOptions);
       if (ids.length > 0) return ids;
     } catch {
       // List may be unavailable; fall through to toolkit metadata.
@@ -679,9 +709,10 @@ export class ComposioConnector implements ComposioProvider {
     return id ? [id] : [];
   }
 
-  private async activeAccountIds(
+  private async accountIds(
     userId: string,
     toolkits: string[],
+    statuses: ConnectedAccountStatus[],
     requestOptions?: { signal?: AbortSignal },
   ): Promise<string[]> {
     const accounts = await collectPages(async (cursor) => {
@@ -689,7 +720,7 @@ export class ComposioConnector implements ComposioProvider {
         {
           userIds: [userId],
           ...(toolkits.length > 0 ? { toolkitSlugs: toolkits } : {}),
-          statuses: ["ACTIVE"],
+          statuses,
           ...(cursor ? { cursor } : {}),
         },
         requestOptions,
@@ -750,7 +781,7 @@ export class ComposioConnector implements ComposioProvider {
     return ids.find((id) => !excluded.has(id));
   }
 
-  private sdk(): Composio {
+  private sdk(): ComposioClient {
     this.client ??= new Composio(this.apiKey ? { apiKey: this.apiKey } : undefined);
     return this.client;
   }

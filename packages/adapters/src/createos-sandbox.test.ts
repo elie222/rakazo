@@ -50,6 +50,7 @@ const WORKSPACE_LISTING = JSON.stringify([
 interface ExecCall {
   path: string;
   command: string;
+  stdin?: string;
 }
 
 /**
@@ -164,9 +165,9 @@ function createosFixture(
       return jsonResponse({ id: "sbx-1", status: statuses.shift() ?? "running" });
     }
     if (method === "POST" && url.pathname.endsWith("/exec")) {
-      const body = JSON.parse(String(init?.body)) as { args: string[] };
+      const body = JSON.parse(String(init?.body)) as { args: string[]; stdin?: string };
       const command = body.args[3] ?? "";
-      execs.push({ path: url.pathname, command });
+      execs.push({ path: url.pathname, command, stdin: body.stdin });
       // The tab probe also lists /proc, so match it before the workspace listing.
       if (command.includes("/json/new")) {
         return jsonResponse({ result: { stdout: "", exit_code: 1 } });
@@ -313,10 +314,38 @@ describe("CreateOSSandboxProvider", () => {
       { type: "stdout", data: "hello\n" },
       { type: "exit", code: 0 },
     ]);
-    const command = fixture.execs.at(-1)?.command ?? "";
-    expect(command).toContain("cd '/home/desktop/rakazo-home/notes'");
-    expect(command).toContain("TEST_VALUE='works'");
-    expect(command).toContain("'env' '-u' 'FAILED' '--'");
+    const exec = fixture.execs.at(-1);
+    expect(exec?.command).toBe(
+      `mkdir -p '/home/desktop/rakazo-home/notes' && cd '/home/desktop/rakazo-home/notes' && eval "$(cat)" && 'env' '-u' 'FAILED' '--' 'echo' 'hello'`,
+    );
+    expect(exec?.stdin).toBe("export TEST_VALUE='works'\n");
+  });
+
+  it("sends command secrets on stdin, never in command text", async () => {
+    const fixture = createosFixture();
+    const secret = "fake-secret-'value'";
+    for await (const _ of provider(fixture).execute(
+      computer,
+      { argv: ["printenv", "FAKE_TOKEN"], env: { FAKE_TOKEN: secret } },
+      context,
+    ));
+    for await (const _ of provider(fixture).execute(computer, { argv: ["true"] }, context));
+
+    expect(fixture.execs.some((exec) => exec.command.includes("fake-secret"))).toBe(false);
+    expect(fixture.execs.at(-2)?.stdin).toContain("fake-secret");
+    expect(fixture.execs.at(-1)).toMatchObject({ stdin: undefined });
+    expect(fixture.execs.at(-1)?.command).not.toContain("cat");
+
+    const invalid = async () => {
+      for await (const _ of provider(fixture).execute(
+        computer,
+        { argv: ["true"], env: { "BAD NAME": "fake-secret" } },
+        context,
+      ));
+    };
+    const execs = fixture.execs.length;
+    await expect(invalid()).rejects.toThrow("invalid environment variable name");
+    expect(fixture.execs.length).toBe(execs);
   });
 
   it("reports a timed-out command as exit code 124", async () => {

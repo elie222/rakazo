@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -11,13 +13,14 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   BotAvatar: () => null,
   Button: ({ children, ...props }: React.ComponentProps<"button">) => (
     <button type="button" {...props}>
       {children}
     </button>
   ),
+  buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
   Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
@@ -57,6 +60,13 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" onClick={() => onPressedChange?.()} {...props}>
       {children}
     </button>
+  ),
+  ToggleGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  ToggleGroupItem: ({ children }: { children?: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  OptionSelect: ({ "data-testid": testId }: { "data-testid"?: string }) => (
+    <div data-testid={testId} />
   ),
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
@@ -98,7 +108,6 @@ vi.mock("../lib/ui-appearance", () => ({
   getUiAppearancePreference: () => "system",
   setUiAppearance: vi.fn(),
 }));
-vi.mock("react-router-dom", () => ({ Link: ({ children }: { children?: ReactNode }) => children }));
 
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
@@ -107,7 +116,7 @@ import {
 } from "../lib/composer-enter-to-send-pref";
 import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
-import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
+import { GeneralSettingsPanels, UsageSettingsPanel } from "./AccountSettingsOverlay";
 
 afterEach(() => {
   localStorage.clear();
@@ -250,6 +259,56 @@ it("updates the Enter preference from Settings and reflects external changes", a
     expect(toggle.getAttribute("aria-checked")).toBe("true");
   } finally {
     await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  [201, "2 runs · 201 tokens"],
+  [null, "2 runs · — tokens"],
+])("shows usage totals (%s)", async (totalTokens, expected) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <UsageSettingsPanel usage={{ runs: 2, inputTokens: 10, outputTokens: 1, totalTokens }} />,
+      ),
+    );
+    expect(container.textContent).toContain(expected);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("renders the server integrations entry as a plain link", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <GeneralSettingsPanels
+            name="Jamie"
+            avatarStyle="robot"
+            onAvatarStyleChange={async () => undefined}
+            isDeploymentOwner
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    const link = container.querySelector('a[href="/integrations/setup"]');
+    if (!link) throw new Error("Missing server integrations link");
+    expect(link.hasAttribute("type")).toBe(false);
+    expect(link.hasAttribute("role")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
     vi.unstubAllGlobals();
   }
 });

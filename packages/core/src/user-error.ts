@@ -70,7 +70,7 @@ export function isTechnicalErrorMessage(message: string): boolean {
  * through; transport failures and implementation detail become the caller's copy.
  */
 export function userErrorMessage(error: unknown, copy: UserErrorCopy): string {
-  if (isNetworkFailure(error)) return copy.offline;
+  if (isServerUnreachable(error)) return copy.offline;
   const message = (
     error instanceof Error ? error.message : typeof error === "string" ? error : ""
   ).trim();

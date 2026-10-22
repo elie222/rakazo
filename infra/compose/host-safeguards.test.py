@@ -349,6 +349,22 @@ class HostCheckTests(unittest.TestCase):
                 ["bash", str(script)], env=env, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            # A plaintext latest snapshot alerts until it is encrypted or explicitly allowed.
+            plaintext = backups / "rakazo" / "20261020T000000Z" / "rakazo.dump"
+            plaintext.write_text("dump")
+            result = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("latest backup is not encrypted", alert_log.read_text())
+            result = subprocess.run(
+                ["bash", str(script)],
+                env={**env, "RAKAZO_BACKUP_ALLOW_PLAINTEXT": "1"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plaintext.unlink()
             rules.write_text(
                 "### tuple ### allow any 2222 0.0.0.0/0 any 0.0.0.0/0 in\n"
             )

@@ -301,7 +301,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_snapshot",
     description:
-      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If fallback is computer_act, use the desktop tools instead.",
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
     inputSchema: { type: "object", properties: {} },
     readOnly: true,
   },
@@ -432,6 +432,17 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: { reason: { type: "string" } },
       required: ["reason"],
+    },
+  },
+  {
+    name: "connect_app",
+    description:
+      "Show an inline card to connect an app in this chat when you need an unconnected app or the user asks to connect one. Then wait for the user instead of directing them elsewhere.",
+    inputSchema: {
+      type: "object",
+      properties: { app: { type: "string", minLength: 1, maxLength: 100 } },
+      required: ["app"],
+      additionalProperties: false,
     },
   },
   {
@@ -779,7 +790,8 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
-  // A Space memory provider is configured (which hides `remember`).
+  // Space memory provider is configured (which hides `remember`), and
+  // forget_memory only when that provider can forget.
   {
     name: "save_memory",
     description:
@@ -1242,7 +1254,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "list_fleet",
     description:
-      "List the bots and groups of this user with their ids, sections and pinned state, and which bots you created. Pass bot_id of a bot you created to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the fleet.",
+      "List the bots and groups of this user with their ids, sections and pinned state, and which bots you created. Pass bot_id of a bot you created to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the bots you manage.",
     inputSchema: {
       type: "object",
       properties: {

@@ -2,7 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { Bot } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
-import { Button, Textarea } from "@rakazo/ui-web";
+import { Button, Disclosure, Textarea } from "@rakazo/ui-web";
 import { useId, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
@@ -42,7 +42,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
   }
   return (
     <div className="mt-4 space-y-3">
-      <label htmlFor={`${id}-instructions`} className="block text-sm">
+      <label htmlFor={`${id}-instructions`} className="block text-[14px] text-muted-foreground">
         <Trans>Instructions</Trans>
         <Textarea
           id={`${id}-instructions`}
@@ -59,18 +59,18 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         />
       </label>
       {current.instructionHistory?.length ? (
-        <details>
-          <summary className="cursor-pointer text-sm">
-            <Trans>Instruction history</Trans>
-          </summary>
+        <Disclosure summary={<Trans>Instruction history</Trans>} summaryClassName="text-sm">
           {current.instructionHistory.map((version) => (
             <div key={version.id} className="mt-2 text-sm">
-              <details>
-                <summary>
-                  {new Date(version.createdAt).toLocaleString()} · {version.reason}
-                </summary>
+              <Disclosure
+                summary={
+                  <>
+                    {new Date(version.createdAt).toLocaleString()} · {version.reason}
+                  </>
+                }
+              >
                 <pre className="whitespace-pre-wrap">{version.instructions}</pre>
-              </details>
+              </Disclosure>
               <Button
                 variant="outline"
                 disabled={pending}
@@ -88,7 +88,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
               </Button>
             </div>
           ))}
-        </details>
+        </Disclosure>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {conflict ? (

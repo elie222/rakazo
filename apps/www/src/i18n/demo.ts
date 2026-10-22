@@ -220,7 +220,6 @@ const ZH_DEMO_TEXT: Record<string, string> = {
   "Open computer": "打开电脑",
   "Take control of computer": "接管电脑控制",
   "You have control": "你已接管控制",
-  "{name}’s screen": "{name} 的屏幕",
   "Release": "释放控制",
   "Take control": "接管控制",
   "Routines": "例行任务",

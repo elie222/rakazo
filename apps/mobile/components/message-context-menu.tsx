@@ -19,6 +19,7 @@ export function MessageContextMenu({
   children,
   colorScheme,
   maxWidth,
+  fullWidth = false,
   onAction,
   onLongPress,
 }: {
@@ -26,6 +27,7 @@ export function MessageContextMenu({
   children: ReactNode;
   colorScheme: ColorSchemeName;
   maxWidth: number;
+  fullWidth?: boolean;
   onAction: (id: string) => void;
   onLongPress?: (event: GestureResponderEvent) => void;
 }) {
@@ -34,7 +36,7 @@ export function MessageContextMenu({
       <Pressable
         accessible={false}
         onLongPress={onLongPress}
-        style={{ maxWidth: "100%", flexShrink: 1 }}
+        style={{ maxWidth: "100%", width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
       >
         {children}
       </Pressable>
@@ -49,7 +51,9 @@ export function MessageContextMenu({
       style={{ maxWidth: "100%", flexShrink: 1 }}
     >
       {/* The SwiftUI bridge measures its trigger without a horizontal constraint. */}
-      <View style={{ maxWidth, flexShrink: 1 }}>{children}</View>
+      <View style={{ maxWidth, width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}>
+        {children}
+      </View>
     </MenuView>
   );
 }

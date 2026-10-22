@@ -73,7 +73,7 @@ export function RunErrorSheet({
   );
   const textStyle = { color: tokens.foreground, fontSize: 16, lineHeight: 24 };
   return (
-    <RunErrorSheetContainer onClose={onClose} expanded={technical}>
+    <RunErrorSheetContainer onClose={onClose} expanded={technical} label={error.summary}>
       <View
         accessibilityViewIsModal
         style={{
@@ -84,7 +84,9 @@ export function RunErrorSheet({
         }}
       >
         {/* Keep the close target inside the scroll bounds without moving the headline. */}
+        {/* Android's native sheet wraps this in its own scroll view, so nested scrolling must be on. */}
         <ScrollView
+          nestedScrollEnabled
           style={{ flexGrow: 0, maxHeight: height * 0.9 - 28, marginTop: -11 }}
           contentContainerStyle={{
             paddingHorizontal: 20,

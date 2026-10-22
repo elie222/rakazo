@@ -90,6 +90,7 @@ case "$verb" in
   config)
     cat <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret
@@ -144,10 +145,12 @@ setup_work() {
   : > "$work/cwd/.env.images.example"
   cat > "$work/cwd/.env" <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret
 SANDBOX_SUPERVISOR_TOKEN=test-supervisor-token
+SANDBOX_COMPUTER_EGRESS=open
 EOF
   : > "$work/docker.log"
   : > "$work/curl.log"
@@ -235,5 +238,26 @@ set -e
 [[ "$default_out" != *"unbound variable"* ]] || fail "empty array expansion aborted: $default_out"
 has_compose_pull "$tmp/default" || fail "default install should run compose pull"
 grep -q 'VERB=up' "$tmp/default/docker.log" || fail "default install should run compose up"
+
+# A setting the Compose file does not name is reported instead of silently dropped.
+setup_work "$tmp/unpassed"
+printf '  TELEGRAM_BOT_TOKEN:\n  POSTGRES_PASSWORD: x\n' > "$tmp/unpassed/cwd/docker-compose.images.yml"
+printf 'TELEGRAM_BOT_TOKEN=1\nTELEGRAM_BOT_TOKEN_SUPPORT=2\nCOMPOSE_PROJECT_NAME=x\n' >> "$tmp/unpassed/cwd/.env"
+unpassed_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$unpassed_out" == *"no container receives these .env settings:"*"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "custom setting was not reported: $unpassed_out"
+[[ "$unpassed_out" != *" TELEGRAM_BOT_TOKEN "* && "$unpassed_out" != *" TELEGRAM_BOT_TOKEN." ]] ||
+  fail "a listed setting was reported: $unpassed_out"
+[[ "$unpassed_out" != *"COMPOSE_PROJECT_NAME"* ]] || fail "a Compose setting was reported"
+
+# An override file next to the base file is layered into every command and counts as listing.
+printf 'services:\n  api:\n    environment:\n      TELEGRAM_BOT_TOKEN_SUPPORT:\n' \
+  > "$tmp/unpassed/cwd/docker-compose.override.yml"
+: > "$tmp/unpassed/docker.log"
+override_out="$(run_install "$tmp/unpassed" --offline 2>&1)"
+[[ "$override_out" != *"TELEGRAM_BOT_TOKEN_SUPPORT"* ]] ||
+  fail "a setting listed in the override was reported: $override_out"
+grep -qF -e '-f docker-compose.override.yml up' "$tmp/unpassed/docker.log" ||
+  fail "compose up did not layer the override: $(cat "$tmp/unpassed/docker.log")"
 
 echo "ok"

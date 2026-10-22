@@ -10,7 +10,10 @@ vi.mock("better-auth/adapters/prisma", async () => {
       memoryAdapter(prisma.authData),
   };
 });
-vi.mock("@rakazo/db", () => ({ bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })) }));
+vi.mock("@rakazo/db", () => ({
+  bootstrapUserSpace: vi.fn(async () => ({ spaceId: "space-1" })),
+  recordSecurityEvent: vi.fn(async () => undefined),
+}));
 
 const baseURL = "http://auth.example.test";
 const webOrigin = "http://web.example.test";

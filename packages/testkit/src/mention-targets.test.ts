@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
@@ -30,7 +30,7 @@ describeWithDatabase("structured @ mention targets", () => {
       dataDir,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
-      composio: new ComposioEmulator(),
+      composio: new ComposioConnector({ client: new FakeComposioClient() }),
       signupsEnabled: "true",
     });
     app = handles.app;

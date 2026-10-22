@@ -1,4 +1,5 @@
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import { createPool, currentDbContext, runAsTenant } from "@rakazo/db";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
@@ -328,6 +329,52 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     } finally {
       await publisher.cancel(key).catch(() => undefined);
       await publisher.close();
+    }
+  });
+
+  // `pnpm test:integration` connects as the runtime login. graphile-worker turns on
+  // row-level security for its own tables, so without the queue policy that
+  // `pnpm db:migrate` installs, the runtime login can neither add nor take a job.
+  it("enqueues from a request and runs the job as the restricted runtime login", async () => {
+    const appPool = createPool(databaseUrl!);
+    const workerPool = createPool(databaseUrl!);
+    const { rows } = await appPool.query<{ restricted: boolean }>(
+      `select not (r.rolsuper or r.rolbypassrls
+          or pg_has_role(current_user, c.relowner, 'USAGE')) as restricted
+         from pg_roles r, pg_class c
+        where r.rolname = current_user and c.oid = 'graphile_worker._private_jobs'::regclass`,
+    );
+    expect(rows[0]?.restricted).toBe(true);
+    const publisher = new GraphileJobPublisher(appPool);
+    const host = new GraphileJobWorkerHost(workerPool, { concurrency: 1, pollInterval: 25 });
+    const contexts: unknown[] = [];
+    const key = `contract:restricted:${Date.now()}`;
+    try {
+      await host.start(
+        handlers({
+          "run.continue": async () => {
+            contexts.push(currentDbContext());
+          },
+        }),
+      );
+      // The API enqueues inside the signed-in Space's context, keepExisting
+      // included, which reads the queue table before adding the job.
+      await runAsTenant({ spaceId: "space-restricted", userId: "user-restricted" }, () =>
+        publisher.enqueue({
+          name: "run.continue",
+          payload: { runId: "restricted" },
+          replaceKey: key,
+          keepExisting: true,
+        }),
+      );
+      await waitFor(() => expect(contexts).toHaveLength(1));
+      expect(contexts[0]).toEqual({ kind: "system", reason: "background job run.continue" });
+    } finally {
+      await host.stop();
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+      await appPool.end();
+      await workerPool.end();
     }
   });
 

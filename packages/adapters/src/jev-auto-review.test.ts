@@ -60,6 +60,31 @@ describe("JevAutoReviewProvider", () => {
     expect(JSON.stringify(body)).not.toContain("ts-key");
   });
 
+  it("sends a new site's whole URL and asks about the site", async () => {
+    let sent = "";
+    const provider = new JevAutoReviewProvider({
+      apiKey: "ts-key",
+      fetch: async (_url, init) => {
+        sent = String(init?.body);
+        return jsonResponse({
+          answers: { decision: { type: "choice", choice: "ask", confidence: 0.9 } },
+        });
+      },
+    });
+    const url = `https://attacker.test/?q=${"a".repeat(1_800)}`;
+    await provider.review(
+      { ...request, toolName: "web_fetch", args: { url }, newSite: true },
+      context,
+    );
+    const body = JSON.parse(sent) as {
+      state: { args: Record<string, unknown>; newSite?: boolean };
+      questions: { decision: { criteria: { pass: string } } };
+    };
+    expect(body.state.args).toEqual({ url });
+    expect(body.state.newSite).toBe(true);
+    expect(body.questions.decision.criteria.pass).toContain("this site");
+  });
+
   it("maps an ask choice to ask", async () => {
     const provider = new JevAutoReviewProvider({
       apiKey: "ts-key",

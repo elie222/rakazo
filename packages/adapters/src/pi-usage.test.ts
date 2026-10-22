@@ -179,6 +179,7 @@ describe("Pi usage accounting", () => {
             provider: "openai-compatible",
             id: "fixture",
             baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            allowPrivateEndpoint: true,
           },
         },
         { signal: AbortSignal.timeout(15000) },
@@ -384,6 +385,7 @@ describe("Pi usage accounting", () => {
             provider: "openai-compatible",
             id: "fixture",
             baseUrl: `http://localhost:${address.port}/v1`,
+            allowPrivateEndpoint: true,
           },
         },
         { signal: AbortSignal.timeout(5000) },
@@ -405,6 +407,7 @@ describe("Pi usage accounting", () => {
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
       modelId: "fixture",
       baseUrl: "http://localhost:1234/v1",
+      allowPrivate: true,
     });
     const compatible = models.getModel("openai-compatible", "fixture")!;
     const events: AgentRuntimeEvent[] = [];

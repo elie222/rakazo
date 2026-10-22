@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRootLogger } from "./axiom.js";
 import { createLogger } from "./logger.js";
+import { monitoringUserId } from "./pseudonym.js";
 import { createSentrySink, createSentrySinkFromEnv, sentryConfigFromEnv } from "./sentry.js";
 
 const DSN = "https://publickey@errors.example.com/7";
@@ -139,6 +140,40 @@ describe("sentry sink", () => {
     expect(JSON.stringify(event)).not.toMatch(/hunter2|sk-live|ada@example/);
   });
 
+  it("names the user only by a keyed hash of the logged account id", async () => {
+    const { events, transport } = recordingTransport();
+    const secret = "test-pseudonym-secret";
+    const sink = createSentrySink("rakazo-api", { dsn: DSN, pseudonymSecret: secret }, transport);
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    await logger.withContext({ "user.id": "user-raw-1", "space.id": "space-1" }, async () => {
+      logger.error("rpc failed for ada@example.com", new Error("boom"));
+    });
+    logger.error("no user here", new Error("boom"));
+    await logger.flush();
+
+    expect(events).toHaveLength(2);
+    expect(events[0]!.user).toEqual({
+      id: monitoringUserId(secret, "user-raw-1"),
+      ip_address: null,
+    });
+    expect(events[1]!.user).toEqual({ ip_address: null });
+    expect(JSON.stringify(events)).not.toMatch(/user-raw-1|ada@example\.com/);
+  });
+
+  it("sends no user without a pseudonym secret", async () => {
+    const { events, transport } = recordingTransport();
+    const sink = createSentrySink("rakazo-api", { dsn: DSN }, transport);
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    logger.error("failed", new Error("boom"), { "user.id": "user-raw-2" });
+    await logger.flush();
+    expect(events[0]!.user).toEqual({ ip_address: null });
+    expect(JSON.stringify(events)).not.toContain("user-raw-2");
+    expect(
+      sentryConfigFromEnv({ SENTRY_DSN: DSN, ANALYTICS_PSEUDONYM_SECRET: " s " }).config
+        ?.pseudonymSecret,
+    ).toBe("s");
+  });
+
   it("scrubs SDK and scope metadata before sending", async () => {
     const { events, transport } = recordingTransport();
     const sink = createSentrySink("rakazo-api", { dsn: DSN }, transport);
@@ -158,7 +193,7 @@ describe("sentry sink", () => {
     expect(events).toHaveLength(1);
     const event = events[0]!;
     expect(event.request).toBeUndefined();
-    expect(event.user).toBeUndefined();
+    expect(event.user).toEqual({ ip_address: null });
     expect(event.breadcrumbs).toBeUndefined();
     expect(event.server_name).toBeUndefined();
     expect(event.extra).toEqual({ "log.message": "token=[Redacted]" });

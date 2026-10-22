@@ -27,6 +27,60 @@ describe("redaction", () => {
     expect(redacted.nested).toEqual({ password: "[Redacted]", token: "[Redacted]", safe: true });
   });
 
+  it("redacts message content keys at any depth", () => {
+    const contentKeys = [
+      "content",
+      "text",
+      "blocks",
+      "parts",
+      "input",
+      "output",
+      "stdout",
+      "stderr",
+      "arguments",
+      "transcript",
+      "completion",
+      "html",
+      "markdown",
+    ];
+    const payload = Object.fromEntries(contentKeys.map((key) => [key, `private ${key}`]));
+
+    const redacted = redactBindings({
+      ...payload,
+      Stdout: "private Stdout",
+      nested: { tool: { name: "shell", ...payload } },
+      items: [{ id: "a", ...payload }],
+    });
+
+    for (const key of contentKeys) expect(redacted[key]).toBe("[Redacted]");
+    expect(redacted.Stdout).toBe("[Redacted]");
+    expect(redacted.nested).toEqual({
+      tool: { name: "shell", ...Object.fromEntries(contentKeys.map((key) => [key, "[Redacted]"])) },
+    });
+    expect(redacted.items).toEqual([
+      { id: "a", ...Object.fromEntries(contentKeys.map((key) => [key, "[Redacted]"])) },
+    ]);
+    expect(JSON.stringify(redacted)).not.toContain("private");
+  });
+
+  it("keeps metadata fields whose names only contain a content key", () => {
+    const redacted = redactBindings({
+      "output.chars": 120,
+      "stdout.bytes": 4,
+      "text.length": 9,
+      "content.type": "text/plain",
+      "input.items": 30,
+    });
+
+    expect(redacted).toEqual({
+      "output.chars": 120,
+      "stdout.bytes": 4,
+      "text.length": 9,
+      "content.type": "text/plain",
+      "input.items": 30,
+    });
+  });
+
   it("replaces circular values", () => {
     const cycle: Record<string, unknown> = { "request.id": "r1" };
     cycle.self = cycle;

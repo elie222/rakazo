@@ -827,7 +827,12 @@ describe("Railway computers", () => {
     const events: ProcessEvent[] = [];
     for await (const event of provider.execute(
       computer,
-      { argv: ["echo", "a; touch /tmp/unwanted"], cwd: "notes", timeoutMs: 5000 },
+      {
+        argv: ["echo", "a; touch /tmp/unwanted"],
+        cwd: "notes",
+        env: { FAKE_TOKEN: "fake-secret" },
+        timeoutMs: 5000,
+      },
       ctx,
     ))
       events.push(event);
@@ -836,9 +841,14 @@ describe("Railway computers", () => {
       { type: "stderr", data: "timeout" },
       { type: "exit", code: 124 },
     ]);
+    // Secrets go in the env field, never in command text.
     expect(sandbox.exec).toHaveBeenCalledWith(
-      expect.stringContaining("'a; touch /tmp/unwanted'"),
-      expect.objectContaining({ cwd: "/home/rakazo/notes", timeoutSec: 5 }),
+      "'echo' 'a; touch /tmp/unwanted'",
+      expect.objectContaining({
+        cwd: "/home/rakazo/notes",
+        env: { FAKE_TOKEN: "fake-secret" },
+        timeoutSec: 5,
+      }),
     );
   });
 
@@ -871,6 +881,10 @@ describe("Railway computers", () => {
     if (!screen.url) throw new Error("missing screen URL");
     const url = new URL(screen.url);
     expect(url.origin).toBe("https://screen-test.up.railway.app");
+    expect(sandbox.exec).toHaveBeenCalledWith(
+      expect.stringContaining("0.0.0.0:6080 8>&-"),
+      expect.anything(),
+    );
     expect(url.searchParams.get("path")).toBe("websockify?token=screen-token");
     expect(url.searchParams.has("token")).toBe(false);
   });

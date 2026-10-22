@@ -1,0 +1,1432 @@
+// @vitest-environment jsdom
+
+import type { CSSProperties, ReactNode, Ref } from "react";
+import { act, createElement, useEffect, useImperativeHandle } from "react";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import SettingsModelPickerScreen from "../app/(settings)/model-picker";
+import Models from "../app/(settings)/models";
+import BotModelScreen from "../app/bot-model";
+import BotSettingsScreen from "../app/bot-settings";
+import { ModelPickerList } from "../components/model-picker-list";
+import { modelPickerRequest } from "./model-picker-selection";
+
+const mocks = vi.hoisted(() => ({
+  scrollToLocation: vi.fn(),
+  scrollTo: vi.fn(),
+  reportVisibleRows: true,
+  headerInset: 0,
+  focused: true,
+  platform: "ios",
+  connected: true,
+  serverCredentials: false,
+  catalogEmpty: false,
+  extraProviders: false,
+  gateway: false,
+  savedMaxTokens: undefined as number | undefined,
+  savedAccountId: "account-fixture",
+  savedGatewayId: "gateway-fixture",
+  vendorLabels: false,
+  subscriptionSignIn: false,
+  completeOAuth: vi.fn(),
+  rpc: vi.fn(),
+  dismissKeyboard: vi.fn(),
+  listProps: {} as Record<string, unknown>,
+  params: {} as Record<string, string | undefined>,
+  update: vi.fn(),
+  push: vi.fn(),
+  back: vi.fn(),
+  dismissTo: vi.fn(),
+  setParams: vi.fn(),
+  setOptions: vi.fn(),
+  announce: vi.fn(),
+  backups: [] as { provider: string; modelId: string }[] | Promise<unknown>,
+  menus: new Map<
+    string,
+    {
+      actions: { id: string; title: string }[];
+      onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    }
+  >(),
+  rowAccessibilityActions: new Map<
+    string,
+    (event: { nativeEvent: { actionName: string } }) => void
+  >(),
+}));
+
+const catalog = Array.from({ length: 11 }, (_, index) => ({
+  provider: "openrouter",
+  providerName: "OpenRouter",
+  id: `vendor/model-${index + 1}`,
+  label: `Model ${index + 1}`,
+  billing: "",
+  auth: "api-key",
+  thinkingLevels: ["low", "medium", "high"],
+}));
+
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ bottom: 34 }),
+  SafeAreaView: ({ children }: { children: ReactNode }) => createElement("div", {}, children),
+}));
+vi.mock("./floating-header", () => ({ useFloatingHeaderInset: () => mocks.headerInset }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
+
+vi.mock("./api", () => ({
+  captureApiRequestContext: async () => ({}),
+  selectedSpaceId: () => "space-fixture",
+  rpc: async (procedure: string, input?: unknown, options?: { signal?: AbortSignal }) => {
+    const result = mocks.rpc(procedure, input);
+    if (procedure === "models/connect") {
+      await result;
+      const saved = input as { maxTokens?: number; accountId?: string; gatewayId?: string };
+      mocks.savedMaxTokens = saved.maxTokens;
+      if (saved.accountId) mocks.savedAccountId = saved.accountId;
+      if (saved.gatewayId) mocks.savedGatewayId = saved.gatewayId;
+      return {};
+    }
+    if (procedure === "models/beginOAuth")
+      return {
+        loginId: "login-fixture",
+        mode: "device-code",
+        verificationUri: "https://example.com/sign-in",
+        userCode: "FIXTURE",
+        expiresInSeconds: 600,
+      };
+    if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
+    if (procedure === "bots/update") return mocks.update(input);
+    if (procedure === "models/backups") return mocks.backups;
+    if (procedure === "models/setBackups") return result;
+    if (procedure === "bots/get")
+      return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
+    if (procedure === "me")
+      return {
+        userId: "user-fixture",
+        spaceId: "space-fixture",
+        defaultProvider: mocks.gateway ? "cloudflare-ai-gateway" : "openrouter",
+        defaultModel: "vendor/model-1",
+        hostCredentialProvider: mocks.serverCredentials ? "openrouter" : undefined,
+      };
+    if (procedure === "models/list")
+      return mocks.catalogEmpty
+        ? []
+        : mocks.vendorLabels
+          ? catalog.map((entry, index) => ({
+              ...entry,
+              label:
+                index === 0
+                  ? "Anthropic: Claude Sonnet 4.5"
+                  : index === 1
+                    ? "Google: Gemini"
+                    : entry.label,
+            }))
+          : mocks.subscriptionSignIn
+            ? catalog.map((entry) => ({ ...entry, signIn: "device-code" }))
+            : [
+                ...catalog.map((entry) => ({
+                  ...entry,
+                  provider: mocks.gateway ? "cloudflare-ai-gateway" : entry.provider,
+                  providerName: mocks.gateway ? "Cloudflare AI Gateway" : entry.providerName,
+                })),
+                ...(mocks.extraProviders
+                  ? ["Anthropic", "Google", "OpenAI", "Other", "Last"].map((name) => ({
+                      ...catalog[0],
+                      provider: name.toLowerCase(),
+                      providerName: name,
+                    }))
+                  : []),
+              ];
+    if (procedure === "models/credentials")
+      return mocks.connected
+        ? [
+            {
+              provider: mocks.gateway ? "cloudflare-ai-gateway" : "openrouter",
+              label: mocks.gateway ? "Cloudflare AI Gateway" : "OpenRouter",
+              maxTokens: mocks.savedMaxTokens,
+              ...(mocks.gateway
+                ? { accountId: mocks.savedAccountId, gatewayId: mocks.savedGatewayId }
+                : {}),
+              modelId: "vendor/model-1",
+              thinkingLevel: "high",
+            },
+          ]
+        : [];
+    return [];
+  },
+}));
+vi.mock("./bot-voices", () => ({
+  voiceLabel: () => "",
+  deviceVoices: async () => [],
+  voiceForBot: async () => undefined,
+  setVoiceForBot: async () => undefined,
+}));
+vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => false }));
+vi.mock("./voice", () => ({ stopVoicePlayback: () => undefined }));
+vi.mock("expo-speech", () => ({ stop: async () => undefined, speak: () => undefined }));
+vi.mock("expo-router", () => ({
+  Stack: { Screen: () => null },
+  useRouter: () => ({
+    back: mocks.back,
+    push: mocks.push,
+    dismissTo: mocks.dismissTo,
+    setParams: mocks.setParams,
+  }),
+  useNavigation: () => ({ setOptions: mocks.setOptions }),
+  useLocalSearchParams: () => mocks.params,
+  useFocusEffect: (effect: () => (() => void) | undefined) =>
+    useEffect(() => (mocks.focused ? effect() : undefined), [effect, mocks.focused]),
+}));
+vi.mock("react-native", () => {
+  const view = ({
+    children,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityValue,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    accessibilityRole?: string;
+    accessibilityValue?: { text: string };
+  }) =>
+    createElement(
+      "div",
+      {
+        "aria-label": accessibilityLabel,
+        role: accessibilityRole,
+        "aria-valuetext": accessibilityValue?.text,
+      },
+      children,
+    );
+  return {
+    AccessibilityInfo: { announceForAccessibility: mocks.announce },
+    ActivityIndicator: () => createElement("i", { "data-loading": true }),
+    Platform: {
+      get OS() {
+        return mocks.platform;
+      },
+    },
+    Keyboard: { dismiss: mocks.dismissKeyboard },
+    Alert: { alert: vi.fn() },
+    Linking: { openURL: vi.fn() },
+    StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+    ScrollView: view,
+    View: view,
+    Text: ({ children }: { children?: ReactNode }) => createElement("span", {}, children),
+    TextInput: ({
+      value,
+      onChangeText,
+      accessibilityLabel,
+      placeholder,
+    }: {
+      value: string;
+      onChangeText: (text: string) => void;
+      accessibilityLabel?: string;
+      placeholder?: string;
+    }) =>
+      createElement("input", {
+        value,
+        onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+        "aria-label": accessibilityLabel,
+        placeholder,
+      }),
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityLabel,
+      accessibilityValue,
+      accessibilityRole,
+    }: {
+      accessibilityRole?: string;
+      children?: ReactNode;
+      onPress: () => void;
+      accessibilityLabel?: string;
+      accessibilityValue?: { text: string };
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          role: accessibilityRole,
+          onClick: onPress,
+          "aria-label": accessibilityLabel,
+          "aria-valuetext": accessibilityValue?.text,
+        },
+        children,
+      ),
+    SectionList: ({
+      ref,
+      onViewableItemsChanged,
+      ...props
+    }: {
+      ref: Ref<{
+        scrollToLocation: typeof mocks.scrollToLocation;
+        getScrollResponder: () => { scrollTo: typeof mocks.scrollTo };
+      }>;
+      onViewableItemsChanged: (info: {
+        viewableItems: { index: number; item: { key: string } }[];
+      }) => void;
+      onScrollToIndexFailed: (info: { averageItemLength: number; index: number }) => void;
+      onScrollBeginDrag: () => void;
+      sections: { key: string; heading?: string; data: { key: string }[] }[];
+      renderItem: (info: {
+        item: { key: string };
+        index: number;
+        section: { data: { key: string }[] };
+      }) => ReactNode;
+      renderSectionHeader: (info: { section: { heading?: string } }) => ReactNode;
+      keyExtractor: (item: { key: string }) => string;
+      ListEmptyComponent: ReactNode;
+      ListHeaderComponent?: ReactNode;
+      automaticallyAdjustKeyboardInsets: boolean;
+      contentContainerStyle: unknown;
+      contentInsetAdjustmentBehavior: string;
+    }) => {
+      const {
+        sections,
+        renderItem,
+        renderSectionHeader,
+        keyExtractor,
+        ListEmptyComponent,
+        ListHeaderComponent,
+      } = props;
+      useImperativeHandle(
+        ref,
+        () => ({
+          scrollToLocation: mocks.scrollToLocation,
+          getScrollResponder: () => ({ scrollTo: mocks.scrollTo }),
+        }),
+        [],
+      );
+      useEffect(() => {
+        if (mocks.reportVisibleRows)
+          onViewableItemsChanged({
+            viewableItems: sections
+              .flatMap((section) => section.data.map((item, index) => ({ index, item })))
+              .slice(0, 4),
+          });
+      }, [sections, onViewableItemsChanged]);
+      mocks.listProps = { ...props, onViewableItemsChanged };
+      return createElement(
+        "ul",
+        {},
+        ListHeaderComponent,
+        sections.length
+          ? sections.map((section) =>
+              createElement(
+                "section",
+                { key: section.key },
+                renderSectionHeader({ section }),
+                section.data.map((item, index) =>
+                  createElement(
+                    "li",
+                    { key: keyExtractor(item) },
+                    renderItem({ item, index, section }),
+                  ),
+                ),
+              ),
+            )
+          : ListEmptyComponent,
+      );
+    },
+  };
+});
+vi.mock("./native", () => ({
+  native: new Proxy({}, { get: (_target, name) => String(name) }),
+  useMobileTokens: () => ({ mutedForeground: "muted", foreground: "ink", destructive: "error" }),
+  useResolvedAppearance: () => "light",
+  useThemedStyles: (createStyles: () => unknown) => createStyles(),
+}));
+vi.mock("./i18n", () => {
+  const t = (text: string) => text;
+  return { t, useI18n: () => ({ t }) };
+});
+vi.mock("../components/settings-group", () => ({
+  SettingsGroup: ({
+    label,
+    footer,
+    children,
+  }: {
+    label?: string;
+    footer?: string;
+    children: ReactNode;
+  }) =>
+    createElement(
+      "section",
+      { "aria-label": label },
+      createElement("header", {}, label),
+      children,
+      footer,
+    ),
+  SettingsLabel: ({ children }: { children: ReactNode }) => createElement("h2", {}, children),
+  SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
+  SettingsRow: ({
+    title,
+    detail,
+    accessibilityState,
+    onPress,
+    trailing,
+    value,
+    accessibilityLabel,
+    accessibilityValue,
+    disabled,
+    chevron,
+    accessibilityActions,
+    onAccessibilityAction,
+  }: {
+    accessibilityActions?: { name: string; label: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+    disabled?: boolean;
+    chevron?: "right" | "down";
+    value?: string;
+    accessibilityLabel?: string;
+    accessibilityValue?: { text: string };
+    title: string;
+    detail?: string;
+    accessibilityState?: { selected?: boolean; expanded?: boolean };
+    onPress: () => void;
+    trailing: ReactNode;
+  }) => {
+    if (onAccessibilityAction) mocks.rowAccessibilityActions.set(title, onAccessibilityAction);
+    return createElement(
+      "button",
+      {
+        "data-accessibility-actions": accessibilityActions?.map((action) => action.label).join(),
+        type: "button",
+        "aria-label": accessibilityLabel ?? title,
+        "data-settings-row": true,
+        "data-chevron": chevron,
+        "aria-expanded": accessibilityState?.expanded,
+        disabled,
+        "aria-valuetext": accessibilityValue?.text,
+        "aria-selected": accessibilityState?.selected,
+        onClick: onPress,
+      },
+      title,
+      value,
+      detail ? createElement("small", {}, detail) : null,
+      trailing,
+    );
+  },
+}));
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("./bot-avatar-edit", () => ({
+  avatarColor: (value: string) => value,
+  avatarShape: () => null,
+  isAvatarPhoto: () => false,
+  withAvatarColor: (_value: string, color: string) => color,
+  withAvatarShape: (value: string) => value,
+}));
+vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+    prominence = "primary",
+    variant,
+    fill,
+    style,
+  }: {
+    variant?: string;
+    fill?: boolean;
+    style?: CSSProperties;
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+    prominence?: string;
+  }) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onPress,
+        disabled,
+        "data-prominence": prominence,
+        "data-variant": variant,
+        "data-fill": fill ?? (prominence === "primary" || prominence === "destructive"),
+        style,
+      },
+      label,
+    ),
+}));
+vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/row-accessories", () => ({
+  Chevron: () => null,
+  Checkmark: () => createElement("i", { "data-checkmark": true }),
+}));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    title,
+    actions,
+    onPressAction,
+    children,
+  }: {
+    title: string;
+    actions: { id: string; title: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    children: ReactNode;
+  }) => {
+    mocks.menus.set(title, { actions, onPressAction });
+    return createElement("section", { "data-menu": title }, children);
+  },
+}));
+
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.reportVisibleRows = true;
+  mocks.headerInset = 0;
+  mocks.focused = true;
+  mocks.platform = "ios";
+  mocks.connected = true;
+  mocks.serverCredentials = false;
+  mocks.catalogEmpty = false;
+  mocks.extraProviders = false;
+  mocks.gateway = false;
+  mocks.savedMaxTokens = undefined;
+  mocks.savedAccountId = "account-fixture";
+  mocks.savedGatewayId = "gateway-fixture";
+  mocks.vendorLabels = false;
+  mocks.subscriptionSignIn = false;
+  mocks.backups = [];
+  mocks.rpc.mockReset();
+  mocks.menus.clear();
+  mocks.rowAccessibilityActions.clear();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("chat settings model row", () => {
+  const render = async () => {
+    await act(async () => root.render(<BotSettingsScreen />));
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Advanced"]')!.click());
+  };
+
+  it("opens the searchable model list when there are too many models for a menu", async () => {
+    mocks.params = { botId: "bot-fixture" };
+    await render();
+    expect(container.querySelector('[data-menu="Model"]')).toBeNull();
+    const row = container.querySelector<HTMLButtonElement>('button[aria-label="Model"]');
+    expect(row?.getAttribute("aria-valuetext")).toBe("Space default (Model 1)");
+    act(() => row!.click());
+    expect(mocks.push).toHaveBeenCalledExactlyOnceWith({
+      pathname: "/bot-model",
+      params: { botId: "bot-fixture", value: "" },
+    });
+  });
+
+  it("stages the model the list hands back until Save", async () => {
+    mocks.params = { botId: "bot-fixture" };
+    await render();
+    mocks.params = { botId: "bot-fixture", model: "openrouter::vendor/model-3" };
+    await act(async () => root.render(<BotSettingsScreen />));
+    expect(mocks.setParams).toHaveBeenCalledWith({ model: undefined });
+    const row = container.querySelector('button[aria-label="Model"]');
+    expect(row?.getAttribute("aria-valuetext")).toBe("OpenRouter · Model 3");
+    expect(mocks.update).not.toHaveBeenCalled();
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    await act(async () => save!.click());
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({ modelProvider: "openrouter", modelId: "vendor/model-3" }),
+    );
+  });
+});
+
+describe("chat model list", () => {
+  const search = (text: string) =>
+    act(() => {
+      const options = mocks.setOptions.mock.lastCall![0];
+      options.headerSearchBarOptions.onChangeText({ nativeEvent: { text } });
+    });
+  const rows = () => [...container.querySelectorAll("li button")];
+
+  it("checks the current model, filters by name or id, and returns the pick", async () => {
+    mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2" };
+    await act(async () => root.render(<BotModelScreen />));
+    expect(rows()).toHaveLength(12);
+    expect(mocks.setOptions.mock.lastCall![0].headerSearchBarOptions).toMatchObject({
+      hideNavigationBar: false,
+    });
+    expect(mocks.listProps).toMatchObject({
+      automaticallyAdjustKeyboardInsets: true,
+      contentInsetAdjustmentBehavior: "automatic",
+      contentContainerStyle: expect.arrayContaining([
+        expect.objectContaining({ paddingBottom: 106 }),
+      ]),
+    });
+    expect(container.querySelectorAll("h2")).toHaveLength(1);
+    expect(container.querySelector("h2")?.textContent).toBe("OpenRouter");
+    expect(rows()[0]?.querySelector("small")?.textContent).toBe("Model 1");
+    expect(rows()[0]!.textContent).toBe("Space defaultModel 1");
+    const checked = rows().filter((row) => row.getAttribute("aria-selected") === "true");
+    expect(checked.map((row) => row.textContent)).toEqual(["Model 2"]);
+    expect(checked[0]!.querySelector("[data-checkmark]")).not.toBeNull();
+
+    search("MODEL 1");
+    expect(rows().map((row) => row.textContent)).toEqual([
+      "Space defaultModel 1",
+      "Model 1",
+      "Model 10",
+      "Model 11",
+    ]);
+    search("vendor/model-7");
+    expect(rows().map((row) => row.textContent)).toEqual(["Model 7"]);
+
+    act(() => (rows()[0] as HTMLButtonElement).click());
+    expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith({
+      pathname: "/bot-settings",
+      params: { botId: "bot-fixture", model: "openrouter::vendor/model-7" },
+    });
+  });
+
+  it("remounts the list only when the search query changes", async () => {
+    mocks.params = { botId: "bot-fixture", value: "" };
+    await act(async () => root.render(<BotModelScreen />));
+    const initialList = container.querySelector("ul");
+    expect(initialList).not.toBeNull();
+
+    search("vendor/model-7");
+    const filteredList = container.querySelector("ul");
+    expect(filteredList).not.toBe(initialList);
+    search("vendor/model-7");
+    expect(container.querySelector("ul")).toBe(filteredList);
+    search("no such model");
+    const emptyList = container.querySelector("ul");
+    expect(emptyList).not.toBe(filteredList);
+    search("no such model");
+    expect(container.querySelector("ul")).toBe(emptyList);
+    search("vendor/model-2");
+    const nextList = container.querySelector("ul");
+    expect(nextList).not.toBe(emptyList);
+    act(() => mocks.setOptions.mock.lastCall![0].headerSearchBarOptions.onCancelButtonPress());
+    expect(container.querySelector("ul")).not.toBe(nextList);
+    expect(rows()).toHaveLength(12);
+  });
+
+  it("says when nothing matches", async () => {
+    mocks.params = { botId: "bot-fixture", value: "" };
+    await act(async () => root.render(<BotModelScreen />));
+    search("no such model");
+    expect(rows()).toHaveLength(0);
+    expect(container.textContent).toBe("No matching models");
+    expect(mocks.announce).toHaveBeenCalledExactlyOnceWith("No matching models");
+  });
+});
+
+// Keep Models mounted as the native stack does, and simulate blur/focus on push/back.
+function SettingsStackFixture() {
+  return (
+    <>
+      <div hidden={!mocks.focused}>
+        <Models />
+      </div>
+      {!mocks.focused ? <SettingsModelPickerScreen key={mocks.params.requestId} /> : null}
+    </>
+  );
+}
+
+function modelRow() {
+  return container.querySelector<HTMLButtonElement>('button[aria-label="Model"]')!;
+}
+
+async function renderModels() {
+  mocks.params = {};
+  mocks.push.mockImplementation(({ params }: { params: Record<string, string> }) => {
+    mocks.params = params;
+    mocks.focused = false;
+    root.render(<SettingsStackFixture />);
+  });
+  mocks.back.mockImplementation(() => {
+    mocks.focused = true;
+    root.render(<SettingsStackFixture />);
+  });
+  await act(async () => root.render(<SettingsStackFixture />));
+}
+
+function searchModels(text: string) {
+  act(() =>
+    mocks.setOptions.mock.calls
+      .findLast(([options]) => options.headerSearchBarOptions)![0]
+      .headerSearchBarOptions.onChangeText({
+        nativeEvent: { text },
+      }),
+  );
+}
+
+function pickerRows() {
+  return [...container.querySelectorAll<HTMLButtonElement>("li button")];
+}
+
+function buttonWithText(text: string) {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === text,
+  );
+}
+
+function editField(label: string, value: string) {
+  const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  act(() => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+describe("connection settings provider picker", () => {
+  it("renders Provider, Model and Thinking once in one connected card and groups connection management below", async () => {
+    await renderModels();
+    const providers = container.querySelectorAll('button[aria-label="Provider"]');
+    const models = container.querySelectorAll('button[aria-label="Model"]');
+    const thinking = container.querySelectorAll('button[aria-label="Thinking"]');
+    expect(providers).toHaveLength(1);
+    expect(models).toHaveLength(1);
+    expect(thinking).toHaveLength(1);
+    expect(thinking[0]!.getAttribute("data-settings-row")).toBe("true");
+    expect(thinking[0]!.getAttribute("aria-valuetext")).toBeTruthy();
+    const advanced = buttonWithText("Advanced")!;
+    expect(advanced.dataset.settingsRow).toBe("true");
+    expect(advanced.getAttribute("aria-expanded")).toBe("false");
+    expect(advanced.dataset.chevron).toBe("right");
+    act(() => advanced.click());
+    expect(advanced.getAttribute("aria-expanded")).toBe("true");
+    expect(advanced.dataset.chevron).toBe("down");
+    const card = providers[0]!.parentElement!;
+    expect([...card.children]).toEqual([
+      providers[0],
+      providers[0]!.nextElementSibling,
+      models[0],
+      models[0]!.nextElementSibling,
+      thinking[0],
+    ]);
+    expect(providers[0]!.nextElementSibling?.tagName).toBe("DIV");
+    expect(models[0]!.nextElementSibling?.tagName).toBe("DIV");
+    const disconnect = buttonWithText("Disconnect")!;
+    expect(disconnect.dataset.prominence).toBe("destructive");
+    expect(disconnect.dataset.variant).toBe("text");
+    expect(disconnect.dataset.fill).toBe("false");
+    const status = disconnect.parentElement!;
+    expect(status.textContent).toBe("ConnectedDisconnect");
+    const keySection = buttonWithText("Replace API key")!.parentElement!;
+    expect(keySection.firstElementChild?.textContent).toBe("API key");
+    expect(buttonWithText("Replace API key")?.dataset.prominence).toBe("secondary");
+    expect(status.parentElement?.contains(buttonWithText("Replace API key")!)).toBe(true);
+    expect(status.parentElement?.firstElementChild).toBe(status);
+    expect(card.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps one standalone Provider row when server credentials reveal the own-key Model card", async () => {
+    mocks.connected = false;
+    mocks.serverCredentials = true;
+    await renderModels();
+    expect(container.querySelectorAll('button[aria-label="Provider"]')).toHaveLength(1);
+    expect(modelRow()).toBeNull();
+    act(() => buttonWithText("Use your own key")!.click());
+    const providers = container.querySelectorAll('button[aria-label="Provider"]');
+    expect(providers).toHaveLength(1);
+    expect(container.querySelectorAll('button[aria-label="Model"]')).toHaveLength(1);
+    expect(providers[0]!.parentElement).not.toBe(modelRow().parentElement);
+    expect(buttonWithText("Disconnect")).toBeUndefined();
+  });
+
+  it("groups connected providers first, checks the current provider, filters names and returns a pick", async () => {
+    mocks.extraProviders = true;
+    await renderModels();
+    const providerRow = () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Provider"]')!;
+    expect(providerRow().getAttribute("aria-valuetext")).toBe("OpenRouter");
+    expect(container.textContent).not.toContain("Show more");
+    expect(container.textContent).not.toContain("Anthropic");
+    act(() => providerRow().click());
+    const id = mocks.params.requestId!;
+    expect(modelPickerRequest(id)?.emptyMessage).toBe("No matching providers");
+    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Provider" });
+    expect(
+      mocks.setOptions.mock.calls.findLast(([options]) => options.headerSearchBarOptions)![0]
+        .headerSearchBarOptions.placeholder,
+    ).toBe("Search");
+    expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
+      "Connected",
+      "All providers",
+    ]);
+    expect(pickerRows()).toHaveLength(6);
+    expect(pickerRows()[0]!.getAttribute("aria-selected")).toBe("true");
+    expect(pickerRows()[0]!.querySelector("[data-checkmark]")).not.toBeNull();
+    searchModels("Model 1");
+    expect(pickerRows()).toHaveLength(0);
+    expect(container.querySelector("ul")?.textContent).toBe("No matching providers");
+    expect(mocks.announce).toHaveBeenLastCalledWith("No matching providers");
+    searchModels("ANTHROPIC");
+    expect(pickerRows().map((row) => row.textContent)).toEqual(["Anthropic"]);
+    expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
+      "All providers",
+    ]);
+    act(() => pickerRows()[0]!.click());
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(modelPickerRequest(id)).toBeUndefined();
+    expect(providerRow().getAttribute("aria-valuetext")).toBe("Anthropic");
+    expect(buttonWithText("Connect API key")?.disabled).toBe(true);
+    expect(buttonWithText("Connect API key")?.dataset.prominence).toBe("primary");
+    editField("API key", "fixture-key");
+    expect(buttonWithText("Connect API key")?.disabled).toBe(false);
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "anthropic",
+        apiKey: "fixture-key",
+      }),
+    );
+  });
+
+  it("scrolls to the current provider outside the first visible rows", async () => {
+    mocks.extraProviders = true;
+    await renderModels();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Provider"]')!.click());
+    searchModels("Last");
+    act(() => pickerRows()[0]!.click());
+    mocks.scrollToLocation.mockClear();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Provider"]')!.click());
+    expect(
+      pickerRows()
+        .find((row) => row.textContent === "Last")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(mocks.scrollToLocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sectionIndex: 1,
+        animated: false,
+      }),
+    );
+  });
+});
+
+describe("connection settings limit saves", () => {
+  it("shows Save under Advanced only when connected limits differ and saves without replacing a draft key", async () => {
+    mocks.savedMaxTokens = 1000;
+    await renderModels();
+    expect(container.textContent).not.toContain("Save limits");
+    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
+    editField("API key", "1234567");
+    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
+    editField("API key", "12345678");
+    expect(buttonWithText("Replace API key")?.disabled).toBe(false);
+    editField("API key", "fixture-replacement-key");
+    expect(buttonWithText("Replace API key")?.disabled).toBe(false);
+    act(() => buttonWithText("Advanced")!.click());
+    expect(buttonWithText("Save")).toBeUndefined();
+    editField("Maximum output tokens", "2000");
+    const save = buttonWithText("Save")!;
+    expect(save).toBeDefined();
+    expect(save.dataset.prominence).toBe("secondary");
+    expect(save.dataset.fill).toBe("false");
+    expect(save.style.marginTop).toBe("12px");
+    expect(save.previousElementSibling?.textContent).toContain("Maximum output tokens");
+    editField("Maximum output tokens", "1000");
+    expect(buttonWithText("Save")).toBeUndefined();
+    editField("Maximum output tokens", "2000");
+    await act(async () => buttonWithText("Save")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("models/connect", {
+      provider: "openrouter",
+      modelId: "vendor/model-1",
+      maxTokens: 2000,
+      label: "OpenRouter",
+    });
+    expect(buttonWithText("Save")).toBeUndefined();
+    const field = container.querySelector('input[aria-label="Maximum output tokens"]')!;
+    expect(field.parentElement?.nextElementSibling?.textContent).toBe("Saved.");
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="API key"]')!.value).toBe(
+      "fixture-replacement-key",
+    );
+  });
+
+  it("shows Saving while the Advanced save is pending", async () => {
+    await renderModels();
+    act(() => buttonWithText("Advanced")!.click());
+    editField("Maximum output tokens", "2000");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mocks.rpc.mockImplementation((procedure) =>
+      procedure === "models/connect" ? pending : undefined,
+    );
+    await act(async () => buttonWithText("Save")!.click());
+    expect(buttonWithText("Saving…")?.disabled).toBe(true);
+    expect(buttonWithText("Replace API key")?.disabled).toBe(true);
+    await act(async () => finish());
+    expect(buttonWithText("Saving…")).toBeUndefined();
+    expect(container.textContent).toContain("Saved.");
+    mocks.rpc.mockReset();
+  });
+
+  it("does not offer a limits save before connecting", async () => {
+    mocks.connected = false;
+    await renderModels();
+    act(() => buttonWithText("Advanced")!.click());
+    editField("Maximum output tokens", "2000");
+    expect(buttonWithText("Save")).toBeUndefined();
+    expect(buttonWithText("Connect API key")?.disabled).toBe(true);
+  });
+
+  it("keeps invalid limits feedback beside Advanced Save", async () => {
+    await renderModels();
+    act(() => buttonWithText("Advanced")!.click());
+    editField("Maximum output tokens", "0");
+    await act(async () => buttonWithText("Save")!.click());
+    expect(mocks.rpc.mock.calls.some(([procedure]) => procedure === "models/connect")).toBe(false);
+    expect(buttonWithText("Save")?.nextElementSibling?.textContent).toContain(
+      "Enter a whole number",
+    );
+  });
+
+  it("enables the connected gateway Save only for changed routing and keeps feedback at that button", async () => {
+    mocks.gateway = true;
+    await renderModels();
+    expect(buttonWithText("Save")?.disabled).toBe(true);
+    editField("Account ID", "account-updated");
+    expect(buttonWithText("Save")?.disabled).toBe(false);
+    await act(async () => buttonWithText("Save")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "cloudflare-ai-gateway",
+        accountId: "account-updated",
+        gatewayId: "gateway-fixture",
+      }),
+    );
+    expect(buttonWithText("Save")?.disabled).toBe(true);
+    expect(
+      container.querySelector('input[aria-label="API key"]')?.parentElement?.nextElementSibling
+        ?.textContent,
+    ).toBe("Saved.");
+    editField("Gateway ID", "gateway-updated");
+    expect(container.textContent).not.toContain("Saved.");
+    expect(buttonWithText("Save")?.disabled).toBe(false);
+    editField("Gateway ID", "gateway-fixture");
+    expect(buttonWithText("Save")?.disabled).toBe(true);
+    editField("API key", "fixture-key");
+    expect(buttonWithText("Replace API key")?.disabled).toBe(false);
+  });
+});
+
+describe("connection settings model picker", () => {
+  it("replaces the catalog radios and search with one row and preserves a pick until Use", async () => {
+    await renderModels();
+    expect(modelRow().getAttribute("aria-valuetext")).toBe("Model 1");
+    expect(modelRow().querySelector("small")).toBeNull();
+    expect(modelRow().textContent).toBe("ModelModel 1");
+    expect(container.querySelectorAll('button[aria-label="Model"]')).toHaveLength(1);
+    expect(container.querySelector('input[aria-label="Search models"]')).toBeNull();
+    expect(container.querySelector('[role="radio"]')).toBeNull();
+    expect(container.textContent).not.toContain("Model 11");
+    expect(container.textContent).toContain("Thinking");
+    expect(container.textContent).toContain("Advanced");
+    expect(container.textContent).toContain("Backup models");
+    act(() => modelRow().click());
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: "/model-picker",
+      params: { requestId: expect.any(String) },
+    });
+    const id = mocks.params.requestId!;
+    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Model" });
+    expect(pickerRows()).toHaveLength(11);
+    expect(
+      pickerRows()
+        .filter((row) => row.getAttribute("aria-selected") === "true")
+        .map((row) => row.textContent),
+    ).toEqual(["Model 1"]);
+    expect(pickerRows()[0]?.querySelector("[data-checkmark]")).not.toBeNull();
+    searchModels("OpenRouter");
+    expect(pickerRows()).toHaveLength(11);
+    searchModels("vendor/model-3");
+    expect(pickerRows().map((row) => row.textContent)).toEqual(["Model 3"]);
+    act(() => pickerRows()[0]!.click());
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(modelPickerRequest(id)).toBeUndefined();
+    expect(modelRow().getAttribute("aria-valuetext")).toBe("Model 3");
+    expect(mocks.dismissKeyboard).toHaveBeenCalled();
+    expect(mocks.rpc.mock.calls.filter(([procedure]) => procedure === "models/list")).toHaveLength(
+      1,
+    );
+    expect(mocks.rpc.mock.calls.some(([procedure]) => procedure === "models/setDefault")).toBe(
+      false,
+    );
+    const use = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Use this model",
+    )!;
+    await act(async () => use.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("models/setDefault", {
+      provider: "openrouter",
+      modelId: "vendor/model-3",
+      thinkingLevel: null,
+    });
+  });
+
+  it("shows only the stripped staged name in the row and vendor-only headings in the settings picker", async () => {
+    mocks.vendorLabels = true;
+    await renderModels();
+    expect(modelRow().getAttribute("aria-valuetext")).toBe("Claude Sonnet 4.5");
+    expect(modelRow().querySelector("small")).toBeNull();
+    expect(modelRow().textContent).toBe("ModelClaude Sonnet 4.5");
+    act(() => modelRow().click());
+    expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
+      "Anthropic",
+      "Google",
+    ]);
+    expect(pickerRows()[0]?.textContent).toBe("Claude Sonnet 4.5");
+    expect(pickerRows()[0]?.getAttribute("aria-label")).toBe("Anthropic: Claude Sonnet 4.5");
+    expect(pickerRows()[1]?.textContent).toBe("Gemini");
+    searchModels("does not exist");
+    expect(pickerRows()).toHaveLength(0);
+    expect(container.querySelector("ul")?.textContent).toBe("No matching models");
+    expect(mocks.announce).toHaveBeenCalledWith("No matching models");
+  });
+
+  it("keeps the model row usable without a connected key and cancels without losing the draft", async () => {
+    mocks.connected = false;
+    await renderModels();
+    expect(modelRow().getAttribute("aria-valuetext")).toBe("Model 1");
+    act(() => modelRow().click());
+    const id = mocks.params.requestId!;
+    expect(pickerRows()).toHaveLength(11);
+    act(() => mocks.back());
+    expect(modelRow().getAttribute("aria-valuetext")).toBe("Model 1");
+    expect(modelPickerRequest(id)).toBeUndefined();
+  });
+
+  it("cleans up requests if the settings owner unmounts while the picker is open", async () => {
+    await renderModels();
+    act(() => modelRow().click());
+    const id = mocks.params.requestId!;
+    expect(modelPickerRequest(id)).toBeDefined();
+    act(() => root.render(null));
+    expect(modelPickerRequest(id)).toBeUndefined();
+  });
+
+  it("aborts pending subscription sign-in when settings unmounts with the picker open", async () => {
+    mocks.subscriptionSignIn = true;
+    let completeSignIn!: (result: { status: "ready" }) => void;
+    mocks.completeOAuth.mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeSignIn = resolve;
+      }),
+    );
+    await renderModels();
+    const signIn = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Sign in again",
+    )!;
+    await act(async () => signIn.click());
+    expect(mocks.completeOAuth).toHaveBeenCalledOnce();
+    const signal = mocks.completeOAuth.mock.lastCall![0] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+
+    act(() => modelRow().click());
+    const id = mocks.params.requestId!;
+    expect(modelPickerRequest(id)).toBeDefined();
+    expect(signal.aborted).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/cancelOAuth", expect.anything());
+
+    act(() => root.render(null));
+    expect(modelPickerRequest(id)).toBeUndefined();
+    expect(signal.aborted).toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
+    await act(async () => completeSignIn({ status: "ready" }));
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+
+  it("omits the model row for an empty catalog", async () => {
+    mocks.catalogEmpty = true;
+    await renderModels();
+    expect(modelRow()).toBeNull();
+  });
+
+  const backup = (index: number) => ({ provider: "openrouter", modelId: `vendor/model-${index}` });
+  const backupRows = () =>
+    [
+      ...container.querySelectorAll<HTMLElement>('section[aria-label="Backup models"] [data-menu]'),
+    ].map((row) => row.textContent);
+  const backupSaves = () =>
+    mocks.rpc.mock.calls
+      .filter(([procedure]) => procedure === "models/setBackups")
+      .map(([, input]) => input);
+  const menuAction = async (title: string, action: string) =>
+    act(async () => mocks.menus.get(title)!.onPressAction({ nativeEvent: { event: action } }));
+
+  it("adds a backup from the shared searchable picker and saves it immediately", async () => {
+    await renderModels();
+    expect(container.textContent).toContain("Tried in order if the active model fails.");
+    expect(buttonWithText("Save backups")).toBeUndefined();
+    const add = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add backup model"]',
+    )!;
+    act(() => add.click());
+    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add backup model" });
+    expect(pickerRows()).toHaveLength(11);
+    searchModels("vendor/model-4");
+    await act(async () => pickerRows()[0]!.click());
+    expect(backupRows()).toEqual(["Model 4OpenRouter"]);
+    expect(backupSaves()).toEqual([[backup(4)]]);
+  });
+
+  it("saves each move and removal immediately with the full list", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    expect(mocks.menus.get("Model 2")!.actions.map((action) => action.id)).toEqual([
+      "moveDown",
+      "remove",
+    ]);
+    expect(mocks.menus.get("Model 3")!.actions.map((action) => action.id)).toEqual([
+      "moveUp",
+      "moveDown",
+      "remove",
+    ]);
+    expect(mocks.menus.get("Model 4")!.actions.map((action) => action.id)).toEqual([
+      "moveUp",
+      "remove",
+    ]);
+    expect(
+      container
+        .querySelector('[data-menu="Model 3"] button')
+        ?.getAttribute("data-accessibility-actions"),
+    ).toBe("Move up,Move down,Remove");
+    await menuAction("Model 2", "moveDown");
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter", "Model 4OpenRouter"]);
+    await act(async () =>
+      mocks.rowAccessibilityActions.get("Model 4")!({ nativeEvent: { actionName: "remove" } }),
+    );
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter"]);
+    expect(backupSaves()).toEqual([
+      [backup(3), backup(2), backup(4)],
+      [backup(3), backup(2)],
+    ]);
+  });
+
+  const holdFirstSave = () => {
+    const first: { finish: () => void; fail: (error: Error) => void } = {
+      finish: () => undefined,
+      fail: () => undefined,
+    };
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/setBackups" && backupSaves().length === 1
+        ? new Promise<void>((resolve, reject) => {
+            first.finish = resolve;
+            first.fail = reject;
+          })
+        : undefined,
+    );
+    return first;
+  };
+  const backupLoads = () =>
+    mocks.rpc.mock.calls.filter(([procedure]) => procedure === "models/backups").length;
+  const leaveModels = () => {
+    act(() => root.unmount());
+    root = createRoot(container);
+  };
+
+  it("runs saves one at a time in edit order", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "moveDown");
+    await menuAction("Model 4", "remove");
+    expect(backupSaves()).toEqual([[backup(3), backup(2), backup(4)]]);
+    await act(async () => first.finish());
+    expect(backupSaves()).toEqual([
+      [backup(3), backup(2), backup(4)],
+      [backup(3), backup(2)],
+    ]);
+    expect(backupRows()).toEqual(["Model 3OpenRouter", "Model 2OpenRouter"]);
+  });
+
+  it("drops edits queued behind a failed save and reverts to the saved list", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    await menuAction("Model 3", "remove");
+    await act(async () => first.fail(new Error("Save failed")));
+    expect(backupSaves()).toEqual([[backup(3), backup(4)]]);
+    expect(backupRows()).toEqual(["Model 2OpenRouter", "Model 3OpenRouter", "Model 4OpenRouter"]);
+    expect(container.textContent).toContain("Save failed");
+  });
+
+  it("keeps saving accepted edits after leaving Models", async () => {
+    mocks.backups = [backup(2), backup(3), backup(4)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    await menuAction("Model 3", "remove");
+    leaveModels();
+    await act(async () => first.finish());
+    expect(backupSaves()).toEqual([[backup(3), backup(4)], [backup(4)]]);
+  });
+
+  it("waits for pending saves before reloading backups", async () => {
+    mocks.backups = [backup(2), backup(3)];
+    await renderModels();
+    const first = holdFirstSave();
+    await menuAction("Model 2", "remove");
+    leaveModels();
+    mocks.backups = [backup(3)];
+    await renderModels();
+    expect(backupLoads()).toBe(1);
+    expect(container.textContent).not.toContain("Backup models");
+    await act(async () => first.finish());
+    expect(backupLoads()).toBe(2);
+    expect(backupRows()).toEqual(["Model 3OpenRouter"]);
+  });
+
+  it("reverts to the saved list and shows the error when a save fails", async () => {
+    mocks.backups = [backup(2), backup(3)];
+    await renderModels();
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/setBackups" ? Promise.reject(new Error("Save failed")) : undefined,
+    );
+    await menuAction("Model 2", "remove");
+    expect(backupSaves()).toEqual([[backup(3)]]);
+    expect(backupRows()).toEqual(["Model 2OpenRouter", "Model 3OpenRouter"]);
+    expect(container.textContent).toContain("Save failed");
+    expect(mocks.announce).toHaveBeenCalledWith("Save failed");
+  });
+
+  it("hides backups while loading and when there is nothing to configure", async () => {
+    mocks.backups = new Promise(() => undefined);
+    await renderModels();
+    expect(container.textContent).not.toContain("Backup models");
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.backups = [];
+    mocks.connected = false;
+    await renderModels();
+    expect(container.textContent).not.toContain("Backup models");
+    act(() => root.unmount());
+    root = createRoot(container);
+    mocks.backups = [backup(2)];
+    await renderModels();
+    expect(backupRows()).toEqual(["Model 2Not connected"]);
+    expect(container.querySelector('button[aria-label="Add backup model"]')).toBeNull();
+  });
+});
+
+describe("initial model picker scroll", () => {
+  const choices = [
+    { key: "first", label: "First", providerLabel: "First provider" },
+    ...Array.from({ length: 30 }, (_, index) => ({
+      key: `model-${index}`,
+      label: `Model ${index}`,
+      providerLabel: "Second provider",
+    })),
+  ];
+  const render = async (selectedKey = "model-20") => {
+    await act(async () =>
+      root.render(
+        <ModelPickerList choices={choices} selectedKey={selectedKey} onSelect={() => undefined} />,
+      ),
+    );
+  };
+  const report = () =>
+    act(() =>
+      (mocks.listProps.onViewableItemsChanged as (info: unknown) => void)({
+        viewableItems: [{ index: 0, item: choices[0] }],
+      }),
+    );
+  const fail = () =>
+    act(() =>
+      (mocks.listProps.onScrollToIndexFailed as (info: unknown) => void)({
+        averageItemLength: 50,
+        index: 24,
+      }),
+    );
+
+  it("reveals a distant selection once after the first visible rows are laid out", async () => {
+    await render();
+    expect(mocks.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 1,
+      itemIndex: 20,
+      viewPosition: 0.5,
+      animated: false,
+    });
+    report();
+    await render("model-25");
+    searchModels("Model");
+    searchModels("");
+    report();
+    expect(mocks.scrollToLocation).toHaveBeenCalledOnce();
+  });
+
+  it("waits for an asynchronously loaded catalog", async () => {
+    await act(async () =>
+      root.render(
+        <ModelPickerList choices={null} selectedKey="model-20" onSelect={() => undefined} />,
+      ),
+    );
+    expect(mocks.scrollToLocation).not.toHaveBeenCalled();
+    await render();
+    expect(mocks.scrollToLocation).toHaveBeenCalledExactlyOnceWith({
+      sectionIndex: 1,
+      itemIndex: 20,
+      viewPosition: 0.5,
+      animated: false,
+    });
+  });
+
+  it.each(["first", "model-0", "", "missing"])(
+    "leaves the initial viewport alone for %s",
+    async (key) => {
+      await render(key);
+      report();
+      expect(mocks.scrollToLocation).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["query", "drag"])("cancels a pending reveal after %s", async (interaction) => {
+    mocks.reportVisibleRows = false;
+    await render();
+    if (interaction === "query") {
+      searchModels("Model");
+      searchModels("");
+    } else act(() => (mocks.listProps.onScrollBeginDrag as () => void)());
+    report();
+    expect(mocks.scrollToLocation).not.toHaveBeenCalled();
+  });
+
+  it("moves the render window and retries an unmeasured location only once", async () => {
+    vi.useFakeTimers();
+    await render();
+    fail();
+    expect(mocks.scrollTo).toHaveBeenCalledExactlyOnceWith({ y: 1200, animated: false });
+    act(() => vi.advanceTimersByTime(100));
+    expect(mocks.scrollToLocation).toHaveBeenCalledTimes(2);
+    fail();
+    act(() => vi.advanceTimersByTime(100));
+    expect(mocks.scrollToLocation).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["query", "drag", "unmount"])("cancels the retry after %s", async (interaction) => {
+    vi.useFakeTimers();
+    await render();
+    fail();
+    if (interaction === "query") searchModels("Model");
+    else if (interaction === "drag") act(() => (mocks.listProps.onScrollBeginDrag as () => void)());
+    else act(() => root.render(null));
+    act(() => vi.advanceTimersByTime(100));
+    expect(mocks.scrollToLocation).toHaveBeenCalledOnce();
+  });
+
+  it("reserves the floating header height without automatic double insets", async () => {
+    mocks.headerInset = 104;
+    await render("first");
+    expect(mocks.listProps).toMatchObject({
+      contentInsetAdjustmentBehavior: "never",
+      contentContainerStyle: expect.arrayContaining([expect.objectContaining({ paddingTop: 120 })]),
+    });
+    searchModels("Model");
+    expect(mocks.listProps.contentInsetAdjustmentBehavior).toBe("never");
+  });
+});
+
+describe("shared model picker presentation", () => {
+  const choices = [
+    {
+      key: "sonnet",
+      label: "Anthropic: Claude Sonnet 4.5",
+      modelLabel: "Anthropic: Claude Sonnet 4.5",
+      providerLabel: "OpenRouter",
+    },
+    {
+      key: "haiku",
+      label: "Anthropic: Claude Haiku",
+      modelLabel: "Anthropic: Claude Haiku",
+      providerLabel: "OpenRouter",
+    },
+    {
+      key: "gemini",
+      label: "Google: Gemini",
+      modelLabel: "Google: Gemini",
+      providerLabel: "OpenRouter",
+    },
+    { key: "plain", label: "Plain model", modelLabel: "Plain model", providerLabel: "OpenRouter" },
+  ];
+
+  it("groups by vendor, strips titles, leaves ungrouped choices unheaded, filters and announces no matches", async () => {
+    await act(async () =>
+      root.render(
+        <ModelPickerList
+          choices={choices}
+          selectedKey="sonnet"
+          providerLabel="OpenRouter"
+          onSelect={() => undefined}
+        />,
+      ),
+    );
+    expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
+      "Anthropic",
+      "Google",
+    ]);
+    expect(pickerRows().map((row) => row.textContent)).toEqual([
+      "Claude Sonnet 4.5",
+      "Claude Haiku",
+      "Gemini",
+      "Plain model",
+    ]);
+    expect(pickerRows()[0]?.getAttribute("aria-selected")).toBe("true");
+    searchModels("Anthropic");
+    expect(pickerRows().map((row) => row.textContent)).toEqual([
+      "Claude Sonnet 4.5",
+      "Claude Haiku",
+    ]);
+    searchModels("unknown");
+    expect(container.textContent).toBe("No matching models");
+    expect(mocks.announce).toHaveBeenCalledWith("No matching models");
+  });
+
+  it("renders loading and load errors", async () => {
+    await act(async () =>
+      root.render(<ModelPickerList choices={null} selectedKey="" onSelect={() => undefined} />),
+    );
+    expect(container.querySelector("[data-loading]")).not.toBeNull();
+    await act(async () =>
+      root.render(
+        <ModelPickerList
+          choices={null}
+          selectedKey=""
+          onSelect={() => undefined}
+          error="Could not load model settings"
+        />,
+      ),
+    );
+    expect(container.textContent).toBe("Could not load model settings");
+  });
+
+  it("keeps the Android search input mounted while filtering", async () => {
+    mocks.platform = "android";
+    await act(async () =>
+      root.render(
+        <ModelPickerList choices={choices} selectedKey="sonnet" onSelect={() => undefined} />,
+      ),
+    );
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search"]')!;
+    expect(input).not.toBeNull();
+    expect(mocks.setOptions).not.toHaveBeenCalled();
+    // React's controlled input setter plus input event exercises the Android fallback.
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    act(() => {
+      setter.call(input, "Gemini");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(pickerRows().map((row) => row.textContent)).toEqual(["Gemini"]);
+    expect(container.querySelector("input")).toBe(input);
+  });
+});

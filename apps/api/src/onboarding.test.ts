@@ -1,4 +1,5 @@
 import type * as db from "@rakazo/db";
+import { appendEventInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { chooseFocus, markAppConnected } from "./onboarding.js";
 
@@ -26,7 +27,10 @@ function fixture(catalog: unknown[]) {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     events: { notify: vi.fn() },
-    connectors: { managedProviders: () => [{ catalog: async () => catalog }] },
+    connectors: {
+      managedProviders: () => [{ catalog: async () => catalog }],
+      managed: () => ({ catalog: async () => catalog }),
+    },
   } as unknown as Parameters<typeof chooseFocus>[0];
   const actor = {
     userId: "user",
@@ -61,7 +65,9 @@ describe("onboarding connection suggestions", () => {
 });
 
 it("marks only the authorized connector when provider slugs collide", async () => {
-  const { deps, actor, tx } = fixture([]);
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", name: "Slack", connected: true },
+  ]);
   const blocks = ["composio", "pipedream"].map((connectorId) => ({
     kind: "app_connect",
     connectorId,
@@ -69,10 +75,122 @@ it("marks only the authorized connector when provider slugs collide", async () =
     name: "Slack",
     status: "pending",
   }));
-  deps.prisma.message = { findMany: vi.fn(async () => [{ id: "cards", blocks }]) } as never;
+  tx.message.findMany = vi.fn(async () => [{ id: "cards", blocks }]) as never;
   await markAppConnected(deps, actor, "bot", "slack", "pipedream");
   expect(tx.message.update).toHaveBeenCalledWith({
     where: { id: "cards" },
     data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
+  });
+});
+
+it("does not trust a client's connected claim", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: false },
+  ]);
+  deps.prisma.message = { findMany: vi.fn() } as never;
+  await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread");
+  expect(deps.prisma.message.findMany).not.toHaveBeenCalled();
+  expect(tx.message.update).not.toHaveBeenCalled();
+});
+
+it("rejects a thread from another user or space before reading its messages", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: true },
+  ]);
+  deps.prisma.thread = { findFirst: vi.fn(async () => null) } as never;
+  await expect(
+    markAppConnected(deps, actor, "bot", "slack", "pipedream", "other-thread"),
+  ).rejects.toThrow();
+  expect(deps.prisma.thread.findFirst).toHaveBeenCalledWith({
+    where: { id: "other-thread", spaceId: actor.spaceId },
+  });
+  expect(tx.message.update).not.toHaveBeenCalled();
+});
+
+it("updates an accessible group thread and emits its normal update event", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: true },
+  ]);
+  deps.prisma.thread = {
+    findFirst: vi.fn(async () => ({ id: "group-thread", groupId: "group" })),
+  } as never;
+  deps.prisma.chatGroup = {
+    findFirst: vi.fn(async () => ({
+      id: "group",
+      name: "Team",
+      thread: { id: "group-thread" },
+      members: ["bot", "peer"].map((id) => ({ bot: { id, name: id, runs: [] } })),
+    })),
+  } as never;
+  tx.message.findMany = vi.fn(async () => [
+    {
+      id: "card",
+      blocks: [
+        { kind: "app_connect", connectorId: "pipedream", provider: "slack", status: "pending" },
+      ],
+    },
+  ]) as never;
+  await markAppConnected(deps, actor, "bot", "slack", "pipedream", "group-thread");
+  expect(deps.prisma.chatGroup.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { id: "group", spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+    }),
+  );
+  expect(tx.message.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { threadId: "group-thread" } }),
+  );
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "card" },
+    data: { blocks: [expect.objectContaining({ status: "connected" })] },
+  });
+  expect(appendEventInTransaction).toHaveBeenCalledWith(
+    tx,
+    expect.objectContaining({
+      threadId: "group-thread",
+      spaceId: actor.spaceId,
+      type: "thread.message.updated",
+    }),
+  );
+  expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
+});
+
+it("rejects another user's group even in the same space", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: true },
+  ]);
+  deps.prisma.thread = {
+    findFirst: vi.fn(async () => ({ id: "other-thread", groupId: "other-group" })),
+  } as never;
+  deps.prisma.chatGroup = { findFirst: vi.fn(async () => null) } as never;
+  await expect(
+    markAppConnected(deps, actor, "bot", "slack", "pipedream", "other-thread"),
+  ).rejects.toThrow();
+  expect(tx.message.update).not.toHaveBeenCalled();
+  expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { id: "bot", spaceId: actor.spaceId, userId: actor.userId } }),
+  );
+});
+
+it("updates the authorized card's own message even outside the bounded scan", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", name: "Slack", connected: true },
+  ]);
+  const card = {
+    kind: "app_connect",
+    connectorId: "pipedream",
+    provider: "slack",
+    name: "Slack",
+    status: "pending",
+  };
+  tx.message.findMany = vi.fn(async ({ where }: { where: { id?: string; threadId: string } }) =>
+    where.id === "middle" && where.threadId === "thread" ? [{ id: "middle", blocks: [card] }] : [],
+  ) as never;
+  await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread", "middle");
+  expect(tx.message.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { id: "middle", threadId: "thread" } }),
+  );
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "middle" },
+    data: { blocks: [{ ...card, status: "connected" }] },
   });
 });

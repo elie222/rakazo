@@ -9,24 +9,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchivedBots from "../app/(settings)/archived-bots";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import type { MobileBot, MobileGroup } from "./api";
+import { onArchivedChatsChanged } from "./archived-chats";
+import { registerSettingsSheet } from "./settings-sheet";
 
-const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  // Archived groups load beside the bots; their calls are kept apart from the bot call queue.
-  groupRpc: vi.fn(),
-  closeSettingsSheet: vi.fn(),
-  alert: vi.fn(),
-  push: vi.fn(),
-  navigation: { setOptions: vi.fn() },
-  focus: { current: undefined as (() => (() => void) | undefined) | undefined },
-}));
-const bot = { id: "bot-fixture", name: "Fixture" } as MobileBot;
-const group = { id: "group-fixture", name: "Crew" } as MobileGroup;
+const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selectSpace } =
+  vi.hoisted(() => ({
+    rpc: vi.fn(),
+    selectSpace: vi.fn(async () => true),
+    // Archived groups load beside the bots; their calls are kept apart from the bot call queue.
+    groupRpc: vi.fn(),
+    closeSettingsSheet: vi.fn(),
+    alert: vi.fn(),
+    push: vi.fn(),
+    navigation: { setOptions: vi.fn() },
+    focus: { current: undefined as (() => (() => void) | undefined) | undefined },
+  }));
+const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
+const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
 vi.mock("./api", () => ({
+  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+  selectSpace,
   rpc: (procedure: string, ...args: unknown[]) =>
-    procedure.startsWith("groups/") ? groupRpc(procedure, ...args) : rpc(procedure, ...args),
+    procedure === "spaces/list"
+      ? Promise.resolve({ spaces: [{ id: "space-a" }] })
+      : procedure.startsWith("groups/")
+        ? groupRpc(procedure, ...args)
+        : rpc(procedure, ...args),
 }));
-vi.mock("./settings-sheet", () => ({ closeSettingsSheet }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useNavigation: () => navigation,
@@ -100,8 +109,10 @@ vi.mock("../components/archived-bot-list", () => ({
 describe("archived chat read failures", () => {
   let root: Root;
   let container: HTMLDivElement;
+  let unregister: () => void;
   beforeEach(async () => {
     vi.clearAllMocks();
+    unregister = registerSettingsSheet(closeSettingsSheet);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     rpc.mockResolvedValue([bot]);
     groupRpc.mockResolvedValue([]);
@@ -110,6 +121,7 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(<ArchivedBots />));
   });
   afterEach(() => {
+    unregister();
     act(() => root.unmount());
     vi.unstubAllGlobals();
   });
@@ -126,6 +138,7 @@ describe("archived chat read failures", () => {
       ]);
       rpc.mockResolvedValueOnce({});
       await act(async () => alert.mock.calls[0]![2][1].onPress());
+      expect(selectSpace).toHaveBeenCalledWith(bot.spaceId);
       expect(push).toHaveBeenCalledWith({
         pathname: "/thread",
         params: { botId: bot.id, name: bot.name, readOnly: "1" },
@@ -252,9 +265,15 @@ describe("archived chat read failures", () => {
     rpc.mockRejectedValueOnce(new Error("Internal server error"));
     await act(async () => container.querySelector("button")!.click());
     expect(push).not.toHaveBeenCalled();
-    rpc.mockResolvedValueOnce({ ok: true });
+    rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     await act(async () => container.querySelectorAll("button")[1]!.click());
-    expect(rpc).toHaveBeenLastCalledWith("bots/restore", { botId: bot.id });
+    expect(rpc).toHaveBeenCalledWith(
+      "bots/restore",
+      { botId: bot.id },
+      expect.objectContaining({
+        requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": bot.spaceId } }),
+      }),
+    );
     expect(container.textContent).toBe("No archived chats");
     expect(push).not.toHaveBeenCalled();
   });
@@ -310,9 +329,38 @@ describe("archived chat read failures", () => {
     )!;
     groupRpc.mockResolvedValueOnce({ ok: true });
     await act(async () => restore.click());
-    expect(groupRpc).toHaveBeenLastCalledWith("groups/restore", { groupId: group.id });
+    expect(groupRpc).toHaveBeenCalledWith(
+      "groups/restore",
+      { groupId: group.id },
+      expect.objectContaining({
+        requestContext: expect.objectContaining({
+          headers: { "x-rakazo-space-id": group.spaceId },
+        }),
+      }),
+    );
     expect(container.textContent).not.toContain("Restore Crew");
     expect(container.textContent).toContain(bot.name);
+  });
+
+  it("updates the inbox's archived count after a restore or delete, not after a failure", async () => {
+    const changed = vi.fn();
+    const stop = onArchivedChatsChanged(changed);
+    groupRpc.mockResolvedValueOnce([group]);
+    await act(async () => {
+      focus.current!();
+    });
+    const button = (label: string) =>
+      [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    groupRpc.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => button("Restore Crew").click());
+    expect(changed).not.toHaveBeenCalled();
+    groupRpc.mockResolvedValueOnce({ ok: true });
+    await act(async () => button("Restore Crew").click());
+    expect(changed).toHaveBeenCalledTimes(1);
+    rpc.mockResolvedValueOnce({ ok: true });
+    await act(async () => button("Restore").click());
+    expect(changed).toHaveBeenCalledTimes(2);
+    stop();
   });
 
   it("keeps a group whose restore fails and uses the native alert", async () => {
@@ -392,12 +440,29 @@ describe("archived chat read failures", () => {
     expect(container.textContent).toBe("No archived chats");
   });
 
+  it("reloads both lists after a restore, since a group comes back with its bots", async () => {
+    groupRpc.mockResolvedValueOnce([group]);
+    await act(async () => {
+      focus.current!();
+    });
+    const restore = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === "Restore Crew",
+    )!;
+    // Restoring the group also restored its archived bot, so the server no longer lists it.
+    groupRpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
+    rpc.mockResolvedValueOnce([]);
+    await act(async () => restore.click());
+    expect(container.textContent).toBe("No archived chats");
+  });
+
   it("keeps the bots load error after restoring the last group", async () => {
     await act(async () => root.render(null));
     rpc.mockRejectedValueOnce(new Error(""));
     groupRpc.mockResolvedValueOnce([group]);
     await act(async () => root.render(<ArchivedBots />));
+    // The reload after the restore fails for bots again.
     groupRpc.mockResolvedValueOnce({ ok: true });
+    rpc.mockRejectedValueOnce(new Error(""));
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore Crew",
     )!;
@@ -409,7 +474,9 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(null));
     groupRpc.mockRejectedValueOnce(new Error(""));
     await act(async () => root.render(<ArchivedBots />));
-    rpc.mockResolvedValueOnce({ ok: true });
+    // The reload after the restore fails for groups again.
+    rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
+    groupRpc.mockRejectedValueOnce(new Error(""));
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore",
     )!;

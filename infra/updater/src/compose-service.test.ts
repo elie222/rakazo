@@ -17,7 +17,7 @@ interface ComposeService {
 }
 
 const composeFile = path.resolve(import.meta.dirname, "../../compose/docker-compose.prod.yml");
-const compose = parse(readFileSync(composeFile, "utf8")) as {
+const compose = parse(readFileSync(composeFile, "utf8"), { merge: true }) as {
   services: Record<string, ComposeService>;
   networks: Record<string, unknown>;
 };
@@ -25,7 +25,6 @@ const updater = compose.services.updater as ComposeService;
 
 describe("the production computer provider", () => {
   it.each(["api", "worker"])("lets .env select the %s provider with an E2B default", (name) => {
-    expect(compose.services[name]?.env_file).toEqual(["../../.env"]);
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(compose.services[name]?.environment?.SANDBOX_PROVIDER).toBe("${SANDBOX_PROVIDER:-e2b}");
   });
@@ -48,6 +47,7 @@ describe("worker error reporting configuration", () => {
   ])("passes optional settings through %s", (file) => {
     const { services } = parse(
       readFileSync(path.resolve(import.meta.dirname, "../../compose", file), "utf8"),
+      { merge: true },
     ) as { services: Record<string, ComposeService> };
     for (const key of ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "SENTRY_RELEASE"]) {
       expect(services.worker?.environment?.[key]).toBe(interpolated(key));

@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalPassThroughEnv": ["COREPACK_ENABLE_DOWNLOAD_PROMPT"],
+  "globalDependencies": ["scripts/build-server.mjs"],
   "tasks": {
     "generate": {
       "cache": false

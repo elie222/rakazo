@@ -229,6 +229,7 @@ describe.skipIf(!databaseAvailable)("offline judge model protocol", () => {
         id: model.model.id,
         apiKey: "offline-judge-key",
         baseUrl: model.baseUrl,
+        allowPrivateEndpoint: true,
         maxTokens: 256,
       });
       expect(

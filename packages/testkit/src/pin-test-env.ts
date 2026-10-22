@@ -1,3 +1,5 @@
+import { afterAll } from "vitest";
+
 /**
  * `pnpm test` must stay emulator-only even when a developer .env points at
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.
@@ -32,3 +34,18 @@ if (!process.env.VERIFY_LOGGING) {
 
 // Tests must never export product analytics to a configured collector.
 process.env.ANALYTICS_PROVIDER = "none";
+
+// Postgres suites connect as the runtime login. A protected table reached
+// without runAsTenant/runAsSystem returns nothing there, as in production, so
+// fail the suite on it instead. Loaded only then: other tests need no database.
+if (process.env.VERIFY_DATABASE) {
+  const { drainUnscopedDatabaseAccess } = await import("@rakazo/db");
+  afterAll(() => {
+    const sites = drainUnscopedDatabaseAccess();
+    if (sites.length) {
+      throw new Error(
+        `Database access without a tenant or system context:\n\n${sites.join("\n\n")}`,
+      );
+    }
+  });
+}

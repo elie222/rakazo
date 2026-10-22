@@ -13,29 +13,37 @@ export function isDesktopSetupLink(value: unknown): value is DesktopSetupLink {
   return typeof value === "string" && Object.hasOwn(DOCKER_INSTALL_LINKS, value);
 }
 
-/**
- * Where the docker CLI usually lives. GUI launches on macOS get a minimal PATH, so the
- * well-known install locations come before whatever PATH happens to contain.
- */
-export function dockerBinaryCandidates(platform: string, env: NodeJS.ProcessEnv): string[] {
-  const candidates: string[] = [];
+/** Shared by CLI discovery and PATH lookup for Docker's credential helpers. */
+function dockerInstallDirectories(platform: string, env: NodeJS.ProcessEnv): string[] {
+  const directories: string[] = [];
   if (platform === "darwin") {
-    candidates.push(
-      "/usr/local/bin/docker",
-      "/opt/homebrew/bin/docker",
-      "/Applications/Docker.app/Contents/Resources/bin/docker",
+    directories.push(
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      "/Applications/Docker.app/Contents/Resources/bin",
     );
-    if (env.HOME) candidates.push(path.posix.join(env.HOME, ".orbstack", "bin", "docker"));
+    if (env.HOME) {
+      directories.push(
+        path.posix.join(env.HOME, ".orbstack", "bin"),
+        path.posix.join(env.HOME, ".docker", "bin"),
+        path.posix.join(env.HOME, ".rd", "bin"),
+      );
+    }
+    directories.push("/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin");
   } else if (platform === "win32") {
     const programFiles = env.ProgramFiles ?? "C:\\Program Files";
-    candidates.push(
-      path.win32.join(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe"),
-    );
+    directories.push(path.win32.join(programFiles, "Docker", "Docker", "resources", "bin"));
   } else {
-    candidates.push("/usr/bin/docker", "/usr/local/bin/docker");
+    directories.push("/usr/bin", "/usr/local/bin");
   }
+  return directories;
+}
+
+/** GUI launches on macOS get a minimal PATH, so check known install locations first. */
+export function dockerBinaryCandidates(platform: string, env: NodeJS.ProcessEnv): string[] {
   const binary = platform === "win32" ? "docker.exe" : "docker";
   const joiner = platform === "win32" ? path.win32 : path.posix;
+  const candidates = dockerInstallDirectories(platform, env).map((dir) => joiner.join(dir, binary));
   for (const entry of (env.PATH ?? "").split(platform === "win32" ? ";" : ":")) {
     if (entry.trim() !== "") candidates.push(joiner.join(entry, binary));
   }
@@ -93,8 +101,11 @@ export function dockerSpawnEnv(
   }
   const separator = platform === "win32" ? ";" : ":";
   const dockerDir = (platform === "win32" ? path.win32 : path.posix).dirname(dockerBinary);
-  const basePath = env.PATH ?? "";
-  result.PATH = basePath === "" ? dockerDir : `${dockerDir}${separator}${basePath}`;
+  // Finding docker by absolute path is not enough: it finds credential helpers by PATH.
+  // Preserve inherited helper precedence, then fill in locations absent from GUI launches.
+  const directories = [dockerDir, ...(env.PATH ?? "").split(separator)];
+  if (platform === "darwin") directories.push(...dockerInstallDirectories(platform, env));
+  result.PATH = [...new Set(directories.filter((dir) => dir.trim() !== ""))].join(separator);
   return { ...result, ...extra };
 }
 

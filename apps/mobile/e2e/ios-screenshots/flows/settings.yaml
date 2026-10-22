@@ -119,3 +119,17 @@ name: Settings
     visible: "Deutsch"
     timeout: 10000
 - takeScreenshot: 16-language
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: "Artifacts"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "Artifacts"
+- takeScreenshot: 17-account-artifacts
+- tapOn: "Artifacts"
+# Only the Artifacts screen has the search field; the sheet must have closed.
+- extendedWaitUntil:
+    visible: "Search artifacts.*"
+    timeout: 15000
+- assertNotVisible: ".*Change password.*"
+- takeScreenshot: 18-artifacts
