@@ -11,5 +11,5 @@ await build({
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
-  external: ["electron", "electron-updater", "koffi"],
+  external: ["electron", "electron-updater", "koffi", "@sentry/electron"],
 });

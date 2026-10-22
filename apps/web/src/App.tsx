@@ -25,6 +25,7 @@ import { lazyComponent } from "./lib/preload-recovery";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
 import {
+  holdAnonymousGate,
   holdUnreachableGate,
   sessionGate,
   sessionRetryDelayMs,
@@ -122,6 +123,9 @@ function SessionApp() {
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
+  const [holdingAnonymous, setHoldingAnonymous] = useState(false);
+  const nextHoldingAnonymous = holdAnonymousGate(gate, holdingAnonymous);
+  if (nextHoldingAnonymous !== holdingAnonymous) setHoldingAnonymous(nextHoldingAnonymous);
 
   useLayoutEffect(() => {
     if (session.isPending) return;
@@ -132,7 +136,7 @@ function SessionApp() {
   if (showSessionUnavailable(gate, nextHolding)) {
     return <SessionUnavailable refetch={session.refetch} />;
   }
-  if (gate === "loading") {
+  if (gate === "loading" && !nextHoldingAnonymous) {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (

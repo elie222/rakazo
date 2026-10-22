@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolvePersonaColorDef } from "@rakazo/core";
+import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
 import { botColors, darkTokens, fontWeight, typeScale } from "@rakazo/ui-tokens";
 import React, { useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -26,7 +26,11 @@ const scope = {
   resolvePersonaColorDef,
   messagePresentationSegments,
   blockText: () => "Hello",
-  MessageCaption: () => null,
+  MessageCaption: () => <span>Hello</span>,
+  ComputerCard: ({ onOpen }: { onOpen: () => void }) => {
+    onOpen();
+    return null;
+  },
   formatFileSize: () => undefined,
   View: "div",
   Text: "span",
@@ -60,6 +64,7 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
       <MessageBubble
         botId={id}
         groupId="group"
+        showBotSenderName={true}
         bots={[{ id, color }]}
         members={[{ botId: id, name: "Sender" }]}
         message={{
@@ -78,4 +83,51 @@ it.each(["text", "image"] as const)("keeps per-bot sender colours on %s messages
     }
     expect(html).toContain(">Sender</span>");
   }
+});
+
+it.each(["text", "image"] as const)(
+  "shows %s sender labels only when speakers need distinguishing",
+  (kind) => {
+    for (const { isGroup, speakerBotIds, expected } of [
+      { isGroup: false, speakerBotIds: ["bot-a", "bot-a"], expected: false },
+      { isGroup: true, speakerBotIds: ["bot-a"], expected: true },
+      { isGroup: false, speakerBotIds: ["bot-a", "bot-b"], expected: true },
+    ]) {
+      const html = renderToStaticMarkup(
+        <MessageBubble
+          botId="bot-a"
+          botName="Sender"
+          bots={[]}
+          groupId={isGroup ? "group" : undefined}
+          showBotSenderName={shouldShowBotSenderName({ isGroup, speakerBotIds })}
+          members={[{ botId: "bot-a", name: "Sender" }]}
+          message={{
+            id: "message",
+            role: "bot",
+            botId: "bot-a",
+            blocks: [kind === "text" ? { kind, text: "Hello" } : { kind, name: "Picture" }],
+          }}
+          actionProps={{}}
+        />,
+      );
+      expect(html.includes(">Sender</span>")).toBe(expected);
+      if (!expected) expect(html).not.toContain("margin-bottom:4px");
+    }
+  },
+);
+
+it("keeps the bot name when opening a computer without a sender label", () => {
+  const opened: string[][] = [];
+  renderToStaticMarkup(
+    <MessageBubble
+      botId="bot-a"
+      botName="Sender"
+      bots={[]}
+      showBotSenderName={false}
+      message={{ id: "message", role: "bot", botId: "bot-a", blocks: [{ kind: "computer" }] }}
+      onOpenComputer={(...args: string[]) => opened.push(args)}
+      actionProps={{}}
+    />,
+  );
+  expect(opened).toEqual([["bot-a", "Sender"]]);
 });

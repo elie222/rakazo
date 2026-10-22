@@ -233,7 +233,7 @@ export function messagingPlatformsFromEnv(
     telegramTokens.add(env.telegramBotToken.trim());
     platforms.push({
       provider: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null },
+      capabilities: { direct: true, groups: false, receipt: null, files: true },
       // Auto mode: uses the webhook route when Telegram has one registered
       // (checked via getWebhookInfo), and otherwise falls back to
       // long-polling getUpdates. Self-hosted/local deployments typically
@@ -268,7 +268,7 @@ export function messagingPlatformsFromEnv(
     platforms.push({
       provider: `telegram-${bot.name}`,
       adapterName: "telegram",
-      capabilities: { direct: true, groups: false, receipt: null },
+      capabilities: { direct: true, groups: false, receipt: null, files: true },
       adapter: createTelegramAdapter({
         botToken: bot.botToken,
         secretToken: bot.webhookSecret,

@@ -27,7 +27,7 @@ async function setToggle(page: Page, on: boolean) {
   await page.goto(`${fixture}?view=settings`);
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await settings.getByTestId("advanced-settings").locator("summary").click();
+  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const toggle = settings.getByTestId("tool-activity-toggle");
   await expect(toggle).toBeVisible();
   await expect(settings.getByText("Show tool activity", { exact: true })).toBeVisible();
@@ -54,27 +54,39 @@ test("tool activity shows for live and finished runs when the user turned it on"
     await expect(liveLine).toHaveCount(1);
     await expect(page.getByTestId("message-bot-bubble")).toHaveCount(0);
     const liveCard = page.getByTestId("tool-activity");
-    await expect(liveCard).toHaveJSProperty("open", true);
-    await expect(liveCard.locator("summary")).toContainText("Working… · 8 tools");
+    await expect(liveCard.locator("button[aria-expanded]")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(liveCard.locator("button[aria-expanded]")).toContainText("Working… · 8 tools");
     await expect(page.getByTestId("tool-rows-hidden")).toHaveText("+2 earlier steps");
     await expect(page.getByTestId("tool-rows")).not.toContainText("Open calendar");
     await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);
     await captureScreenshot(page, testInfo, `default-live-${viewport.name}`);
 
-    await liveCard.locator("summary").click();
-    await expect(liveCard).toHaveJSProperty("open", false);
+    await liveCard.locator("button[aria-expanded]").click();
+    await expect(liveCard.locator("button[aria-expanded]")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
 
     await openThread(page, "done");
     await expect(page.getByTestId("message-bot-bubble")).toHaveText(REPLY_TEXT);
     const doneCard = page.getByTestId("tool-activity");
     await expect(doneCard).toHaveCount(1);
-    await expect(doneCard).toHaveJSProperty("open", false);
-    await expect(doneCard.locator("summary")).toContainText("Done · 8 tools · 12s");
+    await expect(doneCard.locator("button[aria-expanded]")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(doneCard.locator("button[aria-expanded]")).toContainText("Done · 8 tools · 12s");
     await captureScreenshot(page, testInfo, `default-done-collapsed-${viewport.name}`);
 
-    await doneCard.locator("summary").click();
-    await expect(doneCard).toHaveJSProperty("open", true);
+    await doneCard.locator("button[aria-expanded]").click();
+    await expect(doneCard.locator("button[aria-expanded]")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     await expect(page.getByTestId("tool-rows-hidden")).toHaveCount(0);
     await expect(page.getByTestId("tool-rows")).toContainText("Open calendar");
     await expect(page.getByTestId("tool-rows")).toContainText("Check conflicts");
@@ -90,7 +102,7 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
   await page.goto(`${fixture}?view=settings`);
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await settings.getByTestId("advanced-settings").locator("summary").click();
+  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const initialToggle = settings.getByTestId("tool-activity-toggle");
   await expect(initialToggle).toBeVisible();
   await expect(initialToggle).not.toBeChecked();
@@ -117,7 +129,7 @@ test("the settings toggle hides and restores tool activity", async ({ page }, te
 
   await openThread(page, "done");
   await expect(page.getByTestId("tool-activity")).toHaveCount(1);
-  await expect(page.getByTestId("tool-activity").locator("summary")).toContainText(
+  await expect(page.getByTestId("tool-activity").locator("button[aria-expanded]")).toContainText(
     "Done · 8 tools",
   );
   await captureScreenshot(page, testInfo, "on-again-done");
@@ -144,14 +156,17 @@ test("the chat transcript shows tool activity when turned on and hides it when t
   });
   const card = transcript.getByTestId("tool-activity");
   await expect(card.first()).toBeVisible();
-  await expect(card.first().locator("summary")).toContainText(/Done · \d+ tools?/);
-  await expect(card.first()).toHaveJSProperty("open", false);
-  await card.first().locator("summary").click();
+  await expect(card.first().locator("button[aria-expanded]")).toContainText(/Done · \d+ tools?/);
+  await expect(card.first().locator("button[aria-expanded]")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await card.first().locator("button[aria-expanded]").click();
   await expect(transcript.getByTestId("tool-rows").first()).toBeVisible();
   await captureScreenshot(page, testInfo, "shell-tool-activity-on");
 
   const settings = await openUserSettings(page);
-  await settings.getByTestId("advanced-settings").locator("summary").click();
+  await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const toggle = settings.getByTestId("tool-activity-toggle");
   await expect(toggle).toBeChecked();
   await toggle.click();

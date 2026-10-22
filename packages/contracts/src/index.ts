@@ -7,6 +7,7 @@ export * from "./bot-avatar.js";
 export * from "./bot-secrets.js";
 export * from "./bot-settings-layout.js";
 export * from "./builtin-tools.js";
+export * from "./client-build.js";
 export * from "./cloudflare-ai-gateway.js";
 export * from "./desktop.js";
 export * from "./domain.js";

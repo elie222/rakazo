@@ -175,6 +175,7 @@ export function unattendedTriggerToolRequiresApproval(
  */
 const OWN_STATE_RESULT_TOOLS = new Set([
   "ask_user",
+  "connect_app",
   "attach_file",
   "end_call",
   "list_fleet",

@@ -273,29 +273,12 @@ export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
   ].join("\n");
 }
 
-export async function runAutoReviewJudge(input: {
-  onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => Promise<unknown>;
-  runtime: AgentRuntime;
-  checker: AutoReviewChecker;
-  apiKey?: string;
-  accountId?: string;
-  gatewayId?: string;
-  baseUrl?: string;
-  allowPrivateEndpoint?: boolean;
-  cacheCapabilities?: CacheCapabilities;
-  contextWindow?: number;
-  maxTokens?: number;
-  reasoning?: boolean;
-  oauth?: AgentRunModel["oauth"];
-  prompt: string;
-  runId: string;
-  spaceId: string;
-  userId: string;
-  botId: string;
-  threadId: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-}): Promise<AutoReviewJudgeResult> {
+export async function runAutoReviewJudge(
+  input: LlmAutoReviewOptions & {
+    prompt: string;
+    signal?: AbortSignal;
+  },
+): Promise<AutoReviewJudgeResult> {
   const modelLabel = `${input.checker.provider}/${input.checker.model}`;
   const timeoutMs = input.timeoutMs ?? autoReviewTimeoutMs();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
@@ -332,6 +315,7 @@ export async function runAutoReviewJudge(input: {
           maxTokens: input.maxTokens,
           reasoning: input.reasoning,
           oauth: input.oauth,
+          callObserver: input.callObserver,
         },
       },
       {
@@ -407,6 +391,7 @@ export type LlmAutoReviewOptions = {
   maxTokens?: number;
   reasoning?: boolean;
   oauth?: AgentRunModel["oauth"];
+  callObserver?: AgentRunModel["callObserver"];
   runId: string;
   spaceId: string;
   userId: string;

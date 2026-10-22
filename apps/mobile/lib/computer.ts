@@ -1,4 +1,5 @@
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
+import { isRetryableError } from "@rakazo/core";
 import { isLanOrLocalHost } from "./endpoint";
 import { t } from "./i18n";
 
@@ -46,6 +47,8 @@ export async function readScreenUrl(
       if (screen.url) return screen.url;
       lastError = undefined;
     } catch (error) {
+      // A refused read (403, 404, 426...) will not change on the next attempt.
+      if (!isRetryableError(error)) throw error;
       lastError = error;
     }
     if (attempt < attempts) await sleep(delayMs);

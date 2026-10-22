@@ -9,6 +9,10 @@ import {
   subscribe,
   toggleMute,
 } from "./call-session";
+import type { SpeechRecognizer } from "./dictation";
+import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
+import { activateUiLocale, getActiveUiLocale } from "./i18n";
+import type { UiLocale } from "./ui-locale";
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
@@ -808,6 +812,74 @@ describe("mobile call session", () => {
   });
 });
 
+describe("mobile call speech locales", () => {
+  let previousLocale: UiLocale;
+
+  beforeEach(() => {
+    previousLocale = getActiveUiLocale();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    endCall();
+    stopDictation();
+    setSpeechRecognizer(null);
+    activateUiLocale(previousLocale);
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["en", "en-US"],
+    ["de", "de-DE"],
+    ["nl", "nl-NL"],
+    ["ru", "ru-RU"],
+    ["zh-CN", "zh-CN"],
+  ] as const)(
+    "recognizes a %s call with %s and sends its live transcript after silence",
+    async (locale, lang) => {
+      const listeners = new Map<string, (payload: never) => void>();
+      const start = vi.fn();
+      const recognizer: SpeechRecognizer = {
+        start,
+        stop: vi.fn(),
+        abort: vi.fn(),
+        isRecognitionAvailable: () => true,
+        requestPermissionsAsync: async () => ({ granted: true }),
+        addListener: (event, listener) => {
+          listeners.set(event, listener as (payload: never) => void);
+          return { remove: () => void listeners.delete(event) };
+        },
+      };
+      setSpeechRecognizer(recognizer);
+      activateUiLocale(locale);
+      const fake = fakes();
+      const { dictate: _dictate, ...deps } = fake.deps;
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(start).toHaveBeenCalledOnce();
+      expect.soft(start).toHaveBeenCalledWith({ lang, interimResults: true, continuous: true });
+      listeners.get("result")?.({
+        isFinal: false,
+        results: [{ transcript: "status please" }],
+      } as never);
+      expect(getSnapshot()).toMatchObject({ phase: "listening", heard: "status please" });
+      expect(fake.send).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+
+      expect(fake.send).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith(
+        "bot-1",
+        "status please",
+        expect.stringMatching(/^call:/),
+      );
+      expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: "status please" });
+      expect(fake.recordings).toHaveLength(0);
+    },
+  );
+});
+
 describe("mobile call session on a timer", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
@@ -857,6 +929,28 @@ describe("mobile call session on a timer", () => {
     await tick(500);
     expect(subscribeThread).toHaveBeenCalled();
     expect(vi.mocked(subscribeThread).mock.calls[0]?.[1]).toBe(3);
+    vi.mocked(rpc).mockReset();
+    vi.mocked(subscribeThread).mockReset();
+  });
+
+  it("stops the call feed when the server refuses it but keeps retrying a 503", async () => {
+    const { rpc, subscribeThread } = await import("./api");
+    const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+    vi.mocked(rpc).mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
+    vi.mocked(subscribeThread)
+      .mockRejectedValueOnce(httpError(503))
+      .mockRejectedValueOnce(httpError(403))
+      .mockResolvedValue(undefined as never);
+    const fake = fakes();
+    const { watch: _watch, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await tick();
+    expect(subscribeThread).toHaveBeenCalledTimes(1);
+
+    await tick(500);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
+    await tick(20_000);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
   });

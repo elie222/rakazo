@@ -226,6 +226,16 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 
+  it("loads per-client minimum builds and refuses a malformed one", () => {
+    expect(loadEnv(base).minimumClientBuilds).toEqual({});
+    expect(
+      loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "web=20261022093015" }).minimumClientBuilds,
+    ).toEqual({ web: "20261022093015" });
+    expect(() => loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "latest" })).toThrow(
+      /RAKAZO_MIN_CLIENT_BUILD/,
+    );
+  });
+
   it("loads optional updater sidecar wiring without requiring the token at boot", () => {
     expect(loadEnv(base).updaterUrl).toBeUndefined();
     expect(loadEnv(base).updaterToken).toBeUndefined();

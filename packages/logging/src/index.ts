@@ -34,6 +34,7 @@ export {
 } from "./pseudonym.js";
 export { redactBindings, redactSensitiveText } from "./redaction.js";
 export { serializeError } from "./serialize-error.js";
+export { logSinkHealth } from "./sink-guard.js";
 export { createTestSink, type TestSink } from "./test-sink.js";
 export type {
   CreateLoggerOptions,

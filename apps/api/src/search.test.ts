@@ -74,6 +74,40 @@ describe("artifact search batching", () => {
   });
 });
 
+it("searches for the characters the user typed, not SQL wildcards", async () => {
+  const { prisma } = fixture(0);
+  await querySpaceSearch(prisma as unknown as PrismaClient, actor, "50%_off");
+
+  const botFilter = prisma.bot.findMany.mock.calls[0]?.[0]?.where?.OR?.[0]?.name;
+  expect(botFilter?.contains).toBe("50\\%\\_off");
+
+  const groupFilter = prisma.chatGroup.findMany.mock.calls[0]?.[0]?.where?.name;
+  expect(groupFilter?.contains).toBe("50\\%\\_off");
+
+  // The message scan builds its own pattern, and a backslash in the query must
+  // not swallow the character after it.
+  const boundValues = prisma.$queryRaw.mock.calls.flatMap((call) =>
+    call.map((argument) => (argument as { values?: unknown[] } | undefined)?.values ?? []),
+  );
+  expect(boundValues.flat()).toContain("%50\\%\\_off%");
+});
+
+it("JSON-escapes backslashes only for the message scan", async () => {
+  const { prisma } = fixture(0);
+  await querySpaceSearch(prisma as unknown as PrismaClient, actor, String.raw`back\slash`);
+
+  const botFilter = prisma.bot.findMany.mock.calls[0]?.[0]?.where?.OR?.[0]?.name;
+  expect(botFilter?.contains).toBe(String.raw`back\\slash`);
+  const groupFilter = prisma.chatGroup.findMany.mock.calls[0]?.[0]?.where?.name;
+  expect(groupFilter?.contains).toBe(String.raw`back\\slash`);
+  for (const call of prisma.$queryRaw.mock.calls) {
+    const values = call.flatMap(
+      (argument) => (argument as { values?: unknown[] } | undefined)?.values ?? [],
+    );
+    expect(values).toContain(String.raw`%back\\\\slash%`);
+  }
+});
+
 it("guards name-derived snippets while preserving descriptions", async () => {
   const { prisma } = fixture(0);
   prisma.bot.findMany.mockResolvedValue([

@@ -13,7 +13,7 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
@@ -23,13 +23,13 @@ msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {פעיל · # כלי} other {פעיל · # כלים}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "{0, plural, one {Waiting for sign-in — the code expires in about # minute.} other {Waiting for sign-in — the code expires in about # minutes.}}"
 msgstr "{0, plural, one {ממתין להתחברות — הקוד יפוג בעוד כ-# דקה.} other {ממתין להתחברות — הקוד יפוג בעוד כ-# דקות.}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minute.} other {Waiting for sign-in — the link expires in about # minutes.}}"
 msgstr "{0, plural, one {ממתין להתחברות — הקישור יפוג בעוד כ-# דקה.} other {ממתין להתחברות — הקישור יפוג בעוד כ-# דקות.}}"
@@ -106,8 +106,8 @@ msgstr "{0} הרצות · {1} טוקנים"
 msgid "{0} will still respond to direct mentions."
 msgstr "{0} ימשיך להגיב לאזכורים ישירים."
 
-#. placeholder {0}: active.name
-#: src/pages/Shell.tsx
+#. placeholder {0}: bot.name
+#: src/pages/shell/computer-panel.tsx
 msgid "{0}'s screen"
 msgstr "המסך של {0}"
 
@@ -115,7 +115,7 @@ msgstr "המסך של {0}"
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "המחשב של {botName}"
 
@@ -291,14 +291,24 @@ msgstr "{title}, {label}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/transcript.tsx
 msgid "{workingBotName} is working"
 msgstr "{workingBotName} עובד"
 
 #. placeholder {0}: mention.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "@{0}"
 msgstr "@{0}"
+
+#. placeholder {0}: amount / 100
+#: src/components/ModelCredits.tsx
+msgid "${0} / month"
+msgstr ""
+
+#. placeholder {0}: amount / 100
+#: src/components/ModelCredits.tsx
+msgid "${0} in monthly model credits. No API key needed."
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -309,12 +319,12 @@ msgid "A command's output"
 msgstr ""
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window keeps waiting:"
 msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש להזין שם את הקוד הזה — החלון הזה ממשיך להמתין:"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 #: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
@@ -347,7 +357,7 @@ msgstr "חשבון"
 msgid "Account default"
 msgstr "ברירת המחדל של החשבון"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Account ID"
 msgstr "מזהה חשבון"
@@ -360,15 +370,11 @@ msgstr "תווית חשבון"
 msgid "Account menu for {name}"
 msgstr "תפריט החשבון של {name}"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr "חשבונות"
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
 #: src/pages/BotContextMenu.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "פעולות עבור {0}"
 
@@ -385,12 +391,11 @@ msgstr "פעיל"
 msgid "Active model"
 msgstr "מודל פעיל"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "פעילות"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Add"
@@ -417,7 +422,7 @@ msgstr "כדי להשתמש בזה יש להוסיף מודל בהגדרות."
 msgid "Add a passkey for faster sign-in?"
 msgstr "להוסיף מפתח גישה לכניסה מהירה יותר?"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Add a run time for this one-shot."
 msgstr "יש להוסיף זמן הרצה להרצה החד-פעמית הזו."
 
@@ -430,7 +435,7 @@ msgid "Add a stdio command."
 msgstr "יש להוסיף פקודת stdio."
 
 #: src/pages/RoutineEditor.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Add a trigger to run this routine."
 msgstr ""
 
@@ -443,16 +448,16 @@ msgid "Add another"
 msgstr "הוספת עוד"
 
 #: src/pages/ModelBackupsSettings.tsx
-msgid "Add connected model"
-msgstr "הוספת מודל מחובר"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Add connected models to use them as backups."
-msgstr "אפשר להוסיף מודלים מחוברים כדי להשתמש בהם כגיבוי."
+msgid "Add backup model"
+msgstr "הוספת מודל גיבוי"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Add credential"
 msgstr "הוספת פרטי גישה"
+
+#: src/components/ModelCredits.tsx
+msgid "Add credits"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
@@ -519,7 +524,8 @@ msgstr "מוסיף…"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/catalog-model-fields.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -548,7 +554,7 @@ msgstr "סוכנים:"
 msgid "All bots"
 msgstr "כל הבוטים"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/provider-list.tsx
 msgid "All providers"
 msgstr "כל הספקים"
 
@@ -665,7 +671,7 @@ msgstr "ה-API חזר לפעול, אבל העדכון לא הושלם. יש לב
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
@@ -700,15 +706,15 @@ msgstr "יש לאשר את השרת הזה כדי שהסוכן יוכל להשת
 msgid "Archive"
 msgstr "העברה לארכיון"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "archived"
 msgstr "בארכיון"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Archived"
 msgstr "בארכיון"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Archived. Chat, memory, and files kept."
 msgstr "הועבר לארכיון. הצ׳אט, הזיכרון והקבצים נשמרו."
 
@@ -765,12 +771,12 @@ msgstr "בשעה {0}"
 msgid "at {timeSelect}"
 msgstr "בשעה {timeSelect}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Attach file"
 msgstr "צירוף קובץ"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/chat-shared.ts
 msgid "Attachment"
 msgstr "קובץ מצורף"
 
@@ -778,7 +784,7 @@ msgstr "קובץ מצורף"
 msgid "Authentication failed."
 msgstr "האימות נכשל."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Authorization code or callback URL"
 msgstr "קוד הרשאה או URL להחזרה (callback)"
@@ -815,6 +821,10 @@ msgstr "שולחים אוטומטיים יופיעו כאן אחרי שיפרס�
 msgid "Available after the routine is saved"
 msgstr "זמין אחרי שמירת הרוטינה"
 
+#: src/components/ModelCredits.tsx
+msgid "Available credits"
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Available to this bot's shell commands as {commandVariable}"
 msgstr "זמין לפקודות ה-shell של הבוט הזה בתור {commandVariable}"
@@ -841,14 +851,6 @@ msgstr "חזרה להתחברות"
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "מודלי גיבוי"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Backup models order"
-msgstr "סדר מודלי הגיבוי"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Backup models saved."
-msgstr "מודלי הגיבוי נשמרו."
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -882,10 +884,11 @@ msgid "Board"
 msgstr "לוח"
 
 #: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "Booting live desktop…"
 msgstr "מפעיל שולחן עבודה חי…"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "bot"
 msgstr "בוט"
 
@@ -893,6 +896,7 @@ msgstr "בוט"
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Bot"
 msgstr "בוט"
 
@@ -901,11 +905,11 @@ msgstr "בוט"
 msgid "Bot"
 msgstr "בוט"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "מסך הבוט"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-panel.tsx
 msgid "Bot screen preview"
 msgstr "תצוגה מקדימה של מסך הבוט"
 
@@ -921,7 +925,11 @@ msgstr "המודל של הבוט"
 msgid "Bots"
 msgstr "בוטים"
 
-#: src/pages/Shell.tsx
+#: src/components/ModelCredits.tsx
+msgid "Bots and browser automation"
+msgstr ""
+
+#: src/pages/shell/transcript.tsx
 msgid "Bots are working"
 msgstr "הבוטים עובדים"
 
@@ -966,7 +974,9 @@ msgstr ""
 msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/components/TextOnlyMark.tsx
+#: src/pages/model-settings/model-picker.tsx
+#: src/pages/shell/chat-model-picker.tsx
 msgid "Can't read images"
 msgstr "לא ניתן לקרוא תמונות"
 
@@ -978,6 +988,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1035,7 +1046,7 @@ msgstr "לא ניתן להציג את התרשים: {error}"
 msgid "Chat apps"
 msgstr "אפליקציות צ׳אט"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "הגדרות צ׳אט"
 
@@ -1066,7 +1077,7 @@ msgstr ""
 msgid "Check for updates"
 msgstr "בדיקת עדכונים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Check in."
 msgstr "לבדוק מה המצב."
 
@@ -1121,6 +1132,10 @@ msgstr "בחירת סיסמה חדשה"
 msgid "Choose file"
 msgstr "בחירת קובץ"
 
+#: src/components/ModelCredits.tsx
+msgid "Choose how to use Rakazo"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "ניקוי"
@@ -1165,7 +1180,7 @@ msgstr "סגירה"
 msgid "Close chart"
 msgstr "סגירת התרשים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "Close computer"
 msgstr "סגירת המחשב"
 
@@ -1232,11 +1247,11 @@ msgstr "קוד"
 
 #. placeholder {0}: group.title
 #. placeholder {0}: item.chat.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr "כיווץ {0}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Collapse {label}"
 msgstr "כיווץ {label}"
 
@@ -1279,24 +1294,25 @@ msgid "Complete"
 msgstr "הושלם"
 
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Computer"
 msgstr "מחשב"
 
 #: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "Computer failed to boot"
 msgstr "הפעלת המחשב נכשלה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "המחשב במצב שינה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "Computer is asleep. Open it to wake."
 msgstr "המחשב במצב שינה. יש לפתוח אותו כדי להעיר אותו."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "המחשב כבוי"
 
@@ -1354,7 +1370,7 @@ msgstr "חיבור"
 msgid "Connect a model"
 msgstr "חיבור מודל"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
 msgstr "חיבור מפתח API"
 
@@ -1381,7 +1397,7 @@ msgstr "חיבור Treg"
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/provider-list.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1419,7 +1435,7 @@ msgstr "בדיקת החיבור נכשלה."
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "החיבור ל-{0} עדיין ממתין. אפשר לסגור את החלון ולבדוק שוב."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Context limit"
 msgstr "מגבלת הקשר"
@@ -1434,24 +1450,32 @@ msgstr "המשך"
 msgid "Continue in Background"
 msgstr "המשך ברקע"
 
+#: src/components/ModelCredits.tsx
+msgid "Continue to checkout"
+msgstr ""
+
 #. placeholder {0}: reset.sso.name
 #: src/pages/Auth.tsx
 msgid "Continue with {0}"
 msgstr "המשך עם {0}"
+
+#: src/components/ModelCredits.tsx
+msgid "Continue with credits"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "המשך עם אימייל"
 
 #: src/components/ComputersUnavailableHint.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Copied"
 msgstr "הועתק"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Copy"
 msgstr "העתקה"
 
@@ -1479,7 +1503,7 @@ msgstr "לא ניתן להעניק הרשאה לאפליקציה הזו"
 msgid "Could not change password"
 msgstr "לא ניתן לשנות את הסיסמה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Could not change the default model"
 msgstr "לא ניתן לשנות את מודל ברירת המחדל"
 
@@ -1517,7 +1541,7 @@ msgstr "לא ניתן להתחבר"
 msgid "Could not connect {0}"
 msgstr "לא ניתן לחבר את {0}"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Could not connect this provider"
 msgstr "לא ניתן לחבר את הספק הזה"
 
@@ -1600,7 +1624,7 @@ msgstr "לא ניתן לנתק את ספק הזיכרון"
 msgid "Could not disconnect OAuth"
 msgstr "לא ניתן לנתק את OAuth"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Could not disconnect this provider"
 msgstr "לא ניתן לנתק את הספק הזה"
 
@@ -1669,10 +1693,11 @@ msgid "Could not load integrations"
 msgstr "לא ניתן לטעון את האינטגרציות"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "לא ניתן לטעון את שרתי ה-MCP"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
 
@@ -1713,7 +1738,9 @@ msgstr "לא ניתן לטעון את הגדרות הקול"
 msgid "Could not log out. Try again."
 msgstr "לא ניתן להתנתק. יש לנסות שוב."
 
+#: src/components/ModelCredits.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "לא ניתן לפתוח את החיוב"
@@ -1780,7 +1807,7 @@ msgstr "לא ניתן לאפס את הסיסמה"
 msgid "Could not revoke connection"
 msgstr "לא ניתן לבטל את החיבור"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Could not run routine"
 msgstr "לא ניתן להריץ את הרוטינה"
 
@@ -1807,7 +1834,7 @@ msgstr "לא ניתן לשמור את הקבוצה"
 msgid "Could not save model"
 msgstr "לא ניתן לשמור את המודל"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
 msgstr "לא ניתן לשמור את הרוטינה"
 
@@ -1880,6 +1907,10 @@ msgstr "לא ניתן לעדכן"
 msgid "Could not update agent access"
 msgstr "לא ניתן לעדכן את הגישה של הסוכן"
 
+#: src/components/ModelCredits.tsx
+msgid "Could not update billing"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
 msgstr "לא ניתן לעדכן את המחשב"
@@ -1913,9 +1944,9 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Create"
 msgstr "יצירה"
 
@@ -1974,7 +2005,7 @@ msgstr "פרטי גישה"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
-msgid "credential saved"
+msgid "Credential saved"
 msgstr "פרטי הגישה נשמרו"
 
 #: src/pages/shell/bot-credentials.tsx
@@ -1984,6 +2015,10 @@ msgstr "פרטי גישה"
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "פרטי הגישה מוצפנים ולעולם לא נשלחים למודל."
+
+#: src/components/ModelCredits.tsx
+msgid "Credit amount"
+msgstr ""
 
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron"
@@ -2032,23 +2067,23 @@ msgstr "ימים"
 msgid "Decline"
 msgstr "דחייה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "ברירת מחדל"
-
-#. js-lingui-explicit-id
-#. placeholder {0}: thinkingLevelLabel("medium")
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Default ({0})"
-msgstr "ברירת מחדל ({0})"
 
 #. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
+msgid "Default ({0})"
+msgstr "ברירת מחדל ({0})"
+
+#. js-lingui-explicit-id
+#. placeholder {0}: thinkingLevelLabel("medium")
+#: src/pages/model-settings/catalog-model-fields.tsx
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
 
@@ -2062,7 +2097,7 @@ msgstr "היקף ברירת מחדל"
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/archived-chats.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Delete"
 msgstr "מחיקה"
@@ -2078,7 +2113,7 @@ msgstr "למחוק את \"{0}\"?"
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.name
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Delete {0}"
 msgstr "מחיקת {0}"
 
@@ -2100,7 +2135,7 @@ msgstr "מחיקת הקבוצה"
 msgid "Delete memories too"
 msgstr "מחיקת הזיכרונות גם כן"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Delete section"
 msgstr "מחיקת המקטע"
 
@@ -2108,7 +2143,7 @@ msgstr "מחיקת המקטע"
 msgid "Delete space"
 msgstr "מחיקת המרחב"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "deleted"
 msgstr "נמחק"
 
@@ -2152,13 +2187,17 @@ msgid "Desktop update"
 msgstr "עדכון לאפליקציית הדסקטופ"
 
 #: src/pages/RoutineRunHistory.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Details"
 msgstr "פרטים"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr "MCP ישיר"
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Disabled"
+msgstr "מושבת"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
@@ -2180,7 +2219,7 @@ msgid "Disconnect {disconnectName}?"
 msgstr "לנתק את {disconnectName}?"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Disconnected {0}."
 msgstr "{0} נותק."
 
@@ -2198,7 +2237,7 @@ msgstr "מנתק…"
 msgid "Dismiss"
 msgstr "סגירה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Dismiss error"
 msgstr "סגירת השגיאה"
 
@@ -2243,6 +2282,10 @@ msgstr "אין חשבון?"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "הושלם"
+
+#: src/components/ModelCredits.tsx
+msgid "Downgrade at renewal"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Download"
@@ -2333,17 +2376,17 @@ msgstr "יש להזין שם משתמש וסיסמה"
 msgid "Enter a valid email"
 msgstr "יש להזין אימייל תקין"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 #: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_CONTEXT_WINDOW} for the context limit."
 msgstr "יש להזין מספר שלם בין 1 ל-{MAX_MODEL_CONTEXT_WINDOW} עבור מגבלת ההקשר."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 #: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to {MAX_MODEL_MAX_TOKENS} for maximum output tokens."
 msgstr "יש להזין מספר שלם בין 1 ל-{MAX_MODEL_MAX_TOKENS} עבור מספר טוקני הפלט המרבי."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 #: src/pages/Onboarding.tsx
 msgid "Enter a whole number from 1 to 1000 for the image limit."
 msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת התמונות."
@@ -2357,7 +2400,7 @@ msgid "Environment variables"
 msgstr "משתני סביבה"
 
 #: src/lib/roster-status.ts
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -2408,11 +2451,11 @@ msgstr "הרחבה"
 
 #. placeholder {0}: group.title
 #. placeholder {0}: item.chat.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "הרחבת {0}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "הרחבת {label}"
 
@@ -2433,7 +2476,7 @@ msgstr "לייצא את הרשימה של השבוע מה-CRM ולשים אות�
 msgid "External conversation"
 msgstr "שיחה חיצונית"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Extra high"
 msgstr "גבוה מאוד"
@@ -2501,18 +2544,18 @@ msgstr "סינון לפי תאריך"
 msgid "Filters"
 msgstr "מסננים"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Find models"
 msgstr "חיפוש מודלים"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "מחפש…"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "יש להשלים את ההתחברות ב-<0>{0}</0>. ייתכן שהדף האחרון לא ייטען; אפשר להדביק כאן את ה-URL או את הקוד שלו."
@@ -2542,7 +2585,8 @@ msgstr "סימון פעולות לא צפויות"
 msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/components/ModelCredits.tsx
+#: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -2559,7 +2603,7 @@ msgstr "מ-{0}"
 msgid "Fullscreen"
 msgstr "מסך מלא"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Gateway ID"
 msgstr "Gateway ID"
@@ -2644,10 +2688,6 @@ msgstr "השמעת דוגמה"
 msgid "Hi, this is how I'll sound when I read replies out loud."
 msgstr "היי, כך אשמע כשאקריא תשובות בקול."
 
-#: src/pages/Shell.tsx
-msgid "Hide bots"
-msgstr "הסתרת הבוטים"
-
 #: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "הסתרת הסיסמה"
@@ -2657,7 +2697,7 @@ msgid "Hide transcript"
 msgstr "הסתרת התמליל"
 
 #: src/lib/ticket-priority.ts
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "High"
 msgstr "גבוהה"
@@ -2692,7 +2732,7 @@ msgstr "תדירות"
 msgid "How to check"
 msgstr "איך לבדוק"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
 msgstr "סיימתי"
 
@@ -2815,7 +2855,7 @@ msgstr "הבוטים והקבוצות שבו יישמרו ויוצאו מהמק�
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "השיחה, הקבצים והרוטינות שלו יימחקו לצמיתות. בוטים שהוא יצר יישארו ברשימה."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "מעבר לאחרונות"
 
@@ -2894,7 +2934,7 @@ msgstr "מאזין"
 msgid "Listening…"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/transcript.tsx
 msgid "Load earlier messages"
 msgstr "טעינת הודעות קודמות"
 
@@ -2934,10 +2974,6 @@ msgstr "טוען תצוגה מקדימה…"
 msgid "Loading rules…"
 msgstr "טוען כללים…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr "טוען כלים…"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "טוען ספקי קול…"
@@ -2946,11 +2982,10 @@ msgstr "טוען ספקי קול…"
 #: src/pages/Artifacts.tsx
 #: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/ModelBackupsSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/transcript.tsx
 msgid "Loading…"
 msgstr "טוען…"
 
@@ -2970,13 +3005,14 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr "הגדרות השרת המקומי"
 
+#: src/components/ModelCredits.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "התנתקות"
 
 #: src/lib/ticket-priority.ts
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Low"
 msgstr "נמוך"
@@ -2998,6 +3034,7 @@ msgstr "יש לוודא ששום דבר לא פועל עדיין במחשב הז
 msgid "Manage"
 msgstr "ניהול"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Manage billing"
 msgstr "ניהול חיוב"
@@ -3030,7 +3067,7 @@ msgstr "סימון כנקראה"
 msgid "Mark as Unread"
 msgstr "סימון כלא נקראה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
 msgstr "מקסימלי"
@@ -3044,16 +3081,13 @@ msgstr "מקסימלי"
 msgid "Maximize"
 msgstr "הגדלה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Maximum images per request"
 msgstr "מספר תמונות מרבי לבקשה"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Maximum of 10 backup models."
-msgstr "עד 10 מודלי גיבוי."
-
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/catalog-model-fields.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Maximum output tokens"
 msgstr "מספר טוקנים מרבי בפלט"
@@ -3063,10 +3097,11 @@ msgid "MCP endpoint"
 msgstr "נקודת קצה של MCP"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Medium"
 msgstr "בינוני"
@@ -3095,7 +3130,7 @@ msgstr "זיכרון"
 msgid "Memory scope"
 msgstr "היקף הזיכרון"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Mentions"
 msgstr "אזכורים"
 
@@ -3103,7 +3138,8 @@ msgstr "אזכורים"
 msgid "Mentions only"
 msgstr "אזכורים בלבד"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-shared.ts
+#: src/pages/shell/composer.tsx
 msgid "Message"
 msgstr "הודעה"
 
@@ -3112,11 +3148,11 @@ msgstr "הודעה"
 msgid "Message"
 msgstr "הודעה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Message {activeName}"
 msgstr "הודעה אל {activeName}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Message composer"
 msgstr "חלון כתיבת הודעה"
 
@@ -3124,7 +3160,7 @@ msgstr "חלון כתיבת הודעה"
 msgid "Message event"
 msgstr "אירוע הודעה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Message from {peer}"
 msgstr "הודעה מ-{peer}"
 
@@ -3132,11 +3168,11 @@ msgstr "הודעה מ-{peer}"
 msgid "Message from another agent"
 msgstr "הודעה מסוכן אחר"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Message…"
 msgstr "הודעה…"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Messaged {peer}"
 msgstr "נשלחה הודעה אל {peer}"
 
@@ -3149,7 +3185,7 @@ msgstr "הודעות"
 msgid "Microphone failed"
 msgstr "המיקרופון נכשל"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Minimal"
 msgstr "מינימלי"
@@ -3163,7 +3199,7 @@ msgstr "מינימלי"
 msgid "Minimize"
 msgstr "מזעור"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Minimize bots"
 msgstr "מזעור הבוטים"
 
@@ -3184,7 +3220,9 @@ msgstr "דקות"
 msgid "Missed call"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/catalog-model-fields.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3195,12 +3233,12 @@ msgstr "מודל"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "המודל \"{modelId}\" לא הופיע ברשימה."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Model id"
 msgstr "מזהה מודל"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
 
@@ -3208,7 +3246,7 @@ msgstr "אפשרויות מודל"
 msgid "Model spend uses your provider keys."
 msgstr "העלות של המודלים מחויבת דרך מפתחות הספק שלך."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
 msgstr "המודל עודכן."
 
@@ -3218,11 +3256,15 @@ msgstr "המודל עודכן."
 msgid "Models"
 msgstr "מודלים"
 
+#: src/components/ModelCredits.tsx
+msgid "Models at provider cost"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Models for the server owner’s default space."
 msgstr "מודלים למרחב ברירת המחדל של בעלי השרת."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Models from server"
 msgstr "מודלים מהשרת"
@@ -3239,7 +3281,15 @@ msgstr "חודש"
 msgid "Monthly"
 msgstr "חודשי"
 
-#: src/pages/Shell.tsx
+#: src/components/ModelCredits.tsx
+msgid "Monthly credits"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Monthly credits expire at renewal. Top-ups do not expire."
+msgstr ""
+
+#: src/pages/shell/message-hover-actions.tsx
 msgid "More"
 msgstr "עוד"
 
@@ -3307,9 +3357,13 @@ msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
 
 #: src/lib/roster-status.ts
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "נדרשת פעולה"
+
+#: src/pages/shell/chat-context.tsx
+msgid "New"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
@@ -3318,6 +3372,10 @@ msgstr "בוט חדש"
 #: src/pages/GroupPanel.tsx
 msgid "New group"
 msgstr "קבוצה חדשה"
+
+#: src/pages/shell/chat-context.tsx
+msgid "New messages"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
@@ -3345,6 +3403,10 @@ msgstr "מרחב חדש"
 msgid "New ticket"
 msgstr "כרטיס חדש"
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Next settings sections"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "עדיין אין חיבורי סוכנים."
@@ -3358,7 +3420,7 @@ msgid "No artifacts found."
 msgstr "לא נמצאו תוצרים."
 
 #: src/pages/PluginsOverlay.tsx
-msgid "no auth"
+msgid "No auth"
 msgstr "ללא אימות"
 
 #: src/pages/PluginsOverlay.tsx
@@ -3398,7 +3460,7 @@ msgstr "לא הוגדר קטלוג אפליקציות מנוהל בהתקנה ה
 msgid "No matching artifacts on this page."
 msgstr "אין תוצרים תואמים בדף הזה."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
 msgstr "אין מודלים תואמים"
@@ -3427,7 +3489,7 @@ msgstr "אין קטלוג מודלים זמין."
 msgid "No models listed."
 msgstr "לא נמצאו מודלים ברשימה."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/provider-list.tsx
 msgid "No providers found."
 msgstr "לא נמצאו ספקים."
 
@@ -3460,17 +3522,9 @@ msgstr "עדיין אין שיחות צוות."
 msgid "No tickets yet"
 msgstr "עדיין אין כרטיסים"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
-msgstr "אין כלים זמינים."
-
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
 msgstr "ללא טריגר"
-
-#: src/pages/ScratchpadSection.tsx
-msgid "None yet"
-msgstr "עדיין אין"
 
 #: src/lib/ticket-priority.ts
 msgid "Normal"
@@ -3513,7 +3567,7 @@ msgid "Now"
 msgstr "עכשיו"
 
 #. placeholder {0}: selected.label
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Now using {0}."
 msgstr "בשימוש עכשיו: {0}."
 
@@ -3530,6 +3584,7 @@ msgid "OAuth client secret (optional)"
 msgstr "סוד לקוח OAuth (אופציונלי)"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth מחובר"
 
@@ -3538,6 +3593,7 @@ msgid "OAuth connection failed"
 msgstr "חיבור OAuth נכשל"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "תוקף OAuth פג"
 
@@ -3550,29 +3606,34 @@ msgstr "לפי תזמון"
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
 
+#: src/components/ModelCredits.tsx
+msgid "One-time purchase. Credits do not expire."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr "אפשר למחוק רק מרחבים ריקים. יש למחוק קודם את הבוטים והקבוצות שבו."
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/ScratchpadSection.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "פתיחה"
 
 #. placeholder {0}: group.title
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "פתיחת {0}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "יש לפתוח את <0>{0}</0> ולהזין את הקוד הזה:"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
 msgstr "יש לפתוח את <0>{0}</0> כדי להשלים את ההתחברות."
@@ -3594,7 +3655,7 @@ msgstr "פתיחת הגדרות המחשב"
 msgid "Open external link?"
 msgstr "לפתוח קישור חיצוני?"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-panel.tsx
 msgid "Open in full window"
 msgstr "פתיחה בחלון מלא"
 
@@ -3606,12 +3667,12 @@ msgstr "פתיחת הניווט"
 msgid "Open work"
 msgstr "עבודה פתוחה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "כתובת URL של שרת תואם OpenAI"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Opened its thread."
 msgstr "השרשור שלו נפתח."
 
@@ -3623,7 +3684,7 @@ msgstr "פותח צ׳אט…"
 msgid "Opening your Space…"
 msgstr "פותח את המרחב…"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Optional"
@@ -3633,7 +3694,7 @@ msgstr "אופציונלי"
 msgid "Optional header value"
 msgstr "ערך header אופציונלי"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Or connect an API key"
 msgstr "או חיבור עם מפתח API"
 
@@ -3657,7 +3718,7 @@ msgstr "ארגון סרגל הצד ועריכת בוטים. שינויים בק�
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "מודל אחר…"
@@ -3712,12 +3773,12 @@ msgstr "הסיסמאות אינן תואמות"
 msgid "Past due"
 msgstr "באיחור תשלום"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste a replacement key"
 msgstr "יש להדביק מפתח חלופי"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "יש להדביק את הכתובת התואמת ל-OpenAI מהשרת. Rakazo מוסיף /v1 במידת הצורך."
 
@@ -3733,12 +3794,16 @@ msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 msgid "Paused"
 msgstr "מושהה"
 
+#: src/components/ModelCredits.tsx
+msgid "Pay your model provider directly."
+msgstr ""
+
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
 msgstr ""
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/chat-shared.ts
 msgid "Photo"
 msgstr "תמונה"
 
@@ -3795,6 +3860,10 @@ msgstr "תצוגה מקדימה של {0}"
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "תצוגה מקדימה אינה זמינה לסוג הקובץ הזה — אפשר להוריד אותו כדי לצפות בו."
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Previous settings sections"
+msgstr ""
+
 #: src/pages/Board.tsx
 msgid "Priority"
 msgstr "עדיפות"
@@ -3820,7 +3889,7 @@ msgstr "קלט מוגן"
 msgid "Provider"
 msgstr "ספק"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/provider-list.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "ספקים"
@@ -3833,19 +3902,23 @@ msgstr "Pull request"
 msgid "Queued"
 msgstr "בתור"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Quote"
 msgstr "ציטוט"
+
+#: src/components/ModelCredits.tsx
+msgid "Rakazo credits"
+msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "React"
 msgstr "הוספת אמוג׳י"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "אמוג׳י"
 
@@ -3853,7 +3926,7 @@ msgstr "אמוג׳י"
 msgid "Read replies aloud"
 msgstr "הקראת תשובות בקול"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Reasoning effort"
 msgstr "רמת חשיבה"
@@ -3945,9 +4018,14 @@ msgstr "כתובת הפניה (Redirect URI)"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
+#: src/components/ModelCredits.tsx
 #: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "רענון"
+
+#: src/components/ModelCredits.tsx
+msgid "Refresh credits"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
@@ -3965,7 +4043,7 @@ msgstr "ההרשמה סגורה"
 msgid "Release computer"
 msgstr "שחרור המחשב"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
 msgstr "שחרור השליטה"
 
@@ -3979,7 +4057,6 @@ msgstr "טעינה מחדש"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -3987,7 +4064,7 @@ msgid "Remove"
 msgstr "הסרה"
 
 #. placeholder {0}: attachment.file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Remove {0}"
 msgstr "הסרת {0}"
 
@@ -4013,7 +4090,7 @@ msgid "Remove Git event"
 msgstr "הסרת אירוע Git"
 
 #. placeholder {0}: mention.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Remove mention {0}"
 msgstr "הסרת האזכור {0}"
 
@@ -4026,7 +4103,7 @@ msgid "Remove schedule"
 msgstr "הסרת התזמון"
 
 #. placeholder {0}: selectedSkill.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Remove skill {0}"
 msgstr "הסרת המיומנות {0}"
 
@@ -4034,7 +4111,7 @@ msgstr "הסרת המיומנות {0}"
 msgid "Remove webhook"
 msgstr "הסרת ה-webhook"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "הוסר יחד עם הצ׳אט, המחשב והזיכרון."
 
@@ -4051,8 +4128,8 @@ msgid "Rename"
 msgstr "שינוי שם"
 
 #: src/pages/BotContextMenu.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Rename section"
 msgstr "שינוי שם המקטע"
 
@@ -4069,7 +4146,7 @@ msgstr "מתחדש ב-{day}"
 msgid "Reopen"
 msgstr "פתיחה מחדש"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "החלפת מפתח API"
 
@@ -4081,16 +4158,16 @@ msgstr "החלפת מפתח"
 msgid "Replace value"
 msgstr "החלפת ערך"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-hover-actions.tsx
 msgid "Reply"
 msgstr "תשובה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Reply cancelled"
 msgstr "התשובה בוטלה"
 
 #. placeholder {0}: replyNameRef.current
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Replying to {0}"
 msgstr "תשובה ל-{0}"
 
@@ -4131,6 +4208,10 @@ msgstr "איפוס הסיסמה"
 msgid "Resetting…"
 msgstr "מאפס…"
 
+#: src/pages/shell/sidebar-layout.tsx
+msgid "Resize bots sidebar"
+msgstr ""
+
 #: src/pages/ResizableSidePanel.tsx
 msgid "Resize panel"
 msgstr "שינוי גודל החלונית"
@@ -4140,7 +4221,7 @@ msgid "Restart to update"
 msgstr "הפעלה מחדש לעדכון"
 
 #: src/components/InstructionSettings.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/archived-chats.tsx
 msgid "Restore"
 msgstr "שחזור"
 
@@ -4214,7 +4295,7 @@ msgstr "החלפת מפתח"
 
 #: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Routine"
 msgstr "רוטינה"
 
@@ -4234,7 +4315,7 @@ msgstr "הרצה ב-"
 msgid "Run history"
 msgstr "היסטוריית הרצות"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-routine-editor.ts
 msgid "Run time must be in the future."
 msgstr "זמן ההרצה חייב להיות בעתיד."
 
@@ -4266,16 +4347,12 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Save"
 msgstr "שמירה"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Save backups"
-msgstr "שמירת גיבויים"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save credential"
@@ -4299,7 +4376,7 @@ msgstr "נשמר"
 msgid "Saved, but list refresh failed"
 msgstr "נשמר, אבל רענון הרשימה נכשל"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
 msgstr "נשמר."
 
@@ -4318,8 +4395,7 @@ msgstr "שומר..."
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
-#: src/pages/ModelBackupsSettings.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4330,11 +4406,15 @@ msgstr "שומר…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
 
+#: src/components/ModelCredits.tsx
+msgid "Scheduled routines"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
@@ -4364,12 +4444,12 @@ msgstr "חיפוש לפי דומיין"
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
 msgstr "חיפוש מודלים"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/provider-list.tsx
 msgid "Search providers"
 msgstr "חיפוש ספקים"
 
@@ -4391,11 +4471,7 @@ msgstr "מחפש…"
 msgid "Select a bot"
 msgstr "בחירת בוט"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Select a connected model"
-msgstr "בחירת מודל מחובר"
-
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "שליחה"
 
@@ -4451,7 +4527,7 @@ msgstr "שם השרת"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
@@ -4465,16 +4541,16 @@ msgstr "URL של השרת"
 msgid "Settings"
 msgstr "הגדרות"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer-mentions.tsx
 msgid "Settings: General"
 msgstr "הגדרות: כללי"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer-mentions.tsx
 msgid "Settings: Usage"
 msgstr "הגדרות: שימוש"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "עזרה בהגדרה"
 
@@ -4503,7 +4579,7 @@ msgstr "מיומנויות משותפות"
 msgid "Show all"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Show bots"
 msgstr "הצגת בוטים"
 
@@ -4545,7 +4621,7 @@ msgstr "צפיפות סרגל הצד"
 
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
 msgid "Sign in"
@@ -4554,7 +4630,7 @@ msgstr "התחברות"
 #: src/components/AccountAccess.tsx
 #: src/lib/passkeys.ts
 #: src/lib/user-error.ts
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Sign in again"
 msgstr "התחברות מחדש"
 
@@ -4584,12 +4660,12 @@ msgid "Site"
 msgstr "אתר"
 
 #. placeholder {0}: skill.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
 msgid "Skill {0}"
 msgstr "מיומנות {0}"
 
 #: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "דילוג"
 
@@ -4644,7 +4720,7 @@ msgstr "ברירת המחדל של המרחב"
 msgid "Spaces"
 msgstr "מרחבים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Speak"
 msgstr "הקראה"
 
@@ -4656,7 +4732,7 @@ msgstr "הקראה + תמלול"
 msgid "Speak only"
 msgstr "הקראה בלבד"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Speak this reply"
 msgstr "הקראת התשובה"
 
@@ -4686,7 +4762,7 @@ msgstr "מתחיל"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/lib/roster-status.ts
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
@@ -4700,11 +4776,13 @@ msgstr "סטטוס"
 msgid "Steps"
 msgstr "שלבים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/composer.tsx
+#: src/pages/shell/computer-overlay.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Stop"
 msgstr "עצירה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "הפסקת ההקראה"
 
@@ -4726,15 +4804,16 @@ msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
 #: src/lib/identity-display.ts
-#: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "סוכן משנה"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Submit"
 msgstr "שליחה"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr "הרשמה למנוי"
@@ -4743,12 +4822,12 @@ msgstr "הרשמה למנוי"
 msgid "Subscription required"
 msgstr "נדרש מנוי"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
 msgstr "תומך בתמונות"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
@@ -4757,7 +4836,7 @@ msgstr "תומך בחשיבה"
 msgid "Switch bot"
 msgstr "החלפת בוט"
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Switching…"
 msgstr "מחליף…"
 
@@ -4765,7 +4844,7 @@ msgstr "מחליף…"
 msgid "System"
 msgstr "מערכת"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
 msgstr "השתלטות"
 
@@ -4781,7 +4860,7 @@ msgstr "לימוד בתהליך. יש להפסיק את הלימוד לפני ש
 msgid "Team"
 msgstr "צוות"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "Team Computer"
 msgstr "מחשב הצוות"
 
@@ -4848,7 +4927,7 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
 
 #: src/components/call/CallCard.tsx
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4859,7 +4938,7 @@ msgstr "חשיבה"
 msgid "Thinking: {activeThinkingLabel}"
 msgstr "חשיבה: {activeThinkingLabel}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "הבוט הזה פועל על המחשב הזה, לא על שולחן עבודה של Linux. המעטפת והקבצים משתמשים בתיקיית הבית."
 
@@ -4937,7 +5016,7 @@ msgstr "השרת הזה לא ביקש הרשאה דרך הדפדפן."
 msgid "This server is already connected. Disconnect it first to authorize again."
 msgstr "השרת הזה כבר מחובר. יש לנתק אותו קודם כדי לאשר מחדש."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "התחברות עם המנוי הזה עדיין לא זמינה ב-Rakazo. אפשר להשתמש בפרטי גישה של ההתקנה או לבחור ספק אחר."
 
@@ -5004,6 +5083,10 @@ msgstr "מקורות כלים"
 msgid "Tools"
 msgstr "כלים"
 
+#: src/components/ModelCredits.tsx
+msgid "Top up anytime"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Transcribing…"
 msgstr ""
@@ -5031,6 +5114,10 @@ msgstr "תקופת ניסיון"
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Trial ends {day}"
 msgstr "תקופת הניסיון מסתיימת {day}"
+
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Tried in order if the active model fails."
+msgstr "ינוסו לפי הסדר אם המודל הפעיל נכשל."
 
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
@@ -5096,6 +5183,7 @@ msgstr "סוג קובץ לא נתמך: {0}"
 msgid "Up to date"
 msgstr "מעודכן"
 
+#: src/components/ModelCredits.tsx
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update"
 msgstr "עדכון"
@@ -5159,6 +5247,10 @@ msgstr "מעדכן את מחשב הצוות"
 msgid "Updating…"
 msgstr "מעדכן…"
 
+#: src/components/ModelCredits.tsx
+msgid "Upgrade now"
+msgstr ""
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "העלאה"
@@ -5187,7 +5279,7 @@ msgstr "שימוש ב{hostLabel}"
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use a found model"
 msgstr "שימוש במודל שנמצא"
@@ -5204,6 +5296,10 @@ msgstr "שימוש בהנחיות ברירת המחדל"
 msgid "Use email code"
 msgstr "שימוש בקוד מהאימייל"
 
+#: src/components/ModelCredits.tsx
+msgid "Use my API key"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Use password"
 msgstr "שימוש בסיסמה"
@@ -5212,7 +5308,12 @@ msgstr "שימוש בסיסמה"
 msgid "Use Protected input for passwords."
 msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 
-#: src/pages/ModelSettingsOverlay.tsx
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Use Rakazo credits"
+msgstr ""
+
+#: src/pages/model-settings/connection-controls.tsx
 msgid "Use this model"
 msgstr "שימוש במודל הזה"
 
@@ -5236,6 +5337,10 @@ msgstr "שם משתמש"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
 msgstr "משתמש בפרטי הגישה של {hostCredentialSource} של השרת עצמו כדי לגשת ל-{selectedProviderName}."
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -5283,6 +5388,10 @@ msgstr "ממתין בתור…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "ממתין…"
+
+#: src/components/ModelCredits.tsx
+msgid "Web, desktop and mobile"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Web, desktop and mobile apps"
@@ -5370,13 +5479,14 @@ msgstr ""
 msgid "year"
 msgstr "שנה"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
+#: src/pages/shell/sidebar-roster.tsx
 msgid "Yesterday"
 msgstr "אתמול"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/message-view.tsx
 msgid "You"
 msgstr "אני"
 
@@ -5392,7 +5502,7 @@ msgstr "אפשר לסגור את החלון."
 msgid "You declined"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/computer-overlay.tsx
 msgid "You have control"
 msgstr "השליטה אצלך"
 
@@ -5400,6 +5510,10 @@ msgstr "השליטה אצלך"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Anthropic"
+
+#: src/components/ModelCredits.tsx
+msgid "Your API key"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Your email address"

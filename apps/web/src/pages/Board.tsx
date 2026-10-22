@@ -8,8 +8,10 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
+import { isRetryableError, retryDelayMs } from "@rakazo/core";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -59,6 +61,7 @@ export function BoardPage() {
       while (active) {
         const controller = new AbortController();
         currentController = controller;
+        let failure: unknown;
         try {
           const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
           if (!active) return;
@@ -80,13 +83,14 @@ export function BoardPage() {
             if (active) setTickets(result.tickets);
           }
         } catch (cause) {
+          failure = cause;
           if (active) setError(errorText(cause));
         } finally {
           controller.abort();
         }
-        if (!active) return;
+        if (!active || !isRetryableError(failure)) return;
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, 1_000);
+          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
           cancelRetry = () => {
             clearTimeout(timer);
             resolve();
@@ -106,9 +110,13 @@ export function BoardPage() {
     <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
       <header className="flex items-center gap-3 border-b px-4 py-3">
-        <Button variant="ghost" size="icon" render={<Link to="/app" />} aria-label={t`Back`}>
+        <Link
+          to="/app"
+          className={buttonVariants({ variant: "ghost", size: "icon" })}
+          aria-label={t`Back`}
+        >
           <ChevronLeft />
-        </Button>
+        </Link>
         <h1 className="flex-1 font-medium">
           <Trans>Board</Trans>
         </h1>

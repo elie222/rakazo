@@ -2,7 +2,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
 import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -201,6 +201,84 @@ describe("Pi usage accounting", () => {
       await once(server, "close");
     }
   }, 30000);
+  it("persists a generation id before exposing the first SSE chunk", async () => {
+    let release = () => {};
+    let entered = () => {};
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const durable = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const onRequestId = vi.fn(async () => {
+      entered();
+      await durable;
+    });
+    const fields = new Set<keyof AgentUsage>();
+    const wrapped = usageReportingFetch(
+      async () =>
+        new Response('data: {"id":"gen_fixture","choices":[]}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      fields,
+      onRequestId,
+    );
+    const response = await wrapped("https://example.test");
+    let exposed = false;
+    const read = response.text().then((text) => {
+      exposed = true;
+      return text;
+    });
+    await waiting;
+    expect(exposed).toBe(false);
+    release();
+    await read;
+    expect(onRequestId).toHaveBeenCalledWith("gen_fixture");
+    expect(normalizePiUsage(undefined, model, fields).providerRequestId).toBe("gen_fixture");
+  });
+  it("retains a provider cost receipt when a stream throws after reporting it", async () => {
+    const afterCall = vi.fn();
+    const events: AgentRuntimeEvent[] = [];
+    const models = {
+      streamSimple: (_model: unknown, _context: unknown, options: { fetch: typeof fetch }) => ({
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              const response = await options.fetch("https://model.example.test/v1");
+              await response.text();
+              throw new Error("Synthetic interrupted stream");
+            },
+          };
+        },
+      }),
+    } as unknown as Parameters<typeof observedPiStream>[0];
+    const stream = await observedPiStream(
+      models,
+      model,
+      { messages: [] },
+      {
+        fetch: async () =>
+          new Response('data: {"id":"gen_fixture","usage":{"cost":0.125},"choices":[]}\n\n', {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      },
+      (event) => events.push(event),
+      { beforeCall: () => "reservation", afterCall },
+    );
+    for await (const _event of stream) {
+    }
+    expect((await stream.result()).stopReason).toBe("error");
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({
+        costUsd: 0.125,
+        costSource: "provider-reported",
+        providerRequestId: "gen_fixture",
+      }),
+    );
+    expect(events[0]).toMatchObject({ costUsd: 0.125, costSource: "provider-reported" });
+  });
+
   it("settles a thrown provider call before exposing the terminal event", async () => {
     let finishSettlement = () => {};
     const settlement = new Promise<void>((resolve) => {
@@ -228,7 +306,10 @@ describe("Pi usage accounting", () => {
     expect(terminalSeen).toBe(false);
     finishSettlement();
     expect((await next).value).toMatchObject({ type: "error" });
-    expect(afterCall).toHaveBeenCalledWith("reservation", null);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null }),
+    );
   });
   it("does not derive an unsafe integer total from valid component counts", () => {
     expect(
@@ -250,30 +331,58 @@ describe("Pi usage accounting", () => {
       normalizePiUsage({ input: 1.5, output: Number.MAX_SAFE_INTEGER + 1 }, model),
     ).toMatchObject({ inputTokens: null, outputTokens: null });
   });
-  it("disables hidden SDK retries for a guarded model call", async () => {
-    const fetcher = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({ error: { message: "Synthetic rate limit", type: "rate_limit" } }),
-          { status: 429, headers: { "content-type": "application/json" } },
-        ),
-    );
+  it.each([400, 401, 402, 403, 429])(
+    "releases a rejected HTTP %s attempt without hidden retries",
+    async (status) => {
+      const fetcher = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: { message: "Synthetic rate limit", type: "rate_limit" } }),
+            { status, headers: { "content-type": "application/json" } },
+          ),
+      );
+      const afterCall = vi.fn();
+      const events: AgentRuntimeEvent[] = [];
+      const stream = await observedPiStream(
+        builtinModels(),
+        model,
+        { messages: [] },
+        { apiKey: "fake-fixture-key", fetch: fetcher, maxRetries: 3 },
+        (event) => events.push(event),
+        { beforeCall: () => "reservation", afterCall },
+      );
+      for await (const _event of stream) {
+      }
+      expect((await stream.result()).stopReason).toBe("error");
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(afterCall).toHaveBeenCalledOnce();
+      expect(events).toHaveLength(1);
+      expect(afterCall).toHaveBeenCalledWith(
+        "reservation",
+        expect.objectContaining({ costUsd: 0, usageSource: "provider-rejected" }),
+      );
+      expect(events[0]).toMatchObject({ costUsd: 0, costSource: "provider-rejection" });
+    },
+  );
+  it.each([408, 500, 503])("retains uncertainty for HTTP %s", async (status) => {
     const afterCall = vi.fn();
-    const events: AgentRuntimeEvent[] = [];
     const stream = await observedPiStream(
       builtinModels(),
       model,
       { messages: [] },
-      { apiKey: "fake-fixture-key", fetch: fetcher, maxRetries: 3 },
-      (event) => events.push(event),
+      {
+        apiKey: "fixture-key",
+        fetch: async () => Response.json({ error: { message: "Synthetic failure" } }, { status }),
+      },
+      () => {},
       { beforeCall: () => "reservation", afterCall },
     );
     for await (const _event of stream) {
     }
-    expect((await stream.result()).stopReason).toBe("error");
-    expect(fetcher).toHaveBeenCalledOnce();
-    expect(afterCall).toHaveBeenCalledOnce();
-    expect(events).toHaveLength(1);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null }),
+    );
   });
   it("prepares context before budget reservation and provider execution", async () => {
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
@@ -352,6 +461,30 @@ describe("Pi usage accounting", () => {
     expect((await stream.result()).errorMessage).toBe("synthetic tool stop");
     for (const callback of [beforeCall, afterCall, prepareContext, recordUsage, fetcher, push])
       expect(callback).not.toHaveBeenCalled();
+  });
+  it("releases a credit reservation if cancellation arrives before the provider starts", async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn();
+    const afterCall = vi.fn();
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      { signal: controller.signal, fetch: fetcher },
+      vi.fn(),
+      {
+        beforeCall: () => {
+          controller.abort(new Error("canceled before request"));
+          return "reservation";
+        },
+        afterCall,
+      },
+    );
+    for await (const _event of stream) {
+    }
+    expect((await stream.result()).errorMessage).toBe("canceled before request");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(afterCall).toHaveBeenCalledWith("reservation", expect.objectContaining({ costUsd: 0 }));
   });
   it("retains reported zero through the full generic runtime and its safe hostname network adapter", async () => {
     const server = createServer((_request, response) => {

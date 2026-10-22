@@ -7,6 +7,7 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
   CSP_REPORTING_ENDPOINTS,
@@ -44,6 +45,7 @@ import {
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
+const SCREEN_UPSTREAM_TIMEOUT_MS = 20_000;
 const screenLog = createServiceLogger({ service: "rakazo-web" });
 
 function screenPolicy(url: string | undefined) {
@@ -158,7 +160,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         return;
       }
       res.statusCode = 502;
-      res.end("Screen unavailable");
+      res.end(`Screen unavailable (${reason})`);
     };
     function requestUpstream() {
       if (res.destroyed) return;
@@ -207,6 +209,15 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           incoming.pipe(res);
         },
       );
+      // A silent upstream would leave the frame blank for as long as the browser waits. The limit
+      // covers only the wait for response headers; a slow or idle body after that keeps flowing.
+      const request = upstream;
+      const headersTimer = setTimeout(() => {
+        finishUnavailable("upstream_timeout");
+        request.destroy();
+      }, SCREEN_UPSTREAM_TIMEOUT_MS);
+      request.once("response", () => clearTimeout(headersTimer));
+      request.once("close", () => clearTimeout(headersTimer));
       upstream.on("error", (error) => {
         if (
           retryable &&
@@ -383,7 +394,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
+  // Names this build in every API request; the dev server has none, so the handshake stays off.
+  const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const apiProxy = Object.fromEntries(
@@ -440,7 +453,18 @@ export default defineConfig(({ mode }) => {
     ),
   });
   return {
+    build: { sourcemap: true },
+    define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
+      {
+        // The API reads this to name the deployed build, and a tab fetches it to confirm the
+        // server already serves a newer build before it reloads.
+        name: "rakazo-build-id",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "build-id", source: `${buildId}\n` });
+        },
+      },
       react(),
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),

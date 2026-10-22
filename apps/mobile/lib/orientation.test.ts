@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const screen = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ vi.mock("expo-screen-orientation", () => ({
 }));
 
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   Dimensions: { get: (kind: string) => (kind === "screen" ? screen.size : screen.window) },
 }));
 
@@ -36,6 +38,7 @@ function deferredLock() {
 
 describe("app orientation", () => {
   beforeEach(() => {
+    Platform.OS = "ios";
     screen.window = FOLDED;
     screen.size = FOLDED;
     screen.locks = [];
@@ -46,6 +49,32 @@ describe("app orientation", () => {
     expect(appOrientationLock(FOLDED, false)).toBe(1);
     expect(appOrientationLock(UNFOLDED, false)).toBe(0);
     expect(appOrientationLock(FOLDED, true)).toBe(0);
+  });
+
+  it.each([
+    { width: 393, height: 852 },
+    { width: 430, height: 932 },
+    { width: 375, height: 667 },
+    { width: 852, height: 393 },
+    { width: 932, height: 430 },
+    { width: 667, height: 375 },
+  ])("keeps a narrow phone window $width x $height portrait", (window) => {
+    expect(appOrientationLock(window, false)).toBe(1);
+    expect(appOrientationLock(window, true)).toBe(0);
+  });
+
+  it.each([
+    { width: 466, height: 678 },
+    { width: 678, height: 466 },
+    { width: 669, height: 951 },
+    { width: 951, height: 669 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 300, height: 500 },
+    { width: 500, height: 300 },
+  ])("leaves a wider window $width x $height free to rotate", (window) => {
+    expect(appOrientationLock(window, false)).toBe(0);
+    expect(appOrientationLock(window, true)).toBe(0);
   });
 
   it("follows a fold or unfold", async () => {
@@ -59,11 +88,12 @@ describe("app orientation", () => {
   it.each([599, 600, 601])(
     "uses the %i dp screen despite system bars and split-screen",
     async (shortSide) => {
-      screen.size = { width: shortSide, height: 960 };
-      screen.window = { width: shortSide, height: 912 };
+      Platform.OS = "android";
+      screen.size = { width: shortSide, height: 1040 };
+      screen.window = { width: shortSide, height: 992 };
       await syncOrientation();
-      screen.size = { width: 960, height: shortSide };
-      screen.window = { width: 960, height: shortSide - 48 };
+      screen.size = { width: 1040, height: shortSide };
+      screen.window = { width: 1040, height: shortSide - 48 };
       await syncOrientation();
       screen.window = { width: 400, height: shortSide - 48 };
       await syncOrientation();
@@ -112,4 +142,20 @@ describe("app orientation", () => {
     await syncOrientation();
     expect(screen.locks.at(-1)).toBe(1);
   });
+
+  it.each([
+    { width: 466, height: 678, expected: 0 },
+    { width: 678, height: 466, expected: 0 },
+    { width: 669, height: 951, expected: 0 },
+    { width: 951, height: 669, expected: 0 },
+    { width: 402, height: 874, expected: 1 },
+  ])(
+    "uses the live iOS window $width x $height instead of the physical screen",
+    async ({ width, height, expected }) => {
+      screen.size = FOLDED;
+      screen.window = { width, height };
+      await syncOrientation();
+      expect(screen.locks.at(-1)).toBe(expected);
+    },
+  );
 });

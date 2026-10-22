@@ -10,6 +10,8 @@ import {
 } from "@rakazo/ui-web";
 import {
   Brain,
+  ChevronLeft,
+  ChevronRight,
   CloudDownload,
   Cpu,
   CreditCard,
@@ -121,8 +123,10 @@ export function SettingsOverlay({
   onClose: () => void;
   onVoiceStatusMaybeChanged?: () => void | Promise<void>;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const [navOverflow, setNavOverflow] = useState({ previous: false, next: false });
   const usageRef = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [memoryBusy, setMemoryBusy] = useState(false);
@@ -224,6 +228,43 @@ export function SettingsOverlay({
     ...(showUpdates ? [{ id: "updates" as const, label: t`Updates`, icon: CloudDownload }] : []),
   ];
 
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const measure = () => {
+      const offset = Math.abs(nav.scrollLeft);
+      setNavOverflow({
+        previous: offset > 1,
+        next: nav.scrollWidth - nav.clientWidth - offset > 1,
+      });
+    };
+    const revealSection = () => {
+      if (nav.scrollWidth > nav.clientWidth) {
+        nav.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({
+          block: "nearest",
+          inline: "nearest",
+        });
+      }
+      measure();
+    };
+    revealSection();
+    nav.addEventListener("scroll", measure);
+    const observer =
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(revealSection);
+    observer?.observe(nav);
+    return () => {
+      nav.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [section, showComputer, billingEnabled, showUpdates, i18n.locale]);
+
+  function scrollSections(direction: number) {
+    const nav = navRef.current;
+    if (!nav) return;
+    const rtl = getComputedStyle(nav).direction === "rtl";
+    nav.scrollBy({ left: nav.clientWidth * 0.75 * direction * (rtl ? -1 : 1), behavior: "smooth" });
+  }
+
   const sectionTitle =
     navItems.find((item) => item.id === section)?.label ??
     (section === "general" ? t`General` : t`Settings`);
@@ -273,34 +314,58 @@ export function SettingsOverlay({
         className="flex h-[min(760px,calc(100%-2rem))] max-h-[calc(100%-2rem)] w-[min(1080px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[calc(100%-5rem)] sm:max-w-[1080px]"
       >
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <nav
-            data-testid="settings-nav"
-            aria-label={t`Settings`}
-            className="flex shrink-0 flex-row gap-1 overflow-x-auto border-b border-border px-3 py-3 md:w-[200px] md:flex-col md:overflow-y-auto md:border-b-0 md:border-e md:px-3 md:py-4"
-          >
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = item.id === section;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  data-testid={`settings-nav-${item.id}`}
-                  aria-current={active ? "page" : undefined}
-                  disabled={panelBusy}
-                  onClick={() => setSection(item.id)}
-                  className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
-                    active
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-                  <span className="whitespace-nowrap">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 md:contents">
+            {/* Reserve arrow space so showing controls does not change the overflow measurement. */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
+              aria-label={t`Previous settings sections`}
+              disabled={!navOverflow.previous || panelBusy}
+              onClick={() => scrollSections(-1)}
+            >
+              <ChevronLeft className="rtl:rotate-180" />
+            </Button>
+            <nav
+              ref={navRef}
+              data-testid="settings-nav"
+              aria-label={t`Settings`}
+              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-3 md:w-[200px] md:shrink-0 md:flex-none md:flex-col md:overflow-y-auto md:border-e md:border-border md:px-3 md:py-4"
+            >
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = item.id === section;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-testid={`settings-nav-${item.id}`}
+                    aria-current={active ? "page" : undefined}
+                    disabled={panelBusy}
+                    onClick={() => setSection(item.id)}
+                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                      active
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+                    <span className="whitespace-nowrap">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
+              aria-label={t`Next settings sections`}
+              disabled={!navOverflow.next || panelBusy}
+              onClick={() => scrollSections(1)}
+            >
+              <ChevronRight className="rtl:rotate-180" />
+            </Button>
+          </div>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div

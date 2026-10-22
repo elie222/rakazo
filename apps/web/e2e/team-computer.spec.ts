@@ -5,6 +5,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
+  expandAdvancedSection,
   realSandboxTimeout,
   rpc,
   signup,
@@ -150,6 +151,8 @@ test("opening and releasing the computer keep a view-only stream; a failed relea
   const take = chrome.getByRole("button", { name: "Take control", exact: true });
   const release = chrome.getByRole("button", { name: "Release control", exact: true });
   const more = chrome.getByRole("button", { name: "More computer actions" });
+  // The overlay covers the conversation header, which drags the desktop window.
+  await expect(chrome).toHaveCSS("-webkit-app-region", "no-drag");
   const checkViewOnly = async () => {
     await expect(take).toBeVisible();
     await expect(release).toHaveCount(0);
@@ -294,9 +297,7 @@ async function setComputerMode(
   const settings = page.getByTestId("bot-settings");
   await expect(settings.locator("label:has-text('Name') input")).toHaveValue(botName);
   const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   await settings
     .getByRole("button", { name: mode === "team" ? "Team" : "Private", exact: true })
     .click();

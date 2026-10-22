@@ -140,6 +140,7 @@ import {
   writeBotInstructions,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
+import { sanitizedError } from "@rakazo/logging/monitoring";
 import { parse as parseShellCommand } from "shell-quote";
 import {
   connectAgent,
@@ -260,6 +261,7 @@ import {
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
+import { connectApp } from "./connect-app.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
@@ -305,8 +307,13 @@ import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { appendMemoryFact, selectMemoryTools } from "./memory-tools.js";
 import {
+  HostedModelCreditsRequiredError,
+  hostedModelCreditObserver,
+} from "./model-credit-observer.js";
+import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
+  hasHostedModelCredits,
   pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
@@ -2736,9 +2743,13 @@ export interface ExecutorDeps {
   home: AgentHomeStore;
   artifacts?: ArtifactStore;
   connector?: ConnectorProvider;
-  connectors?: { managed(id: string): ManagedConnectorProvider | undefined };
+  connectors?: {
+    managed(id: string): ManagedConnectorProvider | undefined;
+    managedProviders?(): ManagedConnectorProvider[];
+  };
   secrets: string[];
   secretStore: SecretStore;
+  billingEnabled?: boolean;
   deploymentModelKey?: string;
   /** The deployment default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured?: boolean;
@@ -3039,6 +3050,7 @@ export function buildApprovalContinuation(
 export function isTerminalModelSetupError(error: unknown): boolean {
   return (
     error instanceof UnavailableModelForAuthError ||
+    error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
     (error instanceof Error && error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE)
   );
@@ -3057,12 +3069,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
     registerSecrets?: (values: string[]) => void,
     requireStoredSecret = false,
   ): Promise<AgentRunRequest["model"]> => {
+    const hostedProvider = (await modelCreditBillingEnabled(deps))
+      ? resolveDeploymentModel().provider
+      : undefined;
     const validationError = await validateConnectedModelChoice(
       deps.prisma,
       deps.secretStore,
       scope,
       provider,
       modelId,
+      { hostedProvider },
     );
     if (validationError) throw new Error(validationError);
     const credential = await findConnectedModelCredential(
@@ -3072,7 +3088,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       modelId,
     );
-    if (!credential) throw new Error("Connect that model provider first");
+    if (
+      !credential &&
+      !((await modelCreditBillingEnabled(deps)) && provider === resolveDeploymentModel().provider)
+    )
+      throw new Error("Connect that model provider first");
     const resolved = await resolveModelKey(
       deps,
       scope.userId,
@@ -3087,6 +3107,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       id: modelId,
       apiKey: resolved.oauth ? undefined : resolved.apiKey,
+      callObserver: resolved.callObserver,
       ...cloudflareRunFields(resolved),
       baseUrl: resolved.baseUrl,
       allowPrivateEndpoint: resolved.allowPrivateEndpoint,
@@ -3098,8 +3119,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       acceptsImages: resolved.acceptsImages,
       maxImagesPerPrompt: resolved.maxImagesPerPrompt,
       thinkingLevel:
-        ((credential.defaultModel === modelId
-          ? credential.thinkingLevel
+        ((credential?.defaultModel === modelId
+          ? credential?.thinkingLevel
           : null) as AgentRunRequest["model"]["thinkingLevel"]) ??
         resolved.thinkingLevel ??
         null,
@@ -3151,6 +3172,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         overrideCredential,
         defaultCredential,
         settings,
+        hostedProvider: (await modelCreditBillingEnabled(deps))
+          ? resolveDeploymentModel().provider
+          : undefined,
         deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
       });
       const { credential, thinkingLevel } = selected;
@@ -3174,6 +3198,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         provider,
         id,
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
+        callObserver: resolved.callObserver,
         ...cloudflareRunFields(resolved),
         baseUrl: resolved.baseUrl,
         allowPrivateEndpoint: resolved.allowPrivateEndpoint,
@@ -3544,6 +3569,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       // Logs and security events raised by this run's tools name its account and space.
       enrichLogContext({
         "run.id": runId,
+        "bot.id": run.botId,
+        "thread.id": run.threadId,
         "space.id": run.spaceId,
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
@@ -3967,14 +3994,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
-        const pinError = run.modelPinned
-          ? pinnedModelCredentialError(modelChoice, overrideCredential)
-          : undefined;
+        const pinError =
+          run.modelPinned &&
+          !(
+            (await modelCreditBillingEnabled(deps)) &&
+            modelChoice.modelProvider === runDeployment?.provider
+          )
+            ? pinnedModelCredentialError(modelChoice, overrideCredential)
+            : undefined;
         const selected = selectConfiguredModel({
           override: modelChoice,
           overrideCredential,
           defaultCredential,
           settings,
+          hostedProvider: (await modelCreditBillingEnabled(deps))
+            ? resolveDeploymentModel().provider
+            : undefined,
           deployment: runDeployment,
         });
         const { credential, thinkingLevel } = selected;
@@ -4511,10 +4546,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           pendingProgress = "";
           lastProgressAt = Date.now();
         };
-        const publishMidTurnNarration = async () => {
+        const publishMidTurnNarration = async (beforeConnectCard = false) => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
           const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
-          const canPublish = canPublishDurableNarration();
+          const canPublish =
+            canPublishDurableNarration() ||
+            (beforeConnectCard && runPromotesMidTurnNarration(run.trigger));
           if (
             narration &&
             !canPublish &&
@@ -4988,7 +5025,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // key) cannot collide with a later identical-args call in this attempt.
           // request_secret stays single-use: retries must reuse the same card.
           const occurrence =
-            name === "request_secret"
+            name === "request_secret" || name === "connect_app"
               ? 0
               : nextMutatingEffectOccurrence(replayEffectToolName, args);
           const effectKey =
@@ -5087,6 +5124,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       runtime: deps.runtime,
                       checker: checker!,
                       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
+                      callObserver: judgeKey.callObserver,
                       accountId: judgeKey.accountId,
                       gatewayId: judgeKey.gatewayId,
                       baseUrl: judgeKey.baseUrl,
@@ -6645,6 +6683,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 : "Call ended and your farewell was spoken. The user is now reading, not listening: finish any remaining work as a normal chat reply with full formatting.",
             });
           }
+          if (name === "connect_app") {
+            await flushProgress();
+            await publishMidTurnNarration(true);
+            return finish(
+              await connectApp(
+                deps,
+                deps.connectors?.managedProviders?.() ?? [],
+                context,
+                run,
+                args.app,
+                applied?.effect.id ?? runScopedToolExecutionId(runId, executionId),
+              ),
+            );
+          }
           if (name === "list_secrets") return listBotSecrets(deps.prisma, run);
           if (name === "forget_secret") {
             const parsed = BotSecretName.safeParse(args.name);
@@ -7571,6 +7623,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 provider: runModelProvider,
                 id: runModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
+                callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
@@ -7648,47 +7701,45 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   completion,
                   runSecrets,
                 ),
-              claimSteering: scripted
-                ? undefined
-                : async (seenIds) => {
-                    const steering = await deps.events.claimSteering({
-                      threadId: thread.id,
-                      botId: bot.id,
-                      runId,
-                      leaseOwner: workerId,
-                      leaseFence: fence,
-                      seenIds,
-                    });
-                    return Promise.all(
-                      steering.map(async (item) => {
-                        const { images, files, unavailableInstruction } =
-                          await settleSteeringAttachmentLoads(
-                            loadCurrentTurnImages(deps, item.blocks, context),
-                            deps.artifacts
-                              ? listCurrentTurnFiles(deps, item.blocks, context)
-                              : Promise.resolve([]),
-                            item.blocks,
-                            context.signal,
-                          );
-                        if (files.length) pendingTurnFiles.push(item.blocks);
-                        const filesInstruction = currentTurnFilesInstruction(files);
-                        return {
-                          id: item.id,
-                          messageId: item.messageId,
-                          historyText: item.text,
-                          text: [
-                            await loadReplyContext(deps.prisma, thread.id, item.messageId),
-                            item.text,
-                            filesInstruction,
-                            unavailableInstruction,
-                          ]
-                            .filter(Boolean)
-                            .join("\n\n"),
-                          images,
-                        };
-                      }),
-                    );
-                  },
+              claimSteering: async (seenIds) => {
+                const steering = await deps.events.claimSteering({
+                  threadId: thread.id,
+                  botId: bot.id,
+                  runId,
+                  leaseOwner: workerId,
+                  leaseFence: fence,
+                  seenIds,
+                });
+                return Promise.all(
+                  steering.map(async (item) => {
+                    const { images, files, unavailableInstruction } =
+                      await settleSteeringAttachmentLoads(
+                        loadCurrentTurnImages(deps, item.blocks, context),
+                        deps.artifacts
+                          ? listCurrentTurnFiles(deps, item.blocks, context)
+                          : Promise.resolve([]),
+                        item.blocks,
+                        context.signal,
+                      );
+                    if (files.length) pendingTurnFiles.push(item.blocks);
+                    const filesInstruction = currentTurnFilesInstruction(files);
+                    return {
+                      id: item.id,
+                      messageId: item.messageId,
+                      historyText: item.text,
+                      text: [
+                        await loadReplyContext(deps.prisma, thread.id, item.messageId),
+                        item.text,
+                        filesInstruction,
+                        unavailableInstruction,
+                      ]
+                        .filter(Boolean)
+                        .join("\n\n"),
+                      images,
+                    };
+                  }),
+                );
+              },
             },
             context,
           );
@@ -8281,6 +8332,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          getLogger().error(
+            "run.failed",
+            sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
+            {
+              "run.outcome": "failed",
+            },
+          );
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -8315,15 +8373,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           setupError instanceof Error ? setupError.message : String(setupError),
           runSecrets,
         );
-        if (!computerBusy) {
-          // undici collapses every network failure to "fetch failed"; the cause names the
-          // host and errno, which is the only part worth paging over.
-          const causeMessage =
-            setupError instanceof Error && setupError.cause instanceof Error
-              ? `: ${redactSecrets(setupError.cause.message, runSecrets)}`
-              : "";
-          getLogger().error("run setup failed", `${setupMessage}${causeMessage}`);
-        }
+        const reportedSetupError = sanitizedError(setupError, (text) =>
+          redactSecrets(text, runSecrets),
+        );
+        if (!computerBusy) getLogger().error("run setup failed", reportedSetupError);
         // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
         // setup that fails every time would retry forever. End the run instead.
         if (
@@ -8368,7 +8421,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return;
           }
-          throw new Error("Run setup failed; retrying");
+          throw new Error("Run setup failed; retrying", { cause: reportedSetupError });
         }
       } finally {
         getLogger().info("run.computer", {
@@ -9052,6 +9105,9 @@ function toolUsageLine(parts: {
     pageWorkClause(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
     ...secretGuidance(disabled),
+    builtinOffered(disabled, "connect_app")
+      ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
+      : undefined,
     builtinOffered(disabled, "remember") ? "Use remember for durable facts." : undefined,
     scratchpadClause(disabled),
     builtinOffered(disabled, "request_takeover")
@@ -9790,7 +9846,37 @@ function assertCompatibleModelEnabled(
   }
 }
 
-async function resolveModelKey(
+async function modelCreditBillingEnabled(deps: ExecutorDeps): Promise<boolean> {
+  if (deps.billingEnabled !== undefined) return deps.billingEnabled;
+  return (
+    (
+      await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+        select: { modelCreditsEnabled: true },
+      })
+    )?.modelCreditsEnabled === true
+  );
+}
+
+async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
+  const [deps, userId, spaceId, , provider] = args;
+  const billingEnabled = await modelCreditBillingEnabled(deps);
+  const scope = { userId, spaceId };
+  if (
+    billingEnabled &&
+    !args[7]?.requireStoredSecret &&
+    (await hasHostedModelCredits(deps.prisma, scope, provider))
+  ) {
+    args[3] = null;
+  }
+  const credential = args[3];
+  const material = await resolveModelKeyMaterial(...args);
+  const callObserver =
+    !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
+  return { ...material, callObserver };
+}
+
+async function resolveModelKeyMaterial(
   deps: ExecutorDeps,
   userId: string,
   spaceId: string,
@@ -9833,6 +9919,8 @@ async function resolveModelKey(
         where: { id: credential.secretId, userId, spaceId: null },
       });
       if (!row) {
+        if (await modelCreditBillingEnabled(deps))
+          throw new Error("Connect that model provider again.");
         if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");

@@ -262,3 +262,85 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   ).toHaveCount(2);
   await captureScreenshot(page, testInfo, "peer-run-answer-inline");
 });
+
+test("answers a message sent while the bot works on another bot's request", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `peer-busy-${Date.now()}@rakazo.test`, "password12", "Peer Busy");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const researcher = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Researcher",
+    title: "",
+    description: "",
+    instructions: "",
+    notifyOnFinish: true,
+  });
+  await page.reload();
+  const chief = page.getByRole("combobox", { name: "Message Chief" });
+  await chief.fill("message the bot named Researcher saying work for 8 seconds");
+  await chief.press("Enter");
+
+  // Researcher is busy with Chief's request when the user writes to it.
+  await expect
+    .poll(
+      async () => {
+        const history = await rpc<{ messages: Array<{ blocks: Array<{ kind: string }> }> }>(
+          page,
+          "threads/messages",
+          { botId: researcher.id, includePeerRuns: true },
+        );
+        return history.messages.some((message) =>
+          message.blocks.some((block) => block.kind === "bot_message_received"),
+        );
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  await page.goto(`/app/${researcher.id}`);
+  const composer = page.getByRole("combobox", { name: "Message Researcher" });
+  await composer.fill("remember peer-busy-alpha");
+  await composer.press("Enter");
+
+  const transcript = page.getByTestId("transcript");
+  await expect(
+    transcript.getByTestId("message-user-bubble").filter({ hasText: "peer-busy-alpha" }),
+  ).toBeVisible({ timeout: 30_000 });
+  // The message landed while Chief's request was still running, so it was held behind it.
+  const held = await rpc<{
+    messages: Array<{
+      role: string;
+      runId?: string;
+      blocks: Array<{ kind: string; text?: string }>;
+    }>;
+  }>(page, "threads/messages", { botId: researcher.id, includePeerRuns: true });
+  const peerRunId = held.messages.find((message) =>
+    message.blocks.some((block) => block.kind === "bot_message_received"),
+  )?.runId;
+  const sent = held.messages.find((message) =>
+    message.blocks.some((block) => block.text === "remember peer-busy-alpha"),
+  );
+  expect(peerRunId).toBeTruthy();
+  expect(sent?.runId).toBe(peerRunId);
+  // The answer is the user's own: inline in the chat, never folded under Chief's request.
+  const answer = transcript.getByText("i will keep that in memory.");
+  await expect(answer).toBeVisible({ timeout: 60_000 });
+  await captureScreenshot(page, testInfo, "peer-busy-answer-inline");
+
+  // Only Chief's request goes back to Chief, not the answer to the user.
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await expect(
+    page.getByTestId("transcript").getByTestId("peer-receipt-chip").filter({
+      hasText: "Message from Researcher",
+    }),
+  ).toBeVisible({ timeout: 30_000 });
+  const returned = await rpc<{
+    messages: Array<{ blocks: Array<{ kind: string; text?: string }> }>;
+  }>(page, "threads/messages", { botId: researcher.id, includePeerRuns: true });
+  const sentToChief = returned.messages.flatMap((message) =>
+    message.blocks.filter((block) => block.kind === "bot_message_sent").map((b) => b.text ?? ""),
+  );
+  expect(sentToChief.some((text) => text.includes("keep that in memory"))).toBe(false);
+});

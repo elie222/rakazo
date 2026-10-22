@@ -101,79 +101,73 @@ export function ScratchpadSection({ botId }: { botId: string }) {
   }
 
   return (
-    <div className="mt-6" data-testid="bot-scratchpad">
-      <div className="mb-3 text-[14px] text-muted-foreground">
+    <div className="mt-8" data-testid="bot-scratchpad">
+      <h3 className="mb-3 text-[15px] font-medium text-foreground">
         <Trans>Open work</Trans>
-      </div>
-      {items.length === 0 ? (
-        <div className="py-1 text-[13.5px] text-muted-foreground/80">
-          <Trans>None yet</Trans>
-        </div>
-      ) : (
-        items.map((item) => (
-          <div
-            key={item.id}
-            className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent"
-          >
-            <Checkbox
-              aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
-              checked={item.status === "done"}
-              disabled={busy}
-              onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
-              className="mt-0.5"
-            />
-            <div className="min-w-0 flex-1">
-              <div
-                className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
-                dir="auto"
-              >
-                {item.title}
-              </div>
-              {item.notes ? (
-                <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
-                  {item.notes}
-                </div>
-              ) : null}
+      </h3>
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent"
+        >
+          <Checkbox
+            aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
+            checked={item.status === "done"}
+            disabled={busy}
+            onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
+            className="mt-0.5"
+          />
+          <div className="min-w-0 flex-1">
+            <div
+              className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+              dir="auto"
+            >
+              {item.title}
             </div>
-            <span className="shrink-0 text-[12px] text-muted-foreground/80">{item.status}</span>
-            {item.status === "open" ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-label={t`Park`}
-                disabled={busy}
-                onClick={() => void setStatus(item, "parked")}
-                className="shrink-0 text-muted-foreground/70"
-              >
-                <Trans>Park</Trans>
-              </Button>
-            ) : item.status === "parked" ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-label={t`Reopen`}
-                disabled={busy}
-                onClick={() => void setStatus(item, "open")}
-                className="shrink-0 text-muted-foreground/70"
-              >
-                <Trans>Open</Trans>
-              </Button>
+            {item.notes ? (
+              <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
+                {item.notes}
+              </div>
             ) : null}
+          </div>
+          <span className="shrink-0 text-[12px] text-muted-foreground/80">{item.status}</span>
+          {item.status === "open" ? (
             <Button
               variant="ghost"
-              size="icon-xs"
-              aria-label={t`Remove`}
+              size="xs"
+              aria-label={t`Park`}
               disabled={busy}
-              onClick={() => void removeItem(item)}
+              onClick={() => void setStatus(item, "parked")}
               className="shrink-0 text-muted-foreground/70"
             >
-              <X />
+              <Trans>Park</Trans>
             </Button>
-          </div>
-        ))
-      )}
+          ) : item.status === "parked" ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={t`Reopen`}
+              disabled={busy}
+              onClick={() => void setStatus(item, "open")}
+              className="shrink-0 text-muted-foreground/70"
+            >
+              <Trans>Open</Trans>
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t`Remove`}
+            disabled={busy}
+            onClick={() => void removeItem(item)}
+            className="shrink-0 text-muted-foreground/70"
+          >
+            <X />
+          </Button>
+        </div>
+      ))}
       <form
-        className="mt-2 flex items-center gap-2"
+        className={`flex items-center gap-2 ${items.length ? "mt-2" : ""}`}
         onSubmit={(event) => {
           event.preventDefault();
           void addItem();

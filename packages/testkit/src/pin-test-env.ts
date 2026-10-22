@@ -5,6 +5,7 @@ import { afterAll } from "vitest";
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.
  */
 if (!process.env.VERIFY_PROVIDERS) {
+  process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
   process.env.AGENT_RUNTIME = "scripted";
   process.env.SANDBOX_PROVIDER = "fake";
   process.env.CLOUD_AGENT_PROVIDER = "emulator";

@@ -8,9 +8,9 @@ const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml";
 // Each rolled service gains a new container, which must pass its health check before the old
 // one stops; the rest of the stack is reconciled afterwards.
-const ROLLOUT = [
+const rolloutSteps = (revision: string) => [
   `${COMPOSE} config --quiet`,
-  `${COMPOSE} build`,
+  `${COMPOSE} build --build-arg GIT_SHA=${revision}`,
   ...["api", "web"].flatMap((service) => [
     `${COMPOSE} ps --all --quiet ${service}`,
     `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
@@ -87,7 +87,7 @@ function fixture() {
     path.join(bin, "docker"),
     `#!/bin/bash
 echo "docker $* @ $(git rev-parse --short HEAD)" >> "$COMMAND_LOG"
-if [[ "$*" == *" build" && "$(cat revision.txt)" == "\${FAIL_BUILD:-}" ]]; then exit 1; fi
+if [[ "$*" == *" build "* && "$(cat revision.txt)" == "\${FAIL_BUILD:-}" ]]; then exit 1; fi
 if [[ "$1" == info ]]; then echo /var/lib/docker; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
@@ -181,7 +181,7 @@ describe("production deploy script", () => {
     expect(result.stdout).not.toContain("already at");
     expect(deploy.head()).toBe(deploy.first);
     expect(deploy.deployed()).toBe(deploy.first);
-    expect(rollout(deploy.commands())).toEqual(ROLLOUT);
+    expect(rollout(deploy.commands())).toEqual(rolloutSteps(deploy.first));
   });
 
   it("deploys the revision the launcher pinned even after main moves on", () => {
@@ -192,6 +192,7 @@ describe("production deploy script", () => {
     expect(result.status).toBe(0);
     expect(deploy.head()).toBe(pinned);
     expect(deploy.deployed()).toBe(pinned);
+    expect(rollout(deploy.commands())).toContain(`${COMPOSE} build --build-arg GIT_SHA=${pinned}`);
   });
 
   it("deploys when the recorded revision is not the checkout", () => {
@@ -211,7 +212,7 @@ describe("production deploy script", () => {
     expect(result.status).toBe(0);
     expect(deploy.head()).toBe(next);
     expect(deploy.deployed()).toBe(next);
-    expect(rollout(deploy.commands())).toEqual(ROLLOUT);
+    expect(rollout(deploy.commands())).toEqual(rolloutSteps(next));
   });
 
   it("keeps the previous images and prunes the rest after a healthy rollout", () => {
@@ -278,10 +279,16 @@ describe("production deploy script", () => {
 
   it("rolls back to the previous revision when the build fails", () => {
     const deploy = fixture();
-    commit(deploy.upstream, "broken");
+    const broken = commit(deploy.upstream, "broken");
     const result = deploy.run({ FAIL_BUILD: "broken" });
     expect(result.status).toBe(1);
     expect(deploy.head()).toBe(deploy.first);
+    expect(
+      rollout(deploy.commands()).filter((line) => line.startsWith(`${COMPOSE} build`)),
+    ).toEqual([
+      `${COMPOSE} build --build-arg GIT_SHA=${broken}`,
+      `${COMPOSE} build --build-arg GIT_SHA=${deploy.first}`,
+    ]);
     expect(deploy.commands().at(-1)).toMatch(
       new RegExp(`up -d --remove-orphans @ ${deploy.first.slice(0, 7)}`),
     );

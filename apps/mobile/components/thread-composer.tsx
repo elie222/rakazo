@@ -8,10 +8,11 @@ import {
   serializeComposerPrompt,
   truncateSlashDescription,
 } from "@rakazo/core";
+import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
-import { useImperativeHandle, useMemo, useState } from "react";
+import { useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ViewStyle } from "react-native";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ComposerSnapshot } from "../lib/thread-feedback";
@@ -67,8 +68,12 @@ export function ThreadComposer({
   onSlashAction,
 }: ThreadComposerProps) {
   const tokens = useMobileTokens();
+  const { fontScale } = useWindowDimensions();
+  // The input text stops growing at MAX_FONT_SCALE, so its height limits stop there too.
+  const textScale = Math.min(fontScale, MAX_FONT_SCALE);
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
+  const inputRef = useRef<TextInput>(null);
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
@@ -420,7 +425,18 @@ export function ThreadComposer({
                 </Pressable>
               </View>
             ))}
-            <View style={{ flexGrow: 1, flexShrink: 1, minWidth: 96 }}>
+            <Pressable
+              accessible={false}
+              onPress={() => inputRef.current?.focus()}
+              style={{
+                flexGrow: 1,
+                flexShrink: 1,
+                minWidth: 96,
+                // Keep the inset outside the scrolling native input: iOS can scroll its
+                // padding out of view, leaving a partially visible line at the edge.
+                paddingVertical: 11,
+              }}
+            >
               {!draft && !selectedSkill && !selectedMentions.length ? (
                 <Text
                   numberOfLines={1}
@@ -442,6 +458,7 @@ export function ThreadComposer({
                 </Text>
               ) : null}
               <TextInput
+                ref={inputRef}
                 onFocus={onFocus}
                 value={draft}
                 onChangeText={updateDraft}
@@ -457,19 +474,21 @@ export function ThreadComposer({
                 }}
                 keyboardAppearance={colorScheme}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 blurOnSubmit={false}
                 style={{
                   color: tokens.foreground,
                   fontSize: 17,
                   lineHeight: 22,
-                  paddingTop: 11,
-                  paddingBottom: 11,
-                  maxHeight: 132,
+                  padding: 0,
+                  // Native text and lineHeight scale with Dynamic Type; the viewport must too.
+                  minHeight: 22 * textScale,
+                  maxHeight: 110 * textScale,
                   writingDirection: "auto",
                 }}
               />
-            </View>
+            </Pressable>
           </View>
           {!canSend && botId && !onCall ? (
             <Pressable

@@ -534,3 +534,21 @@ it("ignores an old focus identity error after the new focus succeeds", async () 
   expect(container.textContent).not.toContain("Retry");
   expect(container.textContent).toContain("New space appAdd");
 });
+
+it("shows registered MCP servers with connector initials and sentence case statuses", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string) =>
+    proc === "mcp/servers/list"
+      ? Promise.resolve([
+          { id: "saved", name: "Saved server", enabled: true, hasSecret: true },
+          { id: "open", name: "Open server", enabled: true, hasSecret: false },
+        ])
+      : fallback?.(proc),
+  );
+  await render();
+  const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.textContent).toBe("SSaved serverCredential saved");
+  expect(rows[1]?.textContent).toBe("OOpen serverNo auth");
+  for (const row of rows) expect(row.querySelector("button")).toBeNull();
+});

@@ -25,6 +25,7 @@ export * from "./messages.js";
 export * from "./messaging.js";
 export * from "./model-backups.js";
 export * from "./model-credentials.js";
+export * from "./model-credits.js";
 export * from "./repos.js";
 export * from "./row-security.js";
 export * from "./scope.js";

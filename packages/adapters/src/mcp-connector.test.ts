@@ -767,16 +767,15 @@ describe("MCP connector session cache", () => {
       }
     });
 
-    it("warns when the host no longer resolves", async () => {
+    it("warns when the host no longer resolves, and waits for a new address", async () => {
       vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
-      const connector = connectorWith(SERVER, {
-        ...TEST_NETWORK,
-        resolveHostname: async () => {
-          throw Object.assign(new Error("getaddrinfo ENOTFOUND mcp.example.test"), {
-            code: "ENOTFOUND",
-          });
-        },
+      const resolveHostname = vi.fn(async () => {
+        throw Object.assign(new Error("getaddrinfo ENOTFOUND mcp.example.test"), {
+          code: "ENOTFOUND",
+        });
       });
+      const server = { ...SERVER };
+      const connector = connectorWith(server, { ...TEST_NETWORK, resolveHostname });
       const error = vi.spyOn(getLogger(), "error");
       const warn = vi.spyOn(getLogger(), "warn");
       try {
@@ -785,6 +784,48 @@ describe("MCP connector session cache", () => {
         expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
           reason: expect.stringContaining("ENOTFOUND"),
         });
+        const tried = resolveHostname.mock.calls.length;
+
+        // A host name that is gone (an expired tunnel) will not come back on its own.
+        const now = Date.now();
+        vi.spyOn(Date, "now").mockReturnValue(now + 30 * 60_000);
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(resolveHostname).toHaveBeenCalledTimes(tried);
+
+        // Editing the address bumps the revision, which ends the wait.
+        server.revision = 2;
+        await connector.discoverTools(context);
+        expect(resolveHostname.mock.calls.length).toBeGreaterThan(tried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the host times out, and retries it on the usual backoff", async () => {
+      const requests = vi.fn(async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("connect ETIMEDOUT 192.0.2.1:443"), {
+            code: "ETIMEDOUT",
+          }),
+        });
+      });
+      vi.stubGlobal("fetch", requests);
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("ETIMEDOUT"),
+        });
+        const tried = requests.mock.calls.length;
+
+        // A host that is only down is tried again once the short backoff passes.
+        vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+        await connector.discoverTools(context);
+        expect(requests.mock.calls.length).toBeGreaterThan(tried);
       } finally {
         vi.restoreAllMocks();
         await connector.close();
@@ -797,10 +838,9 @@ describe("MCP connector session cache", () => {
       const error = vi.spyOn(getLogger(), "error");
       try {
         expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
-        expect(error).toHaveBeenCalledWith(
-          "mcp discovery failed for server demo:",
-          expect.any(String),
-        );
+        expect(error).toHaveBeenCalledWith("mcp.discovery.failed", expect.any(Error), {
+          "connector.id": SERVER.id,
+        });
       } finally {
         vi.restoreAllMocks();
         await connector.close();

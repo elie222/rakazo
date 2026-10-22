@@ -63,14 +63,6 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Docker, E2B, Daytona, CreateOS, and Boat
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
-## Deploy on Railway
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
-
-Deploy a private Rakazo instance with PostgreSQL, persistent storage and Railway computers.
-Enter your email and Railway API token, then connect a model after signing in.
-See [setup, security defaults and backups](./infra/railway/README.md).
-
 ## Quick start (published images)
 
 You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
@@ -112,6 +104,8 @@ bash install-images.sh
 Put HTTPS in front of port 5173; [docs/self-host.md](./docs/self-host.md#public-single-vm-deployment)
 covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
 the `https://` address.
+
+Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see the [Railway setup guide](./infra/railway/README.md).
 
 ## Local development (source checkout)
 
@@ -219,6 +213,21 @@ must use HTTPS; HTTP is accepted only for loopback and private LAN addresses (no
 app verifies Rakazo's health endpoint before saving, and later launches go straight to that
 instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
 menu turns it off.
+
+On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
+that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
+`dlopen(): error loading libfuse.so.2`. Install the FUSE 2 library (`fuse-libs` on Fedora,
+`libfuse2t64` on Ubuntu 24.04, `libfuse2` on older Ubuntu and Debian), or run the AppImage without
+FUSE:
+
+```bash
+chmod +x Rakazo-*.AppImage
+./Rakazo-*.AppImage --appimage-extract-and-run
+```
+
+**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
+before starting the app.
 
 Use **Change Rakazo Server…** in the application menu to reconnect. Closing that window without
 saving returns to the previous instance. For development automation, set `RAKAZO_WEB_URL` to point

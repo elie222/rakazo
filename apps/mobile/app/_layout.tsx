@@ -32,6 +32,7 @@ import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
 import { MermaidDiagram } from "../components/mermaid-diagram";
 import { MessageMenuHost } from "../components/message-action-menu";
+import { MessageActionSheetHost } from "../components/message-action-sheet-host";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
@@ -46,6 +47,7 @@ import {
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { loadAvatarStyle } from "../lib/avatar-style";
+import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { loadLinkFavicon } from "../lib/link-favicons";
 import {
@@ -79,6 +81,7 @@ import { InboxPane } from "./index";
 capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
+installClientUpdates();
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -97,7 +100,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
   useEffect(() => {
     paneSpace.current = pathname === "/" ? null : selectedSpaceId();
   }, [routeKey]);
-  const { split, inboxHidden, inboxWidth, windowWidth } = useSplitView();
+  const { split, inboxHidden, inboxWidth, foldGap, foldActive, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
   const home = pathname === "/";
   useEffect(() => {
@@ -111,6 +114,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
     paneWidth.value = inboxWidth;
   }, [inboxWidth, paneWidth]);
   const resize = Gesture.Pan()
+    .enabled(!foldActive)
     .runOnJS(true)
     .activeOffsetX([-4, 4])
     .onStart(() => {
@@ -119,7 +123,9 @@ function SplitFrame({ children }: { children: ReactNode }) {
     .onUpdate((event) => {
       paneWidth.value = inboxPaneWidth(windowWidth, dragStart.current + event.translationX);
     })
-    .onEnd(() => chooseInboxWidth(paneWidth.value));
+    .onEnd((_event, success) => {
+      if (success) chooseInboxWidth(paneWidth.value);
+    });
   const paneStyle = useAnimatedStyle(() => ({ width: paneWidth.value }));
   const handleStyle = useAnimatedStyle(() => ({ left: paneWidth.value - DIVIDER_GRAB_WIDTH / 2 }));
   return (
@@ -141,8 +147,8 @@ function SplitFrame({ children }: { children: ReactNode }) {
         </Animated.View>
       ) : null}
       {/* Keeps its place among the children so the navigation stack survives folding. */}
-      <View style={{ flex: 1 }}>{children}</View>
-      {showsInbox ? (
+      <View style={{ flex: 1, marginLeft: showsInbox ? foldGap : 0 }}>{children}</View>
+      {showsInbox && !foldActive ? (
         <GestureDetector gesture={resize}>
           {/* Drawn last and wider than the line, over both panes, so it is easy to grab. */}
           <Animated.View
@@ -217,7 +223,7 @@ function ChatContentProviders({
 
 function LayoutContent() {
   useEffect(() => {
-    // Screen changes include folding; window resizing must not lock a tablet in split-screen.
+    // Re-read live geometry after folding, rotation, or window resizing.
     const subscription = Dimensions.addEventListener("change", () => {
       void syncOrientation();
     });
@@ -286,6 +292,8 @@ function LayoutContent() {
     if (!ready) return;
     return startUnsentSends();
   }, [ready]);
+
+  useEffect(() => watchForegroundUpdates(), []);
 
   useEffect(() => {
     void Promise.all([
@@ -428,6 +436,7 @@ function LayoutContent() {
                 </View>
                 <ComputerUpdateProgress />
                 <MessageMenuHost />
+                <MessageActionSheetHost />
                 <CallCard />
               </ThemeProvider>
             </ChatContentProviders>

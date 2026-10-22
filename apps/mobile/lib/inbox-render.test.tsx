@@ -683,6 +683,93 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   }
 });
 
+it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const action = vi.fn();
+  const withMenu: string[] = [];
+  const scope = {
+    React,
+    memo,
+    useCallback,
+    useI18n: () => ({ t: (text: string) => text }),
+    previewSnippet: (text: string) => text,
+    formatThreadTime: () => "",
+    botTag: () => "",
+    ACTIVE_RUN_STATUSES,
+    isRunWorking,
+    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
+    FALLBACK_COLOR: "gray",
+    ConversationRow: () => null,
+    BotAvatar: () => null,
+    GroupAvatar: () => null,
+    WorkingIndicator: () => null,
+    InboxSwipeRow: ({ rowKey }: { rowKey: string }) => {
+      withMenu.push(rowKey);
+      return null;
+    },
+    inboxRowActionList,
+    appearance: "light",
+    botAction: action,
+    groupAction: action,
+    botSections: [],
+    editSectionFromMenu: action,
+    organizeFromMenu: action,
+    SWIPE_ROWS: true,
+    day: 0,
+    chooseInboxSpace: action,
+    collapsed: new Set(),
+    confirmDeleteSpace: action,
+    deleteSection: action,
+    me: { spaceId: "space-current" },
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeGroup: action,
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    styles: {},
+    t: action,
+    toggleCollapsed: action,
+  };
+  const rowSource = source.slice(
+    source.indexOf("const BotRow = memo("),
+    source.indexOf("function createHomeStyles()"),
+  );
+  const listSource = source.slice(
+    source.indexOf("  const renderItem = useCallback("),
+    source.indexOf("  if (!ready) {"),
+  );
+  const compiled = ts.transpileModule(
+    `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${listSource}
+      return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
+    };`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const chat = (id: string, spaceId: string) => ({
+    id,
+    spaceId,
+    name: id,
+    preview: "",
+    members: [],
+  });
+  // Chats listed from another space have no row menu, as with Archive.
+  const items = [
+    { type: "bot", bot: chat("current-bot", "space-current"), depth: 0, hasChildren: false },
+    { type: "group", group: chat("current-group", "space-current") },
+    { type: "bot", bot: chat("other-bot", "space-other"), depth: 0, hasChildren: false },
+    { type: "group", group: chat("other-group", "space-other") },
+  ];
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() => root.render(<List items={items} />));
+    expect(withMenu).toEqual(["bot:current-bot", "group:current-group"]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("sets inbox rows and section headings in the shared type scale", () => {
   const stylesSource = source.slice(source.indexOf("function createHomeStyles()"));
   const rowDimensions = source.slice(

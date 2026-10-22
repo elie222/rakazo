@@ -9,6 +9,7 @@ import {
   NodeTracerProvider,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
+import { runWithLogContext } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "./pi-runtime.js";
 import {
@@ -46,6 +47,17 @@ afterEach(async () => {
 });
 
 describe("Pi OpenTelemetry", () => {
+  it("continues the request/job trace instead of starting an unrelated trace", async () => {
+    const { output, provider } = setup();
+    await runWithLogContext({ "trace.id": "a".repeat(32), "span.id": "b".repeat(16) }, () =>
+      withPiTelemetry(ids, async () => undefined),
+    );
+    await provider.forceFlush();
+    const [span] = output.getFinishedSpans();
+    expect(span?.spanContext().traceId).toBe("a".repeat(32));
+    expect(span?.parentSpanContext?.spanId).toBe("b".repeat(16));
+  });
+
   it.each([undefined, "", "  "])(
     "does not initialize or create spans with endpoint %j",
     async (endpoint) => {

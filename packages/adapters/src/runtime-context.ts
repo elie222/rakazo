@@ -16,7 +16,7 @@ import {
 import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
-/** Recent evidence stays whole when rebuilding context, unless the model budget requires clipping. */
+/** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
 
 const accountSalt = randomBytes(32);
@@ -174,6 +174,8 @@ export function createRuntimeContextPolicy(
     return reserve;
   }
   let sent: SentTranscript | undefined;
+  // Only remember shortening actually sent, never speculative rebuild candidates.
+  const shortenedResults = new Map<string, Message>();
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
     let value = hashes.get(message);
@@ -315,7 +317,9 @@ export function createRuntimeContextPolicy(
       };
     }
     // Metadata distinguishes repeated historical requests from the live request.
-    let messages = projected?.messages ?? [...ctx.messages];
+    let messages = (projected?.messages ?? ctx.messages).map(
+      (message) => shortenedResults.get(hash(message)) ?? message,
+    );
     let currentIndex = messages.findIndex(
       (message) =>
         message.role === "user" && message !== projected?.navigation && !original(message),
@@ -450,11 +454,30 @@ export function createRuntimeContextPolicy(
       (message) =>
         message.role === "assistant" && message.content.some((part) => part.type === "toolCall"),
     );
-    const recentToolResults = new Set(
-      messages
-        .flatMap((message, index) => (message.role === "toolResult" ? [index] : []))
-        .slice(-RECENT_TOOL_RESULTS_TO_KEEP),
+    // Expand the minimum window within three quarters of the input budget,
+    // leaving room for conversation as well as the separately reserved output.
+    const wholeResultAllowance = Math.max(
+      0,
+      (contextWindow - reserve - fixed) * (1 - REBUILD_HEADROOM),
     );
+    const recentToolResults = new Set<number>();
+    let wholeResultTokens = 0;
+    const resultIndexes = messages.flatMap((message, index) =>
+      message.role === "toolResult" ? [index] : [],
+    );
+    for (const index of resultIndexes.reverse()) {
+      const tokens = estimateContextTokens(
+        providerContextPrefix("", [], [messages[index]!]).messages[0],
+        options.imageTokens,
+      );
+      if (
+        recentToolResults.size >= RECENT_TOOL_RESULTS_TO_KEEP &&
+        wholeResultTokens + tokens > wholeResultAllowance
+      )
+        break;
+      recentToolResults.add(index);
+      wholeResultTokens += tokens;
+    }
     const shortenOlderResults = (keepRecent: boolean) =>
       messages.map((message, index) => {
         if (
@@ -655,6 +678,18 @@ export function createRuntimeContextPolicy(
           ? { catalogIds: built.navigation.catalogIds }
           : {}),
       }));
+      const originalResults = new Map(
+        ctx.messages.flatMap((message) =>
+          message.role === "toolResult" ? [[message.toolCallId, message] as const] : [],
+        ),
+      );
+      for (const message of messages) {
+        if (message.role !== "toolResult") continue;
+        const original = originalResults.get(message.toolCallId);
+        if (original && text(message).length < text(original).length) {
+          shortenedResults.set(hash(original), message);
+        }
+      }
       sent = {
         head,
         source,

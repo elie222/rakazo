@@ -1,5 +1,7 @@
 import type {
   AdapterContext,
+  DurableMemoryScope,
+  SemanticMemoryForgetRequest,
   SemanticMemoryProvider,
   SemanticMemoryRecallRequest,
   SemanticMemoryResponse,
@@ -9,14 +11,18 @@ import type {
 import type { HonchoConnectionConfig, HonchoReasoningLevel } from "./honcho-client.js";
 import {
   createHonchoConclusions,
+  deleteHonchoConclusion,
   ensureHonchoPeers,
   ensureHonchoWorkspace,
+  getHonchoConclusion,
   HONCHO_CLOUD_BASE_URL,
   HONCHO_REASONING_LEVELS,
   honchoPeerChat,
   honchoResourceId,
+  isHonchoConclusionId,
   MAX_HONCHO_CONCLUSION_BYTES,
   probeHonchoAdminKey,
+  queryHonchoConclusions,
 } from "./honcho-client.js";
 import {
   assertLocalServiceBaseUrlSync,
@@ -38,6 +44,11 @@ const DEFAULT_REASONING_LEVEL: HonchoReasoningLevel = "low";
 
 /** Sentinel the dialectic is asked to return when it has nothing relevant. */
 const NO_MEMORY = "NO_RELEVANT_MEMORY";
+
+/** Honcho returns at most this many conclusions per search. */
+const MAX_COPIES_PER_SEARCH = 100;
+/** Includes the cited fact; leave it available for retry when cleanup reaches the cap. */
+const MAX_DELETIONS_PER_FORGET = 200;
 
 /**
  * Local mode reaches the deployment owner's own network, so only the owner may set it.
@@ -173,6 +184,19 @@ export function createHonchoProvider(
   return new HonchoMemoryProvider(connection, settings);
 }
 
+/**
+ * Every fact is about the shared peer. Isolated: this bot's private view of it, independent of
+ * the user. Shared: also the workspace-wide view that all opted-in Spaces write to.
+ */
+function recallObservers(scope: DurableMemoryScope, botId: string): string[] {
+  const bot = honchoBotPeerId(botId);
+  return scope === "shared" ? [SHARED_PEER_ID, bot] : [bot];
+}
+
+function normalizeMemory(memory: string): string {
+  return memory.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function recallQuery(query: string, subject = "this Space"): string {
   return [
     `Recall what you know about ${subject} that is relevant to the request below.`,
@@ -256,15 +280,14 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
     );
     if (!ready.ok) return ready;
     const query = recallQuery(request.query);
-    // Isolated: this bot's private view of the shared peer, independent of the user.
-    // Shared: also the workspace-wide representation that all opted-in Spaces write to.
+    const observers = recallObservers(request.scope, request.botId);
     const perspectives: { peerId: string; target?: string; entity: string; query: string }[] =
-      request.scope === "shared"
-        ? [
-            { peerId: SHARED_PEER_ID, entity: SHARED_PEER_ID, query },
-            { peerId: bot, target: SHARED_PEER_ID, entity: bot, query },
-          ]
-        : [{ peerId: bot, target: SHARED_PEER_ID, entity: bot, query }];
+      observers.map((entity) => ({
+        peerId: entity,
+        ...(entity === SHARED_PEER_ID ? {} : { target: SHARED_PEER_ID }),
+        entity,
+        query,
+      }));
     // An existing user peer is read through Honcho's own representation and never written to.
     const userPeerId = this.settings.userPeerId?.trim();
     if (userPeerId) {
@@ -275,10 +298,26 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
       });
     }
     const answers = await Promise.all(
-      perspectives.map(async ({ entity, ...perspective }) => ({
-        entity,
-        result: await honchoPeerChat(connection.value, workspaceId, perspective, context.signal),
-      })),
+      perspectives.map(async ({ entity, ...perspective }) => {
+        const [result, conclusions] = await Promise.all([
+          honchoPeerChat(connection.value, workspaceId, perspective, context.signal),
+          // Only Rakazo's own facts are cited, so forget never reaches the user peer.
+          observers.includes(entity)
+            ? queryHonchoConclusions(
+                connection.value,
+                workspaceId,
+                {
+                  query: request.query,
+                  observerId: entity,
+                  observedId: SHARED_PEER_ID,
+                  topK: request.limit,
+                },
+                context.signal,
+              )
+            : undefined,
+        ]);
+        return { entity, result, conclusions };
+      }),
     );
     const failures = answers.filter((answer) => !answer.result.ok);
     if (failures.length === answers.length) {
@@ -287,16 +326,46 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
         error: failures.map((answer) => (answer.result.ok ? "" : answer.result.error)).join("; "),
       };
     }
-    const results: SemanticMemoryResult[] = [];
+    const relevant = answers.filter(
+      ({ result }) => result.ok && result.value && !result.value.includes(NO_MEMORY),
+    );
+    // Stored conclusions give forget_memory real ids. They follow only a relevant answer,
+    // so the dialectic still decides whether a turn recalls anything.
     const seen = new Set<string>();
-    for (const { entity, result } of answers) {
-      if (!result.ok || !result.value || result.value.includes(NO_MEMORY)) continue;
-      const normalized = result.value.replace(/\s+/g, " ").trim().toLowerCase();
+    const citedBy = relevant.map(({ entity, conclusions }) => {
+      const cited: SemanticMemoryResult[] = [];
+      for (const conclusion of conclusions?.ok ? conclusions.value : []) {
+        const normalized = normalizeMemory(conclusion.content);
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        cited.push({
+          memory: conclusion.content,
+          score: 1,
+          id: conclusion.id,
+          provenance: "honcho",
+          entity,
+        });
+      }
+      return cited;
+    });
+    // Perspectives take turns so one cannot crowd another's ids out of the limit.
+    const cited: SemanticMemoryResult[] = [];
+    for (let round = 0; citedBy.some((list) => round < list.length); round++) {
+      for (const list of citedBy) {
+        const result = list[round];
+        if (result) cited.push(result);
+      }
+    }
+    // An answer that repeats a cited fact verbatim adds nothing the citation lacks.
+    const results: SemanticMemoryResult[] = [];
+    for (const { entity, result } of relevant) {
+      if (!result.ok) continue;
+      const normalized = normalizeMemory(result.value);
       if (seen.has(normalized)) continue;
       seen.add(normalized);
       results.push({ memory: result.value, score: 1, provenance: "honcho", entity });
     }
-    return { ok: true, value: results.slice(0, request.limit) };
+    return { ok: true, value: [...results, ...cited].slice(0, request.limit) };
   }
 
   async save(
@@ -324,6 +393,93 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
     if (request.scope === "shared")
       conclusions.push({ content, observerId: SHARED_PEER_ID, observedId: SHARED_PEER_ID });
     return createHonchoConclusions(connection.value, workspaceId, conclusions, context.signal);
+  }
+
+  async forget(
+    request: SemanticMemoryForgetRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<{ id: string; expired: boolean; reason: string | null }>> {
+    const id = request.id.trim();
+    if (!id) return { ok: false, error: "id is required" };
+    if (!isHonchoConclusionId(id)) return { ok: false, error: "Invalid Honcho conclusion id." };
+    const observers = recallObservers(request.scope, request.botId);
+    if (request.entity && !observers.includes(request.entity)) {
+      return { ok: false, error: "That memory belongs to another bot or Space." };
+    }
+    const connection = await this.connectionForRequest();
+    if (!connection.ok) return connection;
+    const workspaceId = honchoWorkspaceId(this.settings, context.spaceId);
+    const found = await getHonchoConclusion(connection.value, workspaceId, id, context.signal);
+    if (!found.ok) return found;
+    // Honcho deletes any conclusion in the workspace, so only facts this bot can recall qualify.
+    const recallable = (conclusion: { observerId: string; observedId: string }) =>
+      conclusion.observedId === SHARED_PEER_ID && observers.includes(conclusion.observerId);
+    const fact = found.value;
+    if (
+      !fact ||
+      fact.id !== id ||
+      !recallable(fact) ||
+      (request.entity && fact.observerId !== request.entity)
+    ) {
+      return { ok: false, error: "No memory with that id was found in this bot's memory." };
+    }
+    // A shared save writes the fact from two perspectives, repeated saves add more copies, and
+    // recall cites only one. Remove every copy this bot could recall again: deleted copies leave
+    // the search, so search again until none remain or the deletion cap is reached. The cited
+    // fact goes last, so a failed forget can be retried with the same id.
+    const key = normalizeMemory(fact.content);
+    const deleted = new Set([fact.id]);
+    for (;;) {
+      const copies = await Promise.all(
+        observers.map((observerId) =>
+          queryHonchoConclusions(
+            connection.value,
+            workspaceId,
+            {
+              query: fact.content,
+              observerId,
+              observedId: SHARED_PEER_ID,
+              topK: MAX_COPIES_PER_SEARCH,
+            },
+            context.signal,
+          ),
+        ),
+      );
+      const pending = new Set<string>();
+      for (const copy of copies) {
+        if (!copy.ok) return copy;
+        for (const conclusion of copy.value) {
+          if (
+            !deleted.has(conclusion.id) &&
+            recallable(conclusion) &&
+            normalizeMemory(conclusion.content) === key
+          ) {
+            pending.add(conclusion.id);
+          }
+        }
+      }
+      if (pending.size === 0) break;
+      const batch = [...pending].slice(0, MAX_DELETIONS_PER_FORGET - deleted.size);
+      const results = await Promise.all(
+        batch.map((conclusionId) =>
+          deleteHonchoConclusion(connection.value, workspaceId, conclusionId, context.signal),
+        ),
+      );
+      const failure = results.find((result) => !result.ok);
+      if (failure) return failure;
+      for (const conclusionId of batch) deleted.add(conclusionId);
+      if (batch.length < pending.size) {
+        return { ok: false, error: "Honcho forget reached its deletion limit. Retry this id." };
+      }
+    }
+    const removed = await deleteHonchoConclusion(
+      connection.value,
+      workspaceId,
+      fact.id,
+      context.signal,
+    );
+    if (!removed.ok) return removed;
+    return { ok: true, value: { id: fact.id, expired: true, reason: request.reason ?? null } };
   }
 
   async purgeHistory(

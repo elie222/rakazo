@@ -87,6 +87,38 @@ describe("ChatModelPicker", () => {
     expect(container.querySelector("select")?.options).toHaveLength(10);
   });
 
+  it("marks a short list's selected model when it cannot read images", () => {
+    const list = choices(2).map((choice, index) =>
+      index === 1 ? { ...choice, images: false } : { ...choice, images: true },
+    );
+    render(list, "openrouter::vendor/model-1");
+    const select = container.querySelector("select")!;
+    const hint = () => document.getElementById(select.getAttribute("aria-describedby") ?? "");
+    expect(container.querySelector('[title="Can\'t read images"]')).not.toBeNull();
+    expect(hint()?.textContent).toBe("Can't read images");
+
+    render(list, "openrouter::vendor/model-2");
+    expect(container.querySelector('[title="Can\'t read images"]')).toBeNull();
+    expect(select.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("marks text-only rows and the selected model in a long list", () => {
+    const list = choices(11).map((choice) =>
+      choice.modelId === "vendor/model-3" ? { ...choice, images: false } : choice,
+    );
+    render(list, "openrouter::vendor/model-3");
+    const trigger = container.querySelector<HTMLButtonElement>("button#model")!;
+    expect(trigger.querySelector('[title="Can\'t read images"]')).not.toBeNull();
+    act(() => trigger.click());
+    const marked = options().filter((option) =>
+      option.querySelector('[title="Can\'t read images"]'),
+    );
+    expect(marked.map((option) => option.textContent)).toEqual(["Model 3"]);
+    expect(marked[0]?.getAttribute("aria-describedby")).toBe(
+      trigger.getAttribute("aria-describedby"),
+    );
+  });
+
   it("searches a long list by name or id and picks from it", () => {
     render(choices(11), "openrouter::vendor/model-2");
     expect(container.querySelector("select")).toBeNull();

@@ -154,6 +154,7 @@ export default function ArtifactDetailScreen() {
     if (!versions || versions.length < 2) return;
     presentMessageActionSheet({
       title: t("Versions"),
+      selected: versions.findIndex((version) => version.id === selectedVersionId),
       cancel: t("Cancel"),
       more: t("More"),
       colorScheme,

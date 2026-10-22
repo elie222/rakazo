@@ -21,6 +21,25 @@ alerts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alerts)
 
 
+service_spec = importlib.util.spec_from_file_location("service_health", ROOT / "check-services.py")
+service_health = importlib.util.module_from_spec(service_spec)
+service_spec.loader.exec_module(service_health)
+
+
+class ServiceHealthTests(unittest.TestCase):
+    def test_missing_stopped_and_unhealthy_services_fail(self):
+        self.assertEqual(service_health.service_failures([]), ["api container is missing", "worker container is missing"])
+        rows = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "running", "health": "unhealthy"}]
+        self.assertEqual(service_health.service_failures(rows), ["worker has no healthy running container"])
+        rows[1]["state"] = "exited"
+        rows[1]["health"] = "healthy"
+        self.assertEqual(len(service_health.service_failures(rows)), 1)
+
+    def test_rolling_replacement_accepts_one_healthy_replica(self):
+        rows = [{"service": "api", "state": "running", "health": "healthy"}, {"service": "worker", "state": "exited", "health": ""}, {"service": "worker", "state": "running", "health": "healthy"}]
+        self.assertEqual(service_health.service_failures(rows), [])
+
+
 class AlertTests(unittest.TestCase):
     def test_change_dedup_recovery_and_failed_delivery(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -696,6 +696,63 @@ describe("ChatSdkMessagingSurface outbound", () => {
     },
   );
 
+  it("posts a Telegram image attachment as a photo", async () => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const data = new Uint8Array([1, 2, 3]);
+
+    await surface.sendToThread(
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "chart.png", mimeType: "image/png", data },
+      },
+      context,
+    );
+
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("telegram:123", {
+      markdown: "",
+      attachments: [
+        { type: "image", data: Buffer.from(data), name: "chart.png", mimeType: "image/png" },
+      ],
+    });
+  });
+
+  it.each([
+    ["a PDF", "report.pdf", "application/pdf", 3],
+    ["an SVG", "logo.svg", "image/svg+xml", 3],
+    ["an image over the photo limit", "scan.png", "image/png", 10_000_001],
+  ])("uploads %s to Telegram as a document", async (_label, name, mimeType, size) => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const data = new Uint8Array(size);
+
+    await surface.sendToThread(
+      { threadId: "telegram:123", body: "", attachment: { name, mimeType, data } },
+      context,
+    );
+
+    // Compare the bytes by size: deep-equality on a 10 MB buffer is slow.
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("telegram:123", {
+      markdown: "",
+      files: [{ data: expect.any(Buffer), filename: name, mimeType }],
+    });
+    const [, message] = (adapter.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(message.files[0].data.byteLength).toBe(size);
+  });
+
+  it("fails a file over Telegram's upload limit without retrying it", async () => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const attachment = {
+      name: "video.mp4",
+      mimeType: "video/mp4",
+      data: new Uint8Array(50_000_001),
+    };
+
+    await expect(
+      surface.sendToThread({ threadId: "telegram:123", body: "", attachment }, context),
+    ).rejects.toMatchObject({ name: "MessagingSendError", permanent: true });
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+  });
+
   it("posts to a thread through the platform adapter and returns the handle", async () => {
     const { surface, adapter } = createSurface();
     const result = await surface.sendToThread({ threadId: "mock:C1:9", body: "hi" }, context);

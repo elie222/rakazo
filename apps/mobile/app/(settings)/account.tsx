@@ -608,6 +608,13 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
+          {me?.billingEnabled ? (
+            <SettingsRow
+              title={t("Billing")}
+              chevron="right"
+              onPress={() => router.push("/billing")}
+            />
+          ) : null}
           {(
             [
               { title: t("Artifacts"), href: "/artifacts" },

@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult, IntegrationSetupState } from "@rakazo/contracts";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { newClientId } from "../../lib/client-id";
@@ -275,10 +275,10 @@ export function IntegrationSetup({
               <Trans>No remote MCP servers found</Trans>
             </p>
           ) : null}
-          <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer">
-              <Trans>Add server URL</Trans>
-            </summary>
+          <Disclosure
+            className="text-sm text-muted-foreground"
+            summary={<Trans>Add server URL</Trans>}
+          >
             <div className="mt-3 space-y-3">
               <Input
                 aria-label={t`Server URL`}
@@ -293,7 +293,7 @@ export function IntegrationSetup({
                 <Trans>Connect</Trans>
               </Button>
             </div>
-          </details>
+          </Disclosure>
         </>
       ) : null}
       {choice === "executor" ? (
@@ -325,10 +325,7 @@ export function IntegrationSetup({
           >
             <Trans>Connect</Trans>
           </Button>
-          <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer">
-              <Trans>Setup help</Trans>
-            </summary>
+          <Disclosure className="text-sm text-muted-foreground" summary={<Trans>Setup help</Trans>}>
             <a
               href="https://executor.sh/#get-started"
               target="_blank"
@@ -337,7 +334,7 @@ export function IntegrationSetup({
             >
               <Trans>Download Executor</Trans>
             </a>
-          </details>
+          </Disclosure>
         </div>
       ) : null}
       {error ? (

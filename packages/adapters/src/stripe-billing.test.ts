@@ -454,9 +454,18 @@ describe("stripeBillingConfigFromEnv", () => {
     ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake", priceId: "price_fake" });
   });
 
+  it("supports model credits without a legacy seat price", () => {
+    expect(
+      stripeBillingConfigFromEnv({
+        stripeSecretKey: "sk_test_fake",
+        stripeWebhookSecret: "whsec_fake",
+      }),
+    ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake" });
+  });
+
   it("names the missing variables when partially configured", () => {
     expect(() => stripeBillingConfigFromEnv({ stripeSecretKey: "sk_test_fake" })).toThrow(
-      "STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID",
+      "STRIPE_WEBHOOK_SECRET",
     );
   });
 });

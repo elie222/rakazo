@@ -393,9 +393,55 @@ is unreachable or takes longer than three seconds, the password is accepted and 
 
 ### Billing
 
-Billing stays off, with no paywall, unless `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
-`STRIPE_PRICE_ID` are all set (see `.env.example`). Setting only some of them stops the API at
-startup.
+Billing stays off unless `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are both set (see
+`.env.example`). Enabling billing offers free use with a personal model connection or monthly
+model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-ups use the same amounts.
+Monthly credits expire at the end of their service period; one-time top-ups do not expire.
+The hosted computer is included in both paths.
+
+Configure the managed default model through the existing model connection settings. The default
+OpenRouter model is Luna 6; customers can choose another available model, with its usage deducted
+at model cost. In credit mode, the configured hosted provider uses Rakazo's key even when a personal
+key for that provider is saved. Switching back to BYOK restores that connection. Personal connections
+to other providers continue to use their own keys and never debit Rakazo credits. Hosted calls reserve an upper cost estimate atomically before starting, then settle
+to reported or catalog-priced usage. Unknown usage retains its reservation for reconciliation.
+
+`STRIPE_PRICE_ID` is optional and only needed to display the legacy seat price. Existing live seat
+subscriptions retain their access and billing portal. Upgrades charge the prorated difference
+immediately and add the amount collected to the credit balance; a failed payment leaves the plan
+unchanged. Downgrades lower the next renewal without charging now or removing credits.
+Credit purchases require settled payments; webhook
+replays do not add credits twice, and refunds reduce the remaining account balance.
+
+Monthly funds are spent before top-ups. Each grant has an audited allocation lot, so reservations
+retain their funding source across renewal: unused monthly holds expire when released, while
+purchased top-ups remain available. Prorated upgrades share the original period end. Expiration
+creates a financial journal delta and runs before balance reads, reservations, settlements, and
+background recovery. Unclassified legacy balances are preserved as non-expiring funds.
+
+Postgres owns accounting. `billing_audit_events` is an append-only journal enforced by database
+triggers; credit entries, usage rows, and balances are projections. Each managed call shares one
+`callId` across reservation, durable provider receipt, usage, and settlement. Provider generation
+IDs, token buckets, cost provenance, and pricing snapshots are retained. Usage and settlement
+commit together, and journal/usage history survives clearing messages or deleting a bot or
+organization. Corrections append evidence rather than rewriting earlier journal events. Existing
+rows receive explicit baseline events when the migration runs; earlier history cannot be recovered.
+
+The API/worker reconciler recovers saved receipts and, when supported by the configured provider,
+fetches authoritative generation costs for interrupted calls and estimates. Retries use leases and
+idempotent settlement. Unverifiable calls retain their holds and become `needs_review` after six
+attempts. An hourly, paginated audit rebuilds drifted balance caches from the journal and records
+repairs. Investigate `Model credit hold requires review` logs using the shared call ID; do not turn
+missing provider evidence into a zero-cost settlement.
+
+OpenRouter inference requests include the normal Rakazo user ID in `user`, `HTTP-Referer`
+(`https://rakazo.com`), and `X-OpenRouter-Title` (`Rakazo`). These values are sent only to OpenRouter's
+HTTPS inference endpoints, never to compatible custom hosts. Recovery uses the existing configured
+deployment credential; no Redis or external accounting service is required.
+
+
+For local testing, forward Stripe test events to `/api/v1/billing/webhook`. Use the signing secret
+from `stripe listen` and test API credentials; keep them in an ignored environment file.
 
 ### Pi tracing
 
@@ -512,6 +558,11 @@ Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is 
   to that DSN. Use a separate project from `SENTRY_DSN`.
 - `SENTRY_ENVIRONMENT` names the deployment. `SENTRY_RELEASE` defaults to the image's `GIT_SHA`.
 
+Desktop and mobile use the connected server's `SENTRY_BROWSER_DSN`. Electron sends crash metadata
+without memory dumps. Mobile native reporting requires a rebuilt app; Expo Go is unsupported.
+For readable mobile crash stacks, build with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`,
+and optional `SENTRY_URL` to upload symbols.
+
 Neither SDK sends cookies, headers, request bodies, user identity, console output, or log context.
 When `ANALYTICS_PSEUDONYM_SECRET` is set, reports carry a keyed hash of the signed-in user's id so
 the collector can count affected users; the raw id, email and IP address are never sent, and the
@@ -542,6 +593,8 @@ DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
+
+`RAKAZO_LIVE_MODEL_CATALOG=off` disables provider and Codex live catalog probing; the default is on.
 
 To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio, llama.cpp, or
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
@@ -587,6 +640,21 @@ accepts images, enable **Supports images** under **Advanced** when connecting so
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+### Client updates
+
+Every web build is named by the UTC time it was built (`YYYYMMDDHHMMSS`). The web app sends its
+build on each `/rpc` request in `x-rakazo-client-build` (`web/20261022093015`; the mobile app sends
+`mobile/` and the time its JavaScript bundle was built), and the API answers with the web build in
+its own image in `x-rakazo-build`. An open tab that sees a newer build reloads at a safe moment:
+while hidden, on its next navigation, or after a few idle minutes with nothing typed.
+
+To retire old clients immediately, set `RAKAZO_MIN_CLIENT_BUILD` on the API, for example
+`web=20261022093015` or `web=20261022093015,mobile=20261001000000`, and restart it. Older clients
+get HTTP 426 `CLIENT_UPDATE_REQUIRED`: the web app reloads, and the mobile app offers its update.
+Read the current build from the `x-rakazo-build` header of any `/rpc` response. Requests that name
+no build, such as webhooks and API tools, are never refused. A malformed value stops the API from
+starting rather than being ignored.
 
 ### Client addresses
 
@@ -773,7 +841,8 @@ server and use an admin JWT from its `scripts/generate_jwt.py --admin` as the ke
 gets its own workspace. A workspace-scoped JWT works when you enter that workspace. Honcho needs
 its own PostgreSQL with pgvector, an LLM provider, and an embedding provider; set
 `EMBEDDING_VECTOR_DIMENSIONS` before its first start. Rakazo stores only explicitly saved facts
-in Honcho; conversation summaries stay in Rakazo.
+in Honcho; conversation summaries stay in Rakazo. Bots can forget a saved fact on Honcho v3.2 or
+later.
 
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
@@ -1177,9 +1246,14 @@ mount options. Set `RAKAZO_BACKUP_REQUIRE_VOLUME=1` and add a service drop-in co
 then refuses to fall back to root storage if the mount is missing or points at the root filesystem.
 
 Monitoring is opt-in. Install `host-alert.py` as `/usr/local/sbin/rakazo-host-alert` and
-`check-host.sh` as `/usr/local/sbin/rakazo-host-check`, then install the supplied host-check service
+`check-host.sh` as `/usr/local/sbin/rakazo-host-check`, and `check-services.py` as
+`/usr/local/sbin/rakazo-check-services` (all executable), then install the supplied host-check service
 and timer and enable `rakazo-host-check.timer`. Checks run every five minutes and report low disk
 space, failed backups, a verified backup older than 36 hours, or missing configured IPv4 SSH rules.
+To also check API and worker containers, set `RAKAZO_MONITOR_COMPOSE_PROJECT` in `backup.env` to
+the Compose project name (`rakazo-prod` for production). The worker probe checks heartbeat and
+reconciliation freshness. Leave the variable unset if container monitoring is managed elsewhere.
+
 The dedicated-volume check is enabled only by `RAKAZO_BACKUP_REQUIRE_VOLUME=1` in `backup.env`.
 Identical alerts are suppressed for a day; recovery sends a separate notification.
 

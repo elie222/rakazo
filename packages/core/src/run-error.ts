@@ -6,6 +6,17 @@ export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
 
+/** Recognize the send rejection across RPC errors and persisted outbox messages. */
+export function isModelRequiredSendError(error: unknown): boolean {
+  const message =
+    typeof error === "string"
+      ? error
+      : error !== null && typeof error === "object" && "message" in error
+        ? error.message
+        : undefined;
+  return typeof message === "string" && message.trim() === MODEL_REQUIRED_SEND_ERROR;
+}
+
 const APP_RUN_ERRORS = new Set([MISSING_TOOL_FINAL_RESPONSE_ERROR, ...stuckWorkStatusMessages()]);
 
 export const RUN_ERROR_LIMIT_MESSAGES = {

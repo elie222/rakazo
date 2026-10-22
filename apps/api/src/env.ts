@@ -10,6 +10,8 @@ import {
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
+import type { MinimumClientBuilds } from "@rakazo/contracts";
+import { parseMinimumClientBuilds } from "@rakazo/contracts";
 import {
   phoneCallSettings,
   resolveAuthSecret,
@@ -130,6 +132,8 @@ export interface AppEnv {
   mcpAllowPrivateEndpoint: boolean;
   port: number;
   gitSha: string | undefined;
+  /** Oldest client build per kind the API still serves (RAKAZO_MIN_CLIENT_BUILD). */
+  minimumClientBuilds?: MinimumClientBuilds;
   /** Browser error reporting, served to the web app at runtime. The DSN is public by design. */
   browserMonitoring:
     | { dsn: string; environment?: string; release?: string; pseudonymSecret?: string }
@@ -290,6 +294,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     updaterUrl,
     updaterToken,

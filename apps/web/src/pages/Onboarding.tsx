@@ -1,10 +1,10 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { IntegrationSetupState, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
-  type IntegrationSetupState,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -13,7 +13,6 @@ import {
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
-  type ThinkingLevel,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
@@ -24,6 +23,7 @@ import {
 } from "@rakazo/core";
 import {
   Button,
+  Disclosure,
   Input,
   ModelThinkingOptions,
   Select,
@@ -127,6 +127,7 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const fieldId = useId();
   const [step, setStep] = useState<"loading" | "model" | "integrations" | "bot">("loading");
+  const [billingEnabled, setBillingEnabled] = useState(false);
   const [integrationSetup, setIntegrationSetup] = useState<IntegrationSetupState | null>(null);
   const needsIntegrationSetup = integrationSetup?.needsSetup ?? false;
   const [integrationServers, setIntegrationServers] = useState<string[]>([]);
@@ -199,6 +200,7 @@ export function OnboardingPage() {
       rpc.integrationSetup.get().catch(() => null),
     ])
       .then(([me, models, integrations]) => {
+        setBillingEnabled(me.billingEnabled);
         setIntegrationSetup(integrations);
         setCatalog(models);
         deploymentDefaultModelRef.current = me.defaultModel;
@@ -958,10 +960,10 @@ export function OnboardingPage() {
             ) : null}
             {acceptsKey ? (
               isOpenAiCompatible ? (
-                <details className="mt-4 text-sm text-muted-foreground">
-                  <summary className="w-fit cursor-pointer select-none">
-                    <Trans>API key</Trans>
-                  </summary>
+                <Disclosure
+                  className="mt-4 text-sm text-muted-foreground"
+                  summary={<Trans>API key</Trans>}
+                >
                   <Input
                     aria-label={t`API key`}
                     value={apiKey}
@@ -971,7 +973,7 @@ export function OnboardingPage() {
                     autoComplete="new-password"
                     className="mt-2"
                   />
-                </details>
+                </Disclosure>
               ) : (
                 <label
                   htmlFor={`${fieldId}-api-key`}
@@ -1019,6 +1021,19 @@ export function OnboardingPage() {
               <Button disabled={!canSaveModel} onClick={() => void saveModel()}>
                 <Trans>Continue</Trans>
               </Button>
+              {billingEnabled ? (
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void rpc.billing
+                      .selectFunding({ funding: "credits" })
+                      .then(() => window.location.assign("/onboarding"))
+                      .catch(() => setError(t`Could not open billing`))
+                  }
+                >
+                  <Trans>Use Rakazo credits</Trans>
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : null}

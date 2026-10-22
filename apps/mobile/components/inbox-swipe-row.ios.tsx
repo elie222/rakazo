@@ -64,7 +64,7 @@ export function InboxSwipeRow({
         key={action}
         label={t(label)}
         systemImage={systemImage}
-        role={action === "archive" ? "destructive" : undefined}
+        role={(swipe && action === "archive") || action === "delete" ? "destructive" : undefined}
         modifiers={
           swipe
             ? [
@@ -161,6 +161,7 @@ export function InboxSwipeRow({
                   ) : null}
                 </Menu>
                 {button("archive", false)}
+                {button("delete", false)}
               </ContextMenu.Items>
             </ContextMenu>
             <SwipeActions.Actions edge="leading">{button(actions.leading)}</SwipeActions.Actions>

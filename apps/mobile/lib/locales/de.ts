@@ -1,4 +1,13 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Pick a chat": "Wähle einen Chat",
+  "Add an AI model to keep chatting": "Füge ein KI-Modell hinzu, um weiterzuchatten",
+  "Not Now": "Jetzt nicht",
+  "Add Model": "Modell hinzufügen",
+  "Not sent · No model": "Nicht gesendet · Kein Modell",
+  "Update required": "Update erforderlich",
+  Update: "Aktualisieren",
+  Provider: "Anbieter",
+  "No matching providers": "Keine passenden Anbieter",
   "To:": "An:",
   Next: "Weiter",
   "Ex: Project Falcon": "Z. B. Projekt Falcon",
@@ -236,6 +245,8 @@ export const DE_MESSAGES: Record<string, string> = {
   Image: "Bild",
   "Jump to latest": "Zur neuesten Nachricht springen",
   "Jump to latest, new messages": "Zur neuesten Nachricht springen, neue Nachrichten",
+  New: "Neu",
+  "New messages": "Neue Nachrichten",
   "Load earlier messages": "Frühere Nachrichten laden",
   "Markdown file": "Markdown-Datei",
   Message: "Nachricht",
@@ -332,6 +343,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",
   "Space default": "Space-Standard",
+  "Can't read images": "Kann keine Bilder lesen",
   Thinking: "Denkmodus",
   Title: "Titel",
   "What this bot is for": "Wofür dieser Bot gedacht ist",
@@ -340,8 +352,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load group": "Gruppe konnte nicht geladen werden",
   "Could not save group": "Gruppe konnte nicht gespeichert werden",
   "Delete group": "Gruppe löschen",
-  "Delete this group? Bots and their solo threads are kept.":
-    "Diese Gruppe löschen? Bots und ihre eigenen Threads bleiben erhalten.",
+  "Bots and their own chats stay.": "Bots und ihre eigenen Chats bleiben erhalten.",
   "Group name": "Gruppenname",
   "Group not found": "Gruppe nicht gefunden",
   Members: "Mitglieder",
@@ -410,7 +421,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
-  "Connected · {label}": "Verbunden · {label}",
   "Connected. Its tools are available from your next message.":
     "Verbunden. Seine Tools sind ab deiner nächsten Nachricht verfügbar.",
   "Context limit": "Kontextlimit",
@@ -780,19 +790,14 @@ export const DE_MESSAGES: Record<string, string> = {
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/(settings)/models.tsx
-  "Add connected model": "Verbundenes Modell hinzufügen",
-  "Add connected models to use them as backups.":
-    "Füge verbundene Modelle hinzu, um sie als Backups zu verwenden.",
+  "Add backup model": "Backup-Modell hinzufügen",
+  "Move down": "Nach unten",
+  "Move up": "Nach oben",
+  "Tried in order if the active model fails.":
+    "Werden der Reihe nach versucht, wenn das aktive Modell ausfällt.",
   "Backup models": "Backup-Modelle",
-  "Backup models saved.": "Backup-Modelle gespeichert.",
-  "Connect a provider to add backups.": "Verbinde einen Anbieter, um Backups hinzuzufügen.",
   "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
   "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
-  "Maximum of 10 backup models.": "Maximal 10 Backup-Modelle.",
-  "Move {model} down": "{model} nach unten verschieben",
-  "Move {model} up": "{model} nach oben verschieben",
-  "Remove {model}": "{model} entfernen",
-  "Save backups": "Backups speichern",
   "Space changed. Reload Models to refresh backup models.":
     "Der Space wurde gewechselt. Lade Modelle neu, um die Backups zu aktualisieren.",
   "Space changed. Reload Models before saving backups.":
@@ -805,7 +810,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not disconnect this provider": "Anbieter konnte nicht getrennt werden",
   "Default ({level})": "Standard ({level})",
   "Disconnected {provider}.": "{provider} getrennt.",
-  "Save limits": "Limits speichern",
   "Sign in again": "Erneut anmelden",
   "Thinking: {level}": "Denkmodus: {level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":
@@ -909,6 +913,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Try again": "Erneut versuchen",
   "Your session expired": "Deine Sitzung ist abgelaufen",
   "The server had a problem": "Auf dem Server ist ein Problem aufgetreten",
+  "Could not load MCP servers": "MCP-Server konnten nicht geladen werden",
+  "MCP servers": "MCP-Server",
+  Disabled: "Deaktiviert",
+  "OAuth connected": "OAuth verbunden",
+  "OAuth expired": "OAuth abgelaufen",
+  "Credential saved": "Zugangsdaten gespeichert",
+  "No auth": "Keine Authentifizierung",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "Der Bot konnte nicht antworten, weil das Tageslimit seines Anbieters erreicht wurde.",
   "The bot couldn't reply because its provider's weekly limit was reached.":
@@ -944,4 +955,22 @@ export const DE_MESSAGES: Record<string, string> = {
     "Beim Starten ist etwas schiefgelaufen. Versuche es in einem Moment erneut.",
   "Your voice provider is out of credit.": "Dein Stimmanbieter hat kein Guthaben mehr.",
   "Your voice provider key was rejected.": "Der Schlüssel deines Stimmanbieters wurde abgelehnt.",
+  Billing: "Abrechnung",
+  "Could not load billing": "Abrechnung konnte nicht geladen werden",
+  "Could not update billing": "Abrechnung konnte nicht aktualisiert werden",
+  Credits: "Guthaben",
+  "Available credits": "Verfügbares Guthaben",
+  Refresh: "Aktualisieren",
+  "Monthly credits": "Monatliches Guthaben",
+  "Upgrade now": "Jetzt upgraden",
+  "Downgrade at renewal": "Bei Verlängerung downgraden",
+  "Continue with credits": "Mit Guthaben fortfahren",
+  "Add credits": "Guthaben hinzufügen",
+  "Manage billing": "Abrechnung verwalten",
+  "Your API key": "Dein API-Schlüssel",
+  "Free. Pay your model provider directly.": "Kostenlos. Bezahle deinen Modellanbieter direkt.",
+  "Use my API key": "Meinen API-Schlüssel verwenden",
+  "Monthly credits expire at renewal. Top-ups do not expire.":
+    "Monatliches Guthaben verfällt bei Verlängerung. Einmalige Aufladungen verfallen nicht.",
+  "Use Rakazo credits": "Rakazo-Guthaben verwenden",
 };

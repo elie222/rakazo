@@ -58,6 +58,7 @@ import {
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
+import { liveModelSibling } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { codexComputeResidency } from "./pi-oauth.js";
@@ -90,6 +91,7 @@ import {
   withoutThinkingFrom,
 } from "./thinking-signatures.js";
 import { textContentArg } from "./tool-text.js";
+import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
@@ -382,8 +384,12 @@ export class PiAgentRuntime implements AgentRuntime {
                   ctx,
                   preparedOptions,
                   (event) => queue.push(event),
-                  this.modelCallObserver,
-                  { operationKind: request.usageOperationKind ?? "answer" },
+                  target.config.callObserver ?? this.modelCallObserver,
+                  {
+                    operationKind: request.usageOperationKind ?? "answer",
+                    userId: context?.userId,
+                    runId: request.runId,
+                  },
                   {
                     ...usageHooks,
                     prepareContext: (ctx, m) => contextPolicy.prepareContext(ctx, m),
@@ -756,14 +762,16 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
     model = models.getModel("openrouter", modelId);
   }
   if (
-    !model &&
     provider === "openrouter" &&
+    !model &&
     modelId &&
     ((envDefaultProvider === "openrouter" && modelId === envDefaultModel) ||
       modelConfig.contextWindow !== undefined)
   ) {
     model = configuredOpenRouterModel(modelId, modelConfig.contextWindow);
   }
+  // Saved generic limits and deployment defaults take precedence over inferred siblings.
+  model ??= liveModelSibling(models, provider, modelId);
   if (model && (modelConfig.contextWindow !== undefined || modelConfig.maxTokens !== undefined)) {
     model = {
       ...model,
@@ -1481,8 +1489,13 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
             ctx,
             preparedOptions,
             (event) => host.queue.push(event),
-            host.modelCallObserver,
-            { operationKind: "subagent", agentId },
+            target.config.callObserver ?? host.modelCallObserver,
+            {
+              operationKind: "subagent",
+              agentId,
+              userId: host.context?.userId,
+              runId: host.request.runId,
+            },
             {
               prepareContext: contextPolicy.prepareContext,
               imageTokens: estimatePiImageTokens,
@@ -2720,8 +2733,8 @@ export function isCodexModel(model: Pick<Model<Api>, "api" | "provider">): boole
   return model.provider === "openai-codex" || model.api === "openai-codex-responses";
 }
 
-/** Abort reason recorded when a Codex stream goes silent past the idle bound. */
-export const CODEX_STREAM_IDLE_TIMEOUT_MESSAGE = "Codex stream idle timeout";
+/** Abort reason recorded when a model stream goes silent past the idle bound. */
+export const MODEL_STREAM_IDLE_TIMEOUT_MESSAGE = "Model stream idle timeout";
 
 export interface StreamIdleWatchdog {
   /** Composed abort signal to hand to the provider request. */
@@ -2752,7 +2765,7 @@ export interface StreamIdleWatchdog {
  * so when the watchdog fired the wrapper relabels the terminal error as an
  * idle timeout rather than a caller abort.
  */
-export function codexStreamIdleWatchdog(
+export function modelStreamIdleWatchdog(
   upstream: AbortSignal | undefined,
   idleTimeoutMs: number = MODEL_STREAM_IDLE_TIMEOUT_MS,
 ): StreamIdleWatchdog {
@@ -2771,7 +2784,7 @@ export function codexStreamIdleWatchdog(
       timer = undefined;
       if (controller.signal.aborted) return;
       timedOut = true;
-      controller.abort(new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE));
+      controller.abort(new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE));
     }, idleTimeoutMs);
     timer.unref?.();
   };
@@ -2798,7 +2811,7 @@ export function codexStreamIdleWatchdog(
       ? {
           ...message,
           stopReason: "error",
-          errorMessage: CODEX_STREAM_IDLE_TIMEOUT_MESSAGE,
+          errorMessage: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
         }
       : message;
 
@@ -2859,7 +2872,7 @@ function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Res
       const outcome = await Promise.race([read, timeout]);
       clear();
       if (outcome.kind === "timeout") {
-        const error = new Error(CODEX_STREAM_IDLE_TIMEOUT_MESSAGE);
+        const error = new Error(MODEL_STREAM_IDLE_TIMEOUT_MESSAGE);
         void reader.cancel(error).catch(() => undefined);
         controller.error(error);
         return;
@@ -2886,15 +2899,24 @@ function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Res
   });
 }
 
-function codexRequestFetch(
+function modelRequestFetch(
   fetchImpl: ModelsSimpleStreamOptions["fetch"],
   idleTimeoutMs: number,
 ): NonNullable<ModelsSimpleStreamOptions["fetch"]> {
   return async (input, init) => {
-    const response = fetchImpl ? await fetchImpl(input, init) : await globalThis.fetch(input, init);
+    // Compatible providers attach a package undici Agent after this wrapper is
+    // installed. Pair that dispatcher without replacing other providers' fetch.
+    const transport =
+      init && "dispatcher" in init
+        ? fetchPairedWithDispatcher(fetchImpl)
+        : (fetchImpl ?? globalThis.fetch);
+    const response = await transport(input, init);
     return boundRetryableErrorBody(response, idleTimeoutMs);
   };
 }
+
+// These Pi adapters reject fetch overrides other than globalThis.fetch.
+const APIS_WITHOUT_CUSTOM_FETCH = new Set<Api>(["google-generative-ai", "google-vertex"]);
 
 export function reliableModelStream(
   models: Models,
@@ -2906,23 +2928,23 @@ export function reliableModelStream(
   runStream?: (options: ModelsSimpleStreamOptions) => AssistantMessageEventStream,
   cacheRetention?: ModelsSimpleStreamOptions["cacheRetention"],
 ): AssistantMessageEventStream {
-  const watchdog = isCodexModel(model) ? codexStreamIdleWatchdog(options?.signal) : undefined;
+  const watchdog = modelStreamIdleWatchdog(options?.signal);
   try {
     const preparedOptions = reliableStreamOptions(
       model,
-      watchdog
-        ? {
-            ...options,
-            signal: watchdog.signal,
-            fetch: codexRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
-            // Only a 2xx arms the shared watchdog. Error bodies are bounded by
-            // the fetch wrapper, and a caller-supplied hook still sees every status.
-            onResponse: (response, requestModel) => {
-              if (response.status >= 200 && response.status < 300) watchdog.ping();
-              return options?.onResponse?.(response, requestModel);
-            },
-          }
-        : options,
+      {
+        ...options,
+        signal: watchdog.signal,
+        fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
+          ? options?.fetch
+          : modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
+        // Only a 2xx arms the shared watchdog. Error bodies are bounded by
+        // the fetch wrapper where supported; caller hooks still see every status.
+        onResponse: (response, requestModel) => {
+          if (response.status >= 200 && response.status < 300) watchdog.ping();
+          return options?.onResponse?.(response, requestModel);
+        },
+      },
       configuredMaxTokens,
       accessToken,
       cacheRetention,
@@ -2930,9 +2952,9 @@ export function reliableModelStream(
     const stream = runStream
       ? runStream(preparedOptions)
       : models.streamSimple(model, context, preparedOptions);
-    return watchdog ? watchdog.wrap(stream) : stream;
+    return watchdog.wrap(stream);
   } catch (error) {
-    watchdog?.dispose();
+    watchdog.dispose();
     throw error;
   }
 }

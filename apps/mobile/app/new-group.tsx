@@ -122,6 +122,7 @@ export default function NewGroup() {
                         {
                           type: "button" as const,
                           label: t("Next"),
+                          icon: { type: "sfSymbol" as const, name: "chevron.right" },
                           variant: "prominent" as const,
                           tintColor: tokens.primary,
                           disabled: !valid,

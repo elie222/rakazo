@@ -422,6 +422,8 @@ export interface AgentSteeringMessage {
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
 export interface AgentRunModel {
+  /** Server-side spending authorization, carried with the resolved credential. */
+  callObserver?: ModelCallObserver;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -529,6 +531,8 @@ export interface ScriptedTurn {
  * Input excludes cache buckets. Reasoning is already included in output.
  */
 export interface AgentUsage {
+  providerRequestId?: string | null;
+  operationKind?: UsageOperationKind;
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens?: number | null;
@@ -539,6 +543,7 @@ export interface AgentUsage {
   costUsd?: number | null;
   costSource?: string | null;
   pricingVersion?: string | null;
+  pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
 }
 
@@ -546,14 +551,20 @@ export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" |
 
 export interface ModelCallObserver {
   beforeCall(call: {
+    callId?: string;
+    runId?: string;
+    operationKind?: UsageOperationKind;
     provider: string;
     modelId: string;
     inputTokensEstimate: number;
     maxOutputTokens: number;
+    /** Conservative dollar bound from the resolved model pricing; absent means unknown. */
+    maxCostUsd?: number;
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
     cacheWriteRetention?: "1h";
   }): string | Promise<string>;
   afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+  onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;
 }
 
 export type AgentRuntimeEvent =
@@ -738,6 +749,8 @@ export interface MessagingCapabilities {
   direct: boolean;
   groups: boolean;
   receipt: MessagingReceipt | null;
+  /** Sends image and file attachments. Absent means replies go out as text only. */
+  files?: boolean;
 }
 
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
@@ -752,6 +765,15 @@ export interface MessagingSendRequest {
   body: string;
   /** Stable key so retries of the same logical send can be deduped upstream. */
   idempotencyKey?: string;
+  /** A file to post as this message; only sent to platforms with the `files` capability. */
+  attachment?: MessagingOutboundAttachment;
+}
+
+/** An outbound file, already read from the artifact store. */
+export interface MessagingOutboundAttachment {
+  name: string;
+  mimeType: string;
+  data: Uint8Array;
 }
 
 export interface MessagingSendResult {
@@ -1090,7 +1112,24 @@ export interface BillingPrice {
 }
 
 /** Full subscription state for one billing customer, re-fetched from the provider on every sync. */
+export interface BillingCreditPurchase {
+  /** Stable provider payment identity, including any subsequent refund adjustment. */
+  id: string;
+  amountCents: number;
+  /** Subscription service-period end; absent for non-expiring top-ups. */
+  expiresAt?: string;
+}
+
+export interface BillingCreditCheckoutRequest {
+  customerId: string;
+  amountCents: number;
+  monthly: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
 export interface BillingSubscriptionSnapshot {
+  creditAmountCents?: number;
   subscriptionId: string;
   subscriptionItemId: string;
   priceId: string;
@@ -1109,4 +1148,10 @@ export interface BillingCheckoutRequest {
   trialDays?: number;
   successUrl: string;
   cancelUrl: string;
+}
+
+/** Optional provider adapter for recovering authoritative cost after an interrupted call. */
+export interface ModelUsageLookup {
+  provider: string;
+  lookupUsage(providerRequestId: string): Promise<AgentUsage | null>;
 }

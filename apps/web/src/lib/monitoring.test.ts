@@ -155,28 +155,8 @@ describe("browser monitoring", () => {
     expect(options.integrations([{ name: "BrowserSession" }, { name: "GlobalHandlers" }])).toEqual([
       { name: "GlobalHandlers" },
     ]);
-    expect(options.beforeBreadcrumb({ category: "console", message: "x" })).toBeNull();
-    expect(options.beforeBreadcrumb({ category: "fetch" })).toEqual({ category: "fetch" });
-
-    for (const category of ["ui.click", "ui.input"]) {
-      expect(options.beforeBreadcrumb({ category, message: "private text" })).toBeNull();
-    }
-    for (const category of ["fetch", "xhr", "navigation"]) {
-      expect(
-        options.beforeBreadcrumb({
-          category,
-          data: {
-            url: "https://example.com/path?token=secret#private",
-            from: "/before?query=secret",
-            to: "/after#private",
-            status_code: 500,
-          },
-        }),
-      ).toEqual({
-        category,
-        data: { url: "https://example.com/path", from: "/before", to: "/after", status_code: 500 },
-      });
-    }
+    expect(options.maxBreadcrumbs).toBe(0);
+    expect(options.integrations([{ name: "Breadcrumbs" }])).toEqual([]);
     expect(
       options.beforeSend({
         request: {

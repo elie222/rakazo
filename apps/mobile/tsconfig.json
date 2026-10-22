@@ -9,5 +9,5 @@
     "moduleResolution": "bundler",
     "types": ["node"]
   },
-  "include": ["app", "lib", "components"]
+  "include": ["app", "lib", "components", "index.ts"]
 }

@@ -313,6 +313,15 @@ describe("billing", () => {
     const client = billingDeps(false);
     await expect(client.billing.status()).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.checkout()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.billing.selectFunding({ funding: "credits" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
     await expect(client.me()).resolves.toMatchObject({ billingEnabled: false });
   });
 
@@ -4212,7 +4221,7 @@ describe("codex live catalog", () => {
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
       },
-      codexCatalog: new CodexCatalogCache({ fetch: fetchImpl }),
+      codexCatalog: new CodexCatalogCache({ enabled: true, fetch: fetchImpl }),
       refreshExpiredModelCredential,
     } as unknown as RouterDeps;
 
@@ -5145,6 +5154,118 @@ describe("group restore with archived bots", () => {
 
 afterEach(() => {
   delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
+});
+
+describe("routine live Codex model validation", () => {
+  it.each(["create", "update"] as const)(
+    "saves a listed live-only model on %s and rejects an unlisted id",
+    async (operation) => {
+      const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+      const modelId = "gpt-6-luna-latest";
+      const stamp = new Date("2026-01-01T00:00:00Z");
+      const row = {
+        id: "routine-1",
+        botId: "bot-1",
+        name: "Check",
+        prompt: "Check changes",
+        crons: ["0 9 * * *"],
+        timezone: "UTC",
+        active: false,
+        notify: false,
+        webhookEnabled: false,
+        githubEnabled: false,
+        messageProvider: null,
+        modelProvider: null,
+        modelId: null,
+        thinkingLevel: null,
+        lastRunAt: null,
+        nextRunAt: null,
+        createdAt: stamp,
+      };
+      const save = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...row,
+        ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+      }));
+      const read = vi.fn(async () => [
+        {
+          slug: modelId,
+          reasoningEfforts: [],
+          supportsImages: true,
+          supportsFastTier: false,
+        },
+      ]);
+      const client = createRouterClient(
+        createRouter({
+          prisma: {
+            bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
+            routine: { findFirst: vi.fn(async () => row), create: save, update: save },
+            spaceModelPreference: { findMany: vi.fn(async () => []) },
+            userModelCredential: {
+              findMany: vi.fn(async () => [
+                {
+                  id: "credential-1",
+                  provider: "openai-codex",
+                  secretId: "secret-1",
+                  updatedAt: stamp,
+                  createdAt: stamp,
+                },
+              ]),
+            },
+            secret: {
+              findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "fake-cipher" })),
+            },
+          },
+          secrets: {
+            load: vi.fn(async () =>
+              JSON.stringify({
+                type: "oauth",
+                access: "fake-access",
+                refresh: "fake-refresh",
+                expires: Date.now() + 60_000,
+                accountId: "acct-test",
+              }),
+            ),
+          },
+          jobs: { cancel: vi.fn(async () => undefined) },
+          codexCatalog: { read },
+          env: { sandboxProvider: "fake" },
+        } as unknown as RouterDeps),
+        { context: { actor } as never },
+      );
+      const call = (id: string) =>
+        operation === "create"
+          ? client.routines.create({
+              botId: "bot-1",
+              name: "Check",
+              prompt: "Check changes",
+              crons: ["0 9 * * *"],
+              active: false,
+              modelProvider: "openai-codex",
+              modelId: id,
+            })
+          : client.routines.update({
+              routineId: "routine-1",
+              modelProvider: "openai-codex",
+              modelId: id,
+            });
+
+      await expect(call(modelId)).resolves.toMatchObject({
+        modelProvider: "openai-codex",
+        modelId,
+      });
+      expect(read).toHaveBeenCalledWith(
+        actor.userId,
+        expect.objectContaining({ accountId: "acct-test" }),
+        undefined,
+      );
+      expect(save).toHaveBeenCalledOnce();
+      await expect(call("gpt-6-luna-unlisted")).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Unknown model for that provider",
+      });
+      expect(save).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("routines.update", () => {
@@ -6678,6 +6799,51 @@ describe("boards.rename", () => {
   });
 });
 
+describe("boards.tickets.list", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function listDeps() {
+    const findMany = vi.fn(async () => []);
+    const prisma = {
+      board: {
+        findUnique: vi.fn(async () => ({
+          id: "board-1",
+          spaceId: "workspace-1",
+          name: "Personal",
+          ticketPrefix: "RAK",
+          nextNumber: 2,
+          createdAt: new Date("2026-06-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+        })),
+      },
+      ticket: { findMany },
+    } as unknown as PrismaClient;
+    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    return { findMany, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  it("searches ticket text for the characters the user typed, not SQL wildcards", async () => {
+    const { findMany, handler } = listDeps();
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/tickets/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { q: "50%_off" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    expect(response?.status).toBe(200);
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where?.OR?.[0]?.title?.contains).toBe("50\\%\\_off");
+    expect(where?.OR?.[1]?.description?.contains).toBe("50\\%\\_off");
+  });
+});
+
 describe("export.bot", () => {
   const actor = {
     spaceId: "workspace-1",
@@ -7019,4 +7185,78 @@ describe("routine watch creation boundaries", () => {
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+});
+
+describe("API-key live model catalog", () => {
+  it.each([false, true])(
+    "merges a fake provider probe and keeps saved selections (failure=%s)",
+    async (fails) => {
+      const bundled = listPiCatalog().filter((entry) => entry.provider === "openai");
+      const retired = bundled[0]!.id;
+      const saved = bundled[1]!.id;
+      const liveOnly = "gpt-future-live-chat";
+      const probe = vi.fn(async () => {
+        if (fails) throw new Error("fake provider failure");
+        return [...bundled.slice(2).map((entry) => entry.id), liveOnly, "text-embedding-future"];
+      });
+      const credential = {
+        id: "credential-test",
+        provider: "openai",
+        secretId: "secret-test",
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      };
+      const prisma = {
+        userModelCredential: { findMany: vi.fn(async () => [credential]) },
+        spaceModelPreference: { findMany: vi.fn(async () => []) },
+        secret: {
+          findMany: vi.fn(async () => [{ id: "secret-test", ciphertext: "fake-ciphertext" }]),
+        },
+        bot: { findMany: vi.fn(async () => [{ modelProvider: "openai", modelId: saved }]) },
+        routine: { findMany: vi.fn(async () => []) },
+        spaceBackupModel: { findMany: vi.fn(async () => []) },
+        deploymentSettings: { findFirst: vi.fn(async () => null) },
+      };
+      const load = vi.fn(async () => "fake-api-key");
+      const deps = {
+        prisma,
+        secrets: { load },
+        providerCatalog: new adapters.ProviderCatalogCache({ enabled: true, probe }),
+        env: { agentRuntime: "pi", defaultProvider: "fake", defaultModel: "fake" },
+      } as unknown as RouterDeps;
+      const actor = {
+        userId: "user-test",
+        spaceId: "space-test",
+        email: "user@example.test",
+        isDeploymentOwner: false,
+      } satisfies Actor;
+      const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+      const entries = await client.models.list();
+      const openai = entries.filter((entry) => entry.provider === "openai");
+      expect(openai.some((entry) => entry.id === retired)).toBe(fails);
+      expect(openai.some((entry) => entry.id === saved)).toBe(true);
+      expect(openai.some((entry) => entry.id === liveOnly)).toBe(!fails);
+      expect(openai.some((entry) => entry.id === "text-embedding-future")).toBe(false);
+      if (!fails)
+        expect(openai.at(-1)).toMatchObject({
+          provider: "openai",
+          providerName: "OpenAI",
+          id: liveOnly,
+          label: liveOnly,
+          auth: "api-key",
+        });
+      await client.models.list();
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe).toHaveBeenCalledWith(
+        { provider: "openai", apiKey: "fake-api-key" },
+        undefined,
+        expect.any(AbortSignal),
+      );
+      expect(prisma.secret.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: actor.userId, spaceId: null }),
+        }),
+      );
+    },
+  );
 });

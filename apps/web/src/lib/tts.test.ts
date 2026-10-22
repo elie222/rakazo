@@ -32,8 +32,26 @@ describe("Speaker", () => {
     ).mockImplementation(() => new Promise(() => undefined));
     const pending = speaker.speak("Hello there.", { messageId: "m1" });
     speaker.stop();
-    await pending;
+    await expect(pending).resolves.toBeUndefined();
     expect(speaker.state.status).toBe("idle");
+  });
+
+  it("does not report a failure for a request a newer one replaced", async () => {
+    const speaker = new Speaker();
+    let fail: (error: Error) => void = () => undefined;
+    vi.spyOn(speaker as unknown as { prepare: () => Promise<string[]> }, "prepare")
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValueOnce([]);
+    const first = speaker.speak("First.", { messageId: "m1" });
+    await speaker.speak("Second.", { messageId: "m2" });
+    fail(new Error("Your voice provider is out of credit."));
+    await expect(first).resolves.toBeUndefined();
+    expect(speaker.state.error).toBeUndefined();
   });
 
   it("resolves with an error snapshot instead of rejecting", async () => {
@@ -42,7 +60,7 @@ describe("Speaker", () => {
       speaker as unknown as { prepare: () => Promise<string[]> },
       "prepare",
     ).mockRejectedValue(new Error("ElevenLabs rejected that key."));
-    await expect(speaker.speak("Hi there.")).resolves.toBeUndefined();
+    await expect(speaker.speak("Hi there.")).resolves.toBe("ElevenLabs rejected that key.");
     expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
   });
 
@@ -119,7 +137,7 @@ describe("Speaker", () => {
       "prepare",
     ).mockResolvedValue(["Hello."]);
 
-    await expect(speaker.speak("Hello.")).resolves.toBeUndefined();
+    await expect(speaker.speak("Hello.")).resolves.toBe("Voice response is too large.");
 
     expect(speaker.state.error).toBe("Voice response is too large.");
     expect(cancel).toHaveBeenCalledOnce();
@@ -144,7 +162,7 @@ describe("Speaker", () => {
       "prepare",
     ).mockResolvedValue(["Hello."]);
 
-    await speaker.speak("Hello.");
+    await expect(speaker.speak("Hello.")).resolves.toBe(copy);
 
     expect(speaker.state.error).toBe(copy);
   });
