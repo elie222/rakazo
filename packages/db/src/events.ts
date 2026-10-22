@@ -404,10 +404,12 @@ export async function sendUserMessage(
           clientNonce: input.clientNonce,
         },
       },
-      include: { sourceRuns: { orderBy: { createdAt: "asc" }, take: 1 } },
     });
     if (!message) return null;
-    const created = message.sourceRuns[0];
+    const created = await prisma.run.findFirst({
+      where: { sourceMessageId: message.id },
+      orderBy: { createdAt: "asc" },
+    });
     const run =
       created ??
       (message.runId ? await prisma.run.findUnique({ where: { id: message.runId } }) : null);
