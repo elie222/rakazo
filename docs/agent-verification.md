@@ -25,36 +25,13 @@ Missing live credentials mean **not run**, not a passing model evaluation.
 
 ## Test value
 
-Keep a test when it catches a plausible product regression through an observable
-result, a structured contract, or a meaningful invariant. The number of test
-cases and lines of coverage are discovery tools, not deletion targets.
+Keep tests that catch a distinct, plausible regression through observable behavior
+or a contract. Before deleting overlapping tests, break the behavior and check
+which tests catch it.
 
-Before adding or removing a case, answer:
-
-- What bug would make it fail, and what would a user lose?
-- Does it run the relevant production code, or only inspect its spelling?
-- Does another retained test catch the same bug at the appropriate boundary?
-- Is this input a different branch or boundary, or just another example?
-- Would a harmless refactor or copy edit require changing the assertion?
-
-Preserve authorization, tenant isolation, secret handling, host and sandbox
-boundaries, recovery races, migration compatibility, and provider conformance.
-A static check can be valuable when the shipped artifact is itself the contract:
-Compose privileges, release publication, CSP, and generated tokens are examples.
-A mocked platform boundary can also be appropriate; mocks alone do not make a
-test low value.
-
-Avoid tests that copy typography or animation constants, search incidental JSX,
-or infer prompt quality from matching words. Native keyboard layout and animation
-need visual verification on the platform; source searches do not demonstrate that
-they work. Keep deterministic prompt escaping, interpolation and tool-effect
-checks. Natural-language quality needs the opt-in rubric-based evaluations above.
-Removing a wording check does not establish that the prompt is effective.
-
-For an expensive or apparently duplicated behavioral test, temporarily break the
-specific production behavior and check which tests detect it before deleting it.
-Use that evidence alongside product risk; do not delete surviving tests merely
-because a mutation tool cannot change the relevant native or external behavior.
+Avoid assertions that mirror design constants, incidental source text, or prompt
+wording. Preserve security, recovery, compatibility, and provider conformance
+coverage; static checks remain useful when configuration is the contract.
 
 ## Paused turn continuity
 
