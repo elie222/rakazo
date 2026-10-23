@@ -23,16 +23,6 @@ command. Nightly verification never starts computer sandboxes or requests model
 or sandbox credentials.
 Missing live credentials mean **not run**, not a passing model evaluation.
 
-## Test value
-
-Keep tests that catch a distinct, plausible regression through observable behavior
-or a contract. Before deleting overlapping tests, break the behavior and check
-which tests catch it.
-
-Avoid assertions that mirror design constants, incidental source text, or prompt
-wording. Preserve security, recovery, compatibility, and provider conformance
-coverage; static checks remain useful when configuration is the contract.
-
 ## Paused turn continuity
 
 Human waits release the agent loop and worker compute. Before an approval,
