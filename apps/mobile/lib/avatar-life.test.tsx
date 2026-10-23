@@ -103,9 +103,6 @@ vi.mock("react-native", () => ({
   Image: () => null,
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
 }));
-vi.mock("../components/avatar-style", () => ({
-  useAvatarStyle: () => ({ avatarStyle: "organic" }),
-}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({
@@ -152,20 +149,10 @@ describe("avatar motion on mobile", () => {
   });
 
   it.each([
-    ["a shipped shape", SHAPE, undefined],
-    ["an organic avatar", "#FF781C", "organic"],
-    ["a robot avatar", "#FF781C", "robot"],
-  ] as const)("plays %s's working clips in the inbox while its bot works", (_, color, variant) => {
-    render(
-      <BotAvatar
-        color={color}
-        identity="bot-1"
-        size={62}
-        variant={variant}
-        status="running"
-        motion="lazy"
-      />,
-    );
+    ["a shipped shape", SHAPE],
+    ["an organic avatar", "#FF781C"],
+  ] as const)("plays %s's working clips in the inbox while its bot works", (_, color) => {
+    render(<BotAvatar color={color} identity="bot-1" size={62} status="running" motion="lazy" />);
     expect(clockStarted()).toBe(true);
     expect(awake()).toBe(1);
   });

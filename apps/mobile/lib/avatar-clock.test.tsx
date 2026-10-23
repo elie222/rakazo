@@ -89,9 +89,6 @@ vi.mock("react-native", () => ({
   Image: () => null,
   AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
 }));
-vi.mock("../components/avatar-style", () => ({
-  useAvatarStyle: () => ({ avatarStyle: "robot" }),
-}));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 vi.mock("./native", () => ({

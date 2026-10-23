@@ -106,8 +106,6 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
         <SettingsOverlay
           name="Jamie"
           onUsageOpen={() => undefined}
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
           timezone={null}
           onTimezoneChange={async () => undefined}
           memoryConfig={null}

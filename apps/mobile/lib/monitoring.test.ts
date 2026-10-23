@@ -133,4 +133,31 @@ describe("mobile monitoring", () => {
     await monitor.configureMobileMonitoring("https://first.example.com", {}, fetchConfig);
     expect(sdk.init).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps lost connections and cancelled requests out of error reports", async () => {
+    const monitor = await import("./monitoring");
+    await monitor.configureMobileMonitoring(
+      "https://app.example.com",
+      {},
+      response({ dsn: "https://key@errors.example.com/8" }),
+    );
+    for (const message of [
+      "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+      "fetch failed: UnexpectedException: cancelled (at ExpoModulesCore/Promise.swift:56)",
+      'fetch failed: java.net.UnknownHostException: Unable to resolve host "app.example.com": No address associated with hostname',
+    ])
+      monitor.reportMobileError(new Error(message), "rpc.transport");
+    expect(sdk.captureException).not.toHaveBeenCalled();
+
+    const bug = new TypeError("undefined is not a function");
+    monitor.reportMobileError(bug, "rpc.transport");
+    expect(sdk.captureException).toHaveBeenCalledWith(bug, {
+      tags: { operation: "rpc.transport", surface: "mobile" },
+    });
+
+    const { beforeSend } = sdk.init.mock.calls[0]![0];
+    const timeout = Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
+    expect(beforeSend({}, { originalException: timeout })).toBeNull();
+    expect(beforeSend({}, { originalException: bug })).toEqual({ user: { ip_address: null } });
+  });
 });

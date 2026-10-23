@@ -143,23 +143,20 @@ describe("account preferences", () => {
     expect(fetch).toHaveBeenCalled();
   });
 
-  it("persists and returns the selected avatar style", async () => {
+  it("accepts an avatar style from an older app without storing it", async () => {
     const { update, actor, handler } = preferencesDeps("organic");
 
     const { response } = await handler.handle(
       new Request("http://127.0.0.1/rpc/preferences/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { avatarStyle: "organic" } }),
+        body: JSON.stringify({ json: { avatarStyle: "robot" } }),
       }),
       { prefix: "/rpc", context: { actor } },
     );
 
     expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith({
-      where: { id: "user-1" },
-      data: { avatarStyle: "organic" },
-    });
+    expect(update).toHaveBeenCalledWith({ where: { id: "user-1" }, data: {} });
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({ avatarStyle: "organic" }),
     });
@@ -254,7 +251,7 @@ describe("account preferences", () => {
   });
 
   it.each(["robot", "organic", "custom-cdn"])(
-    "returns the stored style or organic fallback for %s",
+    "always reports the organic style, whatever is stored (%s)",
     async (style) => {
       const { actor, handler } = preferencesDeps(style);
 
@@ -269,7 +266,7 @@ describe("account preferences", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({
-        json: expect.objectContaining({ avatarStyle: style === "robot" ? "robot" : "organic" }),
+        json: expect.objectContaining({ avatarStyle: "organic" }),
       });
     },
   );

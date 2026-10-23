@@ -1,3 +1,5 @@
+// Import just the classifier: monitoring loads before the app, ahead of the full core barrel.
+import { isAbandonedRequest, isConnectionFailure } from "@rakazo/core/user-error";
 import type { ClientOperation, MonitoringConfig } from "@rakazo/logging/monitoring";
 import {
   createClientErrorReporter,
@@ -20,6 +22,8 @@ export function reportMobileError(
   operation: ClientOperation,
   tags?: Record<string, string>,
 ): void {
+  // A request that lost its connection, timed out or was cancelled is the network, not a bug.
+  if (operation === "rpc.transport" && isConnectionFailure(error)) return;
   errors.capture(error, operation, tags);
 }
 
@@ -102,8 +106,10 @@ export function configureMobileMonitoring(
             ].includes(integration.name),
           ),
         beforeBreadcrumb: () => null,
-        beforeSend: (event) =>
-          current === generation ? sanitizeMonitoringEvent(event, userId) : null,
+        beforeSend: (event, hint) =>
+          current === generation && !isAbandonedRequest(hint?.originalException)
+            ? sanitizeMonitoringEvent(event, userId)
+            : null,
       });
       sdk = Sentry;
       configured = true;

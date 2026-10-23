@@ -832,10 +832,6 @@ msgstr "זמין לפקודות ה-shell של הבוט הזה בתור {commandV
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Avatars"
-msgstr "אווטארים"
-
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1904,10 +1900,6 @@ msgstr "לא ניתן לאמת את הגדרת המחשב ({failureMessage}). י
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't load messaging settings"
 msgstr "לא ניתן לטעון את הגדרות ההודעות"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Couldn't update avatars"
-msgstr "לא ניתן לעדכן את תמונות הפרופיל"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
@@ -3668,10 +3660,6 @@ msgstr "או חיבור עם מפתח API"
 msgid "Or paste an API key"
 msgstr "או הדבקת מפתח API"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Organic"
-msgstr "אורגני"
-
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
@@ -4229,10 +4217,6 @@ msgstr "יש לבדוק את הגדרות הספק ולבדוק שוב."
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Revoke"
 msgstr "ביטול הרשאה"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Robot"
-msgstr "רובוט"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"

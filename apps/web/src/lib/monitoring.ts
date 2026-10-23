@@ -1,3 +1,5 @@
+// Import just the classifier: monitoring loads before the app, ahead of the full core barrel.
+import { isAbandonedRequest, isConnectionFailure } from "@rakazo/core/user-error";
 import type { ClientOperation, MonitoringConfig } from "@rakazo/logging/monitoring";
 import {
   createClientErrorReporter,
@@ -31,6 +33,8 @@ export function reportClientError(
   operation: ClientOperation,
   tags?: Record<string, string>,
 ): void {
+  // A request that lost its connection, timed out or was cancelled is the network, not a bug.
+  if (operation === "rpc.transport" && isConnectionFailure(error)) return;
   errors.capture(error, operation, tags);
 }
 
@@ -138,7 +142,9 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
         defaults.filter(
           (integration) => !["BrowserSession", "Breadcrumbs"].includes(integration.name),
         ),
-      beforeSend: (event) => sanitizeMonitoringEvent(event, userId),
+      // An uncaught timeout or cancellation still means the network, not the code.
+      beforeSend: (event, hint) =>
+        isAbandonedRequest(hint?.originalException) ? null : sanitizeMonitoringEvent(event, userId),
     });
   } catch {
     console.warn("Browser error reporting failed to start");

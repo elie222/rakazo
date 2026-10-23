@@ -1,4 +1,3 @@
-import type { AvatarStyle } from "@rakazo/contracts";
 import type { AvatarMotionMode } from "@rakazo/core";
 import {
   AVATAR_LID_CLOSE,
@@ -20,7 +19,6 @@ import {
   SHIPPED_BOT_AVATAR_VIEWBOX,
 } from "@rakazo/core";
 import { memo } from "react";
-import type { ViewStyle } from "react-native";
 import { Image, Pressable, View } from "react-native";
 import Animated, {
   useAnimatedProps,
@@ -33,7 +31,6 @@ import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import { useAvatarStyle } from "./avatar-style";
 import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -112,7 +109,6 @@ export const BotAvatar = memo(function BotAvatar({
   size = 54,
   status,
   identity,
-  variant,
   muted = false,
   motion = "static",
   composing = false,
@@ -122,7 +118,6 @@ export const BotAvatar = memo(function BotAvatar({
   size?: number;
   status?: string;
   identity?: string;
-  variant?: AvatarStyle;
   muted?: boolean;
   /**
    * How the avatar may move: still (the default), lazy (inbox rows and pinned chats: still
@@ -146,7 +141,6 @@ export const BotAvatar = memo(function BotAvatar({
   const isWorking = isRunWorking(status) && !composing && motion !== "running";
   // The ring sits outside the disc, so the disc keeps its place.
   const dot = avatarWorkingDot(size);
-  const { avatarStyle } = useAvatarStyle();
   const parsed = mobileBotAvatarPresentation(color);
   const onScreen = useAvatarOnScreen();
   const reducedMotion = useReducedMotion();
@@ -164,19 +158,6 @@ export const BotAvatar = memo(function BotAvatar({
   const poke = usePoke(life, pokeable && clock === "running");
   const bodyStyle = useBodyStyle(life, size);
   const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
-  const visorW = Math.round(size * 0.68);
-  const visorH = Math.round(size * 0.44);
-  const eyeW = Math.max(3, Math.round(size * 0.11));
-  const eyeH = Math.max(4, Math.round(size * 0.17));
-  const gap = Math.max(3, Math.round(size * 0.11));
-  const robotEye = {
-    width: eyeW,
-    height: eyeH,
-    borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-    backgroundColor: "#fff",
-  };
-  // The robot's eyes look around inside its visor (in points), short of its rounded ends.
-  const visorRoom = { x: ((visorW - 2 * eyeW - gap) / 2) * 0.8, y: (visorH - eyeH) / 2 };
   const picture =
     parsed.kind === "image" && parsed.imageUrl ? (
       <View
@@ -198,7 +179,7 @@ export const BotAvatar = memo(function BotAvatar({
         life={life}
         bodyStyle={bodyStyle}
       />
-    ) : (variant ?? avatarStyle) === "organic" ? (
+    ) : (
       <OrganicAvatar
         color={fillColor}
         identity={identity}
@@ -206,36 +187,6 @@ export const BotAvatar = memo(function BotAvatar({
         life={life}
         bodyStyle={bodyStyle}
       />
-    ) : (
-      <Animated.View
-        style={[
-          {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: fillColor,
-            alignItems: "center",
-            justifyContent: "center",
-          },
-          bodyStyle,
-        ]}
-      >
-        <View
-          style={{
-            width: visorW,
-            height: visorH,
-            borderRadius: Math.round(visorH * 0.52),
-            backgroundColor: "#0C0C0E",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap,
-          }}
-        >
-          <RobotEye size={size} life={life} style={robotEye} room={visorRoom} />
-          <RobotEye size={size} life={life} style={robotEye} room={visorRoom} />
-        </View>
-      </Animated.View>
     );
   const avatar = (
     <View style={{ width: size, height: size }}>
@@ -334,37 +285,6 @@ function Dot({
     };
   });
   return <Animated.View style={[{ position: "absolute", backgroundColor: color }, style]} />;
-}
-
-/**
- * A robot eye: it follows the head's turns as far as `room` (points each way) allows and
- * closes vertically about its centre.
- */
-function RobotEye({
-  size,
-  life,
-  style,
-  room,
-}: {
-  size: number;
-  life: AvatarLife;
-  style: ViewStyle;
-  room: { x: number; y: number };
-}) {
-  const eye = useAnimatedStyle(() => {
-    const state = eyeState(life);
-    const unit = size / AVATAR_MOTION_UNITS;
-    const within = (value: number, limit: number) => Math.min(Math.max(value, -limit), limit);
-    return {
-      opacity: state.hidden ? 0 : 1,
-      transform: [
-        { translateX: within(state.x * unit, room.x) },
-        { translateY: within(state.y * unit, room.y) },
-        { scaleY: state.lid },
-      ],
-    };
-  });
-  return <Animated.View style={[style, eye]} />;
 }
 
 type BodyStyle = ReturnType<typeof useAnimatedStyle>;

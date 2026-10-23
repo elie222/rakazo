@@ -183,7 +183,7 @@ function account(provider: string, modelId: string) {
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",
-    avatarStyle: "robot" as const,
+    avatarStyle: "organic" as const,
     billingEnabled: false,
     ticketBoardEnabled: false,
     phoneCallsEnabled: false,
