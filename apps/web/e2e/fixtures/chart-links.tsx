@@ -17,26 +17,30 @@ createRoot(document.getElementById("root")!).render(
             data-testid="message-bubble-frame"
             className="relative w-fit min-w-0 max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
           >
-            <ChartBlockView
-              name="chart.png"
-              spec={{
-                title: "Linked chart",
-                marks: [
-                  {
-                    type: "dot",
-                    options: {
-                      x: "x",
-                      y: "y",
-                      href: "url",
-                      fill: "currentColor",
-                      r: 12,
-                      tip: params.get("inspect") === "1",
-                    },
-                  },
-                ],
-              }}
-              data={[{ x: 1, y: 1, url: href }]}
-            />
+            <div className="relative flex flex-col gap-2">
+              <div className="flex justify-start">
+                <ChartBlockView
+                  name="chart.png"
+                  spec={{
+                    title: "Linked chart",
+                    marks: [
+                      {
+                        type: "dot",
+                        options: {
+                          x: "x",
+                          y: "y",
+                          href: "url",
+                          fill: "currentColor",
+                          r: 12,
+                          tip: params.get("inspect") === "1",
+                        },
+                      },
+                    ],
+                  }}
+                  data={[{ x: 1, y: 1, url: href }]}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
