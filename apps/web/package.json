@@ -30,7 +30,8 @@
     "lucide-react": "1.60.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-router-dom": "7.18.4"
+    "react-router-dom": "7.18.4",
+    "@rakazo/logging": "workspace:*"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

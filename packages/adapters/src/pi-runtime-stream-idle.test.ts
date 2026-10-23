@@ -424,6 +424,97 @@ describe.each([
   });
 });
 
+describe.each(["google-generative-ai", "google-vertex"] as const)(
+  "reliableModelStream fetch options for %s",
+  (api) => {
+    afterEach(() => vi.useRealTimers());
+
+    it.each([false, true])(
+      "preserves caller fetch (supplied: %s) and the idle watchdog",
+      async (supplied) => {
+        vi.useFakeTimers();
+        const caller = new AbortController();
+        const fetch = supplied ? vi.fn<NonNullable<SimpleStreamOptions["fetch"]>>() : undefined;
+        const onResponse = vi.fn();
+        const inner = new AssistantMessageEventStream();
+        const streamSimple = vi.fn(
+          (_model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) => inner,
+        );
+        const model = { provider: "fixture", api } as Model<Api>;
+        const stream = reliableModelStream(
+          { streamSimple } as unknown as Models,
+          model,
+          context,
+          { signal: caller.signal, fetch, onResponse },
+          undefined,
+        );
+        const options = streamSimple.mock.calls[0]![2]!;
+        expect(options.fetch).toBe(fetch);
+        expect(options.signal).not.toBe(caller.signal);
+        expect(options.timeoutMs).toBe(MODEL_STREAM_TIMEOUT_MS);
+        await options.onResponse?.({ status: 200, headers: {} }, model);
+        expect(onResponse).toHaveBeenCalledWith({ status: 200, headers: {} }, model);
+        await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS);
+        expect(options.signal?.aborted).toBe(true);
+        expect(caller.signal.aborted).toBe(false);
+        inner.push(abortedByPi());
+        inner.end();
+        await expect(stream.result()).resolves.toMatchObject({
+          errorMessage: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
+        });
+        expect(vi.getTimerCount()).toBe(0);
+      },
+    );
+  },
+);
+
+it.each(["google-generative-ai", "google-vertex"] as const)(
+  "streams a reply through the real Pi %s provider without a custom fetch",
+  async (api) => {
+    const fetch = vi.fn(async () => {
+      const chunk = {
+        candidates: [{ content: { parts: [{ text: "hi" }], role: "model" }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+      };
+      return new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const model: Model<typeof api> = {
+        provider: api === "google-generative-ai" ? "google" : "google-vertex",
+        api,
+        id: "gemini-2.5-flash",
+        name: "Fixture",
+        baseUrl: "https://models.invalid",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 32768,
+        maxTokens: 4096,
+      };
+      const stream = reliableModelStream(
+        builtinModels(),
+        model,
+        { messages: [{ role: "user", content: "Fixture", timestamp: 0 }] },
+        { apiKey: "fake-key", maxRetries: 0 },
+        undefined,
+      );
+      const events: string[] = [];
+      for await (const event of stream) events.push(event.type);
+      const result = await stream.result();
+      expect(result.errorMessage ?? "").not.toContain("Custom fetch is not supported");
+      expect(result).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "hi" }] });
+      expect(events).toContain("text_delta");
+      expect(events.at(-1)).toBe("done");
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("terminates a silent compatible HTTP stream through the real Pi provider", async () => {
   vi.useFakeTimers();
   const caller = new AbortController();

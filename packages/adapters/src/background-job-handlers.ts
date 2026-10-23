@@ -1,6 +1,7 @@
 import type {
   AgentHomeStore,
   AgentRuntime,
+  ArtifactStore,
   BackgroundJobHandlers,
   JobPublisher,
   MessagingSurface,
@@ -51,6 +52,7 @@ export function createBackgroundJobHandlers(deps: {
   prisma: PrismaClient;
   sandbox: SandboxProvider;
   home: AgentHomeStore;
+  artifacts: ArtifactStore;
   jobs: JobPublisher;
   events: ThreadEvents;
   workerId: string;
@@ -64,7 +66,13 @@ export function createBackgroundJobHandlers(deps: {
   notifications?: ExpoPushProvider;
 }): BackgroundJobHandlers {
   const messagingDeps = deps.messaging
-    ? { prisma: deps.prisma, messaging: deps.messaging, events: deps.events, jobs: deps.jobs }
+    ? {
+        prisma: deps.prisma,
+        messaging: deps.messaging,
+        events: deps.events,
+        jobs: deps.jobs,
+        artifacts: deps.artifacts,
+      }
     : undefined;
   // The outbox holds every Space's pending sends, so draining it is cross-tenant.
   const drainMessaging = async () => {

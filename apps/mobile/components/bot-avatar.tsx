@@ -1,57 +1,163 @@
-import type { AvatarStyle } from "@rakazo/contracts";
+import type { AvatarMotionMode } from "@rakazo/core";
 import {
-  ACTIVE_RUN_STATUSES,
+  AVATAR_LID_CLOSE,
+  AVATAR_MOTION_UNITS,
+  AVATAR_TYPING_DOTS,
+  avatarClip,
+  avatarClock,
+  avatarFrame,
   avatarIdentitySeed,
+  avatarLifeState,
+  avatarPokeFrame,
+  avatarRestingBlink,
+  avatarSchedulePose,
+  avatarThinkingDot,
+  avatarWorkingDot,
+  isRunWorking,
   organicAvatarPath,
   SHIPPED_BOT_AVATAR_CENTER,
   SHIPPED_BOT_AVATAR_VIEWBOX,
 } from "@rakazo/core";
-import { memo, useEffect } from "react";
-import { Image, View } from "react-native";
+import { memo } from "react";
+import { Image, Pressable, View } from "react-native";
 import Animated, {
-  cancelAnimation,
-  Easing,
   useAnimatedProps,
   useAnimatedStyle,
   useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
 } from "react-native-reanimated";
 import Svg, { Ellipse, G, Path, Rect } from "react-native-svg";
-import { workingAvatarDuration, workingAvatarFrame } from "../lib/avatar-motion";
+import type { AvatarLife } from "../lib/avatar-life";
+import { useAvatarOnScreen, useLife, usePoke, useSettling } from "../lib/avatar-life";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { useI18n } from "../lib/i18n";
-import { useAvatarStyle } from "./avatar-style";
+import { useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
+const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
+
+/** How far (0–1) the face has turned into the typing dots, for a morph of 0–1. */
+function morphGrow(morph: number): number {
+  "worklet";
+  const t = Math.min(Math.max(morph, 0), 1);
+  return t * t * (3 - 2 * t);
+}
+/** The face shrinks until it is the size of the middle typing dot. */
+const MORPH_SHRINK = 1 - (2 * AVATAR_TYPING_DOTS.radius) / AVATAR_MOTION_UNITS;
+/** The shipped shapes' view box is this many units wide. */
+const SHAPE_UNITS = Number(SHIPPED_BOT_AVATAR_VIEWBOX.split(" ")[2]);
+
+/** The avatar's flat frame right now, a tap poke included; a worklet. */
+function liveFrame(life: AvatarLife) {
+  "worklet";
+  const now = life.seconds.value;
+  const segments = life.schedule.value;
+  const pose = avatarSchedulePose(segments, now);
+  const frame = avatarFrame(pose, life.awake.value);
+  if (life.awake.value < 1) {
+    // Resting and Reduce Motion blinks: the authored blink times, with the resting blink.
+    let shut = 0;
+    for (const segment of segments) {
+      if (!segment.clip || segment.start > now) continue;
+      const clip = avatarClip(segment.clip);
+      for (const blink of clip.blinks ?? [])
+        shut = Math.max(shut, avatarRestingBlink(now - segment.start - blink));
+    }
+    frame.lid = Math.min(frame.lid, 1 - AVATAR_LID_CLOSE * shut);
+  }
+  const poke = life.poke.value;
+  if (poke) {
+    const extra = avatarPokeFrame(poke, life.pokeProgress.value);
+    frame.rotate += extra.rotate;
+    frame.translateY += extra.translateY;
+    frame.scaleY *= extra.scaleY;
+    frame.eyeY += extra.eyeY;
+  }
+  // The face shrinks into the middle typing dot while the bot writes.
+  const grow = morphGrow(life.morph.value);
+  frame.scaleX *= 1 - MORPH_SHRINK * grow;
+  frame.scaleY *= 1 - MORPH_SHRINK * grow;
+  return { frame, grow };
+}
+
+/** The body transform for an avatar `size` points wide. */
+function useBodyStyle(life: AvatarLife, size: number) {
+  return useAnimatedStyle(() => {
+    const { frame, grow } = liveFrame(life);
+    return {
+      opacity: 1 - grow,
+      transform: [
+        { translateX: frame.translateX * size },
+        { translateY: frame.translateY * size },
+        { rotate: `${frame.rotate}deg` },
+        { scaleX: frame.scaleX },
+        { scaleY: frame.scaleY },
+      ],
+    };
+  });
+}
+
+/** An eye's offset (motion units), its height and whether it shows. */
+function eyeState(life: AvatarLife) {
+  "worklet";
+  const { frame, grow } = liveFrame(life);
+  return { x: frame.eyeX, y: frame.eyeY, lid: frame.lid, hidden: grow >= 0.5 };
+}
 
 export const BotAvatar = memo(function BotAvatar({
   color,
   size = 54,
   status,
   identity,
-  variant,
   muted = false,
+  motion = "static",
+  composing = false,
+  pokeable = false,
 }: {
   color: string;
   size?: number;
   status?: string;
   identity?: string;
-  variant?: AvatarStyle;
   muted?: boolean;
+  /**
+   * How the avatar may move: still (the default), lazy (inbox rows and pinned chats: still
+   * at rest, moving while the bot is busy), live (the call card: also blinks at rest) or
+   * running (the activity mark in a chat).
+   */
+  motion?: AvatarMotionMode;
+  /**
+   * The bot is writing its reply: a moving avatar turns into the typing dots, and no avatar
+   * shows the working dot.
+   */
+  composing?: boolean;
+  /** A tap plays a little reaction (the activity mark). */
+  pokeable?: boolean;
 }) {
   const { t } = useI18n();
-  const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
-  const { avatarStyle } = useAvatarStyle();
+  const tokens = useMobileTokens();
+  const state = avatarLifeState(status, composing);
+  // The working dot marks a bot at work, not one writing its reply; a running avatar is
+  // itself that sign, so it carries none.
+  const isWorking = isRunWorking(status) && !composing && motion !== "running";
+  // The ring sits outside the disc, so the disc keeps its place.
+  const dot = avatarWorkingDot(size);
   const parsed = mobileBotAvatarPresentation(color);
+  const onScreen = useAvatarOnScreen();
+  const reducedMotion = useReducedMotion();
+  const settling = useSettling(state);
+  const clock = avatarClock({
+    mode: motion,
+    onScreen,
+    hasEyes: parsed.kind !== "image",
+    size,
+    state,
+    settling,
+    reducedMotion,
+  });
+  const life = useLife(state, clock, size, motion);
+  const poke = usePoke(life, pokeable && clock === "running");
+  const bodyStyle = useBodyStyle(life, size);
   const fillColor = parsed.kind === "shape" || parsed.kind === "color" ? parsed.color : color;
-  const visorW = Math.round(size * 0.68);
-  const visorH = Math.round(size * 0.44);
-  const eyeW = Math.max(3, Math.round(size * 0.11));
-  const eyeH = Math.max(4, Math.round(size * 0.17));
-  const gap = Math.max(3, Math.round(size * 0.11));
   const picture =
     parsed.kind === "image" && parsed.imageUrl ? (
       <View
@@ -70,61 +176,38 @@ export const BotAvatar = memo(function BotAvatar({
         eyeColor={parsed.eyeColor}
         shapePath={parsed.shapePath}
         size={size}
+        life={life}
+        bodyStyle={bodyStyle}
       />
-    ) : (variant ?? avatarStyle) === "organic" ? (
-      <OrganicAvatar color={fillColor} identity={identity} size={size} isWorking={isWorking} />
     ) : (
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: fillColor,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <View
-          style={{
-            width: visorW,
-            height: visorH,
-            borderRadius: Math.round(visorH * 0.52),
-            backgroundColor: "#0C0C0E",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap,
-          }}
-        >
-          {[0, 1].map((eye) => (
-            <View
-              key={eye}
-              style={{
-                width: eyeW,
-                height: eyeH,
-                borderRadius: Math.max(2, Math.round(eyeW * 0.6)),
-                backgroundColor: "#fff",
-              }}
-            />
-          ))}
-        </View>
-      </View>
+      <OrganicAvatar
+        color={fillColor}
+        identity={identity}
+        size={size}
+        life={life}
+        bodyStyle={bodyStyle}
+      />
     );
-  return (
+  const avatar = (
     <View style={{ width: size, height: size }}>
       {picture}
+      {parsed.kind !== "image" && clock !== "still" ? (
+        <ThinkingDots color={fillColor} size={size} life={life} />
+      ) : null}
       {isWorking ? (
         <View
           accessibilityLabel={t("Working")}
           style={{
             position: "absolute",
-            right: muted ? undefined : 0,
-            left: muted ? 0 : undefined,
-            bottom: 0,
-            width: Math.max(6, Math.round(size * 0.18)),
-            height: Math.max(6, Math.round(size * 0.18)),
+            right: muted ? undefined : dot.inset - dot.ring,
+            left: muted ? dot.inset - dot.ring : undefined,
+            bottom: dot.inset - dot.ring,
+            width: dot.diameter + dot.ring * 2,
+            height: dot.diameter + dot.ring * 2,
             borderRadius: size,
-            backgroundColor: "#F5A03C",
+            borderWidth: dot.ring,
+            borderColor: tokens.background,
+            backgroundColor: tokens.workingDot,
           }}
         />
       ) : null}
@@ -156,28 +239,95 @@ export const BotAvatar = memo(function BotAvatar({
       ) : null}
     </View>
   );
+  // A tap is a little toy, not an action, so it stays out of the accessibility tree.
+  return pokeable ? (
+    <Pressable accessible={false} onPress={poke}>
+      {avatar}
+    </Pressable>
+  ) : (
+    avatar
+  );
 });
+
+/** The three typing dots a writing bot's avatar turns into; the middle one is its body. */
+function ThinkingDots({ color, size, life }: { color: string; size: number; life: AvatarLife }) {
+  return (
+    <View pointerEvents="none" style={{ position: "absolute", width: size, height: size }}>
+      <Dot slot={0} color={color} size={size} life={life} />
+      <Dot slot={1} color={color} size={size} life={life} />
+      <Dot slot={2} color={color} size={size} life={life} />
+    </View>
+  );
+}
+
+function Dot({
+  slot,
+  color,
+  size,
+  life,
+}: {
+  slot: 0 | 1 | 2;
+  color: string;
+  size: number;
+  life: AvatarLife;
+}) {
+  const style = useAnimatedStyle(() => {
+    const dot = avatarThinkingDot(slot, life.seconds.value, life.morph.value);
+    const unit = size / AVATAR_MOTION_UNITS;
+    const radius = dot.radius * unit;
+    return {
+      opacity: dot.opacity,
+      width: radius * 2,
+      height: radius * 2,
+      borderRadius: radius,
+      left: size / 2 + dot.x * unit - radius,
+      top: size / 2 + dot.y * unit - radius,
+    };
+  });
+  return <Animated.View style={[{ position: "absolute", backgroundColor: color }, style]} />;
+}
+
+type BodyStyle = ReturnType<typeof useAnimatedStyle>;
 
 function ShippedShapeAvatar({
   color,
   eyeColor,
   shapePath,
   size,
+  life,
+  bodyStyle,
 }: {
   color: string;
   eyeColor: string;
   shapePath: string;
   size: number;
+  life: AvatarLife;
+  bodyStyle: BodyStyle;
 }) {
   const center = SHIPPED_BOT_AVATAR_CENTER;
+  // Offsets are in motion units, scaled to the shape's view box.
+  const eyeProps = (cx: number) => () => {
+    "worklet";
+    const state = eyeState(life);
+    const scale = SHAPE_UNITS / AVATAR_MOTION_UNITS;
+    return {
+      cx: cx + state.x * scale,
+      cy: center - 8 + state.y * scale,
+      ry: state.hidden ? 0 : 7 * state.lid,
+    };
+  };
+  const leftEye = useAnimatedProps(eyeProps(center - 29));
+  const rightEye = useAnimatedProps(eyeProps(center + 29));
   return (
-    <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
-      <Path d={shapePath} fill={color} />
-      <G fill={eyeColor}>
-        <Ellipse cx={center - 29} cy={center - 8} rx={10} ry={7} />
-        <Ellipse cx={center + 29} cy={center - 8} rx={10} ry={7} />
-      </G>
-    </Svg>
+    <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
+      <Svg width={size} height={size} viewBox={SHIPPED_BOT_AVATAR_VIEWBOX}>
+        <Path d={shapePath} fill={color} />
+        <G fill={eyeColor}>
+          <AnimatedEllipse animatedProps={leftEye} rx={10} />
+          <AnimatedEllipse animatedProps={rightEye} rx={10} />
+        </G>
+      </Svg>
+    </Animated.View>
   );
 }
 
@@ -185,76 +335,35 @@ function OrganicAvatar({
   color,
   identity,
   size,
-  isWorking,
+  life,
+  bodyStyle,
 }: {
   color: string;
   identity?: string;
   size: number;
-  isWorking: boolean;
+  life: AvatarLife;
+  bodyStyle: BodyStyle;
 }) {
   const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
-  const progress = useSharedValue(0);
-  const reducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    cancelAnimation(progress);
-    progress.value = 0;
-    if (isWorking && !reducedMotion) {
-      progress.value = withRepeat(
-        withTiming(1, {
-          duration: workingAvatarDuration(seed),
-          easing: Easing.linear,
-        }),
-        -1,
-      );
-    }
-    return () => cancelAnimation(progress);
-  }, [isWorking, progress, reducedMotion, seed]);
-
-  const bodyStyle = useAnimatedStyle(() => {
-    const frame = workingAvatarFrame(seed, progress.value);
-    return {
-      transform: [
-        { translateX: (frame.translationX * size) / 120 },
-        { translateY: (frame.translationY * size) / 120 },
-        { rotate: `${frame.rotation}deg` },
-        { scaleX: frame.scaleX },
-        { scaleY: frame.scaleY },
-      ],
-    };
-  });
-  const leftEyeProps = useAnimatedProps(() => {
-    const frame = workingAvatarFrame(seed, progress.value);
-    return { x: -14 + frame.eyeOffsetX, y: -12 + frame.eyeOffsetY };
-  });
-  const rightEyeProps = useAnimatedProps(() => {
-    const frame = workingAvatarFrame(seed, progress.value);
-    return { x: 7 + frame.eyeOffsetX, y: -12 + frame.eyeOffsetY };
-  });
-
+  // Offsets are in motion units, scaled to this 120-unit box; eyes close about their centre.
+  const eyeProps = (x: number) => () => {
+    "worklet";
+    const state = eyeState(life);
+    const scale = 120 / AVATAR_MOTION_UNITS;
+    const height = state.hidden ? 0 : 24 * state.lid;
+    return { x: x + state.x * scale, y: -height / 2 + state.y * scale, height };
+  };
+  const leftEyeProps = useAnimatedProps(eyeProps(-14));
+  const rightEyeProps = useAnimatedProps(eyeProps(7));
   return (
-    <View style={{ width: size, height: size }}>
-      <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
-        <Svg width={size} height={size} viewBox="-60 -60 120 120">
-          <Path d={organicAvatarPath(seed)} fill={color} />
-          <G transform={`rotate(${(seed % 9) - 4})`}>
-            <AnimatedRect
-              animatedProps={leftEyeProps}
-              width={7}
-              height={24}
-              rx={3.5}
-              fill="#101014"
-            />
-            <AnimatedRect
-              animatedProps={rightEyeProps}
-              width={7}
-              height={24}
-              rx={3.5}
-              fill="#101014"
-            />
-          </G>
-        </Svg>
-      </Animated.View>
-    </View>
+    <Animated.View style={[{ width: size, height: size }, bodyStyle]}>
+      <Svg width={size} height={size} viewBox="-60 -60 120 120">
+        <Path d={organicAvatarPath(seed)} fill={color} />
+        <G transform={`rotate(${(seed % 9) - 4})`}>
+          <AnimatedRect animatedProps={leftEyeProps} width={7} rx={3.5} fill="#101014" />
+          <AnimatedRect animatedProps={rightEyeProps} width={7} rx={3.5} fill="#101014" />
+        </G>
+      </Svg>
+    </Animated.View>
   );
 }

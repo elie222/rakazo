@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Build and roll out origin/main on the single-VM production stack.
+# Roll out origin/main on the single-VM production stack.
 #
 # Runs as the deploy user through deploy-launcher.sh, which is installed as the CI forced command
 # and always runs this file from origin/main. The deploy user needs passwordless sudo for Docker.
+#
+# CI publishes the app image for a main commit before it deploys that commit, so this pulls
+# <RAKAZO_DEPLOY_IMAGE>:sha-<commit> instead of building on the host that serves traffic. It builds
+# the checkout instead when the pull fails or times out, or when no image repository is configured.
 set -Eeuo pipefail
 
 # A forced SSH command carries no environment, so read the checkout path from a root-owned file.
@@ -13,17 +17,29 @@ fi
 APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
-# CI allows 30 minutes: 15m build + 5m start + ~1m of health retries + 8m rollback.
+# CI allows 45 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
+# rollback, which only pulls or builds when the previous image is gone.
+PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
 ROLLBACK_TIMEOUT="${RAKAZO_DEPLOY_ROLLBACK_TIMEOUT:-8m}"
-# Free disk a deploy needs before it builds.
+# Free disk a deploy needs before it pulls or builds.
 MIN_FREE_GB="${RAKAZO_DEPLOY_MIN_FREE_GB:-5}"
 BUILD_CACHE_GB="${RAKAZO_DEPLOY_BUILD_CACHE_GB:-8}"
 [[ "${BUILD_CACHE_GB}" =~ ^[0-9]+$ ]] || { echo "RAKAZO_DEPLOY_BUILD_CACHE_GB must be a whole number" >&2; exit 1; }
 [[ "${MIN_FREE_GB}" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "RAKAZO_DEPLOY_MIN_FREE_GB must be a whole number" >&2; exit 1; }
 
 cd "${APP_DIR}"
+# Where CI publishes the app image. Unset: the GHCR app image of the GitHub repository the checkout
+# tracks, which is where publish-server-image.yml pushes. Empty: always build on the host.
+if [[ -z "${RAKAZO_DEPLOY_IMAGE+set}" ]]; then
+  RAKAZO_DEPLOY_IMAGE=""
+  origin_url="$(git config --get remote.origin.url || true)"
+  if [[ "${origin_url}" =~ github\.com[:/]([^/]+/[^/]+)$ ]]; then
+    repository="$(tr '[:upper:]' '[:lower:]' <<<"${BASH_REMATCH[1]%.git}")"
+    RAKAZO_DEPLOY_IMAGE="ghcr.io/${repository}/app"
+  fi
+fi
 if [[ -z "${RAKAZO_HEALTH_URL:-}" ]]; then
   host="$(sed -n 's/^RAKAZO_HOST=//p' .env | tail -n 1)"
   [[ -n "${host}" ]] || { echo "Set RAKAZO_HOST in .env or RAKAZO_HEALTH_URL" >&2; exit 1; }
@@ -38,6 +54,34 @@ compose() {
 
 healthy() {
   curl --fail --silent --show-error --max-time 15 "${RAKAZO_HEALTH_URL}" >/dev/null
+}
+
+# The image the api, web and worker share, as Compose resolves it from .env (by default
+# ghcr.io/<owner>/<repo>/app:local). A pulled image is tagged as it, so hand-run Compose commands
+# and backups keep using whatever the deploy started.
+compose_app_image() {
+  compose 1m config | awk '
+    $0 == "  api:" { api = 1; next }
+    api && /^  [^ ]/ { api = 0 }
+    api && /^    image: / { print $2; api = 0 }'
+}
+
+# Points the app image at the published image for a revision, or builds that revision when the
+# image cannot be pulled, so a registry outage slows a deploy down instead of blocking it.
+use_revision_image() {
+  local revision="$1" limit="$2" published
+  if [[ -n "${RAKAZO_DEPLOY_IMAGE}" ]]; then
+    published="${RAKAZO_DEPLOY_IMAGE}:sha-${revision}"
+    if timeout --kill-after=30s "${PULL_TIMEOUT}" sudo docker pull --quiet "${published}" >/dev/null; then
+      sudo docker tag "${published}" "${app_image}"
+      # Drop the sha- tag; the image stays as the app image, so these tags never pile up.
+      sudo docker rmi "${published}" >/dev/null || true
+      echo "Using the published image ${published}."
+      return 0
+    fi
+    echo "::warning::Could not pull ${published}; building ${revision} on this host instead." >&2
+  fi
+  compose "${limit}" build --build-arg "GIT_SHA=${revision}"
 }
 
 # Waits for a container's own health check, or for it to run when its revision has none (a
@@ -102,8 +146,8 @@ if ! flock -n 9; then
   exit 1
 fi
 
-# Each build adds images, so refuse to start one that would fill the disk. Check before fetching:
-# git fails on a full disk with a less helpful message.
+# Each deploy adds an image, so refuse to start one that would fill the disk. Check before
+# fetching: git fails on a full disk with a less helpful message.
 docker_root="$(sudo docker info --format '{{.DockerRootDir}}')"
 for dir in "${APP_DIR}" "${docker_root}"; do
   free_gb="$(df -Pk "${dir}" | awk 'NR == 2 { print int($4 / 1048576) }')"
@@ -129,11 +173,27 @@ if [[ "${previous_revision}" == "${target_revision}" && "${deployed_revision}" =
   exit 0
 fi
 
+app_image=""
+# The image the running API uses, which can differ from the configured tag if someone pulled a
+# newer one without recreating the containers.
+previous_app_image=""
+api_container="$(compose 1m ps --quiet api 2>/dev/null | head -n 1 || true)"
+if [[ -n "${api_container}" ]]; then
+  previous_app_image="$(sudo docker inspect --format '{{.Image}}' "${api_container}" 2>/dev/null || true)"
+fi
+
 rollback() {
   trap - ERR
   echo "Deployment failed; restoring the previous revision ${previous_revision}." >&2
   git reset --hard "${previous_revision}"
-  compose "${ROLLBACK_TIMEOUT}" build
+  app_image="$(compose_app_image)"
+  # The image the previous containers ran is still here, so restoring it is a retag. Without a
+  # running API to read it from, pull or build the previous revision instead.
+  if [[ -n "${previous_app_image}" ]]; then
+    sudo docker tag "${previous_app_image}" "${app_image}"
+  else
+    use_revision_image "${previous_revision}" "${ROLLBACK_TIMEOUT}"
+  fi
   roll_out
   apply_caddyfile "${target_revision}" "${previous_revision}"
   exit 1
@@ -144,9 +204,9 @@ trap rollback ERR
 previous_images="$(compose 1m images -q 2>/dev/null | sort -u)" || previous_images="unknown"
 
 # Runs after a healthy rollout. Tags the previous images so they survive, then drops untagged
-# images and trims the build cache to a fixed size (RAKAZO_DEPLOY_BUILD_CACHE_GB, default 8): a
-# time window let a busy day of deploys pile up tens of gigabytes. Cleanup is time-limited and
-# never fails the deploy.
+# images, which leaves the current and previous app image. The build cache only grows when a pull
+# fell back to a build, and is trimmed to RAKAZO_DEPLOY_BUILD_CACHE_GB (default 8). Cleanup is
+# time-limited and never fails the deploy.
 prune_docker() {
   local id kept=true
   if [[ "${previous_images}" == unknown ]]; then
@@ -176,7 +236,20 @@ if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' .env; then
   echo "Added POSTGRES_APP_PASSWORD to .env."
 fi
 compose 1m config --quiet
-compose "${BUILD_TIMEOUT}" build
+# Postgres 18 refuses a Postgres 16 volume until upgrade-postgres.sh has copied the data across.
+# Stop before anything is replaced rather than take the database down.
+# shellcheck disable=SC2016 # expanded inside the container
+postgres_state="$(compose "${UP_TIMEOUT}" run --rm --no-deps -T --entrypoint sh postgres -c \
+  'if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s /var/lib/postgresql/16/docker/PG_VERSION ]; then echo upgrade; fi')"
+if [[ "${postgres_state}" == upgrade ]]; then
+  trap - ERR
+  git reset --hard "${previous_revision}"
+  echo "Postgres needs its one-time upgrade to 18 before this release deploys; see docs/self-host.md#upgrading-to-postgres-18." >&2
+  exit 1
+fi
+app_image="$(compose_app_image)"
+[[ -n "${app_image}" ]] || { echo "Could not find the api image in ${COMPOSE_FILE}." >&2; false; }
+use_revision_image "${target_revision}" "${BUILD_TIMEOUT}"
 roll_out
 apply_caddyfile "${previous_revision}" "${target_revision}"
 

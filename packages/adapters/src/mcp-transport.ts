@@ -25,7 +25,7 @@ export interface McpUrlPolicy {
   allowHttpLocalhost?: boolean;
   /** Permit configured credentials on an explicitly local HTTP endpoint. */
   allowLocalHttpCredentials?: boolean;
-  /** Permit RFC1918 / Docker-network hosts when the deployment owner enabled the escape. */
+  /** Permit RFC1918 / Docker-network hosts when the operator enabled the escape. */
   allowPrivateEndpoint?: boolean;
   /** Hosts allowed after redirects (redirects are rejected by default). */
   allowedHosts?: readonly string[];

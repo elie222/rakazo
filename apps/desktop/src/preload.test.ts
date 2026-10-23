@@ -34,7 +34,6 @@ describe("desktop preload bridge", () => {
     expect(Object.keys(bridge).sort()).toEqual([
       "badge",
       "computer",
-      "localSettings",
       "oauth",
       "platform",
       "update",

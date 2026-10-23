@@ -245,3 +245,13 @@ describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
     expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "  ")).not.toThrow();
   });
 });
+
+it("keeps API-key-only HTTPS copy separate from header-aware copy", () => {
+  const url = new URL("http://models.example/v1");
+  expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "key")).toThrow(
+    "OpenAI-compatible endpoints that send an API key must use HTTPS.",
+  );
+  expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined, true)).toThrow(
+    "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS.",
+  );
+});

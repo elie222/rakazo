@@ -1,3 +1,4 @@
+import { logSinkHealth } from "@rakazo/logging";
 import { Hono } from "hono";
 
 /**
@@ -36,7 +37,7 @@ export function healthRoutes(
   app.get("/health", (c) => c.json({ ok: true }));
   app.get("/internal/health", (c) => {
     if (c.req.header("x-forwarded-for") || c.req.header("forwarded")) return c.notFound();
-    return c.json({ ok: true, ...details() });
+    return c.json({ ok: true, ...details(), telemetry: logSinkHealth() });
   });
   return app;
 }

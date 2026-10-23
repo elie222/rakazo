@@ -1539,6 +1539,46 @@ describeWithDatabase("API authorization and resource isolation", () => {
     }
   });
 
+  it("keeps compatible headers encrypted and out of DTOs across reconnects", async () => {
+    const cookie = await signup(app, `model-headers-${stamp}@rakazo.test`, "Model Headers");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    const connection = {
+      provider: "openai-compatible",
+      modelId: "arbitrary-model",
+      baseUrl: "http://localhost:8000/v1",
+    };
+    const connected = await rpc<ModelCredential>(app, cookie, "models/connect", {
+      ...connection,
+      headers: { "x-session": "fake-session-secret" },
+    });
+    expect(connected.headerNames).toEqual(["x-session"]);
+    expect(JSON.stringify(connected)).not.toContain("fake-session-secret");
+    const credential = await db.userModelCredential.findUniqueOrThrow({
+      where: { id: connected.id },
+    });
+    const secret = await db.secret.findUniqueOrThrow({
+      where: { id: credential.secretId },
+    });
+    expect(secret.ciphertext).not.toContain("fake-session-secret");
+    await rpc(app, cookie, "models/connect", connection);
+    expect(
+      await runAsTenant(actor, () =>
+        handles.executor.resolveModel({ userId: actor.userId, spaceId: actor.spaceId }),
+      ),
+    ).toMatchObject({ headers: { "x-session": "fake-session-secret" } });
+    const listed = await rpc<Array<ModelCredential>>(app, cookie, "models/credentials");
+    expect(listed.find((row) => row.id === connected.id)?.headerNames).toEqual(["x-session"]);
+    expect(JSON.stringify(listed)).not.toContain("fake-session-secret");
+    await rpc(app, cookie, "models/connect", { ...connection, headers: {} });
+    expect(
+      await runAsTenant(actor, () =>
+        handles.executor.resolveModel({ userId: actor.userId, spaceId: actor.spaceId }),
+      ),
+    ).toMatchObject({ headers: {} });
+    const cleared = await rpc<Array<ModelCredential>>(app, cookie, "models/credentials");
+    expect(cleared.find((row) => row.id === connected.id)?.headerNames).toEqual([]);
+  });
+
   it("validates custom thinking against the saved connection capability", async () => {
     const cookie = await signup(app, `custom-thinking-${stamp}@rakazo.test`, "Custom Thinking");
     const bot = await rpc<Bot>(app, cookie, "bots/create", botInput("Thinking Bot"));
@@ -1750,94 +1790,30 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await handles.prisma.user.findUnique({ where: { email } })).not.toBeNull();
   });
 
-  it("restricts deployment settings to the deployment owner", async () => {
-    const owner = await signup(app, `deployment-owner-${stamp}@rakazo.test`, "Deployment Owner");
-    const other = await signup(app, `deployment-other-${stamp}@rakazo.test`, "Deployment Other");
-    const ownerActor = await rpc<Actor>(app, owner, "me");
-    const otherActor = await rpc<Actor>(app, other, "me");
-    // This test changes a live allowlist; the operator has already proved
-    // ownership of the mailbox. Endpoint verification has offline auth tests.
-    await handles.prisma.user.update({
-      where: { id: ownerActor.userId },
-      data: { emailVerified: true },
-    });
+  it("denies server administration to every app account, including a stored former owner", async () => {
+    const formerOwner = await signup(app, `former-owner-${stamp}@rakazo.test`, "Test Account");
+    const other = await signup(app, `ordinary-${stamp}@rakazo.test`, "Other Account");
+    const account = await rpc<Actor>(app, formerOwner, "me");
     await handles.prisma.deploymentSettings.update({
       where: { id: "default" },
-      data: {
-        ownerUserId: ownerActor.userId,
-        signupsEnabled: true,
-        signupAllowlist: "",
-      },
+      data: { ownerUserId: account.userId },
     });
-
-    expect(otherActor.userId).not.toBe(ownerActor.userId);
-
-    await rpc(app, owner, "deployment/get");
-    await expectDenied(app, other, "deployment/get", {});
-    await expectDenied(app, other, "deployment/update", {
-      signupsEnabled: false,
-      signupAllowlist: ["attacker@example.test"],
-    });
-    await expectForbidden(app, other, "updater/status", {});
-    await expectForbidden(app, other, "updater/check", {});
-    await expectForbidden(app, other, "updater/apply", {});
+    for (const cookie of [formerOwner, other]) {
+      expect((await rpc<Actor>(app, cookie, "me")).isDeploymentOwner).toBe(false);
+      await expectForbidden(app, cookie, "deployment/get", {});
+      await expectForbidden(app, cookie, "deployment/update", { signupsEnabled: false });
+      await expectForbidden(app, cookie, "security/events", {});
+      await expectForbidden(app, cookie, "updater/status", {});
+      await expectForbidden(app, cookie, "updater/check", {});
+      await expectForbidden(app, cookie, "updater/apply", {});
+      await expectForbidden(app, cookie, "integrationSetup/save", {
+        provider: "composio",
+        apiKey: "fake-key",
+      });
+    }
     expect(
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
-
-    try {
-      await rpc(app, owner, "deployment/update", { signupsEnabled: false });
-      const closedSignup = await app.request("/api/auth/sign-up/email", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: `closed-${stamp}@rakazo.test`,
-          password: "password123",
-          name: "Closed Signup",
-        }),
-      });
-      expect(closedSignup.status).toBe(400);
-      expect(await closedSignup.json()).toMatchObject({
-        code: "REGISTRATION_CLOSED",
-        message: "Registration is closed",
-      });
-
-      const approvedEmail = `approved-${stamp}@example.test`;
-      await rpc(app, owner, "deployment/update", {
-        signupsEnabled: true,
-        signupAllowlist: [approvedEmail],
-      });
-      const disallowedSignup = await app.request("/api/auth/sign-up/email", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: `not-approved-${stamp}@rakazo.test`,
-          password: "password123",
-          name: "Disallowed Signup",
-        }),
-      });
-      expect(disallowedSignup.status).toBe(400);
-      expect(await disallowedSignup.json()).toMatchObject({
-        code: "EMAIL_NOT_ALLOWED",
-        message: "Email is not allowed to register",
-      });
-      const unverifiedSignup = await app.request("/api/auth/sign-up/email", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: approvedEmail,
-          password: "password123",
-          name: "Approved Signup",
-        }),
-      });
-      expect(unverifiedSignup.status).toBe(400);
-      expect(await unverifiedSignup.text()).toContain("Registration requires email delivery");
-    } finally {
-      await rpc(app, owner, "deployment/update", {
-        signupsEnabled: true,
-        signupAllowlist: [],
-      });
-    }
   });
 });
 
@@ -2000,6 +1976,7 @@ interface Actor {
 }
 
 interface ModelCredential {
+  headerNames?: string[];
   id: string;
   provider: string;
   label: string;

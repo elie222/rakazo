@@ -49,45 +49,20 @@ function reposFor(memoryScope: string | null) {
 
 describe("createRepos.listBots", () => {
   it("surfaces a failed foreground run and clears the signal after recovery", async () => {
-    const findMany = vi.fn(async () => [
-      {
-        ...baseBot,
-        thread: { ...baseBot.thread, runs: [{ id: "run-failed", status: "failed" }] },
-      },
-    ]);
+    const findMany = vi.fn(async () => [baseBot]);
+    const queryRaw = vi.fn(async () => [] as unknown[]);
+    queryRaw.mockResolvedValueOnce([{ id: "run-failed", threadId: "thread-1", status: "failed" }]);
     const repos = createRepos({
       bot: { findMany },
-      $queryRaw: vi.fn(async () => []),
+      $queryRaw: queryRaw,
     } as unknown as PrismaClient);
-
     const failed = await repos.listBots(actor);
     expect(failed[0]).toMatchObject({ status: "idle", runErrorId: "run-failed" });
-
-    findMany.mockResolvedValueOnce([
-      {
-        ...baseBot,
-        thread: { ...baseBot.thread, runs: [{ id: "run-recovered", status: "completed" }] },
-      },
+    queryRaw.mockResolvedValueOnce([
+      { id: "run-recovered", threadId: "thread-1", status: "completed" },
     ]);
     const recovered = await repos.listBots(actor);
     expect(recovered[0]).toMatchObject({ status: "idle", runErrorId: null });
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({
-          thread: expect.objectContaining({
-            include: expect.objectContaining({
-              runs: expect.objectContaining({
-                where: { trigger: { notIn: ["bot_message", "tickets"] } },
-                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-                take: 1,
-                select: { id: true, status: true },
-              }),
-            }),
-          }),
-        }),
-      }),
-    );
   });
 
   it("classifies initial preview runs once across bots, including non-peer results", async () => {
@@ -403,19 +378,34 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         parentBotId: null,
         thread: {
+          id: "thread-2",
           unread: true,
-          messages: [
-            {
-              createdAt: new Date("2026-08-19T12:00:00.000Z"),
-              blocks: [{ kind: "text", text: "Waiting for a reply" }],
-            },
-          ],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running" }],
       },
     ]);
-    const repos = createRepos({ bot: { findMany } } as unknown as PrismaClient);
+    const repos = createRepos({
+      bot: { findMany },
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "run-failed", threadId: "thread-2", status: "failed" }])
+        .mockResolvedValueOnce([
+          {
+            id: "message-2",
+            threadId: "thread-2",
+            seq: 4,
+            role: "user",
+            blocks: [{ kind: "text", text: "Waiting for a reply" }],
+            botId: null,
+            replyToMessageId: null,
+            replyQuote: null,
+            runId: null,
+            clientNonce: null,
+            createdAt: new Date("2026-08-19T12:00:00.000Z"),
+          },
+        ]),
+    } as unknown as PrismaClient);
 
     await expect(repos.listSpaceBotsForSpaces(actor, ["ws-2"])).resolves.toEqual([
       {
@@ -438,12 +428,8 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
     const query = findMany.mock.calls[0]![0];
     expect(query.select.thread).toEqual(
       expect.objectContaining({
-        select: expect.objectContaining({
-          messages: {
-            orderBy: { seq: "desc" },
-            take: 1,
-            select: { blocks: true, createdAt: true },
-          },
+        select: expect.not.objectContaining({
+          messages: expect.anything(),
         }),
       }),
     );

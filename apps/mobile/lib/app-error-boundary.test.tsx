@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppErrorBoundary } from "../components/app-error-boundary";
 
+vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
 vi.mock("expo-splash-screen", () => ({ hideAsync: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../lib/appearance", () => ({
   mobileTokens: () => ({

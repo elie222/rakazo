@@ -144,11 +144,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
 
+  test-postgres-upgrade:
+    name: Postgres upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: bash infra/compose/upgrade-postgres.docker-test.sh
+
   test-e2e:
     name: Web E2E
     uses: ./.github/workflows/playwright.yml
     with:
       upload_artifacts: true
+
+  # Publishes sha-<commit> and edge alongside the checks, so the production deploy pulls the
+  # image this run built instead of building on the production host.
+  publish-server-image:
+    name: Publish server images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/publish-server-image.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
 
   publish-mobile-update:
     name: Publish compatible mobile update
@@ -306,9 +328,11 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
-    needs: [lint, check, build, test, test-integration, test-e2e]
+    # The host pulls the image published for this commit; it builds only if that pull fails.
+    needs: [lint, check, build, test, test-integration, test-postgres-upgrade, test-e2e, publish-server-image]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
+    timeout-minutes: 45
     concurrency:
       group: production
       cancel-in-progress: false

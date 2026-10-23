@@ -72,10 +72,14 @@ test("the missing-model send error opens model settings", async ({ page }, testI
   await captureScreenshot(page, testInfo, "composer-send-needs-model");
 
   await link.click();
-  const settings = page.getByTestId("user-settings");
+  const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  await expect(settings.getByTestId("settings-nav-models")).toHaveAttribute("aria-current", "page");
-  await page.keyboard.press("Escape");
+  await expect(settings.getByRole("button", { name: "Advanced", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(settings.getByRole("combobox", { name: "Model", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
   await expect(settings).toBeHidden();
   await expect(composer).toHaveValue("what can you do?");
 });

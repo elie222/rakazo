@@ -31,6 +31,7 @@ import {
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 type ComputerUpdateProgress = (
@@ -327,6 +328,9 @@ export async function provisionComputer(
   if (claimed.count !== 1) throw new ComputerBusyError();
   let provisioned: ComputerRef | undefined;
   try {
+    // Docker mounts the cached directory, so it must hold the stored revision before boot.
+    if (!reconnecting && deps.home instanceof ObjectAgentHomeStore)
+      await deps.home.hydrate(existing.homeKey);
     await onProgress?.("recreating");
     const ref = await getLogger().withContext(
       { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },

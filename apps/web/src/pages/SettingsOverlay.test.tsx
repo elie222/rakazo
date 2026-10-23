@@ -106,8 +106,6 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
         <SettingsOverlay
           name="Jamie"
           onUsageOpen={() => undefined}
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
           timezone={null}
           onTimezoneChange={async () => undefined}
           memoryConfig={null}
@@ -253,21 +251,11 @@ it("withholds memory connection controls after a failed load and retries the edi
 const updatesNav = (container: HTMLElement) =>
   container.querySelector('[data-testid="settings-nav-updates"]');
 
-it("hides Updates when neither the desktop app nor the server can update", async () => {
-  const { container, cleanup } = await render({ isDeploymentOwner: true });
+it("hides server updates and never requests server authority", async () => {
+  const { container, cleanup } = await render({});
   try {
-    await vi.waitFor(() => expect(updaterStatus).toHaveBeenCalled());
     expect(updatesNav(container)).toBeNull();
-  } finally {
-    await cleanup();
-  }
-});
-
-it("shows Updates to the owner of a server that can update itself", async () => {
-  updaterStatus.mockResolvedValueOnce({ installKind: "sidecar" });
-  const { container, cleanup } = await render({ isDeploymentOwner: true });
-  try {
-    await vi.waitFor(() => expect(updatesNav(container)).not.toBeNull());
+    expect(updaterStatus).not.toHaveBeenCalled();
   } finally {
     await cleanup();
   }
@@ -278,29 +266,6 @@ it("shows Updates in the desktop app", async () => {
   const { container, cleanup } = await render({});
   try {
     expect(updatesNav(container)).not.toBeNull();
-  } finally {
-    await cleanup();
-  }
-});
-
-it("leaves Updates for General once the status shows nothing to update", async () => {
-  let resolveStatus: (status: unknown) => void = () => undefined;
-  updaterStatus.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        resolveStatus = resolve;
-      }),
-  );
-  const { container, cleanup } = await render({
-    isDeploymentOwner: true,
-    initialSection: "updates",
-  });
-  const selected = () =>
-    container.querySelector('[data-testid="user-settings"]')?.getAttribute("data-settings-section");
-  try {
-    expect(selected()).toBe("updates");
-    await act(async () => resolveStatus({ installKind: "compose" }));
-    expect(selected()).toBe("general");
   } finally {
     await cleanup();
   }

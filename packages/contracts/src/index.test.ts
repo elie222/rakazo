@@ -512,3 +512,25 @@ describe("contracts", () => {
     ).toBe(false);
   });
 });
+
+describe("compatible connection headers", () => {
+  const input = {
+    provider: "openai-compatible",
+    baseUrl: "https://example.invalid/v1",
+    modelId: "test",
+  };
+  it("retains trimmed header names", () => {
+    expect(
+      ModelConnectInputSchema.parse({ ...input, headers: { " x-session ": "secret" } }),
+    ).toHaveProperty("headers", { "x-session": "secret" });
+  });
+});
+
+it("retains legacy unknown-field stripping for model connections", () => {
+  expect(
+    ModelConnectInputSchema.parse({ provider: "test", apiKey: "fake-key", futureOption: true }),
+  ).toEqual({
+    provider: "test",
+    apiKey: "fake-key",
+  });
+});

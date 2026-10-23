@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
-import { Button, Label, Switch } from "@rakazo/ui-web";
+import { Button, Label, Spinner, Switch } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
@@ -149,7 +149,7 @@ export function ApprovalRulesSettings() {
       {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
       {loading ? (
         <p className="mt-4 text-[13px] text-muted-foreground">
-          <Trans>Loading rules…</Trans>
+          <Spinner aria-label={t`Loading rules…`} />
         </p>
       ) : rules.length > 0 ? (
         <ul className="mt-4 space-y-2">

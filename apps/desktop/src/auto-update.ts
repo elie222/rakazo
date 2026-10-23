@@ -1,4 +1,5 @@
 import type { DesktopUpdateState } from "@rakazo/contracts";
+import { reportDesktopError } from "./monitoring.js";
 
 /** Long enough that a cold launch is never competing with the update feed for bandwidth. */
 export const LAUNCH_CHECK_DELAY_MS = 8_000;
@@ -268,6 +269,11 @@ export class DesktopUpdateController {
   }
 
   private push(event: UpdaterEvent) {
+    if (event.type === "failed") {
+      const failure = classifyUpdaterFailure(event.error);
+      if (failure.kind === "signature" || failure.kind === "other")
+        reportDesktopError(event.error, "desktop.update", { "update.failure": failure.kind });
+    }
     this.current = reduceUpdateState(this.current, event, this.clock.iso());
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;

@@ -1,7 +1,7 @@
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 
-/** Preserve saved provider references and the Bedrock India strict-tools guard. */
+/** Apply provider protocol capabilities before catalog and runtime selection. */
 export function applyPiModelCompatibility(models: MutableModels): MutableModels {
   const provider = models.getProvider?.("amazon-bedrock");
   if (provider) {
@@ -14,6 +14,15 @@ export function applyPiModelCompatibility(models: MutableModels): MutableModels 
           : model,
       );
     models.setProvider({ ...provider, getModels: () => guardedModels });
+  }
+  const groq = models.getProvider?.("groq");
+  if (groq) {
+    // Groq chat templates accept system instructions, including reasoning models.
+    const groqModels = groq.getModels().map((model) => ({
+      ...model,
+      compat: { ...model.compat, supportsDeveloperRole: false },
+    }));
+    models.setProvider({ ...groq, getModels: () => groqModels });
   }
   const getModel = models.getModel.bind(models);
   models.getModel = (provider, id) => getModel(canonicalPiProviderId(provider), id);

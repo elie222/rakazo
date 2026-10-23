@@ -10,6 +10,7 @@ import {
   probeOpenAiCompatibleModels,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -42,6 +43,77 @@ export function catalogProviderProbeBaseUrl(provider: string): string | null {
   return catalogProbeBaseUrls.get(canonicalPiProviderId(provider)) ?? null;
 }
 
+/** Read-only authenticated endpoints; public catalogs cannot establish key validity. */
+const KEY_CHECK_URLS = new Map([
+  ["openrouter", "https://openrouter.ai/api/v1/key"],
+  ["deepseek", "https://api.deepseek.com/models"],
+  ["google", "https://generativelanguage.googleapis.com/v1beta/models"],
+]);
+
+/** Google reports invalid keys as HTTP 400 with a structured ErrorInfo reason. */
+async function googleKeyWasRejected(response: Response): Promise<boolean> {
+  const reader = response.body?.getReader();
+  if (!reader) return false;
+  try {
+    const decoder = new TextDecoder();
+    let text = "";
+    let bytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 4096) return false;
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    const body = JSON.parse(text) as { error?: { details?: Array<{ reason?: string }> } };
+    return (
+      Array.isArray(body.error?.details) &&
+      body.error.details.some((detail) => detail?.reason === "API_KEY_INVALID")
+    );
+  } catch {
+    return false;
+  } finally {
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+export async function verifyCatalogProviderApiKey(
+  input: { provider: string; apiKey: string },
+  fetchImpl: typeof fetch = globalThis.fetch,
+  signal?: AbortSignal,
+): Promise<void> {
+  const provider = canonicalPiProviderId(input.provider);
+  const url = KEY_CHECK_URLS.get(provider);
+  if (!url) return;
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      headers:
+        provider === "google"
+          ? { "x-goog-api-key": input.apiKey.trim() }
+          : { Authorization: `Bearer ${input.apiKey.trim()}` },
+      redirect: "error",
+      signal: AbortSignal.any([
+        AbortSignal.timeout(MODEL_CONNECT_TIMEOUT_MS),
+        ...(signal ? [signal] : []),
+      ]),
+    });
+  } catch {
+    // Transport errors may contain the request's credential. Never forward them.
+    throw new Error("Could not verify the API key. Try again.");
+  }
+  const rejected =
+    provider === "google" && response.status === 400
+      ? await googleKeyWasRejected(response)
+      : response.status === 401 || response.status === 403;
+  void response.body?.cancel().catch(() => undefined);
+  if (rejected) {
+    throw new Error("API key was rejected by the provider.");
+  }
+  if (!response.ok) throw new Error("Could not verify the API key. Try again.");
+}
+
 /**
  * List models for a catalog provider whose registry base URL is pinned.
  * Caller-supplied URLs stay on `probeOpenAiCompatibleModels`, which still
@@ -54,6 +126,7 @@ export async function probeCatalogProviderModels(
 ): Promise<string[]> {
   const baseUrl = catalogProviderProbeBaseUrl(input.provider);
   if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  await verifyCatalogProviderApiKey(input, fetchImpl, signal);
   return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
     allowPublic: true,
     catalogProbe: true,
@@ -220,7 +293,7 @@ function catalogBilling(
   const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[providerId];
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
-    return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+    return "Runs on infrastructure configured by the server operator. No model charges from Rakazo.";
   }
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
     return "Runs on a URL you control. Rakazo does not pay for model usage.";

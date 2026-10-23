@@ -156,6 +156,15 @@ it.each([true, false, undefined])(
 );
 
 describe("resolveRuntimeModel", () => {
+  it("does not route an unavailable provider model through OpenRouter", () => {
+    const resolved = resolveRuntimeModel({
+      provider: "anthropic",
+      id: "openai/gpt-6-luna",
+    });
+    expect(resolved.provider).toBe("anthropic");
+    expect(resolved.model).toBeUndefined();
+  });
+
   it("does not treat a stringified null as a catalog model", () => {
     const resolved = resolveRuntimeModel({ provider: "anthropic", id: "null" });
     expect(resolved.modelId).toBe("");

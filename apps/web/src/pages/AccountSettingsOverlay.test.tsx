@@ -98,7 +98,6 @@ vi.mock("../components/ComputersUnavailableHint", () => ({
   ComputersUnavailableHint: () => null,
 }));
 vi.mock("../components/DesktopUpdates", () => ({ DesktopUpdateSection: () => null }));
-vi.mock("../components/SoftwareUpdateSection", () => ({ SoftwareUpdateSection: () => null }));
 vi.mock("../lib/auth", () => ({ authClient: { changePassword: vi.fn() } }));
 vi.mock("../lib/i18n", () => ({
   getActiveUiLocale: () => "en",
@@ -122,6 +121,25 @@ afterEach(() => {
   localStorage.clear();
 });
 
+it("offers no avatar style choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<GeneralSettingsPanels name="Jamie" />);
+    });
+
+    expect(container.querySelector('[data-testid="avatar-style-select"]')).toBeNull();
+    expect(container.textContent).not.toContain("Robot");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -129,13 +147,7 @@ it("flips the stored tool activity preference from the settings toggle", async (
   const root = createRoot(container);
   try {
     await act(async () => {
-      root.render(
-        <GeneralSettingsPanels
-          name="Jamie"
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
-        />,
-      );
+      root.render(<GeneralSettingsPanels name="Jamie" />);
     });
 
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -171,13 +183,7 @@ it("turns loading web images on and off from the settings toggle", async () => {
   const root = createRoot(container);
   try {
     await act(async () => {
-      root.render(
-        <GeneralSettingsPanels
-          name="Jamie"
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
-        />,
-      );
+      root.render(<GeneralSettingsPanels name="Jamie" />);
     });
 
     const toggle = container.querySelector<HTMLButtonElement>(
@@ -211,15 +217,7 @@ it.each([undefined, true, false])("respects the password-change policy (%s)", as
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
-    await act(async () =>
-      root.render(
-        <GeneralSettingsPanels
-          name="Test"
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
-        />,
-      ),
-    );
+    await act(async () => root.render(<GeneralSettingsPanels name="Test" />));
     expect(container.textContent?.includes("Change password")).toBe(enabled !== false);
   } finally {
     await act(async () => root.unmount());
@@ -235,13 +233,7 @@ it("updates the Enter preference from Settings and reflects external changes", a
   const root = createRoot(container);
   try {
     await act(async () => {
-      root.render(
-        <GeneralSettingsPanels
-          name="Test"
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
-        />,
-      );
+      root.render(<GeneralSettingsPanels name="Test" />);
     });
     const toggle = container.querySelector<HTMLButtonElement>(
       '[data-testid="composer-enter-to-send-toggle"]',
@@ -283,7 +275,7 @@ it.each([
   }
 });
 
-it("renders the server integrations entry as a plain link", async () => {
+it("does not expose server integration configuration", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -292,20 +284,12 @@ it("renders the server integrations entry as a plain link", async () => {
     await act(async () => {
       root.render(
         <MemoryRouter>
-          <GeneralSettingsPanels
-            name="Jamie"
-            avatarStyle="robot"
-            onAvatarStyleChange={async () => undefined}
-            isDeploymentOwner
-          />
+          <GeneralSettingsPanels name="Jamie" />
         </MemoryRouter>,
       );
     });
 
-    const link = container.querySelector('a[href="/integrations/setup"]');
-    if (!link) throw new Error("Missing server integrations link");
-    expect(link.hasAttribute("type")).toBe(false);
-    expect(link.hasAttribute("role")).toBe(false);
+    expect(container.querySelector('a[href="/integrations/setup"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();

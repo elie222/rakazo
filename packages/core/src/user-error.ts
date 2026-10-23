@@ -40,6 +40,25 @@ export function isNetworkFailure(error: unknown): boolean {
   return false;
 }
 
+/** True when the client itself gave up on a request: a timeout or a cancellation. */
+export function isAbandonedRequest(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; typeof current === "object" && current !== null && depth < 4; depth += 1) {
+    const { name } = current as { name?: unknown };
+    if (name === "TimeoutError" || name === "AbortError") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * True when a request never got a response because of the connection (offline, DNS, a dropped
+ * connection) or because the client timed out or cancelled it: the user's network, not a bug.
+ */
+export function isConnectionFailure(error: unknown): boolean {
+  return isNetworkFailure(error) || isAbandonedRequest(error);
+}
+
 /** True for the gateway answers a proxy gives while the server is down or restarting. */
 export function isUnreachableStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;

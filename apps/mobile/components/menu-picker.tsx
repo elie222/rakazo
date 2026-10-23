@@ -68,6 +68,7 @@ export function MenuPicker({
   onPress,
   divider = false,
   plain = false,
+  showLabel = true,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
@@ -76,6 +77,7 @@ export function MenuPicker({
   onPress?: () => void;
   divider?: boolean;
   plain?: boolean;
+  showLabel?: boolean;
 }) {
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
@@ -89,12 +91,18 @@ export function MenuPicker({
   } as const;
   const content = (
     <>
-      <Text style={[styles.label, plain && { color: tokens.mutedForeground, fontSize: 14 }]}>
-        {label}
-      </Text>
+      {showLabel ? (
+        <Text style={[styles.label, plain && { color: tokens.foreground, fontSize: 14 }]}>
+          {label}
+        </Text>
+      ) : null}
       <Text
         numberOfLines={1}
-        style={[styles.value, plain && { color: tokens.foreground, fontSize: 14 }]}
+        style={[
+          styles.value,
+          plain && { color: tokens.foreground, fontSize: 14 },
+          !showLabel && { textAlign: "left" },
+        ]}
       >
         {current}
       </Text>

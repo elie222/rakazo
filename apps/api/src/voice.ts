@@ -2,7 +2,6 @@ import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
-  actorMayUsePrivateEndpoint,
   createVoiceProvider,
   isFishSpeechModelId,
   isVoiceProviderId,
@@ -41,14 +40,9 @@ export interface VoiceDeps {
 }
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
-async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, actor: Actor, provider: string) {
+async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, _actor: Actor, provider: string) {
   return (
-    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
-    actorMayUsePrivateEndpoint(
-      deps.prisma,
-      actor.userId,
-      deps.env?.mcpAllowPrivateEndpoint === true,
-    )
+    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && deps.env?.mcpAllowPrivateEndpoint === true
   );
 }
 

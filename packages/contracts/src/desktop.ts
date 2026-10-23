@@ -42,13 +42,11 @@ export interface RakazoDesktop {
     set: (count: number) => Promise<boolean>;
   };
   computer?: {
+    /** Native main persists host choice through its local capability, never a user session. */
+    managesHostChoice?: boolean;
     requestAccess: () => Promise<boolean>;
     revokeAccess: () => Promise<void>;
     onConfigure: (listener: () => void) => () => void;
-  };
-  /** Only the isolated local settings window is authorized to call this bridge. */
-  localSettings?: {
-    request: (pathname: string, body: string) => Promise<{ status: number; body: string }>;
   };
   platform: string;
   window: {

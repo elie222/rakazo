@@ -268,9 +268,7 @@ export function SidebarRoster({
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent
-              className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
-            >
+            <CollapsibleContent className="flex flex-col gap-0.5">
               {nestedRows.map(({ item, depth, hasChildren, parentId }) => {
                 const parentCollapsed = hasChildren && collapsedRosterParents.has(item.chat.id);
                 const selected =
@@ -318,7 +316,7 @@ export function SidebarRoster({
                     <BotAvatar
                       color={item.chat.color}
                       identity={item.chat.id}
-                      size={mini ? 32 : compact ? 28 : 38}
+                      size={mini ? 40 : compact ? 28 : 38}
                       status={item.chat.status}
                     />
                   ) : (
@@ -328,7 +326,7 @@ export function SidebarRoster({
                           ? (activeSnapshot.members ?? item.chat.members)
                           : item.chat.members
                       }
-                      size={mini ? 32 : compact ? 28 : 38}
+                      size={mini ? 40 : compact ? 28 : 38}
                     />
                   );
                 const chatTrigger = (

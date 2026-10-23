@@ -14,14 +14,17 @@ import {
   isAttachmentAudioMimeType,
   MESSAGE_REACTIONS,
 } from "@rakazo/contracts";
-import type { SlashActionId, ThreadItem } from "@rakazo/core";
+import type { ReadBoundary, SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
   answerableAskMessageIds,
   appendNewerThreadPage,
   attachmentsForThread,
   buildComposerMentionOptions,
+  canMarkMessageUnread,
+  chatUserBubbleColors,
   cloudAgentHttpsUrl,
+  createChatQueues,
   dismissableAskMessageIds,
   expandPeerReplies,
   foldPeerReplies,
@@ -35,7 +38,10 @@ import {
   isRunWaitingOnUser,
   isRunWorking,
   isSecretAskBlock,
+  jumpTargetId,
   leaveThreadWindow,
+  liveActivityLine,
+  liveMessageComposing,
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
@@ -46,9 +52,12 @@ import {
   retryDelayMs,
   displayName as safeDisplayName,
   selectedAskActionLabel,
+  settleReadBoundary,
   shouldShowBotSenderName,
   threadWindowMessages,
   timeSeparatorIds,
+  unreadDividerMessageId,
+  voiceChatHoldsMessage,
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
@@ -109,6 +118,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
+import { ActivityMark } from "../components/activity-mark";
 import { AudioAttachment } from "../components/audio-attachment";
 import { BotAvatar } from "../components/bot-avatar";
 import { ChoiceCard } from "../components/ChoiceCard";
@@ -140,9 +150,9 @@ import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import { TimeSeparator } from "../components/time-separator";
+import { UnreadDivider } from "../components/unread-divider";
 import { VoiceChatCard } from "../components/VoiceChatCard";
-import { WorkingIndicator } from "../components/WorkingIndicator";
-import { readableGutter } from "../lib/adaptive-layout";
+import { readableGutters } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileGroup,
@@ -178,6 +188,7 @@ import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
+import { chatSettingsRoute } from "../lib/chat-settings-route";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
@@ -210,6 +221,7 @@ import {
   threadSpaceRequest,
   threadSpaceSwitchResult,
 } from "../lib/notification-open";
+import { peerChipPress } from "../lib/peer-chip";
 import type { PickedAttachment } from "../lib/pick-attachments";
 import { pickDocuments, pickFromLibrary, takePhoto } from "../lib/pick-attachments";
 import { threadRefreshDelayMs } from "../lib/refresh";
@@ -236,15 +248,18 @@ import {
   subscribeSessionGeneration,
 } from "../lib/session";
 import { setInboxHidden, useSplitView } from "../lib/split-view";
-import { threadEdgeOptions } from "../lib/thread-edges";
+import { threadEdgeOptions, threadHeaderClearance, threadHeaderFloats } from "../lib/thread-edges";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
+import { threadKeyboardOffset } from "../lib/thread-keyboard-offset";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
+import type { UserBubble } from "../lib/user-bubble";
+import { withUserBubble } from "../lib/user-bubble";
 import { errorText } from "../lib/user-error";
 import { speakQueue, speakText } from "../lib/voice";
 import {
@@ -438,16 +453,21 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const [botActionsOpen, setBotActionsOpen] = useState(false);
   const { t, locale } = useI18n();
   const navigation = useNavigation();
+  const focused = useIsFocused();
   const foreground = useAppForeground();
   const router = useRouter();
   // Beside the chat list on a wide window, the chat has only the width the list leaves.
   const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
-  const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
+  const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
+  const headerClearance = threadHeaderClearance(headerHeight);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
-  const columnInset = readableGutter(windowWidth, Math.max(insets.left, insets.right));
-  const columnWidth = windowWidth - columnInset * 2;
+  const columnInsets = readableGutters(windowWidth, {
+    left: split && !inboxHidden ? 0 : insets.left,
+    right: insets.right,
+  });
+  const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
   // Frame by frame, including a swipe that drags the keyboard down.
   const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
   useKeyboardHandler(
@@ -531,9 +551,24 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
   const readVisibleTarget = useRef<string | null>(null);
+  // What the user had read up to when this chat opened; the "New" divider follows it all visit.
+  // Each open or return to a chat is a new visit.
+  const readVisit = useRef<{ target: string | undefined; visit: number; focused: boolean }>({
+    target: undefined,
+    visit: 0,
+    focused,
+  });
+  const [readBoundary, setReadBoundary] = useState<ReadBoundary | null>(null);
+  // A chat's markRead calls run one at a time so the request that opened it answers first.
+  const [readInOrder] = useState(createChatQueues);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
+  if (readVisit.current.target !== threadKey || (focused && !readVisit.current.focused)) {
+    readVisit.current = { target: threadKey, visit: readVisit.current.visit + 1, focused };
+    readVisibleTarget.current = null;
+  }
+  readVisit.current.focused = focused;
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
     scrollBehavior.current.state(),
   );
@@ -561,6 +596,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       ? { botId }
       : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
+  /** Bots writing reply text right now, comma-separated. */
+  const [composingBots, setComposingBots] = useState("");
   const snapRef = useRef<MobileSnapshot | null>(null);
   // The copy saved on this device stays on screen until a live snapshot replaces it.
   const [showingSaved, setShowingSaved] = useState(false);
@@ -578,6 +615,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     snapRef.current = next;
     const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
     setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
+    // Read before streamed text is hidden, so a writing bot shows it even with streaming off.
+    setComposingBots(
+      (next?.messages ?? [])
+        .filter(
+          (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
+        )
+        .map((message) => message.botId ?? next?.botId ?? "")
+        .sort()
+        .join(","),
+    );
   }
 
   useEffect(() => {
@@ -720,7 +767,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
-  const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
+  // Only reply text being written replaces the footer; earlier sentences above a tool call don't.
+  const hasLiveProgress = visibleMessages.some(
+    (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
+  );
+  const activityLine = liveActivityLine(snap?.messages ?? []);
+  const userBubble = useMemo(
+    () =>
+      !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
+    [inGroup, currentBot?.color, currentBot?.id],
+  );
   const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];
     const seen = new Set<string>();
@@ -904,6 +960,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   useLayoutEffect(() => {
+    // The title opens the chat's own settings: the group's in a group, the bot's otherwise.
+    const titleSettings = chatSettingsRoute({ groupId, botId, readOnly });
     navigation.setOptions({
       title: displayName || t("Thread"),
       headerTitleAlign: "center",
@@ -911,11 +969,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={!inGroup && botId ? t("Chat settings") : displayName || t("Thread")}
-          disabled={readOnly || inGroup || !botId}
+          accessibilityLabel={
+            titleSettings
+              ? t(inGroup ? "Group settings" : "Chat settings")
+              : displayName || t("Thread")
+          }
+          disabled={!titleSettings}
           onPress={() => {
-            if (readOnly || !botId || inGroup) return;
-            router.push({ pathname: "/bot-settings", params: { botId } });
+            if (titleSettings) router.push(titleSettings);
           }}
         >
           <GlassSurface style={styles.titleCapsule} fallbackStyle={styles.titleCapsuleFill}>
@@ -925,6 +986,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 identity={currentBot.id}
                 size={28}
                 status={currentBotStatus}
+                composing={composingBots.split(",").includes(currentBot.id)}
                 muted={currentBot.notifyOnFinish === false}
               />
             ) : null}
@@ -944,6 +1006,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               inGroup
                 ? {
                     type: "button" as const,
+                    label: t("Group settings"),
                     accessibilityLabel: t("Group settings"),
                     icon: { type: "sfSymbol" as const, name: "gearshape" },
                     onPress: () =>
@@ -954,6 +1017,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   }
                 : {
                     type: "menu" as const,
+                    label: t("Bot actions"),
                     accessibilityLabel: t("Bot actions"),
                     icon: { type: "sfSymbol" as const, name: "ellipsis" },
                     disabled: !botId,
@@ -1012,6 +1076,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       ...(split
         ? {
             headerBackVisible: false,
+            ...(iosAtLeast(26)
+              ? {
+                  unstable_headerLeftItems: () => [
+                    {
+                      type: "button" as const,
+                      label: inboxHidden ? t("Show chats") : t("Hide chats"),
+                      icon: { type: "sfSymbol" as const, name: "sidebar.left" },
+                      onPress: () => setInboxHidden(!inboxHidden),
+                    },
+                  ],
+                }
+              : {}),
             headerLeft: () => (
               <Pressable
                 accessibilityRole="button"
@@ -1029,7 +1105,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             ),
           }
         : // Folding back takes the list away, so the chat gets its back button again.
-          { headerBackVisible: true, headerLeft: undefined }),
+          {
+            headerBackVisible: true,
+            headerLeft: undefined,
+            ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
+          }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
         : {}),
@@ -1042,6 +1122,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     botId,
     currentBot,
     currentBotStatus,
+    composingBots,
     displayName,
     groupId,
     inGroup,
@@ -1260,19 +1341,24 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    const targetInPage = page.messages.some((message) => message.id === target.messageId);
+    // A relay's dropped marker (e.g. a search hit) lands on its "Messaged X" receipt.
+    const messageId = jumpTargetId(
+      foldPeerReplies(page.messages, { includePeerReceipts: true }),
+      target.messageId,
+    );
+    const targetInPage = page.messages.some((message) => message.id === messageId);
     const opened = targetInPage ? openThreadWindow(snap, page) : null;
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = opened
       ? {
           ...threadTarget,
-          messageId: target.messageId,
+          messageId,
           threadId: page.threadId,
           newerCursor: opened.newerCursor,
         }
       : null;
-    jumpAnchor.current.begin(targetInPage ? target.messageId : null);
-    jumpScrollTarget.current = targetInPage ? target.messageId : null;
+    jumpAnchor.current.begin(targetInPage ? messageId : null);
+    jumpScrollTarget.current = targetInPage ? messageId : null;
     newerLoadFailed.current = false;
     joinPinnedAfterLayout.current = null;
     pinnedScrollMetrics.current = { offset: 0, viewport: 0, content: 0 };
@@ -1282,7 +1368,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     const next = opened?.snapshot ?? snap;
     // A reply folded under its peer marker is only drawn once the marker is expanded.
     const markerId = targetInPage
-      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(target.messageId)
+      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(messageId)
       : undefined;
     if (markerId) {
       setExpandedPeerMarkers((expanded) =>
@@ -1406,24 +1492,70 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     }
   }
 
+  // After "Mark as unread" on a message, the chat stays unread for the rest of this visit. The
+  // hold names the visit, so returning to the chat (a new visit) reads it again.
+  const heldUnread = useRef<number | null>(null);
+  const markUnreadFrom = (message: MobileMessage) => {
+    const visit = readVisit.current.visit;
+    const target = groupId ?? botId;
+    if (!target) return;
+    heldUnread.current = visit;
+    // Through the chat's read queue, so a read already sent lands first and this one wins.
+    void readInOrder(target, () =>
+      rpc("threads/markUnread", {
+        ...(groupId ? { groupId } : { botId: botId! }),
+        messageId: message.id,
+      }),
+    ).catch((err) => {
+      if (heldUnread.current === visit) heldUnread.current = null;
+      Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
+    });
+  };
+
   const markReadIfVisible = useCallback(() => {
-    if (readOnly || AppState.currentState !== "active" || !navigation.isFocused()) return;
+    if (
+      readOnly ||
+      heldUnread.current === readVisit.current.visit ||
+      AppState.currentState !== "active" ||
+      !navigation.isFocused()
+    )
+      return;
     const target = groupId ?? botId;
     if (!target || readVisibleTarget.current === target) return;
     readVisibleTarget.current = target;
+    const visit = readVisit.current.visit;
     if (activeThreadId.current) {
       void dismissThreadNotifications({ threadId: activeThreadId.current }).catch(() => undefined);
     }
-    if (groupId) {
-      void rpc("threads/markRead", { groupId }).catch(() => {
+    // A read that waited in the queue skips once the user has left the chat, or marked it
+    // unread meanwhile.
+    void readInOrder(target, () =>
+      readVisit.current.visit === visit &&
+      heldUnread.current !== visit &&
+      AppState.currentState === "active" &&
+      navigation.isFocused()
+        ? rpc<{ unreadAfterSeq?: number | null }>(
+            "threads/markRead",
+            groupId ? { groupId } : { botId: botId! },
+          )
+        : Promise.resolve(null),
+    )
+      .then((answer) => {
+        if (!answer) {
+          if (readVisibleTarget.current === target) readVisibleTarget.current = null;
+          return;
+        }
+        setReadBoundary((current) =>
+          settleReadBoundary(current, readVisit.current.visit, {
+            visit,
+            seq: answer.unreadAfterSeq ?? null,
+          }),
+        );
+      })
+      .catch(() => {
         if (readVisibleTarget.current === target) readVisibleTarget.current = null;
       });
-      return;
-    }
-    void rpc("threads/markRead", { botId: botId! }).catch(() => {
-      if (readVisibleTarget.current === target) readVisibleTarget.current = null;
-    });
-  }, [botId, groupId, navigation, readOnly]);
+  }, [botId, groupId, navigation, readInOrder, readOnly]);
 
   useEffect(() => {
     if (!notificationThreadId || AppState.currentState !== "active" || !navigation.isFocused())
@@ -1712,11 +1844,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
-      if (inGroup && groupId) {
-        router.push({ pathname: "/group-settings", params: { groupId } });
-      } else if (botId) {
-        router.push({ pathname: "/bot-settings", params: { botId } });
-      }
+      const settings = chatSettingsRoute({ groupId, botId });
+      if (settings) router.push(settings);
       return;
     }
     router.push({
@@ -2075,9 +2204,21 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
   function openErrorModel() {
     setRunErrorDetailsOpen(false);
-    router.push({ pathname: "/bot-settings", params: { botId: snap?.run?.botId ?? botId ?? "" } });
+    router.push({
+      pathname: "/bot-settings",
+      params: { botId: snap?.run?.botId ?? botId ?? "", focus: "model" },
+    });
   }
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
+  const unreadDividerId = useMemo(
+    () =>
+      unreadDividerMessageId(
+        visibleMessages,
+        readBoundary?.visit === readVisit.current.visit ? readBoundary.seq : null,
+        snap?.olderCursor ?? null,
+      ),
+    [visibleMessages, readBoundary, snap?.olderCursor, threadKey],
+  );
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -2139,7 +2280,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     if (jumpAnchor.current.holds() && !targetDrawn) {
       jumpAnchor.current.release();
       jumpScrollTarget.current = null;
-    } else if (jumpAnchor.current.blocksPaging(targetDrawn, headerHeight + 24)) {
+    } else if (jumpAnchor.current.blocksPaging(targetDrawn, headerClearance.anchor)) {
       return;
     }
     const { offset, viewport, content } = pinnedScrollMetrics.current;
@@ -2213,6 +2354,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     select: setSelectableText,
     speak,
     react: (message, reaction) => void reactToMessage(message, reaction),
+    markUnread: markUnreadFrom,
     answer: answerMessage,
     openBot,
     openComputer,
@@ -2236,6 +2378,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         return next;
       });
     },
+    openPeerChat: (peer) => {
+      if (!botId) return;
+      router.push({
+        pathname: "/peer-chat",
+        params: { botId, botName: displayName, ...peer },
+      });
+    },
     togglePeerReplies: (markerId) => {
       setExpandedPeerMarkers((expanded) => {
         const next = new Set(expanded);
@@ -2244,14 +2393,19 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       });
     },
     layout: (messageId, y, index) => {
-      const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
+      const offset = jumpAnchor.current.onMessageLayout(
+        messageId,
+        y,
+        index,
+        headerClearance.anchor,
+      );
       if (offset == null) return;
       scrollPinnedTo(offset);
       setHighlightedMessageId(messageId);
       if (highlightTimer.current) clearTimeout(highlightTimer.current);
       highlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 1200);
       requestAnimationFrame(() => {
-        const again = jumpAnchor.current.align(headerHeight + 24);
+        const again = jumpAnchor.current.align(headerClearance.anchor);
         if (again != null) scrollPinnedTo(again);
       });
     },
@@ -2267,6 +2421,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       select: (text) => rowActionsRef.current.select(text),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
+      markUnread: (message) => rowActionsRef.current.markUnread(message),
       answer: (message, answer, username, dismiss) =>
         rowActionsRef.current.answer(message, answer, username, dismiss),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
@@ -2276,6 +2431,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
       togglePeerReplies: (id) => rowActionsRef.current.togglePeerReplies(id),
+      openPeerChat: (peer) => rowActionsRef.current.openPeerChat(peer),
       layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
     [],
@@ -2325,6 +2481,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           canDismiss={dismissableAskIds.has(message.id)}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
+          headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
+          unreadDivider={message.id === unreadDividerId}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
@@ -2338,6 +2496,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
+          userBubble={userBubble}
           inGroup={inGroup}
           columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
@@ -2361,6 +2520,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       groupId,
       currentBot,
       currentBotStatus,
+      userBubble,
       rowActions,
       readOnly,
       onCall,
@@ -2368,6 +2528,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       dismissableAskIds,
       highlightedMessageId,
       separatorIds,
+      visibleMessages[0]?.id,
+      unreadDividerId,
       columnWidth,
       t,
       locale,
@@ -2376,23 +2538,35 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ThreadItem<MobileMessage>>) =>
       item.kind === "voiceChat" ? (
-        <View style={messageListStyles.row}>
+        <View
+          style={[
+            messageListStyles.row,
+            threadHeaderFloats() && item.messages[0]?.id === visibleMessages[0]?.id
+              ? { marginTop: 0 }
+              : undefined,
+          ]}
+        >
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
+          ) : null}
+          {voiceChatHoldsMessage(item, unreadDividerId) ? (
+            <UnreadDivider
+              afterSeparator={Boolean(item.messages[0] && separatorIds.has(item.messages[0].id))}
+            />
           ) : null}
           <VoiceChatCard group={item} />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds],
+    [renderMessageRow, separatorIds, unreadDividerId, visibleMessages[0]?.id],
   );
   const listContentStyle = useMemo(
     () => ({
-      paddingBottom: headerHeight + 8,
+      paddingBottom: headerClearance.padding,
       paddingTop: readOnly ? insets.bottom + 16 : 16,
     }),
-    [headerHeight, readOnly, insets.bottom],
+    [headerClearance.padding, readOnly, insets.bottom],
   );
 
   const workingFooter =
@@ -2400,21 +2574,20 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       <View
         accessibilityLabel={t("{name} is working", { name: currentBot.name })}
         accessibilityRole="text"
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          minHeight: 40,
-          marginTop: 12,
-        }}
+        style={{ minHeight: 40, marginTop: 12, justifyContent: "center" }}
       >
-        <BotAvatar
-          color={currentBot.color}
-          identity={currentBot.id}
-          size={28}
-          status={currentBotStatus}
+        <ActivityMark
+          bots={[
+            {
+              id: currentBot.id,
+              color: currentBot.color,
+              status: currentBotStatus,
+              composing: composingBots.split(",").includes(currentBot.id),
+            },
+          ]}
+          atBottom={!threadScrollState.detached}
+          label={activityLine ?? t("Working…")}
         />
-        <WorkingIndicator />
       </View>
     ) : inGroup && workingGroupBots.length > 0 ? (
       <View
@@ -2424,27 +2597,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             : t("{count} agents working", { count: workingGroupBots.length })
         }
         accessibilityRole="text"
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          minHeight: 40,
-          marginTop: 12,
-        }}
+        style={{ minHeight: 40, marginTop: 12, justifyContent: "center" }}
       >
-        <View style={{ flexDirection: "row", paddingRight: 8 }}>
-          {workingGroupBots.map((bot, index) => (
-            <View
-              key={bot.botId}
-              style={{
-                marginLeft: index === 0 ? 0 : -8,
-                zIndex: workingGroupBots.length - index,
-              }}
-            >
-              <BotAvatar color={bot.color} identity={bot.botId} size={28} status={bot.status} />
-            </View>
-          ))}
-        </View>
-        <WorkingIndicator />
+        <ActivityMark
+          bots={workingGroupBots.map((bot) => ({
+            id: bot.botId,
+            color: bot.color,
+            status: bot.status,
+            composing: composingBots.split(",").includes(bot.botId),
+          }))}
+          atBottom={!threadScrollState.detached}
+          label={activityLine ?? t("Working…")}
+        />
       </View>
     ) : null;
 
@@ -2455,12 +2619,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         onPress={() => void loadOlderMessages()}
         style={{
           alignSelf: "center",
+          alignItems: "center",
+          flexDirection: "row",
+          gap: 8,
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
       >
+        {loadingOlder ? (
+          <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
+        ) : null}
         <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
-          {loadingOlder ? t("Loading…") : t("Load earlier messages")}
+          {t("Load earlier messages")}
         </Text>
       </Pressable>
     ) : null;
@@ -2472,6 +2642,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       needsModel={needsModel}
       onRetry={() => void deliver(attempt, true)}
       onDelete={() => feedback.discard(attempt)}
+      userBubble={userBubble}
     />
   ));
 
@@ -2505,15 +2676,21 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
-        keyboardVerticalOffset={keyboardLayout.offset}
+        keyboardVerticalOffset={threadKeyboardOffset({
+          os: Platform.OS,
+          floatingHeader: threadHeaderFloats(),
+          nativeHeaderHeight,
+          measuredOffset: keyboardLayout.offset,
+        })}
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          paddingHorizontal: 20 + columnInset,
+          paddingLeft: 20 + columnInsets.left,
+          paddingRight: 20 + columnInsets.right,
         }}
       >
         {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
-        <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
+        <View style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}>
           {showPinnedPage ? (
             <ThreadScrollSurface
               key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
@@ -2525,7 +2702,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 // A pinned page always shows the floating jump button (44pt, 12pt from the
                 // bottom), so its last message must be able to scroll clear of it.
                 contentContainerStyle={{
-                  paddingTop: headerHeight + 8,
+                  paddingTop: headerClearance.padding,
                   paddingBottom: 12 + 44 + 16,
                 }}
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
@@ -2537,7 +2714,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 onContentSizeChange={(_, height) => {
                   pinnedScrollMetrics.current.content = height;
-                  const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
+                  const jumpOffset = jumpAnchor.current.align(headerClearance.anchor);
                   if (jumpOffset != null) scrollPinnedTo(jumpOffset);
                   const armedAt = joinPinnedAfterLayout.current;
                   if (armedAt != null && height !== armedAt) {
@@ -2922,7 +3099,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           />
         ) : null}
         {headerHeight > 0 ? (
-          <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight }]}>
+          <View
+            pointerEvents="none"
+            style={[styles.headerFade, { height: headerClearance.opaqueHeight }]}
+          >
             <View style={styles.headerFadeEdge} />
           </View>
         ) : null}
@@ -3084,6 +3264,7 @@ type MessageRowActions = {
   select: (text: string) => void;
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => void;
+  markUnread: (message: MobileMessage) => void;
   answer: (
     message: MobileMessage,
     answer: string,
@@ -3097,6 +3278,7 @@ type MessageRowActions = {
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
   togglePeerReplies: (markerId: string) => void;
+  openPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   layout: (messageId: string, y: number, index: number) => void;
 };
 
@@ -3116,6 +3298,8 @@ type MessageRowProps = {
   canDismiss: boolean;
   highlighted: boolean;
   separator: boolean;
+  headerAdjacent: boolean;
+  unreadDivider: boolean;
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
@@ -3124,6 +3308,7 @@ type MessageRowProps = {
   activityBotId?: string;
   activityColor?: string;
   activityStatus?: MobileBot["status"];
+  userBubble?: UserBubble;
   inGroup: boolean;
   columnWidth: number;
   enableJump: boolean;
@@ -3155,6 +3340,8 @@ const MessageRow = memo(function MessageRow({
   canDismiss,
   highlighted,
   separator,
+  headerAdjacent,
+  unreadDivider,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -3162,6 +3349,7 @@ const MessageRow = memo(function MessageRow({
   activityBotId,
   activityColor,
   activityStatus,
+  userBubble,
   inGroup,
   columnWidth,
   enableJump,
@@ -3200,6 +3388,8 @@ const MessageRow = memo(function MessageRow({
     // The call already reads replies aloud; a second voice would talk over it.
     const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
     const includeSelect = messageText.trim().length > 0;
+    // Any sent message can be marked unread; the next open starts New at the first reply from it.
+    const includeUnread = !readOnly && canMarkMessageUnread(message);
     const reply = () => actions.reply(message);
     const quote = () => actions.quote(message);
     const speakMessage = () => actions.speak(message);
@@ -3212,6 +3402,7 @@ const MessageRow = memo(function MessageRow({
       if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
     };
     const react = (reaction: MessageReaction) => actions.react(message, reaction);
+    const markUnread = () => actions.markUnread(message);
     // VoiceOver reads the bubble as one element and can't reach a code block's copy button.
     const codeBlocks = message.role === "user" ? [] : markdownCodeBlocks(blockText(message));
     const copyCode = () => {
@@ -3219,6 +3410,9 @@ const MessageRow = memo(function MessageRow({
     };
     const menuActions = [
       ...(!readOnly ? [{ name: "reply", text: t("Reply"), onPress: reply }] : []),
+      ...(includeUnread
+        ? [{ name: "unread", text: t("Mark as unread"), onPress: markUnread }]
+        : []),
       ...(includeQuote ? [{ name: "quote", text: t("Quote"), onPress: quote }] : []),
       ...(includeReact
         ? [
@@ -3253,6 +3447,7 @@ const MessageRow = memo(function MessageRow({
         quote: t("Quote"),
         speak: t("Speak message"),
         select: t("Select text"),
+        unread: t("Mark as unread"),
       },
       reactions: MESSAGE_REACTIONS,
       include: {
@@ -3261,6 +3456,7 @@ const MessageRow = memo(function MessageRow({
         react: includeReact,
         speak: includeSpeak,
         select: includeSelect,
+        unread: includeUnread,
       },
     });
     const openSheet = (event: GestureResponderEvent) =>
@@ -3278,6 +3474,16 @@ const MessageRow = memo(function MessageRow({
                     text: t("Reply"),
                     icon: "arrow-undo-outline" as const,
                     onPress: reply,
+                  },
+                ]
+              : []),
+            ...(includeUnread
+              ? [
+                  {
+                    name: "unread",
+                    text: t("Mark as unread"),
+                    icon: "mail-unread-outline" as const,
+                    onPress: markUnread,
                   },
                 ]
               : []),
@@ -3330,6 +3536,7 @@ const MessageRow = memo(function MessageRow({
         if (id === "quote") quote();
         if (id === "speak") speakMessage();
         if (id === "select") select();
+        if (id === "unread") markUnread();
       },
       actionProps: {
         onLongPress: Platform.OS === "ios" ? undefined : openSheet,
@@ -3349,11 +3556,12 @@ const MessageRow = memo(function MessageRow({
       onLayout={onLayout}
       style={{
         backgroundColor: highlighted ? tokens.muted : undefined,
-        marginTop: 12,
+        marginTop: headerAdjacent ? 0 : 12,
         width: "100%",
       }}
     >
       {separator ? <TimeSeparator createdAt={message.createdAt} /> : null}
+      {unreadDivider ? <UnreadDivider afterSeparator={separator} /> : null}
       <View
         style={{
           width: "100%",
@@ -3370,6 +3578,9 @@ const MessageRow = memo(function MessageRow({
               identity={activityBotId}
               size={inGroup ? 20 : 28}
               status={activityStatus}
+              motion="running"
+              composing={liveMessageComposing(message.blocks)}
+              pokeable
             />
           </View>
         ) : null}
@@ -3437,7 +3648,9 @@ const MessageRow = memo(function MessageRow({
                 onPreviewImage={actions.previewImage}
                 peerReplies={peerReplies}
                 onTogglePeerReplies={actions.togglePeerReplies}
+                onOpenPeerChat={actions.openPeerChat}
                 actionProps={actionProps}
+                userBubble={userBubble}
               />
             </ThreadReadOnlyContext.Provider>
           </MessageContextMenu>
@@ -3493,7 +3706,9 @@ const MessageBubble = memo(function MessageBubble({
   onPreviewImage,
   peerReplies,
   onTogglePeerReplies,
+  onOpenPeerChat,
   actionProps,
+  userBubble,
 }: {
   botId: string;
   botName?: string;
@@ -3517,10 +3732,12 @@ const MessageBubble = memo(function MessageBubble({
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerReplies?: "collapsed" | "expanded";
   onTogglePeerReplies: (markerId: string) => void;
+  onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
+  userBubble?: UserBubble;
 }) {
   const colorScheme = useResolvedAppearance();
-  const tokens = mobileTokens();
+  const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
@@ -3617,15 +3834,27 @@ const MessageBubble = memo(function MessageBubble({
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Full view-only peer chat is web-first; on mobile a received chip expands the peer run's
-    // folded replies, which the thread draws as ordinary rows right after it.
+    // A received chip with folded replies expands them in place; otherwise, in a bot's own chat,
+    // the chip opens the view-only bot-to-bot exchange, as on web.
     const replies = sent ? undefined : peerReplies;
+    const press = peerChipPress({
+      sent,
+      replies,
+      threadBotId: groupId ? undefined : botId,
+      peerBotId,
+    });
     return (
       <Pressable
         {...actionProps}
         accessible
-        onPress={replies ? () => onTogglePeerReplies(message.id) : undefined}
-        accessibilityRole={replies ? "button" : undefined}
+        onPress={
+          press === "toggle"
+            ? () => onTogglePeerReplies(message.id)
+            : press === "open"
+              ? () => onOpenPeerChat({ peerBotId, peerBotName: peer ?? t("Bot") })
+              : undefined
+        }
+        accessibilityRole={press ? "button" : undefined}
         accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
         accessibilityLabel={
           replies === "expanded"
@@ -3650,7 +3879,7 @@ const MessageBubble = memo(function MessageBubble({
         >
           {label}
         </Text>
-        {replies ? (
+        {press ? (
           <NativeSymbol
             ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
             android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
@@ -4169,6 +4398,7 @@ const MessageBubble = memo(function MessageBubble({
           speaker={showBotSenderName && index === firstContent ? speaker : undefined}
           speakerColor={showBotSenderName && index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
+          userBubble={userBubble}
         />
       ))}
       {choiceBlocks.map((block, index) => (
@@ -4212,14 +4442,16 @@ function MessageTextCard({
   speaker,
   speakerColor,
   actionProps,
+  userBubble,
 }: {
   message: MobileMessage;
   speaker?: string;
   speakerColor?: string;
   actionProps: MessageActionProps;
+  userBubble?: UserBubble;
 }) {
   const colorScheme = useResolvedAppearance();
-  const tokens = mobileTokens();
+  const tokens = withUserBubble(mobileTokens(), userBubble);
   const contentText = blockText(message);
   if (!contentText) return null;
   return (

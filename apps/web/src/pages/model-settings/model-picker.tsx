@@ -11,8 +11,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
-import { ChevronDown, ImageOff } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { TextOnlyMark } from "../../components/TextOnlyMark";
 import type { ModelCatalogEntry } from "../../lib/model-auth";
 
 function optionValue(option: ModelCatalogEntry) {
@@ -156,14 +157,5 @@ export function ModelPicker({
         </PopoverContent>
       </div>
     </Popover>
-  );
-}
-
-function TextOnlyMark() {
-  const { t } = useLingui();
-  return (
-    <span className="flex items-center" title={t`Can't read images`} aria-hidden="true">
-      <ImageOff size={14} strokeWidth={1.8} />
-    </span>
   );
 }

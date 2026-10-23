@@ -32,7 +32,7 @@ import {
 } from "./local-service-endpoint.js";
 import type { ResolveHostname } from "./network-address.js";
 import { egressRefused } from "./network-address.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 import { truncateUtf8 } from "./utf8.js";
 
 export const HONCHO_PROVIDER_ID = "honcho";
@@ -51,10 +51,10 @@ const MAX_COPIES_PER_SEARCH = 100;
 const MAX_DELETIONS_PER_FORGET = 200;
 
 /**
- * Local mode reaches the deployment owner's own network, so only the owner may set it.
+ * Local mode reaches the server network, so the operator must authorize private endpoints.
  * Fails closed: any mode other than an absent one or "cloud" needs the owner.
  */
-export function honchoRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+export function honchoRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
   return settings.mode !== undefined && settings.mode !== "cloud";
 }
 
@@ -78,7 +78,7 @@ function parseHonchoConnection(
   credentials: Record<string, string>,
 ): { connection: HonchoConnectionConfig; workspaceId: string; userPeerId: string; local: boolean } {
   // Configurations saved before local mode carry no mode and always meant Honcho Cloud.
-  // Match exactly, as honchoRequiresDeploymentOwner does, so the owner gate sees the same mode.
+  // Match exactly, as honchoRequiresPrivateEndpoint does, so the owner gate sees the same mode.
   const mode = settings.mode ?? "cloud";
   if (mode !== "cloud" && mode !== "local") throw new Error("mode must be cloud or local");
   const local = mode === "local";
@@ -141,7 +141,7 @@ export async function prepareHonchoConnection(
   if (local && options?.allowPrivateEndpoint !== true) {
     throw egressRefused(
       URL.parse(connection.baseUrl)?.hostname ?? "",
-      new MemoryProviderDeploymentOwnerRequiredError(),
+      new MemoryProviderPrivateEndpointRequiredError(),
     );
   }
   const pinnedAddresses = local

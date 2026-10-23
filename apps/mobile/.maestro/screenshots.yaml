@@ -99,6 +99,10 @@ tags:
 - assertVisible: "Current password"
 - takeScreenshot: "10b-change-password"
 - back
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "10c-account-notifications"
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
@@ -245,6 +249,10 @@ tags:
     timeout: 10000
 - tapOn: "Dark"
 - takeScreenshot: "22-account-dark"
+- scrollUntilVisible:
+    element: "Notification settings"
+    direction: DOWN
+- takeScreenshot: "22b-account-notifications-dark"
 
 - openLink: "rakazo:///new"
 - assertVisible: "Name this bot"

@@ -32,8 +32,10 @@ import {
   startWaitSound,
   stopWaitSound,
 } from "./call-sounds";
+import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
+import { reportMobileError } from "./monitoring";
 import { errorText, voiceAccountErrorText } from "./user-error";
 import { speakText, stopSpeaking } from "./voice";
 
@@ -58,6 +60,7 @@ export type CallClip = { base64: string; mimeType: string };
 export type DictationHandlers = {
   onInterim: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp: (reason: DictationGiveUp) => void;
 };
 
 /** Everything that touches the device or the server, so the loop stays testable. */
@@ -330,9 +333,20 @@ async function openMic(): Promise<void> {
           onFinal: (text) => {
             if (mine()) void handleTranscript(text);
           },
+          onGiveUp: (reason) => {
+            if (!mine()) return;
+            controller.abort();
+            micOpen = false;
+            clearInterim();
+            set({ heard: "" });
+            if (reason === "failed") onDevice = false;
+            // Recording must wait for playback; recognition can still hear a barge-in.
+            if (state?.phase !== "speaking" || onDevice !== false) void openMic();
+          },
         },
         controller.signal,
       );
+      if (!mine()) return;
       if (started) {
         onDevice = true;
         return;
@@ -360,8 +374,8 @@ async function openMic(): Promise<void> {
     micOpen = false;
     await handleTranscript(text);
   } catch (error) {
-    micOpen = false;
     if (!mine()) return;
+    micOpen = false;
     failTurn(error);
   }
 }
@@ -458,6 +472,7 @@ async function handleTranscript(raw: string): Promise<void> {
 }
 
 function failTurn(error: unknown): void {
+  reportMobileError(error, "voice.turn");
   failures += 1;
   if (failures >= MAX_TURN_FAILURES) {
     endCall();

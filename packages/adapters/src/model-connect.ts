@@ -28,9 +28,21 @@ import {
 export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
-  /** From `actorMayUsePrivateEndpoint`; private and loopback endpoints are refused without it. */
+  /** Private and loopback endpoints require explicit operator configuration. */
   allowPrivateEndpoint?: boolean;
 };
+
+/** Reuse saved probe headers only for the endpoint they were saved for. */
+export function storedOpenAiCompatibleProbeHeaders(
+  baseUrl: string,
+  storedPlaintext?: string,
+): Record<string, string> | undefined {
+  const previous = tryParseModelSecret(storedPlaintext);
+  return previous?.kind === "openai_compatible" &&
+    previous.baseUrl === normalizeOpenAiCompatibleBaseUrl(baseUrl)
+    ? previous.headers
+    : undefined;
+}
 
 /** Reuse a saved probe key only for the endpoint it was saved for. */
 export function storedOpenAiCompatibleProbeKey(
@@ -74,6 +86,8 @@ export function buildModelConnectPlaintext(
         policy,
       ).apiKey;
     }
+    const headers = input.headers ?? compatiblePrevious?.headers;
+    prepareOpenAiCompatibleConnect({ ...input, apiKey: prepared.apiKey, headers }, policy);
     const previousVisionModelIds = sameEndpoint ? previous.visionModelIds : undefined;
     const maxImagesPerPrompt =
       input.maxImagesPerPrompt === null
@@ -119,6 +133,7 @@ export function buildModelConnectPlaintext(
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(headers !== undefined ? { headers } : {}),
       ...(compatibleCacheCapabilities !== undefined
         ? { cacheCapabilities: compatibleCacheCapabilities }
         : {}),
@@ -306,6 +321,7 @@ export function modelCredentialDto(
         ? modelIdSupportsImages(parsed.visionModelIds, row.defaultModel)
         : compatibleCredential.supportsImages,
     baseUrl: parsed.baseUrl,
+    ...(parsed.headers !== undefined ? { headerNames: Object.keys(parsed.headers) } : {}),
     reasoning: parsed.reasoning ?? false,
     ...(credential.thinkingLevel !== undefined || parsed.thinkingLevel !== undefined
       ? { thinkingLevel: credential.thinkingLevel ?? parsed.thinkingLevel }

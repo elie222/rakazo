@@ -33,10 +33,22 @@ test("agent-attached files appear as cards with previews and downloads", async (
   const previewButton = page.getByRole("button", { name: "Preview preview.md" });
   await expect(previewButton).toBeVisible({ timeout: 30_000 });
   await captureScreenshot(page, testInfo, "markdown-file-card");
+  let releasePreview = () => {};
+  const previewReady = new Promise<void>((resolve) => {
+    releasePreview = resolve;
+  });
+  await page.route("**/rpc/artifacts/get", async (route) => {
+    await previewReady;
+    await route.continue();
+  });
   await previewButton.click();
 
   const dialog = page.getByRole("dialog", { name: "preview.md" });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("status", { name: "Loading preview…" })).toBeVisible();
+  await expect(dialog).not.toContainText("Loading preview…");
+  await captureScreenshot(page, testInfo, "markdown-preview-loading-spinner");
+  releasePreview();
   await expect(dialog.getByRole("heading", { name: "Project preview" })).toBeVisible();
   const closeButton = dialog.getByRole("button", { name: "Close preview" });
   const downloadButton = dialog.getByRole("button", { name: "Download preview.md" });

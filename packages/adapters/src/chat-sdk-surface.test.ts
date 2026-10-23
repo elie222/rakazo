@@ -44,6 +44,8 @@ function createPlatform(
           id: string;
           text: string;
           isMe?: boolean;
+          isMention?: boolean;
+          rawType?: string;
           files?: Array<{ name: string; url: string; authenticated?: boolean }>;
         };
         // Fire-and-forget: matches Chat SDK adapters that return 200 before
@@ -53,7 +55,10 @@ function createPlatform(
           payload.threadId,
           createTestMessage(payload.id, payload.text, {
             threadId: payload.threadId,
-            raw: { roster: ["+15551111111", "+15552222222"] },
+            raw: {
+              roster: ["+15551111111", "+15552222222"],
+              ...(payload.rawType ? { type: payload.rawType } : {}),
+            },
             author: {
               userId: "U123",
               userName: "testuser",
@@ -69,6 +74,7 @@ function createPlatform(
               size: 3,
               ...(file.authenticated ? { fetchData: async () => Buffer.from([1, 2, 3]) } : {}),
             })),
+            isMention: payload.isMention,
           }),
           options,
         );
@@ -243,6 +249,147 @@ describe("ChatSdkMessagingSurface inbound", () => {
       { name: "screen.png", mimeType: "image/png", size: 3, fetch: expect.any(Function) },
     ]);
     await expect(event.attachments?.[0]?.fetch()).resolves.toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("hydrates incomplete Slack app-mention file stubs from the exact history message", async () => {
+    const hydrated = createTestMessage("m-1", "history text must not replace the mention", {
+      threadId: "slack:C1:1",
+      raw: { type: "message" },
+      author: {
+        userId: "U123",
+        userName: "testuser",
+        fullName: "Test User",
+        isBot: false,
+        isMe: false,
+      },
+      attachments: [
+        {
+          type: "file",
+          name: "transcript.txt",
+          mimeType: "text/plain",
+          size: 12,
+          fetchData: async () => Buffer.from("meeting text"),
+        },
+      ],
+      isMention: true,
+    });
+    const fetchMessage = vi.fn(async () => hydrated);
+    const { surface, events } = createSurface({ provider: "slack" }, { fetchMessage });
+
+    const response = await surface.handleWebhook(
+      "slack",
+      webhookRequest({
+        threadId: "slack:C1:1",
+        id: "m-1",
+        text: "@bot inspect this",
+        isMention: true,
+        rawType: "app_mention",
+        files: [{ name: "transcript.txt", url: "https://files.slack.com/incomplete" }],
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(fetchMessage).toHaveBeenCalledOnce();
+    expect(fetchMessage).toHaveBeenCalledWith("slack:C1:1", "m-1");
+    const event = events[0];
+    if (event?.type !== "message") throw new Error("expected a message");
+    expect(event).toMatchObject({
+      content: "@bot inspect this",
+      handle: "m-1",
+      mentionsBot: true,
+      provider: "slack",
+      threadId: "slack:C1:1",
+    });
+    expect(event.attachments).toEqual([
+      { name: "transcript.txt", mimeType: "text/plain", size: 12, fetch: expect.any(Function) },
+    ]);
+    await expect(event.attachments?.[0]?.fetch()).resolves.toEqual(
+      new Uint8Array(Buffer.from("meeting text")),
+    );
+  });
+
+  it.each([
+    ["text-only", undefined],
+    [
+      "already fetchable",
+      [{ name: "transcript.txt", url: "https://files.slack.com/complete", authenticated: true }],
+    ],
+  ])("does not hydrate %s Slack app mentions", async (_label, files) => {
+    const fetchMessage = vi.fn();
+    const { surface, events } = createSurface({ provider: "slack" }, { fetchMessage });
+
+    const response = await surface.handleWebhook(
+      "slack",
+      webhookRequest({
+        threadId: "slack:C1:1",
+        id: "m-no-hydrate",
+        text: "@bot hello",
+        isMention: true,
+        rawType: "app_mention",
+        files,
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(fetchMessage).not.toHaveBeenCalled();
+    expect(events).toHaveLength(1);
+  });
+
+  it.each([
+    ["missing history message", vi.fn(async () => null)],
+    [
+      "history without fetchable files",
+      vi.fn(async () => createTestMessage("m-missing", "history")),
+    ],
+    [
+      "history lookup failure",
+      vi.fn(async () => {
+        throw new Error("missing_scope");
+      }),
+    ],
+    ["adapter without fetchMessage", undefined],
+  ])("delivers incomplete Slack mentions after %s", async (_label, fetchMessage) => {
+    const { surface, events } = createSurface({ provider: "slack" }, { fetchMessage });
+
+    const response = await surface.handleWebhook(
+      "slack",
+      webhookRequest({
+        threadId: "slack:C1:1",
+        id: "m-missing",
+        text: "@bot inspect this",
+        isMention: true,
+        rawType: "app_mention",
+        files: [{ name: "transcript.txt", url: "https://files.slack.com/incomplete" }],
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    if (fetchMessage) expect(fetchMessage).toHaveBeenCalledWith("slack:C1:1", "m-missing");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      content: "@bot inspect this",
+      handle: "m-missing",
+      mentionsBot: true,
+      mediaUrl: "https://files.slack.com/incomplete",
+    });
+  });
+
+  it("does not turn inbound conversion failures into retryable sink failures", async () => {
+    const { surface, events } = createSurface({
+      enrichTeamRoom: () => {
+        throw new Error("conversion failed");
+      },
+    });
+    const response = await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:C1:1",
+        id: "m-conversion",
+        text: "hello",
+      }),
+    );
+    expect(response?.status).toBe(200);
+    expect(events).toEqual([]);
   });
 
   it.each([false, true])(
@@ -548,6 +695,63 @@ describe("ChatSdkMessagingSurface outbound", () => {
       expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
     },
   );
+
+  it("posts a Telegram image attachment as a photo", async () => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const data = new Uint8Array([1, 2, 3]);
+
+    await surface.sendToThread(
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "chart.png", mimeType: "image/png", data },
+      },
+      context,
+    );
+
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("telegram:123", {
+      markdown: "",
+      attachments: [
+        { type: "image", data: Buffer.from(data), name: "chart.png", mimeType: "image/png" },
+      ],
+    });
+  });
+
+  it.each([
+    ["a PDF", "report.pdf", "application/pdf", 3],
+    ["an SVG", "logo.svg", "image/svg+xml", 3],
+    ["an image over the photo limit", "scan.png", "image/png", 10_000_001],
+  ])("uploads %s to Telegram as a document", async (_label, name, mimeType, size) => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const data = new Uint8Array(size);
+
+    await surface.sendToThread(
+      { threadId: "telegram:123", body: "", attachment: { name, mimeType, data } },
+      context,
+    );
+
+    // Compare the bytes by size: deep-equality on a 10 MB buffer is slow.
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("telegram:123", {
+      markdown: "",
+      files: [{ data: expect.any(Buffer), filename: name, mimeType }],
+    });
+    const [, message] = (adapter.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(message.files[0].data.byteLength).toBe(size);
+  });
+
+  it("fails a file over Telegram's upload limit without retrying it", async () => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const attachment = {
+      name: "video.mp4",
+      mimeType: "video/mp4",
+      data: new Uint8Array(50_000_001),
+    };
+
+    await expect(
+      surface.sendToThread({ threadId: "telegram:123", body: "", attachment }, context),
+    ).rejects.toMatchObject({ name: "MessagingSendError", permanent: true });
+    expect(adapter.postMessage).not.toHaveBeenCalled();
+  });
 
   it("posts to a thread through the platform adapter and returns the handle", async () => {
     const { surface, adapter } = createSurface();

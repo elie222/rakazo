@@ -3,6 +3,7 @@ import { createRunExecutor, createWebProvider, PiAgentRuntime } from "@rakazo/ad
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycle from "../../adapters/src/computer-lifecycle.js";
 import { parallelMcpFixture } from "../../adapters/src/parallel-web.test-support.js";
+import { resolveRuntimeModel } from "../../adapters/src/pi-runtime.js";
 import { startModelEmulator } from "./model-emulator.js";
 
 vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
@@ -85,9 +86,12 @@ function executorFixture(
     actionAutoReviewPreference: { findUnique: async () => ({ enabled: false }) },
     externalEffect: { findMany: async () => [] },
     usageRecord: { createMany: async () => ({ count: 1 }) },
+    modelCreditEntry: { findUnique: async () => null },
+    $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   vi.stubEnv("WEB_PROVIDER", "parallel");
+  vi.stubEnv("OPENROUTER_API_KEY", "fixture-openrouter-key");
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -99,10 +103,45 @@ function executorFixture(
     jobs: { enqueue: async () => undefined },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
-  return { peer, prisma, finalizeRun, execute: () => executor.continueRun("run", "worker") };
+  return {
+    peer,
+    prisma,
+    finalizeRun,
+    resolveModel: () => executor.resolveModel({ userId: run.userId, spaceId: run.spaceId }),
+    execute: () => executor.continueRun("run", "worker"),
+  };
 }
 
 describe("Parallel through the ordinary bot caller", () => {
+  it.each(
+    ["scripted", "openrouter", "anthropic"].flatMap((provider) =>
+      [undefined, "", "   ", "fixture-openrouter-key"].map((key) => ({ provider, key })),
+    ),
+  )(
+    "checks runtime environment credentials for $provider with key '$key'",
+    async ({ provider, key }) => {
+      vi.stubEnv("PI_DEFAULT_PROVIDER", provider);
+      const runtime = {
+        describe: () => ({ capabilities: { scripted: false } }),
+      } as unknown as AgentRuntime;
+      const fixture = executorFixture(runtime);
+      vi.stubEnv("OPENROUTER_API_KEY", key);
+      vi.spyOn(fixture.prisma.deploymentSettings, "findUnique").mockResolvedValue({
+        defaultModelProvider: provider,
+        defaultModelId: provider === "scripted" ? "scripted" : "fixture-model",
+      });
+      if (provider !== "anthropic" && key?.trim()) {
+        const model = await fixture.resolveModel();
+        expect(model).toBeDefined();
+        expect(resolveRuntimeModel(model!).apiKey).toBe(key);
+      } else {
+        await expect(fixture.resolveModel()).rejects.toThrow(
+          "Connect a model in Settings before running bots.",
+        );
+      }
+    },
+  );
+
   it.each(["missing", "failure", "saved"])("uses optional timezone context (%s)", async (state) => {
     let prompt = "";
     const runtime = {

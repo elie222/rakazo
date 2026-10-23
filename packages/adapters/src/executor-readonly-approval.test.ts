@@ -290,8 +290,8 @@ function fixture({
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
-        defaultModelProvider: "scripted",
-        defaultModelId: "scripted",
+        defaultModelProvider: "openrouter",
+        defaultModelId: "fixture-model",
       })),
     },
     taughtSkill: { findMany: vi.fn(async () => []) },
@@ -356,6 +356,7 @@ function fixture({
   });
   const enqueue = vi.fn(async (_job: unknown) => undefined);
   const executor = createRunExecutor({
+    deploymentModelKey: "fixture-model-key",
     prisma: transactionalPrisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     connector: {

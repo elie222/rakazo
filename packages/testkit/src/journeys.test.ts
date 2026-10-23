@@ -10,6 +10,7 @@ import {
   FakeComposioClient,
   FakeSandboxProvider,
   handoffToGroupBot,
+  listPiCatalog,
   organizeBot,
   toComputerRef,
 } from "@rakazo/adapters";
@@ -27,6 +28,7 @@ import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { createModelConnectionFixtureFetch } from "./model-connection-fixture.js";
 import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -121,6 +123,7 @@ describeJourneys("required product journeys", () => {
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
     const handles = await createApp({
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
       sandboxProvider: "fake",
@@ -1933,7 +1936,8 @@ describeJourneys("required product journeys", () => {
     const res = await raw(app, cookie, "deployment/update", { computerHost: "this-mac" });
     const text = await res.text();
     expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(text).toMatch(/This Mac mode is only available/i);
+    expect(res.status).toBe(403);
+    expect(text).toMatch(/FORBIDDEN/);
   });
 
   it("15: ask, answer, stop, follow-up, and clientNonce stay consistent", async () => {

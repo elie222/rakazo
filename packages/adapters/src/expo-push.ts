@@ -500,6 +500,7 @@ export class ExpoPushProvider implements NotificationProvider {
       body: capped(message.body, MAX_PUSH_BODY_CHARS),
       collapseId: message.threadId,
       tag: message.threadId,
+      ...(message.badge === undefined ? {} : { badge: message.badge }),
       data: expoPushData(message, context.spaceId, randomUUID()),
     };
     for (let attempt = 0; ; attempt += 1) {

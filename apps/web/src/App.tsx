@@ -1,7 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
-import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import {
@@ -25,6 +24,7 @@ import { lazyComponent } from "./lib/preload-recovery";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
 import {
+  holdAnonymousGate,
   holdUnreachableGate,
   sessionGate,
   sessionRetryDelayMs,
@@ -32,7 +32,6 @@ import {
 } from "./lib/session-gate";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
-import { LocalSettingsPage } from "./pages/LocalSettings";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -73,13 +72,7 @@ export function App() {
     <RemoteImagesContext.Provider value={loadRemoteImages}>
       <LinkFaviconsContext.Provider value={linkFavicons}>
         <ErrorBoundary fallback={<AppFailed />}>
-          {window.location.pathname === SSO_CALLBACK_PATH ? (
-            <SsoCallbackPage />
-          ) : window.location.pathname === LOCAL_SETTINGS_PAGE ? (
-            <LocalSettingsPage />
-          ) : (
-            <SessionApp />
-          )}
+          {window.location.pathname === SSO_CALLBACK_PATH ? <SsoCallbackPage /> : <SessionApp />}
         </ErrorBoundary>
       </LinkFaviconsContext.Provider>
     </RemoteImagesContext.Provider>
@@ -122,6 +115,9 @@ function SessionApp() {
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
+  const [holdingAnonymous, setHoldingAnonymous] = useState(false);
+  const nextHoldingAnonymous = holdAnonymousGate(gate, holdingAnonymous);
+  if (nextHoldingAnonymous !== holdingAnonymous) setHoldingAnonymous(nextHoldingAnonymous);
 
   useLayoutEffect(() => {
     if (session.isPending) return;
@@ -132,16 +128,11 @@ function SessionApp() {
   if (showSessionUnavailable(gate, nextHolding)) {
     return <SessionUnavailable refetch={session.refetch} />;
   }
-  if (gate === "loading") {
+  if (gate === "loading" && !nextHoldingAnonymous) {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (
-      <div
-        className="grid h-full place-items-center text-muted-foreground/80"
-        data-rakazo-app-state="session-pending"
-      >
-        <Trans>Loading…</Trans>
-      </div>
+      <div className="h-full bg-background" data-rakazo-app-state="session-pending" />
     );
   }
 

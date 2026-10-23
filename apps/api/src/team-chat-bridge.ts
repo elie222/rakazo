@@ -10,6 +10,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, AutomatedSenderPoliciesSchema } from "@rakazo/contracts";
 import { botMessageMaxHops, messageBlockForArtifact, promptTextForAttachments } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { clearRunTurnCheckpoints } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 import type { TeamChatEngagementJudge } from "./team-chat-judge.js";
@@ -1367,6 +1368,7 @@ export class TeamChatBridge {
             leaseExpiresAt: null,
           },
         });
+        await clearRunTurnCheckpoints(this.deps.prisma, [sent.runId]);
         const taskId =
           sent.taskId ??
           (
