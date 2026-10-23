@@ -55,7 +55,7 @@ import {
   isAttachmentImageMimeType,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import type { ActionApprovalRule, ToolCallStreak } from "@rakazo/core";
+import type { ActionApprovalRule, ToolCallStreak, ToolHookRunner } from "@rakazo/core";
 import {
   appendTextSegment,
   appendToolCallSegment,
@@ -99,6 +99,7 @@ import {
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
   TAKEOVER_COMPUTER_PENDING_STATE,
+  toolHookBlockedError,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -178,6 +179,7 @@ import {
   claimIntendedEffect,
   completeExternalEffect,
   createApprovedEffectReplayQueue,
+  isOwnPauseResult,
   isToolPauseResult,
   parseCatalogApprovalTarget,
   replaceCompletedExternalEffectResult,
@@ -376,6 +378,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { hookArgs, hookShellCompletions } from "./tool-hook-observer.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export { selectRunConnections } from "./connection-context.js";
@@ -2739,6 +2742,8 @@ function runtimeFallbackModel(runtime: AgentRuntime) {
 
 export interface ExecutorDeps {
   maxUploadSizeBytes?: number;
+  /** Operator checkpoints around every tool call; see tool-hooks in @rakazo/core. */
+  toolHooks?: ToolHookRunner;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -7451,11 +7456,54 @@ export function createRunExecutor(deps: ExecutorDeps) {
             instructionProposalInFlight = false;
           }
         };
+        const toolHooks = deps.toolHooks;
         const applyTool = async (...params: Parameters<typeof dispatchTool>) => {
+          const [toolName, toolArgs, executionId, route, observer] = params;
+          const hookCall = toolHooks
+            ? {
+                tool: toolName,
+                executionId,
+                // web_fetch fetches the URL its gate normalizes, and parsing drops tabs and
+                // newlines, so a hook judges that URL and not the raw string the model wrote.
+                args: hookArgs(toolName, toolArgs),
+                run: {
+                  id: run.id,
+                  botId: run.botId,
+                  trigger: run.trigger,
+                  // If the check itself fails, assume outside content has entered the run.
+                  tainted: await isRunTainted().catch(() => true),
+                },
+              }
+            : undefined;
+          if (toolHooks && hookCall) {
+            // A denied call never ran, so nothing outside entered the run and it stays as it was.
+            const gate = await toolHooks.before(hookCall);
+            if (gate.blocked) {
+              // An approved replay waiting on this call would otherwise block every later call.
+              if (approvedEffectReplays.nextToolName() === toolName)
+                approvedEffectReplays.take(toolName);
+              return toolHookBlockedError(gate.blocked);
+            }
+          }
           try {
-            return await dispatchOneTool(...params);
+            const result = await dispatchOneTool(
+              toolName,
+              toolArgs,
+              executionId,
+              route,
+              toolHooks && hookCall
+                ? hookShellCompletions(observer, toolHooks, hookCall)
+                : observer,
+            );
+            // A call this process paused has no result yet; its approval card must reach the owner
+            // untouched. Only a pause this process built counts: a tool server can return one.
+            if (!toolHooks || !hookCall || isOwnPauseResult(result)) return result;
+            const tainted = hookCall.run.tainted || toolResultTaintsRun(toolName);
+            return (
+              await toolHooks.after({ ...hookCall, run: { ...hookCall.run, tainted } }, result)
+            ).result;
           } finally {
-            if (toolResultTaintsRun(params[0])) runTainted = true;
+            if (toolResultTaintsRun(toolName)) runTainted = true;
           }
         };
 

@@ -978,3 +978,69 @@ describe("overlapping tracked identities", () => {
     expect(readItems([list[0]], ["id", "modifiedTime"]).fingerprint).not.toBe(before.fingerprint);
   });
 });
+
+describe("tool hooks", () => {
+  function watchDeps(toolHooks: unknown) {
+    const execute = vi.fn(async function* () {
+      yield { type: "result", data: { changes: ["x"] } };
+    });
+    const deps = {
+      prisma: {
+        connection: { findMany: vi.fn(async () => []) },
+        actionApprovalRule: { findMany: vi.fn(async () => []) },
+      },
+      connector: {
+        discoverTools: vi.fn(async () => [
+          { name: "brain_changed", readOnly: true, route: { connectorId: "installed" } },
+        ]),
+        execute,
+      },
+      toolHooks,
+    } as unknown as RoutineWatchTickDeps;
+    const routine = {
+      id: "r",
+      spaceId: "s",
+      userId: "u",
+      botId: "b",
+      watch: { kind: "tool", tool: "brain_changed", args: { q: "secret" } },
+      watchState: null,
+    };
+    return { deps, routine, execute };
+  }
+
+  it("runs a watch's tool call through the hooks as a tainted routine_watch call", async () => {
+    const before = vi.fn(async (_call: unknown) => ({ warnings: [] }));
+    const after = vi.fn(async (_call: unknown, result: unknown) => ({ result, verdicts: [] }));
+    const { deps, routine } = watchDeps({ before, after });
+    await checkRoutineWatch(deps, routine);
+    expect(before.mock.calls[0]?.[0]).toMatchObject({
+      tool: "brain_changed",
+      args: { q: "secret" },
+      run: { id: "r", botId: "b", trigger: "routine_watch", tainted: true },
+    });
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run a tool a before hook denies", async () => {
+    const { deps, routine, execute } = watchDeps({
+      before: async () => ({
+        blocked: { hook: "dlp", decision: "deny", reason: "secret in args" },
+        warnings: [],
+      }),
+      after: async (_call: unknown, result: unknown) => ({ result, verdicts: [] }),
+    });
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(/Blocked by tool hook dlp/);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("fails the check when an after hook withholds the result", async () => {
+    const { deps, routine } = watchDeps({
+      before: async () => ({ warnings: [] }),
+      after: async () => ({
+        result: { error: "Tool hook tripwire withheld this tool's result." },
+        verdicts: [],
+      }),
+    });
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow(/withheld/);
+  });
+});

@@ -315,13 +315,28 @@ export function catalogApprovalInnerArgs(catalog: {
   return inner as Record<string, unknown>;
 }
 
+const ownPauseResults = new WeakSet<object>();
+
+/**
+ * Marks a pause result this process built. A tool server can return anything, including an
+ * object shaped like a pause, so only a marked object counts as a real pause.
+ */
+export function markOwnPauseResult<T extends object>(result: T): T {
+  ownPauseResults.add(result);
+  return result;
+}
+
+export function isOwnPauseResult(result: unknown): boolean {
+  return typeof result === "object" && result !== null && ownPauseResults.has(result);
+}
+
 export function approvalPausedToolResult(): ApprovalPausedToolResult {
-  return {
+  return markOwnPauseResult({
     kind: "agent_tool_result",
     content: [{ type: "text", text: "Waiting for approval." }],
     details: { approval: "paused" },
     terminate: true,
-  };
+  } as ApprovalPausedToolResult);
 }
 
 export function isToolPauseResult(result: unknown): result is ApprovalPausedToolResult {
