@@ -59,12 +59,15 @@ class RakazoFileDropModule : Module() {
     val permissions = activity.requestDragAndDropPermissions(event)
     Thread {
       val files = mutableListOf<Map<String, Any>>()
-      val tooLarge = mutableListOf<String>()
-      for (uri in uris) {
-        val file = copyToCache(activity, uri, tooLarge)
-        if (file != null) files.add(file)
+      val tooLarge = mutableListOf<Map<String, Any>>()
+      try {
+        for (uri in uris) {
+          val file = copyToCache(activity, uri, tooLarge)
+          if (file != null) files.add(file)
+        }
+      } finally {
+        permissions?.release()
       }
-      permissions?.release()
       if (files.isNotEmpty() || tooLarge.isNotEmpty()) {
         sendEvent("onFilesDropped", mapOf("files" to files, "tooLarge" to tooLarge))
       }
@@ -75,19 +78,23 @@ class RakazoFileDropModule : Module() {
   private fun copyToCache(
     activity: Activity,
     uri: Uri,
-    tooLarge: MutableList<String>,
+    tooLarge: MutableList<Map<String, Any>>,
   ): Map<String, Any>? {
     val resolver = activity.contentResolver
-    var queried: String? = null
-    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-      if (cursor.moveToFirst() && !cursor.isNull(0)) queried = cursor.getString(0)
-    }
-    val displayName = queried?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
     val directory = File(activity.cacheDir, "dropped/${UUID.randomUUID()}")
-    directory.mkdirs()
-    val target = File(directory, displayName)
-    var copied = 0L
-    val finished = runCatching {
+    var refused: String? = null
+    // Provider calls and the copy stay inside one guard: a dropped URI can deny
+    // access or fail mid-stream, and that must not escape the worker thread.
+    val file: Map<String, Any>? = runCatching {
+      var queried: String? = null
+      resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst() && !cursor.isNull(0)) queried = cursor.getString(0)
+      }
+      val displayName = queried?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
+      directory.mkdirs()
+      val target = File(directory, displayName)
+      var copied = 0L
+      var oversized = false
       resolver.openInputStream(uri)?.use { source ->
         target.outputStream().use { sink ->
           val buffer = ByteArray(COPY_BUFFER_BYTES)
@@ -98,25 +105,30 @@ class RakazoFileDropModule : Module() {
             // A drop must not fill the cache: stop at the guard, discard the
             // partial copy, and let the thread report the file as too large.
             if (copied > MAX_COPY_BYTES) {
-              copied = -1
+              oversized = true
               break
             }
             sink.write(buffer, 0, read)
           }
         }
-      } != null
-    }.getOrDefault(false)
-    if (!finished || copied < 0) {
+      } ?: return@runCatching null
+      if (oversized) {
+        refused = displayName
+        null
+      } else {
+        mapOf(
+          "uri" to Uri.fromFile(target).toString(),
+          "name" to displayName,
+          "mimeType" to (resolver.getType(uri) ?: "application/octet-stream"),
+          "size" to copied.toDouble(),
+        )
+      }
+    }.getOrNull()
+    if (file == null) {
       directory.deleteRecursively()
-      if (finished && copied < 0) tooLarge.add(displayName)
-      return null
+      refused?.let { tooLarge.add(mapOf("name" to it, "limit" to MAX_COPY_BYTES.toDouble())) }
     }
-    return mapOf(
-      "uri" to Uri.fromFile(target).toString(),
-      "name" to displayName,
-      "mimeType" to (resolver.getType(uri) ?: "application/octet-stream"),
-      "size" to copied.toDouble(),
-    )
+    return file
   }
 
   private companion object {

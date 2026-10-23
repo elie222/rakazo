@@ -2,8 +2,10 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 
 export type DroppedFile = { uri: string; name: string; mimeType: string; size: number };
 
-/** Files the native module refused to copy because they passed its storage guard. */
-export type DropPayload = { files: DroppedFile[]; tooLarge?: string[] };
+/** A file the native module refused to copy, with the guard it crossed. */
+export type RefusedDrop = { name: string; limit: number };
+
+export type DropPayload = { files: DroppedFile[]; tooLarge?: RefusedDrop[] };
 
 type FileDropModule = {
   addListener(event: "onFilesDropped", listener: (event: DropPayload) => void): { remove(): void };

@@ -1,4 +1,4 @@
-﻿import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
@@ -199,21 +199,21 @@ export async function pickDocuments(
 
 /**
  * Files dragged in from another window, already copied into the app's cache.
- * `tooLargeToCopy` names files the native module refused to copy because they
- * passed its storage guard; they are reported like any other oversized file.
+ * `tooLargeToCopy` holds the files the native module refused to copy, each with
+ * the guard it crossed, so the notice names the limit that actually applied.
  */
 export async function readDroppedFiles(
   files: Array<{ uri: string; name: string; mimeType: string; size?: number }>,
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
-  tooLargeToCopy: readonly string[] = [],
+  tooLargeToCopy: ReadonlyArray<{ name: string; limit: number }> = [],
 ): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
-  const skipped: PickSkip[] = tooLargeToCopy.map((name) => ({
-    name,
-    reason: `over ${attachmentSizeLabel(maxBytes)}`,
+  const skipped: PickSkip[] = tooLargeToCopy.map((file) => ({
+    name: file.name,
+    reason: `over ${attachmentSizeLabel(file.limit)}`,
   }));
   const candidates: Array<{
     name: string;

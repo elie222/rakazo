@@ -77,10 +77,12 @@ describe("dropped file attachments", () => {
     expect(state.base64).not.toHaveBeenCalled();
   });
 
-  it("reports files the drop guard refused to copy", async () => {
-    const result = await readDroppedFiles([], 0, undefined, ["huge.mov"]);
+  it("reports files the drop guard refused to copy with the guard's own limit", async () => {
+    const result = await readDroppedFiles([], 0, undefined, [
+      { name: "huge.mov", limit: 64 * 1024 * 1024 },
+    ]);
 
     expect(result.attachments).toEqual([]);
-    expect(result.skipped).toEqual([{ name: "huge.mov", reason: "over 10 MiB" }]);
+    expect(result.skipped).toEqual([{ name: "huge.mov", reason: "over 64 MiB" }]);
   });
 });

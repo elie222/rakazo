@@ -43,9 +43,10 @@ it("sends drops to the most recently mounted target only", () => {
 it("still tells the target about files the guard refused to copy", () => {
   const target = vi.fn();
   const remove = addDropTarget(target);
+  const tooLarge = [{ name: "film.mp4", limit: 64 * 1024 * 1024 }];
 
-  drop({ files: [], tooLarge: ["film.mp4"] });
-  expect(target).toHaveBeenCalledWith({ files: [], tooLarge: ["film.mp4"] });
+  drop({ files: [], tooLarge });
+  expect(target).toHaveBeenCalledWith({ files: [], tooLarge });
 
   remove();
 });
