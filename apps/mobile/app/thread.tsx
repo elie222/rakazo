@@ -187,6 +187,7 @@ import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-s
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
+import { useFileDrop } from "../lib/file-drop";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
@@ -219,7 +220,12 @@ import {
 } from "../lib/notification-open";
 import { peerChipPress } from "../lib/peer-chip";
 import type { PickedAttachment } from "../lib/pick-attachments";
-import { pickDocuments, pickFromLibrary, takePhoto } from "../lib/pick-attachments";
+import {
+  pickDocuments,
+  pickFromLibrary,
+  readDroppedFiles,
+  takePhoto,
+} from "../lib/pick-attachments";
 import { threadRefreshDelayMs } from "../lib/refresh";
 import {
   getCachedResponseStreamingEnabled,
@@ -2159,6 +2165,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         : null,
     );
   }
+
+  // Files dragged in from another app beside this one attach like picked files.
+  useFileDrop((files) => {
+    if (!readOnly)
+      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes));
+  });
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
