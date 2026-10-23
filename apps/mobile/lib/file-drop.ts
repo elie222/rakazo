@@ -1,13 +1,12 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
-import { useEffect, useRef } from "react";
 
 export type DroppedFile = { uri: string; name: string; mimeType: string; size: number };
 
+/** Files the native module refused to copy because they passed its storage guard. */
+export type DropPayload = { files: DroppedFile[]; tooLarge?: string[] };
+
 type FileDropModule = {
-  addListener(
-    event: "onFilesDropped",
-    listener: (event: { files: DroppedFile[] }) => void,
-  ): { remove(): void };
+  addListener(event: "onFilesDropped", listener: (event: DropPayload) => void): { remove(): void };
 };
 
 // Android only: absent on iOS, on web, and in binaries built before the module existed.
@@ -16,15 +15,15 @@ function nativeFileDrop(): FileDropModule | null {
 }
 
 // One window, one drop target: the most recently mounted screen receives drops.
-const targets: Array<(files: DroppedFile[]) => void> = [];
+const targets: Array<(payload: DropPayload) => void> = [];
 let subscription: { remove(): void } | null = null;
 
 /** Registers a drop target and returns its unregister function. */
-export function addDropTarget(target: (files: DroppedFile[]) => void): () => void {
+export function addDropTarget(target: (payload: DropPayload) => void): () => void {
   targets.push(target);
   subscription ??=
-    nativeFileDrop()?.addListener("onFilesDropped", ({ files }) => {
-      if (files.length > 0) targets.at(-1)?.(files);
+    nativeFileDrop()?.addListener("onFilesDropped", (payload) => {
+      if (payload.files.length > 0 || payload.tooLarge?.length) targets.at(-1)?.(payload);
     }) ?? null;
   return () => {
     const index = targets.lastIndexOf(target);
@@ -34,11 +33,4 @@ export function addDropTarget(target: (files: DroppedFile[]) => void): () => voi
       subscription = null;
     }
   };
-}
-
-/** Receives files dragged onto the app from another window while mounted. */
-export function useFileDrop(handler: (files: DroppedFile[]) => void): void {
-  const latest = useRef(handler);
-  latest.current = handler;
-  useEffect(() => addDropTarget((files) => latest.current(files)), []);
 }

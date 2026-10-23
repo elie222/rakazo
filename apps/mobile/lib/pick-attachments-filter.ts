@@ -11,6 +11,24 @@ export type PickedAttachment = {
 
 export type PickSkip = { name: string; reason: string };
 
+/**
+ * Why a candidate cannot become an attachment, or null when it can. Callers can
+ * ask before reading the content, so a rejected file is never loaded.
+ */
+export function attachmentSkipReason(
+  candidate: { name: string; size: number; mimeType: string | null },
+  existingCount: number,
+  acceptedCount: number,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): string | null {
+  if (existingCount + acceptedCount >= ATTACHMENT_MAX_COUNT) {
+    return `max ${ATTACHMENT_MAX_COUNT} attachments`;
+  }
+  if (candidate.size > maxBytes) return `over ${attachmentSizeLabel(maxBytes)}`;
+  if (!candidate.mimeType) return "unsupported type";
+  return null;
+}
+
 export function filterPickedAttachments(
   existingCount: number,
   candidates: Array<{
@@ -25,16 +43,9 @@ export function filterPickedAttachments(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const candidate of candidates) {
-    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
-      skipped.push({ name: candidate.name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` });
-      continue;
-    }
-    if (candidate.size > maxBytes) {
-      skipped.push({ name: candidate.name, reason: `over ${attachmentSizeLabel(maxBytes)}` });
-      continue;
-    }
-    if (!candidate.mimeType) {
-      skipped.push({ name: candidate.name, reason: "unsupported type" });
+    const reason = attachmentSkipReason(candidate, existingCount, attachments.length, maxBytes);
+    if (reason) {
+      skipped.push({ name: candidate.name, reason });
       continue;
     }
     attachments.push({

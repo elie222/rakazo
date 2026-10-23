@@ -1,4 +1,4 @@
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+﻿import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
@@ -6,7 +6,7 @@ import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
-import { filterPickedAttachments } from "./pick-attachments-filter.js";
+import { attachmentSkipReason, filterPickedAttachments } from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 
@@ -197,22 +197,48 @@ export async function pickDocuments(
   return filterPickedAttachments(existingCount, candidates, maxBytes);
 }
 
-/** Files dragged in from another window, already copied into the app's cache. */
+/**
+ * Files dragged in from another window, already copied into the app's cache.
+ * `tooLargeToCopy` names files the native module refused to copy because they
+ * passed its storage guard; they are reported like any other oversized file.
+ */
 export async function readDroppedFiles(
-  files: Array<{ uri: string; name: string; mimeType: string }>,
+  files: Array<{ uri: string; name: string; mimeType: string; size?: number }>,
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
+  tooLargeToCopy: readonly string[] = [],
 ): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
-  const candidates = await Promise.all(
-    files.map(async (file) => {
-      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
-      const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
-      const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
-      return { name: file.name, mimeType, size, contentBase64, previewUri };
-    }),
-  );
-  return filterPickedAttachments(existingCount, candidates, maxBytes);
+  const skipped: PickSkip[] = tooLargeToCopy.map((name) => ({
+    name,
+    reason: `over ${attachmentSizeLabel(maxBytes)}`,
+  }));
+  const candidates: Array<{
+    name: string;
+    mimeType: string | null;
+    size: number;
+    contentBase64: string;
+    previewUri?: string;
+  }> = [];
+  for (const file of files) {
+    const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+    // Reject before reading, so a drop that cannot be attached costs no memory.
+    const reason = attachmentSkipReason(
+      { name: file.name, size: file.size ?? 0, mimeType },
+      existingCount,
+      candidates.length,
+      maxBytes,
+    );
+    if (reason) {
+      skipped.push({ name: file.name, reason });
+      continue;
+    }
+    const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
+    const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
+    candidates.push({ name: file.name, mimeType, size, contentBase64, previewUri });
+  }
+  const filtered = filterPickedAttachments(existingCount, candidates, maxBytes);
+  return { attachments: filtered.attachments, skipped: [...skipped, ...filtered.skipped] };
 }

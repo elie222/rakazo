@@ -58,32 +58,71 @@ class RakazoFileDropModule : Module() {
     // The read grant for another app's content lasts until it is released.
     val permissions = activity.requestDragAndDropPermissions(event)
     Thread {
-      val files = uris.mapNotNull { copyToCache(activity, it) }
+      val files = mutableListOf<Map<String, Any>>()
+      val tooLarge = mutableListOf<String>()
+      for (uri in uris) {
+        val file = copyToCache(activity, uri, tooLarge)
+        if (file != null) files.add(file)
+      }
       permissions?.release()
-      if (files.isNotEmpty()) sendEvent("onFilesDropped", mapOf("files" to files))
+      if (files.isNotEmpty() || tooLarge.isNotEmpty()) {
+        sendEvent("onFilesDropped", mapOf("files" to files, "tooLarge" to tooLarge))
+      }
     }.start()
     return true
   }
 
-  private fun copyToCache(activity: Activity, uri: Uri): Map<String, Any>? {
-    return runCatching {
-      val resolver = activity.contentResolver
-      var name: String? = null
-      resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst() && !cursor.isNull(0)) name = cursor.getString(0)
-      }
-      val displayName = name?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
-      val directory = File(activity.cacheDir, "dropped/${UUID.randomUUID()}")
-      directory.mkdirs()
-      val target = File(directory, displayName)
-      val input = resolver.openInputStream(uri) ?: return@runCatching null
-      input.use { source -> target.outputStream().use { sink -> source.copyTo(sink) } }
-      mapOf(
-        "uri" to Uri.fromFile(target).toString(),
-        "name" to displayName,
-        "mimeType" to (resolver.getType(uri) ?: "application/octet-stream"),
-        "size" to target.length().toDouble(),
-      )
-    }.getOrNull()
+  private fun copyToCache(
+    activity: Activity,
+    uri: Uri,
+    tooLarge: MutableList<String>,
+  ): Map<String, Any>? {
+    val resolver = activity.contentResolver
+    var queried: String? = null
+    resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+      if (cursor.moveToFirst() && !cursor.isNull(0)) queried = cursor.getString(0)
+    }
+    val displayName = queried?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
+    val directory = File(activity.cacheDir, "dropped/${UUID.randomUUID()}")
+    directory.mkdirs()
+    val target = File(directory, displayName)
+    var copied = 0L
+    val finished = runCatching {
+      resolver.openInputStream(uri)?.use { source ->
+        target.outputStream().use { sink ->
+          val buffer = ByteArray(COPY_BUFFER_BYTES)
+          while (true) {
+            val read = source.read(buffer)
+            if (read < 0) break
+            copied += read
+            // A drop must not fill the cache: stop at the guard, discard the
+            // partial copy, and let the thread report the file as too large.
+            if (copied > MAX_COPY_BYTES) {
+              copied = -1
+              break
+            }
+            sink.write(buffer, 0, read)
+          }
+        }
+      } != null
+    }.getOrDefault(false)
+    if (!finished || copied < 0) {
+      directory.deleteRecursively()
+      if (finished && copied < 0) tooLarge.add(displayName)
+      return null
+    }
+    return mapOf(
+      "uri" to Uri.fromFile(target).toString(),
+      "name" to displayName,
+      "mimeType" to (resolver.getType(uri) ?: "application/octet-stream"),
+      "size" to copied.toDouble(),
+    )
+  }
+
+  private companion object {
+    // Storage guard only: the attachment limit itself is applied by the thread,
+    // which knows the server's configured size.
+    const val MAX_COPY_BYTES = 64L * 1024 * 1024
+    const val COPY_BUFFER_BYTES = 64 * 1024
   }
 }

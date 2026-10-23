@@ -29,15 +29,25 @@ it("sends drops to the most recently mounted target only", () => {
   const files = [{ uri: "file:///a.png", name: "a.png", mimeType: "image/png", size: 3 }];
 
   drop({ files });
-  expect(second).toHaveBeenCalledWith(files);
+  expect(second).toHaveBeenCalledWith({ files });
   expect(first).not.toHaveBeenCalled();
 
   removeSecond();
   drop({ files });
-  expect(first).toHaveBeenCalledWith(files);
+  expect(first).toHaveBeenCalledWith({ files });
 
   removeFirst();
   expect(listeners.size).toBe(0);
+});
+
+it("still tells the target about files the guard refused to copy", () => {
+  const target = vi.fn();
+  const remove = addDropTarget(target);
+
+  drop({ files: [], tooLarge: ["film.mp4"] });
+  expect(target).toHaveBeenCalledWith({ files: [], tooLarge: ["film.mp4"] });
+
+  remove();
 });
 
 it("ignores drops without the native module", () => {

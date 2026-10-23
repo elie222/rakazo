@@ -191,7 +191,7 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { chatSettingsRoute } from "../lib/chat-settings-route";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
-import { useFileDrop } from "../lib/file-drop";
+import { addDropTarget } from "../lib/file-drop";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
@@ -2199,10 +2199,20 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   // Files dragged in from another app beside this one attach like picked files.
-  useFileDrop((files) => {
-    if (!readOnly)
-      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes));
-  });
+  // The target only exists while this chat is on screen, so a chat left behind
+  // by a peer-chat push cannot collect a drop meant for the visible chat.
+  useFocusEffect(
+    useCallback(
+      () =>
+        addDropTarget(({ files, tooLarge }) => {
+          if (readOnly) return;
+          void addAttachments((count, maxBytes) =>
+            readDroppedFiles(files, count, maxBytes, tooLarge),
+          );
+        }),
+      [addAttachments, readOnly],
+    ),
+  );
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
