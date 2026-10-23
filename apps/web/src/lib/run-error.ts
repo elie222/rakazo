@@ -133,6 +133,24 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} reached its monthly spending limit.",
         values,
       });
+    case "{summary} Your backup models also failed.":
+      return i18n._({
+        id: "{summary} Your backup models also failed.",
+        message: "{summary} Your backup models also failed.",
+        values,
+      });
+    case "{summary} No backup model was usable for this request.":
+      return i18n._({
+        id: "{summary} No backup model was usable for this request.",
+        message: "{summary} No backup model was usable for this request.",
+        values,
+      });
+    case "{summary} Backup models failed or were unavailable for this request.":
+      return i18n._({
+        id: "{summary} Backup models failed or were unavailable for this request.",
+        message: "{summary} Backup models failed or were unavailable for this request.",
+        values,
+      });
     default:
       return message;
   }

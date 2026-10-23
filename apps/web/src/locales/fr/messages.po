@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Les modèles de secours ont échoué ou étaient indisponibles pour cette demande."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} Aucun modèle de secours ne pouvait être utilisé pour cette demande."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Réinitialisation le {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Vos modèles de secours ont également échoué."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

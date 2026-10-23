@@ -299,8 +299,23 @@ msgstr "{stepCount, plural, one {Bezig… · # tool} other {Bezig… · # tools}
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} Er was geen reservemodel bruikbaar voor dit verzoek."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Wordt gereset op {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Je reservemodellen zijn ook mislukt."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

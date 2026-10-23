@@ -14,7 +14,7 @@ Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI �
 [Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 应用。
 你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
 
-它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Hark Pro 和 Claude Duet 的开源、自托管替代方案。
+它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
 
 Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
 
@@ -23,7 +23,7 @@ Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
 ## 与其他产品的比较
 
 Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
-Muse、Dots、Instinct、Hark Pro 和 Claude Duet 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
+Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
 后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
 
 - [Grok Bot](https://rakazo.com/grok-bot-alternative/)
@@ -32,8 +32,8 @@ Muse、Dots、Instinct、Hark Pro 和 Claude Duet 是托管式助手；OpenClaw 
 - [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
 - [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
-- [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
 - [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
+- [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
 - [全部对比](https://rakazo.com/alternatives/)
 - [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
 

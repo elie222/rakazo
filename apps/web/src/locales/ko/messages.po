@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} 백업 모델이 실패했거나 이 요청에 사용할 수 없었습니다."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} 이 요청에 사용할 수 있는 백업 모델이 없었습니다."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} {date}에 초기화됩니다."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} 백업 모델도 실패했습니다."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

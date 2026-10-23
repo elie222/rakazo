@@ -1,4 +1,11 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "{summary} Your backup models also failed.":
+    "{summary} Резервные модели тоже завершились с ошибкой.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Ни одна резервная модель не подошла для этого запроса.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
+
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "API-ключ Ollama",
   "Show password": "Показать пароль",

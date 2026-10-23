@@ -43,14 +43,20 @@ import {
   FLEET_TOOL_NAMES,
   usableModelId,
 } from "@rakazo/contracts";
-import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR, normalizeRunError } from "@rakazo/core";
+import type { ModelBackupOutcome } from "@rakazo/core";
+import {
+  abortableDelay,
+  MISSING_TOOL_FINAL_RESPONSE_ERROR,
+  modelFallbackFailure,
+  normalizeRunError,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
-import { pruneForRebuild } from "./context-pruning.js";
+import { ModelImageLimitError, pruneForRebuild } from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
@@ -412,6 +418,7 @@ export class PiAgentRuntime implements AgentRuntime {
           isProviderFailure: (message) => providerFailures.has(message.content),
           attempted: new Set<string>(),
           nextIndex: 0,
+          backupOutcomes: new Map(),
           stream: (target, ctx, options) =>
             reliableModelStream(
               target.models,
@@ -463,10 +470,6 @@ export class PiAgentRuntime implements AgentRuntime {
             host.models = target.models;
             host.model = target.model;
             host.apiKey = target.credentials?.accessToken ?? target.apiKey;
-            queue.push({
-              type: "progress",
-              text: `Provider unavailable. Switched to backup model ${target.config.id}.`,
-            });
           },
         };
         agent = new Agent({
@@ -842,7 +845,24 @@ export class PiAgentRuntime implements AgentRuntime {
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
         const error = agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
-          const message = sanitizeProviderError(activeStreamTarget.model.provider, error);
+          let message = sanitizeProviderError(activeStreamTarget.model.provider, error);
+          if (
+            !signal.aborted &&
+            terminalMessage?.role === "assistant" &&
+            terminalMessage.stopReason !== "aborted" &&
+            fallbackState.primaryFailure &&
+            fallbackState.nextIndex >= (request.fallbackModels?.length ?? 0) &&
+            fallbackState.backupOutcomes.size > 0 &&
+            (request.fallbackModels ?? []).every(
+              (choice) =>
+                (choice.provider === request.model.provider && choice.id === request.model.id) ||
+                fallbackState.backupOutcomes.has(JSON.stringify([choice.provider, choice.id])),
+            )
+          ) {
+            message = modelFallbackFailure(fallbackState.primaryFailure, [
+              ...fallbackState.backupOutcomes.values(),
+            ]);
+          }
           throw modelFailure(error, message);
         }
         if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
@@ -1705,6 +1725,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     signal: host.signal,
     attempted: new Set(),
     nextIndex: 0,
+    backupOutcomes: new Map(),
     onSwitch: async () => undefined,
     onContextLimit: (contextWindow) => {
       const target = resizeRuntimeTarget(nestedHost.activeModel, contextWindow);
@@ -2585,6 +2606,8 @@ interface FallbackStreamState {
   signal: AbortSignal;
   attempted: Set<string>;
   nextIndex: number;
+  primaryFailure?: string;
+  backupOutcomes: Map<string, ModelBackupOutcome>;
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
   isProviderFailure(message: AssistantMessage): boolean;
@@ -2650,19 +2673,25 @@ function fallbackSeesImages(candidate: RuntimeModelTarget): boolean {
   );
 }
 
-function fallbackSupportsContext(
+function fallbackIncompatibility(
   candidate: RuntimeModelTarget,
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
   requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
   tools: readonly ConnectorTool[],
-): boolean {
+): string | undefined {
   // The backup's own context policy prunes on its first call; judge what it would send. Too
   // many user images for its limit throws, and the caller skips the backup.
-  context = {
-    ...context,
-    messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
-  };
+  try {
+    context = {
+      ...context,
+      messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
+    };
+  } catch (error) {
+    if (error instanceof ModelImageLimitError)
+      return "The request exceeds the backup model's image limit.";
+    throw error;
+  }
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
   const outputTokens = resolveCompletionMaxTokens(
     candidate.model.maxTokens,
@@ -2676,19 +2705,19 @@ function fallbackSupportsContext(
   // otherwise usable small-context models on short turns.
   const contextSafetyMargin = Math.max(256, Math.ceil(inputTokens * 0.1));
   if (candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin)
-    return false;
+    return "Conversation exceeds the backup model's context limit.";
   const imageCount = contextImageCount(context);
   if (
     (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
     !fallbackSeesImages(candidate)
   ) {
-    return false;
+    return "The backup model cannot use the images required by this request.";
   }
   if (
     typeof candidate.config.maxImagesPerPrompt === "number" &&
     imageCount > candidate.config.maxImagesPerPrompt
   ) {
-    return false;
+    return "The request exceeds the backup model's image limit.";
   }
   const reasoningLevel = options?.reasoning ?? requestedThinkingLevel;
   const requiresReasoning =
@@ -2696,7 +2725,9 @@ function fallbackSupportsContext(
     (candidate.config.thinkingLevel !== undefined &&
       candidate.config.thinkingLevel !== null &&
       candidate.config.thinkingLevel !== "off");
-  return !requiresReasoning || candidate.model.reasoning;
+  return requiresReasoning && !candidate.model.reasoning
+    ? "The backup model does not support the requested thinking level."
+    : undefined;
 }
 
 function fallbackAwareModelStream(
@@ -2718,8 +2749,22 @@ function fallbackAwareModelStream(
     return messages === context.messages ? context : { ...context, messages };
   };
   const signalAborted = () => signal.aborted;
+  const recordFailure = (target: RuntimeModelTarget, error: string) => {
+    if (
+      target.config.provider === state.request.model.provider &&
+      target.config.id === state.request.model.id
+    )
+      return;
+    state.backupOutcomes.set(JSON.stringify([target.config.provider, target.config.id]), {
+      provider: target.config.provider,
+      modelId: target.config.id,
+      status: "failed",
+      reason: sanitizeProviderError(target.config.provider, error),
+    });
+  };
   const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
+    recordFailure(target, message);
     const aborted = signalAborted() || /abort|cancel/i.test(message);
     const stopReason: "aborted" | "error" = aborted ? "aborted" : "error";
     const failure: AssistantMessage = {
@@ -2759,15 +2804,26 @@ function fallbackAwareModelStream(
       if (state.attempted.has(key)) continue;
       state.attempted.add(key);
       if (choice.provider === current.config.provider && choice.id === current.config.id) continue;
+      const skip = (reason: string) =>
+        state.backupOutcomes.set(key, {
+          provider: choice.provider,
+          modelId: choice.id,
+          status: "skipped",
+          reason,
+        });
       try {
         const config = state.request.resolveFallbackModel
           ? await state.request.resolveFallbackModel(choice.provider, choice.id)
           : (choice as AgentRunRequest["model"]);
         if (signalAborted()) return undefined;
-        if (config.provider !== choice.provider || config.id !== choice.id) continue;
+        if (config.provider !== choice.provider || config.id !== choice.id) {
+          skip("The saved backup connection no longer matches this model.");
+          continue;
+        }
         // Never borrow the primary or process-wide key for a backup. Production resolves
         // each candidate lazily from the authenticated user's Space-scoped credential store.
         if (!config.apiKey && !config.oauth && config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+          skip("No credential is available for the backup model.");
           continue;
         }
         const resolved = resolveRuntimeModel(config);
@@ -2776,6 +2832,7 @@ function fallbackAwareModelStream(
           resolved.model.provider !== config.provider ||
           resolved.model.id !== config.id
         ) {
+          skip("The backup model is unavailable.");
           continue;
         }
         const candidate: RuntimeModelTarget = {
@@ -2785,20 +2842,21 @@ function fallbackAwareModelStream(
           apiKey: resolved.apiKey,
           credentials: resolved.credentials,
         };
-        if (
-          !fallbackSupportsContext(
-            candidate,
-            requestContext(true),
-            options,
-            state.request.model.thinkingLevel,
-            state.request.tools,
-          )
-        ) {
+        const incompatibility = fallbackIncompatibility(
+          candidate,
+          requestContext(true),
+          options,
+          state.request.model.thinkingLevel,
+          state.request.tools,
+        );
+        if (incompatibility) {
+          skip(incompatibility);
           continue;
         }
         return candidate;
       } catch {
-        // Missing connections and changed credentials are skipped in configured order.
+        // Do not persist credential-resolution diagnostics; they can contain secrets.
+        skip("The backup connection or request could not be prepared.");
       }
     }
     return undefined;
@@ -2860,6 +2918,7 @@ function fallbackAwareModelStream(
       try {
         for await (const event of stream) {
           if (event.type === "error") {
+            recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;
             const hasTerminalPartialOutput = assistantHasPartialOutput(event.error);
             if (
@@ -2938,6 +2997,10 @@ function fallbackAwareModelStream(
               state.isProviderFailure(event.error) &&
               isRetryableProviderUnavailable(event.error)
             ) {
+              state.primaryFailure ??= sanitizeProviderError(
+                target.config.provider,
+                event.error.errorMessage ?? "Model request failed.",
+              );
               const next = await resolveNext(target);
               if (failIfAborted(target)) return;
               if (next) {
@@ -2989,6 +3052,9 @@ function fallbackAwareModelStream(
             return;
           }
           if (event.type === "done") {
+            // A recovered call must not replace a later failure with its old error.
+            state.primaryFailure = undefined;
+            state.backupOutcomes.delete(targetKey);
             for (const pending of buffered) output.push(pending);
             buffered = [];
             output.push(event);

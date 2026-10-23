@@ -71,6 +71,7 @@ import {
   useRouter,
 } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
+import type { ComponentProps } from "react";
 import {
   memo,
   useCallback,
@@ -3887,7 +3888,58 @@ const MessageRow = memo(function MessageRow({
 // its row mounts again when the helper finishes. Remember open cards by agent id across that.
 const openHelpers = new Set<string>();
 
-const MessageBubble = memo(function MessageBubble({
+const MessageBubble = memo(function MessageBubble(
+  props: ComponentProps<typeof MessageBubbleContent>,
+) {
+  const { message } = props;
+  if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
+
+  const pieces: MessageBlock[][] = [];
+  for (const block of message.blocks) {
+    const previous = pieces.at(-1);
+    if (isSpecialMessageBlock(block) || !previous || isSpecialMessageBlock(previous[0]!)) {
+      pieces.push([block]);
+    } else {
+      previous.push(block);
+    }
+  }
+  const content = pieces.map((blocks, index) => {
+    const first = blocks[0]!;
+    return isSpecialMessageBlock(first) ? (
+      <SpecialMessageCard
+        key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
+        special={first}
+        actionProps={props.actionProps}
+        onOpenBot={props.onOpenBot}
+        onHelperToggle={props.onHelperToggle}
+        userBubble={props.userBubble}
+      />
+    ) : (
+      <MessageBubbleContent
+        {...props}
+        key={`content-${index}`}
+        message={{ ...message, blocks }}
+        onAnswer={(_, ...answer) => props.onAnswer(message, ...answer)}
+      />
+    );
+  });
+  return content.length === 1 ? (
+    content[0]
+  ) : (
+    <View style={{ gap: 8, width: "100%" }}>{content}</View>
+  );
+});
+
+type SpecialMessageBlock = Extract<
+  MessageBlock,
+  { kind: "subagent" | "child_bot" | "cloud_agent" }
+>;
+
+function isSpecialMessageBlock(block: MessageBlock): block is SpecialMessageBlock {
+  return block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent";
+}
+
+const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
   botName,
   showBotSenderName,
@@ -3898,7 +3950,6 @@ const MessageBubble = memo(function MessageBubble({
   canAnswer,
   canDismiss,
   onAnswer,
-  onOpenBot,
   onOpenComputer,
   onChoiceDismissed,
   onPreviewMarkdown,
@@ -3908,7 +3959,6 @@ const MessageBubble = memo(function MessageBubble({
   onOpenPeerChat,
   actionProps,
   doubleTapSurface = false,
-  onHelperToggle,
   userBubble,
 }: {
   onHelperToggle?: MessageRowActions["helperToggle"];
@@ -3943,23 +3993,6 @@ const MessageBubble = memo(function MessageBubble({
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
-  const helperHeader = useRef<View>(null);
-  const helperCard = useRef<View>(null);
-  const helperReducedMotion = useReducedMotion();
-  const [subagentOpen, setSubagentOpen] = useState(() =>
-    message.blocks.some((block) => block.kind === "subagent" && openHelpers.has(block.agentId)),
-  );
-  const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
-  useEffect(() => {
-    helperRotation.value = helperReducedMotion
-      ? subagentOpen
-        ? 180
-        : 0
-      : withTiming(subagentOpen ? 180 : 0, { duration: 150 });
-  }, [subagentOpen, helperReducedMotion, helperRotation]);
-  const helperChevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${helperRotation.value}deg` }],
-  }));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -4123,216 +4156,6 @@ const MessageBubble = memo(function MessageBubble({
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {messagingProviderLabel(channelMessage.provider, channelMessage.transport)} ·{" "}
           {channelMessage.fromLabel}: {channelMessage.text}
-        </Text>
-      </Pressable>
-    );
-  }
-  const special = message.blocks.find(
-    (block) =>
-      block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent",
-  );
-  if (special?.kind === "subagent") {
-    const running = special.status === "running";
-    const failed = special.status === "failed";
-    return (
-      <Pressable
-        {...actionProps}
-        ref={helperCard}
-        collapsable={false}
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-        }}
-      >
-        <Pressable
-          {...actionProps}
-          onPress={() => {
-            const toggle = () => {
-              if (subagentOpen) openHelpers.delete(special.agentId);
-              else openHelpers.add(special.agentId);
-              setSubagentOpen(!subagentOpen);
-            };
-            if (onHelperToggle) {
-              onHelperToggle(
-                (done) =>
-                  helperHeader.current?.measureInWindow((_x, y) => {
-                    helperCard.current?.measureInWindow((_cardX, cardY, _width, height) =>
-                      done(y, cardY + height),
-                    );
-                  }),
-                toggle,
-                !subagentOpen,
-              );
-            } else toggle();
-          }}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: subagentOpen }}
-          style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
-        >
-          <View ref={helperHeader} collapsable={false}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
-            >
-              <Text
-                style={{
-                  flexShrink: 1,
-                  flexGrow: 1,
-                  color: tokens.foreground,
-                  ...typeScale.cardTitle,
-                }}
-              >
-                {safeDisplayName(special.name, t("subagent"))}
-              </Text>
-              <Text
-                style={{
-                  color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-                  ...typeScale.caption,
-                }}
-              >
-                {running
-                  ? t("Running")
-                  : special.status === "failed"
-                    ? t("Failed")
-                    : special.status === "completed"
-                      ? t("Completed")
-                      : special.status}
-              </Text>
-              <Animated.View style={helperChevronStyle}>
-                <NativeSymbol
-                  ios="chevron.down"
-                  android="chevron-down"
-                  size={12}
-                  color={tokens.mutedForeground}
-                />
-              </Animated.View>
-            </View>
-            {special.task ? (
-              <Text
-                numberOfLines={subagentOpen ? undefined : 1}
-                style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
-              >
-                {special.task}
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
-        {subagentOpen && (special.result || special.progress) ? (
-          <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
-            <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
-              {special.result || special.progress || ""}
-            </ChatMarkdown>
-          </View>
-        ) : null}
-      </Pressable>
-    );
-  }
-  if (special?.kind === "cloud_agent") {
-    const title = special.title || t("Cloud agent");
-    const statusLabel =
-      special.status === "running"
-        ? t("running")
-        : special.status === "finished"
-          ? t("finished")
-          : special.status === "cancelled"
-            ? t("cancelled")
-            : special.status === "expired"
-              ? t("expired")
-              : t("failed");
-    const running = special.status === "running";
-    const failed = special.status !== "running" && special.status !== "finished";
-    const prHref = cloudAgentHttpsUrl(special.prUrl);
-    const href = prHref ?? cloudAgentHttpsUrl(special.url);
-    return (
-      <Pressable
-        onPress={() => {
-          if (href) Linking.openURL(href).catch(() => undefined);
-        }}
-        testID="cloud-agent-card"
-        accessibilityRole={href ? "link" : "text"}
-        accessibilityLabel={`${title}: ${statusLabel}`}
-        disabled={!href}
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-      >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-          <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
-            {title}
-          </Text>
-          <Text
-            style={{
-              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              ...typeScale.caption,
-            }}
-          >
-            {statusLabel}
-          </Text>
-        </View>
-        {prHref ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {t("Pull request")}
-          </Text>
-        ) : special.branch ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {special.branch}
-          </Text>
-        ) : null}
-      </Pressable>
-    );
-  }
-  if (special?.kind === "child_bot") {
-    const removed = special.status === "deleted" || special.status === "archived";
-    return (
-      <Pressable
-        {...actionProps}
-        onPress={
-          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
-        }
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          opacity: removed ? 0.6 : 1,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {special.name || t("Bot")}
-          </Text>
-          <Text
-            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
-          >
-            {special.status === "archived"
-              ? t("archived")
-              : special.status === "deleted"
-                ? t("deleted")
-                : t("bot")}
-          </Text>
-        </View>
-        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-          {removed
-            ? special.status === "archived"
-              ? t("Archived. Chat, memory, and files kept.")
-              : t("Removed with chat, computer, and memory.")
-            : special.title || t("Opened its thread.")}
         </Text>
       </Pressable>
     );
@@ -4704,6 +4527,252 @@ const MessageBubble = memo(function MessageBubble({
     </View>
   );
 });
+
+type SpecialMessageCardProps = Pick<
+  ComponentProps<typeof MessageBubbleContent>,
+  "actionProps" | "onOpenBot" | "onHelperToggle" | "userBubble"
+> & { special: SpecialMessageBlock };
+
+function HelperMessageCard({
+  special,
+  actionProps,
+  onHelperToggle,
+  userBubble,
+}: Pick<SpecialMessageCardProps, "actionProps" | "onHelperToggle" | "userBubble"> & {
+  special: Extract<MessageBlock, { kind: "subagent" }>;
+}) {
+  const colorScheme = useResolvedAppearance();
+  const tokens = withUserBubble(mobileTokens(), userBubble);
+  const { t } = useI18n();
+  const helperHeader = useRef<View>(null);
+  const helperCard = useRef<View>(null);
+  const helperReducedMotion = useReducedMotion();
+  const [subagentOpen, setSubagentOpen] = useState(() => openHelpers.has(special.agentId));
+  const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
+  useEffect(() => {
+    helperRotation.value = helperReducedMotion
+      ? subagentOpen
+        ? 180
+        : 0
+      : withTiming(subagentOpen ? 180 : 0, { duration: 150 });
+  }, [subagentOpen, helperReducedMotion, helperRotation]);
+  const helperChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${helperRotation.value}deg` }],
+  }));
+  const running = special.status === "running";
+  const failed = special.status === "failed";
+  return (
+    <Pressable
+      {...actionProps}
+      ref={helperCard}
+      collapsable={false}
+      style={{
+        width: "90%",
+        borderRadius: 18,
+        backgroundColor: tokens.card,
+      }}
+    >
+      <Pressable
+        {...actionProps}
+        onPress={() => {
+          const toggle = () => {
+            if (subagentOpen) openHelpers.delete(special.agentId);
+            else openHelpers.add(special.agentId);
+            setSubagentOpen(!subagentOpen);
+          };
+          if (onHelperToggle) {
+            onHelperToggle(
+              (done) =>
+                helperHeader.current?.measureInWindow((_x, y) => {
+                  helperCard.current?.measureInWindow((_cardX, cardY, _width, height) =>
+                    done(y, cardY + height),
+                  );
+                }),
+              toggle,
+              !subagentOpen,
+            );
+          } else toggle();
+        }}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: subagentOpen }}
+        style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
+      >
+        <View ref={helperHeader} collapsable={false}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <Text
+              style={{
+                flexShrink: 1,
+                flexGrow: 1,
+                color: tokens.foreground,
+                ...typeScale.cardTitle,
+              }}
+            >
+              {safeDisplayName(special.name, t("subagent"))}
+            </Text>
+            <Text
+              style={{
+                color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+                ...typeScale.caption,
+              }}
+            >
+              {running
+                ? t("Running")
+                : special.status === "failed"
+                  ? t("Failed")
+                  : special.status === "completed"
+                    ? t("Completed")
+                    : special.status}
+            </Text>
+            <Animated.View style={helperChevronStyle}>
+              <NativeSymbol
+                ios="chevron.down"
+                android="chevron-down"
+                size={12}
+                color={tokens.mutedForeground}
+              />
+            </Animated.View>
+          </View>
+          {special.task ? (
+            <Text
+              numberOfLines={subagentOpen ? undefined : 1}
+              style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
+            >
+              {special.task}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+      {subagentOpen && (special.result || special.progress) ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
+          <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
+            {special.result || special.progress || ""}
+          </ChatMarkdown>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function SpecialMessageCard(props: SpecialMessageCardProps) {
+  const { special, actionProps, onOpenBot, userBubble } = props;
+  const tokens = withUserBubble(mobileTokens(), userBubble);
+  const { t } = useI18n();
+  if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
+  if (special.kind === "cloud_agent") {
+    const title = special.title || t("Cloud agent");
+    const statusLabel =
+      special.status === "running"
+        ? t("running")
+        : special.status === "finished"
+          ? t("finished")
+          : special.status === "cancelled"
+            ? t("cancelled")
+            : special.status === "expired"
+              ? t("expired")
+              : t("failed");
+    const running = special.status === "running";
+    const failed = special.status !== "running" && special.status !== "finished";
+    const prHref = cloudAgentHttpsUrl(special.prUrl);
+    const href = prHref ?? cloudAgentHttpsUrl(special.url);
+    return (
+      <Pressable
+        {...actionProps}
+        onPress={() => {
+          if (href) Linking.openURL(href).catch(() => undefined);
+        }}
+        testID="cloud-agent-card"
+        accessibilityRole={href ? "link" : "text"}
+        accessibilityLabel={`${title}: ${statusLabel}`}
+        disabled={!href}
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          backgroundColor: tokens.card,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
+            {title}
+          </Text>
+          <Text
+            style={{
+              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+              ...typeScale.caption,
+            }}
+          >
+            {statusLabel}
+          </Text>
+        </View>
+        {prHref ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+            {t("Pull request")}
+          </Text>
+        ) : special.branch ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+            {special.branch}
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+  }
+  if (special.kind === "child_bot") {
+    const removed = special.status === "deleted" || special.status === "archived";
+    return (
+      <Pressable
+        {...actionProps}
+        onPress={
+          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
+        }
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          backgroundColor: tokens.card,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          opacity: removed ? 0.6 : 1,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
+            {special.name || t("Bot")}
+          </Text>
+          <Text
+            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
+          >
+            {special.status === "archived"
+              ? t("archived")
+              : special.status === "deleted"
+                ? t("deleted")
+                : t("bot")}
+          </Text>
+        </View>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+          {removed
+            ? special.status === "archived"
+              ? t("Archived. Chat, memory, and files kept.")
+              : t("Removed with chat, computer, and memory.")
+            : special.title || t("Opened its thread.")}
+        </Text>
+      </Pressable>
+    );
+  }
+  return null;
+}
 
 function MessageTextCard({
   message,

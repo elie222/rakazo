@@ -48,6 +48,18 @@ export type RunErrorTranslator = (
 const english: RunErrorTranslator = (message, values) =>
   message.replace(/\{(\w+)\}/g, (match, key: string) => String(values?.[key] ?? match));
 
+export type ModelBackupOutcome = {
+  provider: string;
+  modelId: string;
+  status: "failed" | "skipped";
+  reason: string;
+};
+
+/** Persist fallback outcomes with the original failure, without changing provider diagnostics. */
+export function modelFallbackFailure(primaryError: string, backups: ModelBackupOutcome[]): string {
+  return JSON.stringify({ modelFallbackVersion: 1, primaryError, backups });
+}
+
 /** Keep provider diagnostics available without exposing them in the visible summary. */
 export function normalizeRunError(
   details: string,
@@ -71,6 +83,35 @@ export function normalizeRunError(
     // Plain text is handled below; malformed HTTP envelopes still get a safe summary.
   }
   const record = asRecord(parsed);
+  if (
+    record.modelFallbackVersion === 1 &&
+    typeof record.primaryError === "string" &&
+    Array.isArray(record.backups) &&
+    record.backups.length > 0 &&
+    record.backups.every((item: unknown) => {
+      const outcome = asRecord(item);
+      return (
+        typeof outcome.provider === "string" &&
+        typeof outcome.modelId === "string" &&
+        typeof outcome.reason === "string" &&
+        (outcome.status === "failed" || outcome.status === "skipped")
+      );
+    })
+  ) {
+    const primary = normalizeRunError(record.primaryError, translate, locale, now);
+    const failed = record.backups.some((item) => item.status === "failed");
+    const skipped = record.backups.some((item) => item.status === "skipped");
+    const message = failed
+      ? skipped
+        ? "{summary} Backup models failed or were unavailable for this request."
+        : "{summary} Your backup models also failed."
+      : "{summary} No backup model was usable for this request.";
+    return {
+      ...primary,
+      summary: translate(message, { summary: primary.summary }),
+      details,
+    };
+  }
   // Preserve only known recovery advice: provider diagnostics can also be plain text.
   if (APP_RUN_ERRORS.has(details.trim())) {
     return { summary: details, details };

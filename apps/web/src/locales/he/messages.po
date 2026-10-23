@@ -299,8 +299,23 @@ msgstr "{stepCount, plural, one {בעבודה… · # כלי} other {בעבוד�
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} מודלי הגיבוי נכשלו או לא היו זמינים לבקשה הזו."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} לא ניתן היה להשתמש באף מודל גיבוי לבקשה הזו."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} יתאפס ב-{date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} גם מודלי הגיבוי נכשלו."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

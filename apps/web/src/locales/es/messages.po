@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Los modelos de respaldo fallaron o no estaban disponibles para esta solicitud."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} Ningún modelo de respaldo pudo utilizarse para esta solicitud."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Se restablece el {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Tus modelos de respaldo también fallaron."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

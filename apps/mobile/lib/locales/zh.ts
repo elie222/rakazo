@@ -1,4 +1,10 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "{summary} Your backup models also failed.": "{summary} 备用模型也失败了。",
+  "{summary} No backup model was usable for this request.":
+    "{summary} 没有可用于此请求的备用模型。",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} 备用模型失败或无法用于此请求。",
+
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API 密钥",
   "Show password": "显示密码",

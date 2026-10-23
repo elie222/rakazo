@@ -8,6 +8,7 @@ import {
   abortableDelay,
   BOT_MESSAGE_WAKE_CUE,
   inferHandoffTargetName,
+  modelFallbackFailure,
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
 
@@ -659,6 +660,16 @@ function shouldFail(prompt: string): boolean {
 
 /** The error a failing run throws; "overloaded" sends the body Anthropic returns with a 529. */
 function scriptedFailure(prompt: string): string {
+  if (/\bexhausted backups\b/i.test(prompt)) {
+    return modelFallbackFailure('429: {"message":"Too many requests"}', [
+      {
+        provider: "fake-provider",
+        modelId: "fake-backup",
+        status: "failed",
+        reason: "429 quota exhausted",
+      },
+    ]);
+  }
   return /\boverloaded\b/i.test(prompt)
     ? '529: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
     : "Scripted run failure";

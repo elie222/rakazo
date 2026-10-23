@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isModelRequiredSendError,
   MODEL_REQUIRED_SEND_ERROR,
+  modelFallbackFailure,
   normalizeRunError,
 } from "./run-error.js";
 
@@ -302,4 +303,38 @@ describe("isModelRequiredSendError", () => {
   ])("rejects unrelated values: %s", (error) => {
     expect(isModelRequiredSendError(error)).toBe(false);
   });
+});
+
+it.each([
+  [["failed"], "Your backup models also failed."],
+  [["skipped"], "No backup model was usable for this request."],
+  [["failed", "skipped"], "Backup models failed or were unavailable for this request."],
+] as const)("explains exhausted backups: %s", (statuses, explanation) => {
+  const primaryError = '429: {"message":"Too many requests"}';
+  const details = modelFallbackFailure(
+    primaryError,
+    statuses.map((status) => ({
+      provider: "fake-provider",
+      modelId: "fake-model",
+      status,
+      reason: "fake-diagnostic",
+    })),
+  );
+  expect(normalizeRunError(details)).toEqual({
+    ...normalizeRunError(primaryError),
+    details,
+    summary: `${normalizeRunError(primaryError).summary} ${explanation}`,
+  });
+});
+
+it("does not expose malformed fallback metadata as user-facing copy", () => {
+  expect(
+    normalizeRunError(
+      JSON.stringify({
+        modelFallbackVersion: 1,
+        primaryError: "private diagnostic",
+        backups: [{ status: "unknown" }],
+      }),
+    ).summary,
+  ).toBe("The model provider returned an error.");
 });

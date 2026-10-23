@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Yedek modeller başarısız oldu veya bu istek için kullanılamadı."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} Bu istek için kullanılabilir bir yedek model yoktu."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Sıfırlanma tarihi: {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Yedek modelleriniz de başarısız oldu."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

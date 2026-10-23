@@ -259,7 +259,7 @@ export function VoiceSettingsOverlay({
                       .finally(() => markPending(null));
                   }}
                   className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start transition-colors last:border-0 disabled:pointer-events-none disabled:opacity-50 ${
-                    entry.id === provider ? "bg-muted" : "hover:bg-accent"
+                    entry.id === provider ? "bg-accent" : "hover:bg-accent"
                   }`}
                 >
                   <span className="min-w-0 flex-1">

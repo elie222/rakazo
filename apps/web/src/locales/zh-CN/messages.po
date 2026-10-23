@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} 备用模型失败或无法用于此请求。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} 没有可用于此请求的备用模型。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} 将于{date}重置。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} 备用模型也失败了。"
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

@@ -412,7 +412,7 @@ export const Transcript = memo(function Transcript({
             disabled={loadingOlder}
             onClick={() => void loadOlder()}
             aria-label={t`Load earlier messages`}
-            className="flex items-center gap-2 self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground/75 disabled:opacity-50"
+            className="flex items-center gap-2 self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground/75 disabled:opacity-50"
           >
             {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
             {t`Load earlier messages`}

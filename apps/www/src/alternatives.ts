@@ -65,7 +65,7 @@ export const ALTERNATIVES_HUB = {
   title:
     "Best Personal AI Agents in 2026: Grok Bot, Muse, Dots, Instinct, Hark Pro & Open Source Alternatives",
   description:
-    "A dated comparison of Grok Bot, Meta Muse, OpenAI Dots, Instinct, Hark Pro, Claude Duet, OpenClaw, Hermes Agent, and Rakazo. Licenses, self-hosting, model choice, price, setup, and whether you manage the agent from chat.",
+    "A dated comparison of Grok Bot, Meta Muse, OpenAI Dots, Instinct, Claude Duet, Hark Pro, OpenClaw, Hermes Agent, and Rakazo. Licenses, self-hosting, model choice, price, setup, and whether you manage the agent from chat.",
   h1: "Best Personal AI Agents in 2026: Grok Bot, Muse, Dots, Instinct, Hark Pro & Open Source Alternatives",
   intro:
     "These are different products that all take on work beyond a single reply. This page compares their public descriptions, read between October 7 and October 24, 2026. It is not a score, a benchmark, or a claim that one of them is best at every task.",
@@ -576,6 +576,86 @@ export const ALTERNATIVES: readonly Alternative[] = [
     sources: HERMES_SOURCES,
   },
   {
+    slug: "claude-duet-alternative",
+    name: "Claude Duet",
+    summary: "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
+    title: "Open Source Claude Duet Alternative – Rakazo",
+    description:
+      "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Claude Duet, Anthropic's personal agent.",
+    h1: "Open source Claude Duet alternative",
+    comparedOn: "October 24, 2026",
+    otherName: "Claude Duet",
+    intro: [
+      "Claude Duet is Anthropic's proactive personal agent, released as a research preview on October 21, 2026. You message it like a person. It sends a morning brief, checks your connected accounts, and works on a cloud computer Anthropic runs.",
+      "Rakazo is open source software for persistent AI teammates. You run it, you choose the model, and you can have more than one bot. Rakazo can also sign in with your Claude Pro or Max subscription.",
+    ],
+    rows: [
+      {
+        topic: "Product",
+        rakazo: "Open source platform for persistent AI teammates. Rakazo is in beta.",
+        other:
+          "A standalone Anthropic app with one ongoing thread, by text or voice. Anthropic says it is for professionals and small business owners.",
+      },
+      {
+        topic: "Who runs it",
+        rakazo:
+          "You do when you self-host with Docker or point the desktop and mobile apps at a server you operate. Rakazo Cloud, in beta, runs it for you.",
+        other:
+          "Anthropic. Duet works on its own cloud virtual machine with a browser. The help center says you cannot watch or take over that browser.",
+      },
+      {
+        topic: "Source",
+        rakazo: "Apache-2.0 source on GitHub.",
+        other: "Hosted service from Anthropic. Its pages do not describe self-hosting.",
+      },
+      {
+        topic: "Model",
+        rakazo:
+          "Bring your own model credentials, including Claude Pro/Max sign-in, other providers, and a local server. Each bot can use a different model.",
+        other: "Claude Opus 5.5. The help center says you cannot choose a model.",
+      },
+      {
+        topic: "Connections",
+        rakazo:
+          "Composio or Pipedream Connect, or a Treg, remote MCP, or OpenAPI source you install. Bots also get a sandboxed browser, terminal, files, and a graphical desktop.",
+        other:
+          "Claude's connectors and plugins, which Anthropic puts at more than 6,000. The help center names Gmail, Google Calendar, Google Drive, Slack, QuickBooks, HubSpot, Docusign, and Calendly. Microsoft 365 is not available yet. Purchases use Link by Stripe or Shop Pay with one-time virtual cards.",
+      },
+      {
+        topic: "Ongoing work",
+        rakazo:
+          "Each bot keeps conversations, memory, routines, and history. Routines are readable Markdown and can run on a schedule. A bot can delegate to a peer bot or a short-lived subagent.",
+        other:
+          "A morning brief, then check-ins on your accounts. The announcement says every few hours; the help center says set intervals. Duet uses your Claude memory, skills, and connectors.",
+      },
+      {
+        topic: "Control and availability",
+        rakazo:
+          "A bot can pause for approval at a boundary you set, and actions are recorded in an audit log. The web, desktop, and mobile clients are available with self-hosting now.",
+        other:
+          "Duet asks before it sends a message, makes a payment, signs a document, or deletes anything. Trading securities, moving money between accounts, and accessing someone else's account are blocked. Pro and Max only, in the US, from a waitlist. Usage counts against the plan's limits.",
+      },
+    ],
+    faq: [
+      {
+        question: "Can Rakazo use my Claude subscription?",
+        answer:
+          "Yes. Sign in with Claude Pro or Max, or bring an Anthropic key. Claude is one model choice, and each bot can use a different one.",
+      },
+      {
+        question: "Is Claude Duet open source or self-hosted?",
+        answer:
+          "Anthropic's Duet pages do not describe source you can run or a self-hosted install. Duet runs on a cloud computer Anthropic operates. Rakazo is Apache-2.0, and you can run it yourself.",
+      },
+      {
+        question: "Where do the Claude Duet details come from?",
+        answer:
+          "The Claude Duet column summarizes Anthropic's October 21, 2026 announcement, the product page, the help center article, and the October 23, 2026 safety post. Duet is a research preview, so check those pages before you rely on a detail.",
+      },
+    ],
+    sources: DUET_SOURCES,
+  },
+  {
     slug: "hark-alternative",
     name: "Hark",
     summary: "A hosted personal agent. After install, Rakazo stays in chat on a stack you run.",
@@ -689,86 +769,6 @@ export const ALTERNATIVES: readonly Alternative[] = [
       },
     ],
     sources: HARK_SOURCES,
-  },
-  {
-    slug: "claude-duet-alternative",
-    name: "Claude Duet",
-    summary: "Anthropic's proactive personal agent, and what is different when you host Rakazo yourself.",
-    title: "Open Source Claude Duet Alternative – Rakazo",
-    description:
-      "Rakazo is an open source, self-hostable platform for persistent AI teammates. Compare it with Claude Duet, Anthropic's personal agent.",
-    h1: "Open source Claude Duet alternative",
-    comparedOn: "October 24, 2026",
-    otherName: "Claude Duet",
-    intro: [
-      "Claude Duet is Anthropic's proactive personal agent, released as a research preview on October 21, 2026. You message it like a person. It sends a morning brief, checks your connected accounts, and works on a cloud computer Anthropic runs.",
-      "Rakazo is open source software for persistent AI teammates. You run it, you choose the model, and you can have more than one bot. Rakazo can also sign in with your Claude Pro or Max subscription.",
-    ],
-    rows: [
-      {
-        topic: "Product",
-        rakazo: "Open source platform for persistent AI teammates. Rakazo is in beta.",
-        other:
-          "A standalone Anthropic app with one ongoing thread, by text or voice. Anthropic says it is for professionals and small business owners.",
-      },
-      {
-        topic: "Who runs it",
-        rakazo:
-          "You do when you self-host with Docker or point the desktop and mobile apps at a server you operate. Rakazo Cloud, in beta, runs it for you.",
-        other:
-          "Anthropic. Duet works on its own cloud virtual machine with a browser. The help center says you cannot watch or take over that browser.",
-      },
-      {
-        topic: "Source",
-        rakazo: "Apache-2.0 source on GitHub.",
-        other: "Hosted service from Anthropic. Its pages do not describe self-hosting.",
-      },
-      {
-        topic: "Model",
-        rakazo:
-          "Bring your own model credentials, including Claude Pro/Max sign-in, other providers, and a local server. Each bot can use a different model.",
-        other: "Claude Opus 5.5. The help center says you cannot choose a model.",
-      },
-      {
-        topic: "Connections",
-        rakazo:
-          "Composio or Pipedream Connect, or a Treg, remote MCP, or OpenAPI source you install. Bots also get a sandboxed browser, terminal, files, and a graphical desktop.",
-        other:
-          "Claude's connectors and plugins, which Anthropic puts at more than 6,000. The help center names Gmail, Google Calendar, Google Drive, Slack, QuickBooks, HubSpot, Docusign, and Calendly. Microsoft 365 is not available yet. Purchases use Link by Stripe or Shop Pay with one-time virtual cards.",
-      },
-      {
-        topic: "Ongoing work",
-        rakazo:
-          "Each bot keeps conversations, memory, routines, and history. Routines are readable Markdown and can run on a schedule. A bot can delegate to a peer bot or a short-lived subagent.",
-        other:
-          "A morning brief, then check-ins on your accounts. The announcement says every few hours; the help center says set intervals. Duet uses your Claude memory, skills, and connectors.",
-      },
-      {
-        topic: "Control and availability",
-        rakazo:
-          "A bot can pause for approval at a boundary you set, and actions are recorded in an audit log. The web, desktop, and mobile clients are available with self-hosting now.",
-        other:
-          "Duet asks before it sends a message, makes a payment, signs a document, or deletes anything. Trading securities, moving money between accounts, and accessing someone else's account are blocked. Pro and Max only, in the US, from a waitlist. Usage counts against the plan's limits.",
-      },
-    ],
-    faq: [
-      {
-        question: "Can Rakazo use my Claude subscription?",
-        answer:
-          "Yes. Sign in with Claude Pro or Max, or bring an Anthropic key. Claude is one model choice, and each bot can use a different one.",
-      },
-      {
-        question: "Is Claude Duet open source or self-hosted?",
-        answer:
-          "Anthropic's Duet pages do not describe source you can run or a self-hosted install. Duet runs on a cloud computer Anthropic operates. Rakazo is Apache-2.0, and you can run it yourself.",
-      },
-      {
-        question: "Where do the Claude Duet details come from?",
-        answer:
-          "The Claude Duet column summarizes Anthropic's October 21, 2026 announcement, the product page, the help center article, and the October 23, 2026 safety post. Duet is a research preview, so check those pages before you rely on a detail.",
-      },
-    ],
-    sources: DUET_SOURCES,
   },
 ];
 

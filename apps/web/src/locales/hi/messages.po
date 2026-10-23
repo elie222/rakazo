@@ -299,8 +299,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} बैकअप मॉडल विफल रहे या इस अनुरोध के लिए उपलब्ध नहीं थे।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} इस अनुरोध के लिए कोई बैकअप मॉडल उपयोग योग्य नहीं था।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} {date} को रीसेट होगा।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} आपके बैकअप मॉडल भी विफल रहे।"
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"

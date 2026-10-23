@@ -128,6 +128,9 @@ describe("mobile i18n", () => {
     const ids = new Set<string>([
       ...Object.values(AI_DATA_DISCLOSURES),
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "{summary} Your backup models also failed.",
+      "{summary} No backup model was usable for this request.",
+      "{summary} Backup models failed or were unavailable for this request.",
       "Your OpenRouter",
       "Your OpenAI",
       "Your Anthropic",

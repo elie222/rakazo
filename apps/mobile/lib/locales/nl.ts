@@ -1,4 +1,10 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "{summary} Your backup models also failed.": "{summary} Je reservemodellen zijn ook mislukt.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Er was geen reservemodel bruikbaar voor dit verzoek.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek.",
+
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API-sleutel",
   "Show password": "Wachtwoord tonen",

@@ -14,7 +14,7 @@ const helpers = source.slice(
   source.indexOf("type MessageActionProps"),
 );
 const cards = source.slice(
-  source.indexOf("const MessageBubble = memo(function MessageBubble({"),
+  source.indexOf("const MessageBubble = memo(function MessageBubble("),
   source.indexOf("function AgentEventLabel("),
 );
 const scope = {
