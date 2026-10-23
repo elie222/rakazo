@@ -4719,8 +4719,8 @@ msgstr "Şifreli saklanıyor"
 msgid "Stream replies"
 msgstr "Yanıtları akışla göster"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "alt ajan"
 

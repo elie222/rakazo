@@ -3587,6 +3587,7 @@ const MessageBubble = memo(function MessageBubble({
   const tokens = mobileTokens();
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  const [subagentOpen, setSubagentOpen] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -3752,6 +3753,9 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <Pressable
         {...actionProps}
+        onPress={() => setSubagentOpen((open) => !open)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: subagentOpen }}
         style={{
           width: "90%",
           borderRadius: 18,
@@ -3786,11 +3790,14 @@ const MessageBubble = memo(function MessageBubble({
           </Text>
         </View>
         {special.task ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+          <Text
+            numberOfLines={subagentOpen ? undefined : 1}
+            style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
+          >
             {special.task}
           </Text>
         ) : null}
-        {special.result || special.progress ? (
+        {subagentOpen && (special.result || special.progress) ? (
           <View style={{ marginTop: 8 }}>
             <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
               {special.result || special.progress || ""}

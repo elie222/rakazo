@@ -20,8 +20,29 @@ vi.mock("react-native", async () => {
       : ((style as Record<string, unknown>) ?? {});
   const element =
     (tag: string) =>
-    ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-      createElement(tag, { "data-style": JSON.stringify(flatten(style)) }, children);
+    ({
+      children,
+      style,
+      onPress,
+      numberOfLines,
+      accessibilityState,
+    }: {
+      children?: ReactNode;
+      style?: unknown;
+      onPress?: () => void;
+      numberOfLines?: number;
+      accessibilityState?: { expanded?: boolean };
+    }) =>
+      createElement(
+        tag,
+        {
+          "data-style": JSON.stringify(flatten(style)),
+          "data-number-of-lines": numberOfLines,
+          "aria-expanded": accessibilityState?.expanded,
+          onClick: onPress,
+        },
+        children,
+      );
   return {
     Alert: { alert: vi.fn() },
     Pressable: element("button"),
@@ -68,6 +89,8 @@ const scope = {
   Text,
   Pressable,
   AskActions: () => <button type="button">Answer</button>,
+  safeDisplayName: (name: string) => name,
+  ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
 };
 const MessageBubble = new Function(
   ...Object.keys(scope),
@@ -202,5 +225,40 @@ describe("thread cards", () => {
     expect(card?.textContent).toContain("Example notes");
     expect(styleOf(card)).toMatchObject({ maxWidth: 576 });
     expect(styleOf(card).width).toBeUndefined();
+  });
+
+  it("folds a helper card to one line of the task until it is pressed", () => {
+    const message = {
+      id: "message-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "subagent",
+          agentId: "agent-1",
+          name: "writer",
+          task: longQuestion,
+          status: "completed",
+          result: "A long report",
+        },
+      ],
+    } as MobileMessage;
+    act(() =>
+      root.render(<MessageBubble botId="bot-1" bots={[]} message={message} actionProps={{}} />),
+    );
+    const card = () => container.querySelector("button[aria-expanded]");
+    const task = () =>
+      [...container.querySelectorAll("span")].find((span) => span.textContent === longQuestion);
+    expect(card()?.getAttribute("aria-expanded")).toBe("false");
+    expect(task()?.getAttribute("data-number-of-lines")).toBe("1");
+    expect(container.textContent).not.toContain("A long report");
+
+    act(() => (card() as HTMLElement).click());
+    expect(card()?.getAttribute("aria-expanded")).toBe("true");
+    expect(task()?.hasAttribute("data-number-of-lines")).toBe(false);
+    expect(container.textContent).toContain("A long report");
+
+    act(() => (card() as HTMLElement).click());
+    expect(card()?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("A long report");
   });
 });

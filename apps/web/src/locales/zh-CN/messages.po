@@ -4719,8 +4719,8 @@ msgstr "已加密存储"
 msgid "Stream replies"
 msgstr "流式回复"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "子 Agent"
 

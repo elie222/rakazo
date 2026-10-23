@@ -4719,8 +4719,8 @@ msgstr "נשמר מוצפן"
 msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "סוכן משנה"
 

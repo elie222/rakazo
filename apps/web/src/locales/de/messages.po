@@ -4719,8 +4719,8 @@ msgstr "Verschlüsselt gespeichert"
 msgid "Stream replies"
 msgstr "Antworten streamen"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "Subagent"
 

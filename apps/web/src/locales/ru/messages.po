@@ -4719,8 +4719,8 @@ msgstr "Хранится в зашифрованном виде"
 msgid "Stream replies"
 msgstr "Потоковые ответы"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "субагент"
 

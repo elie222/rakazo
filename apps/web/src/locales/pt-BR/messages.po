@@ -4719,8 +4719,8 @@ msgstr "Armazenado criptografado"
 msgid "Stream replies"
 msgstr "Transmitir respostas"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "subagente"
 

@@ -4719,8 +4719,8 @@ msgstr "एन्क्रिप्टेड रूप में संग्र
 msgid "Stream replies"
 msgstr "जवाब स्ट्रीम करें"
 
+#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "सबएजेंट"
 
