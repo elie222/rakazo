@@ -2,7 +2,11 @@
 export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
 
 export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
-  return baseUrl?.replace(/\/+$/, "") === OLLAMA_CLOUD_BASE_URL;
+  try {
+    return normalizeOpenAiCompatibleBaseUrl(baseUrl ?? "") === OLLAMA_CLOUD_BASE_URL;
+  } catch {
+    return false;
+  }
 }
 
 export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {

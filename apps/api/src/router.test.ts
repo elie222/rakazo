@@ -3218,6 +3218,9 @@ describe("OpenAI-compatible model probes", () => {
         secret: { findMany: findSecret },
       },
       secrets: { load },
+      modelConnectionFetch: vi.fn(() => {
+        throw new Error("Unexpected injected transport");
+      }),
       env: {
         sandboxProvider: "fake",
         mcpAllowPrivateEndpoint: options.mcpAllowPrivateEndpoint ?? true,
@@ -3230,6 +3233,17 @@ describe("OpenAI-compatible model probes", () => {
   }
 
   afterEach(() => vi.restoreAllMocks());
+
+  it("does not inject the connection transport into non-Ollama probes", async () => {
+    const { client } = fixture();
+    await client.models.probeOpenAiCompatible({ baseUrl });
+    expect(adapters.probeOpenAiCompatibleModels).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      undefined,
+      expect.anything(),
+    );
+  });
 
   it.each([undefined, "", "   "])("uses the saved key for a blank key %j", async (apiKey) => {
     const { client, fetch, findSecret, load } = fixture();

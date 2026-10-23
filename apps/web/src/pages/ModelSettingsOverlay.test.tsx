@@ -914,6 +914,10 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     expect((view.container.querySelector("#model-base-url") as HTMLInputElement).value).toBe(
       "https://ollama.com/v1",
     );
+    expect(buttons(view.container, "Ollama Cloud")[0]?.getAttribute("aria-current")).toBe("true");
+    expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
+      false,
+    );
     const key = view.container.querySelector(
       'input[placeholder="Ollama API key"]',
     ) as HTMLInputElement;
@@ -931,6 +935,57 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
         apiKey: "fake-fixture-key",
         modelId: "fixture-model",
       }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows a saved Ollama connection only once", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "https://ollama.com/",
+      hasKey: true,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    expect(buttons(view.container, "Ollama Cloud")).toHaveLength(1);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the Ollama preset in All providers beside a saved local connection", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      hasKey: false,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    const preset = buttons(view.container, "Ollama Cloud");
+    expect(preset).toHaveLength(1);
+    const heading = [...view.container.querySelectorAll("p")].find(
+      (element) => element.textContent === "All providers",
+    );
+    expect(heading).toBeDefined();
+    expect(
+      heading!.compareDocumentPosition(preset[0]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await act(async () => preset[0]!.click());
+    expect(preset[0]?.getAttribute("aria-current")).toBe("true");
+    expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
+      false,
     );
   } finally {
     await view.unmount();

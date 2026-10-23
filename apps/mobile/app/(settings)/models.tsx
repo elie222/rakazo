@@ -1281,7 +1281,7 @@ export default function Models() {
           choices: [true, false].flatMap((connected) =>
             groups
               .filter((group) => credentialByProvider.has(group.id) === connected)
-              .flatMap((group) => {
+              .map((group) => {
                 const savedModelId = credentialByProvider.get(group.id)?.modelId;
                 const row = {
                   key: group.id,
@@ -1295,17 +1295,24 @@ export default function Models() {
                       savedModelId)
                     : undefined,
                 };
-                return group.id === OPENAI_COMPATIBLE_PROVIDER_ID
+                return row;
+              })
+              .concat(
+                !connected &&
+                  groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
+                  !isOllamaCloudBaseUrl(
+                    credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl,
+                  )
                   ? [
-                      row,
                       {
                         key: "ollama-preset",
                         label: t("Ollama Cloud"),
                         providerLabel: t("All providers"),
+                        detail: undefined,
                       },
                     ]
-                  : [row];
-              }),
+                  : [],
+              ),
           ),
           onSelect: (choice) =>
             choice.key === "ollama-preset"

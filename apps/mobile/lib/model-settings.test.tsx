@@ -9,7 +9,10 @@ import Models from "../app/(settings)/models";
 import { modelPickerRequest, selectPickerModel } from "./model-picker-selection";
 
 const savedEndpoint = "https://models.example.test/v1";
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+const { push, saved } = vi.hoisted(() => ({
+  push: vi.fn(),
+  saved: { baseUrl: "https://models.example.test/v1" },
+}));
 
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({}),
@@ -30,7 +33,7 @@ vi.mock("./api", () => ({
           id: "credential-fixture",
           provider: "openai-compatible",
           modelId: "model-fixture",
-          baseUrl: "https://models.example.test/v1",
+          baseUrl: saved.baseUrl,
           headerNames: ["x-session"],
           label: "Fixture",
         },
@@ -197,10 +200,34 @@ it("selects the Ollama preset through the compatible form with a visible key fie
   const request = modelPickerRequest(route.params.requestId)!;
   const preset = request.choices.find((choice) => choice.label === "Ollama Cloud")!;
   expect(preset).toBeDefined();
+  expect(preset.providerLabel).toBe("All providers");
+  expect(request.choices.filter((choice) => choice.label === "Ollama Cloud")).toHaveLength(1);
   await act(async () => {
     selectPickerModel(route.params.requestId, preset.key);
   });
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
   expect(field("API key")?.placeholder).toBe("Ollama API key");
   expect(field("API key")?.type).toBe("password");
+});
+
+it("shows a saved Ollama connection only once in the connected section", async () => {
+  saved.baseUrl = "https://ollama.com/";
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(Models));
+  });
+  const button = [...container.querySelectorAll("button")].find((entry) =>
+    entry.textContent?.startsWith("Provider"),
+  )!;
+  await act(async () => button.click());
+  const route = push.mock.calls.at(-1)?.[0] as { params: { requestId: string } };
+  const choices = modelPickerRequest(route.params.requestId)!.choices.filter(
+    (choice) => choice.label === "Ollama Cloud",
+  );
+  expect(choices).toHaveLength(1);
+  expect(choices[0]?.providerLabel).toBe("Connected");
+  saved.baseUrl = savedEndpoint;
 });

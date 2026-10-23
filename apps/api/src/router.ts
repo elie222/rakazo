@@ -169,6 +169,7 @@ import {
   canonicalPiProviderId,
   foldComputerCommands,
   isDeletableMemoryDocument,
+  isOllamaCloudBaseUrl,
   mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
@@ -1633,7 +1634,7 @@ export function createRouter(deps: RouterDeps) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              deps.modelConnectionFetch,
+              isOllamaCloudBaseUrl(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
