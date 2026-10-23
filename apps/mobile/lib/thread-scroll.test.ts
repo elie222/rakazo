@@ -2,7 +2,11 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import type { ThreadScrollState } from "@rakazo/core";
 import { expandPeerReplies, foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { latestArrivalMessageId, ThreadScrollBehavior } from "./thread-scroll.js";
+import {
+  latestArrivalMessageId,
+  latestThreadRowKey,
+  ThreadScrollBehavior,
+} from "./thread-scroll.js";
 
 describe("mobile thread initial scroll", () => {
   it("waits for layout when messages arrive first, then opens at the latest message", () => {
@@ -29,6 +33,17 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.onContentChanged(false, "m1")).toBe("jump");
     expect(behavior.onContentChanged(false, "m1")).toBe(null);
     expect(behavior.onContentChanged(false, "m2")).toBe("smooth");
+  });
+
+  it("follows a sent message while it waits in the outbox and again when it lands", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestThreadRowKey("m1", []));
+
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m1", ["send-1"]))).toBe("smooth");
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m1", ["send-1"]))).toBe(null);
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m2", []))).toBe("smooth");
   });
 
   it("keeps the latest message visible when the viewport resizes", () => {
