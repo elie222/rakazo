@@ -222,7 +222,10 @@ describe("requestUserCall security", () => {
 
         update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })),
       },
-      run: { findUnique: vi.fn(async () => ({ status: "running" })) },
+      run: {
+        findUnique: vi.fn(async () => ({ status: "running" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
       userVoiceCredential: { findFirst: vi.fn(async () => ({ id: "voice-1" })) },
       message: {
         findFirst: vi.fn(async () => saved),
@@ -263,6 +266,12 @@ describe("requestUserCall security", () => {
     };
     return { deps, tx, saved: () => saved };
   }
+
+  it("forwards the first-response winner for a call request card", async () => {
+    const { deps } = fixture();
+    await requestUserCall(deps, run, input);
+    expect(deps.events.notify).toHaveBeenCalledWith(run.threadId, 0, run.id);
+  });
 
   it("passes configured durations to the persisted request and recipient cooldown", async () => {
     const { deps, tx, saved } = fixture();

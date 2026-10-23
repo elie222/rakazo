@@ -335,6 +335,24 @@ describe("reserved Graphile workloads", () => {
     expect(first.runner.stop).toHaveBeenCalled();
   });
 
+  it("does not start another workload after shutdown interrupts startup", async () => {
+    const first = mockRunner();
+    let release!: (runner: Runner) => void;
+    run.mockReturnValueOnce(
+      new Promise<Runner>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const host = createReservedGraphileJobWorkerHost({} as Pool);
+    const starting = host.start(handlers());
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+    await host.stop();
+    release(first.runner);
+    await starting;
+    expect(run).toHaveBeenCalledOnce();
+    expect(first.runner.stop).toHaveBeenCalledOnce();
+  });
+
   it("dispatches legacy chat jobs after stopping and restarting", async () => {
     for (let i = 0; i < 6; i++) run.mockResolvedValueOnce(mockRunner().runner);
     const host = createReservedGraphileJobWorkerHost({} as Pool);

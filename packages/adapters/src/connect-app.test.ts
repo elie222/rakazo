@@ -11,7 +11,7 @@ vi.mock("@rakazo/db", async (original) => ({
     stored.push(input);
     return { id: "card" };
   }),
-  appendEventInTransaction: vi.fn(async () => ({ seq: 1 })),
+  appendEventInTransaction: vi.fn(async () => ({ seq: 1, firstResponse: true })),
 }));
 const entry: ConnectionCatalogItem = {
   connectorId: "fake",
@@ -88,7 +88,7 @@ describe("connect_app execution", () => {
       },
     ]);
     expect(f.catalog).toHaveBeenCalledWith(f.context, "GMAIL");
-    expect(f.deps.events.notify).toHaveBeenCalledWith("chat", 1);
+    expect(f.deps.events.notify).toHaveBeenCalledWith("chat", 1, "run");
   });
   it("does not accept model card objects or unknown apps", async () => {
     const f = fixture();

@@ -276,7 +276,15 @@ test("bot management switch persists with its subtitle", async ({ page }, testIn
   await expect(page.getByRole("button", { name: "About Manage the bots it creates" })).toHaveCount(
     0,
   );
+  const crossSpaceSwitch = page.getByRole("switch", {
+    name: "Allow cross-space bot communication",
+  });
+  await expect(crossSpaceSwitch).not.toBeChecked();
+  await crossSpaceSwitch.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "32-bot-settings-advanced");
+  await crossSpaceSwitch.click();
+  await expect(crossSpaceSwitch).toBeChecked();
+  await expect(crossSpaceSwitch).toBeEnabled();
   await fleetSwitch.click();
   await expect(fleetSwitch).not.toBeChecked();
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
@@ -285,4 +293,10 @@ test("bot management switch persists with its subtitle", async ({ page }, testIn
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   const reloadedSwitch = await openAdvanced();
   await expect(reloadedSwitch).not.toBeChecked();
+  const reloadedCrossSpace = page.getByRole("switch", {
+    name: "Allow cross-space bot communication",
+  });
+  await expect(reloadedCrossSpace).toBeChecked();
+  await reloadedCrossSpace.click();
+  await expect(reloadedCrossSpace).not.toBeChecked();
 });

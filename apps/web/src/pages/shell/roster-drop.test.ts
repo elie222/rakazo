@@ -19,7 +19,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "bot", chat: bot("b", "s1") },
-        sameParent: true,
+        sameList: true,
       }),
     ).toEqual({ action: "reorder", targetBotId: "b" });
   });
@@ -29,7 +29,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "bot", chat: bot("b", "s1") },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
   });
@@ -39,14 +39,14 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "bot", chat: bot("b", "s2") },
-        sameParent: false,
+        sameList: false,
       }),
     ).toEqual({ action: "move", sectionId: "s2" });
     expect(
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "bot", chat: bot("b", null) },
-        sameParent: false,
+        sameList: false,
       }),
     ).toEqual({ action: "move", sectionId: null });
   });
@@ -56,14 +56,14 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", null),
         target: { kind: "section", sectionId: "s2" },
-        sameParent: false,
+        sameList: false,
       }),
     ).toEqual({ action: "move", sectionId: "s2" });
     expect(
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "section", sectionId: null },
-        sameParent: false,
+        sameList: false,
       }),
     ).toEqual({ action: "move", sectionId: null });
   });
@@ -73,7 +73,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "section", sectionId: "s1" },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
   });
@@ -83,14 +83,14 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", null, true),
         target: { kind: "section", sectionId: "s2" },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
     expect(
       resolveRosterDrop({
         dragged: bot("a", null, true),
         target: { kind: "bot", chat: bot("b", "s2") },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
   });
@@ -100,7 +100,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "group", chat: group("g1", null, ["b", "c"]) },
-        sameParent: false,
+        sameList: false,
       }),
     ).toEqual({ action: "join", groupId: "g1", botIds: ["b", "c", "a"] });
   });
@@ -110,7 +110,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", null),
         target: { kind: "group", chat: group("g1", null, ["a", "b"]) },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
     expect(
@@ -124,7 +124,7 @@ describe("resolveRosterDrop", () => {
             Array.from({ length: GROUP_MEMBER_MAX }, (_, i) => `m${i}`),
           ),
         },
-        sameParent: false,
+        sameList: false,
       }),
     ).toBeNull();
   });
@@ -134,7 +134,7 @@ describe("resolveRosterDrop", () => {
       resolveRosterDrop({
         dragged: bot("a", "s1"),
         target: { kind: "bot", chat: bot("a", "s1") },
-        sameParent: true,
+        sameList: true,
       }),
     ).toBeNull();
   });

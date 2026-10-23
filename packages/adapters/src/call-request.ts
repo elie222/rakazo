@@ -206,11 +206,13 @@ export async function requestUserCall(
           callId: request.callId,
         },
       });
-      return { eventSeq: event.seq };
+      return { eventSeq: event.seq, firstResponseRunId: event.firstResponse ? run.id : undefined };
     }),
   );
   if ("error" in result) return result;
-  await deps.events.notify(run.threadId, result.eventSeq).catch(() => undefined);
+  await deps.events
+    .notify(run.threadId, result.eventSeq, result.firstResponseRunId)
+    .catch(() => undefined);
   try {
     await deps.jobs.enqueue(callExpireJob(run.threadId, request.callId, request.expiresAt));
   } catch {

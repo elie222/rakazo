@@ -88,7 +88,12 @@ export async function connectApp(
     });
     return event;
   });
-  if (committed) await deps.events.notify(target.threadId, committed.seq);
+  if (committed)
+    await deps.events.notify(
+      target.threadId,
+      committed.seq,
+      committed.firstResponse ? target.id : undefined,
+    );
   return {
     status: "pending",
     message: committed
