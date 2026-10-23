@@ -172,6 +172,15 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     };
   }
 
+  it("forwards first-response timing when its cloud-agent card is the first output", async () => {
+    const h = await setup();
+    await h.launch();
+    expect(h.deps.events.notify).toHaveBeenCalledWith(h.thread.id, expect.any(Number), h.run.id);
+    expect(
+      (await asSystem(prisma).run.findUniqueOrThrow({ where: { id: h.run.id } })).firstResponseAt,
+    ).not.toBeNull();
+  });
+
   it("persists before remote I/O, launches once, and wakes exactly once per generation", async () => {
     const h = await setup();
     const id = await h.launch();

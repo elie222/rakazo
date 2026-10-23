@@ -330,12 +330,7 @@ function SpaceShell() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
-  const {
-    collapsedSidebarSections,
-    collapsedRosterParents,
-    toggleSidebarSection,
-    toggleRosterParent,
-  } = useSidebarExpansion(userId);
+  const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   useEffect(() => {
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
   }, [userId]);
@@ -1765,13 +1760,13 @@ function SpaceShell() {
   // Drags only act on bots of the active space; other spaces are read-only here.
   const draggedBot = draggedBotId ? bots.find((bot) => bot.id === draggedBotId) : undefined;
   const rosterDropAction = useCallback(
-    (target: RosterDropTarget, sameParent: boolean) =>
-      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameParent }) : null,
+    (target: RosterDropTarget, sameList: boolean) =>
+      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameList }) : null,
     [draggedBot],
   );
   const applyRosterDrop = useCallback(
-    (target: RosterDropTarget, sameParent: boolean, groupBotIds: string[]) => {
-      const action = rosterDropAction(target, sameParent);
+    (target: RosterDropTarget, sameList: boolean, groupBotIds: string[]) => {
+      const action = rosterDropAction(target, sameList);
       setDraggedBotId(null);
       setRosterDropKey(null);
       if (!action || !draggedBot) return;
@@ -3298,7 +3293,6 @@ function SpaceShell() {
                 mini={miniSidebar}
                 sidebarGroups={sidebarGroups}
                 collapsedSidebarSections={collapsedSidebarSections}
-                collapsedRosterParents={collapsedRosterParents}
                 bootstrapMe={bootstrapMe}
                 botSections={botSections}
                 spaces={spaces}
@@ -3320,7 +3314,6 @@ function SpaceShell() {
                 displayedRunError={displayedRunError}
                 draggedBotId={draggedBotId}
                 setDraggedBotId={setDraggedBotId}
-                toggleRosterParent={toggleRosterParent}
                 botMenu={botMenu}
                 setBotMenu={setBotMenu}
                 reorderRosterBot={reorderRosterBot}

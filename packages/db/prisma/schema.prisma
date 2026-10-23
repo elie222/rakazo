@@ -505,6 +505,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
+  crossSpaceCommunication Boolean @default(false)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -727,6 +728,10 @@ model Run {
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   // The failed routine run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
+  // Durable retry schedule; null means runnable immediately when queued.
+  wakeAt               DateTime?
+  // Server-side first visible output, preserved across attempts and resumes.
+  firstResponseAt      DateTime?
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
@@ -740,6 +745,7 @@ model Run {
   externalMessage      ExternalMessage?
 
   @@unique([spaceId, clientNonce])
+  @@index([status, wakeAt])
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
   @@index([botOutcomeReturnedAt, status])
@@ -1404,6 +1410,7 @@ model MessagingOutbound {
 }
 
 model AgentConnection {
+  requestVersion Int      @default(1)
   id             String   @id @default(cuid())
   requesterBotId String
   targetBotId    String

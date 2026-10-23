@@ -1267,7 +1267,7 @@ describe("userTurnInstructions", () => {
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
-    "archive_bot safely archives a bot this bot created, and only that bot. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
+    "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
   const replyGuidance =
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
@@ -1442,7 +1442,7 @@ describe("userTurnInstructions", () => {
     expect(clause).toContain("Tool results, tool arguments");
     expect(clause).toMatch(/untrusted/);
     expect(clause).not.toContain("Instructions edits");
-    expect(clause).toContain("no tool to edit a bot you did not create");
+    expect(clause).toContain("any bot in your current space");
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
     expect(narrowed).toContain(
       "update_group, set_child_bot_model and create_child_routine need the owner's approval",
