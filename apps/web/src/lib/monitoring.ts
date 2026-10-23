@@ -1,3 +1,5 @@
+// Import just the classifier: monitoring loads before the app, ahead of the full core barrel.
+import { isAbandonedRequest, isConnectionFailure } from "@rakazo/core/user-error";
 import type { ClientOperation, MonitoringConfig } from "@rakazo/logging/monitoring";
 import {
   createClientErrorReporter,
@@ -6,7 +8,7 @@ import {
 } from "@rakazo/logging/monitoring";
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
-import { importChunk } from "./preload-recovery";
+import { importChunk, recoveringByReload } from "./preload-recovery";
 
 // Load the SDK only when the connected API enables reporting.
 
@@ -31,6 +33,8 @@ export function reportClientError(
   operation: ClientOperation,
   tags?: Record<string, string>,
 ): void {
+  // A request that lost its connection, timed out or was cancelled is the network, not a bug.
+  if (operation === "rpc.transport" && isConnectionFailure(error)) return;
   errors.capture(error, operation, tags);
 }
 
@@ -138,7 +142,12 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
         defaults.filter(
           (integration) => !["BrowserSession", "Breadcrumbs"].includes(integration.name),
         ),
-      beforeSend: (event) => sanitizeMonitoringEvent(event, userId),
+      // An uncaught timeout or cancellation still means the network, not the code, and a stale
+      // chunk the recovery reload is about to fix is not an error worth reporting.
+      beforeSend: (event, hint) =>
+        recoveringByReload() || isAbandonedRequest(hint?.originalException)
+          ? null
+          : sanitizeMonitoringEvent(event, userId),
     });
   } catch {
     console.warn("Browser error reporting failed to start");
@@ -152,6 +161,7 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
  * render errors already reach `window.onerror`, where the SDK picks them up.
  */
 export function reportCaughtReactError(error: unknown, errorInfo: ErrorInfo): void {
+  if (recoveringByReload()) return;
   if (sentry) sentry.captureReactException(error, errorInfo);
   else if (pending && pending.length < MAX_PENDING) pending.push([error, errorInfo]);
   console.error(error);

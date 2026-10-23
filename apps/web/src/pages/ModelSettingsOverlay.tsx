@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   Disclosure,
+  Spinner,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { ModelBackupsSettings } from "./ModelBackupsSettings";
@@ -197,7 +198,7 @@ export function ModelSettingsOverlay({
             </>
           ) : loading ? (
             <p className="text-[13px] leading-[1.5] text-muted-foreground">
-              <Trans>Loading model catalog…</Trans>
+              <Spinner aria-label={t`Loading model catalog…`} />
             </p>
           ) : (
             <p className="text-[13px] leading-[1.5] text-muted-foreground">

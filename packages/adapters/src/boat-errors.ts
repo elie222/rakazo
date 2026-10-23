@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { ResponseError } from "@boatdev/sdk";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -33,7 +33,8 @@ const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
 /**
  * Keep HTTP failures actionable without changing the SDK's status-based recovery contract.
  * A brief Boat outage is retried once: any call whose request never arrived, and an
- * `idempotent` call that Boat failed on its side.
+ * `idempotent` call that Boat failed on its side. A sandbox that took the request and did not
+ * answer in time would only time out again, so that is never resent.
  */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
@@ -47,6 +48,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
       if (!(error instanceof ResponseError)) throw error;
       const wrapped = await boatResponseError(error.response, apiKey);
       if (error.response.status === 429) throw new SandboxRateLimitError({ cause: wrapped });
+      // Boat's proxy reached the sandbox but gave up waiting for its answer.
+      if (wrapped.code === "sandbox_direct_failed" && /\btimeout\b/i.test(wrapped.message)) {
+        throw new SandboxUnresponsiveError(wrapped.message, { cause: wrapped });
+      }
       throw wrapped;
     }
   };

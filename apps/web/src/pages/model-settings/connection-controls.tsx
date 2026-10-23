@@ -1,11 +1,13 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
-import { Button, Disclosure, Input } from "@rakazo/ui-web";
+import { Button, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../../components/ModelConnectionPreflightNotice";
+import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -357,6 +359,7 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
+  baseUrl,
   busy,
   connectKey,
   credential,
@@ -366,6 +369,7 @@ export function CompatibleKeyControls({
   updateApiKey,
 }: Pick<
   ModelSettingsState,
+  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
@@ -378,17 +382,24 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <Disclosure className="text-[13.5px] text-muted-foreground" summary={<Trans>API key</Trans>}>
+      <CompatibleKeyField baseUrl={baseUrl} className="block text-[13.5px] text-muted-foreground">
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          placeholder={credential?.hasKey ? t`Paste a replacement key` : t`Optional`}
+          required={isOllamaCloudBaseUrl(baseUrl)}
+          placeholder={
+            isOllamaCloudBaseUrl(baseUrl)
+              ? t`Ollama API key`
+              : credential?.hasKey
+                ? t`Paste a replacement key`
+                : t`Optional`
+          }
           type="password"
           autoComplete="new-password"
           className="mt-2 h-10 text-foreground"
         />
-      </Disclosure>
+      </CompatibleKeyField>
       <Button
         type="button"
         variant="secondary"

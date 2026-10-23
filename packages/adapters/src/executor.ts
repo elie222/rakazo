@@ -33,6 +33,7 @@ import {
   DEFAULT_CONTEXT_STRATEGY,
   historyCompactJob,
   MEMORY_REVISION_CONFLICT_ERROR,
+  ModelAccountError,
   routineJobKey,
   routineRetryJob,
   routineWakeupJob,
@@ -88,8 +89,8 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   newSiteOutcome,
-  nextCronDateAcross,
   nextFence,
+  nextRoutineRunDateAcross,
   outboundSiteGate,
   planActionGate,
   promptInvokesSkill,
@@ -141,6 +142,7 @@ import {
   searchHistory,
   settleReleasedTakeoverCards,
   validateInstructionProposal,
+  withTransactionRetry,
   writeBotInstructions,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -516,8 +518,15 @@ const TURN_ATTACHMENT_UNAVAILABLE =
 const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
-/** Avoid an expensive remote workspace export when a turn never touched the computer. */
-export function createRunWorkspaceCheckpoint(checkpoint: () => Promise<unknown>) {
+/**
+ * Avoid an expensive remote workspace export when a turn never touched the computer. A failed
+ * export does not fail the run: its work is done, the computer keeps the files, and the idle
+ * sleep checkpoints them again before stopping it. Only cancelling the run stops it.
+ */
+export function createRunWorkspaceCheckpoint(
+  checkpoint: () => Promise<unknown>,
+  signal?: AbortSignal,
+) {
   let dirty = false;
   return {
     markDirty() {
@@ -534,7 +543,9 @@ export function createRunWorkspaceCheckpoint(checkpoint: () => Promise<unknown>)
         return true;
       } catch (error) {
         dirty = true;
-        throw error;
+        if (signal?.aborted) throw error;
+        getLogger().warn("computer.checkpoint_deferred", { error });
+        return false;
       }
     },
   };
@@ -3116,6 +3127,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       callObserver: resolved.callObserver,
       ...cloudflareRunFields(resolved),
       baseUrl: resolved.baseUrl,
+      headers: resolved.headers,
       allowPrivateEndpoint: resolved.allowPrivateEndpoint,
       cacheCapabilities: resolved.cacheCapabilities,
       contextWindow: resolved.contextWindow,
@@ -3207,6 +3219,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         callObserver: resolved.callObserver,
         ...cloudflareRunFields(resolved),
         baseUrl: resolved.baseUrl,
+        headers: resolved.headers,
         allowPrivateEndpoint: resolved.allowPrivateEndpoint,
         cacheCapabilities: resolved.cacheCapabilities,
         contextWindow: resolved.contextWindow,
@@ -3285,9 +3298,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ? watchTick.nextRunAt
         : isOneShotRoutineCrons(routine.crons)
           ? null
-          : nextCronDateAcross(
+          : nextRoutineRunDateAcross(
               routine.crons,
-              new Date(Math.max(Date.now(), scheduledAt.getTime())),
+              scheduledAt,
+              new Date(Date.now()),
               routine.timezone,
             );
       const previousLastRunAt = routine.lastRunAt;
@@ -4140,7 +4154,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
           if (!runComputer.ready) return;
           await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
-        });
+        }, context.signal);
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
@@ -5200,6 +5214,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       accountId: judgeKey.accountId,
                       gatewayId: judgeKey.gatewayId,
                       baseUrl: judgeKey.baseUrl,
+                      headers: judgeKey.headers,
                       allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
                       cacheCapabilities: judgeKey.cacheCapabilities,
                       contextWindow: judgeKey.contextWindow,
@@ -7702,6 +7717,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             )
             .map((candidate) => JSON.stringify([candidate.provider, candidate.modelId])),
         );
+        // Provider kind and model id only: custom endpoints are identified by kind, never host.
+        const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
 
         try {
           if (checkpointLoadError) throw checkpointLoadError;
@@ -7766,6 +7783,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                headers: resolved.headers,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,
                 contextWindow: resolved.contextWindow,
@@ -7817,6 +7835,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (updated.count !== 1) {
                   throw new Error("Run lease was lost before the backup model could be used");
                 }
+                activeModel["model.provider"] = provider;
+                activeModel["model.id"] = modelId;
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               turnCheckpoint,
@@ -8501,13 +8521,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
-          getLogger().error(
-            "run.failed",
-            sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
-            {
+          if (error instanceof TransientModelError || error instanceof ModelAccountError) {
+            // Provider outages that outlasted retries, and keys or limits the user fixes, are
+            // not server faults; the run error already tells the user what to do.
+            getLogger().warn("run.failed", {
               "run.outcome": "failed",
-            },
-          );
+              "run.failure": error.name,
+              reason: message,
+              ...activeModel,
+            });
+          } else {
+            getLogger().error(
+              "run.failed",
+              sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
+              {
+                "run.outcome": "failed",
+                ...activeModel,
+              },
+            );
+          }
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -9769,33 +9801,37 @@ async function publishMessage(
     blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
     if (blocks.length === 0 && !stoppedHelper) return null;
   }
-  const committed = await deps.prisma.$transaction(async (tx) => {
-    // Only synthetic terminal helper writes may bypass the cancellation guard.
-    // Commit their event and durable message together so cleanup retries are safe.
-    let helperEvent: { seq: number } | undefined;
-    if (stoppedHelper) {
-      const { kind: _kind, ...payload } = stoppedHelper;
-      helperEvent = await appendEventInTransaction(tx, {
-        spaceId: run.spaceId,
-        threadId: run.threadId,
-        botId: run.botId,
-        runId: run.id,
-        type: "thread.subagent",
-        payload,
-        allowCancelledRun: true,
-      });
-    }
-    if (blocks.length === 0 && helperEvent) return { message: null, eventSeq: helperEvent.seq };
-    return persistMessageInTransaction(
-      tx,
-      run,
-      role,
-      blocks,
-      markUnread,
-      clientNonce,
-      Boolean(stoppedHelper),
-    );
-  });
+  // Concurrent runs in one thread contend for its sequence counters; Postgres aborts a
+  // deadlock victim, which commits nothing, so retry instead of failing the run.
+  const committed = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      // Only synthetic terminal helper writes may bypass the cancellation guard.
+      // Commit their event and durable message together so cleanup retries are safe.
+      let helperEvent: { seq: number } | undefined;
+      if (stoppedHelper) {
+        const { kind: _kind, ...payload } = stoppedHelper;
+        helperEvent = await appendEventInTransaction(tx, {
+          spaceId: run.spaceId,
+          threadId: run.threadId,
+          botId: run.botId,
+          runId: run.id,
+          type: "thread.subagent",
+          payload,
+          allowCancelledRun: true,
+        });
+      }
+      if (blocks.length === 0 && helperEvent) return { message: null, eventSeq: helperEvent.seq };
+      return persistMessageInTransaction(
+        tx,
+        run,
+        role,
+        blocks,
+        markUnread,
+        clientNonce,
+        Boolean(stoppedHelper),
+      );
+    }),
+  );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("thread message realtime notification", error);
   });
@@ -10132,6 +10168,7 @@ async function resolveModelKeyMaterial(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
@@ -10249,6 +10286,7 @@ async function resolveModelKeyMaterial(
         accountId,
         gatewayId,
         baseUrl,
+        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,

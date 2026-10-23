@@ -15,6 +15,7 @@ import { escapePromptData, redactSecrets } from "@rakazo/core";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
+import { secretValuesToRedact } from "./pi-oauth.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TASK_CHARS = 400;
@@ -309,6 +310,7 @@ export async function runAutoReviewJudge(
           accountId: input.accountId,
           gatewayId: input.gatewayId,
           baseUrl: input.baseUrl,
+          headers: input.headers,
           allowPrivateEndpoint: input.allowPrivateEndpoint,
           cacheCapabilities: input.cacheCapabilities,
           contextWindow: input.contextWindow,
@@ -345,7 +347,12 @@ export async function runAutoReviewJudge(
       (input.signal?.aborted === true &&
         (input.signal.reason instanceof DOMException || input.signal.reason instanceof Error) &&
         input.signal.reason.name === "TimeoutError");
-    const secrets = input.apiKey ? [input.apiKey] : [];
+    const secrets = secretValuesToRedact({
+      kind: "openai_compatible",
+      baseUrl: input.baseUrl ?? "",
+      apiKey: input.apiKey,
+      headers: input.headers,
+    });
     const detail = timedOut
       ? timeoutSignal.aborted
         ? `timed out after ${timeoutMs}ms`
@@ -385,6 +392,7 @@ export type LlmAutoReviewOptions = {
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: CacheCapabilities;
   contextWindow?: number;

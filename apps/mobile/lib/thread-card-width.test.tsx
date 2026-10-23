@@ -43,6 +43,7 @@ vi.mock("../components/native-action-button", () => ({
 }));
 
 import { McpApprovalCard } from "../components/McpApprovalCard";
+import { withUserBubble } from "./user-bubble";
 
 // Render the screen's actual message bubble without importing its native dependencies.
 const testFileUrl = import.meta.url;
@@ -59,6 +60,7 @@ const scope = {
   useState,
   useResolvedAppearance: () => "light",
   mobileTokens: () => ({}),
+  withUserBubble,
   useI18n: () => ({ t: (text: string) => text }),
   isApprovalAskBlock: (block: { actions?: { id: string }[] }) =>
     Boolean(block.actions?.some((action) => action.id === "allow")),

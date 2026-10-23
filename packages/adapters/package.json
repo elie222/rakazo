@@ -12,6 +12,7 @@
     "test": "vitest run --root ../.. packages/adapters/src"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1127.0",
     "@boatdev/sdk": "1.10.0",
     "@chat-adapter/slack": "4.43.0",
     "@chat-adapter/state-memory": "4.43.0",

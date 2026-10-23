@@ -236,6 +236,17 @@ if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' .env; then
   echo "Added POSTGRES_APP_PASSWORD to .env."
 fi
 compose 1m config --quiet
+# Postgres 18 refuses a Postgres 16 volume until upgrade-postgres.sh has copied the data across.
+# Stop before anything is replaced rather than take the database down.
+# shellcheck disable=SC2016 # expanded inside the container
+postgres_state="$(compose "${UP_TIMEOUT}" run --rm --no-deps -T --entrypoint sh postgres -c \
+  'if [ ! -s "$PGDATA/PG_VERSION" ] && [ -s /var/lib/postgresql/16/docker/PG_VERSION ]; then echo upgrade; fi')"
+if [[ "${postgres_state}" == upgrade ]]; then
+  trap - ERR
+  git reset --hard "${previous_revision}"
+  echo "Postgres needs its one-time upgrade to 18 before this release deploys; see docs/self-host.md#upgrading-to-postgres-18." >&2
+  exit 1
+fi
 app_image="$(compose_app_image)"
 [[ -n "${app_image}" ]] || { echo "Could not find the api image in ${COMPOSE_FILE}." >&2; false; }
 use_revision_image "${target_revision}" "${BUILD_TIMEOUT}"

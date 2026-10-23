@@ -6,11 +6,11 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { createDb, runAsSystem } from "@rakazo/db";
+import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { createRunExecutor } from "./executor.js";
-import { GraphileJobPublisher, GraphileJobWorkerHost } from "./wakeup.js";
+import { createReservedGraphileJobWorkerHost, GraphileJobPublisher } from "./wakeup.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
 // as `pnpm test:integration` provides.
@@ -148,15 +148,22 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
 
   it("runs tenant jobs through the Graphile queue", async () => {
     const { handlers, seen, continueRun } = careless(app.prisma);
-    const publisher = new GraphileJobPublisher(app.pool);
-    const host = new GraphileJobWorkerHost(app.pool, { concurrency: 2, pollInterval: 25 });
+    const publisher = new GraphileJobPublisher(app.pool, app.prisma);
+    const host = createReservedGraphileJobWorkerHost(app.pool, {
+      concurrency: 2,
+      pollInterval: 25,
+    });
     try {
       await host.start(handlers);
       for (const t of tenants) {
-        await publisher.enqueue({ name: "run.continue", payload: { runId: t.runId } });
+        await runAsTenant(t, () =>
+          publisher.enqueue({ name: "run.continue", payload: { runId: t.runId } }),
+        );
       }
       // A job whose run is gone has nothing to act on and completes.
-      await publisher.enqueue({ name: "run.continue", payload: { runId: `gone-${suffix}` } });
+      await runAsTenant(a, () =>
+        publisher.enqueue({ name: "run.continue", payload: { runId: `gone-${suffix}` } }),
+      );
       await vi.waitFor(() => expect(seen.size).toBe(2), { timeout: 10_000, interval: 25 });
       expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
       expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
@@ -165,7 +172,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
           const pending = await owner.pool.query(
             `SELECT count(*)::int AS count FROM graphile_worker._private_jobs j
              JOIN graphile_worker._private_tasks t ON t.id = j.task_id
-             WHERE t.identifier = 'run.continue' AND j.payload::text LIKE $1`,
+             WHERE t.identifier IN ('run.continue', 'run.interactive') AND j.payload::text LIKE $1`,
             [`%${suffix}%`],
           );
           expect(pending.rows[0].count).toBe(0);

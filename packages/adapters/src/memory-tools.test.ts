@@ -20,14 +20,14 @@ describe("selectMemoryTools", () => {
     expect(names).toEqual(["remember", "shell"]);
   });
 
-  it("keeps semantic memory tools and drops native remember when configured", () => {
+  it("keeps native remember beside semantic memory tools when configured", () => {
     const names = selectMemoryTools(allThree, true, true).map((t) => t.name);
-    expect(names).toEqual(["recall_memory", "save_memory", "forget_memory", "shell"]);
+    expect(names).toEqual(["remember", "recall_memory", "save_memory", "forget_memory", "shell"]);
   });
 
-  it("offers forget_memory only when the provider can forget", () => {
+  it("keeps native remember and drops forget_memory when the provider cannot forget", () => {
     const names = selectMemoryTools(allThree, true, false).map((t) => t.name);
-    expect(names).toEqual(["recall_memory", "save_memory", "shell"]);
+    expect(names).toEqual(["remember", "recall_memory", "save_memory", "shell"]);
   });
 
   it("is a no-op for tool lists with no memory tools at all", () => {

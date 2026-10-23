@@ -233,7 +233,7 @@ const subscriptionMe: Me = {
   computerHost: "docker",
   canChooseHostComputer: true,
   sandboxProvider: "docker",
-  avatarStyle: "robot",
+  avatarStyle: "organic",
   billingEnabled: false,
 };
 
@@ -491,8 +491,6 @@ function SubscriptionShot() {
         email="ada@example.test"
         name="Ada"
         initialSection="models"
-        avatarStyle="robot"
-        onAvatarStyleChange={async () => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
         onUsageOpen={() => undefined}

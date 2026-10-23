@@ -1,6 +1,10 @@
 import { ORPCError, onError, os } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { SandboxRateLimitError, VoiceAccountError } from "@rakazo/adapter-kit";
+import {
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  VoiceAccountError,
+} from "@rakazo/adapter-kit";
 import { IsolationError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
@@ -61,6 +65,29 @@ describe("logUnexpectedRpcError", () => {
       message: "rpc computer/boot failed",
       error: { cause: { message: "HTTP 429, rate_limited" } },
     });
+  });
+
+  it("returns a computer the provider never started as a retryable 503 without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxUnavailableError({ cause: new Error("sandbox did not become ready") });
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "SERVICE_UNAVAILABLE", message: error.message });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/boot computer unavailable",
+        reason: "sandbox did not become ready",
+      }),
+    ]);
   });
 
   it("sends a provider rate limit to the client as HTTP 429 with the plain message", async () => {
