@@ -59,6 +59,7 @@ import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
 } from "./openai-tool-parameters.js";
+import { affordableOpenRouterOutput } from "./openrouter-output-budget.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { liveModelSibling } from "./pi-live-model.js";
@@ -2552,6 +2553,8 @@ interface FallbackStreamState {
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
+  /** Output reservations reduced by a rejected request, scoped to this run and model. */
+  outputCaps?: Map<string, number>;
   /**
    * Messages written before the last switch to a backup model. Their thinking is bound to the
    * model and transcript it was written for, and the backup's policy starts with a rebuild that
@@ -2767,6 +2770,7 @@ function fallbackAwareModelStream(
     let buffered: AssistantMessageEvent[] = [];
     let retries = 0;
     let recoveredIdle = false;
+    let outputBudgetFailure: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Bound same-model retries. Explicit backups retain their per-model header
     // timeout: a post-header idle watchdog can already exceed that timeout.
     let startedAt = Date.now();
@@ -2774,13 +2778,22 @@ function fallbackAwareModelStream(
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     while (!signalAborted()) {
       const remainingMs = timeoutMs - (Date.now() - startedAt);
-      if (retries > 0 && firstRetryableError && remainingMs <= 0) {
-        output.push(firstRetryableError);
-        output.end(firstRetryableError.error);
+      const failure = firstRetryableError ?? outputBudgetFailure;
+      if ((retries > 0 || outputBudgetFailure) && remainingMs <= 0 && failure) {
+        output.push(failure);
+        output.end(failure.error);
         return;
       }
-      const attemptOptions = retries > 0 ? { ...options, timeoutMs: remainingMs } : options;
       const target = state.getActive();
+      const targetKey = JSON.stringify([target.config.provider, target.config.id]);
+      const outputCap = state.outputCaps?.get(targetKey);
+      const attemptOptions = {
+        ...options,
+        ...(retries > 0 || outputBudgetFailure ? { timeoutMs: remainingMs } : {}),
+        ...(outputCap !== undefined
+          ? { maxTokens: Math.min(outputCap, options?.maxTokens ?? outputCap) }
+          : {}),
+      };
       lastPartial = undefined;
       let sawPartialOutput = false;
       let restart = false;
@@ -2812,6 +2825,42 @@ function fallbackAwareModelStream(
           if (event.type === "error") {
             let terminalEvent = event;
             const hasTerminalPartialOutput = assistantHasPartialOutput(event.error);
+            if (
+              !sawPartialOutput &&
+              !hasTerminalPartialOutput &&
+              event.reason === "error" &&
+              !signalAborted() &&
+              !outputBudgetFailure &&
+              state.isProviderFailure(event.error)
+            ) {
+              const currentLimit = resolveCompletionMaxTokens(
+                target.model.maxTokens,
+                target.config.maxTokens,
+                attemptOptions.maxTokens,
+                target.model.reasoning,
+                target.model.contextWindow,
+              );
+              const affordable = affordableOpenRouterOutput(
+                target.config.provider,
+                event.error.errorMessage,
+                currentLimit,
+              );
+              if (affordable !== undefined && Date.now() - startedAt < timeoutMs) {
+                state.outputCaps ??= new Map();
+                state.outputCaps.set(targetKey, affordable);
+                getLogger().info("model.output_reservation.reduced", {
+                  runId: state.request.runId,
+                  provider: target.config.provider,
+                  model: target.config.id,
+                  requestedMaxTokens: currentLimit,
+                  effectiveMaxTokens: affordable,
+                });
+                outputBudgetFailure = event;
+                buffered = [];
+                restart = true;
+                break;
+              }
+            }
             if (
               !sawPartialOutput &&
               !hasTerminalPartialOutput &&

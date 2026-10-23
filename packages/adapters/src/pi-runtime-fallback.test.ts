@@ -2200,3 +2200,81 @@ describe("Pi runtime thinking blocks bound to a different conversation", () => {
     expect(providerState.delay).not.toHaveBeenCalled();
   });
 });
+
+describe("Pi runtime output reservation recovery", () => {
+  const limited = model("openrouter", "fixture-limited", 32_768);
+  const budgetError =
+    '402: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 1024.","metadata":{"limit_source":"openrouter_credits"}}';
+
+  function limitedRequest() {
+    providerState.models.set(
+      `${limited.provider}/${limited.id}`,
+      limited as unknown as Record<string, unknown>,
+    );
+    return {
+      ...request(),
+      model: { provider: limited.provider, id: limited.id, apiKey: "fixture-key" },
+    };
+  }
+
+  it("lowers the rejected reservation once and retains it through subsequent tool turns", async () => {
+    const input = limitedRequest();
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      caps.push(options.maxTokens);
+      if (caps.length === 1) return stream(target, message(target, [], "error", budgetError));
+      if (caps.length === 2)
+        return stream(
+          target,
+          message(
+            target,
+            [
+              {
+                type: "toolCall",
+                id: "fixture-call",
+                name: "write_effect",
+                arguments: { value: "fixture" },
+              },
+            ],
+            "toolUse",
+          ),
+        );
+      return stream(target, message(target, [{ type: "text", text: "Ready" }], "stop"));
+    });
+    const events = await run(input);
+    expect(caps).toEqual([4096, 1024, 1024]);
+    expect(input.executeTool).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  it("never loops when the reduced request is rejected too", async () => {
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [], "error", budgetError)),
+    );
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(input.executeTool).not.toHaveBeenCalled();
+  });
+
+  it("does not retry a response with partial output or a completed tool call", async () => {
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [{ type: "text", text: "Partial" }], "error", budgetError)),
+    );
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    expect(input.executeTool).not.toHaveBeenCalled();
+  });
+
+  it("does not retry after the original request deadline", async () => {
+    vi.useFakeTimers();
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) => {
+      vi.setSystemTime(Date.now() + MODEL_STREAM_TIMEOUT_MS + 1);
+      return stream(target, message(target, [], "error", budgetError));
+    });
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledOnce();
+  });
+});
