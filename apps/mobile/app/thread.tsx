@@ -255,7 +255,12 @@ import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { threadKeyboardOffset } from "../lib/thread-keyboard-offset";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
-import { isOwnThreadMessage, latestThreadRowKey, ThreadScrollBehavior } from "../lib/thread-scroll";
+import {
+  isOwnThreadMessage,
+  latestArrivalMessage,
+  latestThreadRowKey,
+  ThreadScrollBehavior,
+} from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
 import type { UserBubble } from "../lib/user-bubble";
@@ -732,10 +737,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
   );
   const visibleMessages = reactionView.visibleMessages;
-  const latestArrivalMessage = visibleMessages.findLast(
-    (message) => !peerTranscript.markerOf.has(message.id),
-  );
-  const latestMessageId = latestArrivalMessage?.id ?? null;
+  const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
+  const latestMessageId = latestMessage?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
@@ -1857,6 +1860,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     });
   }
 
+  function followOwnSend() {
+    if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
+    performScroll(scrollBehavior.current.onOwnSend());
+    publishThreadScrollState(scrollBehavior.current.state());
+  }
+
   async function send() {
     if (readOnly) return;
     const initialBotTarget = botId;
@@ -1925,9 +1934,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     setReplyTarget(null);
     setReplyQuote(null);
     setAttachmentNotice(null);
-    if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
-    performScroll(scrollBehavior.current.onOwnSend());
-    publishThreadScrollState(scrollBehavior.current.state());
+    followOwnSend();
     await deliver(attempt);
   }
 
@@ -2644,9 +2651,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       attempt={attempt}
       needsModel={needsModel}
       onRetry={() => {
-        if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
-        performScroll(scrollBehavior.current.onOwnSend());
-        publishThreadScrollState(scrollBehavior.current.state());
+        followOwnSend();
         void deliver(attempt, true);
       }}
       onDelete={() => feedback.discard(attempt)}
@@ -2855,7 +2860,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                       latestThreadRowKey(
                         latestMessageId,
                         feedback.unsentSends.map((attempt) => attempt.clientNonce),
-                        isOwnThreadMessage(latestArrivalMessage, userId),
+                        isOwnThreadMessage(latestMessage, userId),
                       ),
                     ),
                   );
