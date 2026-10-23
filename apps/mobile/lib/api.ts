@@ -1013,6 +1013,7 @@ export type MobileMe = Pick<
   | "hostCredentialSource"
   | "needsModel"
   | "isDeploymentOwner"
+  | "needsSignupSurvey"
 > & { billingEnabled?: boolean };
 
 export type MobileModel = ModelCatalogEntry;

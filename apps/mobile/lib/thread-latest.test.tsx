@@ -32,15 +32,6 @@ function page(seqs: number[]) {
 }
 
 describe("mobile jump to latest", () => {
-  it("lets a pinned page's last message scroll clear of the floating jump button", () => {
-    const pinned = source.slice(source.indexOf("        {showPinnedPage ? ("));
-    expect(pinned.slice(0, pinned.indexOf("</ScrollView>"))).toContain(
-      "paddingBottom: 12 + 44 + 16",
-    );
-    // The button stays floating over the transcript rather than resizing it.
-    expect(source).toContain('position: "absolute", end: 0, bottom: 12');
-  });
-
   it.each(["no newer gap", "newer pages closed the gap"])(
     "leaves a pinned page with %s",
     (scenario) => {

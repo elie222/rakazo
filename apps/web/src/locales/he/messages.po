@@ -185,6 +185,11 @@ msgstr "{provider} לא מצא את המודל המבוקש."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} עמוס כרגע. אפשר לנסות שוב בעוד רגע."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} מגביל את קצב הבקשות. אפשר לנסות שוב בעוד רגע."
 
@@ -321,7 +326,6 @@ msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window
 msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש להזין שם את הקוד הזה — החלון הזה ממשיך להמתין:"
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
 
@@ -917,6 +921,10 @@ msgstr "בוט לקישור"
 msgid "Bot's model"
 msgstr "המודל של הבוט"
 
+#: src/components/SignupSurvey.tsx
+msgid "Both"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr "בוטים"
@@ -1437,6 +1445,7 @@ msgid "Context limit"
 msgstr "מגבלת הקשר"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 msgid "Continue"
@@ -2705,6 +2714,14 @@ msgstr "שעה"
 msgid "hours"
 msgstr "שעות"
 
+#: src/components/SignupSurvey.tsx
+msgid "How big is your team?"
+msgstr ""
+
+#: src/components/SignupSurvey.tsx
+msgid "How did you hear about us?"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "תדירות"
@@ -2716,6 +2733,10 @@ msgstr "איך בוטים אחרים רואים אותו"
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "איך לבדוק"
+
+#: src/components/SignupSurvey.tsx
+msgid "How will you use Rakazo?"
+msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -3659,6 +3680,7 @@ msgstr "פותח צ׳אט…"
 msgid "Opening your Space…"
 msgstr "פותח את המרחב…"
 
+#: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -3760,6 +3782,10 @@ msgstr "מושהה"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "הרשאות"
+
+#: src/components/SignupSurvey.tsx
+msgid "Personal"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -4820,6 +4846,7 @@ msgstr "בדיקה"
 msgid "Test API key"
 msgstr "בדיקת מפתח API"
 
+#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "בדיקת חיבור"
@@ -4827,10 +4854,6 @@ msgstr "בדיקת חיבור"
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "הרצת בדיקה"
-
-#: src/components/ModelConnectionPreflightNotice.tsx
-msgid "Test sign-in"
-msgstr "בדיקת התחברות"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4893,6 +4916,11 @@ msgstr "הצ׳אט הזה לקריאה בלבד"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "המחשב הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "השיחה הזו ארוכה מדי בשביל המודל. ניסיון חוזר לא יעזור. אפשר להתחיל צ׳אט חדש או לקצר את ההודעה."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
@@ -5314,9 +5342,17 @@ msgstr "שבוע"
 msgid "Weekdays"
 msgstr "שני עד שישי"
 
+#: src/components/SignupSurvey.tsx
+msgid "Welcome to Rakazo"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "ומה עם הזיכרונות שלו?"
+
+#: src/components/SignupSurvey.tsx
+msgid "What do you most want Rakazo to help with?"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
@@ -5370,6 +5406,10 @@ msgstr "איפה הבוטים ירוצו?"
 msgid "Won't do"
 msgstr "לא יבוצע"
 
+#: src/components/SignupSurvey.tsx
+msgid "Work"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5399,6 +5439,7 @@ msgstr "אני"
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "אפשר לסגור את הכרטיסייה אם אין הפניה אוטומטית."
 
+#: src/pages/IntegrationCallback.tsx
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "אפשר לסגור את החלון."

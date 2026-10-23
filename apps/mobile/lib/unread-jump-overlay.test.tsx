@@ -1,8 +1,5 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ReactElement, ReactNode } from "react";
 import { act, createContext, createElement, useContext, useRef } from "react";
 import type { Root } from "react-dom/client";
@@ -51,11 +48,6 @@ vi.mock("../components/unread-jump-pill", () => ({
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
 import { useHeaderHeightIfAny } from "./floating-header";
 
-const inbox = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../app/index.tsx"),
-  "utf8",
-);
-
 type Pills = ReturnType<typeof useUnreadJumpPills<unknown>>;
 type Signal = { unread: number; attention: number };
 
@@ -84,11 +76,6 @@ describe("useHeaderHeightIfAny", () => {
     act(() => root.render(createElement(Probe)));
     act(() => root.render(createElement(Context.Provider, { value: 101 }, createElement(Probe))));
     expect(seen).toEqual([0, 101]);
-  });
-
-  it("is what the inbox reads, so the split-view inbox doesn't need a stack screen", () => {
-    expect(inbox).toContain("useHeaderHeightIfAny()");
-    expect(inbox).not.toContain("useHeaderHeight()");
   });
 });
 

@@ -6,6 +6,8 @@ import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 // boundary, not a product limit on bots or saved browser profiles.
 export const MAX_DESKTOP_DISPLAY = 65535 - 9221;
 export const BROWSER_APPLICATIONS = new Set([
+  "brave",
+  "brave-browser",
   "browser",
   "chrome",
   "chromium",

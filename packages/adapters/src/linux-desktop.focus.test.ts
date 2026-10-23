@@ -225,7 +225,7 @@ describe("provider focus command", () => {
     });
     expect(command).toContain("nohup /tmp/rakazo/browser-launch-1 'https://example.test'");
     expect(command).toContain(
-      "in chromium|chromium-browser|google-chrome|google-chrome-stable|chrome)",
+      "in chromium|chromium-browser|google-chrome|google-chrome-stable|chrome|brave-browser)",
     );
     expect(command).not.toContain("in firefox)");
     expect(command).not.toContain(`\ncd '${workspace}'\n`);

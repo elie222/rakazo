@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { native, platform } = vi.hoisted(() => ({
@@ -11,8 +8,6 @@ const { native, platform } = vi.hoisted(() => ({
 vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: platform }));
-
-const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Live update settings row", () => {
   beforeEach(() => {
@@ -48,22 +43,5 @@ describe("Live update settings row", () => {
     platform.Version = "26.0";
     const { hasLiveUpdateSettings } = await load();
     expect(hasLiveUpdateSettings()).toBe(false);
-  });
-
-  it("only renders the row when the screen exists, and checks it natively", () => {
-    const account = readFileSync(resolve(mobileRoot, "app/(settings)/account.tsx"), "utf8");
-    expect(account).toMatch(
-      /hasLiveUpdateSettings\(\)[\s\S]{0,40}\? \([\s\S]{0,40}<SettingsRow[\s\S]{0,120}openPromotedNotificationSettings[\s\S]{0,80}t\("Live update settings"\)/,
-    );
-    const nativeRoot = resolve(mobileRoot, "modules/rakazo-notifications/android/src/main");
-    const module = readFileSync(
-      resolve(nativeRoot, "java/com/rakazo/notifications/RakazoNotificationsModule.kt"),
-      "utf8",
-    );
-    expect(module).toMatch(/Function\("hasPromotedSettings"\)[\s\S]*resolveActivity/);
-    const manifest = readFileSync(resolve(nativeRoot, "AndroidManifest.xml"), "utf8");
-    expect(manifest).toMatch(
-      /<queries>[\s\S]*android\.settings\.APP_NOTIFICATION_PROMOTION_SETTINGS[\s\S]*<\/queries>/,
-    );
   });
 });

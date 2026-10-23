@@ -248,7 +248,8 @@ function browserActionCommand(
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
-const CHROME_WM_CLASSES = "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome";
+const CHROME_WM_CLASSES =
+  "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome|brave-browser";
 
 // Launch maps every BROWSER_APPLICATIONS name, including firefox, onto the
 // Chromium launcher. Focus must use that same set or it cannot raise the window launch opened.

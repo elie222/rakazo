@@ -49,7 +49,7 @@ import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
+import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
 import { pruneForRebuild } from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
@@ -417,7 +417,7 @@ export class PiAgentRuntime implements AgentRuntime {
               target.models,
               target.model,
               ctx,
-              withCloudflareGatewayAuth(target.config, options),
+              withCloudflareAuth(target.config, options),
               target.config.maxTokens,
               () => target.credentials?.accessToken ?? target.apiKey,
               (preparedOptions) =>
@@ -1729,7 +1729,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         target.models,
         target.model,
         ctx,
-        withCloudflareGatewayAuth(requestModel, options),
+        withCloudflareAuth(requestModel, options),
         requestModel.maxTokens,
         () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
         (preparedOptions) =>

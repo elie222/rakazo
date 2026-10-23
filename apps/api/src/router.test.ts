@@ -273,21 +273,32 @@ describe("account preferences", () => {
 });
 
 describe("billing", () => {
-  function billingDeps(isDeploymentOwner: boolean, billing?: RouterDeps["billing"]) {
+  const surveyCreatedAt = new Date("2026-10-23T12:00:00Z");
+  const upsertSignupSurvey = vi.fn().mockResolvedValue({ createdAt: surveyCreatedAt });
+
+  function billingDeps(
+    isDeploymentOwner: boolean,
+    billing?: RouterDeps["billing"],
+    signupSurvey: { userId: string } | null = null,
+    analytics?: RouterDeps["analytics"],
+  ) {
     const prisma = {
       user: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           email: "user@rakazo.test",
           name: "Test User",
           avatarStyle: "robot",
+          signupSurvey,
         }),
       },
+      signupSurvey: { upsert: upsertSignupSurvey },
       spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       billing,
+      analytics,
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -330,6 +341,81 @@ describe("billing", () => {
     await expect(billingDeps(true, billing).me()).resolves.toMatchObject({
       billingEnabled: true,
     });
+  });
+
+  it("asks hosted users the signup survey until they answer or skip it", async () => {
+    const billing = { status: vi.fn() } as unknown as RouterDeps["billing"];
+    await expect(billingDeps(false).me()).resolves.toMatchObject({ needsSignupSurvey: false });
+    await expect(billingDeps(false, billing).me()).resolves.toMatchObject({
+      needsSignupSurvey: true,
+    });
+    await expect(billingDeps(false, billing, { userId: "user-1" }).me()).resolves.toMatchObject({
+      needsSignupSurvey: false,
+    });
+  });
+
+  it("sends only the fixed survey choices to analytics", async () => {
+    const capture = vi.fn();
+    const client = billingDeps(false, undefined, null, { capture, flush: async () => undefined });
+    await client.onboarding.signupSurvey({
+      use: "work",
+      teamSize: "2-10",
+      reason: "Private plans",
+      source: "A friend",
+    });
+    await client.onboarding.signupSurvey({});
+    expect(capture.mock.calls.map(([userId, event]) => [userId, event])).toEqual([
+      ["user-1", { name: "signup_survey_answered", skipped: false, use: "work", teamSize: "2-10" }],
+      ["user-1", { name: "signup_survey_answered", skipped: true }],
+    ]);
+    expect(capture.mock.calls.map(([, , identity]) => identity)).toEqual([
+      { id: "user-1", at: surveyCreatedAt },
+      { id: "user-1", at: surveyCreatedAt },
+    ]);
+  });
+
+  it("records a blank survey as skipped", async () => {
+    await billingDeps(false).onboarding.signupSurvey({});
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith({
+      where: { userId: "user-1" },
+      create: { userId: "user-1", reason: null, use: null, teamSize: null, source: null },
+      update: { reason: null, use: null, teamSize: null, source: null },
+    });
+  });
+
+  it("keeps team size only for work or both", async () => {
+    const client = billingDeps(false);
+    await client.onboarding.signupSurvey({
+      reason: "  Run my inbox  ",
+      use: "personal",
+      teamSize: "11-50",
+      source: "",
+    });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith({
+      where: { userId: "user-1" },
+      create: {
+        userId: "user-1",
+        reason: "Run my inbox",
+        use: "personal",
+        teamSize: null,
+        source: null,
+      },
+      update: { reason: "Run my inbox", use: "personal", teamSize: null, source: null },
+    });
+
+    await client.onboarding.signupSurvey({ use: "work", teamSize: "11-50" });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        update: { reason: null, use: "work", teamSize: "11-50", source: null },
+      }),
+    );
+
+    await client.onboarding.signupSurvey({ use: "both", teamSize: "2-10" });
+    expect(upsertSignupSurvey).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        update: { reason: null, use: "both", teamSize: "2-10", source: null },
+      }),
+    );
   });
 });
 
@@ -2099,6 +2185,10 @@ describe("connections.begin", () => {
 
     expect(matched).toBe(true);
     expect(response.status).toBe(200);
+    expect(begin).toHaveBeenCalledWith(
+      { provider: "gmail", redirectUrl: "http://127.0.0.1:5173/integrations/callback" },
+      expect.anything(),
+    );
     // Complete and revoke hold the same lock across provider calls; begin must outwait them.
     expect(vi.mocked(prisma.$transaction).mock.calls.map((call) => call[1])).toEqual([
       { timeout: 60_000 },
