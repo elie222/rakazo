@@ -13,7 +13,7 @@ export const ROUNDUP_DESCRIPTION = ALTERNATIVES_HUB.description;
 export const ROUNDUP_TLDR = [
   ALTERNATIVES_HUB.intro,
   "Rakazo is the open source option you run yourself. Like Grok Bot, it is just chat once it is running: you set up a bot and manage it from that chat. You bring the model key. The license is Apache-2.0, and there is no seat fee.",
-  "Grok Bot, Meta Muse, OpenAI Dots, Instinct, Hark Pro, and Claude Duet are hosted. You do not install their service. Grok Bot comes with paid Cursor plans and SuperGrok. Muse runs on a virtual machine Meta operates. Dots sit on eligible ChatGPT plans. Instinct is the assistant you text or call. Hark Pro has a free tier, with $20 and $100 monthly tiers for more usage.",
+  "Grok Bot, Meta Muse, OpenAI Dots, Instinct, Claude Duet, and Hark Pro are hosted. You do not install their service. Grok Bot comes with paid Cursor plans and SuperGrok. Muse runs on a virtual machine Meta operates. Dots sit on eligible ChatGPT plans. Instinct is the assistant you text or call. Hark Pro has a free tier, with $20 and $100 monthly tiers for more usage.",
   "OpenClaw and Hermes Agent are also open source and self-hosted. Their docs describe installers, config files, and a gateway. Hermes Desktop can reach a first chat without the command line. OpenClaw can chat while its Gateway runs in the terminal.",
 ] as const;
 
@@ -89,16 +89,6 @@ export const ROUNDUP_ROWS: readonly RoundupRow[] = [
     chat: "Yes. You text or call.",
   },
   {
-    product: "Hark Pro",
-    href: "/hark-alternative/",
-    license: "Hosted. The terms restrict reverse engineering.",
-    selfHost: "No install is described.",
-    model: "No. Hark trains its own models.",
-    price: "Free. $20 a month is 2×. $100 a month is 10×.",
-    setup: "Web, iOS, or Android app.",
-    chat: "Yes. Projects are separate chats.",
-  },
-  {
     product: "Claude Duet",
     href: "/claude-duet-alternative/",
     license: "Hosted service from Anthropic.",
@@ -107,6 +97,16 @@ export const ROUNDUP_ROWS: readonly RoundupRow[] = [
     price: "Included with Pro at $20 a month and Max from $100.",
     setup: "Waitlist, US only. iOS, Android, and claude.ai.",
     chat: "Yes. One ongoing thread with a morning brief.",
+  },
+  {
+    product: "Hark Pro",
+    href: "/hark-alternative/",
+    license: "Hosted. The terms restrict reverse engineering.",
+    selfHost: "No install is described.",
+    model: "No. Hark trains its own models.",
+    price: "Free. $20 a month is 2×. $100 a month is 10×.",
+    setup: "Web, iOS, or Android app.",
+    chat: "Yes. Projects are separate chats.",
   },
   {
     product: "OpenClaw",
@@ -191,8 +191,8 @@ const PREFERRED_CARD_ORDER = [
   "muse-alternative",
   "dots-alternative",
   "instinct-alternative",
-  "hark-alternative",
   "claude-duet-alternative",
+  "hark-alternative",
   "hermes-alternative",
 ] as const;
 
@@ -272,25 +272,25 @@ export const ROUNDUP_CHANGELOG = [
 
 export const ROUNDUP_HOWTO = [
   "Choose Rakazo when the agent should live on hardware you control, the model key should be one you bring, and the daily surface should stay a chat. That is the Grok Bot shape without the hosted service. The cost is the install: Docker or the desktop app, then an account and a model. After that, routines, memory, and approvals stay in the chat.",
-  "Choose Grok Bot when you already pay for Cursor or SuperGrok and you want xAI to host the computer. Choose Meta Muse for Meta's agent in the Muse app or WhatsApp, on a VM Meta runs. Choose OpenAI Dots when the agent should sit on an eligible ChatGPT plan and follow OpenAI's rules for what it may do alone. Choose Instinct when you want to text or call a hosted assistant. Choose Hark Pro for a hosted conversation with a free tier and a cloud computer Hark operates. Choose Claude Duet when you already pay for Claude Pro or Max, live in the US, and want Anthropic to watch your inbox and calendar on a computer it runs.",
-  "Choose OpenClaw when the assistant should live in chat apps you already use, and you are willing to run a Gateway and a config file. Choose Hermes Agent for MIT-licensed software and a desktop app that can reach a first message without the CLI. Messaging apps on Hermes still need a separate gateway. Rakazo does not import a Grok Bot account, a Muse VM, a dot, an Instinct thread, a Hark vault, or a Claude Duet thread. OpenClaw documents a Hermes migration for config, memory, skills, and, if you accept it, credentials. Read the linked page before you rely on a price, a country, or a connector.",
+  "Choose Grok Bot when you already pay for Cursor or SuperGrok and you want xAI to host the computer. Choose Meta Muse for Meta's agent in the Muse app or WhatsApp, on a VM Meta runs. Choose OpenAI Dots when the agent should sit on an eligible ChatGPT plan and follow OpenAI's rules for what it may do alone. Choose Instinct when you want to text or call a hosted assistant. Choose Claude Duet when you already pay for Claude Pro or Max, live in the US, and want Anthropic to watch your inbox and calendar on a computer it runs. Choose Hark Pro for a hosted conversation with a free tier and a cloud computer Hark operates.",
+  "Choose OpenClaw when the assistant should live in chat apps you already use, and you are willing to run a Gateway and a config file. Choose Hermes Agent for MIT-licensed software and a desktop app that can reach a first message without the CLI. Messaging apps on Hermes still need a separate gateway. Rakazo does not import a Grok Bot account, a Muse VM, a dot, an Instinct thread, a Claude Duet thread, or a Hark vault. OpenClaw documents a Hermes migration for config, memory, skills, and, if you accept it, credentials. Read the linked page before you rely on a price, a country, or a connector.",
 ] as const;
 
 export const ROUNDUP_FAQ: readonly FaqItem[] = [
   {
     question: "Which of these can I self-host?",
     answer:
-      "Rakazo, OpenClaw, and Hermes Agent. Rakazo publishes Docker images and a source checkout. OpenClaw's guide has you run the Gateway. Hermes installs on your machine, and the desktop app can start its own local backend. Grok Bot, Muse, Dots, Instinct, Hark Pro, and Claude Duet are hosted. Their pages do not describe installing the service yourself. Rakazo also offers a hosted beta, Rakazo Cloud.",
+      "Rakazo, OpenClaw, and Hermes Agent. Rakazo publishes Docker images and a source checkout. OpenClaw's guide has you run the Gateway. Hermes installs on your machine, and the desktop app can start its own local backend. Grok Bot, Muse, Dots, Instinct, Claude Duet, and Hark Pro are hosted. Their pages do not describe installing the service yourself. Rakazo also offers a hosted beta, Rakazo Cloud.",
   },
   {
     question: "Which let me bring my own model?",
     answer:
-      "Rakazo, OpenClaw, and Hermes Agent, including a local or compatible server. Grok Bot's docs do not describe your own provider. Muse's launch post names Muse Spark. Dots use GPT-6 Astra. Instinct's privacy policy and terms do not name a public model. Hark says it trains its own models and prioritizes them. Claude Duet uses Claude Opus 5.5, and you cannot choose a model.",
+      "Rakazo, OpenClaw, and Hermes Agent, including a local or compatible server. Grok Bot's docs do not describe your own provider. Muse's launch post names Muse Spark. Dots use GPT-6 Astra. Instinct's privacy policy and terms do not name a public model. Claude Duet uses Claude Opus 5.5, and you cannot choose a model. Hark says it trains its own models and prioritizes them.",
   },
   {
     question: "Is Rakazo just chat, like Grok Bot?",
     answer:
-      "Yes, after it is running. You install with Docker or the desktop app, create an account, and connect a model. A new bot interviews you, and you manage it from that chat. Grok Bot is also a chat for named bots. OpenClaw adds a command-line setup and a Gateway. Hermes Desktop can reach a first message without the CLI, and messaging apps use a separate gateway. Hark Pro, Muse, Dots, Instinct, and Claude Duet are conversations too, on services you do not host.",
+      "Yes, after it is running. You install with Docker or the desktop app, create an account, and connect a model. A new bot interviews you, and you manage it from that chat. Grok Bot is also a chat for named bots. OpenClaw adds a command-line setup and a Gateway. Hermes Desktop can reach a first message without the CLI, and messaging apps use a separate gateway. Claude Duet, Hark Pro, Muse, Dots, and Instinct are conversations too, on services you do not host.",
   },
   {
     question: "Is this a ranking?",
