@@ -21,7 +21,7 @@ class RakazoFileDropModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("RakazoFileDrop")
 
-    Events("onFilesDropped")
+    Events("onFilesDropped", "onDropStarted")
 
     OnCreate { mainHandler.post { attach() } }
     OnActivityEntersForeground { attach() }
@@ -55,15 +55,25 @@ class RakazoFileDropModule : Module() {
     val clip = event.clipData ?: return false
     val uris = (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
     if (uris.isEmpty()) return false
+    // Tells the thread which chat the files were dropped over, before the copy
+    // gives the user time to open another one.
+    sendEvent("onDropStarted", emptyMap<String, Any>())
     // The read grant for another app's content lasts until it is released.
     val permissions = activity.requestDragAndDropPermissions(event)
     Thread {
       val files = mutableListOf<Map<String, Any>>()
       val tooLarge = mutableListOf<Map<String, Any>>()
+      var copiedBytes = 0.0
       try {
         for (uri in uris) {
+          // A drop is bounded work: the thread keeps a handful of attachments, so
+          // copying more than that only fills the cache with files nobody reads.
+          if (files.size >= MAX_DROP_FILES || copiedBytes >= MAX_DROP_BYTES) break
           val file = copyToCache(activity, uri, tooLarge)
-          if (file != null) files.add(file)
+          if (file != null) {
+            files.add(file)
+            copiedBytes += (file["size"] as? Double) ?: 0.0
+          }
         }
       } finally {
         permissions?.release()
@@ -132,9 +142,11 @@ class RakazoFileDropModule : Module() {
   }
 
   private companion object {
-    // Storage guard only: the attachment limit itself is applied by the thread,
-    // which knows the server's configured size.
+    // Storage guards only: the attachment limit itself is applied by the thread,
+    // which knows the server's configured size and how many files fit.
     const val MAX_COPY_BYTES = 64L * 1024 * 1024
+    const val MAX_DROP_BYTES = 64.0 * 1024 * 1024
+    const val MAX_DROP_FILES = 8
     const val COPY_BUFFER_BYTES = 64 * 1024
   }
 }

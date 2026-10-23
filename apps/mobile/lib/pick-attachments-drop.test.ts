@@ -6,18 +6,27 @@ const state = vi.hoisted(() => ({
   file: vi.fn(),
   info: vi.fn(),
   base64: vi.fn(),
+  deleted: [] as string[],
 }));
 
 vi.mock("expo-file-system", () => ({
   File: class {
+    uri: string;
     constructor(uri: string) {
+      this.uri = uri;
       state.file(uri);
+    }
+    get exists() {
+      return true;
     }
     info() {
       return state.info();
     }
     base64() {
       return state.base64();
+    }
+    delete() {
+      state.deleted.push(this.uri);
     }
   },
 }));
@@ -31,6 +40,7 @@ beforeEach(async () => {
   vi.resetModules();
   state.info.mockReset().mockReturnValue({ size: 1024 });
   state.base64.mockReset().mockResolvedValue("aGVsbG8=");
+  state.deleted.length = 0;
   ({ readDroppedFiles } = await import("./pick-attachments"));
 });
 
@@ -57,6 +67,12 @@ describe("dropped file attachments", () => {
     expect(result.attachments).toEqual([]);
     expect(result.skipped).toEqual([{ name: "film.mp4", reason: "over 10 MiB" }]);
     expect(state.base64).not.toHaveBeenCalled();
+  });
+
+  it("deletes the cached copy of a file it will not attach", async () => {
+    await readDroppedFiles([dropped("film.mp4", 20 * 1024 * 1024), dropped("note.png", 1024)]);
+
+    expect(state.deleted).toEqual(["file:///cache/dropped/film.mp4"]);
   });
 
   it("rejects an unsupported file without reading it", async () => {

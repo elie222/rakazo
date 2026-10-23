@@ -216,6 +216,7 @@ export async function readDroppedFiles(
     reason: `over ${attachmentSizeLabel(file.limit)}`,
   }));
   const candidates: Array<{
+    uri: string;
     name: string;
     mimeType: string | null;
     size: number;
@@ -233,12 +234,29 @@ export async function readDroppedFiles(
     );
     if (reason) {
       skipped.push({ name: file.name, reason });
+      discardDroppedCopy(file.uri);
       continue;
     }
     const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
     const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
-    candidates.push({ name: file.name, mimeType, size, contentBase64, previewUri });
+    candidates.push({ uri: file.uri, name: file.name, mimeType, size, contentBase64, previewUri });
   }
   const filtered = filterPickedAttachments(existingCount, candidates, maxBytes);
+  // The native module copies every dropped file, so a file the thread refuses must
+  // not stay in the cache behind it.
+  const kept = new Set(filtered.attachments.map((attachment) => attachment.name));
+  for (const candidate of candidates) {
+    if (!kept.has(candidate.name)) discardDroppedCopy(candidate.uri);
+  }
   return { attachments: filtered.attachments, skipped: [...skipped, ...filtered.skipped] };
+}
+
+/** Removes the cached copy of a dropped file that will not become an attachment. */
+function discardDroppedCopy(uri: string): void {
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // Nothing to clean up when the copy is already gone or is not a local file.
+  }
 }

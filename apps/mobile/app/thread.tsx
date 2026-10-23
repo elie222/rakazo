@@ -9,6 +9,7 @@ import type {
   Routine,
 } from "@rakazo/contracts";
 import {
+  ATTACHMENT_MAX_COUNT,
   attachmentMaxBytes,
   canReactToThreadMessage,
   isAttachmentAudioMimeType,
@@ -740,6 +741,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const visibleMessages = reactionView.visibleMessages;
   const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
+  // Read by a second drop that starts before the first one commits.
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  pendingAttachmentsRef.current = pendingAttachments;
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
     () =>
@@ -2180,19 +2184,30 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     if (!targetKey) return;
     const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
     if ((groupId ?? botId) !== targetKey) return;
-    if (result.attachments.length) {
+    // Two drops can overlap, so the room left is settled against the draft as it
+    // is now, not as it was when this read began.
+    const room = Math.max(0, ATTACHMENT_MAX_COUNT - pendingAttachmentsRef.current.length);
+    const accepted = result.attachments.slice(0, room);
+    if (accepted.length) {
       setPendingAttachments((current) => [
         ...current,
-        ...result.attachments.map((attachment) => ({
+        ...accepted.map((attachment) => ({
           ...attachment,
           threadKey: targetKey,
         })),
       ]);
     }
+    const skipped = [
+      ...result.skipped,
+      ...result.attachments.slice(room).map((attachment) => ({
+        name: attachment.name,
+        reason: `max ${ATTACHMENT_MAX_COUNT} attachments`,
+      })),
+    ];
     setAttachmentNotice(
-      result.skipped.length
+      skipped.length
         ? t("Skipped {items}", {
-            items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+            items: skipped.map((item) => formatAttachmentSkip(item)).join(", "),
           })
         : null,
     );
