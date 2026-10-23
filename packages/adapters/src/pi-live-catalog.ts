@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Models } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -14,7 +14,6 @@ import {
   probeCatalogProviderModels,
 } from "./pi-models.js";
 import { parseModelSecret } from "./pi-oauth.js";
-import { registeredPiModels } from "./pi-registered-models.js";
 
 /** Credential governing each provider/model slot, shared with the run selection path. */
 export type CatalogSpaceAuth = {
@@ -60,13 +59,11 @@ export function trustedProviderModels(provider: string, ids: readonly string[]):
   );
 }
 
-// Lazy: registered providers may read environment that is not loaded at import time.
-let siblingModels: Models | undefined;
+const siblingModels = builtinModels();
 
 export function liveCatalogEntry(provider: string, id: string): PiCatalogEntry | undefined {
   provider = canonicalPiProviderId(provider);
   const entry = listPiCatalog().find((entry) => entry.provider === provider);
-  siblingModels ??= registeredPiModels();
   const model = liveModelSibling(siblingModels, provider, id);
   if (!entry || !model) return undefined;
   return {

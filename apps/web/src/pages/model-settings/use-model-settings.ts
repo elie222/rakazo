@@ -3,6 +3,7 @@ import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
+  compatibleConnectionName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
@@ -220,7 +221,12 @@ export function useModelSettings(onClose: () => void) {
     const query = providerQuery.trim().toLowerCase();
     const matched = query
       ? groups.filter((group) =>
-          [group.id, group.name, ...group.entries.flatMap((entry) => [entry.id, entry.label])]
+          [
+            group.id,
+            group.name,
+            group.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Ollama Cloud" : "",
+            ...group.entries.flatMap((entry) => [entry.id, entry.label]),
+          ]
             .join(" ")
             .toLowerCase()
             .includes(query),
@@ -258,7 +264,10 @@ export function useModelSettings(onClose: () => void) {
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
-  const selectedProviderName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedProviderName = compatibleConnectionName(
+    baseUrl,
+    selected?.providerName ?? selected?.provider ?? "",
+  );
   const disconnectName = selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -308,6 +317,8 @@ export function useModelSettings(onClose: () => void) {
   }
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey:
+      apiKey || (credential?.hasKey && credential.baseUrl === effectiveBaseUrl ? "stored" : ""),
     baseUrl: effectiveBaseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
@@ -366,10 +377,13 @@ export function useModelSettings(onClose: () => void) {
     );
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, presetBaseUrl?: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider && (!presetBaseUrl || entry.baseUrl === presetBaseUrl),
+    );
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -396,7 +410,9 @@ export function useModelSettings(onClose: () => void) {
     setModelId(nextModelId);
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
+        : "",
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");

@@ -30,22 +30,6 @@ describe("catalog provider authentication", () => {
     });
   });
 
-  it("checks an Ollama Cloud key on the balance endpoint, since its model list is public", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      Response.json({ data: [{ id: "gemma4:31b" }] }),
-    );
-    await expect(
-      probeCatalogProviderModels({ provider: "ollama-cloud", apiKey: "fixture-key" }, fetchImpl),
-    ).resolves.toEqual(["gemma4:31b"]);
-    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
-      "https://ollama.com/api/balance",
-      "https://ollama.com/v1/models",
-    ]);
-    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
-      headers: { Authorization: "Bearer fixture-key" },
-    });
-  });
-
   it.each([401, 403])(
     "refuses rejected credentials (%i) before reading the catalog",
     async (status) => {
@@ -56,10 +40,6 @@ describe("catalog provider authentication", () => {
         probeCatalogProviderModels({ provider: "openrouter", apiKey: "fixture-key" }, fetchImpl),
       ).rejects.toThrow("API key was rejected by the provider.");
       expect(fetchImpl).toHaveBeenCalledOnce();
-      await expect(
-        probeCatalogProviderModels({ provider: "ollama-cloud", apiKey: "fixture-key" }, fetchImpl),
-      ).rejects.toThrow("API key was rejected by the provider.");
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -243,31 +223,11 @@ describe("Pi model catalog", () => {
     expect(openAiCompatible?.catalogProbe).toBeUndefined();
   });
 
-  it("lists Ollama Cloud as a keyed provider with real catalog entries", () => {
-    const entries = listPiCatalog().filter((entry) => entry.provider === "ollama-cloud");
-    expect(entries.map((entry) => entry.id)).toContain("gemma4:31b");
-    for (const entry of entries) {
-      expect(entry).toMatchObject({
-        providerName: "Ollama Cloud",
-        auth: "api-key",
-        subscription: false,
-        catalogProbe: true,
-      });
-      expect(entry.placeholder).toBeUndefined();
-      expect(entry.billing).toContain("Ollama Cloud API key");
-    }
-    expect(entries.find((entry) => entry.id === "gemma4:31b")).toMatchObject({
-      images: true,
-      thinkingLevels: ["off", "medium"],
-    });
-  });
-
   it("pins catalog probes to registry base URLs and leaves user URLs gated", async () => {
     const expected = {
       openrouter: "https://openrouter.ai/api/v1",
       openai: "https://api.openai.com/v1",
       groq: "https://api.groq.com/openai/v1",
-      "ollama-cloud": "https://ollama.com/v1",
     } as const;
     for (const [provider, baseUrl] of Object.entries(expected)) {
       expect(catalogProviderProbeBaseUrl(provider)).toBe(baseUrl);

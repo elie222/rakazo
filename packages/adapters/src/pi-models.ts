@@ -1,17 +1,15 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
+import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
-import {
-  OLLAMA_CLOUD_KEY_CHECK_URL,
-  OLLAMA_CLOUD_PROVIDER_ID,
-} from "./pi-ollama-cloud-provider.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   probeOpenAiCompatibleModels,
+  registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
-import { registeredPiModels } from "./pi-registered-models.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
@@ -45,25 +43,16 @@ export function catalogProviderProbeBaseUrl(provider: string): string | null {
   return catalogProbeBaseUrls.get(canonicalPiProviderId(provider)) ?? null;
 }
 
-/**
- * Providers whose public model list does not establish that a key can authenticate,
- * with a cheap authenticated endpoint that answers 401 for a rejected key.
- */
-const CATALOG_KEY_CHECK_URLS: Record<string, string> = {
-  openrouter: "https://openrouter.ai/api/v1/key",
-  [OLLAMA_CLOUD_PROVIDER_ID]: OLLAMA_CLOUD_KEY_CHECK_URL,
-};
-
+/** OpenRouter's public model list does not establish that a key can authenticate. */
 export async function verifyCatalogProviderApiKey(
   input: { provider: string; apiKey: string },
   fetchImpl: typeof fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<void> {
-  const url = CATALOG_KEY_CHECK_URLS[canonicalPiProviderId(input.provider)];
-  if (!url) return;
+  if (canonicalPiProviderId(input.provider) !== "openrouter") return;
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    response = await fetchImpl("https://openrouter.ai/api/v1/key", {
       headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
       redirect: "error",
       signal: AbortSignal.any([
@@ -145,7 +134,9 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
-  const models = registeredPiModels();
+  const models = registerOpenAiCompatibleCatalog(
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+  );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const providerName = PROVIDER_DISPLAY_NAMES[provider.id] ?? provider.name;

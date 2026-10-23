@@ -5,10 +5,12 @@ import {
   cloudflareGatewayRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   modelHeadersInput,
+  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -242,6 +244,7 @@ export function OnboardingPage() {
   const acceptsKey = selected?.auth !== "oauth";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey,
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
@@ -256,8 +259,14 @@ export function OnboardingPage() {
   const otherModelLabel = t`Other model…`;
   // Base UI Select.Value only resolves labels when Root gets `items`.
   const providerItems = useMemo(
-    () => providers.map((entry) => ({ value: entry.provider, label: providerLabel(entry) })),
-    [providers],
+    () =>
+      providers.flatMap((entry) => {
+        const item = { value: entry.provider, label: providerLabel(entry) };
+        return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
+          : [item];
+      }),
+    [providers, t],
   );
   const modelItems = useMemo(
     () => modelsForProvider.map((entry) => ({ value: entry.id, label: entry.label })),
@@ -305,8 +314,8 @@ export function OnboardingPage() {
     invalidatePreflight();
   }
 
-  function selectProvider(nextProvider: string) {
-    if (nextProvider === provider) return;
+  function selectProvider(nextProvider: string, presetBaseUrl?: string) {
+    if (nextProvider === provider && !presetBaseUrl && !isOllamaCloudBaseUrl(baseUrl)) return;
     cancelOAuthAttempt();
     setProvider(nextProvider);
     setApiKey("");
@@ -318,7 +327,7 @@ export function OnboardingPage() {
         ? ""
         : pickCatalogModelId(catalog, nextProvider, deploymentDefaultModelRef.current),
     );
-    setBaseUrl("");
+    setBaseUrl(presetBaseUrl ?? "");
     setReasoning(false);
     setThinkingLevel(null);
     setManualModelId(false);
@@ -566,10 +575,14 @@ export function OnboardingPage() {
                 <Trans>Provider</Trans>
               </span>
               <Select
-                value={provider}
+                value={
+                  isOpenAiCompatible && isOllamaCloudBaseUrl(baseUrl) ? "ollama-preset" : provider
+                }
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
-                  selectProvider(value);
+                  if (value === "ollama-preset")
+                    selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL);
+                  else selectProvider(value);
                 }}
                 items={providerItems}
               >
@@ -578,9 +591,9 @@ export function OnboardingPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {providers.map((entry) => (
-                      <SelectItem key={entry.provider} value={entry.provider}>
-                        {providerLabel(entry)}
+                    {providerItems.map((entry) => (
+                      <SelectItem key={entry.value} value={entry.value}>
+                        {entry.label}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -973,13 +986,15 @@ export function OnboardingPage() {
               isOpenAiCompatible ? (
                 <Disclosure
                   className="mt-4 text-sm text-muted-foreground"
+                  open={isOllamaCloudBaseUrl(baseUrl) ? true : undefined}
                   summary={<Trans>API key</Trans>}
                 >
                   <Input
                     aria-label={t`API key`}
                     value={apiKey}
                     onChange={(e) => updateApiKey(e.target.value)}
-                    placeholder={t`Optional`}
+                    required={isOllamaCloudBaseUrl(baseUrl)}
+                    placeholder={isOllamaCloudBaseUrl(baseUrl) ? t`Ollama API key` : t`Optional`}
                     type="password"
                     autoComplete="new-password"
                     className="mt-2"

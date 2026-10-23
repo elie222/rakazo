@@ -3,7 +3,6 @@ import { CodexCatalogCache } from "./pi-codex-catalog.js";
 import { liveModelCatalogEnabled } from "./pi-live-cache.js";
 import {
   applyProviderLiveCatalog,
-  liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
 } from "./pi-live-catalog.js";
@@ -35,25 +34,6 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
-  it("builds live entries for providers Rakazo registers itself", () => {
-    // A dated tag is a snapshot of the bundled model and keeps its capabilities.
-    expect(liveCatalogEntry("ollama-cloud", "deepseek-v4.1-flash:1017")).toMatchObject({
-      provider: "ollama-cloud",
-      id: "deepseek-v4.1-flash:1017",
-      live: true,
-      catalogProbe: true,
-      reasoning: true,
-      images: true,
-    });
-    // A size tag is another model; nothing is assumed about what it can do.
-    expect(liveCatalogEntry("ollama-cloud", "gemma4:9b")).toMatchObject({
-      id: "gemma4:9b",
-      reasoning: false,
-      images: false,
-    });
-    expect(liveCatalogEntry("local", "qwen3:4b")).toBeUndefined();
-  });
-
   it("defaults probing on and honors the deployment off switch", () => {
     expect(liveModelCatalogEnabled({})).toBe(true);
     expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: " off " })).toBe(false);

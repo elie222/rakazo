@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "Ollama API-sleutel",
   Export: "Exporteren",
   "Edit avatar": "Avatar bewerken",
   "Add open work": "Open taak toevoegen",

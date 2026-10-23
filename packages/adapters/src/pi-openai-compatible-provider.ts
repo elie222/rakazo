@@ -470,6 +470,35 @@ async function readBoundedJson(
   }
 }
 
+/** Some compatible servers expose their model list without authenticating. */
+export async function verifyOpenAiCompatibleApiKey(
+  input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (new URL(input.baseUrl).hostname !== "ollama.com") return;
+  if (!input.apiKey?.trim()) throw new Error("API key was rejected by the provider.");
+  const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
+  let response: Response;
+  try {
+    response = await safeFetch("https://ollama.com/api/balance", {
+      headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
+      redirect: "error",
+      signal: AbortSignal.any([
+        AbortSignal.timeout(MODEL_CONNECT_TIMEOUT_MS),
+        ...(signal ? [signal] : []),
+      ]),
+    });
+  } catch {
+    throw new Error("Could not verify the API key. Try again.");
+  }
+  await response.body?.cancel().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("API key was rejected by the provider.");
+  }
+  if (!response.ok) throw new Error("Could not verify the API key. Try again.");
+}
+
 export async function probeOpenAiCompatibleModels(
   input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
@@ -482,6 +511,7 @@ export async function probeOpenAiCompatibleModels(
     input.apiKey,
     Object.keys(input.headers ?? {}).length > 0,
   );
+  await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;

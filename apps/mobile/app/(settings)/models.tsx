@@ -10,9 +10,11 @@ import {
   backupChoiceKey,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
+  compatibleConnectionName,
   connectedBackupOptions,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isOllamaCloudBaseUrl,
   MAX_MODEL_BACKUPS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -20,6 +22,7 @@ import {
   modelHeadersInput,
   moveBackupChoice,
   normalizeOpenAiCompatibleBaseUrl,
+  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
@@ -439,7 +442,10 @@ export default function Models() {
     addableBackupOptions.length > 0;
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const selectedProviderLabel = selected?.providerName ?? selected?.provider;
+  const selectedProviderLabel = compatibleConnectionName(
+    baseUrl,
+    selected?.providerName ?? selected?.provider ?? "",
+  );
   const selectedSection = selected
     ? groupModelChoices(
         [
@@ -502,6 +508,8 @@ export default function Models() {
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey:
+      apiKey || (credential?.hasKey && credential.baseUrl === effectiveBaseUrl ? "stored" : ""),
     baseUrl: effectiveBaseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
@@ -527,9 +535,12 @@ export default function Models() {
     clearFeedback();
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, presetBaseUrl?: string) {
     cancelOAuth();
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider && (!presetBaseUrl || entry.baseUrl === presetBaseUrl),
+    );
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -557,7 +568,9 @@ export default function Models() {
     setModelId(nextModelId);
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
+        : "",
     );
     setApiKey("");
     setHeaderRows(null);
@@ -1209,7 +1222,7 @@ export default function Models() {
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
         {disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))}
-        {showApiKey ? (
+        {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -1218,7 +1231,13 @@ export default function Models() {
             editable={!busy}
             importantForAutofill="no"
             onChangeText={updateApiKey}
-            placeholder={credential?.hasKey ? t("Paste a replacement key") : t("Optional")}
+            placeholder={
+              isOllamaCloudBaseUrl(baseUrl)
+                ? t("Ollama API key")
+                : credential?.hasKey
+                  ? t("Paste a replacement key")
+                  : t("Optional")
+            }
             placeholderTextColor={native.tertiaryLabel}
             secureTextEntry
             style={styles.keyInput}
@@ -1262,20 +1281,36 @@ export default function Models() {
           choices: [true, false].flatMap((connected) =>
             groups
               .filter((group) => credentialByProvider.has(group.id) === connected)
-              .map((group) => {
+              .flatMap((group) => {
                 const savedModelId = credentialByProvider.get(group.id)?.modelId;
-                return {
+                const row = {
                   key: group.id,
-                  label: group.name,
+                  label: compatibleConnectionName(
+                    credentialByProvider.get(group.id)?.baseUrl,
+                    group.name,
+                  ),
                   providerLabel: connected ? t("Connected") : t("All providers"),
                   detail: connected
                     ? (group.entries.find((entry) => entry.id === savedModelId)?.label ??
                       savedModelId)
                     : undefined,
                 };
+                return group.id === OPENAI_COMPATIBLE_PROVIDER_ID
+                  ? [
+                      row,
+                      {
+                        key: "ollama-preset",
+                        label: t("Ollama Cloud"),
+                        providerLabel: t("All providers"),
+                      },
+                    ]
+                  : [row];
               }),
           ),
-          onSelect: (choice) => chooseProvider(choice.key),
+          onSelect: (choice) =>
+            choice.key === "ollama-preset"
+              ? chooseProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL)
+              : chooseProvider(choice.key),
         })
       }
     />

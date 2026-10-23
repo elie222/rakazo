@@ -10,7 +10,10 @@ import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/
 import { fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
-import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
+import {
+  assertAllowedOpenAiCompatibleUrl,
+  PRIVATE_MODEL_ENDPOINT_MESSAGE,
+} from "./openai-compatible-url.js";
 import { listPiCatalog } from "./pi-models.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./pi-oauth.js";
 import {
@@ -22,6 +25,7 @@ import {
   probeOpenAiCompatibleModels,
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
+  verifyOpenAiCompatibleApiKey,
 } from "./pi-openai-compatible-provider.js";
 
 const savedPrivateHosts = process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS;
@@ -988,6 +992,76 @@ describe("custom header transport", () => {
     await expect(fetch("http://127.0.0.1:8000/v1/models")).rejects.toThrow(
       PRIVATE_MODEL_ENDPOINT_MESSAGE,
     );
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
+
+describe("built-in public compatible host", () => {
+  it("allows only the exact HTTPS host on the default port without the public gate", () => {
+    expect(
+      assertAllowedOpenAiCompatibleUrl("https://ollama.com/v1", { allowPublic: false }).href,
+    ).toBe("https://ollama.com/v1");
+    for (const url of [
+      "http://ollama.com",
+      "https://ollama.com:8443",
+      "https://evil.ollama.com",
+      "https://ollama.com.evil.test",
+      "https://user@ollama.com",
+      "https://ollama.com.",
+      "https://other.test",
+    ]) {
+      expect(() => assertAllowedOpenAiCompatibleUrl(url, { allowPublic: false })).toThrow();
+    }
+    expect(
+      assertAllowedOpenAiCompatibleUrl("https://other.test", { allowPublic: true }).hostname,
+    ).toBe("other.test");
+  });
+  it("still rejects a private DNS answer for the built-in host", async () => {
+    const safeFetch = createOpenAiCompatibleFetch(
+      undefined,
+      async () => [{ address: "10.0.0.8", family: 4 }],
+      { allowPublic: false },
+    );
+    await expect(safeFetch("https://ollama.com/v1/models")).rejects.toMatchObject({
+      cause: { message: "Public model server hostname resolved to a private address" },
+    });
+  });
+  it.each([401, 403])(
+    "rejects an invalid Ollama key (%s) before listing public models",
+    async (status) => {
+      const transport = vi.fn(async () => new Response(null, { status }));
+      await expect(
+        probeOpenAiCompatibleModels(
+          { baseUrl: "https://ollama.com/v1", apiKey: "fake-key" },
+          transport,
+        ),
+      ).rejects.toThrow("API key was rejected by the provider.");
+      expect(transport).toHaveBeenCalledOnce();
+    },
+  );
+  it("verifies a key with the guarded balance endpoint and then discovers models", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe("error");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
+      return String(input).endsWith("/api/balance")
+        ? new Response(null)
+        : Response.json({ data: [{ id: "example-model" }] });
+    });
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://ollama.com/v1", apiKey: "fake-key" },
+        transport,
+      ),
+    ).resolves.toEqual(["example-model"]);
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it("does not verify unrelated compatible servers and rejects missing keys", async () => {
+    const transport = vi.fn();
+    await verifyOpenAiCompatibleApiKey({ baseUrl: "https://other.test/v1" }, transport);
+    await expect(
+      verifyOpenAiCompatibleApiKey({ baseUrl: "https://ollama.com/v1" }, transport),
+    ).rejects.toThrow("API key was rejected");
     expect(transport).not.toHaveBeenCalled();
   });
 });

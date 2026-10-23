@@ -35,10 +35,8 @@ export function liveModelSibling(
     return n;
   };
   const sibling = [...siblings].sort((a, b) => prefixLength(b.id) - prefixLength(a.id))[0]!;
-  // Only a date/alias variant proves the same family and its capabilities. Ollama
-  // writes the date as a tag (`deepseek-v4.1-flash:1017`); a size tag (`gemma4:31b`)
-  // is a different model.
-  const family = (value: string) => value.replace(/[-:](?:\d{4}-\d{2}-\d{2}|\d{4,8}|latest)$/, "");
+  // Only a date/alias variant proves the same family and its capabilities.
+  const family = (value: string) => value.replace(/-(?:\d{4}-\d{2}-\d{2}|\d{4,8}|latest)$/, "");
   const sameFamily = family(id) === family(sibling.id);
   return {
     ...sibling,

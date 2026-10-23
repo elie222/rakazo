@@ -7,7 +7,6 @@ import { voiceCatalogEntry } from "./voice-factory.js";
 const PRIVACY_URLS: Record<string, string> = {
   cursor: "https://cursor.com/privacy",
   openrouter: "https://openrouter.ai/privacy",
-  "ollama-cloud": "https://ollama.com/privacy",
   openai: "https://openai.com/policies/privacy-policy/",
   "openai-codex": "https://openai.com/policies/privacy-policy/",
   anthropic: "https://www.anthropic.com/legal/privacy",

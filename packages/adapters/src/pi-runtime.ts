@@ -16,6 +16,7 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel, Type, validateToolArguments } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type {
   AdapterContext,
@@ -60,12 +61,14 @@ import {
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { liveModelSibling } from "./pi-live-model.js";
+import { registerLocalProvider } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { codexComputeResidency } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
-import { registeredPiModels } from "./pi-registered-models.js";
 import {
   clipToolResultContent,
   clipToolResultText,
@@ -112,7 +115,9 @@ const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
 // would run before .env is loaded and miss the local provider entirely.
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
-  catalogModelsCache ??= registeredPiModels();
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+  );
   return catalogModelsCache;
 }
 const MAX_PARALLEL_SUBAGENTS = 4;
@@ -1015,14 +1020,18 @@ export function modelsForRequest(
 ): Models {
   const store = credentials ?? credentialStoreForRequest(request, provider);
   if (store) {
-    return registeredPiModels({ credentials: store });
+    return registerOpenAiCompatibleCatalog(
+      registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
+    );
   }
   if (
     provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
     request.model.baseUrl &&
     request.model.id.trim()
   ) {
-    const models = registeredPiModels();
+    const models = registerOpenAiCompatibleCatalog(
+      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+    );
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
       baseUrl: request.model.baseUrl,

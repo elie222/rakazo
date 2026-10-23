@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Models from "../app/(settings)/models";
+import { modelPickerRequest, selectPickerModel } from "./model-picker-selection";
 
 const savedEndpoint = "https://models.example.test/v1";
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
@@ -184,4 +185,22 @@ describe("mobile saved model headers", () => {
       expectSavedHeader();
     },
   );
+});
+
+it("selects the Ollama preset through the compatible form with a visible key field", async () => {
+  const providerButton = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("Provider"),
+  );
+  expect(providerButton).toBeDefined();
+  await act(async () => providerButton!.click());
+  const route = push.mock.calls.at(-1)?.[0] as { params: { requestId: string } };
+  const request = modelPickerRequest(route.params.requestId)!;
+  const preset = request.choices.find((choice) => choice.label === "Ollama Cloud")!;
+  expect(preset).toBeDefined();
+  await act(async () => {
+    selectPickerModel(route.params.requestId, preset.key);
+  });
+  expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
+  expect(field("API key")?.placeholder).toBe("Ollama API key");
+  expect(field("API key")?.type).toBe("password");
 });

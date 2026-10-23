@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import {
+  compatibleConnectionName,
+  OLLAMA_CLOUD_BASE_URL,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "@rakazo/contracts";
 import { Input } from "@rakazo/ui-web";
+import { Fragment } from "react";
 import { providerRowHint } from "../../lib/localized-provider-hint";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -37,29 +43,41 @@ export function ProviderList({
     const rowSubtitle =
       connectedSection && savedModelLabel ? savedModelLabel : providerRowHint(group.entries[0]!);
     return (
-      <button
-        key={group.id}
-        type="button"
-        aria-current={group.id === provider ? "true" : undefined}
-        onClick={() => chooseProvider(group.id)}
-        className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
-          group.id === provider ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
-        }`}
-      >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] text-foreground">{group.name}</span>
-          {rowSubtitle ? (
-            <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">
-              {rowSubtitle}
+      <Fragment key={group.id}>
+        <button
+          type="button"
+          aria-current={group.id === provider ? "true" : undefined}
+          onClick={() => chooseProvider(group.id)}
+          className={`flex w-full items-center gap-3 border-b border-border px-3.5 py-3 text-start last:border-0 ${
+            group.id === provider ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+          }`}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] text-foreground">
+              {compatibleConnectionName(rowCredential?.baseUrl, group.name)}
+            </span>
+            {rowSubtitle ? (
+              <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">
+                {rowSubtitle}
+              </span>
+            ) : null}
+          </span>
+          {!connectedSection && rowCredential ? (
+            <span className="text-[13px] leading-[1.5] text-success">
+              <Trans>Connected</Trans>
             </span>
           ) : null}
-        </span>
-        {!connectedSection && rowCredential ? (
-          <span className="text-[13px] leading-[1.5] text-success">
-            <Trans>Connected</Trans>
-          </span>
+        </button>
+        {group.id === OPENAI_COMPATIBLE_PROVIDER_ID ? (
+          <button
+            type="button"
+            className="w-full border-b border-border px-3.5 py-3 text-start text-[15px] hover:bg-accent/50"
+            onClick={() => chooseProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL)}
+          >
+            <Trans>Ollama Cloud</Trans>
+          </button>
         ) : null}
-      </button>
+      </Fragment>
     );
   }
 

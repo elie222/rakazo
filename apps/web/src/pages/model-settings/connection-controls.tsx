@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
@@ -357,6 +358,7 @@ export function ConnectionControls({
 
 export function CompatibleKeyControls({
   apiKey,
+  baseUrl,
   busy,
   connectKey,
   credential,
@@ -366,6 +368,7 @@ export function CompatibleKeyControls({
   updateApiKey,
 }: Pick<
   ModelSettingsState,
+  | "baseUrl"
   | "apiKey"
   | "busy"
   | "connectKey"
@@ -378,12 +381,23 @@ export function CompatibleKeyControls({
   const { t } = useLingui();
   return isOpenAiCompatible ? (
     <div className="mt-5">
-      <Disclosure className="text-[13.5px] text-muted-foreground" summary={<Trans>API key</Trans>}>
+      <Disclosure
+        open={isOllamaCloudBaseUrl(baseUrl) ? true : undefined}
+        className="text-[13.5px] text-muted-foreground"
+        summary={<Trans>API key</Trans>}
+      >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          placeholder={credential?.hasKey ? t`Paste a replacement key` : t`Optional`}
+          required={isOllamaCloudBaseUrl(baseUrl)}
+          placeholder={
+            isOllamaCloudBaseUrl(baseUrl)
+              ? t`Ollama API key`
+              : credential?.hasKey
+                ? t`Paste a replacement key`
+                : t`Optional`
+          }
           type="password"
           autoComplete="new-password"
           className="mt-2 h-10 text-foreground"

@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "Ollama API 密钥",
   Export: "导出",
   "Edit avatar": "编辑头像",
   "Add open work": "添加待办事项",

@@ -142,6 +142,7 @@ import {
   validateRoutineWatch,
   verifyCatalogProviderApiKey,
   verifyMcpInstall,
+  verifyOpenAiCompatibleApiKey,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type {
@@ -1533,6 +1534,12 @@ export function createRouter(deps: RouterDeps) {
             omitVisionModelIds,
             allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
           });
+          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+            const saved = parseModelSecret(plaintext);
+            if (saved.kind === "openai_compatible") {
+              await verifyOpenAiCompatibleApiKey(saved, deps.modelConnectionFetch, context.signal);
+            }
+          }
           if (input.apiKey?.trim()) {
             await verifyCatalogProviderApiKey(
               { provider: input.provider, apiKey: input.apiKey },
@@ -1628,7 +1635,7 @@ export function createRouter(deps: RouterDeps) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              undefined,
+              deps.modelConnectionFetch,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );

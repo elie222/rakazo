@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  compatibleConnectionName,
   normalizeOpenAiCompatibleBaseUrl,
+  OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
 } from "./openai-compatible-ui.js";
 
@@ -43,4 +45,15 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
   it("rejects text that is not an HTTP(S) URL", () => {
     expect(() => normalizeOpenAiCompatibleBaseUrl("127.0.0.1:8000")).toThrow();
   });
+});
+
+it("uses an ordinary compatible connection for the Ollama preset and requires its key", () => {
+  expect(OLLAMA_CLOUD_BASE_URL).toBe("https://ollama.com/v1");
+  expect(compatibleConnectionName(OLLAMA_CLOUD_BASE_URL, "OpenAI-compatible")).toBe("Ollama Cloud");
+  expect(compatibleConnectionName("https://other.test/v1", "OpenAI-compatible")).toBe(
+    "OpenAI-compatible",
+  );
+  const input = { baseUrl: OLLAMA_CLOUD_BASE_URL, modelId: "example-model" };
+  expect(openAiCompatibleConnectReady(input)).toBe(false);
+  expect(openAiCompatibleConnectReady({ ...input, apiKey: "fake-key" })).toBe(true);
 });

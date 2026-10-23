@@ -1,9 +1,28 @@
+/** UI preset only; saved connections use the OpenAI-compatible provider. */
+export const OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1";
+
+export function isOllamaCloudBaseUrl(baseUrl: string | undefined): boolean {
+  return baseUrl?.replace(/\/+$/, "") === OLLAMA_CLOUD_BASE_URL;
+}
+
+export function compatibleConnectionName(baseUrl: string | undefined, fallback: string): string {
+  return isOllamaCloudBaseUrl(baseUrl) ? "Ollama Cloud" : fallback;
+}
+
 export const OPENAI_COMPATIBLE_BASE_URL_HINT =
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
 
 /** Connect when base URL and model id are set. */
-export function openAiCompatibleConnectReady(input: { baseUrl: string; modelId: string }): boolean {
-  return Boolean(input.baseUrl.trim() && input.modelId.trim());
+export function openAiCompatibleConnectReady(input: {
+  baseUrl: string;
+  modelId: string;
+  apiKey?: string;
+}): boolean {
+  return Boolean(
+    input.baseUrl.trim() &&
+      input.modelId.trim() &&
+      (!isOllamaCloudBaseUrl(input.baseUrl) || input.apiKey?.trim()),
+  );
 }
 
 export function openAiCompatibleProbeSuccessMessage(modelCount: number): string {

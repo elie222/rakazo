@@ -902,3 +902,37 @@ it("disables Save for invalid custom header names", async () => {
     await view.unmount();
   }
 });
+
+it("opens the Ollama preset with a required key and saves a compatible connection", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["fixture-model"] });
+  const view = await renderSettings(false);
+  try {
+    await act(async () => buttons(view.container, "Ollama Cloud")[0]!.click());
+    expect((view.container.querySelector("#model-base-url") as HTMLInputElement).value).toBe(
+      "https://ollama.com/v1",
+    );
+    const key = view.container.querySelector(
+      'input[placeholder="Ollama API key"]',
+    ) as HTMLInputElement;
+    expect(key.required).toBe(true);
+    await typeInto(key, "fake-fixture-key");
+    await act(async () => buttons(view.container, "Find models")[0]!.click());
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: "https://ollama.com/v1", apiKey: "fake-fixture-key" }),
+    );
+    await act(async () => buttons(view.container, "Save")[0]!.click());
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        baseUrl: "https://ollama.com/v1",
+        apiKey: "fake-fixture-key",
+        modelId: "fixture-model",
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});

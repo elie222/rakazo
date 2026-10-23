@@ -1,9 +1,14 @@
 import type { Models } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { liveModelSibling } from "./pi-live-model.js";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
-import { registeredPiModels } from "./pi-registered-models.js";
+import { registerLocalProvider } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import {
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  registerOpenAiCompatibleCatalog,
+} from "./pi-openai-compatible-provider.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -49,7 +54,9 @@ let catalogModelsCache: Models | undefined;
 
 function catalogModels(): Models {
   // Same catalog the runtime calls, including configured compatible providers.
-  catalogModelsCache ??= registeredPiModels();
+  catalogModelsCache ??= registerOpenAiCompatibleCatalog(
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
+  );
   return catalogModelsCache;
 }
 
