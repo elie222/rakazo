@@ -73,6 +73,11 @@ import {
   setInboxHidden,
   useSplitView,
 } from "../lib/split-view";
+import {
+  completeMobileStartup,
+  markMobileStartupMounted,
+  trackMobileStartup,
+} from "../lib/startup";
 import { capTextScaling } from "../lib/text-scale";
 import { startUnsentSends } from "../lib/unsent-sends";
 import { InboxPane } from "./index";
@@ -280,7 +285,10 @@ function LayoutContent() {
   }, [resolved]);
 
   useEffect(() => {
-    if (appearanceReady && ready) void SplashScreen.hideAsync().catch(() => undefined);
+    if (appearanceReady && ready)
+      void SplashScreen.hideAsync()
+        .then(completeMobileStartup)
+        .catch(() => undefined);
   }, [appearanceReady, ready]);
 
   useEffect(() => {
@@ -297,23 +305,27 @@ function LayoutContent() {
   useEffect(() => watchForegroundUpdates(), []);
 
   useEffect(() => {
+    markMobileStartupMounted();
     void Promise.all([
       Promise.all([
-        loadApiBase(),
-        loadAppearancePreference().finally(() => setAppearanceReady(true)),
-        loadResponseStreamingPreference(),
-        loadRemoteImagesPreference(),
-        loadInboxWidth(),
+        trackMobileStartup("server", loadApiBase()),
+        trackMobileStartup("appearance", loadAppearancePreference()).finally(() =>
+          setAppearanceReady(true),
+        ),
+        trackMobileStartup("streaming", loadResponseStreamingPreference()),
+        trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("inbox", loadInboxWidth()),
       ])
-        .then(async () =>
-          resumeLiveNotifications(
-            currentApiBase(),
-            await loadSessionToken(),
-            selectedSpaceId() ?? "",
-          ),
-        )
+        .then(() => {
+          // Notification restoration must not keep the native splash visible.
+          void loadSessionToken()
+            .then((token) =>
+              resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""),
+            )
+            .catch(() => undefined);
+        })
         .catch(() => undefined),
-      bootstrapI18n(),
+      trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
     ]).finally(() => setReady(true));
   }, []);
 

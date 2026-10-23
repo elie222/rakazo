@@ -8,7 +8,7 @@ import {
 } from "@rakazo/logging/monitoring";
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
-import { importChunk } from "./preload-recovery";
+import { importChunk, recoveringByReload } from "./preload-recovery";
 
 // Load the SDK only when the connected API enables reporting.
 
@@ -142,9 +142,12 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
         defaults.filter(
           (integration) => !["BrowserSession", "Breadcrumbs"].includes(integration.name),
         ),
-      // An uncaught timeout or cancellation still means the network, not the code.
+      // An uncaught timeout or cancellation still means the network, not the code, and a stale
+      // chunk the recovery reload is about to fix is not an error worth reporting.
       beforeSend: (event, hint) =>
-        isAbandonedRequest(hint?.originalException) ? null : sanitizeMonitoringEvent(event, userId),
+        recoveringByReload() || isAbandonedRequest(hint?.originalException)
+          ? null
+          : sanitizeMonitoringEvent(event, userId),
     });
   } catch {
     console.warn("Browser error reporting failed to start");
@@ -158,6 +161,7 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
  * render errors already reach `window.onerror`, where the SDK picks them up.
  */
 export function reportCaughtReactError(error: unknown, errorInfo: ErrorInfo): void {
+  if (recoveringByReload()) return;
   if (sentry) sentry.captureReactException(error, errorInfo);
   else if (pending && pending.length < MAX_PENDING) pending.push([error, errorInfo]);
   console.error(error);

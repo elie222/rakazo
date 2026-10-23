@@ -18,6 +18,7 @@ import {
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -709,7 +710,10 @@ export default function Integrations() {
           {toolsOpen ? (
             <View style={styles.toolsBody}>
               {toolsLoading ? (
-                <Text style={styles.secondary}>{t("Loading tools…")}</Text>
+                <ActivityIndicator
+                  color={native.secondaryLabel}
+                  accessibilityLabel={t("Loading tools…")}
+                />
               ) : tools.length === 0 ? (
                 <Text style={styles.secondary}>{t("No tools available.")}</Text>
               ) : (

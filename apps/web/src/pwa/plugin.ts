@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { isBuildId } from "@rakazo/contracts/client-build";
 import { darkTokens } from "@rakazo/ui-tokens";
 import type { Plugin, Rolldown } from "vite";
 import { CACHE_PREFIX } from "./service-worker.js";
@@ -57,12 +57,10 @@ export function shellFiles(bundle: Rolldown.OutputBundle): string[] {
   return [...files].sort();
 }
 
-export function injectShell(
-  code: string,
-  precache: readonly string[],
-  html: string | Uint8Array,
-): string {
-  const cacheName = `${CACHE_PREFIX}${createHash("sha256").update(JSON.stringify(precache)).update(html).digest("hex").slice(0, 16)}`;
+/** The cache is named after the build, the same id `/build-id` and every API request carry. */
+export function injectShell(code: string, precache: readonly string[], buildId: string): string {
+  if (!isBuildId(buildId)) throw new Error(`Expected a build id, got "${buildId}".`);
+  const cacheName = `${CACHE_PREFIX}${buildId}`;
   let injected = code;
   for (const [placeholder, value] of [
     [PRECACHE_PLACEHOLDER, precache],
@@ -76,7 +74,7 @@ export function injectShell(
 }
 
 /** Installable PWA shell: the web manifest and the service worker. */
-export function rakazoPwa(): Plugin[] {
+export function rakazoPwa(buildId: string): Plugin[] {
   const manifest = () => JSON.stringify(webManifest(), null, 2);
   return [
     {
@@ -113,7 +111,7 @@ export function rakazoPwa(): Plugin[] {
         if (worker.imports.length || worker.dynamicImports.length || worker.exports.length) {
           this.error("The service worker must not import or export modules.");
         }
-        worker.code = injectShell(worker.code, shellFiles(bundle), html.source);
+        worker.code = injectShell(worker.code, shellFiles(bundle), buildId);
       },
     },
   ];

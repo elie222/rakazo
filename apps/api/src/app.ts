@@ -14,7 +14,11 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError, VoiceAccountError } from "@rakazo/adapter-kit";
+import {
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  VoiceAccountError,
+} from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -1248,6 +1252,14 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
       message: error.message,
       cause: error,
     });
+  }
+  // The computer provider did not start the computer in time: an outage on its side the user
+  // can retry, not a server failure.
+  if (error instanceof SandboxUnavailableError) {
+    getLogger().warn(`rpc ${path.join("/")} computer unavailable`, {
+      reason: error.cause instanceof Error ? error.cause.message : undefined,
+    });
+    throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
   logUnexpectedRpcError(error, path);
   if (error instanceof SandboxRateLimitError) {

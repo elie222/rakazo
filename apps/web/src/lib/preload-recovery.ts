@@ -119,6 +119,14 @@ export function installPreloadRecovery(
 }
 
 /**
+ * True once a recovery reload is under way. Failures from then on are replaced by the reloaded page,
+ * so they are not worth reporting.
+ */
+export function recoveringByReload(): boolean {
+  return reloading;
+}
+
+/**
  * Reload to pick up a newer deployment, under the same guard as stale-chunk recovery: at most one
  * reload per cooldown, never offline, and with read-only overlays restored afterwards. False when
  * the guard refused.

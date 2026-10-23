@@ -2099,6 +2099,11 @@ describe("connections.begin", () => {
 
     expect(matched).toBe(true);
     expect(response.status).toBe(200);
+    // Complete and revoke hold the same lock across provider calls; begin must outwait them.
+    expect(vi.mocked(prisma.$transaction).mock.calls.map((call) => call[1])).toEqual([
+      { timeout: 60_000 },
+      { timeout: 60_000 },
+    ]);
     expect(create).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith({
       where: { id: "conn-old" },
@@ -3723,14 +3728,18 @@ describe("model credential persistence", () => {
     },
   );
 
-  it.each([401, 403, 503])(
-    "rejects an unverified OpenRouter replacement (%i) without changing the saved connection",
-    async (status) => {
+  it.each(
+    ["openrouter", "google", "deepseek"].flatMap((provider) =>
+      [401, 403, 503].map((status) => ({ provider, status })),
+    ),
+  )(
+    "rejects an unverified $provider replacement ($status) without changing the saved connection",
+    async ({ provider, status }) => {
       const { upsert, deps, handler } = persistDeps();
       const saved = {
         id: "credential-fixture",
         userId: actor.userId,
-        provider: "openrouter",
+        provider,
         secretId: "secret-fixture",
       };
       vi.mocked(deps.prisma.userModelCredential.findFirst).mockResolvedValue(saved as never);
@@ -3744,7 +3753,7 @@ describe("model credential persistence", () => {
       vi.stubGlobal("fetch", fetchImpl);
       try {
         const response = await call(handler, "models/connect", {
-          provider: "openrouter",
+          provider,
           apiKey: "fixture-replacement-key",
         });
         expect(response.status).toBe(400);
@@ -3767,31 +3776,47 @@ describe("model credential persistence", () => {
     },
   );
 
-  it("saves an OpenRouter key only after its authentication check succeeds", async () => {
-    const { deps, handler } = persistDeps();
-    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ data: {} }));
-    vi.stubGlobal("fetch", fetchImpl);
-    try {
-      const response = await call(handler, "models/connect", {
-        provider: "openrouter",
-        apiKey: "fixture-key",
-      });
-      expect(response.status).toBe(200);
-      expect(fetchImpl).toHaveBeenCalledWith(
-        "https://openrouter.ai/api/v1/key",
-        expect.objectContaining({ headers: { Authorization: "Bearer fixture-key" } }),
-      );
-      expect(deps.secrets.put).toHaveBeenCalledWith(
-        "fixture-key",
-        expect.objectContaining({ userId: actor.userId }),
-      );
-      expect(fetchImpl.mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(deps.secrets.put).mock.invocationCallOrder[0]!,
-      );
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
+  it.each([
+    {
+      provider: "openrouter",
+      url: "https://openrouter.ai/api/v1/key",
+      headers: { Authorization: "Bearer fixture-key" },
+    },
+    {
+      provider: "deepseek",
+      url: "https://api.deepseek.com/models",
+      headers: { Authorization: "Bearer fixture-key" },
+    },
+    {
+      provider: "google",
+      url: "https://generativelanguage.googleapis.com/v1beta/models",
+      headers: { "x-goog-api-key": "fixture-key" },
+    },
+  ])(
+    "saves a $provider key only after its authentication check succeeds",
+    async ({ provider, url, headers }) => {
+      const { deps, handler } = persistDeps();
+      const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ data: {} }));
+      vi.stubGlobal("fetch", fetchImpl);
+      try {
+        const response = await call(handler, "models/connect", {
+          provider,
+          apiKey: "fixture-key",
+        });
+        expect(response.status).toBe(200);
+        expect(fetchImpl).toHaveBeenCalledWith(url, expect.objectContaining({ headers }));
+        expect(deps.secrets.put).toHaveBeenCalledWith(
+          "fixture-key",
+          expect.objectContaining({ userId: actor.userId }),
+        );
+        expect(fetchImpl.mock.invocationCallOrder[0]).toBeLessThan(
+          vi.mocked(deps.secrets.put).mock.invocationCallOrder[0]!,
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("rejects an API key for ChatGPT-subscription Codex before persisting", async () => {
     const { upsert, deps, handler } = persistDeps();

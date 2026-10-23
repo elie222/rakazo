@@ -79,6 +79,11 @@ export function sanitizeNativeEvent(
     };
   const tags = object(input.tags);
   const safeTags = event.tags as Record<string, string>;
+  if (
+    surface === "mobile" &&
+    (tags["mobile.platform"] === "ios" || tags["mobile.platform"] === "android")
+  )
+    safeTags["mobile.platform"] = tags["mobile.platform"];
   for (const key of [...CORRELATION_TAG_KEYS, "operation"]) {
     const value = tags[key];
     if (typeof value === "string" && value.length <= 200 && /^[a-zA-Z0-9_.:-]+$/.test(value))

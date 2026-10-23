@@ -30,6 +30,9 @@ vi.mock("react-native", () => {
     AccessibilityInfo: { announceForAccessibility: vi.fn() },
     KeyboardAvoidingView: Container,
     TouchableWithoutFeedback: Container,
+    ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) => (
+      <div role="progressbar" aria-label={accessibilityLabel} />
+    ),
     View: Container,
     ScrollView: Container,
     Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,

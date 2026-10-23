@@ -35,6 +35,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Spinner,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -562,7 +563,7 @@ export function OnboardingPage() {
       <div className="mx-auto w-full max-w-[560px]">
         {step === "loading" ? (
           <p className="text-muted-foreground">
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null}
         {step === "model" ? (

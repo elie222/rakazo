@@ -34,6 +34,7 @@ import {
   DEFAULT_CONTEXT_STRATEGY,
   isRetryableProviderUnavailable,
   isTransientModelError,
+  ModelAccountError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import {
@@ -42,7 +43,7 @@ import {
   FLEET_TOOL_NAMES,
   usableModelId,
 } from "@rakazo/contracts";
-import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
+import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR, normalizeRunError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
 import { automated, withAutomatedLabels } from "./automated-messages.js";
@@ -834,9 +835,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const error = agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded && (!host.pausePending || signal.aborted)) {
           const message = sanitizeProviderError(activeStreamTarget.model.provider, error);
-          throw isTransientModelError(error)
-            ? new TransientModelError(message)
-            : new Error(message);
+          throw modelFailure(error, message);
         }
         if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
           const terminalText = assistantText(terminalMessage);
@@ -891,7 +890,9 @@ export class PiAgentRuntime implements AgentRuntime {
         queue.fail(
           error instanceof TransientModelError
             ? new TransientModelError(message)
-            : new Error(message),
+            : error instanceof ModelAccountError
+              ? new ModelAccountError(message)
+              : new Error(message),
         );
       } finally {
         queue.close();
@@ -2407,6 +2408,16 @@ function looksLikeOpenCodeSessionError(message: string): boolean {
     /session\s*(id|header|required|missing|invalid|expired|stale)/i.test(message) ||
     /model is unavailable/i.test(message)
   );
+}
+
+/**
+ * One classification for retries, reporting and the run error view: a failure that view
+ * explains with a connection or model fix is the user's account state, not a server fault.
+ */
+function modelFailure(error: string, message: string): Error {
+  if (isTransientModelError(error)) return new TransientModelError(message);
+  if (normalizeRunError(message).recovery) return new ModelAccountError(message);
+  return new Error(message);
 }
 
 function sanitizeProviderError(provider: string, message: string): string {

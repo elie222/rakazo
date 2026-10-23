@@ -13,7 +13,7 @@ import {
   voiceChatHoldsMessage,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
-import { cn } from "@rakazo/ui-web";
+import { cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
 import type { RefObject } from "react";
 import {
@@ -403,9 +403,11 @@ export const Transcript = memo(function Transcript({
             type="button"
             disabled={loadingOlder}
             onClick={() => void loadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground/75 disabled:opacity-50"
+            aria-label={t`Load earlier messages`}
+            className="flex items-center gap-2 self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground/75 disabled:opacity-50"
           >
-            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+            {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
+            {t`Load earlier messages`}
           </button>
         ) : null}
         {groupVoiceChats(reactionView.visibleMessages).map((item) => {

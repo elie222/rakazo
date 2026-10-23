@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { NativeSelect, NativeSelectOption, Spinner } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
@@ -59,7 +59,13 @@ export function IntegrationSetupPage() {
             onDone={() => navigate(bots.length ? "/app" : "/onboarding")}
           />
         ) : (
-          <p>{error ? t`Could not load bots. Reload to try again.` : t`Loading…`}</p>
+          <p>
+            {error ? (
+              t`Could not load bots. Reload to try again.`
+            ) : (
+              <Spinner aria-label={t`Loading…`} />
+            )}
+          </p>
         )}
       </div>
     </div>

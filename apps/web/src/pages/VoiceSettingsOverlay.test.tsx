@@ -26,6 +26,7 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: ({
       variant: _variant,
       size: _size,

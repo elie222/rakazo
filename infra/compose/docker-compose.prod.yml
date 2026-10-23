@@ -409,6 +409,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web
     command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Recent builds' hashed assets, so tabs still running one keep loading chunks after a deploy.
+    volumes:
+      - webassets:/app/apps/web/asset-archive
     init: true
     logging: *logging
     security_opt:
@@ -549,6 +552,7 @@ volumes:
   appdata:
   caddydata:
   caddyconfig:
+  webassets:
 
 networks:
   edge:

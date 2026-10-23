@@ -6,6 +6,11 @@ const sentry = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
 vi.mock("@sentry/react", () => sentry);
+const recovery = vi.hoisted(() => ({ reloading: false }));
+vi.mock("./preload-recovery", async (load) => ({
+  ...(await load<Record<string, unknown>>()),
+  recoveringByReload: () => recovery.reloading,
+}));
 
 import { reportCaughtReactError, startMonitoring } from "./monitoring";
 
@@ -30,6 +35,27 @@ describe("browser monitoring", () => {
     expect(sentry.captureReactException).toHaveBeenCalledWith(early, {
       componentStack: "\n    at App",
     });
+    consoleError.mockRestore();
+  });
+
+  it("does not report failures the recovery reload is about to replace", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    sentry.init.mockClear();
+    sentry.captureReactException.mockClear();
+    expect(await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }))).toBe(
+      true,
+    );
+    const { beforeSend } = sentry.init.mock.calls[0]![0];
+    recovery.reloading = true;
+    fresh.reportCaughtReactError(new TypeError("Failed to fetch dynamically imported module"), {
+      componentStack: "",
+    });
+    expect(sentry.captureReactException).not.toHaveBeenCalled();
+    expect(beforeSend({ message: "stale chunk" })).toBeNull();
+    recovery.reloading = false;
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
     consoleError.mockRestore();
   });
 

@@ -1,9 +1,9 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
-import { Trans, useLingui } from "@lingui/react/macro";
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import { isAttachmentAudioMimeType } from "@rakazo/contracts";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import { Button, Dialog, DialogClose, DialogContent, DialogTitle, Spinner } from "@rakazo/ui-web";
 import { Code2, Download, FileText, Play, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -221,8 +221,8 @@ function FilePreview({
       ) : null}
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {state.status === "loading" ? (
-          <div className="p-8 text-muted-foreground">
-            <Trans>Loading preview…</Trans>
+          <div className="absolute inset-0 grid place-items-center text-muted-foreground">
+            <Spinner aria-label={t`Loading preview…`} />
           </div>
         ) : state.status === "error" ? (
           <div className="m-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
@@ -314,8 +314,8 @@ function AudioArtifactPreview({
         </button>
       </div>
       {state.status === "loading" ? (
-        <span role="status" className="text-sm text-muted-foreground">
-          <Trans>Loading preview…</Trans>
+        <span className="text-sm text-muted-foreground">
+          <Spinner aria-label={t`Loading preview…`} />
         </span>
       ) : state.status === "error" ? (
         <DownloadError message={t`Could not load this file.`} />

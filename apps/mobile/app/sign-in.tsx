@@ -3,6 +3,7 @@ import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -123,7 +124,7 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
       </View>
     );
   }
@@ -271,11 +272,11 @@ export default function SignIn() {
                       />
                     </View>
                   ) : !reset ? (
-                    <Text
-                      style={{ color: tokens.mutedForeground, textAlign: "center", marginTop: 16 }}
-                    >
-                      {t("Loading…")}
-                    </Text>
+                    <ActivityIndicator
+                      color={tokens.mutedForeground}
+                      accessibilityLabel={t("Loading…")}
+                      style={{ marginTop: 16 }}
+                    />
                   ) : null}
                   {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
                     <NativeActionButton

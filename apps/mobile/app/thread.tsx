@@ -2602,12 +2602,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         onPress={() => void loadOlderMessages()}
         style={{
           alignSelf: "center",
+          alignItems: "center",
+          flexDirection: "row",
+          gap: 8,
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
       >
+        {loadingOlder ? (
+          <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
+        ) : null}
         <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>
-          {loadingOlder ? t("Loading…") : t("Load earlier messages")}
+          {t("Load earlier messages")}
         </Text>
       </Pressable>
     ) : null;

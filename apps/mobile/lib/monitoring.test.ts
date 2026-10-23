@@ -8,6 +8,7 @@ const sdk = vi.hoisted(() => ({
   setTag: vi.fn(),
 }));
 vi.mock("@sentry/react-native", () => sdk);
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 const response = (body: unknown) =>
   vi.fn(async () => new Response(JSON.stringify(body))) as unknown as typeof fetch;
 
@@ -36,9 +37,13 @@ describe("mobile monitoring", () => {
       attachScreenshot: false,
       attachViewHierarchy: false,
     });
+    expect(sdk.setTag).toHaveBeenCalledWith("mobile.platform", "ios");
     expect(
       options.beforeSend({ extra: { secret: "private" }, user: { email: "private" } }),
-    ).toEqual({ user: { id: "a".repeat(64), ip_address: null } });
+    ).toEqual({
+      user: { id: "a".repeat(64), ip_address: null },
+      tags: { "mobile.platform": "ios" },
+    });
     monitor.resetMobileMonitoring();
     expect(options.beforeSend({})).toBeNull();
     expect(sdk.setUser).toHaveBeenLastCalledWith(null);
@@ -158,6 +163,9 @@ describe("mobile monitoring", () => {
     const { beforeSend } = sdk.init.mock.calls[0]![0];
     const timeout = Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
     expect(beforeSend({}, { originalException: timeout })).toBeNull();
-    expect(beforeSend({}, { originalException: bug })).toEqual({ user: { ip_address: null } });
+    expect(beforeSend({}, { originalException: bug })).toEqual({
+      user: { ip_address: null },
+      tags: { "mobile.platform": "ios" },
+    });
   });
 });
