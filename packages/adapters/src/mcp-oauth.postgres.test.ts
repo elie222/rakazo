@@ -32,7 +32,10 @@ describePostgres("MCP OAuth refresh (PostgreSQL contract)", () => {
       await prisma.organization.deleteMany({ where: { id: { in: users } } });
       await prisma.user.deleteMany({ where: { id: { in: users } } });
     }
-    await Promise.all(databases.map((db) => db.prisma.$disconnect()));
+    for (const db of databases) {
+      await db.prisma.$disconnect();
+      await db.pool.end();
+    }
   });
 
   async function seed(material: OAuthMaterial) {
