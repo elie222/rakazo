@@ -77,7 +77,11 @@ vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("expo-file-system", () => ({ File: class {} }));
-vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./voice", () => ({
+  speakText: vi.fn(),
+  stopSpeaking: vi.fn(),
+  setVoiceBackgroundPlayback: vi.fn(),
+}));
 vi.mock("./dictation", () => ({ available: vi.fn(), listen: vi.fn() }));
 vi.mock("./call-sounds", () => ({
   playCallCue: vi.fn(),

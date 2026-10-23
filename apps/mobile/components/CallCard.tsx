@@ -15,6 +15,7 @@ import type { CallPhase } from "../lib/call-session";
 import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { setVoiceBackgroundPlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -22,6 +23,8 @@ import type { NativeSymbol } from "./native-symbol";
 
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
+const START_RETRY_MS = 3000;
+const START_ATTEMPTS = 20;
 
 let cachedInitial: string | null = null;
 
@@ -40,6 +43,7 @@ export function CallCard() {
   const [initial, setInitial] = useState(cachedInitial ?? "");
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
+  const startSeq = useRef(0);
   const onCall = Boolean(call);
 
   useEffect(() => {
@@ -52,37 +56,55 @@ export function CallCard() {
       .catch(() => undefined);
   }, [onCall]);
 
+  // A call keeps its replies playing while the screen is off.
+  useEffect(() => {
+    if (!onCall) return;
+    setVoiceBackgroundPlayback(true);
+    return () => setVoiceBackgroundPlayback(false);
+  }, [onCall]);
+
   // A microphone foreground service keeps the call alive when the display sleeps.
   // Start it only after the microphone permission is granted; retry when the call
-  // phase changes because the first turn may have just shown the permission prompt.
+  // phase changes or a moment passes, because the first turn may have just shown
+  // the permission prompt.
   useEffect(() => {
     if (!call) {
+      startSeq.current += 1;
       serviceStartedFor.current = null;
       setServiceStarted(false);
       void stopCallBackground();
       return;
     }
     if (Platform.OS !== "android" || serviceStartedFor.current === call.botId) return;
+    startSeq.current += 1;
+    const seq = startSeq.current;
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const retry = () => {
+      if (cancelled || attempts >= START_ATTEMPTS) return;
+      attempts += 1;
+      timer = setTimeout(() => void attempt(), START_RETRY_MS);
+    };
+    const attempt = async () => {
       try {
         const permission = await AudioModule.getRecordingPermissionsAsync();
-        if (cancelled || !permission.granted) return;
+        if (cancelled || seq !== startSeq.current) return;
+        if (!permission.granted) return retry();
         const started = await startCallBackground(call.botName);
-        if (cancelled) {
-          if (started) await stopCallBackground();
-          return;
-        }
-        if (started) {
-          serviceStartedFor.current = call.botId;
-          setServiceStarted(true);
-        }
+        // A newer attempt owns the service now, so its result decides the fallback.
+        if (cancelled || seq !== startSeq.current) return;
+        if (!started) return retry();
+        serviceStartedFor.current = call.botId;
+        setServiceStarted(true);
       } catch {
         // Keep the screen-awake fallback when the native service is unavailable.
       }
-    })();
+    };
+    void attempt();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [call?.botId, call?.botName, call?.phase]);
 

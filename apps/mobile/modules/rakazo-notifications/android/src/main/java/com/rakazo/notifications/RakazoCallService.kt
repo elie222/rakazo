@@ -24,6 +24,7 @@ class RakazoCallService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      report(started = false)
       stopSelf()
       return START_NOT_STICKY
     }
@@ -34,10 +35,14 @@ class RakazoCallService : Service() {
     try {
       startForegroundCompat(title)
     } catch (_: Exception) {
+      report(started = false)
       stopSelf()
       return START_NOT_STICKY
     }
     acquireWakeLock()
+    // Starting the service only queues this call, so the caller learns about
+    // success here, once the notification is up and the wake lock is held.
+    report(started = wakeLock?.isHeld == true)
     return START_NOT_STICKY
   }
 
@@ -81,8 +86,16 @@ class RakazoCallService : Service() {
     val power = getSystemService(Context.POWER_SERVICE) as PowerManager
     wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
       setReferenceCounted(false)
-      acquire(WAKE_LOCK_TIMEOUT_MS)
+      // No timeout: a call has no fixed length, and the lock is released when the
+      // service stops or the process dies.
+      acquire()
     }
+  }
+
+  private fun report(started: Boolean) {
+    val pending = pendingStart
+    pendingStart = null
+    pending?.invoke(started)
   }
 
   private fun openApp(): PendingIntent {
@@ -110,22 +123,31 @@ class RakazoCallService : Service() {
     private const val NOTIFICATION_ID = 1102
     private const val EXTRA_TITLE = "com.rakazo.notifications.CALL_TITLE"
     private const val WAKE_LOCK_TAG = "rakazo:call"
-    private const val WAKE_LOCK_TIMEOUT_MS = 2 * 60 * 60_000L
 
-    fun start(context: Context, title: String): Boolean {
+    /** Answers the start request that is still waiting for [onStartCommand]. */
+    private var pendingStart: ((Boolean) -> Unit)? = null
+
+    fun start(context: Context, title: String, onResult: (Boolean) -> Unit) {
       if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-        return false
+        onResult(false)
+        return
       }
+      pendingStart = onResult
       val intent = Intent(context, RakazoCallService::class.java)
         .putExtra(EXTRA_TITLE, title)
-      return runCatching {
+      val queued = runCatching {
         if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent)
         else context.startService(intent)
         true
       }.getOrDefault(false)
+      if (!queued) {
+        pendingStart = null
+        onResult(false)
+      }
     }
 
     fun stop(context: Context) {
+      pendingStart = null
       context.stopService(Intent(context, RakazoCallService::class.java))
     }
   }
