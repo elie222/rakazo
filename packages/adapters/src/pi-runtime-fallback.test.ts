@@ -57,6 +57,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE, PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
@@ -2312,5 +2313,48 @@ describe("Pi runtime output reservation recovery", () => {
     });
     await expect(run(input)).rejects.toThrow("This request requires more credits");
     expect(providerState.stream).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Pi runtime account request ceilings", () => {
+  it("rebuilds a rejected Groq context once without changing saved/requested settings", async () => {
+    const targetModel = model("groq", "fixture-limited", 32_768);
+    providerState.models.set(
+      `${targetModel.provider}/${targetModel.id}`,
+      targetModel as unknown as Record<string, unknown>,
+    );
+    const input = {
+      ...request(),
+      model: { provider: targetModel.provider, id: targetModel.id, apiKey: "fixture-key" },
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    const windows: number[] = [];
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      windows.push(target.contextWindow);
+      caps.push(options.maxTokens);
+      if (windows.length > 1) {
+        expect(estimateModelContextTokens(_context)).toBeLessThan(
+          target.contextWindow - options.maxTokens,
+        );
+      }
+      return stream(
+        target,
+        windows.length === 1
+          ? message(
+              target,
+              [],
+              "error",
+              '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large on tokens per minute (TPM): Limit 6000, Requested 7000, please reduce your message size."}',
+            )
+          : message(target, [{ type: "text", text: "Ready" }], "stop"),
+      );
+    });
+    const events = await run(input);
+    expect(windows).toEqual([32768, 5100]);
+    expect(caps).toEqual([4096, 1275]);
+    expect(input.model).not.toHaveProperty("contextWindow");
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
   });
 });
