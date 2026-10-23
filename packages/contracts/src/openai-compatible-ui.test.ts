@@ -5,6 +5,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   openAiCompatibleConnectReady,
+  savedCompatibleEndpointMatches,
 } from "./openai-compatible-ui.js";
 
 describe("openAiCompatibleConnectReady", () => {
@@ -76,4 +77,20 @@ it.each([
   "https://user:pass@ollama.com",
 ])("rejects non-preset URL %s", (url) => {
   expect(isOllamaCloudBaseUrl(url)).toBe(false);
+});
+
+it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+  "matches equivalent saved endpoints: %s",
+  (baseUrl) => {
+    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(true);
+  },
+);
+it.each(["", "https://", "https://other.test", "https://ollama.com/v2"])(
+  "does not inherit credentials for %s",
+  (baseUrl) => {
+    expect(savedCompatibleEndpointMatches(baseUrl, OLLAMA_CLOUD_BASE_URL)).toBe(false);
+  },
+);
+it("does not match a missing saved endpoint", () => {
+  expect(savedCompatibleEndpointMatches(OLLAMA_CLOUD_BASE_URL, undefined)).toBe(false);
 });

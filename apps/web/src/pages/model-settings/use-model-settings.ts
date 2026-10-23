@@ -10,13 +10,13 @@ import {
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
   modelHeadersInput,
-  normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
@@ -307,18 +307,14 @@ export function useModelSettings(onClose: () => void) {
       : null;
   const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
-  let savedHeaderEndpointMatches = false;
-  try {
-    savedHeaderEndpointMatches =
-      Boolean(credential?.baseUrl) &&
-      normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
-  } catch {
-    // An incomplete URL cannot inherit saved header placeholders.
-  }
+  const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     apiKey:
-      apiKey || (credential?.hasKey && credential.baseUrl === effectiveBaseUrl ? "stored" : ""),
+      apiKey ||
+      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
+        ? "stored"
+        : ""),
     baseUrl: effectiveBaseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,

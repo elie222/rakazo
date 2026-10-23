@@ -21,7 +21,6 @@ import {
   ModelHeaderRowsSchema,
   modelHeadersInput,
   moveBackupChoice,
-  normalizeOpenAiCompatibleBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -30,6 +29,7 @@ import {
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
   sameBackupChoices,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
@@ -509,7 +509,10 @@ export default function Models() {
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     apiKey:
-      apiKey || (credential?.hasKey && credential.baseUrl === effectiveBaseUrl ? "stored" : ""),
+      apiKey ||
+      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
+        ? "stored"
+        : ""),
     baseUrl: effectiveBaseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
@@ -941,14 +944,7 @@ export default function Models() {
     );
   }
 
-  let savedHeaderEndpointMatches = false;
-  try {
-    savedHeaderEndpointMatches =
-      Boolean(credential?.baseUrl) &&
-      normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
-  } catch {
-    // An incomplete URL cannot inherit saved header placeholders.
-  }
+  const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const visibleHeaderRows =
     headerRows ??
     (savedHeaderEndpointMatches ? (credential?.headerNames ?? []) : []).map((name) => ({

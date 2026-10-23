@@ -78,3 +78,15 @@ export function selectCompatibleModelCredential<
     (preferred.enabledModelIds === undefined ? preferred : undefined)
   );
 }
+
+/** Match a typed endpoint to the canonical saved endpoint; incomplete input never matches. */
+export function savedCompatibleEndpointMatches(
+  baseUrl: string,
+  savedBaseUrl: string | undefined,
+): boolean {
+  try {
+    return Boolean(savedBaseUrl) && normalizeOpenAiCompatibleBaseUrl(baseUrl) === savedBaseUrl;
+  } catch {
+    return false;
+  }
+}

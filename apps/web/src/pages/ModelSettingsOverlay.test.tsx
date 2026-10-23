@@ -1017,3 +1017,36 @@ it("keeps setup help and API key collapsible for generic compatible servers", as
     await view.unmount();
   }
 });
+
+it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+  "keeps Save enabled with a saved Ollama key at %s",
+  async (baseUrl) => {
+    models.list.mockResolvedValue([compatibleEntry]);
+    models.credentials.mockResolvedValue([
+      {
+        id: "fixture",
+        provider: "openai-compatible",
+        modelId: "fixture-model",
+        baseUrl: "https://ollama.com/v1",
+        hasKey: true,
+      },
+    ]);
+    const view = await renderSettings(false);
+    try {
+      await act(async () => buttons(view.container, "Ollama Cloud")[0]!.click());
+      await typeInto(view.container.querySelector("#model-base-url") as HTMLInputElement, baseUrl);
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+      await typeInto(
+        view.container.querySelector("#model-base-url") as HTMLInputElement,
+        "https://other.test/v1",
+      );
+      await typeInto(
+        view.container.querySelector("#model-base-url") as HTMLInputElement,
+        "https://ollama.com/v1/",
+      );
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+    } finally {
+      await view.unmount();
+    }
+  },
+);

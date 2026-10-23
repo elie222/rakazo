@@ -11,7 +11,7 @@ import { modelPickerRequest, selectPickerModel } from "./model-picker-selection"
 const savedEndpoint = "https://models.example.test/v1";
 const { push, saved } = vi.hoisted(() => ({
   push: vi.fn(),
-  saved: { baseUrl: "https://models.example.test/v1" },
+  saved: { baseUrl: "https://models.example.test/v1", hasKey: false },
 }));
 
 vi.mock("./api", () => ({
@@ -34,6 +34,7 @@ vi.mock("./api", () => ({
           provider: "openai-compatible",
           modelId: "model-fixture",
           baseUrl: saved.baseUrl,
+          hasKey: saved.hasKey,
           headerNames: ["x-session"],
           label: "Fixture",
         },
@@ -251,3 +252,28 @@ it("keeps setup help and API key collapsible for generic compatible servers", as
   await act(async () => row("API key").click());
   expect(field("API key")).toBeNull();
 });
+
+it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+  "keeps Save enabled with a saved Ollama key at %s",
+  async (baseUrl) => {
+    saved.baseUrl = "https://ollama.com/v1";
+    saved.hasKey = true;
+    try {
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(createElement(Models)));
+      await change("OpenAI-compatible server URL", baseUrl);
+      const save = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Save",
+      );
+      expect(save).toBeDefined();
+      expect(save!.disabled).toBe(false);
+      await change("OpenAI-compatible server URL", "https://other.test/v1");
+      await change("OpenAI-compatible server URL", "https://ollama.com/v1/");
+      expect(save!.disabled).toBe(false);
+    } finally {
+      saved.baseUrl = savedEndpoint;
+      saved.hasKey = false;
+    }
+  },
+);
