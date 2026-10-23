@@ -363,9 +363,6 @@ importers:
       '@babel/core':
         specifier: 7.29.7
         version: 7.29.7
-      '@fontsource-variable/geist':
-        specifier: 5.3.0
-        version: 5.3.0
       '@lingui/babel-plugin-lingui-macro':
         specifier: 6.6.0
         version: 6.6.0(@babel/core@7.29.7)(@babel/types@7.29.8)
@@ -2555,9 +2552,6 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
-
-  '@fontsource-variable/geist@5.3.0':
-    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
   '@google/genai@2.21.0':
     resolution: {integrity: sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q==}
@@ -12826,8 +12820,6 @@ snapshots:
       react-dom: 19.2.3(react@19.2.3)
 
   '@floating-ui/utils@0.2.12': {}
-
-  '@fontsource-variable/geist@5.3.0': {}
 
   '@google/genai@2.21.0(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.7))':
     dependencies:

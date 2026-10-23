@@ -215,7 +215,7 @@ export function ModelRoleSettings({
 
   return (
     <section className="mb-8" data-testid={`model-role-${role}`}>
-      <h3 className="mb-2.5 text-[15px] font-medium text-foreground">{title}</h3>
+      <h3 className="mb-2.5 text-heading3 font-medium text-foreground">{title}</h3>
       <ol className="divide-y divide-border rounded-xl border border-border">
         {primary ? null : (
           <li className={`${rowClass} ps-8`} data-testid="model-role-default">

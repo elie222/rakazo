@@ -120,7 +120,7 @@ export function HostComputerPrompt({
     >
       <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-[22px]">
+          <DialogTitle className="text-heading2">
             <Trans>Where should bots run?</Trans>
           </DialogTitle>
           <DialogDescription className="space-y-2 leading-relaxed">

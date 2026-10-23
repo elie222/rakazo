@@ -213,7 +213,7 @@ export function AppConnectCard({
           <img
             src={block.logo}
             alt=""
-            className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
+            className="h-10 w-10 rounded-[10px] bg-favicon-plate object-contain p-1"
           />
         ) : (
           <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-muted text-[15px] text-foreground">

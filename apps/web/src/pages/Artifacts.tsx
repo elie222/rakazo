@@ -231,7 +231,7 @@ export function ArtifactsPage() {
               <ChevronLeft size={16} strokeWidth={1.9} aria-hidden="true" />
               <Trans>Bots</Trans>
             </Link>
-            <h1 className="text-xl font-semibold">
+            <h1 className="text-heading2 font-semibold">
               <Trans>Artifacts</Trans>
             </h1>
           </div>

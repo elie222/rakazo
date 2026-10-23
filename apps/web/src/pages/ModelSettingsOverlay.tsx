@@ -188,7 +188,7 @@ export function ModelSettingsOverlay({
     <>
       {!embedded ? (
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
-          <DialogTitle className="text-2xl font-medium text-foreground">
+          <DialogTitle className="text-heading2 font-medium text-foreground">
             <Trans>Models</Trans>
           </DialogTitle>
           <DialogClose
