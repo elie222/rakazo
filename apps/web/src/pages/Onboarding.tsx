@@ -233,6 +233,7 @@ export function OnboardingPage() {
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey,
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
