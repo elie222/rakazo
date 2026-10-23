@@ -101,4 +101,14 @@ describe("dropped file attachments", () => {
     expect(result.attachments).toEqual([]);
     expect(result.skipped).toEqual([{ name: "huge.mov", reason: "over 64 MiB" }]);
   });
+
+  it("keeps the rest of a drop when one copy cannot be read", async () => {
+    state.base64.mockRejectedValueOnce(new Error("gone"));
+
+    const result = await readDroppedFiles([dropped("gone.png", 1024), dropped("kept.png", 1024)]);
+
+    expect(result.attachments.map((attachment) => attachment.name)).toEqual(["kept.png"]);
+    expect(result.skipped).toEqual([{ name: "gone.png", reason: "permission denied" }]);
+    expect(state.deleted).toContain("file:///cache/dropped/gone.png");
+  });
 });

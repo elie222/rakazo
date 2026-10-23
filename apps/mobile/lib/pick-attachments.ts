@@ -242,7 +242,14 @@ export async function readDroppedFiles(
       discardDroppedCopy(file.uri);
       continue;
     }
-    const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
+    const read = await readUriAsBase64(file.uri, maxBytes).catch(() => null);
+    if (!read) {
+      // A copy that vanished or cannot be read costs that file only.
+      skipped.push({ name: file.name, reason: "permission denied" });
+      discardDroppedCopy(file.uri);
+      continue;
+    }
+    const { contentBase64, size } = read;
     const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
     candidates.push({ uri: file.uri, name: file.name, mimeType, size, contentBase64, previewUri });
   }
