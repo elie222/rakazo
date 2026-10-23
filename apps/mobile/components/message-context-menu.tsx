@@ -55,6 +55,10 @@ export function MessageContextMenu({
         accessible={false}
         onLongPress={onLongPress}
         onPressIn={onDoubleTap ? (event) => detector.start(tapPoint(event)) : undefined}
+        // A touch that slides is not a tap, so movement and cancellation end it here
+        // as they do in the iOS responder below.
+        onTouchMove={onDoubleTap ? (event) => detector.move(tapPoint(event)) : undefined}
+        onTouchCancel={onDoubleTap ? () => detector.cancel() : undefined}
         onPress={onDoubleTap ? release : undefined}
         style={{ maxWidth: "100%", width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
       >
