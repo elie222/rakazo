@@ -2257,14 +2257,50 @@ describe("Pi runtime output reservation recovery", () => {
     expect(input.executeTool).not.toHaveBeenCalled();
   });
 
-  it("does not retry a response with partial output or a completed tool call", async () => {
+  it.each(["text", "toolCall"] as const)(
+    "does not retry a response with a partial %s block",
+    async (part) => {
+      const input = limitedRequest();
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          message(
+            target,
+            part === "text"
+              ? [{ type: "text", text: "Partial" }]
+              : [
+                  {
+                    type: "toolCall",
+                    id: "fixture-call",
+                    name: "write_effect",
+                    arguments: { value: "fixture" },
+                  },
+                ],
+            "error",
+            budgetError,
+          ),
+        ),
+      );
+      await expect(run(input)).rejects.toThrow("This request requires more credits");
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      expect(input.executeTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not treat a local reservation failure as a provider rejection", async () => {
     const input = limitedRequest();
-    providerState.stream.mockImplementation((target) =>
-      stream(target, message(target, [{ type: "text", text: "Partial" }], "error", budgetError)),
-    );
-    await expect(run(input)).rejects.toThrow("This request requires more credits");
-    expect(providerState.stream).toHaveBeenCalledOnce();
-    expect(input.executeTool).not.toHaveBeenCalled();
+    const beforeCall = vi.fn<ModelCallObserver["beforeCall"]>(async () => {
+      throw new Error(budgetError);
+    });
+    await expect(
+      run(
+        input,
+        [],
+        new PiAgentRuntime({ modelCallObserver: { beforeCall, afterCall: async () => undefined } }),
+      ),
+    ).rejects.toThrow("This request requires more credits");
+    expect(beforeCall).toHaveBeenCalledOnce();
+    expect(providerState.stream).not.toHaveBeenCalled();
   });
 
   it("does not retry after the original request deadline", async () => {
