@@ -173,6 +173,7 @@ import {
   mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
+  signupSurveyAsksTeamSize,
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
@@ -5117,6 +5118,31 @@ export function createRouter(deps: RouterDeps) {
       },
     },
     onboarding: {
+      signupSurvey: authed.onboarding.signupSurvey.handler(async ({ context, input }) => {
+        const answers = {
+          reason: input.reason || null,
+          use: input.use ?? null,
+          teamSize: signupSurveyAsksTeamSize(input.use) ? (input.teamSize ?? null) : null,
+          source: input.source || null,
+        };
+        const saved = await deps.prisma.signupSurvey.upsert({
+          where: { userId: context.actor.userId },
+          create: { userId: context.actor.userId, ...answers },
+          update: answers,
+        });
+        deps.analytics?.capture(
+          context.actor.userId,
+          {
+            name: "signup_survey_answered",
+            skipped: Object.values(answers).every((answer) => answer === null),
+            ...(answers.use ? { use: answers.use } : {}),
+            ...(answers.teamSize ? { teamSize: answers.teamSize } : {}),
+          },
+          // The first save's time keeps a resubmission a duplicate of the same event.
+          { id: context.actor.userId, at: saved.createdAt },
+        );
+        return { ok: true as const };
+      }),
       start: authed.onboarding.start.handler(async ({ context, input }) => {
         await startOnboarding(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };
@@ -5267,7 +5293,10 @@ export function createRouter(deps: RouterDeps) {
         );
         try {
           const auth = await connector.begin(
-            { provider: input.provider, redirectUrl: `${deps.env.webOrigin}/app` },
+            {
+              provider: input.provider,
+              redirectUrl: `${deps.env.webOrigin}/integrations/callback`,
+            },
             connectionContext(context.actor, "connections.begin", context.signal),
           );
           // Re-take the provider lock and only advance still-pending rows so a
@@ -6966,7 +6995,10 @@ function hostCredentials(active: boolean, provider: string) {
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
-    deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
+    deps.prisma.user.findUniqueOrThrow({
+      where: { id: actor.userId },
+      include: { signupSurvey: { select: { userId: true } } },
+    }),
     modelSetup(deps, actor),
   ]);
   return {
@@ -7000,6 +7032,8 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     avatarStyle: "organic",
     timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing),
+    // Only billing deployments ask; self-hosted installs never see the survey.
+    needsSignupSurvey: Boolean(deps.billing) && !user.signupSurvey,
   };
 }
 

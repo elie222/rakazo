@@ -53,6 +53,29 @@ const context = { messages: [] } as Context;
 describe("Model stream idle watchdog", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("allows an active stream to continue for an hour", async () => {
+    vi.useFakeTimers();
+    const watchdog = modelStreamIdleWatchdog(undefined);
+    const inner = new AssistantMessageEventStream();
+    const stream = watchdog.wrap(inner);
+    const iterator = stream[Symbol.asyncIterator]();
+    let pending = iterator.next();
+    inner.push({ type: "start", partial: assistantMessage() });
+    await pending;
+    for (let minute = 0; minute < 60; minute++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      pending = iterator.next();
+      inner.push({ type: "text_delta", contentIndex: 0, delta: "x", partial: assistantMessage() });
+      await pending;
+      expect(watchdog.signal.aborted).toBe(false);
+    }
+    pending = iterator.next();
+    inner.push({ type: "done", reason: "stop", message: assistantMessage() });
+    inner.end();
+    await pending;
+    await expect(stream.result()).resolves.toMatchObject({ stopReason: "stop" });
+  });
+
   it("aborts the composed signal after the idle bound and relabels the terminal error", async () => {
     vi.useFakeTimers();
     const watchdog = modelStreamIdleWatchdog(undefined);
