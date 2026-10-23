@@ -22,9 +22,9 @@ import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
 import {
   activeRunSelection,
-  latestBotRunSelection,
   previewFromBlocks,
   primaryActiveRun,
+  withLatestBotRuns,
 } from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
@@ -190,14 +190,13 @@ export function createRepos(
           select: {
             id: true,
             unread: true,
-            runs: latestBotRunSelection,
           },
         },
         runs: activeRunSelection,
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
-    const bots = await withNewestThreadMessages(prisma, rows, 1);
+    const bots = await withNewestThreadMessages(prisma, await withLatestBotRuns(prisma, rows), 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
       const activeRun = primaryActiveRun(bot.runs);
@@ -354,23 +353,22 @@ export function createRepos(
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
       const bots = await withNewestThreadMessages(
         prisma,
-        await prisma.bot.findMany({
-          where: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            archivedAt: options.archived ? { not: null } : null,
-          },
-          include: {
-            thread: {
-              include: {
-                runs: latestBotRunSelection,
-              },
+        await withLatestBotRuns(
+          prisma,
+          await prisma.bot.findMany({
+            where: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              archivedAt: options.archived ? { not: null } : null,
             },
-            runs: activeRunSelection,
-            computer: { select: { scope: true } },
-          },
-          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-        }),
+            include: {
+              thread: true,
+              runs: activeRunSelection,
+              computer: { select: { scope: true } },
+            },
+            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+          }),
+        ),
         SIDEBAR_PREVIEW_MESSAGE_WINDOW,
       );
       const callThreadIds = capabilities.phoneCallsEnabled
