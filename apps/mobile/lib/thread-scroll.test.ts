@@ -3,6 +3,7 @@ import type { ThreadScrollState } from "@rakazo/core";
 import { expandPeerReplies, foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
+  isOwnThreadMessage,
   latestArrivalMessageId,
   latestThreadRowKey,
   ThreadScrollBehavior,
@@ -56,6 +57,110 @@ describe("mobile thread initial scroll", () => {
 
     expect(behavior.onContentChanged(false, latestThreadRowKey("m1", []))).toBe(null);
     expect(behavior.state()).toEqual({ detached: true, unread: false });
+  });
+
+  it.each(["bottom", "detached", "drag", "momentum"])(
+    "follows outbox and landing after sending from %s",
+    (position) => {
+      const behavior = new ThreadScrollBehavior();
+      behavior.openThread("thread");
+      behavior.onLayout(600);
+      behavior.onContentSizeChanged(1800);
+      behavior.onContentChanged(false, "m1");
+      if (position !== "bottom") behavior.onUserScroll(500);
+      if (position === "drag" || position === "momentum") behavior.onUserDragStart();
+      if (position === "momentum") behavior.onUserDragEnd();
+      const action = position === "bottom" ? "smooth" : "jump";
+      expect(behavior.onOwnSend()).toBe(action);
+      behavior.onProgrammaticScroll();
+      expect(behavior.isTrackingUserScroll()).toBe(false);
+      // Native movement from the interrupted gesture cannot detach the send.
+      expect(behavior.onUserScroll(500)).toEqual({ detached: false, unread: false });
+      behavior.onUserDragEnd();
+      expect(behavior.onUserMomentumEnd()).toBe(action);
+      expect(behavior.onContentChanged(false, "bot-before-landing")).toBe("smooth");
+      expect(behavior.state().unread).toBe(false);
+      for (const row of [
+        latestThreadRowKey("bot-before-landing", ["a"]),
+        latestThreadRowKey("m2", [], true),
+      ]) {
+        behavior.onContentSizeChanged(2000);
+        expect(behavior.onContentChanged(false, row)).toBe(action);
+        expect(behavior.state()).toEqual({ detached: false, unread: false });
+      }
+      expect(behavior.onContentChanged(false, "bot")).toBe("smooth");
+      behavior.onUserScroll(500);
+      expect(behavior.onContentChanged(false, "bot2")).toBeNull();
+      expect(behavior.state().unread).toBe(true);
+    },
+  );
+
+  it("does not yank a reader who drags away before their send lands", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    behavior.onContentChanged(false, "m1");
+    behavior.onOwnSend();
+    behavior.onContentChanged(false, latestThreadRowKey("m1", ["a"]));
+    behavior.onUserDragStart();
+    behavior.onUserScroll(500);
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m2", [], true))).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+    expect(behavior.onContentChanged(false, latestThreadRowKey("bot", ["b"]))).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
+  });
+
+  it("handles an empty thread, two queued sends, and discards without an arrival", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestThreadRowKey(null, []));
+    behavior.onOwnSend();
+    for (const row of [
+      latestThreadRowKey(null, ["a"]),
+      latestThreadRowKey(null, ["a", "b"]),
+      latestThreadRowKey("m1", ["b"], true),
+      latestThreadRowKey("m2", [], true),
+    ]) {
+      expect(behavior.onContentChanged(false, row)).toBe("smooth");
+      expect(behavior.state()).toEqual({ detached: false, unread: false });
+    }
+    behavior.onUserDragStart();
+    behavior.onUserScroll(500);
+    behavior.onContentChanged(false, latestThreadRowKey("m2", ["c", "d"]));
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m2", ["c"]))).toBeNull();
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m2", []))).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+  });
+
+  it("restores outbox rows without unread and retries even when the row key stays the same", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    const row = latestThreadRowKey(null, ["failed"]);
+    expect(behavior.onContentChanged(false, row)).toBe("jump");
+    behavior.onUserDragStart();
+    behavior.onUserScroll(500);
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+    expect(behavior.onOwnSend()).toBe("jump");
+    expect(behavior.onContentChanged(false, row)).toBeNull();
+    expect(behavior.state()).toEqual({ detached: false, unread: false });
+    expect(behavior.onContentChanged(false, latestThreadRowKey("own", [], true))).toBe("jump");
+  });
+
+  it("retains the send intent while a pinned page blocks the live list", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    behavior.onContentChanged(false, "m1");
+    behavior.onUserDragStart();
+    behavior.onUserScroll(500);
+    behavior.onOwnSend();
+    const row = latestThreadRowKey("m1", ["a"]);
+    expect(behavior.onContentChanged(true, row)).toBeNull();
+    expect(behavior.state()).toEqual({ detached: false, unread: false });
+    expect(behavior.onLayout()).toBe("jump");
+    expect(behavior.onContentChanged(false, row)).toBe("jump");
   });
 
   it("keeps the latest message visible when the viewport resizes", () => {
@@ -431,5 +536,55 @@ describe("mobile thread folded peer replies", () => {
       latestArrivalMessageId([...expanded, { id: "new" }], markerOf),
     );
     expect(behavior.state()).toEqual({ detached: true, unread: true });
+  });
+});
+
+describe("message ownership", () => {
+  const message = { role: "user" as const, blocks: [] };
+  it("uses the human author when available and falls back for older messages", () => {
+    expect(isOwnThreadMessage({ ...message, userId: "me" }, "me")).toBe(true);
+    expect(isOwnThreadMessage({ ...message, userId: "other" }, "me")).toBe(false);
+    expect(isOwnThreadMessage(message, "me")).toBe(true);
+    expect(isOwnThreadMessage({ ...message, role: "bot" }, "me")).toBe(false);
+    expect(isOwnThreadMessage(undefined, "me")).toBe(false);
+    expect(
+      isOwnThreadMessage(
+        {
+          ...message,
+          blocks: [
+            { kind: "bot_message_received", fromBotId: "bot", fromBotName: "Bot", text: "Hi" },
+          ],
+        },
+        "me",
+      ),
+    ).toBe(false);
+  });
+  it("marks another member's arrival unread while detached", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    behavior.onContentChanged(false, "initial");
+    behavior.onUserScroll(500);
+    expect(
+      behavior.onContentChanged(
+        false,
+        latestThreadRowKey("other", [], isOwnThreadMessage({ ...message, userId: "other" }, "me")),
+      ),
+    ).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
+  });
+  it("ends send following when its outbox row is discarded", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread");
+    behavior.onLayout();
+    behavior.onContentChanged(false, "initial");
+    behavior.onUserScroll(500);
+    behavior.onOwnSend();
+    behavior.onContentChanged(false, latestThreadRowKey("initial", ["send"]));
+    expect(behavior.onContentChanged(false, latestThreadRowKey("bot", ["send"]))).toBe("smooth");
+    expect(behavior.onContentChanged(false, latestThreadRowKey("bot", []))).toBeNull();
+    behavior.onUserScroll(500);
+    behavior.onContentChanged(false, "reply");
+    expect(behavior.state().unread).toBe(true);
   });
 });
