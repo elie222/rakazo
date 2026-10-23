@@ -1325,6 +1325,7 @@ export class McpOAuthBroker {
           expectedEndpoint: endpoint,
           onPersisted,
           storedRefreshToken: rotated.spent,
+          replaceCleared: true,
           onKept: (grant) => {
             observed = grant;
           },
@@ -1348,6 +1349,7 @@ export class McpOAuthBroker {
       expectedEndpoint?: string | null;
       onPersisted?: ProviderOptions["onPersisted"];
       storedRefreshToken?: string | null;
+      replaceCleared?: boolean;
       onKept?: (grant: TokenGrant) => void;
     } = {},
   ): Promise<TokenGrant | undefined> {
@@ -1377,9 +1379,12 @@ export class McpOAuthBroker {
         if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
           nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
         nextMaterial.oauth = structuredClone(material.oauth);
+        // A process that spent the rotated-away token meanwhile cleared the grant this write renews.
+        const staleClear = options.replaceCleared && storedOAuth && !storedOAuth.tokens;
         if (
           options.storedRefreshToken !== undefined &&
-          (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken
+          (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken &&
+          !staleClear
         ) {
           // Another process rotated or replaced the grant; never overwrite it with an older one.
           // A disconnect removed the state altogether, and this write must not bring it back.

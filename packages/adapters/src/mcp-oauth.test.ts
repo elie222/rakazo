@@ -765,6 +765,34 @@ describe("MCP OAuth", () => {
     },
   );
 
+  it("keeps a rotated grant over the clear a queued process stores after a failed commit", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const api = await shared.startProcess(server.fetch);
+    const worker = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let queued: Promise<unknown> | undefined;
+    shared.tables.mcpServer.update = async (args) => {
+      if (!queued) {
+        queued = worker.provider.tokens();
+        await vi.waitFor(() =>
+          expect(shared.lockSettings.filter((sql) => sql.includes("advisory"))).toHaveLength(2),
+        );
+        throw new Error("connection terminated unexpectedly");
+      }
+      return update(args);
+    };
+
+    expect(await api.provider.tokens()).toMatchObject({ access_token: "access-1" });
+    await queued;
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+      "old-refresh",
+      "old-refresh",
+    ]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+    expect(await api.broker.statusFor(shared.server, shared.context)).toBe("connected");
+  });
+
   it("does not renew a token that is still inside its lifetime", async () => {
     const server = rotatingAuthServer();
     const shared = sharedCredentials(expiringMaterial(Date.now() - 10 * 60 * 1000));
