@@ -88,8 +88,8 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   newSiteOutcome,
-  nextCronDateAcross,
   nextFence,
+  nextRoutineRunDateAcross,
   outboundSiteGate,
   planActionGate,
   promptInvokesSkill,
@@ -3287,9 +3287,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ? watchTick.nextRunAt
         : isOneShotRoutineCrons(routine.crons)
           ? null
-          : nextCronDateAcross(
+          : nextRoutineRunDateAcross(
               routine.crons,
-              new Date(Math.max(Date.now(), scheduledAt.getTime())),
+              scheduledAt,
+              new Date(Date.now()),
               routine.timezone,
             );
       const previousLastRunAt = routine.lastRunAt;
