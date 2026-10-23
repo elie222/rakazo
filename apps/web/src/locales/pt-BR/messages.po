@@ -848,6 +848,36 @@ msgstr "Voltar"
 msgid "Back to sign in"
 msgstr "Voltar para o login"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "O modelo de backup {model} também falhou."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "O modelo de backup {model} foi ignorado: não pode ler imagens."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "O modelo de backup {model} foi ignorado: contexto muito grande."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "O modelo de backup {model} foi ignorado: sem conexão."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "O modelo de backup {model} foi ignorado: raciocínio indisponível."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "O modelo de backup {model} foi ignorado: modelo desconhecido."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Modelos de backup"

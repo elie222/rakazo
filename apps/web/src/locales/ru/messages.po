@@ -848,6 +848,36 @@ msgstr "Назад"
 msgid "Back to sign in"
 msgstr "Вернуться ко входу"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "Резервная модель {model} тоже завершилась с ошибкой."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "Резервная модель {model} пропущена: не поддерживает изображения."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "Резервная модель {model} пропущена: слишком большой контекст."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "Резервная модель {model} пропущена: нет подключения."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "Резервная модель {model} пропущена: рассуждения недоступны."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "Резервная модель {model} пропущена: неизвестная модель."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Резервные модели"

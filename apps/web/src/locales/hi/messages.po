@@ -848,6 +848,36 @@ msgstr "वापस"
 msgid "Back to sign in"
 msgstr "साइन इन पर वापस जाएँ"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "बैकअप मॉडल {model} भी विफल रहा।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "बैकअप मॉडल {model} छोड़ दिया गया: तस्वीरें नहीं पढ़ सकता।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "बैकअप मॉडल {model} छोड़ दिया गया: संदर्भ बहुत बड़ा है।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "बैकअप मॉडल {model} छोड़ दिया गया: कोई कनेक्शन नहीं।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "बैकअप मॉडल {model} छोड़ दिया गया: तर्क उपलब्ध नहीं है।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "बैकअप मॉडल {model} छोड़ दिया गया: अज्ञात मॉडल।"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "बैकअप मॉडल"

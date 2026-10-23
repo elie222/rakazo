@@ -64,6 +64,9 @@ export function defaultCatalogModelId(
   return usableModelId(entry?.id);
 }
 
+/** Selection error for a model id the provider does not serve, as opposed to a blocked connection. */
+export const UNKNOWN_MODEL_FOR_PROVIDER = "Unknown model for that provider";
+
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
     super(message);

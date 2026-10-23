@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { AppBootstrap, ThreadSnapshot } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, openNewSpace, signup } from "./helpers";
 
 function isPresented(error: Locator) {
@@ -137,6 +138,52 @@ test("a covered run error is not remembered until it is presented", async ({ pag
   await page.reload();
   await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
   await expect(error).toBeHidden();
+});
+
+test("a saved run error explains failed and skipped backups", async ({ page }, testInfo) => {
+  // The shell primes its first thread from bootstrap; later refreshes use threads/get.
+  await page.route("**/rpc/{bootstrap,threads/get}", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: ThreadSnapshot | AppBootstrap };
+    const snapshot = "thread" in body.json ? body.json.thread : body.json;
+    if (!snapshot) {
+      await route.fulfill({ response, json: body });
+      return;
+    }
+    snapshot.run = {
+      id: "backup-failure-fixture",
+      botId: snapshot.botId!,
+      threadId: snapshot.threadId,
+      taskId: "backup-task-fixture",
+      status: "failed",
+      trigger: "user",
+      routineId: null,
+      modelProvider: "openrouter",
+      modelId: "example:free",
+      startedAt: null,
+      completedAt: null,
+      createdAt: "2026-10-01T00:00:00Z",
+      error: JSON.stringify({
+        message: "Quota exhausted",
+        backupModels: [
+          {
+            provider: "openrouter",
+            model: "example:free",
+            name: "OpenRouter / Example",
+            reason: "failed",
+          },
+          { provider: "example", model: "backup", name: "Example / Backup", reason: "connection" },
+        ],
+      }),
+    };
+    await route.fulfill({ response, json: body });
+  });
+  await signup(page, `backup-failure-${Date.now()}@rakazo.test`, "password12", "Backup Failure");
+  await completeOnboarding(page);
+  const error = page.getByTestId("composer-error");
+  await expect(error).toContainText("Backup OpenRouter / Example also failed.");
+  await expect(error).toContainText("Backup Example / Backup was skipped: no connection.");
+  await captureScreenshot(page, testInfo, "run-error-backup-outcomes");
 });
 
 test("an overloaded provider is named instead of a generic error", async ({ page }, testInfo) => {

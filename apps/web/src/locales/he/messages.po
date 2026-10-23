@@ -848,6 +848,36 @@ msgstr "חזרה"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "גם מודל הגיבוי {model} נכשל."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "מודל הגיבוי {model} דולג: לא יכול לקרוא תמונות."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "מודל הגיבוי {model} דולג: ההקשר גדול מדי."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "מודל הגיבוי {model} דולג: אין חיבור."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "מודל הגיבוי {model} דולג: החשיבה לא זמינה."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "מודל הגיבוי {model} דולג: מודל לא מוכר."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "מודלי גיבוי"

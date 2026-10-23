@@ -848,6 +848,36 @@ msgstr "Zurück"
 msgid "Back to sign in"
 msgstr "Zurück zur Anmeldung"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "Auch das Ersatzmodell {model} ist fehlgeschlagen."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "Ersatzmodell {model} wurde übersprungen: kann keine Bilder lesen."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "Ersatzmodell {model} wurde übersprungen: Kontext zu groß."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "Ersatzmodell {model} wurde übersprungen: keine Verbindung."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "Ersatzmodell {model} wurde übersprungen: Denken nicht verfügbar."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "Ersatzmodell {model} wurde übersprungen: unbekanntes Modell."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Backup-Modelle"

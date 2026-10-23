@@ -92,6 +92,17 @@ export const RU_MESSAGES: Record<string, string> = {
   "{provider} reached its daily credit limit.": "{provider}: достигнут дневной кредитный лимит.",
   "{provider} reached its weekly credit limit.": "{provider}: достигнут недельный кредитный лимит.",
   "{provider} reached its monthly credit limit.": "{provider}: достигнут месячный кредитный лимит.",
+  "Backup {model} also failed.": "Резервная модель {model} тоже завершилась с ошибкой.",
+  "Backup {model} was skipped: no connection.":
+    "Резервная модель {model} пропущена: нет подключения.",
+  "Backup {model} was skipped: context too large.":
+    "Резервная модель {model} пропущена: слишком большой контекст.",
+  "Backup {model} was skipped: cannot read images.":
+    "Резервная модель {model} пропущена: не поддерживает изображения.",
+  "Backup {model} was skipped: unknown model.":
+    "Резервная модель {model} пропущена: неизвестная модель.",
+  "Backup {model} was skipped: thinking unavailable.":
+    "Резервная модель {model} пропущена: рассуждения недоступны.",
   "{provider} reached its spending limit.": "{provider}: достигнут лимит расходов.",
   "{provider} reached its daily spending limit.": "{provider}: достигнут дневной лимит расходов.",
   "{provider} reached its weekly spending limit.":

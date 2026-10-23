@@ -848,6 +848,36 @@ msgstr "Geri"
 msgid "Back to sign in"
 msgstr "Oturum açmaya geri dön"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "Yedek model {model} de başarısız oldu."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "Yedek model {model} atlandı: görüntüleri okuyamıyor."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "Yedek model {model} atlandı: bağlam çok büyük."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "Yedek model {model} atlandı: bağlantı yok."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "Yedek model {model} atlandı: akıl yürütme kullanılamıyor."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "Yedek model {model} atlandı: bilinmeyen model."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "Yedek modeller"

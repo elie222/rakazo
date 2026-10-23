@@ -43,6 +43,7 @@ import {
   FLEET_TOOL_NAMES,
   usableModelId,
 } from "@rakazo/contracts";
+import type { BackupModelOutcome } from "@rakazo/core";
 import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR, normalizeRunError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult, uncertainEffectResult } from "./approval-effect.js";
@@ -55,6 +56,7 @@ import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { groqRequestContextWindow } from "./groq-request-budget.js";
 import { estimateModelContextTokens } from "./model-context.js";
+import { UNKNOWN_MODEL_FOR_PROVIDER, UnavailableModelForAuthError } from "./model-selection.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import {
   normalizeOpenAiToolParameters,
@@ -2585,6 +2587,7 @@ interface FallbackStreamState {
   signal: AbortSignal;
   attempted: Set<string>;
   nextIndex: number;
+  backupModels?: BackupModelOutcome[];
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
   isProviderFailure(message: AssistantMessage): boolean;
@@ -2654,15 +2657,18 @@ function fallbackSupportsContext(
   candidate: RuntimeModelTarget,
   context: TranscriptContext,
   options: ModelsSimpleStreamOptions | undefined,
-  requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
   tools: readonly ConnectorTool[],
-): boolean {
+): Exclude<BackupModelOutcome["reason"], "failed"> | undefined {
   // The backup's own context policy prunes on its first call; judge what it would send. Too
   // many user images for its limit throws, and the caller skips the backup.
-  context = {
-    ...context,
-    messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
-  };
+  try {
+    context = {
+      ...context,
+      messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
+    };
+  } catch {
+    return "images";
+  }
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
   const outputTokens = resolveCompletionMaxTokens(
     candidate.model.maxTokens,
@@ -2676,27 +2682,26 @@ function fallbackSupportsContext(
   // otherwise usable small-context models on short turns.
   const contextSafetyMargin = Math.max(256, Math.ceil(inputTokens * 0.1));
   if (candidate.model.contextWindow <= inputTokens + outputTokens + contextSafetyMargin)
-    return false;
+    return "context";
   const imageCount = contextImageCount(context);
   if (
     (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
     !fallbackSeesImages(candidate)
   ) {
-    return false;
+    return "images";
   }
   if (
     typeof candidate.config.maxImagesPerPrompt === "number" &&
     imageCount > candidate.config.maxImagesPerPrompt
   ) {
-    return false;
+    return "images";
   }
-  const reasoningLevel = options?.reasoning ?? requestedThinkingLevel;
-  const requiresReasoning =
-    (reasoningLevel !== undefined && reasoningLevel !== null && reasoningLevel !== "off") ||
-    (candidate.config.thinkingLevel !== undefined &&
-      candidate.config.thinkingLevel !== null &&
-      candidate.config.thinkingLevel !== "off");
-  return !requiresReasoning || candidate.model.reasoning;
+  // Thinking belongs to each model's configuration. A primary's setting must not
+  // exclude a text-only backup, whose stream already runs with thinking disabled.
+  const thinkingLevel = candidate.config.thinkingLevel;
+  return thinkingLevel && thinkingLevel !== "off" && !candidate.model.reasoning
+    ? "thinking"
+    : undefined;
 }
 
 function fallbackAwareModelStream(
@@ -2718,6 +2723,20 @@ function fallbackAwareModelStream(
     return messages === context.messages ? context : { ...context, messages };
   };
   const signalAborted = () => signal.aborted;
+  const finishWithError = (event: Extract<AssistantMessageEvent, { type: "error" }>) => {
+    const error =
+      state.backupModels?.length && event.reason !== "aborted"
+        ? {
+            ...event.error,
+            errorMessage: JSON.stringify({
+              message: event.error.errorMessage ?? "The model provider returned an error.",
+              backupModels: state.backupModels,
+            }),
+          }
+        : event.error;
+    output.push({ ...event, error });
+    output.end(error);
+  };
   const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     const aborted = signalAborted() || /abort|cancel/i.test(message);
@@ -2740,8 +2759,7 @@ function fallbackAwareModelStream(
       errorMessage: message,
       timestamp: Date.now(),
     };
-    output.push({ type: "error", reason: stopReason, error: failure });
-    output.end(failure);
+    finishWithError({ type: "error", reason: stopReason, error: failure });
   };
   const failIfAborted = (target: RuntimeModelTarget) => {
     if (!signalAborted()) return false;
@@ -2759,15 +2777,33 @@ function fallbackAwareModelStream(
       if (state.attempted.has(key)) continue;
       state.attempted.add(key);
       if (choice.provider === current.config.provider && choice.id === current.config.id) continue;
+      const skip = (reason: Exclude<BackupModelOutcome["reason"], "failed">) => {
+        state.backupModels ??= [];
+        state.backupModels.push({
+          provider: choice.provider,
+          model: choice.id,
+          name: `${catalogModels().getProvider?.(choice.provider)?.name ?? choice.provider} / ${choice.id}`,
+          reason,
+        });
+        getLogger().warn("model.backup.skipped", {
+          provider: choice.provider,
+          model: choice.id,
+          reason,
+        });
+      };
       try {
         const config = state.request.resolveFallbackModel
           ? await state.request.resolveFallbackModel(choice.provider, choice.id)
           : (choice as AgentRunRequest["model"]);
         if (signalAborted()) return undefined;
-        if (config.provider !== choice.provider || config.id !== choice.id) continue;
+        if (config.provider !== choice.provider || config.id !== choice.id) {
+          skip("unknown_model");
+          continue;
+        }
         // Never borrow the primary or process-wide key for a backup. Production resolves
         // each candidate lazily from the authenticated user's Space-scoped credential store.
         if (!config.apiKey && !config.oauth && config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+          skip("connection");
           continue;
         }
         const resolved = resolveRuntimeModel(config);
@@ -2776,6 +2812,7 @@ function fallbackAwareModelStream(
           resolved.model.provider !== config.provider ||
           resolved.model.id !== config.id
         ) {
+          skip("unknown_model");
           continue;
         }
         const candidate: RuntimeModelTarget = {
@@ -2785,20 +2822,25 @@ function fallbackAwareModelStream(
           apiKey: resolved.apiKey,
           credentials: resolved.credentials,
         };
-        if (
-          !fallbackSupportsContext(
-            candidate,
-            requestContext(true),
-            options,
-            state.request.model.thinkingLevel,
-            state.request.tools,
-          )
-        ) {
+        const reason = fallbackSupportsContext(
+          candidate,
+          requestContext(true),
+          options,
+          state.request.tools,
+        );
+        if (reason) {
+          skip(reason);
           continue;
         }
         return candidate;
-      } catch {
-        // Missing connections and changed credentials are skipped in configured order.
+      } catch (error) {
+        // Do not log resolver errors: credentials and connection details can be sensitive.
+        skip(
+          error instanceof UnavailableModelForAuthError &&
+            error.message === UNKNOWN_MODEL_FOR_PROVIDER
+            ? "unknown_model"
+            : "connection",
+        );
       }
     }
     return undefined;
@@ -2817,8 +2859,7 @@ function fallbackAwareModelStream(
       const remainingMs = timeoutMs - (Date.now() - startedAt);
       const failure = firstRetryableError ?? sizingFailure;
       if ((retries > 0 || sizingFailure) && remainingMs <= 0 && failure) {
-        output.push(failure);
-        output.end(failure.error);
+        finishWithError(failure);
         return;
       }
       const target = state.getActive();
@@ -2943,6 +2984,18 @@ function fallbackAwareModelStream(
               if (next) {
                 state.messagesBeforeSwitch = context.messages.length;
                 await state.onSwitch(next);
+                state.backupModels ??= [];
+                state.backupModels.push({
+                  provider: next.config.provider,
+                  model: next.config.id,
+                  name: `${catalogModels().getProvider?.(next.config.provider)?.name ?? next.config.provider} / ${next.model.name}`,
+                  reason: "failed",
+                });
+                getLogger().info("model.backup.switched", {
+                  provider: next.config.provider,
+                  model: next.config.id,
+                  reason: "provider_unavailable",
+                });
                 if (failIfAborted(target)) return;
                 buffered = [];
                 restart = true;
@@ -2984,15 +3037,23 @@ function fallbackAwareModelStream(
               sawPartialOutput && event.error.content.length === 0 && lastPartial
                 ? { ...event, error: { ...event.error, content: lastPartial.content } }
                 : terminalEvent;
-            output.push(terminal);
-            output.end(terminal.error);
+            finishWithError(terminal);
             return;
           }
           if (event.type === "done") {
             for (const pending of buffered) output.push(pending);
             buffered = [];
-            output.push(event);
-            output.end(event.message);
+            const failure = providerFailureText(event.message);
+            if (failure && state.backupModels?.length) {
+              finishWithError({
+                type: "error",
+                reason: "error",
+                error: { ...event.message, stopReason: "error", errorMessage: failure },
+              });
+            } else {
+              output.push(event);
+              output.end(event.message);
+            }
             return;
           }
           lastPartial = {

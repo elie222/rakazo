@@ -97,6 +97,17 @@ export const DE_MESSAGES: Record<string, string> = {
   "{provider} reached its weekly credit limit.":
     "{provider}: wöchentliches Guthabenlimit erreicht.",
   "{provider} reached its monthly credit limit.": "{provider}: monatliches Guthabenlimit erreicht.",
+  "Backup {model} also failed.": "Auch das Ersatzmodell {model} ist fehlgeschlagen.",
+  "Backup {model} was skipped: no connection.":
+    "Ersatzmodell {model} wurde übersprungen: keine Verbindung.",
+  "Backup {model} was skipped: context too large.":
+    "Ersatzmodell {model} wurde übersprungen: Kontext zu groß.",
+  "Backup {model} was skipped: cannot read images.":
+    "Ersatzmodell {model} wurde übersprungen: kann keine Bilder lesen.",
+  "Backup {model} was skipped: unknown model.":
+    "Ersatzmodell {model} wurde übersprungen: unbekanntes Modell.",
+  "Backup {model} was skipped: thinking unavailable.":
+    "Ersatzmodell {model} wurde übersprungen: Denken nicht verfügbar.",
   "{provider} reached its spending limit.": "{provider}: Ausgabenlimit erreicht.",
   "{provider} reached its daily spending limit.": "{provider}: tägliches Ausgabenlimit erreicht.",
   "{provider} reached its weekly spending limit.":

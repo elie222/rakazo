@@ -848,6 +848,36 @@ msgstr "뒤로"
 msgid "Back to sign in"
 msgstr "로그인으로 돌아가기"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "백업 모델 {model}도 실패했습니다."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "백업 모델 {model}을 건너뛰었습니다: 이미지를 읽을 수 없음."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "백업 모델 {model}을 건너뛰었습니다: 컨텍스트가 너무 큼."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "백업 모델 {model}을 건너뛰었습니다: 연결 없음."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "백업 모델 {model}을 건너뛰었습니다: 추론 사용 불가."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "백업 모델 {model}을 건너뛰었습니다: 알 수 없는 모델."
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "백업 모델"

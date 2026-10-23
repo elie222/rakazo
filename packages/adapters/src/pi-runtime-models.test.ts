@@ -1,6 +1,7 @@
 import { getSupportedThinkingLevels, normalizeContext } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import googleQuota from "../../adapter-kit/src/fixtures/google-quota.json" with { type: "json" };
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
 import { defaultCatalogModelId, isCatalogModelChoice } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
@@ -187,3 +188,48 @@ it("resolves a saved Azure provider reference without changing its model id", ()
   expect(isCatalogModelChoice(provider, id)).toBe(true);
   expect(defaultCatalogModelId(provider)).toBeTruthy();
 });
+
+it("resolves a live OpenRouter free model absent from the static catalog", () => {
+  const id = "example/new-chat-model:free";
+  const result = resolveRuntimeModel({ provider: "openrouter", id, apiKey: "fake-key" });
+  expect(result.model).toMatchObject({
+    provider: "openrouter",
+    id,
+    reasoning: false,
+    input: ["text"],
+  });
+});
+
+// GenAI wraps non-JSON responses as {error:{message: body, code, status}}.
+// pi's Google catch uses formatProviderError(normalizeProviderError(error)),
+// which preserves ApiError.message, including the JSON string inside it.
+it("reproduces the Google provider errorMessage from a non-JSON quota response", async () => {
+  const envelope = JSON.parse(googleQuota);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(envelope.error.message, {
+          status: 429,
+          statusText: "Too Many Requests",
+          headers: { "content-type": "text/plain" },
+        }),
+    ),
+  );
+  const models = modelsForRequest(
+    { model: { provider: "google", id: "gemini-3.8-flash" } },
+    "google",
+  );
+  const model = models.getModel("google", "gemini-3.8-flash")!;
+  const result = await models
+    .getProvider("google")!
+    .streamSimple(
+      model,
+      normalizeContext({ messages: [{ role: "user", content: "Fixture", timestamp: 0 }] }),
+      { apiKey: "fake-key" },
+    )
+    .result();
+  expect(result.stopReason).toBe("error");
+  expect(result.errorMessage).toBe(googleQuota);
+});
+afterEach(() => vi.unstubAllGlobals());

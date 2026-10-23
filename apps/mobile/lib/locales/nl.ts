@@ -97,6 +97,17 @@ export const NL_MESSAGES: Record<string, string> = {
     "{provider} heeft de weeklimiet voor krediet bereikt.",
   "{provider} reached its monthly credit limit.":
     "{provider} heeft de maandlimiet voor krediet bereikt.",
+  "Backup {model} also failed.": "Back-upmodel {model} is ook mislukt.",
+  "Backup {model} was skipped: no connection.":
+    "Back-upmodel {model} is overgeslagen: geen verbinding.",
+  "Backup {model} was skipped: context too large.":
+    "Back-upmodel {model} is overgeslagen: context te groot.",
+  "Backup {model} was skipped: cannot read images.":
+    "Back-upmodel {model} is overgeslagen: kan geen afbeeldingen lezen.",
+  "Backup {model} was skipped: unknown model.":
+    "Back-upmodel {model} is overgeslagen: onbekend model.",
+  "Backup {model} was skipped: thinking unavailable.":
+    "Back-upmodel {model} is overgeslagen: redeneren niet beschikbaar.",
   "{provider} reached its spending limit.": "{provider} heeft de uitgavenlimiet bereikt.",
   "{provider} reached its daily spending limit.":
     "{provider} heeft de daglimiet voor uitgaven bereikt.",

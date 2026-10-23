@@ -40,6 +40,23 @@ export const RUN_ERROR_LIMIT_MESSAGES = {
   },
 } as const;
 
+/** Stored alongside provider diagnostics in the run's existing error envelope. */
+export const BACKUP_MODEL_ERROR_MESSAGES = {
+  failed: "Backup {model} also failed.",
+  connection: "Backup {model} was skipped: no connection.",
+  context: "Backup {model} was skipped: context too large.",
+  images: "Backup {model} was skipped: cannot read images.",
+  unknown_model: "Backup {model} was skipped: unknown model.",
+  thinking: "Backup {model} was skipped: thinking unavailable.",
+} as const;
+
+export interface BackupModelOutcome {
+  provider: string;
+  model: string;
+  name: string;
+  reason: keyof typeof BACKUP_MODEL_ERROR_MESSAGES;
+}
+
 export type RunErrorTranslator = (
   message: string,
   values?: Record<string, string | number>,
@@ -57,6 +74,7 @@ export function normalizeRunError(
 ): {
   summary: string;
   details: string;
+  backupModels?: BackupModelOutcome[];
   recovery?: "connection" | "model";
   resetAt?: number;
   kind?: "key" | "credit" | "spending" | "rate" | "auth" | "model";
@@ -71,6 +89,32 @@ export function normalizeRunError(
     // Plain text is handled below; malformed HTTP envelopes still get a safe summary.
   }
   const record = asRecord(parsed);
+  // The runtime serializes structured outcomes because persisted run errors are strings.
+  // Only our known categories become visible copy; raw provider text stays in diagnostics.
+  if (typeof record.message === "string" && Array.isArray(record.backupModels)) {
+    const backupModels = record.backupModels.filter((value): value is BackupModelOutcome => {
+      const outcome = asRecord(value);
+      return (
+        typeof outcome.provider === "string" &&
+        typeof outcome.model === "string" &&
+        typeof outcome.name === "string" &&
+        typeof outcome.reason === "string" &&
+        Object.hasOwn(BACKUP_MODEL_ERROR_MESSAGES, outcome.reason)
+      );
+    });
+    const result = normalizeRunError(record.message, translate, locale, now);
+    return {
+      ...result,
+      details,
+      backupModels,
+      summary: [
+        result.summary,
+        ...backupModels.map((outcome) =>
+          translate(BACKUP_MODEL_ERROR_MESSAGES[outcome.reason], { model: outcome.name }),
+        ),
+      ].join(" "),
+    };
+  }
   // Preserve only known recovery advice: provider diagnostics can also be plain text.
   if (APP_RUN_ERRORS.has(details.trim())) {
     return { summary: details, details };

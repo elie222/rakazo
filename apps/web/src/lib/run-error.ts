@@ -133,6 +133,42 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} reached its monthly spending limit.",
         values,
       });
+    case "Backup {model} also failed.":
+      return i18n._({
+        id: "Backup {model} also failed.",
+        message: "Backup {model} also failed.",
+        values,
+      });
+    case "Backup {model} was skipped: no connection.":
+      return i18n._({
+        id: "Backup {model} was skipped: no connection.",
+        message: "Backup {model} was skipped: no connection.",
+        values,
+      });
+    case "Backup {model} was skipped: context too large.":
+      return i18n._({
+        id: "Backup {model} was skipped: context too large.",
+        message: "Backup {model} was skipped: context too large.",
+        values,
+      });
+    case "Backup {model} was skipped: cannot read images.":
+      return i18n._({
+        id: "Backup {model} was skipped: cannot read images.",
+        message: "Backup {model} was skipped: cannot read images.",
+        values,
+      });
+    case "Backup {model} was skipped: unknown model.":
+      return i18n._({
+        id: "Backup {model} was skipped: unknown model.",
+        message: "Backup {model} was skipped: unknown model.",
+        values,
+      });
+    case "Backup {model} was skipped: thinking unavailable.":
+      return i18n._({
+        id: "Backup {model} was skipped: thinking unavailable.",
+        message: "Backup {model} was skipped: thinking unavailable.",
+        values,
+      });
     default:
       return message;
   }

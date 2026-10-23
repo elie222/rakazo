@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
+import googleQuota from "./fixtures/google-quota.json" with { type: "json" };
 import { isRetryableProviderUnavailable, isTransientModelError } from "./model-errors.js";
+
+it("recognizes the nested Google SDK quota error without retrying the exhausted account", () => {
+  expect(isRetryableProviderUnavailable(googleQuota)).toBe(true);
+  expect(isRetryableProviderUnavailable({ errorMessage: googleQuota })).toBe(true);
+  expect(isTransientModelError(googleQuota)).toBe(false);
+});
+
+it.each([
+  "RESOURCE_EXHAUSTED",
+  "Spending limit reached",
+  "Credit limit exceeded",
+  { status: 402, message: "Spending limit reached" },
+])("allows an explicit backup on account exhaustion: %s", (error) => {
+  expect(isRetryableProviderUnavailable(error)).toBe(true);
+});
+it.each(["Spending limit reached", "Credit limit exceeded"])(
+  "does not retry a permanent account limit: %s",
+  (error) => {
+    expect(isTransientModelError(error)).toBe(false);
+  },
+);
 
 describe("transient model errors", () => {
   it.each([

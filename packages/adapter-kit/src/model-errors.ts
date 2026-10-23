@@ -57,6 +57,9 @@ export function isProviderTimeout(error: unknown): boolean {
   return /timed? out|timeout/.test(errorFacts(error).text);
 }
 
+const accountLimit =
+  /\b(?:spend(?:ing)?|credit|budget|billing) (?:limit|cap) (?:reached|exceeded|exhausted)\b|\b(?:reached|exceeded|exhausted) (?:the |your )?(?:spend(?:ing)?|credit|budget|billing) (?:limit|cap)\b/;
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
@@ -94,7 +97,9 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return false;
   if (statuses.has(402)) {
-    return /quota|billing|credit|payment limit|insufficient funds/.test(text);
+    return (
+      accountLimit.test(text) || /quota|billing|credit|payment limit|insufficient funds/.test(text)
+    );
   }
   if (
     [408, 429].some((status) => statuses.has(status)) ||
@@ -102,7 +107,8 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network error|max retries exceeded|stream ended without finish_reason|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  if (accountLimit.test(text)) return true;
+  return /rate.?limit|too many requests|quota|resource_exhausted|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network error|max retries exceeded|stream ended without finish_reason|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -123,6 +129,7 @@ export function isTransientModelError(error: unknown): boolean {
     );
   return (
     isRetryableProviderUnavailable(error) &&
+    !accountLimit.test(text) &&
     !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|billing|credit balance|insufficient (?:funds|balance|credits)|payment|out of budget/.test(
       text,
     ) &&

@@ -848,6 +848,36 @@ msgstr "返回"
 msgid "Back to sign in"
 msgstr "返回登录"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} also failed."
+msgstr "备用模型 {model} 也失败了。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: cannot read images."
+msgstr "已跳过备用模型 {model}：无法读取图片。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: context too large."
+msgstr "已跳过备用模型 {model}：上下文过大。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: no connection."
+msgstr "已跳过备用模型 {model}：未连接。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: thinking unavailable."
+msgstr "已跳过备用模型 {model}：不支持思考。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Backup {model} was skipped: unknown model."
+msgstr "已跳过备用模型 {model}：未知模型。"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Backup models"
 msgstr "备用模型"
