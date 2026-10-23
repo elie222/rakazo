@@ -2,6 +2,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
+import { liveModelSibling } from "./pi-live-model.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import {
@@ -103,6 +104,7 @@ export function modelAcceptsImageInput(
   ) {
     model = models.getModel("openrouter", resolved.id);
   }
+  model ??= liveModelSibling(models, resolved.provider, resolved.id);
   return Boolean(model?.input.includes("image"));
 }
 

@@ -12,5 +12,5 @@
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", theme === "light" ? "#fafaf8" : "#141414");
+  if (meta) meta.setAttribute("content", theme === "light" ? "#fcfcfc" : "#141414");
 })();

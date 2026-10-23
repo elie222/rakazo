@@ -71,12 +71,41 @@ export async function connectCatalogItem(
   if (stopped()) return { status: "aborted" };
   if (started.authorizationUrl) await deps.openUrl(started.authorizationUrl);
   else if (item.noAuth) return { status: "connected" };
-  for (let attempt = 0; attempt < CATALOG_CONNECT_POLL_ATTEMPTS; attempt += 1) {
+  return waitForConnection(started.connectionId, deps.complete, {
+    signal: deps.signal,
+    isCurrent: deps.isCurrent,
+    attempts: CATALOG_CONNECT_POLL_ATTEMPTS,
+  });
+}
+
+/**
+ * Poll `connections/complete` until the connection is connected. A connection that was revoked
+ * or no longer exists was superseded (a newer attempt, possibly on another device, or a removal),
+ * so polling stops quietly as "aborted".
+ */
+export async function waitForConnection<Row extends { status: string }>(
+  connectionId: string,
+  complete: (input: { connectionId: string }) => Promise<Row>,
+  options: { signal: AbortSignal; isCurrent?: () => boolean; attempts: number },
+): Promise<{ status: "connected"; row: Row } | { status: "pending" } | { status: "aborted" }> {
+  const stopped = () => options.signal.aborted || options.isCurrent?.() === false;
+  for (let attempt = 0; attempt < options.attempts; attempt += 1) {
     if (stopped()) return { status: "aborted" };
-    const row = await deps.complete({ connectionId: started.connectionId }).catch(() => undefined);
+    let row: Row | undefined;
+    try {
+      row = await complete({ connectionId });
+    } catch (error) {
+      if (isNotFound(error)) return { status: "aborted" };
+    }
     if (stopped()) return { status: "aborted" };
     if (row?.status === "connected") return { status: "connected", row };
-    await abortableDelay(CATALOG_CONNECT_POLL_MS, deps.signal);
+    if (row?.status === "revoked") return { status: "aborted" };
+    await abortableDelay(CATALOG_CONNECT_POLL_MS, options.signal);
   }
   return stopped() ? { status: "aborted" } : { status: "pending" };
+}
+
+/** The server's NOT_FOUND code, not any 404 a proxy or an older server might send. */
+function isNotFound(error: unknown) {
+  return (error as { code?: unknown } | null)?.code === "NOT_FOUND";
 }

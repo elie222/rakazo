@@ -13,6 +13,7 @@ export function projectMessages(
     threadId: string;
     botId?: string | null;
   }>,
+  runs?: readonly { id: string; status: string }[],
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   type LiveProjection = {
@@ -52,6 +53,13 @@ export function projectMessages(
     else liveById.clear();
   };
   for (const event of events) {
+    if (stopsRunHelpers(event)) {
+      const settled = settleRunSubagents([...liveSubagents.values()], event.runId);
+      for (const message of settled) {
+        const block = message.blocks[0];
+        if (block?.kind === "subagent") liveSubagents.set(block.agentId, message);
+      }
+    }
     const payload = asRecord(event.payload);
     const createdAt =
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
@@ -142,7 +150,14 @@ export function projectMessages(
       clearLive(event);
     }
   }
-  for (const live of liveSubagents.values()) messages.push(live);
+  let helpers = [...liveSubagents.values()];
+  if (runs) {
+    const running = new Set(runs.filter((run) => run.status === "running").map((run) => run.id));
+    for (const runId of new Set(helpers.map((message) => message.runId))) {
+      if (runId && !running.has(runId)) helpers = settleRunSubagents(helpers, runId);
+    }
+  }
+  for (const live of helpers) messages.push(live);
   for (const live of liveById.values()) {
     if (live.blocks.length > 0) {
       messages.push({
@@ -158,6 +173,37 @@ export function projectMessages(
     }
   }
   return messages;
+}
+
+/** A pause ends the current helper execution, even when the run later resumes. */
+export function stopsRunHelpers(event: { type: string }): boolean {
+  return (
+    isRunTerminalEvent(event) ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  );
+}
+
+export function settleRunSubagents<T extends { runId?: string; blocks: readonly unknown[] }>(
+  messages: T[],
+  runId: string | null | undefined,
+): T[] {
+  if (!runId) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.runId !== runId) return message;
+    let settled = false;
+    const blocks = message.blocks.map((value) => {
+      const block = asRecord(value);
+      if (block.kind !== "subagent" || block.status !== "running") return value;
+      settled = true;
+      return { ...block, status: "failed", result: "stopped" };
+    });
+    if (!settled) return message;
+    changed = true;
+    return { ...message, blocks };
+  });
+  return changed ? next : messages;
 }
 
 export function progressMessageId(event: { runId?: string | null; id?: string }): string {
@@ -287,6 +333,29 @@ function liveMessageText(blocks: readonly MessageBlock[]): string {
     .filter((block) => block.kind === "text" || block.kind === "progress")
     .map((block) => block.text)
     .join("");
+}
+
+/**
+ * Whether a live message is writing reply text right now: its newest block is the bot's
+ * own narration, with no tool waiting to run. Tool status lines don't count.
+ */
+export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
+  const tail = blocks.at(-1);
+  return (
+    tail?.kind === "progress" &&
+    !tail.activity &&
+    !tail.pendingToolNames?.length &&
+    tail.text.trim().length > 0
+  );
+}
+
+/** The tool status line the newest live message is showing ("Searching the web: …"), if any. */
+export function liveActivityLine(
+  messages: readonly { id: string; blocks: readonly MessageBlock[] }[],
+): string | undefined {
+  const live = messages.findLast((message) => message.id.startsWith("progress:"));
+  const tail = live?.blocks.at(-1);
+  return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
 export type ToolStep = { label: string; count: number };
@@ -438,7 +507,8 @@ function endsWithHighSurrogate(value: string): boolean {
 }
 
 /**
- * Replace unpaired UTF-16 surrogates so the string is safe for JSON (Postgres rejects them).
+ * Replace unpaired UTF-16 surrogates and NUL characters, which Postgres rejects
+ * in json and text columns (command output and binary-ish tool results carry both).
  */
 export function sanitizeUtf16ForJson(value: string): string {
   let result = "";
@@ -452,7 +522,7 @@ export function sanitizeUtf16ForJson(value: string): string {
       } else {
         result += "\uFFFD";
       }
-    } else if (isLowSurrogate(code)) {
+    } else if (isLowSurrogate(code) || code === 0) {
       result += "\uFFFD";
     } else {
       result += value[i]!;
@@ -461,7 +531,7 @@ export function sanitizeUtf16ForJson(value: string): string {
   return result;
 }
 
-/** Deep-sanitize string leaves so event payloads never carry unpaired surrogates into JSON. */
+/** Deep-sanitize string leaves and keys so event payloads always persist in Postgres. */
 export function sanitizeJsonValue<T>(value: T): T {
   if (typeof value === "string") return sanitizeUtf16ForJson(value) as T;
   if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item)) as T;

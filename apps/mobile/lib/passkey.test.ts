@@ -66,6 +66,7 @@ function requests() {
   return vi.mocked(fetchMobileJson).mock.calls.map(([url, init]) => ({
     path: new URL(String(url)).pathname,
     headers: init.headers as Record<string, string>,
+    credentials: init.credentials,
     body: init.body ? JSON.parse(String(init.body)) : undefined,
   }));
 }
@@ -139,6 +140,8 @@ describe("passkey sign-in", () => {
     expect(verify?.path).toBe("/api/auth/passkey/verify-authentication");
     expect(verify?.headers).toMatchObject({ origin: "rakazo://", cookie: CHALLENGE });
     expect(verify?.headers).not.toHaveProperty("authorization");
+    // iOS would otherwise merge the jar's copy of the cookie with ours (CHALLENGE_NOT_FOUND).
+    expect([options?.credentials, verify?.credentials]).toEqual(["omit", "omit"]);
     expect(verify?.body).toEqual({ response: credential });
     expect(clearSpace).toHaveBeenCalledOnce();
     expect(replaceSessionTokenIfCurrent).toHaveBeenCalledWith(1, "new-session");
@@ -218,6 +221,7 @@ describe("passkey registration", () => {
       cookie: CHALLENGE,
       origin: "rakazo://",
     });
+    expect([options?.credentials, verify?.credentials]).toEqual(["omit", "omit"]);
     expect(verify?.body).toEqual({ response: credential });
     expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
   });

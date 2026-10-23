@@ -1,4 +1,4 @@
-import { Cron } from "croner";
+import { Cron, CronDate } from "croner";
 
 const WEEKDAYS = "1-5";
 const WEEKDAY_NAMES = [
@@ -275,12 +275,81 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   return next;
 }
 
-// Nearest next run across every recurring schedule on a routine. Ignores
-// @once slots (they don't recur) and any schedule that fails to parse. Only
-// the wakeup path (packages/adapters/src/executor.ts) should use this —
-// legacy or hand-edited records may carry a stale cron, and skipping it
-// there is safer than crashing the wakeup job. Anything that persists a
-// routine's crons must reject malformed input instead — see
+// Uneven interval steps recur from the scheduled fire instead of resetting at
+// cron field boundaries. Even steps keep cron's local wall-clock positions.
+// Creation/editing still uses nextCronDate for the initial anchor.
+export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const preset = presetFromCron(cron);
+  if (
+    cron.trim().split(/\s+/).length !== 5 ||
+    preset.freq !== "Interval" ||
+    preset.n > CRON_INTERVAL_MAX[preset.unit] ||
+    (preset.unit === "minutes" && 60 % preset.n === 0) ||
+    (preset.unit === "hours" && 24 % preset.n === 0) ||
+    (preset.unit === "days" && preset.n === 1)
+  ) {
+    return nextCronDate(cron, from, timezone);
+  }
+  if (preset.unit !== "days") {
+    const gap = preset.n * (preset.unit === "hours" ? 3_600_000 : 60_000);
+    const steps = Math.floor((from.getTime() - anchor.getTime()) / gap) + 1;
+    return new Date(anchor.getTime() + steps * gap);
+  }
+
+  const zone = validTimezoneOrUtc(timezone);
+  const localAnchor = new CronDate(anchor, zone);
+  const localNow = new CronDate(from, zone);
+  // CronDate stores months zero-based, like Date.
+  const anchorDay = Date.UTC(localAnchor.year, localAnchor.month, localAnchor.day);
+  const nowDay = Date.UTC(localNow.year, localNow.month, localNow.day);
+  let steps = Math.max(1, Math.floor((nowDay - anchorDay) / (preset.n * 86_400_000)));
+  let next: Date;
+  do {
+    const day = new Date(anchorDay + steps * preset.n * 86_400_000);
+    // Normalize the calendar date before letting Croner resolve its wall-clock
+    // time in the routine zone (including daylight saving transitions).
+    const candidate = new CronDate(localAnchor, zone);
+    candidate.year = day.getUTCFullYear();
+    candidate.month = day.getUTCMonth();
+    candidate.day = day.getUTCDate();
+    next = new Date(candidate.getDate().getTime() + localAnchor.ms);
+    steps++;
+  } while (next <= from);
+  return next;
+}
+
+// The shared anchor belongs to an interval only with one recurring schedule.
+// Multiple schedules keep cron matches because their individual anchors are
+// unknown. Skip one-shot and malformed schedules as nextCronDateAcross does.
+export function nextRoutineRunDateAcross(
+  crons: string[],
+  anchor: Date,
+  now: Date,
+  timezone = "UTC",
+): Date | null {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const recurring: string[] = [];
+  let earliest: Date | null = null;
+  for (const cron of crons) {
+    if (isOneShotRoutineCron(cron)) continue;
+    let next: Date;
+    try {
+      next = nextCronDate(cron, from, timezone);
+    } catch {
+      continue;
+    }
+    recurring.push(cron);
+    if (!earliest || next < earliest) earliest = next;
+  }
+  const onlyCron = recurring.length === 1 ? recurring[0] : undefined;
+  if (onlyCron) return nextRoutineRunDate(onlyCron, anchor, now, timezone);
+  return earliest;
+}
+
+// Nearest next calendar match, ignoring one-shot and malformed schedules.
+// Routine wakeups use nextRoutineRunDateAcross to preserve single-interval phase.
+// Anything persisting crons must reject malformed input instead — see
 // nextCronDateAcrossStrict.
 export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"): Date | null {
   let earliest: Date | null = null;

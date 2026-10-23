@@ -7,6 +7,12 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+  <queries>
+    <intent>
+      <action android:name="android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS" />
+    </intent>
+  </queries>
+
   <application>
     <service
       android:name=".RakazoNotificationService"

@@ -2,13 +2,22 @@ import type * as TimersPromises from "node:timers/promises";
 import type { FileUrlResponse, SandboxStateEnum } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { ComputerRef } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import {
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BoatSandboxProvider } from "./boat-sandbox.js";
+import {
+  BOAT_COMPUTER_SNAPSHOT,
+  BoatSandboxProvider,
+  boatComputerSnapshotName,
+} from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
-import { FakeBoatApi } from "./boat-sandbox.test-support.js";
+import { BOAT_ARTIFACT_MAX_BYTES, boatError, FakeBoatApi } from "./boat-sandbox.test-support.js";
+import { PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 // Polling waits advance a virtual clock, so state and deadline tests run instantly.
@@ -111,6 +120,7 @@ describe("BoatSandboxProvider", () => {
           ttlSeconds: 7200,
           noEnv: true,
           env: { RAKAZO_BOT_ID: "bot-a", RAKAZO_SANDBOX: "computer" },
+          from: BOAT_COMPUTER_SNAPSHOT,
         },
       },
       { signal: context.signal },
@@ -361,6 +371,99 @@ describe("BoatSandboxProvider", () => {
     expect(isSandboxGoneError(error)).toBe(true);
   });
 
+  it("recovers a sandbox whose machine stopped underneath it and retries the work once", async () => {
+    const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
+    const command = FakeBoatApi.prototype.command;
+    let machineStops = false;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      ...args
+    ) {
+      if (!machineStops) return command.apply(this, args);
+      machineStops = false;
+      this.fail(args[0].sandboxId);
+      throw boatError(409, "machine_not_running", "Sandbox machine is not running.");
+    });
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    machineStops = true;
+
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+      events.push(event);
+    }
+    expect(recover).toHaveBeenCalledOnce();
+    expect(events).toEqual([
+      { type: "stdout", data: "awake\n" },
+      { type: "exit", code: 0 },
+    ]);
+  });
+
+  it("waits for a resume another job already started instead of failing", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+    api.setState(computer.id, "archived");
+    resume.mockImplementationOnce(async ({ sandboxId }) => {
+      // The other resume finishes while this one is refused.
+      api.setState(sandboxId, "provisioning");
+      throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
+    });
+
+    expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    expect(resume).toHaveBeenCalledOnce();
+  });
+
+  it("retries a request that never reached Boat once, whatever the call", async () => {
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    const timeout = Object.assign(new Error("Connect Timeout Error"), {
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    const unreached = [
+      new Error("The request failed", { cause: new TypeError("fetch failed", { cause: timeout }) }),
+      // Boat's proxy could not connect to the sandbox machine.
+      boatError(502, "sandbox_direct_failed", "connect ECONNREFUSED 192.0.2.1:21034"),
+    ];
+    for (const failure of unreached) {
+      run.mockRejectedValueOnce(failure);
+      const events = [];
+      for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+        events.push(event);
+      }
+      expect(events).toEqual([
+        { type: "stdout", data: "awake\n" },
+        { type: "exit", code: 0 },
+      ]);
+    }
+  });
+
+  it("retries a Boat server error once for reads but never resends a command", async () => {
+    const lookup = FakeBoatApi.prototype.get;
+    const get = vi.spyOn(FakeBoatApi.prototype, "get");
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    get.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    get.mockImplementation(lookup);
+
+    await provider.stop(computer, context);
+    expect(api.state(computer.id)).toBe("archived");
+
+    await provider.prepare(computer, context);
+    run.mockClear();
+    run.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    const error = await (async () => {
+      for await (const _ of provider.execute(computer, { argv: ["true"] }, context)) {
+        // drain
+      }
+    })().catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 500");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("keeps an errored sandbox when Boat refuses recover without a known code", async () => {
     const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
     const { api, provider, computer } = await boat();
@@ -372,6 +475,53 @@ describe("BoatSandboxProvider", () => {
     const error = await provider.prepare(computer, context).catch((failure: unknown) => failure);
     expect((error as Error).message).toContain("HTTP 409");
     expect(isSandboxGoneError(error)).toBe(false);
+  });
+
+  it("reports a sandbox that never becomes runnable as unavailable, not gone", async () => {
+    const get = FakeBoatApi.prototype.get;
+    vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      const response = await get.call(this, request);
+      return { ...response, sandbox: { ...response.sandbox, state: "provisioning" } };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await reconnect(provider, computer).catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(SandboxUnavailableError);
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect((error as Error).cause).toMatchObject({
+      message: `Boat ${computer.id} did not become ready`,
+    });
+  });
+
+  it("keeps why desktop tool setup failed without changing the reported message", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("apt-get")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        exitCode: 100,
+        stdout: "",
+        stderr: "Reading package lists...\nE: Could not get lock /var/lib/dpkg/lock-frontend\n",
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await provider.prepare(computer, context).catch((failure: unknown) => failure);
+
+    expect(error).toMatchObject({
+      message: "could not prepare computer desktop tools",
+      cause: { message: "exit 100: E: Could not get lock /var/lib/dpkg/lock-frontend" },
+    });
   });
 
   it("replaces a sandbox whose data expires between the lookup and the resume", async () => {
@@ -585,7 +735,7 @@ describe("BoatSandboxProvider", () => {
     ).rejects.toBe(reason);
   });
 
-  it("exports browser profile files over 5 MiB without losing their bytes", async () => {
+  it("exports files listed over 5 MiB through a private download URL, not the artifact route", async () => {
     const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
     const { api, provider, computer } = await boat();
     const content = Buffer.alloc(6 * 1024 * 1024, 0xab);
@@ -593,20 +743,193 @@ describe("BoatSandboxProvider", () => {
       content,
       executable: false,
     });
+    api.files(computer.id).set("/home/user/rakazo-home/notes.txt", {
+      content: Buffer.from("small"),
+      executable: false,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => api.serveDownload(String(url)));
+
     const exported = [];
     for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
 
-    expect(exported).toHaveLength(1);
-    expect(exported[0]?.path).toBe(".browser-profiles/chrome/Default/History");
+    expect(exported.map((file) => file.path)).toEqual([
+      ".browser-profiles/chrome/Default/History",
+      "notes.txt",
+    ]);
     expect(Buffer.from(exported[0]!.content).equals(content)).toBe(true);
-    expect(artifactRaw).toHaveBeenCalledWith(
-      {
-        sandboxId: computer.id,
-        path: "/home/user/rakazo-home/.browser-profiles/chrome/Default/History",
-      },
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(artifactRaw).toHaveBeenCalledExactlyOnceWith(
+      { sandboxId: computer.id, path: "/home/user/rakazo-home/notes.txt" },
       { signal: context.signal },
     );
   });
+
+  it("downloads a file the artifact route could not send before Boat's proxy timed out", async () => {
+    const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/report.pdf", {
+      content: Buffer.from("slow but small"),
+      executable: false,
+    });
+    artifactRaw.mockRejectedValueOnce(
+      boatError(502, "sandbox_direct_failed", "Request timeout after 74997ms"),
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => api.serveDownload(String(url)));
+
+    const exported = [];
+    for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
+
+    expect(Buffer.from(exported[0]!.content).toString()).toBe("slow but small");
+    // The sandbox already had the request; resending it would only time out again.
+    expect(artifactRaw).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("reports a command Boat's proxy timed out as an unresponsive sandbox without resending it", async () => {
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    run.mockClear();
+    run.mockRejectedValueOnce(
+      boatError(502, "sandbox_direct_failed", "Request timeout after 74997ms"),
+    );
+
+    const error = await provider
+      .listFiles(computer, "", context)
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(SandboxUnresponsiveError);
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("exports files over the artifact limit through a private download URL", async () => {
+    const { api, provider, computer } = await boat();
+    const large = Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1, 0xcd);
+    large[0] = 0;
+    const files = api.files(computer.id);
+    files.set("/home/user/rakazo-home/data/archive.bin", { content: large, executable: true });
+    files.set("/home/user/rakazo-home/notes.txt", {
+      content: Buffer.from("kept"),
+      executable: false,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => api.serveDownload(String(url)));
+
+    const exported = [];
+    for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
+
+    expect(exported.map((file) => [file.path, file.executable])).toEqual([
+      ["data/archive.bin", true],
+      ["notes.txt", undefined],
+    ]);
+    expect(Buffer.from(exported[0]!.content).equals(large)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+  });
+
+  it("keeps large files out of the same export batch", async () => {
+    const { api, provider, computer } = await boat();
+    const files = api.files(computer.id);
+    for (const name of ["a", "b", "c"]) {
+      files.set(`/home/user/rakazo-home/${name}.bin`, {
+        content: Buffer.alloc(40 * 1024 * 1024),
+        executable: false,
+      });
+    }
+    let active = 0;
+    let peak = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      peak = Math.max(peak, ++active);
+      await Promise.resolve();
+      active--;
+      return api.serveDownload(String(url));
+    });
+
+    let count = 0;
+    for await (const _file of provider.exportWorkspace(computer, context)) count++;
+
+    expect(count).toBe(3);
+    expect(peak).toBe(1);
+  });
+
+  it("refuses a capped read of a file over the artifact limit without downloading it", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl");
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+
+    await expect(
+      provider.readFile(computer, "large.bin", context, { maxBytes: 1024 }),
+    ).rejects.toThrow("computer file exceeds 1024 bytes");
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { url: "http://downloads.on.boat.dev/file" },
+    { url: "https://on.boat.dev.attacker.test/file" },
+    { type: "file.upload_url" },
+    { method: "PUT" },
+    { path: "/tmp/other.bin" },
+  ])("rejects invalid download capabilities before fetching: %j", async (override) => {
+    const mint = FakeBoatApi.prototype.createDownloadUrl;
+    vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      return { ...(await mint.call(this, request)), ...override } as FileUrlResponse;
+    });
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("unexpected fetch"));
+
+    await expect(provider.readFile(computer, "large.bin", context)).rejects.toThrow(
+      "Boat returned an invalid file download URL",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["transport", "http"])(
+    "fails downloads without exposing signed URLs or response bodies (%s)",
+    async (failure) => {
+      const { api, provider, computer } = await boat();
+      api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+        content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+        executable: false,
+      });
+      const secret = "fake-private-download-token";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+        if (failure === "transport")
+          throw new Error(`https://downloads.on.boat.dev/?token=${secret}`);
+        return new Response(secret, { status: 503 });
+      });
+
+      const error = await provider
+        .readFile(computer, "large.bin", context)
+        .catch((error: unknown) => error);
+      expect((error as Error).message).toBe(
+        failure === "transport"
+          ? "Boat file download failed"
+          : "Boat file download failed (HTTP 503)",
+      );
+      expect((error as Error).cause).toBeUndefined();
+      expect((error as Error).stack).not.toContain(secret);
+    },
+  );
 
   it.each([undefined, "1", "20"])(
     "cancels oversized downloads with content-length %s",
@@ -809,5 +1132,191 @@ describe("BoatSandboxProvider", () => {
     await expect(pending).rejects.toThrow("Boat boat-test was not deleted within 60 seconds");
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
     expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(deadline.signal);
+  });
+});
+
+describe("Boat computer snapshot", () => {
+  function provision(provider: BoatSandboxProvider) {
+    return provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+  }
+
+  it("names the snapshot after the setup it captures", () => {
+    expect(BOAT_COMPUTER_SNAPSHOT).toMatch(/^rakazo-computer-[0-9a-f]{12}$/);
+    expect(boatComputerSnapshotName(["mkdir -p a", PREPARE_LINUX_DESKTOP])).not.toBe(
+      boatComputerSnapshotName(["mkdir -p b", PREPARE_LINUX_DESKTOP]),
+    );
+    expect(boatComputerSnapshotName(["a", "b"])).toBe(boatComputerSnapshotName(["a", "b"]));
+  });
+
+  it("starts new computers from the ready snapshot with only their own env", async () => {
+    const api = new FakeBoatApi();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    await provision(provider);
+    await provision(provider);
+
+    expect(api.creates).toEqual([
+      {
+        ttlSeconds: 7200,
+        noEnv: true,
+        env: { RAKAZO_BOT_ID: "bot-a", RAKAZO_SANDBOX: "computer" },
+        from: BOAT_COMPUTER_SNAPSHOT,
+      },
+      expect.objectContaining({ from: BOAT_COMPUTER_SNAPSHOT }),
+    ]);
+  });
+
+  it("installs on a plain sandbox and builds the snapshot once when it is missing", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const api = new FakeBoatApi();
+      api.namedSnapshots.clear();
+      const remove = vi.spyOn(api, "deleteSandbox");
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+      const first = await provision(provider);
+      const second = await provision(provider);
+      await vi.waitFor(() =>
+        expect(api.namedSnapshots.get(BOAT_COMPUTER_SNAPSHOT)?.status).toBe("ready"),
+      );
+      await vi.waitFor(() => expect(remove).toHaveBeenCalledOnce());
+      const third = await provision(provider);
+
+      const computers = api.creates.filter((request) => request.env?.RAKAZO_BOT_ID);
+      expect(computers.map((request) => request.from)).toEqual([
+        undefined,
+        undefined,
+        BOAT_COMPUTER_SNAPSHOT,
+      ]);
+      const builds = api.creates.filter((request) => !request.env?.RAKAZO_BOT_ID);
+      expect(builds).toEqual([{ ttlSeconds: 1800, noEnv: true }]);
+      const buildId = api.namedSnapshots.get(BOAT_COMPUTER_SNAPSHOT)?.sourceSandboxId;
+      expect([first.id, second.id, third.id]).not.toContain(buildId);
+      expect(remove).toHaveBeenCalledWith(buildId);
+      expect(api.state(buildId!)).toBeUndefined();
+      expect(
+        sink.events
+          .filter((event) => event.message === "sandbox.base_image")
+          .map(({ outcome }) => outcome),
+      ).toEqual(["missing", "built"]);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
+  it("falls back to a plain sandbox when Boat no longer has the snapshot", async () => {
+    const api = new FakeBoatApi();
+    const create = vi.spyOn(api, "create");
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+    await provision(provider);
+    api.namedSnapshots.clear();
+    create.mockClear();
+    const build = vi.spyOn(provider, "buildComputerSnapshot");
+
+    const computer = await provision(provider);
+
+    const attempts = create.mock.calls.map(([request]) => request?.createSandboxRequest);
+    expect(attempts.slice(0, 2)).toEqual([
+      expect.objectContaining({ from: BOAT_COMPUTER_SNAPSHOT }),
+      {
+        ttlSeconds: 7200,
+        noEnv: true,
+        env: { RAKAZO_BOT_ID: "bot-a", RAKAZO_SANDBOX: "computer" },
+      },
+    ]);
+    expect(computer.id).toBe("bx_fake2");
+    expect(build).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(api.namedSnapshots.get(BOAT_COMPUTER_SNAPSHOT)?.status).toBe("ready"),
+    );
+  });
+
+  it("builds from a clean sandbox, checks the desktop, and skips a ready snapshot", async () => {
+    const api = new FakeBoatApi();
+    api.namedSnapshots.clear();
+    const command = vi.spyOn(api, "command");
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    await expect(provider.buildComputerSnapshot()).resolves.toEqual({
+      name: BOAT_COMPUTER_SNAPSHOT,
+      built: true,
+    });
+    expect(api.creates).toEqual([{ ttlSeconds: 1800, noEnv: true }]);
+    const commands = command.mock.calls.map(([request]) => request.commandRequest.command);
+    expect(commands.some((line) => line.includes("apt-get install"))).toBe(true);
+    expect(commands.some((line) => line.includes("xdpyinfo -display :99"))).toBe(true);
+    expect(commands.join("\n")).not.toContain("RAKAZO_BOT_ID");
+
+    await expect(provider.buildComputerSnapshot()).resolves.toEqual({
+      name: BOAT_COMPUTER_SNAPSHOT,
+      built: false,
+    });
+    expect(api.creates).toHaveLength(1);
+  });
+
+  it("waits for a save already in progress instead of building again", async () => {
+    const api = new FakeBoatApi();
+    api.namedSnapshots.set(BOAT_COMPUTER_SNAPSHOT, {
+      name: BOAT_COMPUTER_SNAPSHOT,
+      status: "saving",
+      sourceSandboxId: "bx_other",
+      createdAt: new Date(0),
+    });
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    await expect(provider.buildComputerSnapshot()).resolves.toEqual({
+      name: BOAT_COMPUTER_SNAPSHOT,
+      built: false,
+    });
+    expect(api.creates).toEqual([]);
+  });
+
+  it("keeps using the snapshot after a boot is cancelled during its lookup", async () => {
+    const api = new FakeBoatApi();
+    const lookup = vi.spyOn(api, "getNamedSnapshot");
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+    const cancelled = new AbortController();
+    lookup.mockImplementationOnce(async () => {
+      cancelled.abort(new Error("boot cancelled"));
+      throw cancelled.signal.reason;
+    });
+
+    await expect(
+      provider.provision(
+        { botId: "bot-a", homePath: "/unused" },
+        { ...context, signal: cancelled.signal },
+      ),
+    ).rejects.toThrow("boot cancelled");
+    await provision(provider);
+
+    expect(api.creates).toEqual([expect.objectContaining({ from: BOAT_COMPUTER_SNAPSHOT })]);
+  });
+
+  it("does not save a snapshot whose desktop check fails", async () => {
+    const api = new FakeBoatApi();
+    api.namedSnapshots.clear();
+    const run = api.command.bind(api);
+    vi.spyOn(api, "command").mockImplementation(async (request) =>
+      request.commandRequest.command.includes("xdpyinfo -display :99")
+        ? {
+            ok: true,
+            type: "command.finished",
+            success: false,
+            exitCode: 1,
+            stdout: "",
+            stderr: "Xvfb did not start\n",
+            timedOut: false,
+          }
+        : run(request),
+    );
+    const remove = vi.spyOn(api, "deleteSandbox");
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+
+    await expect(provider.buildComputerSnapshot()).rejects.toMatchObject({
+      cause: { message: "exit 1: Xvfb did not start" },
+    });
+    expect(api.namedSnapshots.size).toBe(0);
+    expect(remove).toHaveBeenCalledWith("bx_fake1");
   });
 });

@@ -1,3 +1,5 @@
+import type { SearchHit } from "@rakazo/contracts";
+
 const URL_PATTERN = /https?:\/\/[^\s<>"'\]]+/gi;
 
 const URL_START = /https?:\/\/[^\s<>"'\]]/gi;
@@ -39,6 +41,21 @@ export function matchesSearchQuery(
   return fields.some((field) => field?.toLowerCase().includes(q));
 }
 
+/**
+ * Escape the characters a SQL `LIKE` pattern treats as wildcards, so a search
+ * matches the text the user typed. `matchesSearchQuery` compares literally:
+ * without this a `%` or `_` would widen the match, and a `\` would swallow the
+ * character after it.
+ */
+export function escapeSearchWildcards(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/** Escape string content as rendered in JSONB text, then escape SQL LIKE wildcards. */
+export function escapeJsonSearchWildcards(value: string): string {
+  return escapeSearchWildcards(JSON.stringify(value).slice(1, -1));
+}
+
 export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
   const q = query.trim().toLowerCase();
   if (!q) return text.slice(0, maxLen);
@@ -64,4 +81,31 @@ export function searchHitThreadTarget(hit: {
     throw new Error("Search hit must target exactly one of a bot or group");
   }
   return hit.groupId ? { groupId: hit.groupId } : { botId: hit.botId! };
+}
+
+/**
+ * One row per hit, unique per kind and every id. File hits carry the message they were sent in,
+ * so files sent together share a message id; links in one message differ only by URL.
+ */
+export function searchHitListKey(hit: SearchHit): string {
+  return [
+    hit.kind,
+    hit.groupId ?? hit.botId ?? "",
+    hit.messageId ?? "",
+    hit.artifactId ?? "",
+    hit.routineId ?? "",
+    hit.url ?? "",
+  ].join("\u0000");
+}
+
+export function dedupeSearchHits(hits: readonly SearchHit[]): SearchHit[] {
+  const seen = new Set<string>();
+  const unique: SearchHit[] = [];
+  for (const hit of hits) {
+    const key = searchHitListKey(hit);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(hit);
+  }
+  return unique;
 }

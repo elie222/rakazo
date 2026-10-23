@@ -5,6 +5,9 @@ import { HOME_MODEL_PROVIDERS, getHomeCopy } from "./i18n/home";
 import { roundupMarkdown } from "./roundup";
 import { APP_URL } from "./site";
 
+export const AGENT_DISCOVERY_LINKS =
+  '</llms.txt>; rel="describedby"; type="text/plain", </.well-known/ai-catalog.json>; rel="ai-catalog"; type="application/ai-catalog+json"';
+
 const home = getHomeCopy("en");
 
 export const HOME_MARKDOWN = `# Rakazo
@@ -146,12 +149,15 @@ Rakazo Cloud at https://app.rakazo.com is in beta. Self-hosting is also availabl
 
 ## Canonical resources
 
-- [Website](https://rakazo.com/)
+- [AI Catalog](https://rakazo.com/.well-known/ai-catalog.json): machine-readable index of the public agent resources.
+- [Website](https://rakazo.com/): product overview, supported models, and common questions.
+- [Website Markdown](https://rakazo.com/index.md): the English product overview as Markdown.
 - [Alternatives](https://rakazo.com/alternatives/)
 - [Open source Grok Bot alternative](https://rakazo.com/grok-bot-alternative/)
 - [About](https://rakazo.com/about/)
 - [Source](https://github.com/elie222/rakazo)
-- [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
+- [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/): requirements, Docker install, source setup, and desktop and mobile connections.
+- [Self-hosting Markdown](https://rakazo.com/self-hosted-ai-agent.md): the setup guide with language-tagged code examples.
 - [Full self-hosting reference](https://github.com/elie222/rakazo/blob/main/docs/self-host.md)
 - [OpenClaw comparison](https://rakazo.com/openclaw-alternative/)
 - [Blog](https://rakazo.com/blog/)
@@ -280,7 +286,7 @@ export function markdownResponse(
       "Cache-Control": "public, max-age=0, must-revalidate",
       "Content-Language": "en",
       "Content-Type": "text/markdown; charset=utf-8",
-      Link: '</llms.txt>; rel="describedby"; type="text/plain"',
+      Link: AGENT_DISCOVERY_LINKS,
       Vary: "Accept, Accept-Encoding",
       ...(status === 404 ? { "X-Robots-Tag": "noindex" } : {}),
     },

@@ -71,6 +71,7 @@ import {
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
   ModelCredentialSchema,
+  ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   REPLY_QUOTE_MAX_LENGTH,
@@ -108,6 +109,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { ModelHeadersSchema } from "./model-headers.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
@@ -194,6 +196,15 @@ export const appContract = {
   me: oc.output(MeSchema),
   billing: {
     status: oc.output(BillingStatusSchema),
+    selectFunding: oc
+      .input(z.object({ funding: z.enum(["byok", "credits"]) }))
+      .output(z.object({ ok: z.literal(true) })),
+    purchaseCredits: oc
+      .input(z.object({ amountCents: ModelCreditAmountSchema, monthly: z.boolean() }))
+      .output(z.object({ url: z.string().url() })),
+    setMonthlyCredits: oc
+      .input(z.object({ amountCents: ModelCreditAmountSchema }))
+      .output(z.object({ ok: z.literal(true) })),
     checkout: oc.output(z.object({ url: z.string().url() })),
     portal: oc.output(z.object({ url: z.string().url() })),
   },
@@ -260,6 +271,8 @@ export const appContract = {
       .input(
         z.object({
           baseUrl: z.string(),
+          credentialId: z.string().optional(),
+          headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
         }),
       )
@@ -488,8 +501,14 @@ export const appContract = {
           ),
       )
       .output(z.object({ ok: z.literal(true) })),
-    markRead: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
-    markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    /** `unreadAfterSeq`: the seq read up to before this call, null when nothing was unread. */
+    markRead: oc
+      .input(threadTarget)
+      .output(z.object({ ok: z.literal(true), unreadAfterSeq: z.number().int().nullable() })),
+    /** With `messageId`, the chat reads as unread from that message: the next open puts New above it. */
+    markUnread: oc
+      .input(threadTarget.and(z.object({ messageId: Id.optional() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
@@ -831,7 +850,14 @@ export const appContract = {
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
       .input(
-        z.object({ botId: Id, provider: z.string(), connectorId: z.string().default("composio") }),
+        z.object({
+          botId: Id,
+          threadId: Id.optional(),
+          /** The card's own message, so it is found however far back it is. */
+          messageId: Id.optional(),
+          provider: z.string(),
+          connectorId: z.string().default("composio"),
+        }),
       )
       .output(z.object({ ok: z.literal(true) })),
   },

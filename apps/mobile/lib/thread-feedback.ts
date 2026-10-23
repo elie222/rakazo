@@ -1,6 +1,6 @@
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
-import { isServerUnreachable } from "@rakazo/core";
+import { isModelRequiredSendError, isServerUnreachable } from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { rpc } from "./api";
 import { t } from "./i18n";
@@ -173,6 +173,10 @@ export function restoreUnsentSends() {
   if (restored || !scope || !config) return;
   // Restore before the first write; repeated preparation cannot duplicate nonces.
   unsentSends = config.disk.load(sessionCount, scope);
+  for (const attempt of unsentSends) {
+    if (attempt.state === "refused" && isModelRequiredSendError(attempt.error))
+      attempt.state = "failed";
+  }
   restored = true;
   changed();
 }
@@ -245,7 +249,12 @@ export function sendWaitingMessages(force = false): Promise<void> {
           const offline = isServerUnreachable(error) || (status ?? detail?.cause?.status) === 429;
           attempt.state = offline
             ? "queued"
-            : status && status >= 400 && status < 500 && ![408, 425, 429].includes(status)
+            : !isModelRequiredSendError(error) &&
+                status &&
+                status >= 400 &&
+                status < 500 &&
+                // A 409 or 426 clears once teaching stops or the app updates, so it stays retryable.
+                ![408, 409, 425, 426, 429].includes(status)
               ? "refused"
               : "failed";
           attempt.error = config.errorText(error);

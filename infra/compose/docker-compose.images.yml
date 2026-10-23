@@ -23,11 +23,20 @@ x-app-environment: &app-environment
   DATA_DIR: /data
   ENCRYPTION_KEY:
   ENCRYPTION_MASTER_KEYS:
+  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
+  # Optional: keep bot homes in S3-compatible object storage (docs/self-host.md#bot-homes-in-object-storage).
+  OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_ENDPOINT:
+  OBJECT_STORAGE_REGION:
+  OBJECT_STORAGE_ACCESS_KEY_ID:
+  OBJECT_STORAGE_SECRET_ACCESS_KEY:
+  OBJECT_STORAGE_PREFIX:
+  OBJECT_STORAGE_PATH_STYLE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL: ${API_URL:-http://127.0.0.1:5173}
   MAX_UPLOAD_SIZE_MB:
-  RAKAZO_IMAGE_TAG:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
@@ -73,6 +82,7 @@ x-app-environment: &app-environment
   PI_DEFAULT_MODEL:
   PI_DEFAULT_CREDENTIALS:
   PI_SESSION_RECORDING:
+  RAKAZO_LIVE_MODEL_CATALOG:
   OPENROUTER_API_KEY:
   ANTHROPIC_API_KEY:
   TYPESAFE_API_KEY:
@@ -297,7 +307,7 @@ services:
       SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
-      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-restricted}
+      SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
@@ -361,8 +371,9 @@ services:
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
       PASSKEY_ANDROID_CERT_SHA256:
-      # The hop in front of the API whose X-Forwarded-For is believed; see docs/self-host.md.
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-web}
+      # Proxies whose X-Forwarded-For is believed. Unset trusts this stack's own networks: the web
+      # proxy and a reverse proxy on the host. See docs/self-host.md#client-addresses.
+      TRUSTED_PROXIES:
       CLIENT_IP_HEADER:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -374,8 +385,6 @@ services:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_DESKTOP_STACK_TOKEN: ${RAKAZO_DESKTOP_STACK_TOKEN:-}
-      RAKAZO_UPDATER_URL:
-      RAKAZO_UPDATER_TOKEN:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
@@ -390,6 +399,7 @@ services:
       TEAM_CHAT_JUDGE_PROVIDER:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
+      RAKAZO_MIN_CLIENT_BUILD:
     ports:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:
@@ -420,6 +430,12 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/health-check.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
     init: true
     security_opt:
       - no-new-privileges:true
@@ -453,6 +469,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web
     command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Recent builds' hashed assets, so tabs still running one keep loading chunks after a deploy.
+    volumes:
+      - webassets:/app/apps/web/asset-archive
     init: true
     security_opt:
       - no-new-privileges:true
@@ -482,6 +501,7 @@ services:
 volumes:
   pgdata:
   appdata:
+  webassets:
 
 networks:
   app:

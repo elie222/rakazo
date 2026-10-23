@@ -16,6 +16,7 @@ import {
   McpTransportSchema,
   parseMcpOAuthAuthorizationParams,
 } from "./mcp.js";
+import { ModelHeadersSchema } from "./model-headers.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 
@@ -25,6 +26,10 @@ export type ComputerMode = z.infer<typeof ComputerModeSchema>;
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
+/**
+ * Deprecated: bots have one avatar style. Kept so app versions that still send or read it
+ * keep working; the server ignores a sent style and always reports "organic".
+ */
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
 
 /** True for an IANA timezone this runtime can format in, such as "Pacific/Auckland". */
@@ -157,6 +162,13 @@ export function truncateReplyQuote(value: string): string {
 
 export const GROUP_MEMBER_MIN = 2;
 export const GROUP_MEMBER_MAX = 10;
+
+/** Preserve pick order and the group name limit without splitting a surrogate pair. */
+export function defaultGroupName(names: readonly string[]): string {
+  const value = names.join(", ").trim().slice(0, 80);
+  const last = value.charCodeAt(value.length - 1);
+  return (last >= 0xd800 && last <= 0xdbff ? value.slice(0, -1) : value).trim();
+}
 
 export const GroupSchema = z.object({
   id: Id,
@@ -356,6 +368,7 @@ export const CreateBotInput = z.object({
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
   notifyOnFinish: z.boolean().default(true),
+  fleetManagement: z.boolean().optional(),
   color: BotAvatarValueSchema.optional(),
   computerMode: ComputerModeSchema.default("team"),
   /** Idempotency key within a space (unique with spaceId). */
@@ -1155,6 +1168,7 @@ export const ModelCredentialSchema = z.object({
   label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
+  headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1207,6 +1221,7 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
@@ -1311,6 +1326,8 @@ export const SpaceMemoryConfigSchema = z.object({
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
+  /** Available through the deployment without a personal credential. */
+  managed: z.boolean().optional(),
   provider: z.string(),
   providerName: z.string().optional(),
   id: z.string(),
@@ -1329,6 +1346,8 @@ export const ModelCatalogEntrySchema = z.object({
   placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
   catalogProbe: z.boolean().optional(),
+  /** Listed by the provider's live models list but not in the bundled catalog. */
+  live: z.literal(true).optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
 
@@ -1492,6 +1511,7 @@ export const MeSchema = z.object({
   email: z.string().email(),
   name: z.string(),
   spaceId: Id,
+  /** Deprecated: app accounts never have server administrator privileges. Always false. */
   isDeploymentOwner: z.boolean(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),
@@ -1509,12 +1529,22 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
-  /** True when this deployment bills and the user is not the deployment owner. */
+  /** True when this deployment bills model usage. */
   billingEnabled: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 
+export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000] as const;
+export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 2000;
+export const ModelCreditAmountSchema = z.union(
+  MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
+);
+
 export const BillingStatusSchema = z.object({
+  funding: z.enum(["byok", "credits"]).nullable().optional(),
+  balanceUsd: z.number().optional(),
+  monthlyAmountCents: z.number().int().positive().nullable().optional(),
+  creditPurchasesEnabled: z.boolean().optional(),
   access: z.boolean(),
   /** Only organization owners start checkout or open the billing portal. */
   canManage: z.boolean(),

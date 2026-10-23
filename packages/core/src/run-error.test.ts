@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeRunError } from "./run-error.js";
+import {
+  isModelRequiredSendError,
+  MODEL_REQUIRED_SEND_ERROR,
+  normalizeRunError,
+} from "./run-error.js";
 
 describe("normalizeRunError", () => {
   beforeEach(() => {
@@ -221,4 +225,28 @@ it.each([
   const error = normalizeRunError(details);
   expect(error.kind).toBe(kind);
   expect(error.period).toBe(period);
+});
+
+describe("isModelRequiredSendError", () => {
+  it.each([
+    MODEL_REQUIRED_SEND_ERROR,
+    `  ${MODEL_REQUIRED_SEND_ERROR}\n`,
+    new Error(MODEL_REQUIRED_SEND_ERROR),
+    { message: MODEL_REQUIRED_SEND_ERROR },
+  ])("recognizes the exact message in %s", (error) => {
+    expect(isModelRequiredSendError(error)).toBe(true);
+  });
+  it.each([
+    null,
+    undefined,
+    4,
+    {},
+    { message: 4 },
+    "",
+    "Connect a model",
+    `prefix ${MODEL_REQUIRED_SEND_ERROR}`,
+    `${MODEL_REQUIRED_SEND_ERROR} suffix`,
+  ])("rejects unrelated values: %s", (error) => {
+    expect(isModelRequiredSendError(error)).toBe(false);
+  });
 });

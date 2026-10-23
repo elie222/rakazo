@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
@@ -601,7 +602,7 @@ describe("MCP connector session cache", () => {
       {
         load: vi.fn().mockReturnValue(JSON.stringify({ headers: { "X-Api-Key": "local-key" } })),
       } as never,
-      { network: TEST_NETWORK, events: { append } },
+      { network: TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
     );
 
     await expect(
@@ -645,7 +646,7 @@ describe("MCP connector session cache", () => {
       {
         load: vi.fn().mockReturnValue(JSON.stringify({ headers: { "X-Api-Key": "local-key" } })),
       } as never,
-      { network: TEST_NETWORK, events: { append } },
+      { network: TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
     );
     const context = {
       spaceId: "w1",
@@ -708,6 +709,169 @@ describe("MCP connector session cache", () => {
     expect(new Set(ids).size).toBe(2);
     for (const id of ids) expect(id).toMatch(/^mcp-discovery-demo-run-1-\d+$/);
     await connector.close();
+  });
+
+  describe("a server the user has to fix", () => {
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    const connectorWith = (server: typeof SERVER, network = TEST_NETWORK) =>
+      new McpConnector(
+        {
+          botMcpServer: {
+            findMany: vi.fn(async () => [{ ...ASSIGNMENT, server }]),
+          },
+          mcpServer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        } as never,
+        {} as never,
+        { network },
+      );
+
+    it("warns instead of reporting an error, and waits longer for a reconnect", async () => {
+      const requests = vi.fn(async () => new Response("unauthorized", { status: 401 }));
+      vi.stubGlobal("fetch", requests);
+      const server = { ...SERVER };
+      const connector = connectorWith(server);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(
+          "mcp discovery failed for server demo",
+          expect.objectContaining({ reason: expect.any(String) }),
+        );
+        const tried = requests.mock.calls.length;
+
+        // Well past the usual backoff cap, nothing is sent yet.
+        const now = Date.now();
+        const clock = vi.spyOn(Date, "now").mockReturnValue(now + 30 * 60_000);
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(requests).toHaveBeenCalledTimes(tried);
+
+        // Reconnecting bumps the revision, which ends the wait.
+        server.revision = 2;
+        await connector.discoverTools(context);
+        const retried = requests.mock.calls.length;
+        expect(retried).toBeGreaterThan(tried);
+
+        // A refresh that failed only briefly still gets another try after an hour.
+        clock.mockReturnValue(now + 2 * 60 * 60_000);
+        await connector.discoverTools(context);
+        expect(requests.mock.calls.length).toBeGreaterThan(retried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the host no longer resolves, and waits for a new address", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: false, initializations: 0 }));
+      const resolveHostname = vi.fn(async () => {
+        throw Object.assign(new Error("getaddrinfo ENOTFOUND mcp.example.test"), {
+          code: "ENOTFOUND",
+        });
+      });
+      const server = { ...SERVER };
+      const connector = connectorWith(server, { ...TEST_NETWORK, resolveHostname });
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("ENOTFOUND"),
+        });
+        const tried = resolveHostname.mock.calls.length;
+
+        // A host name that is gone (an expired tunnel) will not come back on its own.
+        const now = Date.now();
+        vi.spyOn(Date, "now").mockReturnValue(now + 30 * 60_000);
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(resolveHostname).toHaveBeenCalledTimes(tried);
+
+        // Editing the address bumps the revision, which ends the wait.
+        server.revision = 2;
+        await connector.discoverTools(context);
+        expect(resolveHostname.mock.calls.length).toBeGreaterThan(tried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the host times out, and retries it on the usual backoff", async () => {
+      const requests = vi.fn(async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("connect ETIMEDOUT 192.0.2.1:443"), {
+            code: "ETIMEDOUT",
+          }),
+        });
+      });
+      vi.stubGlobal("fetch", requests);
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("ETIMEDOUT"),
+        });
+        const tried = requests.mock.calls.length;
+
+        // A host that is only down is tried again once the short backoff passes.
+        vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+        await connector.discoverTools(context);
+        expect(requests.mock.calls.length).toBeGreaterThan(tried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the server's OAuth endpoint fails, and retries it on the usual backoff", async () => {
+      const requests = vi.fn(async () => {
+        throw new ServerError("");
+      });
+      vi.stubGlobal("fetch", requests);
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.any(String),
+        });
+        const tried = requests.mock.calls.length;
+
+        vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+        await connector.discoverTools(context);
+        expect(requests.mock.calls.length).toBeGreaterThan(tried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("still reports an unexpected server failure as an error", async () => {
+      vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).toHaveBeenCalledWith("mcp.discovery.failed", expect.any(Error), {
+          "connector.id": SERVER.id,
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
   });
 
   it("leaves no discovery event when the failure happens outside a run", async () => {
@@ -1049,7 +1213,9 @@ describe("MCP connector session cache", () => {
       botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
       deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
     };
-    const connector = new McpConnector(prisma as never, {} as never);
+    const connector = new McpConnector(prisma as never, {} as never, {
+      allowPrivateEndpoint: true,
+    });
 
     const tools = await connector.discoverTools({
       spaceId: "w1",
@@ -1083,6 +1249,7 @@ describe("MCP connector session cache", () => {
             JSON.stringify({ secret: "local-token", headers: { "X-Api-Key": "local-key" } }),
           ),
       } as never,
+      { allowPrivateEndpoint: true },
     );
 
     await connector.discoverTools({
@@ -2257,7 +2424,7 @@ describe("MCP connector private endpoints", () => {
     },
   );
 
-  it("connects a private IP when the current user is the deployment owner", async () => {
+  it("connects a private IP under explicit operator configuration", async () => {
     const state = { failNext: false, initializations: 0 };
     vi.stubGlobal("fetch", mcpFetch(state, "http://10.0.0.8:3927/mcp"));
     const connector = new McpConnector(
@@ -2267,6 +2434,7 @@ describe("MCP connector private endpoints", () => {
       } as never,
       {} as never,
       {
+        allowPrivateEndpoint: true,
         network: {
           fetch: (input, init) => globalThis.fetch(input, init),
           resolveHostname: async () => [{ address: "10.0.0.8", family: 4 }],
@@ -2283,7 +2451,7 @@ describe("MCP connector private endpoints", () => {
     await connector.close();
   });
 
-  it("connects a private-resolving DNS name when the current user is the deployment owner", async () => {
+  it("connects a private-resolving DNS name under explicit operator configuration", async () => {
     const state = { failNext: false, initializations: 0 };
     vi.stubGlobal("fetch", mcpFetch(state, "https://mcp.lan.test/mcp"));
     const connector = new McpConnector(
@@ -2293,6 +2461,7 @@ describe("MCP connector private endpoints", () => {
       } as never,
       {} as never,
       {
+        allowPrivateEndpoint: true,
         network: {
           fetch: (input, init) => globalThis.fetch(input, init),
           resolveHostname: async () => [{ address: "10.0.0.8", family: 4 }],

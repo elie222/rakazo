@@ -63,11 +63,11 @@ export type NativeSwitchProps = {
   disabled?: boolean;
   accessibilityLabel: string;
   accessibilityHint?: string;
-  /** Android track colors. Ignored by the iOS switch, which uses `tintColor`. */
+  /** Android track colors. Defaults the ON track to system green and OFF to platform grey. Ignored on iOS. */
   trackColor?: { false?: ColorValue; true?: ColorValue };
   /** Android thumb color. Ignored on iOS. */
   thumbColor?: ColorValue;
-  /** iOS on-state tint. Omitted switches use the system tint. */
+  /** On-state tint (also the Android track fallback). iOS uses system green by default. */
   tintColor?: ColorValue;
 };
 

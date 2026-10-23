@@ -1,5 +1,9 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
-import { BOT_COLORS, canonicalPiProviderId, InstructionVersionSchema } from "@rakazo/contracts";
+import {
+  canonicalPiProviderId,
+  InstructionVersionSchema,
+  initialBotMemory,
+} from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   displayName,
@@ -8,73 +12,24 @@ import {
   ringingCall,
   userVisibleMessages,
 } from "@rakazo/core";
+import { chooseBotAvatar } from "./bot-avatar-choice.js";
 import type { PrismaClient } from "./client.js";
-import { Prisma } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
-import { contentEncryptionOf } from "./content-encryption.js";
 import { createThreadMessageInTransaction } from "./messages.js";
+import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, latestBotRunSelection, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  previewFromBlocks,
+  primaryActiveRun,
+  withLatestBotRuns,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
 const SIDEBAR_PREVIEW_MESSAGE_WINDOW = 16;
-
-/** Scalar columns the sidebar preview and its older-page fallback both read. */
-interface SidebarPreviewMessage {
-  id: string;
-  threadId: string;
-  seq: number;
-  role: string;
-  blocks: Prisma.JsonValue;
-  botId: string | null;
-  replyToMessageId: string | null;
-  replyQuote: string | null;
-  runId: string | null;
-  clientNonce: string | null;
-  createdAt: Date;
-}
-
-/**
- * One indexed read of the newest preview window per thread. A nested `take` on
- * `bot.findMany` is applied in memory and would load every message.
- */
-async function withSidebarPreviewMessages<T extends { thread: { id: string } | null }>(
-  prisma: PrismaClient,
-  bots: T[],
-) {
-  const threadIds = bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []));
-  const loaded =
-    threadIds.length === 0
-      ? []
-      : await prisma.$queryRaw<SidebarPreviewMessage[]>(Prisma.sql`
-          SELECT m.id, m."threadId", m.seq, m.role, m.blocks, m."botId",
-            m."replyToMessageId", m."replyQuote", m."runId", m."clientNonce", m."createdAt"
-          FROM unnest(${threadIds}::text[]) AS t(id)
-          CROSS JOIN LATERAL (
-            SELECT id, "threadId", seq, role, blocks, "botId", "replyToMessageId", "replyQuote",
-              "runId", "clientNonce", "createdAt"
-            FROM messages
-            WHERE "threadId" = t.id
-            ORDER BY seq DESC
-            LIMIT ${SIDEBAR_PREVIEW_MESSAGE_WINDOW}
-          ) m
-          ORDER BY m."threadId", m.seq DESC
-        `);
-  const opened = (await contentEncryptionOf(prisma)?.openRows("Message", loaded)) ?? loaded;
-  const byThread = new Map<string, SidebarPreviewMessage[]>();
-  for (const row of opened) {
-    const list = byThread.get(row.threadId);
-    if (list) list.push(row);
-    else byThread.set(row.threadId, [row]);
-  }
-  return bots.map((bot) => ({
-    ...bot,
-    thread: bot.thread ? { ...bot.thread, messages: byThread.get(bot.thread.id) ?? [] } : null,
-  }));
-}
 
 function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "P2002");
@@ -214,7 +169,7 @@ export function createRepos(
 
   async function listSpaceBotsForSpaces(actor: Actor, spaceIds: string[]): Promise<SpaceBot[]> {
     if (spaceIds.length === 0) return [];
-    const bots = await prisma.bot.findMany({
+    const rows = await prisma.bot.findMany({
       where: {
         spaceId: { in: spaceIds },
         userId: actor.userId,
@@ -233,21 +188,18 @@ export function createRepos(
         parentBotId: true,
         thread: {
           select: {
+            id: true,
             unread: true,
-            messages: {
-              orderBy: { seq: "desc" },
-              take: 1,
-              select: { blocks: true, createdAt: true },
-            },
-            runs: latestBotRunSelection,
           },
         },
         runs: activeRunSelection,
       },
       orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
     });
+    const bots = await withNewestThreadMessages(prisma, await withLatestBotRuns(prisma, rows), 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
+      const activeRun = primaryActiveRun(bot.runs);
       return {
         id: bot.id,
         spaceId: bot.spaceId,
@@ -260,8 +212,8 @@ export function createRepos(
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: bot.runs[0]?.status ?? "idle",
-        runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
+        status: activeRun?.status ?? "idle",
+        runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
     });
@@ -399,25 +351,25 @@ export function createRepos(
     },
 
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
-      const bots = await withSidebarPreviewMessages(
+      const bots = await withNewestThreadMessages(
         prisma,
-        await prisma.bot.findMany({
-          where: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            archivedAt: options.archived ? { not: null } : null,
-          },
-          include: {
-            thread: {
-              include: {
-                runs: latestBotRunSelection,
-              },
+        await withLatestBotRuns(
+          prisma,
+          await prisma.bot.findMany({
+            where: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              archivedAt: options.archived ? { not: null } : null,
             },
-            runs: activeRunSelection,
-            computer: { select: { scope: true } },
-          },
-          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-        }),
+            include: {
+              thread: true,
+              runs: activeRunSelection,
+              computer: { select: { scope: true } },
+            },
+            orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+          }),
+        ),
+        SIDEBAR_PREVIEW_MESSAGE_WINDOW,
       );
       const callThreadIds = capabilities.phoneCallsEnabled
         ? bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []))
@@ -507,11 +459,12 @@ export function createRepos(
             });
             if (messages.length === 0) break;
           }
+          const activeRun = primaryActiveRun(bot.runs);
           return mapBot(
             bot,
             preview,
-            bot.runs[0]?.status ?? "idle",
-            rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
+            activeRun?.status ?? "idle",
+            rosterRunErrorId(bot.thread?.runs[0], activeRun),
             updatedAt,
             ringingCall(
               bot.thread && callsByThread.has(bot.thread.id)
@@ -547,6 +500,7 @@ export function createRepos(
         description: string;
         instructions: string;
         notifyOnFinish: boolean;
+        fleetManagement?: boolean;
         color?: string;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
@@ -562,13 +516,6 @@ export function createRepos(
         };
       },
     ): Promise<Bot> {
-      let color = input.color;
-      if (color === undefined) {
-        const count = await prisma.bot.count({
-          where: { spaceId: actor.spaceId, userId: actor.userId },
-        });
-        color = BOT_COLORS[count % BOT_COLORS.length] ?? BOT_COLORS[0];
-      }
       let modelProvider = input.modelProvider ?? null;
       let modelId = input.modelId ?? null;
       let thinkingLevel = input.thinkingLevel ?? null;
@@ -605,6 +552,14 @@ export function createRepos(
             where: { spaceId: actor.spaceId, userId: actor.userId },
             _max: { position: true },
           });
+          // Read under the creation lock so two bots made at once still differ.
+          const avatar = chooseBotAvatar(
+            await tx.bot.findMany({
+              where: { spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+              select: { id: true, color: true },
+            }),
+            input.color,
+          );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",
             spaceId: actor.spaceId,
@@ -613,6 +568,7 @@ export function createRepos(
           });
           const created = await tx.bot.create({
             data: {
+              id: avatar.id,
               spaceId: actor.spaceId,
               userId: actor.userId,
               name: displayName(input.name, ""),
@@ -620,7 +576,8 @@ export function createRepos(
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,
-              color,
+              fleetManagement: input.fleetManagement,
+              color: avatar.color,
               position: (positions._max.position ?? -1) + 1,
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,
@@ -642,6 +599,7 @@ export function createRepos(
             await createThreadMessageInTransaction(tx, {
               threadId: thread.id,
               ...input.initialMessage,
+              markUnread: false,
             });
           }
           if (input.computerMode === "dedicated") {
@@ -668,7 +626,7 @@ export function createRepos(
               botId: created.id,
               scope: "bot",
               path: "MEMORY.md",
-              content: `# ${input.name}\n\n`,
+              content: initialBotMemory(input.name),
             },
           });
           return tx.bot.findFirstOrThrow({

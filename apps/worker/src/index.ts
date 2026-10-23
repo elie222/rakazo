@@ -2,6 +2,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -9,13 +10,16 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  createAgentHomeStore,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
+  createModelCreditReconciler,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
+  createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
   createRunExecutor,
   createRunSandbox,
@@ -23,15 +27,15 @@ import {
   createTicketChangeNotifier,
   createWebProvider,
   databaseCapacityBackoffMs,
+  deploymentModelUsageLookup,
   ExpoPushProvider,
   GraphileJobPublisher,
-  GraphileJobWorkerHost,
+  homeStorageSweeper,
   InMemoryJobQueue,
   InstalledConnectorProvider,
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalAgentHomeStore,
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
@@ -79,13 +83,16 @@ const logger = createRootLogger(SERVICE_NAMES.worker);
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  // Shared by Prisma, the reconciliation leadership lock, and both graphile-worker
-  // components (see GraphileJobPublisher/GraphileJobWorkerHost) — one pool instead
-  // of four separate ones. Keep this modest: graphile holds a LISTEN client and
-  // leadership holds an advisory-lock client for the process lifetime, and a
-  // larger max just competes for Postgres max_connections (53300).
+  const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
+  // Three queue listeners and reconciliation leadership hold connections. Leave
+  // room for job queries and transactions instead of starting a stalled worker.
+  if (process.env.WAKEUP_DRIVER !== "memory" && poolMax < 6)
+    throw new Error("DB_POOL_MAX must be at least 6 for the Graphile worker");
+  // Prisma, queue publishing, the three queue listeners and reconciliation
+  // leadership share one bounded pool rather than opening a pool per component.
+  // A larger max competes for Postgres max_connections (53300).
   const created = createDb(databaseUrl, {
-    poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
+    poolMax,
     applicationName: "rakazo-worker",
   });
   const { pool } = created;
@@ -185,10 +192,10 @@ async function main() {
   ]);
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = new LocalAgentHomeStore(dataDir);
+  const home = createAgentHomeStore(dataDir, prisma);
   const artifacts = new LocalArtifactStore(dataDir, contentEncryptionOf(prisma)?.ring);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
-  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool);
+  const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool, prisma);
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
     jobs,
@@ -251,7 +258,7 @@ async function main() {
 
   const jobHost: JobWorkerHost =
     inMemoryJobs ??
-    new GraphileJobWorkerHost(pool, {
+    createReservedGraphileJobWorkerHost(pool, {
       concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
     });
 
@@ -260,6 +267,7 @@ async function main() {
     prisma,
     sandbox,
     home,
+    artifacts,
     jobs,
     events,
     workerId: process.pid.toString(),
@@ -297,6 +305,10 @@ async function main() {
     events,
     notifications,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileModelCredits: createModelCreditReconciler({
+      prisma,
+      lookup: deploymentModelUsageLookup(),
+    }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
@@ -308,14 +320,17 @@ async function main() {
       prisma,
       securityEventRetentionDays(),
     ),
+    reconcileHomeStorage: homeStorageSweeper(home),
   });
   reconciler.start();
+  const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
 
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
     try {
+      await stopHealth();
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();

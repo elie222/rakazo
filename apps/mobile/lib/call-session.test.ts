@@ -9,7 +9,12 @@ import {
   subscribe,
   toggleMute,
 } from "./call-session";
+import type { SpeechRecognizer } from "./dictation";
+import { ENDPOINT_SILENCE_MS, setSpeechRecognizer, stop as stopDictation } from "./dictation";
+import { activateUiLocale, getActiveUiLocale } from "./i18n";
+import type { UiLocale } from "./ui-locale";
 
+vi.mock("./monitoring", () => ({ reportMobileError: vi.fn() }));
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
 vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
@@ -808,6 +813,291 @@ describe("mobile call session", () => {
   });
 });
 
+describe("mobile call speech locales", () => {
+  let previousLocale: UiLocale;
+
+  beforeEach(() => {
+    previousLocale = getActiveUiLocale();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    endCall();
+    stopDictation();
+    setSpeechRecognizer(null);
+    activateUiLocale(previousLocale);
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["en", "en-US"],
+    ["de", "de-DE"],
+    ["nl", "nl-NL"],
+    ["ru", "ru-RU"],
+    ["zh-CN", "zh-CN"],
+  ] as const)(
+    "recognizes a %s call with %s and sends its live transcript after silence",
+    async (locale, lang) => {
+      const listeners = new Map<string, (payload: never) => void>();
+      const start = vi.fn();
+      const recognizer: SpeechRecognizer = {
+        start,
+        stop: vi.fn(),
+        abort: vi.fn(),
+        isRecognitionAvailable: () => true,
+        requestPermissionsAsync: async () => ({ granted: true }),
+        addListener: (event, listener) => {
+          listeners.set(event, listener as (payload: never) => void);
+          return { remove: () => void listeners.delete(event) };
+        },
+      };
+      setSpeechRecognizer(recognizer);
+      activateUiLocale(locale);
+      const fake = fakes();
+      const { dictate: _dictate, ...deps } = fake.deps;
+      startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(start).toHaveBeenCalledOnce();
+      expect.soft(start).toHaveBeenCalledWith({ lang, interimResults: true, continuous: true });
+      listeners.get("result")?.({
+        isFinal: false,
+        results: [{ transcript: "status please" }],
+      } as never);
+      expect(getSnapshot()).toMatchObject({ phase: "listening", heard: "status please" });
+      expect(fake.send).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+
+      expect(fake.send).toHaveBeenCalledOnce();
+      expect(fake.send).toHaveBeenCalledWith(
+        "bot-1",
+        "status please",
+        expect.stringMatching(/^call:/),
+      );
+      expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: "status please" });
+      expect(fake.recordings).toHaveLength(0);
+    },
+  );
+});
+
+describe("mobile call recognition recovery", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    endCall();
+    stopDictation();
+    setSpeechRecognizer(null);
+    vi.useRealTimers();
+  });
+
+  async function greetedCall(transcribe = false, startThrows = false) {
+    const listeners = new Map<string, (payload: never) => void>();
+    const start = vi.fn();
+    if (startThrows)
+      start.mockImplementationOnce(() => {
+        throw new Error("recognizer unavailable");
+      });
+    setSpeechRecognizer({
+      start,
+      stop: vi.fn(),
+      abort: vi.fn(),
+      isRecognitionAvailable: () => true,
+      requestPermissionsAsync: async () => ({ granted: true }),
+      addListener: (event, listener) => {
+        listeners.set(event, listener as (payload: never) => void);
+        return { remove: () => void listeners.delete(event) };
+      },
+    });
+    const fake = fakes();
+    const { dictate: _dictate, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Bot", greeting: "Hello there.", transcribe }, deps);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).not.toHaveBeenCalled();
+    fake.speeches[0]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).toHaveBeenCalledOnce();
+    return {
+      ...fake,
+      start,
+      emit: (event: string, payload: unknown = null) => listeners.get(event)?.(payload as never),
+    };
+  }
+
+  it("re-arms after empty sessions following the greeting, then sends speech", async () => {
+    const fake = await greetedCall();
+    for (let cycle = 0; cycle < 4; cycle += 1) {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        fake.emit("end");
+        await vi.advanceTimersByTimeAsync(2_000);
+      }
+      expect(fake.start).toHaveBeenCalledTimes(1 + (cycle + 1) * 6);
+      expect(getSnapshot()?.phase).toBe("listening");
+    }
+    const starts = fake.start.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.start).toHaveBeenCalledTimes(starts);
+    fake.emit("result", { isFinal: false, results: [{ transcript: "status please" }] });
+    await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+      "bot-1",
+      "status please",
+      expect.stringMatching(/^call:/),
+    );
+
+    fake.replyWith("message-1", "The task is ready.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.emit("result", { isFinal: false, results: [{ transcript: "actually hang on" }] });
+    await vi.advanceTimersByTimeAsync(INTERIM_BARGE_IN_MS);
+    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+    expect(fake.send).toHaveBeenLastCalledWith(
+      "bot-1",
+      "actually hang on",
+      expect.stringMatching(/^call:/),
+    );
+  });
+
+  it("sends a turn after a client error following the greeting", async () => {
+    const fake = await greetedCall();
+    fake.emit("error", { error: "client" });
+    fake.emit("end");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    fake.emit("result", { isFinal: true, results: [{ transcript: "status please" }] });
+    await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+      "bot-1",
+      "status please",
+      expect.stringMatching(/^call:/),
+    );
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it("falls back to recording only after repeated empty network failures", async () => {
+    const fake = await greetedCall(true);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      fake.emit("error", { error: "network" });
+      expect(fake.recordings).toHaveLength(0);
+      fake.emit("end");
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(fake.start).toHaveBeenCalledTimes(6);
+    expect(fake.recordings).toHaveLength(1);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.send).toHaveBeenCalledOnce();
+  });
+
+  it("backs off even when every native start immediately ends", async () => {
+    const fake = await greetedCall();
+    fake.start.mockImplementation(() => fake.emit("end"));
+    fake.emit("end");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.start.mock.calls.length).toBeGreaterThan(6);
+    // Each empty cycle still waits through the 250, 500, 1000, 2000, 2000 ms backoff.
+    expect(fake.start.mock.calls.length).toBeLessThanOrEqual(1 + 6 * Math.ceil(60_000 / 5_750));
+    expect(getSnapshot()?.phase).toBe("listening");
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it("falls back when the first start throws without reviving the failed session", async () => {
+    const fake = await greetedCall(true, true);
+    expect(fake.recordings).toHaveLength(1);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.send).toHaveBeenCalledOnce();
+    fake.replyWith("message-1", "The task is ready.");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.recordings).toHaveLength(1);
+    fake.speeches[1]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.recordings).toHaveLength(2);
+    expect(fake.start).toHaveBeenCalledOnce();
+  });
+
+  it("falls back when restarting throws and keeps the new microphone open", async () => {
+    const fake = await greetedCall(true);
+    fake.start.mockImplementationOnce(() => {
+      throw new Error("recognizer unavailable");
+    });
+    fake.emit("end");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fake.recordings).toHaveLength(1);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.send).toHaveBeenCalledOnce();
+  });
+
+  it("defers recording after a recognition failure during playback", async () => {
+    const fake = await greetedCall(true);
+    fake.emit("result", { isFinal: true, results: [{ transcript: "status please" }] });
+    await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+    fake.replyWith("message-1", "The task is ready.");
+    await vi.advanceTimersByTimeAsync(0);
+    fake.emit("error", { error: "language-not-supported" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(fake.recordings).toHaveLength(0);
+    fake.speeches[1]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.recordings).toHaveLength(1);
+    fake.say("another task please");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.send).toHaveBeenLastCalledWith(
+      "bot-1",
+      "another task please",
+      expect.stringMatching(/^call:/),
+    );
+  });
+
+  it.each(["mute", "hang-up"])("does not re-arm after %s", async (action) => {
+    const fake = await greetedCall();
+    fake.emit("end");
+    if (action === "mute") toggleMute();
+    else endCall();
+    fake.emit("error", { error: "not-allowed" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.start).toHaveBeenCalledOnce();
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it.each(["not-allowed", "language-not-supported"])(
+    "falls back to recording after %s following the greeting",
+    async (error) => {
+      const fake = await greetedCall(true);
+      fake.emit("error", { error });
+      fake.emit("end");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fake.recordings).toHaveLength(1);
+      fake.say("status please");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+        "bot-1",
+        "status please",
+        expect.stringMatching(/^call:/),
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fake.start).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["not-allowed", "language-not-supported"])(
+    "shows the existing settings caption after %s without transcription",
+    async (error) => {
+      const fake = await greetedCall();
+      fake.emit("error", { error });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getSnapshot()).toMatchObject({
+        phase: "listening",
+        caption:
+          "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.",
+      });
+      expect(fake.start).toHaveBeenCalledOnce();
+      expect(fake.recordings).toHaveLength(0);
+    },
+  );
+});
+
 describe("mobile call session on a timer", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
@@ -857,6 +1147,28 @@ describe("mobile call session on a timer", () => {
     await tick(500);
     expect(subscribeThread).toHaveBeenCalled();
     expect(vi.mocked(subscribeThread).mock.calls[0]?.[1]).toBe(3);
+    vi.mocked(rpc).mockReset();
+    vi.mocked(subscribeThread).mockReset();
+  });
+
+  it("stops the call feed when the server refuses it but keeps retrying a 503", async () => {
+    const { rpc, subscribeThread } = await import("./api");
+    const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+    vi.mocked(rpc).mockResolvedValue({ cursor: 3, messages: [], run: null } as never);
+    vi.mocked(subscribeThread)
+      .mockRejectedValueOnce(httpError(503))
+      .mockRejectedValueOnce(httpError(403))
+      .mockResolvedValue(undefined as never);
+    const fake = fakes();
+    const { watch: _watch, ...deps } = fake.deps;
+    startCall({ botId: "bot-1", botName: "Ada" }, deps);
+    await tick();
+    expect(subscribeThread).toHaveBeenCalledTimes(1);
+
+    await tick(500);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
+    await tick(20_000);
+    expect(subscribeThread).toHaveBeenCalledTimes(2);
     vi.mocked(rpc).mockReset();
     vi.mocked(subscribeThread).mockReset();
   });

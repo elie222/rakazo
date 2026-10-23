@@ -1,8 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity } from "@rakazo/contracts";
 import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import {
-  BotAvatar,
   Button,
   Field,
   FieldLabel,
@@ -12,20 +11,17 @@ import {
   NativeSelectOption,
   OptionSelect,
   Switch,
-  Toggle,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router-dom";
 import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
 import { PasskeySettings } from "../components/PasskeySettings";
-import type { ServerUpdateLoad } from "../components/SoftwareUpdateSection";
-import { hasServerUpdates, SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
 import { authClient } from "../lib/auth";
 import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
@@ -61,26 +57,20 @@ import { authErrorText } from "../lib/user-error";
 export type SettingsGeneralProps = {
   email?: string | null;
   name: string;
-  avatarStyle: AvatarStyle;
-  onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
-  isDeploymentOwner?: boolean;
 };
 
 export function GeneralSettingsPanels({
   email,
   name,
-  avatarStyle,
-  onAvatarStyleChange,
   timezone = null,
   onTimezoneChange,
   messagingEnabled = false,
   onOpenMessaging,
-  isDeploymentOwner = false,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
   const account = accountDisplay({ name, email }, t`You`);
@@ -114,8 +104,6 @@ export function GeneralSettingsPanels({
     () => getRemoteImagesPreference() === "on",
   );
   const loadRemoteImagesId = useId();
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const timezoneId = useId();
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
@@ -129,19 +117,6 @@ export function GeneralSettingsPanels({
       if (requestId !== localeRequestRef.current) return;
       setLocale(activated);
     });
-  }
-
-  async function chooseAvatarStyle(next: AvatarStyle) {
-    if (avatarPending || next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await onAvatarStyleChange(next);
-    } catch {
-      setAvatarError(t`Couldn't update avatars`);
-    } finally {
-      setAvatarPending(false);
-    }
   }
 
   async function chooseTimezone(next: string) {
@@ -280,56 +255,12 @@ export function GeneralSettingsPanels({
         </section>
       ) : null}
 
-      <section
-        className="rounded-xl border border-border px-4 py-4"
-        data-testid="avatar-style-select"
+      <Disclosure
+        data-testid="advanced-settings"
+        className="group rounded-xl border border-border"
+        summary={<Trans>Advanced</Trans>}
+        summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75"
       >
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Avatars</Trans>
-        </h3>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["robot", "organic"] as const).map((style) => (
-            <Toggle
-              key={style}
-              variant="outline"
-              pressed={style === avatarStyle}
-              disabled={avatarPending}
-              onPressedChange={() => void chooseAvatarStyle(style)}
-              data-testid={`avatar-style-${style}`}
-              className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
-            >
-              <BotAvatar
-                color="#D9508A"
-                identity="avatar-style-preview"
-                size={32}
-                variant={style}
-              />
-              <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
-            </Toggle>
-          ))}
-        </div>
-        {avatarError ? (
-          <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-            {avatarError}
-          </p>
-        ) : null}
-      </section>
-
-      {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
-          <Trans>Server integrations</Trans>
-        </Button>
-      ) : null}
-
-      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-          <span className="block text-[15px] text-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
         <div className="border-t border-border px-4 pb-5">
           <div className="flex items-start gap-3 pt-5">
             <Switch
@@ -395,7 +326,7 @@ export function GeneralSettingsPanels({
             </Label>
           </div>
         </div>
-      </details>
+      </Disclosure>
 
       <AccountAccess onSecurity={setAccountSecurity} />
     </div>
@@ -465,11 +396,10 @@ export function ComputerSettingsPanel({
   );
 }
 
-export function UpdatesSettingsPanel({ serverUpdate }: { serverUpdate: ServerUpdateLoad }) {
+export function UpdatesSettingsPanel() {
   return (
     <div className="space-y-5">
       <DesktopUpdateSection />
-      {hasServerUpdates(serverUpdate) ? <SoftwareUpdateSection load={serverUpdate} /> : null}
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import type { IntegrationSetupState } from "@rakazo/contracts";
 import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -23,7 +23,6 @@ import {
   loadSessionToken,
   passwordResetCapabilities,
   requestPasswordReset,
-  rpc,
   sendSignInCode,
   signIn,
   signInWithCode,
@@ -49,6 +48,7 @@ export default function SignIn() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [ready, setReady] = useState(false);
@@ -62,6 +62,10 @@ export default function SignIn() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+
+  useEffect(() => {
+    setPasswordVisible(false);
+  }, [mode, apiBase, usePassword]);
 
   useFocusEffect(
     useCallback(() => {
@@ -120,7 +124,7 @@ export default function SignIn() {
           padding: 24,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>{t("Loading…")}</Text>
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
       </View>
     );
   }
@@ -183,12 +187,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      // A code can create the account from either form.
-      const setup =
-        mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
-          : null;
-      router.replace(setup?.needsSetup ? "/integration-setup" : "/");
+      router.replace("/");
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -273,11 +272,11 @@ export default function SignIn() {
                       />
                     </View>
                   ) : !reset ? (
-                    <Text
-                      style={{ color: tokens.mutedForeground, textAlign: "center", marginTop: 16 }}
-                    >
-                      {t("Loading…")}
-                    </Text>
+                    <ActivityIndicator
+                      color={tokens.mutedForeground}
+                      accessibilityLabel={t("Loading…")}
+                      style={{ marginTop: 16 }}
+                    />
                   ) : null}
                   {reset?.sso && !reset.passwordAuth && mode !== "forgot" ? (
                     <NativeActionButton
@@ -378,26 +377,54 @@ export default function SignIn() {
                         }}
                       />
                       {mode !== "forgot" && !usingCode ? (
-                        <TextInput
-                          autoComplete={mode === "in" ? "current-password" : "new-password"}
-                          textContentType={mode === "in" ? "password" : "newPassword"}
-                          passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
-                          maxLength={MAX_PASSWORD_LENGTH}
-                          placeholder={t("Password")}
-                          placeholderTextColor={tokens.mutedForeground}
-                          returnKeyType="go"
-                          secureTextEntry
-                          value={password}
-                          onChangeText={setPassword}
-                          onSubmitEditing={() => void submit()}
+                        <View
                           style={{
                             marginTop: 12,
+                            flexDirection: "row",
+                            alignItems: "center",
                             backgroundColor: tokens.muted,
                             borderRadius: 13,
-                            padding: 16,
-                            color: tokens.foreground,
                           }}
-                        />
+                        >
+                          <TextInput
+                            autoComplete={mode === "in" ? "current-password" : "new-password"}
+                            textContentType={mode === "in" ? "password" : "newPassword"}
+                            passwordRules={mode === "in" ? undefined : PASSWORD_RULES}
+                            maxLength={MAX_PASSWORD_LENGTH}
+                            placeholder={t("Password")}
+                            placeholderTextColor={tokens.mutedForeground}
+                            returnKeyType="go"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            secureTextEntry={!passwordVisible}
+                            value={password}
+                            onChangeText={setPassword}
+                            onSubmitEditing={() => void submit()}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              padding: 16,
+                              color: tokens.foreground,
+                            }}
+                          />
+                          <NativeActionButton
+                            accessibilityLabel={
+                              passwordVisible ? t("Hide password") : t("Show password")
+                            }
+                            icon={{
+                              ios: passwordVisible ? "eye.slash" : "eye",
+                              android: passwordVisible ? "eye-off-outline" : "eye-outline",
+                            }}
+                            prominence="quiet"
+                            onPress={() => setPasswordVisible((visible) => !visible)}
+                            style={{
+                              alignSelf: "center",
+                              minWidth: 44,
+                              minHeight: 44,
+                              marginRight: 4,
+                            }}
+                          />
+                        </View>
                       ) : null}
                       {error ? (
                         <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>

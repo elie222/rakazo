@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: rakazo
           POSTGRES_PASSWORD: rakazo
@@ -102,6 +102,11 @@ jobs:
           pnpm --filter @rakazo/mobile exec expo prebuild --platform android --no-install
           sed -i 's/MaxMetaspaceSize=512m/MaxMetaspaceSize=1g/' \
             apps/mobile/android/gradle.properties
+
+      - name: Run notification native unit tests
+        if: steps.screenshot-apk.outputs.cache-hit != 'true'
+        working-directory: apps/mobile/android
+        run: ./gradlew :rakazo-notifications:testDebugUnitTest --no-daemon
 
       - name: Build screenshot APK
         if: steps.screenshot-apk.outputs.cache-hit != 'true'

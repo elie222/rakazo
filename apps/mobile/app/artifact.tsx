@@ -154,6 +154,7 @@ export default function ArtifactDetailScreen() {
     if (!versions || versions.length < 2) return;
     presentMessageActionSheet({
       title: t("Versions"),
+      selected: versions.findIndex((version) => version.id === selectedVersionId),
       cancel: t("Cancel"),
       more: t("More"),
       colorScheme,
@@ -175,7 +176,7 @@ export default function ArtifactDetailScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: content.status === "ready" ? content.artifact.name : t("Loading…"),
+      title: content.status === "ready" ? content.artifact.name : "",
       headerRight: () =>
         content.status === "ready" ? (
           <View style={styles.headerActions}>

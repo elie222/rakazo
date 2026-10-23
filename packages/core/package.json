@@ -9,6 +9,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./user-error": {
+      "types": "./src/user-error.ts",
+      "development": "./src/user-error.ts",
+      "default": "./src/user-error.ts"
+    },
     "./message-quote": {
       "types": "./src/message-quote.ts",
       "development": "./src/message-quote.ts",

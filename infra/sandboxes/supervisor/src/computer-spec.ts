@@ -175,17 +175,20 @@ export function resolveScreenNetworkMode(value: string | undefined): ScreenNetwo
  * computer network a deterministic bridge interface name so the rules match by
  * interface (`-i rakazo-c+`) instead of ephemeral subnets. Enforcement lives on the
  * Docker host (infra/compose/restrict-computer-egress.sh) and is verified before
- * computers start (egress-probe.ts). The Compose stacks default to restricted; unset
- * here means a host-run supervisor, usually on Docker Desktop, whose VM-hosted
- * bridges the host rules cannot reach, so it stays open.
+ * computers start (egress-probe.ts). The Compose stacks default to `auto`: restricted
+ * when that check passes, open otherwise, so a stack installed before the rules
+ * existed keeps working on upgrade. Unset here means a host-run supervisor, usually
+ * on Docker Desktop, whose VM-hosted bridges the host rules cannot reach, so it stays
+ * open.
  */
 export type ComputerEgressMode = "open" | "restricted";
+export type ComputerEgressSetting = ComputerEgressMode | "auto";
 
 export function resolveComputerEgressMode(
   value = process.env.SANDBOX_COMPUTER_EGRESS,
-): ComputerEgressMode {
+): ComputerEgressSetting {
   if (value === undefined || value.trim() === "" || value === "open") return "open";
-  if (value === "restricted") return "restricted";
+  if (value === "restricted" || value === "auto") return value;
   throw new Error(`Unsupported SANDBOX_COMPUTER_EGRESS value: ${value}`);
 }
 

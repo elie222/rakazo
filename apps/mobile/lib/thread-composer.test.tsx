@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps, ReactNode } from "react";
+import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import { act, createElement, createRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -9,14 +10,25 @@ import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { settleComposer } from "./thread-feedback";
 
+const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
+
 const input = vi.hoisted(() => ({
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
 }));
 vi.mock("react-native", () => {
-  const Surface = ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement("div", { "data-testid": testID }, children);
+  const Surface = ({
+    children,
+    testID,
+    style,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    style?: object;
+  }) =>
+    createElement("div", { "data-testid": testID, "data-style": JSON.stringify(style) }, children);
   return {
+    useWindowDimensions: () => dimensions,
     View: Surface,
     ScrollView: Surface,
     Text: Surface,
@@ -24,12 +36,14 @@ vi.mock("react-native", () => {
       children,
       onPress,
       accessibilityLabel,
+      accessible,
       disabled,
       style,
     }: {
       children?: ReactNode;
       onPress: () => void;
-      accessibilityLabel: string;
+      accessibilityLabel?: string;
+      accessible?: boolean;
       disabled?: boolean;
       style?: object;
     }) =>
@@ -39,23 +53,36 @@ vi.mock("react-native", () => {
           type: "button",
           onClick: onPress,
           "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
           disabled,
           "data-style": JSON.stringify(style),
         },
         children,
       ),
     TextInput: ({
+      ref,
       value,
       onChangeText,
       onKeyPress,
+      style,
+      scrollEnabled,
     }: {
+      ref?: Ref<HTMLInputElement>;
       value: string;
       onChangeText: typeof input.change;
       onKeyPress: typeof input.key;
+      style: object;
+      scrollEnabled?: boolean;
     }) => {
       input.change = onChangeText;
       input.key = onKeyPress;
-      return createElement("input", { value, readOnly: true });
+      return createElement("input", {
+        ref,
+        value,
+        readOnly: true,
+        "data-style": JSON.stringify(style),
+        "data-scroll-enabled": scrollEnabled,
+      });
     },
   };
 });
@@ -131,6 +158,7 @@ describe("thread composer isolation", () => {
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.clearAllMocks();
+    dimensions.fontScale = 1;
     threadRenders = 0;
     container = document.createElement("div");
     document.body.append(container);
@@ -218,6 +246,42 @@ describe("thread composer isolation", () => {
     press("Call");
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
   });
+
+  it("focuses the input when its padding wrapper is pressed without adding an accessibility stop", () => {
+    const field = container.querySelector("input")!;
+    const wrapper = field.parentElement!;
+    expect(wrapper.dataset.accessible).toBe("false");
+    expect(document.activeElement).not.toBe(field);
+    act(() => wrapper.click());
+    expect(document.activeElement).toBe(field);
+  });
+
+  it.each([1, 2, 3.2])(
+    "keeps a padded scrolling viewport with room for scaled lines at font scale %s",
+    (fontScale) => {
+      dimensions.fontScale = fontScale;
+      const textScale = Math.min(fontScale, MAX_FONT_SCALE);
+      render();
+      for (const draft of ["Hello", "Hello\nworld", "مرحبا\nبالعالم", "line\n".repeat(20)]) {
+        type(draft);
+        const field = container.querySelector("input")!;
+        const fieldStyle = JSON.parse(field.dataset.style!);
+        const wrapperStyle = JSON.parse(field.parentElement!.dataset.style!);
+        // Padding belongs outside the native scroll viewport so it cannot scroll away.
+        expect(wrapperStyle.paddingVertical).toBe(11);
+        expect(fieldStyle.padding).toBe(0);
+        expect(fieldStyle.paddingTop).toBeUndefined();
+        expect(fieldStyle.paddingBottom).toBeUndefined();
+        expect(field.dataset.scrollEnabled).toBe("true");
+        expect(fieldStyle.minHeight).toBe(fieldStyle.lineHeight * textScale);
+        expect(fieldStyle.maxHeight).toBe(5 * fieldStyle.lineHeight * textScale);
+        expect(fieldStyle.height).toBeUndefined();
+        expect(fieldStyle.writingDirection).toBe("auto");
+      }
+      act(() => composer.current!.reset());
+      expect(container.querySelector("input")!.value).toBe("");
+    },
+  );
 
   it("insets the call and send pills equally from the capsule's bottom and trailing edges", () => {
     const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);

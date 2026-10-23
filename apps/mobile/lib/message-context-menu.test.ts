@@ -9,6 +9,7 @@ const labels: Record<MessageMenuSymbol, string> = {
   quote: "Quote",
   speak: "Speak message",
   select: "Select text",
+  unread: "Mark as unread",
 };
 
 const reactions = ["👍", "👎", "❤️", "😂", "🎉", "😮"] as const;
@@ -60,6 +61,34 @@ describe("message context menu", () => {
       include: { quote: false, react: true, speak: false, select: false },
     });
     expect(menu.map((entry) => entry.id)).toEqual(["reply", "copy", "react"]);
+  });
+
+  it("offers Mark as unread right after Reply, only when asked", () => {
+    const menu = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { quote: true, react: false, speak: true, select: true, unread: true },
+    });
+    expect(menu.map((entry) => [entry.id, entry.title, entry.symbol])).toEqual([
+      ["reply", "Reply", "reply"],
+      ["unread", "Mark as unread", "unread"],
+      ["copy", "Copy", "copy"],
+      ["secondary", "", undefined],
+    ]);
+    expect(ids(menu.find((entry) => entry.id === "secondary")?.subactions ?? [])).toEqual([
+      "quote",
+      "speak",
+      "select",
+    ]);
+    expect(
+      ids(
+        buildMessageContextMenu({
+          labels,
+          reactions,
+          include: { quote: false, react: false, speak: false, select: false },
+        }),
+      ),
+    ).not.toContain("unread");
   });
 
   it("reads a reaction id back out of a menu event", () => {

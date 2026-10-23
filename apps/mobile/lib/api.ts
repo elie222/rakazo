@@ -1,7 +1,6 @@
 import type {
   AccountSecurity,
   AuthCapabilities,
-  AvatarStyle,
   Bot,
   BotSection,
   ComputerMode,
@@ -11,12 +10,14 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   ReplyPreview,
+  RunStatus,
   Space,
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
   authCapabilitiesSchema,
+  CLIENT_UPDATE_REQUIRED_STATUS,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -28,30 +29,36 @@ import {
   displayIdentityEvent,
   displayIdentityResult,
   ensureAiDataConsent,
+  isActive,
+  isBackgroundRunTrigger,
   isRunTerminalEvent,
   isServerUnreachable,
   isUnreachableStatus,
   mergeThreadHistory,
   messagingProviderLabel,
+  parseRetryAfter,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
   reduceLiveMessageBlocks,
   replyMetadata,
   runFailureError,
+  settleRunSubagents,
   signupRequiresEmailVerification,
+  stopsRunHelpers,
   takeLiveMessage,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
+import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { promptAiConsent } from "./ai-consent";
-import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
+import { reportMobileError } from "./monitoring";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -294,13 +301,11 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true;
       previousToken: string;
       previousSpace: string;
-      previousAvatarStyle: AvatarStyle;
     }
   | { ok: false; result: EndpointResult }
 > {
   const previousToken = await snapshotSessionToken();
   const previousSpace = await snapshotSpace();
-  const previousAvatarStyle = getCachedAvatarStyle();
   if (!previousToken.ok || !previousSpace.ok) {
     return {
       ok: false,
@@ -325,24 +330,18 @@ async function clearCredentialsForEndpointChange(): Promise<
       ok: true,
       previousToken: previousToken.value,
       previousSpace: previousSpace.value,
-      previousAvatarStyle,
     };
   }
 
-  await restoreCredentials(previousToken.value, previousSpace.value, previousAvatarStyle);
+  await restoreCredentials(previousToken.value, previousSpace.value);
   return {
     ok: false,
     result: { ok: false, error: t("Could not clear the previous server session") },
   };
 }
 
-async function restoreCredentials(
-  previousToken: string,
-  previousSpace: string,
-  previousAvatarStyle: AvatarStyle,
-) {
+async function restoreCredentials(previousToken: string, previousSpace: string) {
   if (previousToken) await restoreSessionToken(previousToken);
-  await saveAvatarStyle(previousAvatarStyle);
   if (previousSpace) {
     cachedSpaceId = previousSpace;
     bumpSpaceSelectionGeneration();
@@ -406,7 +405,6 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (parsed.url !== previous) {
@@ -418,11 +416,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     await SecureStore.setItemAsync(ENDPOINT_KEY, parsed.url);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
     }
     return { ok: false, error: t("Could not save the server URL") };
   }
@@ -438,7 +432,6 @@ export async function resetApiBase(): Promise<EndpointResult> {
     | {
         previousToken: string;
         previousSpace: string;
-        previousAvatarStyle: AvatarStyle;
       }
     | undefined;
   if (url !== previous) {
@@ -450,11 +443,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
     await SecureStore.deleteItemAsync(ENDPOINT_KEY);
   } catch {
     if (cleared) {
-      await restoreCredentials(
-        cleared.previousToken,
-        cleared.previousSpace,
-        cleared.previousAvatarStyle,
-      );
+      await restoreCredentials(cleared.previousToken, cleared.previousSpace);
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
@@ -463,11 +452,22 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
+let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+  headers: () => ({}),
+  onUpdateRequired: () => {},
+};
+
+/** The app names its build on every request and decides what a refused build does. */
+export function configureClientBuild(options: typeof clientBuild): void {
+  clientBuild = options;
+}
+
 export async function authHeaders(
   spaceId: string | null = selectedSpaceId(),
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   };
@@ -813,6 +813,7 @@ export async function rpc<T>(
     )
       throw new Error(t("Something went wrong. Try again."));
     let res: Response;
+    const correlation = clientCorrelationHeaders();
     try {
       res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
         method: "POST",
@@ -820,6 +821,7 @@ export async function rpc<T>(
           "content-type": "application/json",
           origin: "rakazo://",
           ...requestHeaders,
+          ...correlation,
         },
         body: JSON.stringify({ json: body }),
         signal: controller.signal,
@@ -828,6 +830,8 @@ export async function rpc<T>(
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException") and an unreachable server with a native stack
       // location; say what happened instead.
+      if (!controller.signal.aborted)
+        reportMobileError(error, "rpc.transport", responseCorrelation(new Headers(correlation)));
       throw requestError(error, controller.signal);
     }
     if (
@@ -851,7 +855,7 @@ export async function rpc<T>(
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
-      const error = parsed.json as { message?: unknown } | undefined;
+      const error = parsed.json as { message?: unknown; code?: unknown } | undefined;
       const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the
@@ -939,7 +943,7 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw Object.defineProperty(new Error(message), "status", { value: res.status });
+      throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (
@@ -1008,12 +1012,12 @@ export type MobileMe = Pick<
   | "hostCredentialProvider"
   | "hostCredentialSource"
   | "needsModel"
-  | "avatarStyle"
   | "isDeploymentOwner"
->;
+> & { billingEnabled?: boolean };
 
 export type MobileModel = ModelCatalogEntry;
 
+/** Shared DTO includes headerNames only; header values remain in the server secret. */
 export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {
@@ -1190,6 +1194,20 @@ type ThreadEvent = {
 /** No frame at all for this long means the stream is half-open; the server beats far faster. */
 export const IDLE_TIMEOUT_MS = 45_000;
 
+/**
+ * A failed response as an error the shared retry policy can read: its status, oRPC code, and any
+ * Retry-After. A 426 also asks the user to update, from whichever request noticed it.
+ */
+function httpError(message: string, res: Response, code?: string): Error {
+  if (res.status === CLIENT_UPDATE_REQUIRED_STATUS) clientBuild.onUpdateRequired();
+  return Object.defineProperties(new Error(message), {
+    status: { value: res.status },
+    // oRPC's error code; a proxy's bare 404 has none.
+    code: { value: code },
+    retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
+  });
+}
+
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -1215,7 +1233,10 @@ export async function subscribeThread(
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  if (!res.ok || !res.body) {
+    cancelResponseBody(res);
+    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1264,6 +1285,10 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev || event.type === "heartbeat") return prev;
+  if (stopsRunHelpers(event)) {
+    const messages = settleRunSubagents(prev.messages, event.runId);
+    if (messages !== prev.messages) prev = { ...prev, messages };
+  }
   if (event.type === "thread.cleared") {
     return {
       ...prev,
@@ -1272,6 +1297,41 @@ export function applyMobileThreadEvent(
       olderCursor: null,
       run: null,
       activeRuns: [],
+    };
+  }
+  if (event.type === "run.started") {
+    const cursor = event.seq ?? prev.cursor;
+    // Match web: background ticket work stays out of the transcript.
+    if (isBackgroundRunTrigger(event.payload?.trigger as string | undefined)) {
+      return cursor === prev.cursor ? prev : { ...prev, cursor };
+    }
+    const members = prev.members?.map((member) =>
+      member.botId === event.botId ? { ...member, status: "running" } : member,
+    );
+    if (!event.runId) return { ...prev, cursor, members };
+    const previousRun =
+      prev.activeRuns?.find((candidate) => candidate.id === event.runId) ??
+      (prev.run?.id === event.runId ? prev.run : undefined);
+    const run = {
+      ...previousRun,
+      id: event.runId,
+      ...(event.botId ? { botId: event.botId } : {}),
+      status: "running",
+      error: null,
+    };
+    const activeRuns = [
+      ...(prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
+        (candidate) => candidate.id !== run.id && isActive(candidate.status as RunStatus),
+      ),
+      run,
+    ];
+    return {
+      ...prev,
+      cursor,
+      members,
+      // Keep a group failure visible while another member starts work.
+      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
+      activeRuns,
     };
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
@@ -1465,6 +1525,8 @@ export function applyMobileThreadEvent(
     const seq = typeof event.payload?.seq === "number" ? event.payload.seq : known?.seq;
     const next: MobileMessage = {
       id,
+      // Inline cards act on the message's thread, so live messages need it too.
+      threadId: known?.threadId ?? prev.threadId,
       // The seq lets a send that is still on screen as "Sending…" recognize its echo.
       ...(seq === undefined ? {} : { seq }),
       createdAt: known?.createdAt ?? event.createdAt,

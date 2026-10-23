@@ -19,7 +19,12 @@ name: Compose
 - tapOn: "Cancel"
 - openLink: "rakazo:///new-group"
 - extendedWaitUntil:
-    visible: "Name this group"
+    visible: "Search bots"
     timeout: 15000
+- tapOn: "Researcher"
+- tapOn: "Writer"
 - takeScreenshot: 03-new-group
+- tapOn: "Next"
+- assertVisible: "Skip"
+- takeScreenshot: 04-new-group-name
 - openLink: "rakazo:///"

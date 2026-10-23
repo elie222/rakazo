@@ -10,6 +10,7 @@ import ArchivedBots from "../app/(settings)/archived-bots";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import type { MobileBot, MobileGroup } from "./api";
 import { onArchivedChatsChanged } from "./archived-chats";
+import { registerSettingsSheet } from "./settings-sheet";
 
 const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selectSpace } =
   vi.hoisted(() => ({
@@ -35,7 +36,6 @@ vi.mock("./api", () => ({
         ? groupRpc(procedure, ...args)
         : rpc(procedure, ...args),
 }));
-vi.mock("./settings-sheet", () => ({ closeSettingsSheet }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push }),
   useNavigation: () => navigation,
@@ -109,8 +109,10 @@ vi.mock("../components/archived-bot-list", () => ({
 describe("archived chat read failures", () => {
   let root: Root;
   let container: HTMLDivElement;
+  let unregister: () => void;
   beforeEach(async () => {
     vi.clearAllMocks();
+    unregister = registerSettingsSheet(closeSettingsSheet);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     rpc.mockResolvedValue([bot]);
     groupRpc.mockResolvedValue([]);
@@ -119,6 +121,7 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(<ArchivedBots />));
   });
   afterEach(() => {
+    unregister();
     act(() => root.unmount());
     vi.unstubAllGlobals();
   });

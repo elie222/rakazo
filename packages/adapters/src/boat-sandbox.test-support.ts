@@ -6,14 +6,20 @@ import type {
   CommandResponse,
   CommandStatusRequest,
   CommandStatusResponse,
+  CreateDownloadUrlRequest,
   CreateRequest,
+  CreateSandboxRequest,
   CreateSandboxResponse,
   CreateUploadUrlRequest,
   FileUrlResponse,
   FileWriteResponse,
+  GetNamedSnapshotRequest,
   GetRequest,
   HostPortOperationRequest,
   HostPortResponse,
+  NamedSnapshot,
+  NamedSnapshotInfoResponse,
+  NamedSnapshotSavingResponse,
   Recover200Response,
   RecoverRequest,
   ResumeOperationRequest,
@@ -21,6 +27,7 @@ import type {
   SandboxActionResponse,
   SandboxInfoResponse,
   SandboxStateEnum,
+  SaveNamedSnapshotRequest,
   StopOperationRequest,
   UpdateRequest,
   WriteFileRequest,
@@ -28,7 +35,7 @@ import type {
 import { ResponseError } from "@boatdev/sdk";
 import { parse } from "shell-quote";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
-import { BoatSandboxProvider } from "./boat-sandbox.js";
+import { BOAT_COMPUTER_SNAPSHOT, BoatSandboxProvider } from "./boat-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 
 /** How a sandbox in the `error` state answers `POST /recover`, per the Boat API reference. */
@@ -47,6 +54,9 @@ interface FakeSandbox {
   files: Map<string, { content: Uint8Array; executable: boolean }>;
   recovery: BoatRecovery;
 }
+
+/** Boat's artifact route refuses larger files; download URLs have no size limit. */
+export const BOAT_ARTIFACT_MAX_BYTES = 50 * 1024 * 1024;
 
 const RUNNABLE = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
 // Where each in-flight state settles by the next read.
@@ -69,8 +79,23 @@ export class FakeBoatApi implements BoatSandboxSdk {
   private readonly detached = new Map<number, CommandResponse>();
   private created = 0;
   private readonly uploads = new Map<string, { sandboxId: string; path: string }>();
+  private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
   private startsExhausted = false;
   private rejectAll?: { status: number; code: string; message: string };
+  /** Every create request, in order. */
+  readonly creates: CreateSandboxRequest[] = [];
+  /** Named snapshots; the current computer snapshot is ready unless a test removes it. */
+  readonly namedSnapshots = new Map<string, NamedSnapshot>([
+    [
+      BOAT_COMPUTER_SNAPSHOT,
+      {
+        name: BOAT_COMPUTER_SNAPSHOT,
+        status: "ready",
+        sourceSandboxId: "bx_build",
+        createdAt: new Date(0),
+      },
+    ],
+  ]);
 
   /** Puts a sandbox in any documented state; in-flight states settle by the next read. */
   setState(id: string, state: SandboxStateEnum): void {
@@ -119,6 +144,11 @@ export class FakeBoatApi implements BoatSandboxSdk {
 
   async create(request: CreateRequest = {}): Promise<CreateSandboxResponse> {
     this.start();
+    const from = request.createSandboxRequest?.from;
+    if (from && this.namedSnapshots.get(from)?.status !== "ready") {
+      throw boatError(404, "snapshot_not_found", "Snapshot not found");
+    }
+    this.creates.push({ ...request.createSandboxRequest });
     const id = `bx_fake${++this.created}`;
     const sandbox: Sandbox = {
       id,
@@ -150,6 +180,36 @@ export class FakeBoatApi implements BoatSandboxSdk {
     if (settled) box.sandbox.state = settled;
     if (box.sandbox.state === "cancelled") this.sandboxes.delete(sandboxId);
     return response;
+  }
+
+  /** A save settles to `ready` by the next read. */
+  async getNamedSnapshot({ name }: GetNamedSnapshotRequest): Promise<NamedSnapshotInfoResponse> {
+    this.check();
+    const snapshot = this.namedSnapshots.get(name);
+    if (!snapshot) throw boatError(404, "snapshot_not_found", "Snapshot not found");
+    const response = { ok: true, type: "snapshot.named.info" as const, snapshot: { ...snapshot } };
+    if (snapshot.status === "saving") snapshot.status = "ready";
+    return response;
+  }
+
+  async saveNamedSnapshot({
+    namedSnapshotSaveRequest,
+  }: SaveNamedSnapshotRequest): Promise<NamedSnapshotSavingResponse> {
+    const { sandboxId, name } = namedSnapshotSaveRequest;
+    this.runnable(sandboxId);
+    const snapshot: NamedSnapshot = {
+      name,
+      status: "saving",
+      sourceSandboxId: sandboxId,
+      createdAt: new Date(),
+    };
+    this.namedSnapshots.set(name, snapshot);
+    return {
+      ok: true,
+      type: "snapshot.named.saving",
+      status: "saving",
+      snapshot: { ...snapshot },
+    };
   }
 
   async resume({ sandboxId }: ResumeOperationRequest): Promise<SandboxActionResponse> {
@@ -225,6 +285,32 @@ export class FakeBoatApi implements BoatSandboxSdk {
     };
   }
 
+  async createDownloadUrl({
+    sandboxId,
+    fileUrlRequest,
+  }: CreateDownloadUrlRequest): Promise<FileUrlResponse> {
+    this.runnable(sandboxId);
+    const url = `https://downloads.on.boat.dev/file?token=fake-download-${this.downloads.size}`;
+    this.downloads.set(url, { sandboxId, path: fileUrlRequest.path });
+    return {
+      ok: true,
+      type: "file.download_url",
+      method: "GET",
+      url,
+      path: fileUrlRequest.path,
+      expiresAt: new Date(Date.now() + 900_000),
+    };
+  }
+
+  /** What the sandbox serves at a download URL. */
+  serveDownload(url: string): Response {
+    const download = this.downloads.get(url);
+    if (!download) return new Response(null, { status: 404 });
+    const file = this.runnable(download.sandboxId).files.get(download.path);
+    if (!file) return new Response(null, { status: 404 });
+    return new Response(Buffer.from(file.content));
+  }
+
   completeUpload(url: string, content: Uint8Array): void {
     const upload = this.uploads.get(url);
     if (!upload) throw new Error("Unknown fake upload");
@@ -251,6 +337,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
   async artifactRaw({ sandboxId, path }: ArtifactRequest): Promise<ApiResponse<Blob>> {
     const file = this.runnable(sandboxId).files.get(path);
     if (!file) throw boatError(404, "not_found", `File not found: ${path}`);
+    if (file.content.byteLength > BOAT_ARTIFACT_MAX_BYTES) {
+      throw boatError(
+        400,
+        "artifact_failed",
+        `Artifact is too large (${file.content.byteLength} bytes > ${BOAT_ARTIFACT_MAX_BYTES})`,
+      );
+    }
     return {
       raw: new Response(Buffer.from(file.content), {
         headers: { "content-length": String(file.content.byteLength) },

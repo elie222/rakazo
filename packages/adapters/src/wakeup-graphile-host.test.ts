@@ -4,6 +4,7 @@ import {
   historyCompactJob,
   messagingDeliverJob,
 } from "@rakazo/adapter-kit";
+import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import type { Runner } from "graphile-worker";
 import { makeWorkerUtils } from "graphile-worker";
@@ -18,6 +19,7 @@ vi.mock("graphile-worker", () => ({
 }));
 
 import {
+  createReservedGraphileJobWorkerHost,
   createRoutineRetryNoticeReconciler,
   databaseCapacityBackoffMs,
   GraphileJobPublisher,
@@ -83,6 +85,33 @@ describe("databaseCapacityBackoffMs", () => {
 });
 
 describe("GraphileJobPublisher.enqueue", () => {
+  it.each([
+    ["user", "run.interactive"],
+    ["follow_up", "run.interactive"],
+    ["messaging", "run.interactive"],
+    ["created", "run.interactive"],
+    ["routine", "run.continue"],
+    ["bot_message", "run.continue"],
+    ["tickets", "run.continue"],
+    ["webhook", "run.continue"],
+    ["cloud_agent", "run.continue"],
+  ])("routes %s from the persisted trigger to %s", async (trigger, task) => {
+    const addJob = vi.fn(async () => undefined);
+    vi.mocked(makeWorkerUtils).mockResolvedValue({ addJob, release: vi.fn() } as never);
+    const findUnique = vi.fn(async () => ({ trigger }));
+    const prisma = { run: { findUnique } } as unknown as Pick<PrismaClient, "run">;
+    const publisher = new GraphileJobPublisher({} as Pool, prisma);
+    try {
+      await publisher.enqueue({ name: "run.continue", payload: { runId: "fixture-run" } });
+      expect(findUnique).toHaveBeenCalledWith({
+        where: { id: "fixture-run" },
+        select: { trigger: true },
+      });
+      expect(addJob).toHaveBeenCalledWith(task, expect.anything(), expect.anything());
+    } finally {
+      await publisher.close();
+    }
+  });
   function publisherWith(addJob: ReturnType<typeof vi.fn>) {
     vi.mocked(makeWorkerUtils).mockResolvedValue({
       addJob,
@@ -267,6 +296,52 @@ describe("GraphileJobPublisher.enqueue", () => {
     expect(options?.jobKeyMode).toBeUndefined();
     expect(jobs.get("run:missing")).toEqual({ attempts: 0, maxAttempts: 25, runAt });
     await publisher.close();
+  });
+});
+
+describe("reserved Graphile workloads", () => {
+  afterEach(() => run.mockReset());
+
+  it("reserves disjoint task lists and stops every runner", async () => {
+    const runners = [mockRunner(), mockRunner(), mockRunner()];
+    for (const { runner } of runners) run.mockResolvedValueOnce(runner);
+    const host = createReservedGraphileJobWorkerHost({} as Pool, { concurrency: 4 });
+    await host.start(handlers());
+    const configurations = run.mock.calls.map(([options]) => options);
+    expect(configurations.map(({ concurrency }) => concurrency)).toEqual([4, 1, 1]);
+    expect(Object.keys(configurations[0].taskList)).toEqual(["run.interactive"]);
+    expect(Object.keys(configurations[1].taskList)).toEqual(["run.continue"]);
+    expect(Object.keys(configurations[2].taskList)).not.toContain("run.continue");
+    expect(Object.keys(configurations[2].taskList)).not.toContain("run.interactive");
+    expect(Object.keys(configurations[2].taskList)).toContain("computer.sleep");
+    await host.stop();
+    for (const { runner } of runners) expect(runner.stop).toHaveBeenCalled();
+  });
+
+  it("stops runners already started if another workload cannot start", async () => {
+    const first = mockRunner();
+    run.mockResolvedValueOnce(first.runner).mockRejectedValueOnce(tooMany);
+    const host = createReservedGraphileJobWorkerHost({} as Pool);
+    await expect(host.start(handlers())).rejects.toBe(tooMany);
+    expect(first.runner.stop).toHaveBeenCalled();
+  });
+
+  it("dispatches legacy chat jobs after stopping and restarting", async () => {
+    for (let i = 0; i < 6; i++) run.mockResolvedValueOnce(mockRunner().runner);
+    const host = createReservedGraphileJobWorkerHost({} as Pool);
+    const target = handlers();
+    try {
+      for (let cycle = 0; cycle < 2; cycle++) {
+        await host.start(target);
+        const background = run.mock.calls[cycle * 3 + 1]?.[0].taskList;
+        await background["run.continue"](wrapJobPayload({ runId: "legacy-chat" }));
+        await host.stop();
+      }
+      expect(target["run.continue"]).toHaveBeenCalledTimes(2);
+      expect(target["run.continue"]).toHaveBeenLastCalledWith({ runId: "legacy-chat" });
+    } finally {
+      await host.stop();
+    }
   });
 });
 

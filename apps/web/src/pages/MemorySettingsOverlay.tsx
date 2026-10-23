@@ -10,6 +10,7 @@ import {
   FieldLabel,
   NativeSelect,
   NativeSelectOption,
+  Spinner,
   Toggle,
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
@@ -178,7 +179,7 @@ export function MemorySettingsOverlay({
 
           {config === undefined ? (
             <p className="text-[13px] text-muted-foreground">
-              <Trans>Loading memory settings…</Trans>
+              <Spinner aria-label={t`Loading memory settings…`} />
             </p>
           ) : config ? (
             <section className="rounded-xl border border-border px-4 py-4">

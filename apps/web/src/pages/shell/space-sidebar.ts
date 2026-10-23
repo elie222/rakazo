@@ -143,3 +143,13 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     ];
   });
 }
+
+/** Count the unread flags the roster renders. Pass unfiltered groups for the app badge. */
+export function countUnreadChats(
+  sections: readonly { bots: readonly { chat: { unread?: boolean } }[] }[],
+): number {
+  return sections.reduce(
+    (count, section) => count + section.bots.filter((item) => item.chat.unread).length,
+    0,
+  );
+}

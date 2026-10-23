@@ -679,6 +679,71 @@ describe("files listing script", () => {
 });
 
 describe("readItems", () => {
+  it("prefers MCP structured results over display text", () => {
+    const reading = readItems(
+      {
+        structuredContent: { items: [{ id: "item-1", version: 2 }] },
+        content: [{ type: "text", text: "One item is available." }],
+      },
+      ["id", "version"],
+    );
+    expect(reading).toEqual(readItems([{ id: "item-1", version: 2 }], ["id", "version"]));
+  });
+
+  it("reads every JSON text block of an unstructured MCP result", () => {
+    const items = [
+      { id: "item-1", version: 1 },
+      { id: "item-2", version: 2 },
+    ];
+    const reading = readItems(
+      { content: items.map((item) => ({ type: "text", text: JSON.stringify(item) })) },
+      ["id", "version"],
+    );
+    expect(reading).toEqual(readItems(items, ["id", "version"]));
+  });
+
+  it("reads an empty structured result with no text blocks", () => {
+    expect(readItems({ structuredContent: { result: [] }, content: [] }, ["id"]).entries).toEqual(
+      {},
+    );
+  });
+
+  it("keeps support for a JSON document split across text blocks", () => {
+    const reading = readItems(
+      {
+        content: [
+          { type: "text", text: '{"items":' },
+          { type: "text", text: '[{"id":"item-1"}]}' },
+        ],
+      },
+      ["id"],
+    );
+    expect(reading).toEqual(readItems([{ id: "item-1" }], ["id"]));
+  });
+
+  it("does not silently drop an invalid text block beside a valid item", () => {
+    expect(() =>
+      readItems(
+        {
+          content: [
+            { type: "text", text: '{"id":"item-1"}' },
+            { type: "text", text: "not JSON" },
+          ],
+        },
+        ["id"],
+      ),
+    ).toThrow("The result is not JSON");
+  });
+
+  it("falls back to JSON text when structuredContent is not an object", () => {
+    expect(
+      readItems(
+        { structuredContent: "invalid", content: [{ type: "text", text: '{"id":"item-1"}' }] },
+        ["id"],
+      ),
+    ).toEqual(readItems([{ id: "item-1" }], ["id"]));
+  });
+
   const inbox = (messages: unknown[]) => ({
     content: [{ type: "text", text: JSON.stringify({ fetchedAt: Date.now(), messages }) }],
   });

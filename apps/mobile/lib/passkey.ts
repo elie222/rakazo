@@ -71,6 +71,14 @@ function challengeCookie(response: Response): string {
   return `${match[1]}=${match[2]}`;
 }
 
+/**
+ * Challenge requests keep the platform cookie jar out. With cookies on, React Native's iOS
+ * networking first fills Cookie from the shared jar (which already holds the challenge cookie
+ * from the options response) and then appends ours with a comma, so the signed value no longer
+ * parses and the server answers CHALLENGE_NOT_FOUND. The cookie is sent explicitly instead.
+ */
+const WITHOUT_COOKIE_JAR = { credentials: "omit" } as const;
+
 function passkeyErrorText(status: number, body: unknown, invalidJson?: boolean): string {
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
   if (code === "SESSION_NOT_FRESH") return t("Sign in again");
@@ -111,7 +119,7 @@ export function signInWithPasskey(): Promise<boolean> {
     if (!passkeys) throw new Error(t("Could not continue"));
     const options = await fetchMobileJson<RequestOptions>(
       `${flow.apiBase}/api/auth/passkey/generate-authenticate-options`,
-      { headers: { origin: "rakazo://" } },
+      { ...WITHOUT_COOKIE_JAR, headers: { origin: "rakazo://" } },
       {} as RequestOptions,
     );
     if (!options.response.ok || options.invalidJson)
@@ -129,6 +137,7 @@ export function signInWithPasskey(): Promise<boolean> {
     const { response, body, invalidJson } = await fetchMobileJson<unknown>(
       `${flow.apiBase}/api/auth/passkey/verify-authentication`,
       {
+        ...WITHOUT_COOKIE_JAR,
         method: "POST",
         headers: { "content-type": "application/json", origin: "rakazo://", cookie },
         body: JSON.stringify({ response: credential }),
@@ -160,7 +169,7 @@ export function addPasskey(): Promise<boolean> {
     flow.requireCurrent();
     const options = await fetchMobileJson<CreationOptions>(
       `${flow.apiBase}/api/auth/passkey/generate-register-options`,
-      { headers: { origin: "rakazo://", ...headers } },
+      { ...WITHOUT_COOKIE_JAR, headers: { origin: "rakazo://", ...headers } },
       {} as CreationOptions,
     );
     if (!options.response.ok || options.invalidJson)
@@ -178,6 +187,7 @@ export function addPasskey(): Promise<boolean> {
     const { response, body, invalidJson } = await fetchMobileJson<unknown>(
       `${flow.apiBase}/api/auth/passkey/verify-registration`,
       {
+        ...WITHOUT_COOKIE_JAR,
         method: "POST",
         headers: {
           "content-type": "application/json",

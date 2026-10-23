@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type {
   Sandbox as BoatMachine,
   Command200Response,
   CommandResponse,
+  FileUrlResponse,
+  NamedSnapshot,
   SandboxStateEnum,
 } from "@boatdev/sdk";
 import { BoatApi, Configuration } from "@boatdev/sdk";
@@ -24,16 +26,20 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import {
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatApiError, boatResponseError, callerSignal, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
-import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { LinuxDesktop, PREPARE_LINUX_DESKTOP, VERIFY_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 import { shellExportScript } from "./sandbox-shell-environment.js";
@@ -50,8 +56,19 @@ const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
 const BOAT_GONE_CHECK_TIMEOUT_MS = 10_000;
 const BOAT_EXPORT_CONCURRENCY = 16;
+/** Bounds how many exported bytes are held in memory at once; a larger file goes alone. */
+const BOAT_EXPORT_BATCH_BYTES = 64 * 1024 * 1024;
 const BOAT_INLINE_FILE_MAX_BYTES = 5 * 1024 * 1024;
-const BOAT_UPLOAD_TIMEOUT_MS = 5 * 60_000;
+const BOAT_ARTIFACT_MAX_BYTES = 50 * 1024 * 1024;
+const BOAT_TRANSFER_TIMEOUT_MS = 5 * 60_000;
+/** Bounds a base snapshot build: a fresh machine, the desktop install, and the save. */
+const BOAT_SNAPSHOT_BUILD_TIMEOUT_MS = 30 * 60_000;
+/** Boat archives an abandoned build sandbox soon after a crashed build. */
+const BOAT_SNAPSHOT_BUILD_TTL_SECONDS = 30 * 60;
+/** How long a process waits before building again after a failed build. */
+const BOAT_SNAPSHOT_RETRY_MS = 15 * 60_000;
+/** How long a process waits to look again after a failed lookup or while another saves it. */
+const BOAT_SNAPSHOT_LOOKUP_RETRY_MS = 60_000;
 
 /** The Boat API surface the adapter uses. Failures are the SDK's raw `ResponseError`s. */
 export type BoatSandboxSdk = Pick<
@@ -60,11 +77,14 @@ export type BoatSandboxSdk = Pick<
   | "command"
   | "commandStatus"
   | "create"
+  | "createDownloadUrl"
   | "createUploadUrl"
   | "get"
+  | "getNamedSnapshot"
   | "hostPort"
   | "recover"
   | "resume"
+  | "saveNamedSnapshot"
   | "stop"
   | "update"
   | "writeFile"
@@ -74,6 +94,11 @@ export type BoatSandboxSdk = Pick<
 };
 
 const RUNNABLE_STATES = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
+const BOAT_NOT_RUNNING_CODES = new Set([
+  "sandbox_not_ready",
+  "machine_not_running",
+  "sandbox_resuming",
+]);
 
 interface BoatCommandResult {
   stdout: string;
@@ -135,6 +160,9 @@ export class BoatSandboxProvider implements SandboxProvider {
   private readonly pendingProvisions = new Map<string, Promise<ComputerRef>>();
   private readonly prepared = new Set<string>();
   private readonly preparations = new Map<string, Promise<void>>();
+  private baseSnapshot?: "ready" | "missing";
+  private baseSnapshotBuild?: Promise<void>;
+  private baseSnapshotRetryAt = 0;
 
   constructor(
     config: { apiKey: string; apiUrl?: string },
@@ -198,20 +226,169 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
     }
 
-    const created = await this.client.create(
-      {
-        createSandboxRequest: {
-          ttlSeconds: BOAT_TTL_SECONDS,
-          noEnv: true,
-          env: {
-            RAKAZO_BOT_ID: request.botId,
-            RAKAZO_SANDBOX: "computer",
+    const create = (from?: string) =>
+      this.client.create(
+        {
+          createSandboxRequest: {
+            ttlSeconds: BOAT_TTL_SECONDS,
+            noEnv: true,
+            env: {
+              RAKAZO_BOT_ID: request.botId,
+              RAKAZO_SANDBOX: "computer",
+            },
+            ...(from ? { from } : {}),
           },
         },
-      },
-      { signal: context.signal },
-    );
+        { signal: context.signal },
+      );
+    const from = await this.computerSnapshot(context.signal);
+    let created: Awaited<ReturnType<typeof create>>;
+    try {
+      created = await create(from);
+    } catch (error) {
+      if (!from || !(error instanceof BoatApiError) || error.code !== "snapshot_not_found") {
+        throw error;
+      }
+      // Removed from the account since this process saw it; rebuild it and install as before.
+      this.baseSnapshot = undefined;
+      this.computerSnapshotMissing();
+      created = await create();
+    }
     return this.ref(created.sandbox.id, request.botId, true);
+  }
+
+  /**
+   * Builds the named snapshot new computers start from, unless it is already ready: a fresh
+   * sandbox with no account environment and no bot data, with the desktop tools installed
+   * and checked. The build sandbox is deleted afterwards.
+   */
+  async buildComputerSnapshot(
+    signal: AbortSignal = AbortSignal.timeout(BOAT_SNAPSHOT_BUILD_TIMEOUT_MS),
+  ): Promise<{ name: string; built: boolean }> {
+    const name = BOAT_COMPUTER_SNAPSHOT;
+    // A save already in progress, from another process or an earlier run, may finish it.
+    if ((await this.settledSnapshot(name, signal))?.status === "ready") {
+      return { name, built: false };
+    }
+    const { sandbox } = await this.client.create(
+      { createSandboxRequest: { ttlSeconds: BOAT_SNAPSHOT_BUILD_TTL_SECONDS, noEnv: true } },
+      { signal },
+    );
+    try {
+      await this.ensureRunnable(sandbox.id, signal);
+      for (const command of BOAT_COMPUTER_SETUP) {
+        const result = await this.runCommand(sandbox.id, command, undefined, 15 * 60_000, signal);
+        if (result.exitCode !== 0 || result.timedOut) {
+          throw new Error("could not prepare the Boat computer snapshot", {
+            cause: new Error(commandFailure(result)),
+          });
+        }
+      }
+      await this.client.saveNamedSnapshot(
+        { namedSnapshotSaveRequest: { sandboxId: sandbox.id, name } },
+        { signal },
+      );
+      const snapshot = await this.settledSnapshot(name, signal);
+      if (snapshot?.status !== "ready") {
+        throw new Error(`Boat could not save snapshot ${name}`, {
+          cause: snapshot?.error ? new Error(snapshot.error) : undefined,
+        });
+      }
+      return { name, built: true };
+    } finally {
+      await this.client.deleteSandbox(sandbox.id).catch(() => undefined);
+    }
+  }
+
+  /** The named snapshot once any save in progress has finished, or undefined when absent. */
+  private async settledSnapshot(
+    name: string,
+    signal: AbortSignal,
+  ): Promise<NamedSnapshot | undefined> {
+    while (true) {
+      const snapshot = await this.namedSnapshot(name, signal);
+      if (snapshot?.status !== "saving") return snapshot;
+      await delay(2_000, undefined, { signal });
+    }
+  }
+
+  /**
+   * The snapshot a new computer starts from, once it is ready. Until then computers install
+   * the desktop tools themselves while one build runs in the background.
+   */
+  private async computerSnapshot(signal: AbortSignal): Promise<string | undefined> {
+    if (this.baseSnapshot === "ready") return BOAT_COMPUTER_SNAPSHOT;
+    if (this.baseSnapshotBuild || Date.now() < this.baseSnapshotRetryAt) return undefined;
+    let snapshot: NamedSnapshot | undefined;
+    try {
+      snapshot = await this.namedSnapshot(BOAT_COMPUTER_SNAPSHOT, signal);
+    } catch (error) {
+      // A cancelled boot says nothing about the snapshot.
+      if (signal.aborted) throw error;
+      this.baseSnapshotRetryAt = Date.now() + BOAT_SNAPSHOT_LOOKUP_RETRY_MS;
+      return undefined;
+    }
+    if (snapshot?.status === "ready") {
+      this.baseSnapshot = "ready";
+      return BOAT_COMPUTER_SNAPSHOT;
+    }
+    if (snapshot?.status === "saving") {
+      // Another process is saving it.
+      this.baseSnapshotRetryAt = Date.now() + BOAT_SNAPSHOT_LOOKUP_RETRY_MS;
+      return undefined;
+    }
+    this.computerSnapshotMissing();
+    return undefined;
+  }
+
+  private computerSnapshotMissing(): void {
+    if (this.baseSnapshotBuild) return;
+    if (this.baseSnapshot !== "missing") {
+      this.baseSnapshot = "missing";
+      getLogger().warn("sandbox.base_image", {
+        provider: "boat",
+        outcome: "missing",
+        name: BOAT_COMPUTER_SNAPSHOT,
+      });
+    }
+    const started = performance.now();
+    this.baseSnapshotBuild = this.buildComputerSnapshot()
+      .then(
+        () => {
+          this.baseSnapshot = "ready";
+          getLogger().info("sandbox.base_image", {
+            provider: "boat",
+            outcome: "built",
+            name: BOAT_COMPUTER_SNAPSHOT,
+            durationMs: Math.round(performance.now() - started),
+          });
+        },
+        (error: unknown) => {
+          this.baseSnapshotRetryAt = Date.now() + BOAT_SNAPSHOT_RETRY_MS;
+          getLogger().warn("sandbox.base_image", {
+            provider: "boat",
+            outcome: "build_failed",
+            name: BOAT_COMPUTER_SNAPSHOT,
+            error,
+          });
+        },
+      )
+      .finally(() => {
+        this.baseSnapshotBuild = undefined;
+      });
+  }
+
+  /** The named snapshot, or undefined when the account has none by that name. */
+  private async namedSnapshot(
+    name: string,
+    signal: AbortSignal,
+  ): Promise<NamedSnapshot | undefined> {
+    try {
+      return (await this.client.getNamedSnapshot({ name }, { signal })).snapshot;
+    } catch (error) {
+      if (error instanceof BoatApiError && error.response.status === 404) return undefined;
+      throw error;
+    }
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -240,7 +417,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         context.signal,
       );
       if (runtime.exitCode !== 0 || runtime.timedOut)
-        throw new Error("could not prepare computer desktop tools");
+        throw new Error("could not prepare computer desktop tools", {
+          cause: new Error(commandFailure(runtime)),
+        });
       if (this.preparations.get(id) !== preparation) {
         throw new Error("Boat workspace preparation was invalidated during teardown");
       }
@@ -389,11 +568,17 @@ export class BoatSandboxProvider implements SandboxProvider {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
     const entries = await this.listWorkspaceFiles(id, context);
-    for (let index = 0; index < entries.length; index += BOAT_EXPORT_CONCURRENCY) {
+    for (const batch of exportBatches(entries)) {
       const files = await Promise.all(
-        entries.slice(index, index + BOAT_EXPORT_CONCURRENCY).map(async (entry) => ({
+        batch.map(async (entry) => ({
           path: entry.path,
-          content: await this.readFile(computer, entry.path, context),
+          content: await this.readRemoteFile(
+            id,
+            workspacePath(BOAT_WORKSPACE, entry.path),
+            context.signal,
+            undefined,
+            entry.size,
+          ),
           executable: entry.executable,
         })),
       );
@@ -499,7 +684,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (Date.now() >= deadline) {
         if (sandbox.state === "error") throw boatSandboxGone(id);
-        throw new Error(`Boat ${id} did not become ready`);
+        throw new SandboxUnavailableError({ cause: new Error(`Boat ${id} did not become ready`) });
       }
       await delay(1_000, undefined, { signal });
     }
@@ -507,7 +692,9 @@ export class BoatSandboxProvider implements SandboxProvider {
 
   /**
    * Boat archives a sandbox by itself when its TTL runs out, and then refuses work with
-   * `sandbox_not_ready` without running it. Wake it and try once more.
+   * `sandbox_not_ready` without running it; a machine that stopped underneath it answers
+   * `machine_not_running`, and one still waking answers `sandbox_resuming`. Wake or recover
+   * it and try once more.
    */
   private async whenRunnable<Result>(
     id: string,
@@ -517,17 +704,24 @@ export class BoatSandboxProvider implements SandboxProvider {
     try {
       return await call();
     } catch (error) {
-      if (!(error instanceof BoatApiError) || error.code !== "sandbox_not_ready") throw error;
+      if (!(error instanceof BoatApiError) || !BOAT_NOT_RUNNING_CODES.has(error.code ?? "")) {
+        throw error;
+      }
       await this.ensureRunnable(id, signal);
       return call();
     }
   }
 
   private async resume(id: string, signal?: AbortSignal): Promise<void> {
-    await this.client.resume(
-      { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
-      { signal },
-    );
+    try {
+      await this.client.resume(
+        { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
+        { signal },
+      );
+    } catch (error) {
+      // Another job's resume is already bringing it up; the caller waits for that one.
+      if (!(error instanceof BoatApiError) || error.code !== "sandbox_resuming") throw error;
+    }
   }
 
   /** Boat's documented way out of the `error` state: power-cycle the machine, or resume. */
@@ -650,28 +844,8 @@ export class BoatSandboxProvider implements SandboxProvider {
         { signal: context.signal },
       ),
     );
-    // The provider's capability URL is a secret. Confine it to Boat's sandbox hosts and
-    // never forward API credentials, follow redirects, or expose transport errors containing it.
-    let url: URL;
-    try {
-      url = new URL(signed.url);
-    } catch {
-      throw new Error("Boat returned an invalid file upload URL");
-    }
-    if (
-      !signed.ok ||
-      signed.type !== "file.upload_url" ||
-      signed.method !== "PUT" ||
-      signed.path !== filePath ||
-      url.protocol !== "https:" ||
-      !url.hostname.endsWith(".on.boat.dev") ||
-      url.username ||
-      url.password ||
-      (url.port && url.port !== "443") ||
-      url.hash
-    )
-      throw new Error("Boat returned an invalid file upload URL");
-    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(BOAT_UPLOAD_TIMEOUT_MS)]);
+    const url = signedFileUrl(signed, "upload", filePath);
+    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(BOAT_TRANSFER_TIMEOUT_MS)]);
     let response: Response;
     try {
       response = await fetch(url, {
@@ -714,11 +888,9 @@ export class BoatSandboxProvider implements SandboxProvider {
     filePath: string,
     signal?: AbortSignal,
     maxBytes?: number,
+    listedSize?: number,
   ): Promise<Uint8Array> {
-    // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
-    const { raw: response } = await this.whenRunnable(id, signal, () =>
-      this.client.artifactRaw({ sandboxId: id, path: filePath }, signal ? { signal } : undefined),
-    );
+    const response = await this.fileResponse(id, filePath, signal, maxBytes, listedSize);
     const reader = response.body?.getReader();
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -749,6 +921,65 @@ export class BoatSandboxProvider implements SandboxProvider {
     } finally {
       reader?.releaseLock();
     }
+  }
+
+  /**
+   * The JSON/base64 file endpoint rejects files over 5 MiB and the artifact route files over
+   * 50 MiB, and Boat's proxy cuts the artifact route off after about 75 seconds. A file listed
+   * over 5 MiB, a larger one, or one the artifact route could not send in time streams from a
+   * short-lived URL the sandbox serves itself.
+   */
+  private async fileResponse(
+    id: string,
+    filePath: string,
+    signal: AbortSignal | undefined,
+    maxBytes: number | undefined,
+    listedSize = 0,
+  ) {
+    if (listedSize <= BOAT_INLINE_FILE_MAX_BYTES) {
+      try {
+        const { raw } = await this.whenRunnable(id, signal, () =>
+          this.client.artifactRaw(
+            { sandboxId: id, path: filePath },
+            signal ? { signal } : undefined,
+          ),
+        );
+        return raw;
+      } catch (error) {
+        if (isArtifactTooLarge(error)) {
+          if (maxBytes !== undefined && maxBytes < BOAT_ARTIFACT_MAX_BYTES) {
+            throw new Error(`computer file exceeds ${maxBytes} bytes`);
+          }
+        } else if (!(error instanceof SandboxUnresponsiveError)) throw error;
+      }
+    }
+    signal?.throwIfAborted();
+    const signed = await this.whenRunnable(id, signal, () =>
+      this.client.createDownloadUrl(
+        { sandboxId: id, fileUrlRequest: { path: filePath } },
+        signal ? { signal } : undefined,
+      ),
+    );
+    const url = signedFileUrl(signed, "download", filePath);
+    const timeout = AbortSignal.timeout(BOAT_TRANSFER_TIMEOUT_MS);
+    const downloadSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        credentials: "omit",
+        redirect: "error",
+        signal: downloadSignal,
+      });
+    } catch {
+      if (downloadSignal.aborted) throw downloadSignal.reason;
+      throw new Error("Boat file download failed");
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Boat file download failed (HTTP ${response.status})`);
+    }
+    return response;
   }
 
   private async runCommand(
@@ -867,6 +1098,13 @@ export class BoatSandboxProvider implements SandboxProvider {
   }
 }
 
+/** Why a setup command failed, without its full output: a timeout, or the exit code and last line. */
+function commandFailure(result: BoatCommandResult): string {
+  if (result.timedOut) return "timed out";
+  const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
+  return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
+}
+
 /** Boat deletes a stopped sandbox's data after 14 days but keeps the record; it cannot resume. */
 /** Named so the shared `isSandboxGoneError` lets callers replace it from its last checkpoint. */
 function boatSandboxGone(sandboxId: string, cause?: unknown): Error {
@@ -877,11 +1115,12 @@ function boatSandboxGone(sandboxId: string, cause?: unknown): Error {
 
 /** Turns raw SDK failures into actionable errors, rate limits, and gone sandboxes. */
 function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
-  const get = wrapBoatCall(api.get.bind(api), apiKey);
+  const get = wrapBoatCall(api.get.bind(api), apiKey, true);
   const sandboxCall = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
     call: (...args: Args) => Promise<Result>,
+    idempotent = false,
   ) => {
-    const wrapped = wrapBoatCall(call, apiKey);
+    const wrapped = wrapBoatCall(call, apiKey, idempotent);
     return async (...args: Args): Promise<Result> => {
       try {
         return await wrapped(...args);
@@ -929,19 +1168,23 @@ function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
         throw error;
       }
     };
+  // Reads, URL grants, TTL updates, and whole-file writes are safe to send twice.
   return {
-    artifactRaw: sandboxCall(api.artifactRaw.bind(api)),
+    artifactRaw: sandboxCall(api.artifactRaw.bind(api), true),
     command: sandboxCall(api.command.bind(api)),
-    commandStatus: sandboxCall(api.commandStatus.bind(api)),
+    commandStatus: sandboxCall(api.commandStatus.bind(api), true),
     create: startCall("create", wrapBoatCall(api.create.bind(api), apiKey)),
-    createUploadUrl: sandboxCall(api.createUploadUrl.bind(api)),
-    get: sandboxCall(api.get.bind(api)),
-    hostPort: sandboxCall(api.hostPort.bind(api)),
+    createDownloadUrl: sandboxCall(api.createDownloadUrl.bind(api), true),
+    createUploadUrl: sandboxCall(api.createUploadUrl.bind(api), true),
+    get: sandboxCall(api.get.bind(api), true),
+    getNamedSnapshot: wrapBoatCall(api.getNamedSnapshot.bind(api), apiKey, true),
+    hostPort: sandboxCall(api.hostPort.bind(api), true),
     recover: startCall("recover", sandboxCall(api.recover.bind(api))),
     resume: startCall("resume", sandboxCall(api.resume.bind(api))),
+    saveNamedSnapshot: wrapBoatCall(api.saveNamedSnapshot.bind(api), apiKey),
     stop: sandboxCall(api.stop.bind(api)),
-    update: sandboxCall(api.update.bind(api)),
-    writeFile: sandboxCall(api.writeFile.bind(api)),
+    update: sandboxCall(api.update.bind(api), true),
+    writeFile: sandboxCall(api.writeFile.bind(api), true),
     deleteSandbox: api.deleteSandbox.bind(api),
   };
 }
@@ -1004,11 +1247,6 @@ async function sandboxMissing(
   }
 }
 
-function callerSignal(init: unknown): AbortSignal | undefined {
-  const signal = (init as RequestInit | undefined)?.signal;
-  return signal instanceof AbortSignal ? signal : undefined;
-}
-
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {
   const seconds = Math.max(timeoutMs / 1_000, 0.001);
   const completionScript =
@@ -1064,6 +1302,21 @@ function boatCwd(cwd: string | undefined): string {
 function configureBoatWorkspaceCommand(): string {
   return `mkdir -p ${shellQuote(BOAT_BROWSER_PROFILES)} && ${commandEnvDirectoryCommand()}`;
 }
+
+/** What a computer snapshot captures, in order: the same setup `prepare` repeats, then a check. */
+const BOAT_COMPUTER_SETUP = [
+  configureBoatWorkspaceCommand(),
+  PREPARE_LINUX_DESKTOP,
+  VERIFY_LINUX_DESKTOP,
+] as const;
+
+/** A snapshot name that changes with the setup it captures, so older computers keep theirs. */
+export function boatComputerSnapshotName(setup: readonly string[]): string {
+  const hash = createHash("sha256").update(setup.join("\0")).digest("hex").slice(0, 12);
+  return `rakazo-computer-${hash}`;
+}
+
+export const BOAT_COMPUTER_SNAPSHOT = boatComputerSnapshotName(BOAT_COMPUTER_SETUP);
 
 /** Only `user` may list or read command environment files. */
 function commandEnvDirectoryCommand(): string {
@@ -1128,6 +1381,65 @@ function parseBoatFileEntries(output: string): ComputerFileEntry[] {
       ];
     })
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Boat's file capability URLs are secrets. Confine them to Boat's sandbox hosts; callers never
+ * forward API credentials, follow redirects, or expose transport errors containing them.
+ */
+function signedFileUrl(
+  signed: FileUrlResponse,
+  direction: "upload" | "download",
+  filePath: string,
+): URL {
+  const invalid = () => new Error(`Boat returned an invalid file ${direction} URL`);
+  let url: URL;
+  try {
+    url = new URL(signed.url);
+  } catch {
+    throw invalid();
+  }
+  if (
+    !signed.ok ||
+    signed.type !== `file.${direction}_url` ||
+    signed.method !== (direction === "upload" ? "PUT" : "GET") ||
+    signed.path !== filePath ||
+    url.protocol !== "https:" ||
+    !url.hostname.endsWith(".on.boat.dev") ||
+    url.username ||
+    url.password ||
+    (url.port && url.port !== "443") ||
+    url.hash
+  )
+    throw invalid();
+  return url;
+}
+
+/** The artifact route refuses files over its size cap with this error. */
+function isArtifactTooLarge(error: unknown): boolean {
+  return (
+    error instanceof BoatApiError &&
+    (error.response.status === 413 ||
+      (error.response.status === 400 && error.code === "artifact_failed"))
+  );
+}
+
+function* exportBatches(entries: readonly ComputerFileEntry[]): Generator<ComputerFileEntry[]> {
+  let batch: ComputerFileEntry[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    if (
+      batch.length &&
+      (batch.length >= BOAT_EXPORT_CONCURRENCY || bytes + entry.size > BOAT_EXPORT_BATCH_BYTES)
+    ) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(entry);
+    bytes += entry.size;
+  }
+  if (batch.length) yield batch;
 }
 
 function isAbortError(error: unknown): boolean {

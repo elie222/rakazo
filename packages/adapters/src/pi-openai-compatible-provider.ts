@@ -8,7 +8,11 @@ import {
   type ProviderStreams,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { DEFAULT_MODEL_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
+import {
+  DEFAULT_MODEL_CONTEXT_WINDOW,
+  DEFAULT_MODEL_MAX_TOKENS,
+  parseModelHeaders,
+} from "@rakazo/contracts";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
 import {
@@ -93,7 +97,7 @@ export function openAiCompatibleModel(
 
 function openAiCompatibleProvider(
   models: Model<"openai-completions">[],
-  policy: { allowPrivate?: boolean } = {},
+  policy: { allowPrivate?: boolean; headers?: Record<string, string> } = {},
 ): Provider {
   const api = openAICompletionsApi();
   // Guard the fetch the caller supplied (the runtime's seam for tests) or the
@@ -183,13 +187,18 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
-  opts?: OpenAiCompatibleUrlPolicy,
+  opts?: OpenAiCompatibleUrlPolicy & { headers?: Record<string, string> },
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
     const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, opts);
-    if (requestCarriesAuthorization(input, init)) {
-      assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
+    const customHeaders = opts?.headers === undefined ? undefined : parseModelHeaders(opts.headers);
+    if (requestCarriesAuthorization(input, init) || Object.keys(customHeaders ?? {}).length > 0) {
+      assertHttpsForKeyedOpenAiCompatibleUrl(
+        url,
+        requestCarriesAuthorization(input, init) ? "present" : undefined,
+        Object.keys(customHeaders ?? {}).length > 0,
+      );
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher = new Agent({
@@ -204,8 +213,16 @@ export function createOpenAiCompatibleFetch(
     // a caller-supplied fetch stays in charge.
     const transport = fetchPairedWithDispatcher(baseFetch);
     try {
+      const requestInit = await requestInitFor(input, init);
+      let headers = requestInit.headers;
+      if (customHeaders !== undefined && Object.keys(customHeaders).length > 0) {
+        const merged = new Headers(headers);
+        for (const [name, value] of Object.entries(customHeaders)) merged.set(name, value);
+        headers = merged;
+      }
       const response = await transport(url, {
-        ...(await requestInitFor(input, init)),
+        ...requestInit,
+        headers,
         redirect: "error",
         dispatcher,
       } as RequestInit & { dispatcher: Agent });
@@ -319,11 +336,12 @@ export function registerOpenAiCompatibleRuntime(
   opts: {
     modelId: string;
     baseUrl: string;
+    headers?: Record<string, string>;
     reasoning?: boolean;
     acceptsImages?: boolean;
     maxTokens?: number;
     contextWindow?: number;
-    /** From `actorMayUsePrivateEndpoint` for the connection's owner. */
+    /** Explicit operator authorization for private endpoints. */
     allowPrivate?: boolean;
   },
 ): MutableModels {
@@ -342,7 +360,7 @@ export function registerOpenAiCompatibleRuntime(
           opts.contextWindow,
         ),
       ],
-      { allowPrivate: opts.allowPrivate },
+      { allowPrivate: opts.allowPrivate, headers: opts.headers },
     ),
   );
   return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
@@ -353,6 +371,7 @@ export type OpenAiCompatibleConnectInput = {
   baseUrl?: string;
   modelId?: string;
   apiKey?: string;
+  headers?: Record<string, string>;
 };
 
 export function prepareOpenAiCompatibleConnect(
@@ -369,7 +388,11 @@ export function prepareOpenAiCompatibleConnect(
   if (!modelId) throw new Error("Model id is required for OpenAI-compatible models");
   const allowed = assertAllowedOpenAiCompatibleUrl(baseUrl, policy);
   const apiKey = input.apiKey?.trim();
-  assertHttpsForKeyedOpenAiCompatibleUrl(allowed, apiKey);
+  assertHttpsForKeyedOpenAiCompatibleUrl(
+    allowed,
+    apiKey,
+    Object.keys(input.headers ?? {}).length > 0,
+  );
   const normalized = allowed.href;
   return apiKey ? { baseUrl: normalized, modelId, apiKey } : { baseUrl: normalized, modelId };
 }
@@ -447,21 +470,58 @@ async function readBoundedJson(
   }
 }
 
+/** Some compatible servers expose their model list without authenticating. */
+export async function verifyOpenAiCompatibleApiKey(
+  input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (new URL(input.baseUrl).hostname !== "ollama.com") return;
+  if (!input.apiKey?.trim()) throw new Error("API key was rejected by the provider.");
+  const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
+  let response: Response;
+  try {
+    response = await safeFetch("https://ollama.com/api/balance", {
+      headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
+      redirect: "error",
+      signal: AbortSignal.any([
+        AbortSignal.timeout(MODEL_CONNECT_TIMEOUT_MS),
+        ...(signal ? [signal] : []),
+      ]),
+    });
+  } catch {
+    throw new Error("Could not verify the API key. Try again.");
+  }
+  await response.body?.cancel().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("API key was rejected by the provider.");
+  }
+  if (!response.ok) throw new Error("Could not verify the API key. Try again.");
+}
+
 export async function probeOpenAiCompatibleModels(
-  input: { baseUrl: string; apiKey?: string },
+  input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
   opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, opts);
-  assertHttpsForKeyedOpenAiCompatibleUrl(baseUrl, input.apiKey);
+  assertHttpsForKeyedOpenAiCompatibleUrl(
+    baseUrl,
+    input.apiKey,
+    Object.keys(input.headers ?? {}).length > 0,
+  );
+  await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (input.apiKey?.trim()) headers.Authorization = `Bearer ${input.apiKey.trim()}`;
-    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, opts);
+    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
+      ...opts,
+      headers: input.headers,
+    });
     const response = await safeFetch(new URL("models", `${baseUrl.href}/`).href, {
       headers,
       redirect: "error",

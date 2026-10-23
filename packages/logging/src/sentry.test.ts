@@ -87,7 +87,10 @@ describe("sentry sink", () => {
     const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
     const error = new Error("run failed", { cause: new TypeError("bad input") });
     logger.error("job crashed", error, {
-      jobId: "j1",
+      "job.id": "j1",
+      "run.id": "r1",
+      "model.provider": "openai-compatible",
+      "model.id": "local-model",
       apiKey: "sk-secret",
       content: "private message",
       "user.id": "u1",
@@ -100,7 +103,13 @@ describe("sentry sink", () => {
       environment: "prod-acme",
       release: "abc",
       level: "error",
-      tags: { service: "rakazo-worker", jobId: "j1" },
+      tags: {
+        service: "rakazo-worker",
+        "job.id": "j1",
+        "run.id": "r1",
+        "model.provider": "openai-compatible",
+        "model.id": "local-model",
+      },
       extra: { "log.message": "job crashed" },
     });
     expect(event.extra).toEqual({ "log.message": "job crashed" });
@@ -109,6 +118,31 @@ describe("sentry sink", () => {
     const values = event.exception.values;
     expect(values.map((value: { type: string }) => value.type)).toEqual(["TypeError", "Error"]);
     expect(values[1].stacktrace.frames.at(-1).filename).toContain("sentry.test.ts");
+  });
+
+  it("titles database errors by code and model operation", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-api",
+      sinks: [createSentrySink("rakazo-api", { dsn: DSN }, transport)],
+    });
+    const error = Object.assign(
+      new Error(
+        "\nInvalid `prisma.connection.findMany()` invocation:\n\n\nTransaction API error: expired transaction.",
+      ),
+      { name: "PrismaClientKnownRequestError", code: "P2028" },
+    );
+    logger.error("rpc connections/begin failed", error);
+    logger.error(
+      "socket closed",
+      Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+    );
+    await logger.flush();
+
+    expect(events.map((event) => event.exception.values.at(-1).value)).toEqual([
+      "P2028 connection.findMany: Transaction API error: expired transaction.",
+      "read ECONNRESET",
+    ]);
   });
 
   it("redacts what it copies out when handed an event directly", async () => {
@@ -212,6 +246,7 @@ describe("sentry sink", () => {
     });
     logger.info("started");
     logger.warn("slow");
+    logger.error("http.request.completed", { "error.report": false });
     logger.error("queue unavailable", { "request.id": "req-1" });
     logger.error("mail sync failed");
     await logger.flush();

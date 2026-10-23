@@ -1,4 +1,4 @@
-import { TransientModelError } from "@rakazo/adapter-kit";
+import { ModelAccountError, TransientModelError } from "@rakazo/adapter-kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const provider = vi.hoisted(() => ({ errorMessage: "" }));
@@ -77,6 +77,24 @@ describe("Pi runtime errors", () => {
     const failure = consume();
     await expect(failure).rejects.toBeInstanceOf(TransientModelError);
     await expect(failure).rejects.toThrow("overloaded");
+  });
+
+  it.each([
+    '401: {"message":"Invalid API-key provided.","type":"invalid_request_error"}',
+    '402: {"message":"This request requires more credits.","code":402}',
+  ])("marks a provider account failure the user can fix: %s", async (message) => {
+    provider.errorMessage = message;
+    const failure = consume();
+    await expect(failure).rejects.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.toThrow(message);
+  });
+
+  it("keeps a malformed request as an ordinary failure", async () => {
+    provider.errorMessage =
+      '400: {"message":"Unexpected message role.","type":"invalid_request_error"}';
+    const failure = consume();
+    await expect(failure).rejects.not.toBeInstanceOf(ModelAccountError);
+    await expect(failure).rejects.not.toBeInstanceOf(TransientModelError);
   });
 
   it("keeps a dropped connection transient", async () => {

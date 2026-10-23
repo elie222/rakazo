@@ -76,9 +76,9 @@ describePostgres("billing service (PostgreSQL)", () => {
     });
   });
 
-  it("grants the deployment owner access without a subscription", async () => {
+  it("requires a subscription for admins too", async () => {
     await expect(billing.status({ ...owner, isDeploymentOwner: true })).resolves.toMatchObject({
-      access: true,
+      access: false,
     });
   });
 

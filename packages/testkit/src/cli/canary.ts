@@ -17,7 +17,7 @@ async function main() {
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-canary-"));
   let postgres: StartedPostgreSqlContainer | undefined;
   try {
-    if (runOpenRouter) postgres = await new PostgreSqlContainer("postgres:16-alpine").start();
+    if (runOpenRouter) postgres = await new PostgreSqlContainer("postgres:18-alpine").start();
     const env = {
       ...process.env,
       DATABASE_URL: postgres?.getConnectionUri() ?? "",

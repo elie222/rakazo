@@ -19,22 +19,18 @@ async function serveFakeImages(page: Page) {
   return requests;
 }
 
-async function sendImageReply(page: Page, name: string) {
-  await signup(page, `${name}-${Date.now()}@rakazo.test`, "password12", "Markdown Image");
+test("remote markdown images in bot replies load only after the reader asks", async ({
+  page,
+}, testInfo) => {
+  const requests = await serveFakeImages(page);
+  await signup(page, `markdown-image-${Date.now()}@rakazo.test`, "password12", "Markdown Image");
   await completeOnboarding(page);
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await expect(composer).toBeVisible();
   await composer.fill(`Here is the chart: ![Quarterly chart](${remoteImage})`);
   await composer.press("Enter");
   // The scripted runtime echoes the prompt back, so the markdown image lands in a bot bubble.
-  return page.getByTestId("message-bot-bubble").last();
-}
-
-test("remote markdown images in bot replies load only after the reader asks", async ({
-  page,
-}, testInfo) => {
-  const requests = await serveFakeImages(page);
-  const bubble = await sendImageReply(page, "markdown-image");
+  const bubble = page.getByTestId("message-bot-bubble").last();
 
   const placeholder = bubble.getByRole("button", { name: /Quarterly chart/ });
   await expect(placeholder).toBeVisible({ timeout: 20_000 });
@@ -50,16 +46,12 @@ test("remote markdown images in bot replies load only after the reader asks", as
   await expect(image).toHaveAttribute("src", remoteImage);
   expect(requests.map((request) => request.url)).toEqual([remoteImage]);
   expect(requests[0]?.referer).toBeUndefined();
-});
 
-test("remote markdown images load at once when the reader turned that on", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("rakazo.loadRemoteImages", "on"));
-  const requests = await serveFakeImages(page);
-  const bubble = await sendImageReply(page, "markdown-image-auto");
-
-  await expect(bubble.getByRole("img", { name: "Quarterly chart" })).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(bubble.getByRole("button", { name: /Quarterly chart/ })).toHaveCount(0);
+  // With the setting on, remote images load at once.
+  requests.length = 0;
+  await page.evaluate(() => localStorage.setItem("rakazo.loadRemoteImages", "on"));
+  await page.reload();
+  await expect(image).toBeVisible({ timeout: 20_000 });
+  await expect(placeholder).toHaveCount(0);
   expect(requests.map((request) => request.url)).toContain(remoteImage);
 });

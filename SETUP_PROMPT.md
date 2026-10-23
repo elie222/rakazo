@@ -27,6 +27,8 @@ Before making changes, ask me these concise questions:
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want remote computers instead of local Docker? If yes, choose E2B (`E2B_API_KEY`), Daytona (`DAYTONA_API_KEY`), or Boat (`BOAT_API_KEY`) and set `SANDBOX_PROVIDER` accordingly. If no, keep the default `SANDBOX_PROVIDER=docker` (local computers via the in-stack supervisor).
 
+Ask which email address I want for the initial account. Do not create an administrator: app accounts never administer the server, and signup order grants no privileges. Keep server configuration in `.env`; manage logs and updates through server tooling. If email delivery is unavailable, keep `SIGNUPS_ENABLED=false`, create the intended ordinary account using the server-side `bootstrap-owner` command documented in `docs/self-host.md`, and never verify a public signup without either mailbox proof or the matching existing password.
+
 Do not ask me to invent secrets; generate strong random values with openssl yourself.
 
 Preflight:
@@ -57,7 +59,7 @@ Setup:
 Verification:
 
 - Request `http://127.0.0.1:3100/internal/health`. Require `ok: true` and `sandbox: "docker"` (or the remote provider you configured). A missing `SANDBOX_SUPERVISOR_TOKEN` is a setup failure: Compose will not start the supervisor; restore the token and recreate the stack. Do not treat `sandbox: "none"` as success for this path.
-- Open `http://127.0.0.1:5173`, create a local test account with fake data, and complete first-run onboarding.
+- Open `http://127.0.0.1:5173`, sign in to the intended account (or create a nonprivileged test account with fake data only if registration is deliberately enabled), and complete first-run onboarding.
 - If a model is connected, send a harmless test message. Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
 
 When finished, report the directory path, effective Docker/Compose versions, configured options without secrets, app URL, health result, and how to stop without deleting volumes (`docker compose … down` without `-v`).
@@ -91,6 +93,7 @@ Before making changes, ask me these concise questions:
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add Treg, HTTPS MCP, or OpenAPI sources in the app.
 4. Set up the web app only (recommended), or also launch the Electron desktop shell after the web stack works?
+5. Which email should the initial ordinary account use? There is no administrator account or first-signup privilege. Keep deployment configuration in `.env` and server operations in deployment tooling. Without email delivery, keep `SIGNUPS_ENABLED=false` and create that account privately with the documented server-side bootstrap command; never treat an unverified public signup as proof of identity.
 
 Generate the required application secrets with openssl; do not ask me to invent them. If I choose an API key, let me enter it through an available secure secret mechanism or directly into `.env`; never echo it back. OAuth or device-code sign-in must remain under my control.
 

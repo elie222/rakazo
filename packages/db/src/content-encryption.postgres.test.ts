@@ -5,6 +5,8 @@ import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { ContentDecryptionError } from "./content-crypto.js";
 import { contentEncryptionOf } from "./content-encryption.js";
+import type { ContentExportRecord } from "./content-export.js";
+import { exportContent } from "./content-export.js";
 import { LocalKeyProvider, masterKeysFromEnv } from "./content-keys.js";
 import {
   contentEncryptionStatus,
@@ -36,10 +38,11 @@ describePostgres("content encryption (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let raw: ReturnType<typeof createDb>["pool"];
 
-  function client(keys = [masterA]) {
+  function client(keys = [masterA], options: { encryptContent?: boolean } = {}) {
     // The derived key keeps rows from other suites sharing this database readable.
     const provider = new LocalKeyProvider([...keys, ...masterKeysFromEnv()]);
-    const db = createDb(databaseUrl!, { keyProvider: provider });
+    // On unless a test switches it, whatever NODE_ENV the developer runs with.
+    const db = createDb(databaseUrl!, { keyProvider: provider, encryptContent: true, ...options });
     clients.push(db);
     return db;
   }
@@ -197,8 +200,13 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await migrateContent(prisma, { mode: "encrypt" });
       expect(await rawBlocks(plaintextId)).not.toContain("pelicans");
       expect(await texts()).toEqual(["fresh note about pelicans", "legacy note about pelicans"]);
-      const after = await contentEncryptionStatus(prisma);
-      for (const table of after.tables) expect(table.plaintext, table.table).toBe(0);
+      // Status is database-wide, and suites running alongside may write plaintext
+      // with encryption off, so check this suite's rows directly.
+      const left = await raw.query(
+        `SELECT count(*)::int AS n FROM messages m WHERE m."threadId" = $1 AND COALESCE(cardinality(m."searchTokens"), 0) = 0`,
+        [threadId],
+      );
+      expect(left.rows[0].n).toBe(0);
 
       const excerpt = await readHistory(prisma, scope, { messageId: plaintextId, limit: 1 });
       expect(excerpt.messages[0]!.text).toBe("legacy note about pelicans");
@@ -379,4 +387,233 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await prisma.space.delete({ where: { id: doomed } });
       expect(await count()).toBe(0);
     }));
+
+  // Its own space, so key counts and searches see only these rows. Global steps
+  // (migrate) run here, where every master key this file uses is configured.
+  describe("with CONTENT_ENCRYPTION switched", () => {
+    const switchSpaceId = `enc-switch-space-${suffix}`;
+    const switchBotId = `enc-switch-bot-${suffix}`;
+    const switchThreadId = `enc-switch-thread-${suffix}`;
+    const scope = { spaceId: switchSpaceId, userId, threadId: switchThreadId, botId: switchBotId };
+    let on: ReturnType<typeof createDb>;
+    let off: ReturnType<typeof createDb>;
+
+    beforeAll(() =>
+      runAsSystem("test fixture", async () => {
+        on = client([masterB, masterA], { encryptContent: true });
+        off = client([masterB, masterA], { encryptContent: false });
+        await prisma.space.create({ data: { id: switchSpaceId, organizationId, name: "Switch" } });
+        await prisma.bot.create({
+          data: { id: switchBotId, spaceId: switchSpaceId, userId, name: "Bo", color: "ink" },
+        });
+        await prisma.thread.create({
+          data: { id: switchThreadId, spaceId: switchSpaceId, userId, botId: switchBotId },
+        });
+      }),
+    );
+
+    const system = <T>(work: () => Promise<T>) => runAsSystem("test fixture", work);
+    const query = async <T>(text: string, values: unknown[]) =>
+      (await raw.query(text, values)).rows as T[];
+    const stored = async (id: string) =>
+      (
+        await query<{ blocks: string; tokens: number[] | null }>(
+          `SELECT blocks::text AS blocks, "searchTokens" AS tokens FROM messages WHERE id = $1`,
+          [id],
+        )
+      )[0]!;
+    const spaceKeys = async () =>
+      (
+        await query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM space_keys WHERE "spaceId" = $1`,
+          [switchSpaceId],
+        )
+      )[0]!.n;
+    const found = async (prisma: PrismaClient, words: string) =>
+      (await searchHistory(prisma, scope, { query: words })).messages.map((m) => m.text).sort();
+    const say = (prisma: PrismaClient, text: string) =>
+      createThreadMessage(prisma, {
+        threadId: switchThreadId,
+        role: "bot",
+        botId: switchBotId,
+        blocks: [{ kind: "text", text }],
+      });
+
+    it("writes plaintext with encryption off, without creating keys, and searches it", () =>
+      system(async () => {
+        const message = await say(off.prisma, "narwhal one, written while off");
+        expect(await stored(message.id)).toMatchObject({ tokens: null });
+        expect((await stored(message.id)).blocks).toContain("narwhal one");
+        const doc = await off.prisma.memoryDocument.create({
+          data: {
+            spaceId: switchSpaceId,
+            userId,
+            botId: switchBotId,
+            scope: "bot",
+            path: "notes.md",
+            content: "Likes kelp",
+          },
+        });
+        await off.prisma.memoryRevision.create({
+          data: { documentId: doc.id, revision: 1, content: "Likes kelp" },
+        });
+        await off.prisma.thread.update({
+          where: { id: switchThreadId },
+          data: { historyCompactionSummary: "They talked about kelp" },
+        });
+        const plain = await query<{ doc: string; rev: string; summary: string }>(
+          `SELECT d.content AS doc, r.content AS rev, t."historyCompactionSummary" AS summary
+           FROM memory_documents d JOIN memory_revisions r ON r."documentId" = d.id
+           JOIN threads t ON t.id = $2 WHERE d.id = $1`,
+          [doc.id, switchThreadId],
+        );
+        expect(plain).toEqual([
+          { doc: "Likes kelp", rev: "Likes kelp", summary: "They talked about kelp" },
+        ]);
+        expect(await spaceKeys()).toBe(0);
+        expect(await found(off.prisma, "narwhal")).toEqual(["narwhal one, written while off"]);
+      }));
+
+    it("keeps everything readable and searchable from on to off and back on", () =>
+      system(async () => {
+        const sealed = await say(on.prisma, "narwhal two, sealed while on");
+        expect((await stored(sealed.id)).blocks).not.toContain("narwhal");
+        expect(await spaceKeys()).toBe(1);
+
+        // Off: the sealed row still reads and matches through its tokens.
+        expect((await off.prisma.message.findUnique({ where: { id: sealed.id } }))?.blocks).toEqual(
+          [{ kind: "text", text: "narwhal two, sealed while on" }],
+        );
+        expect(await found(off.prisma, "narwhal")).toEqual([
+          "narwhal one, written while off",
+          "narwhal two, sealed while on",
+        ]);
+        // Rewritten while off, it is stored readable and stops matching its old words.
+        await off.prisma.message.update({
+          where: { id: sealed.id },
+          data: { blocks: [{ kind: "text", text: "narwhal two, edited while off" }] },
+          select: { id: true },
+        });
+        expect(await stored(sealed.id)).toMatchObject({ tokens: [] });
+        const status = await contentEncryptionStatus(off.prisma);
+        expect(status.tables.find((t) => t.table === "messages")!.plaintext).toBeGreaterThanOrEqual(
+          2,
+        );
+        expect((await stored(sealed.id)).blocks).toContain("edited while off");
+        expect(await found(off.prisma, "sealed")).toEqual([]);
+        expect(await found(off.prisma, "edited")).toEqual(["narwhal two, edited while off"]);
+
+        // Back on: new content is sealed, the mixed rows read, and migrate seals the rest.
+        const third = await say(on.prisma, "narwhal three, sealed again");
+        expect((await stored(third.id)).blocks).not.toContain("narwhal");
+        const all = [
+          "narwhal one, written while off",
+          "narwhal three, sealed again",
+          "narwhal two, edited while off",
+        ];
+        expect(await found(on.prisma, "narwhal")).toEqual(all);
+        await migrateContent(on.prisma, { mode: "encrypt" });
+        for (const id of [sealed.id, third.id]) {
+          expect((await stored(id)).blocks).not.toContain("narwhal");
+          expect((await stored(id)).tokens?.length).toBeGreaterThan(0);
+        }
+        const plaintext = await query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM messages WHERE "threadId" = $1 AND blocks::text LIKE '%narwhal%'`,
+          [switchThreadId],
+        );
+        expect(plaintext[0]!.n).toBe(0);
+        expect(await found(on.prisma, "narwhal")).toEqual(all);
+        expect(await found(off.prisma, "narwhal")).toEqual(all);
+        expect(
+          (await off.prisma.thread.findUnique({ where: { id: switchThreadId } }))
+            ?.historyCompactionSummary,
+        ).toBe("They talked about kelp");
+      }));
+
+    it("exports decrypted content by thread, bot and space", () =>
+      system(async () => {
+        await say(off.prisma, "narwhal four, plaintext beside ciphertext");
+        const collect = async (filter: Parameters<typeof exportContent>[1]) => {
+          const records: ContentExportRecord[] = [];
+          for await (const record of exportContent(off.prisma, filter)) records.push(record);
+          return records;
+        };
+        const byThread = await collect({ threadId: switchThreadId });
+        expect(byThread[0]).toMatchObject({
+          type: "thread",
+          id: switchThreadId,
+          spaceId: switchSpaceId,
+          botId: switchBotId,
+          historyCompactionSummary: "They talked about kelp",
+        });
+        expect(byThread.filter((record) => record.type === "message").map((r) => r.text)).toEqual([
+          "narwhal one, written while off",
+          "narwhal two, edited while off",
+          "narwhal three, sealed again",
+          "narwhal four, plaintext beside ciphertext",
+        ]);
+        expect(byThread.some((record) => record.type === "memory_document")).toBe(false);
+        expect(JSON.stringify(byThread)).not.toContain("rkz1:");
+
+        const bySpace = await collect({ spaceId: switchSpaceId });
+        expect(bySpace.map((record) => record.type)).toEqual([
+          "thread",
+          "message",
+          "message",
+          "message",
+          "message",
+          "memory_document",
+          "memory_revision",
+        ]);
+        expect(bySpace.at(-2)).toMatchObject({
+          path: "notes.md",
+          content: "Likes kelp",
+          botId: switchBotId,
+        });
+        expect(bySpace.at(-1)).toMatchObject({
+          revision: 1,
+          content: "Likes kelp",
+          spaceId: switchSpaceId,
+        });
+        expect(JSON.stringify(bySpace)).not.toContain("rkz1:");
+        expect(await collect({ botId: switchBotId })).toEqual(bySpace);
+        expect(await collect({ botId: `missing-${suffix}` })).toEqual([]);
+
+        // In another bot's thread, a bot export keeps only that bot's messages and
+        // leaves out the thread's summary, which covers the whole conversation.
+        const otherBot = `enc-switch-other-${suffix}`;
+        await prisma.bot.create({
+          data: { id: otherBot, spaceId: switchSpaceId, userId, name: "Cy", color: "ink" },
+        });
+        const otherThread = await off.prisma.thread.create({
+          data: {
+            spaceId: switchSpaceId,
+            userId,
+            botId: otherBot,
+            historyCompactionSummary: "Private chatter",
+          },
+        });
+        await createThreadMessage(off.prisma, {
+          threadId: otherThread.id,
+          role: "user",
+          blocks: [{ kind: "text", text: "only for Cy" }],
+        });
+        await createThreadMessage(off.prisma, {
+          threadId: otherThread.id,
+          role: "bot",
+          botId: switchBotId,
+          blocks: [{ kind: "text", text: "Bo dropped in" }],
+        });
+        const visiting = (await collect({ botId: switchBotId })).filter(
+          (record) =>
+            record.id === otherThread.id ||
+            (record.type === "message" && record.threadId === otherThread.id),
+        );
+        expect(visiting).toMatchObject([
+          { type: "thread", historyCompactionSummary: null },
+          { type: "message", text: "Bo dropped in" },
+        ]);
+        expect(visiting).toHaveLength(2);
+      }));
+  });
 });

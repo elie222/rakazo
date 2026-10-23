@@ -7,6 +7,7 @@ import type {
   MessagingInboundAttachment,
   MessagingInboundEvent,
   MessagingInboundMessage,
+  MessagingOutboundAttachment,
   MessagingOutboundStatus,
   MessagingPlatformDescriptor,
   MessagingReceipt,
@@ -14,7 +15,8 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-import type { Adapter, Message, Thread } from "chat";
+import { getLogger } from "@rakazo/logging";
+import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
 import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
 
 /**
@@ -28,6 +30,11 @@ const webhookDrain = new AsyncLocalStorage<{
 
 /** Inbound webhook bodies larger than this are rejected before parsing. */
 export const MESSAGING_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
+
+/** Telegram Bot API limits: photos up to 10 MB, any upload up to 50 MB. */
+const TELEGRAM_PHOTO_MAX_BYTES = 10_000_000;
+const TELEGRAM_UPLOAD_MAX_BYTES = 50_000_000;
+const TELEGRAM_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /**
  * One messaging platform mounted on the surface. The Chat SDK adapter owns
@@ -120,13 +127,39 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       const mounted: MountedPlatform = { platform, adapterName, chat };
       this.byProvider.set(platform.provider, mounted);
       const deliver = async (thread: Thread, message: Message) => {
+        if (
+          platform.provider === "slack" &&
+          message.isMention &&
+          message.attachments.length > 0 &&
+          inboundAttachments(message).length === 0 &&
+          (message.raw as { type?: unknown }).type === "app_mention"
+        ) {
+          try {
+            const fetchMessage = platform.adapter.fetchMessage;
+            if (!fetchMessage) throw new Error("Slack adapter cannot hydrate mention attachments");
+            const fetched = await fetchMessage.call(platform.adapter, thread.id, message.id);
+            if (!fetched || inboundAttachments(fetched).length === 0) {
+              throw new Error("Slack mention attachments are not available from message history");
+            }
+            // Preserve app_mention-only routing metadata while replacing the
+            // incomplete file stubs with Slack's authenticated history objects.
+            message.attachments = fetched.attachments;
+          } catch {
+            // Missing scopes, deleted files, or unavailable history must not
+            // prevent the mention text and original file URLs from arriving.
+            getLogger().warn(
+              "Slack mention attachment hydration failed; delivering original message",
+            );
+          }
+        }
         const event = this.toInbound(mounted, thread.id, thread.isDM, message);
         if (!event) return;
         try {
           await this.sink?.(event);
         } catch (error) {
-          // processMessage hands waitUntil a swallowed promise, so track sink
-          // failures here and turn them into HTTP 5xx after the drain.
+          // processMessage hands waitUntil a swallowed promise, so track
+          // sink failures here, turn them into HTTP 5xx, and
+          // clear the SDK dedupe key so Slack's retry can process the message.
           webhookDrain.getStore()?.failedKeys.push(chatDedupeKey(platform.adapter, message.id));
           throw error;
         }
@@ -176,7 +209,19 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     await this.ensureInitialized();
     // Telegram converts Markdown and retries parse errors as plain text. Keep
     // other adapters' existing payloads (Slack markdown_text has a lower limit).
-    const message = mounted.adapterName === "telegram" ? { markdown: request.body } : request.body;
+    const telegram = mounted.adapterName === "telegram";
+    const { attachment } = request;
+    if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {
+      throw new MessagingSendError(new Error("File is larger than Telegram accepts"), {
+        permanent: true,
+        retryAfterMs: null,
+      });
+    }
+    const message = attachment
+      ? attachmentMessage(telegram, request.body, attachment)
+      : telegram
+        ? { markdown: request.body }
+        : request.body;
     try {
       const sent = await mounted.chat
         .thread(toAdapterThreadId(mounted, request.threadId))
@@ -405,6 +450,29 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const enrichment = platform.enrichTeamRoom?.(message.raw, base) ?? {};
     return { ...base, ...enrichment };
   }
+}
+
+/**
+ * One file as its own message. Telegram shows common image formats under its
+ * photo limit inline; everything else is uploaded as a document.
+ */
+function attachmentMessage(
+  telegram: boolean,
+  body: string,
+  file: MessagingOutboundAttachment,
+): PostableMarkdown {
+  const data = Buffer.from(file.data.buffer, file.data.byteOffset, file.data.byteLength);
+  if (
+    telegram &&
+    TELEGRAM_PHOTO_TYPES.has(file.mimeType) &&
+    data.byteLength <= TELEGRAM_PHOTO_MAX_BYTES
+  ) {
+    return {
+      markdown: body,
+      attachments: [{ type: "image", data, name: file.name, mimeType: file.mimeType }],
+    };
+  }
+  return { markdown: body, files: [{ data, filename: file.name, mimeType: file.mimeType }] };
 }
 
 function inboundAttachments(message: Message): MessagingInboundAttachment[] {

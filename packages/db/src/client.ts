@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
+import { resolveContentEncryption } from "@rakazo/core";
 import type { PoolClient } from "pg";
 import { Pool } from "pg";
 import { withContentEncryption } from "./content-encryption.js";
@@ -20,6 +21,8 @@ export interface DbClientOptions {
   applicationName?: string;
   /** Wraps per-space content keys. Defaults to master keys from the environment. */
   keyProvider?: KeyProvider;
+  /** Encrypt new content. Defaults to CONTENT_ENCRYPTION (see resolveContentEncryption). */
+  encryptContent?: boolean;
 }
 
 const DEFAULT_POOL_MAX = 4;
@@ -51,13 +54,16 @@ export function createPool(connectionString: string, options: DbClientOptions = 
 }
 
 /**
- * The returned client encrypts user content at rest (see content-encryption.ts).
+ * The returned client encrypts user content at rest (see content-encryption.ts);
+ * with encryption off it writes plaintext and still decrypts existing ciphertext.
  * Space keys use a separate two-connection pool that `pool.end()` also closes.
  */
 export function createDb(
   connectionString: string,
   options: DbClientOptions = {},
 ): { prisma: PrismaClient; pool: Pool; contentKeys: ContentKeyRing } {
+  // Read first, so an invalid CONTENT_ENCRYPTION stops startup before any pool opens.
+  const encryptWrites = options.encryptContent ?? resolveContentEncryption();
   const pool = createPool(connectionString, options);
   const keyPool = new Pool({
     connectionString,
@@ -77,6 +83,7 @@ export function createDb(
   const contentKeys = new ContentKeyRing(
     options.keyProvider ?? lazyKeyProvider(() => new LocalKeyProvider(masterKeysFromEnv())),
     new PgSpaceKeyStore(keyPool),
+    { encryptWrites },
   );
   const adapter = new PrismaPg(pool);
   // Row-level security wraps everything else, so its findUnique rewrite still runs

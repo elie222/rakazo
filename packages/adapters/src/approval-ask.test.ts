@@ -114,7 +114,7 @@ it("redacts known secrets in instruction approval details and editable metadata"
   expect(JSON.stringify(block)).not.toContain("fake-token");
 });
 
-describe("fleet approval cards", () => {
+describe("bot management approval cards", () => {
   it.each([
     "create_group",
     "update_group",

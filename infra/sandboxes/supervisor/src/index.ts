@@ -20,6 +20,7 @@ import Docker from "dockerode";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import type { ComputerEgressMode } from "./computer-spec.js";
 import {
   assertVolumeSubpathSupport,
   COMPUTER_GID,
@@ -55,7 +56,7 @@ import {
   screenUrlWithToken,
   xdotoolCommand,
 } from "./computer-spec.js";
-import { verifyRestrictedEgress } from "./egress-probe.js";
+import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
 import {
   assertRequestIdentity,
@@ -111,7 +112,10 @@ let supervisorInfo: Docker.ContainerInspectInfo | undefined;
 let dockerApiVersion: string | undefined;
 const supervisorToken = resolveSupervisorToken(process.env);
 const screenNetworkMode = resolveScreenNetworkMode(process.env.SANDBOX_SCREEN_NETWORK);
-const computerEgressMode = resolveComputerEgressMode();
+const computerEgressSetting = resolveComputerEgressMode();
+// `auto` starts open and becomes restricted once the probe shows the host rules are in place.
+let computerEgressMode: ComputerEgressMode =
+  computerEgressSetting === "restricted" ? "restricted" : "open";
 const computerDns = resolveComputerDns();
 const teamScreenLimit = resolveTeamScreenLimit();
 // Host-run supervisors on Docker Desktop (macOS/Windows) cannot reach container
@@ -1095,7 +1099,12 @@ function startSupervisor() {
   // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
   // Docker problem. Failing here names the variable while the deployment is still coming up.
   computerResourceLimits();
-  if (computerEgressMode === "restricted" && screenNetworkMode !== "internal") {
+  if (computerEgressSetting === "auto" && screenNetworkMode !== "internal") {
+    // Settle the mode before the first provision rather than on it.
+    void ensureComputerImage()
+      .then(ensureRestrictedEgressEnforced)
+      .catch((error) => logger.error("computer egress probe failed", error));
+  } else if (computerEgressMode === "restricted" && screenNetworkMode !== "internal") {
     // Report a missing host ruleset at startup too, not only on the first provision.
     void ensureComputerImage()
       .then(ensureRestrictedEgressEnforced)
@@ -1186,9 +1195,32 @@ async function ensureComputerImage() {
 // Enforcement is host-side (DOCKER-USER/INPUT on rakazo-c* bridges); the flag only
 // names the interfaces. Refuse restricted computers until a probe shows the host
 // rules are in place. Only success is cached, so installing the rules needs no restart.
+// `auto` keeps the first answer a completed probe gives: restricted when the rules are in place,
+// otherwise open with a warning, which is how computers ran before the rules existed. A probe
+// that could not finish decides nothing: the provision fails and the next one probes again.
 let restrictedEgressVerified: Promise<void> | undefined;
+let autoEgressSettled: Promise<void> | undefined;
 async function ensureRestrictedEgressEnforced() {
-  if (computerEgressMode !== "restricted" || screenNetworkMode === "internal") return;
+  if (screenNetworkMode === "internal") return;
+  if (computerEgressSetting === "auto") {
+    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).then(
+      () => {
+        computerEgressMode = "restricted";
+        getLogger().info("restricted computer egress verified");
+      },
+      (error) => {
+        if (!(error instanceof EgressNotEnforced)) {
+          autoEgressSettled = undefined;
+          throw error;
+        }
+        getLogger().warn("computer egress is open: the host firewall rules are not installed", {
+          error: error.message,
+        });
+      },
+    );
+    return autoEgressSettled;
+  }
+  if (computerEgressMode !== "restricted") return;
   restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE).catch((error) => {
     restrictedEgressVerified = undefined;
     throw error;

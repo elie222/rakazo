@@ -5,6 +5,7 @@ import {
   connectCatalogItem,
   isCatalogItemConnected,
   nextCatalogAccountLabel,
+  waitForConnection,
 } from "./connection-catalog.js";
 
 const item: ConnectionCatalogItem = {
@@ -85,5 +86,49 @@ describe("connection catalog", () => {
       signal: controller.signal,
     });
     expect(result).toEqual({ status: "aborted" });
+  });
+});
+
+describe("waitForConnection", () => {
+  const options = () => ({ signal: new AbortController().signal, attempts: 60 });
+
+  it("stops polling once a newer attempt revoked the connection", async () => {
+    const complete = vi.fn().mockResolvedValue(account("old", "revoked"));
+    await expect(waitForConnection("old", complete, options())).resolves.toEqual({
+      status: "aborted",
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops polling when the connection no longer exists", async () => {
+    const missing = Object.assign(new Error("Resource not found"), {
+      status: 404,
+      code: "NOT_FOUND",
+    });
+    const complete = vi.fn().mockRejectedValue(missing);
+    await expect(waitForConnection("gone", complete, options())).resolves.toEqual({
+      status: "aborted",
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps polling through a transient failure", async () => {
+    const complete = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("Unavailable"), { status: 503 }))
+      // A proxy's bare 404 is not the server saying the connection is gone.
+      .mockRejectedValueOnce(Object.assign(new Error("Not Found"), { status: 404 }))
+      .mockResolvedValueOnce(account("new", "pending"))
+      .mockResolvedValueOnce(account("new", "connected"));
+    vi.useFakeTimers();
+    let result: ReturnType<typeof waitForConnection>;
+    try {
+      result = waitForConnection("new", complete, options());
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
+    expect(complete).toHaveBeenCalledTimes(4);
   });
 });

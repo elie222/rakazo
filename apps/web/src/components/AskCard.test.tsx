@@ -237,7 +237,7 @@ it("gives question options a fill and border", async () => {
   expect(option.classList.contains("border-input")).toBe(true);
 });
 
-it("gives onboarding choices a fill and border", async () => {
+it("gives onboarding choices borderless rows and distinct interaction states", async () => {
   await act(async () =>
     root.render(
       <ChoiceCard
@@ -255,8 +255,13 @@ it("gives onboarding choices a fill and border", async () => {
     item.textContent?.includes("Paris"),
   )!;
   expect(option.disabled).toBe(false);
-  expect(option.classList.contains("bg-secondary")).toBe(true);
-  expect(option.classList.contains("border-input")).toBe(true);
+  expect(option.classList.contains("bg-background")).toBe(true);
+  expect(option.classList.contains("border")).toBe(false);
+  expect(option.classList.contains("border-input")).toBe(false);
+  expect(option.classList.contains("enabled:hover:bg-foreground/5")).toBe(true);
+  expect(option.classList.contains("enabled:active:bg-foreground/15")).toBe(true);
+  expect(option.classList.contains("focus-visible:ring-2")).toBe(true);
+  expect(option.querySelector("span")?.classList.contains("bg-card")).toBe(true);
 });
 
 it.each([

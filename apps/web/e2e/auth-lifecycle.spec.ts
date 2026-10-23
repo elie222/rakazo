@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
@@ -6,6 +7,46 @@ import {
   signup,
   signupThroughForm,
 } from "./helpers";
+
+test("sign-up stays blank until session and sign-in options are ready", async ({
+  page,
+}, testInfo) => {
+  let releaseSession = () => {};
+  let releaseCapabilities = () => {};
+  const sessionReady = new Promise<void>((resolve) => {
+    releaseSession = resolve;
+  });
+  const capabilitiesReady = new Promise<void>((resolve) => {
+    releaseCapabilities = resolve;
+  });
+  await page.route("**/api/auth/get-session**", async (route) => {
+    await sessionReady;
+    await route.fulfill({ json: null });
+  });
+  await page.route("**/api/auth/capabilities", async (route) => {
+    await capabilitiesReady;
+    await route.fulfill({
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
+    });
+  });
+
+  await page.goto("/sign-up");
+  await expect(page.locator('[data-rakazo-app-state="session-pending"]')).toBeVisible();
+  await expect(page.locator("#root")).toHaveText("");
+  await captureScreenshot(page, testInfo, "signup-session-pending");
+
+  const capabilitiesRequested = page.waitForRequest("**/api/auth/capabilities");
+  releaseSession();
+  await capabilitiesRequested;
+  await expect(page.locator('[data-rakazo-app-state="ready"]')).toBeVisible();
+  await expect(page.locator("#root")).toHaveText("");
+  await captureScreenshot(page, testInfo, "signup-options-pending");
+
+  releaseCapabilities();
+  await expect(page.getByRole("heading", { name: "Create your Rakazo" })).toBeVisible();
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "signup-ready");
+});
 
 for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
   test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
@@ -143,17 +184,17 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  // Sign-out usually overlaps a bot refresh that the server rejects; when it does, wait
-  // for it so an unhandled rejection would surface before the assertion.
-  const refreshRejected = page
-    .waitForResponse(
-      (response) => response.url().includes("/rpc/spaces/list") && response.status() === 401,
-      { timeout: 5_000 },
-    )
-    .catch(() => undefined);
+  // Sign-out usually overlaps a bot refresh that the server rejects; wait for every
+  // refresh that started so an unhandled rejection would surface before the assertion.
+  const refreshes: Promise<unknown>[] = [];
+  const trackRefresh = (request: Request) => {
+    if (request.url().includes("/rpc/spaces/list")) refreshes.push(request.response());
+  };
+  page.on("request", trackRefresh);
   await page.getByRole("button", { name: "Log out" }).click();
-  await refreshRejected;
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  page.off("request", trackRefresh);
+  await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
   await page.goto("/");

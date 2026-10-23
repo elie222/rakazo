@@ -78,3 +78,58 @@ describe("withContentEncryption", () => {
     ).rejects.toThrow(/documentId/);
   });
 });
+
+describe("withContentEncryption with encryption off", () => {
+  // A recorder stands in for the driver, so the test sees exactly what would be written.
+  // Query extensions run in the order they were added: encryption first, then this.
+  const writes: unknown[] = [];
+  const off = new ContentKeyRing(new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]), store, {
+    encryptWrites: false,
+  });
+  const plain = withContentEncryption(
+    new PrismaClient({ adapter: new PrismaPg(pool) }),
+    off,
+  ).$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ args }) {
+          const data = (args as { data?: object }).data;
+          writes.push(data);
+          return { id: "m1", threadId: "t", ...data };
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
+
+  it("stores new content as given, without touching keys", async () => {
+    writes.length = 0;
+    const blocks = [{ kind: "text", text: "plain words" }];
+    await plain.message.create({ data: { threadId: "t", seq: 0, role: "user", blocks } });
+    await plain.memoryDocument.create({
+      data: { spaceId: "s", userId: "u", scope: "user", path: "p", content: "remember this" },
+    });
+    expect(writes).toEqual([
+      { threadId: "t", seq: 0, role: "user", blocks },
+      { spaceId: "s", userId: "u", scope: "user", path: "p", content: "remember this" },
+    ]);
+  });
+
+  it("drops the search tokens of a message rewritten in plaintext", async () => {
+    writes.length = 0;
+    await plain.message.update({ where: { id: "m1" }, data: { blocks: [] } });
+    await plain.message.update({ where: { id: "m1" }, data: { role: "bot" } });
+    expect(writes).toEqual([{ blocks: [], searchTokens: { set: [] } }, { role: "bot" }]);
+  });
+
+  it("still rejects writes that could not be encrypted once switched back on", async () => {
+    await expect(
+      plain.thread.create({
+        data: {
+          spaceId: "s",
+          userId: "u",
+          messages: { create: { seq: 0, role: "user", blocks: [{ kind: "text", text: "x" }] } },
+        },
+      }),
+    ).rejects.toThrow(/nested write/);
+  });
+});

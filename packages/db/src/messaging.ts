@@ -91,13 +91,7 @@ export async function provisionMessagingIdentity(
   }
 
   const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
-  const spaceId =
-    membership?.spaceId ??
-    (
-      await bootstrapUserSpace(prisma, user, env, {
-        claimDeploymentOwner: false,
-      })
-    ).spaceId;
+  const spaceId = membership?.spaceId ?? (await bootstrapUserSpace(prisma, user, env)).spaceId;
 
   // A previous attempt may have died between createBot and the identity row;
   // messaging users only ever get bots here, so an existing bot is theirs.

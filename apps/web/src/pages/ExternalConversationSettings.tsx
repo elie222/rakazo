@@ -140,17 +140,19 @@ export function ExternalConversationSettings({
           <Trans>Room guidance</Trans>
           {rules !== null ? (
             <IconTooltip label={t`Use default guidance`}>
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 type="button"
                 aria-label={t`Use default guidance`}
                 onClick={() => {
                   setRules(null);
                   setSaved(false);
                 }}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                className="shrink-0 text-muted-foreground"
               >
                 <RotateCcw size={14} strokeWidth={1.8} />
-              </button>
+              </Button>
             </IconTooltip>
           ) : (
             <span className="text-[11.5px] text-muted-foreground/70">

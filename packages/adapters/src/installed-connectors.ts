@@ -42,7 +42,6 @@ import {
   SELECTED_SCHEMA_MAX_BYTES,
 } from "./lazy-tool-catalog.js";
 import { localSchemaReference } from "./openai-tool-parameters.js";
-import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "./remote-mcp.js";
 import {
   assertSafeRemoteUrl,
@@ -113,14 +112,10 @@ export class InstalledConnectorProvider implements ConnectorProvider {
 
   /** Decided per request from the install owner's current standing, so an install saved
    * before an ownership change cannot keep reaching private endpoints. */
-  private async remoteFor(context: AdapterContext): Promise<RemoteRequestPolicy> {
+  private async remoteFor(_context: AdapterContext): Promise<RemoteRequestPolicy> {
     return {
       ...this.remote,
-      allowPrivateEndpoint: await actorMayUsePrivateEndpoint(
-        this.prisma,
-        context.userId,
-        this.allowPrivateEndpoint,
-      ),
+      allowPrivateEndpoint: this.allowPrivateEndpoint,
     };
   }
 
@@ -363,7 +358,7 @@ export async function verifyMcpInstall(input: {
   credential?: string;
   signal?: AbortSignal;
   remote?: RemoteConnectorDependencies;
-  /** Loopback / LAN endpoint escape: deployment owner or instance flag. */
+  /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ config: Record<string, unknown>; toolCount: number }> {
   assertNoSensitiveQuery(input.source);
@@ -386,7 +381,7 @@ export async function prepareApiInstall(input: {
   credential?: string;
   signal?: AbortSignal;
   remote?: RemoteConnectorDependencies;
-  /** Loopback / LAN endpoint escape: deployment owner or instance flag. */
+  /** Loopback / LAN endpoint escape: operator-configured instance flag. */
   allowPrivateEndpoint?: boolean;
 }): Promise<{ source: string; config: Record<string, unknown>; operationCount: number }> {
   const auth = AuthSchema.parse(input.config.auth);

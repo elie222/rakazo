@@ -174,6 +174,25 @@ describe("loadEnv", () => {
     expect(env.apiHost).toBe("0.0.0.0");
   });
 
+  it("encrypts content on servers by default and fails startup on an invalid switch", () => {
+    const production = {
+      DATABASE_URL: base.DATABASE_URL,
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "prod-auth-secret-with-enough-length",
+      ENCRYPTION_KEY: "prod-encryption-key-with-enough-length",
+      SCREEN_PROXY_SECRET: "prod-screen-proxy-secret-with-enough-length",
+      SANDBOX_PROVIDER: "e2b",
+    };
+    expect(loadEnv(production).contentEncryption).toBe(true);
+    expect(loadEnv({ ...production, CONTENT_ENCRYPTION: "off" }).contentEncryption).toBe(false);
+    expect(
+      loadEnv({ DATABASE_URL: base.DATABASE_URL, NODE_ENV: "development" }).contentEncryption,
+    ).toBe(false);
+    expect(() => loadEnv({ ...production, CONTENT_ENCRYPTION: "maybe" })).toThrow(
+      /CONTENT_ENCRYPTION must be "on" or "off"/,
+    );
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     const env = loadEnv({
       DATABASE_URL: base.DATABASE_URL,
@@ -207,16 +226,14 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
 
-  it("loads optional updater sidecar wiring without requiring the token at boot", () => {
-    expect(loadEnv(base).updaterUrl).toBeUndefined();
-    expect(loadEnv(base).updaterToken).toBeUndefined();
-    const env = loadEnv({
-      ...base,
-      RAKAZO_UPDATER_URL: " http://updater:7092 ",
-      RAKAZO_UPDATER_TOKEN: " fake-review-updater-token-000000000000 ",
-    });
-    expect(env.updaterUrl).toBe("http://updater:7092");
-    expect(env.updaterToken).toBe("fake-review-updater-token-000000000000");
+  it("loads per-client minimum builds and refuses a malformed one", () => {
+    expect(loadEnv(base).minimumClientBuilds).toEqual({});
+    expect(
+      loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "web=20261022093015" }).minimumClientBuilds,
+    ).toEqual({ web: "20261022093015" });
+    expect(() => loadEnv({ ...base, RAKAZO_MIN_CLIENT_BUILD: "latest" })).toThrow(
+      /RAKAZO_MIN_CLIENT_BUILD/,
+    );
   });
 
   it("loads an optional Expo access token", () => {

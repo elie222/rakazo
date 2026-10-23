@@ -3,6 +3,8 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  expandAdvancedSection,
+  expectCardWidth,
   realSandboxTimeout,
   rpc,
   showPasswordForm,
@@ -71,6 +73,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(computerCard).toBeVisible();
   await expect(computerCard.getByText("Needs you", { exact: true })).toBeVisible();
   await expect(computerCard.getByTestId("computer-card-open")).toBeVisible();
+  await expectCardWidth(computerCard, 340);
   await captureScreenshot(page, testInfo, "08-protected-input-request");
   await computerCard.getByTestId("computer-card-open").click();
   await page
@@ -210,6 +213,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue("Work");
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
+  await page
+    .getByTestId("connection-tools")
+    .getByText(/tools?$/)
+    .click();
+  await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11a3-plugin-tools");
+
   await page.getByRole("button", { name: "Close integrations" }).click();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
@@ -249,9 +259,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const advanced = page.getByTestId("integrations-advanced");
   const browseMcp = page.getByRole("button", { name: "Browse MCP servers", exact: true });
   await expect(browseMcp).toBeHidden();
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
+  await expandAdvancedSection(advanced);
   await expect(
     advanced.getByRole("button", { name: "Browse MCP servers", exact: true }),
   ).toBeVisible();
@@ -263,7 +272,6 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Add Treg", exact: true })).toBeVisible();
   await expect(page.getByText("Tool sources", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "MCP servers", exact: true })).toBeHidden();
-  // Thin Advanced smoke only. GraphQL install and order screenshots live in graphql-integrations.spec.ts.
   await expect(page.getByTestId("integrations-catalog-feed")).toBeVisible();
   // Catalog Search is optional chrome; add buttons stay MCP → OpenAPI → GraphQL → Executor → Treg.
   const advancedActions = advanced.getByTestId("integrations-advanced-add").locator("button");
@@ -273,6 +281,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(advancedActions.nth(2)).toHaveText("Add GraphQL");
   await expect(advancedActions.nth(3)).toHaveText("Add Executor");
   await expect(advancedActions.nth(4)).toHaveText("Add Treg");
+  await captureScreenshot(page, testInfo, "01-graphql-advanced-order");
 
   const feed = page.getByTestId("integrations-catalog-feed");
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
@@ -301,13 +310,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Add Treg", exact: true }).click();
   await page.getByPlaceholder("Treg token").fill("fake-treg-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP · https:\/\/treg\.to\/mcp\/ · credential saved/)).toBeVisible();
+  await expect(page.getByText(/MCP · https:\/\/treg\.to\/mcp\/ · Credential saved/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add MCP server", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser MCP");
   await page.getByPlaceholder("https://example.com/mcp").fill("https://mcp.example.test/mcp");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
-  await expect(page.getByText(/MCP · https:\/\/mcp\.example\.test\/mcp · no auth/)).toBeVisible();
+  await expect(page.getByText(/MCP · https:\/\/mcp\.example\.test\/mcp · No auth/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add OpenAPI", exact: true }).click();
   await page.getByPlaceholder("Display name").fill("Browser API");
@@ -318,7 +327,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByPlaceholder("Credential").fill("fake-openapi-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
-    page.getByText(/API · https:\/\/api\.example\.test\/v1 · credential saved/),
+    page.getByText(/API · https:\/\/api\.example\.test\/v1 · Credential saved/),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Add Executor", exact: true }).click();
@@ -329,9 +338,20 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByPlaceholder("Executor token").fill("fake-executor-browser-credential");
   await page.getByRole("button", { name: "Verify and add", exact: true }).click();
   await expect(
-    page.getByText(/MCP · https:\/\/executor\.example\.test\/mcp · credential saved/),
+    page.getByText(/MCP · https:\/\/executor\.example\.test\/mcp · Credential saved/),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "11d-provider-emulators");
+
+  await page.getByRole("button", { name: "Add GraphQL", exact: true }).click();
+  await page.getByPlaceholder("Display name").fill("Browser GraphQL");
+  await page
+    .getByPlaceholder("https://example.com/graphql")
+    .fill("https://graphql.example.test/graphql");
+  await page.getByRole("button", { name: "Verify and add", exact: true }).click();
+  await expect(
+    page.getByText(/GRAPHQL · https:\/\/graphql\.example\.test\/graphql · No auth/),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "02-graphql-installed");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
 
@@ -341,6 +361,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   }
   await gear.click();
+  await page
+    .getByTestId("bot-settings")
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
@@ -391,6 +415,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
   });
+  const botLinkCard = page.getByTestId("bot-link-card");
+  await expect(botLinkCard).toBeVisible({ timeout: 30_000 });
+  await expectCardWidth(botLinkCard, 340);
   await captureScreenshot(page, testInfo, "13-spawned-bot");
 
   await page
@@ -504,7 +531,7 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
 
   await chief.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit Profile" }).click();
-  await expect(page.locator("label:has-text('Name') input")).toHaveValue("Chief");
+  await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Chief");
   await captureScreenshot(page, testInfo, "19-edit-profile");
 });
 

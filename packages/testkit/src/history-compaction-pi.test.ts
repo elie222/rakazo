@@ -60,6 +60,8 @@ describe("history compaction with real Pi", () => {
         ]),
       },
       usageRecord: { createMany, create },
+      modelCreditEntry: { findUnique: async () => null },
+      $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(prisma),
     };
     const memoryProviders = { resolve: vi.fn(async () => null) };
     const jobs = { enqueue: vi.fn(async () => undefined) };

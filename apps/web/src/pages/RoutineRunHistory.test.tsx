@@ -77,7 +77,8 @@ it("shows loading, then the real run and its exact message link", async () => {
   );
   const view = await mounted();
   try {
-    expect(view.container.textContent).toContain("Loading");
+    expect(view.container.querySelector('[role="status"][aria-label="Loading…"]')).not.toBeNull();
+    expect(view.container.textContent).not.toContain("Loading");
     expect(view.container.textContent).not.toContain("No runs yet");
     await act(async () => finish([run]));
     expect(view.container.querySelectorAll("li")).toHaveLength(1);
@@ -121,6 +122,26 @@ it("shows failures honestly, preserves previous results and recovers on the next
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
     expect(view.container.querySelector('[role="alert"]')).toBeNull();
     expect(view.container.textContent).toContain("No runs yet");
+  } finally {
+    await view.close();
+  }
+});
+it.each([
+  [403, 2],
+  [404, 2],
+  [503, 5],
+])("after a %i poll, history requests total %i", async (status, requests) => {
+  vi.useFakeTimers();
+  api.history
+    .mockResolvedValueOnce(page([run]))
+    .mockRejectedValueOnce(Object.assign(new Error("Refused"), { status }))
+    .mockResolvedValue(page([run]));
+  const view = await mounted();
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.container.querySelector('[role="alert"]')?.textContent).toContain("Could not load");
+    await act(async () => vi.advanceTimersByTimeAsync(45_000));
+    expect(api.history).toHaveBeenCalledTimes(requests);
   } finally {
     await view.close();
   }

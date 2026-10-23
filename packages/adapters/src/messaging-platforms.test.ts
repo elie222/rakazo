@@ -111,6 +111,7 @@ describe("messagingPlatformsFromEnv", () => {
       ["telegram-work", "telegram"],
     ]);
     expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
+    expect(platforms[1]!.capabilities.files).toBe(true);
   });
 
   it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
@@ -249,7 +250,7 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group support and the receipt for each platform", () => {
+  it("declares group support, the receipt and file support for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
@@ -257,7 +258,12 @@ describe("messagingPlatformsFromEnv", () => {
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
     expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
     expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
-    expect(capabilities.telegram).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.telegram).toEqual({
+      direct: true,
+      groups: false,
+      receipt: null,
+      files: true,
+    });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
   });
 });

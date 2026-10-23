@@ -1,5 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -18,11 +18,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
-import { useAvatarStyle } from "../../components/avatar-style";
-import { BotAvatar } from "../../components/bot-avatar";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
-import { NativeSymbol } from "../../components/native-symbol";
 import {
   SettingsGroup,
   SettingsLabel,
@@ -57,6 +54,7 @@ import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   getLiveNotificationSettings,
+  hasLiveUpdateSettings,
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
@@ -71,6 +69,7 @@ import {
   renamePasskey,
 } from "../../lib/passkey";
 import { registerPushToken } from "../../lib/push";
+import { createQueuedSave } from "../../lib/queued-save";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
@@ -82,6 +81,7 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
+import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
 import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
@@ -105,13 +105,13 @@ export default function Account() {
     (security?.hasPassword
       ? !deletePassword
       : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
     DEFAULT_LIVE_NOTIFICATION_SETTINGS,
   );
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
-  const [notificationPending, setNotificationPending] = useState(false);
+  const notificationQueue = useRef<ReturnType<
+    typeof createQueuedSave<LiveNotificationSettings>
+  > | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -139,7 +139,6 @@ export default function Account() {
     outputTokens: number | null;
     totalTokens?: number | null;
   } | null>(null);
-  const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const appearance = getCachedAppearancePreference();
   const streamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -208,19 +207,6 @@ export default function Account() {
     }, []),
   );
 
-  async function selectAvatarStyle(next: AvatarStyle) {
-    if (next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await updateAvatarStyle(next);
-    } catch {
-      setAvatarError(t("Couldn't update avatars"));
-    } finally {
-      setAvatarPending(false);
-    }
-  }
-
   async function handleSignOut() {
     setPending(true);
     setSignOutError(null);
@@ -233,28 +219,33 @@ export default function Account() {
     }
   }
 
-  async function updateNotifications(next: LiveNotificationSettings) {
-    const previous = notifications;
-    setNotifications(next);
-    setNotificationPending(true);
+  function updateNotifications(next: LiveNotificationSettings) {
+    notificationQueue.current ??= createQueuedSave(notifications, {
+      onChange: setNotifications,
+      equals: (a, b) =>
+        a.liveConnection === b.liveConnection &&
+        a.messages === b.messages &&
+        a.scheduledTasks === b.scheduledTasks &&
+        a.needsAttention === b.needsAttention,
+      save: async (settings) => {
+        await setLiveNotificationSettings(
+          settings,
+          currentApiBase(),
+          await loadSessionToken(),
+          selectedSpaceId() ?? "",
+        );
+      },
+      onSaved: async (settings) => {
+        if (settings.liveConnection && !(await canPostPromotedNotifications())) {
+          await openPromotedNotificationSettings();
+        }
+        await registerPushToken();
+      },
+      onError: (cause) =>
+        setNotificationError(errorText(cause, t("Could not update notifications"))),
+    });
     setNotificationError(null);
-    try {
-      await setLiveNotificationSettings(
-        next,
-        currentApiBase(),
-        await loadSessionToken(),
-        selectedSpaceId() ?? "",
-      );
-      if (next.liveConnection && !(await canPostPromotedNotifications())) {
-        await openPromotedNotificationSettings();
-      }
-      await registerPushToken();
-    } catch (cause) {
-      setNotifications(previous);
-      setNotificationError(errorText(cause, t("Could not update notifications")));
-    } finally {
-      setNotificationPending(false);
-    }
+    notificationQueue.current.update(next);
   }
 
   async function securityAction(run: () => Promise<void>) {
@@ -495,49 +486,6 @@ export default function Account() {
           />
         </View>
 
-        <View accessibilityLabel={t("Avatar style")} style={styles.section}>
-          <SettingsLabel>{t("Avatars")}</SettingsLabel>
-          <View style={[styles.options, stackOptions && styles.optionsStacked]}>
-            {(["robot", "organic"] as const).map((style) => {
-              const selected = avatarStyle === style;
-              const styleLabel = style === "robot" ? t("Robot") : t("Organic");
-              return (
-                <Pressable
-                  key={style}
-                  accessibilityLabel={t("{style} avatars", { style: styleLabel })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled: avatarPending }}
-                  disabled={avatarPending}
-                  onPress={() => void selectAvatarStyle(style)}
-                  style={({ pressed }) => [
-                    styles.option,
-                    styles.avatarOption,
-                    !stackOptions && styles.optionSideBySide,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <BotAvatar
-                    color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
-                    identity="avatar-preview"
-                    size={42}
-                    variant={style}
-                  />
-                  <Text style={styles.optionLabel}>{styleLabel}</Text>
-                  <NativeSymbol
-                    android={selected ? "checkmark-circle" : "ellipse-outline"}
-                    color={selected ? native.label : native.tertiaryLabel}
-                    ios={selected ? "checkmark.circle.fill" : "circle"}
-                    size={22}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-          <SettingsGroup>
-            {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
-          </SettingsGroup>
-        </View>
-
         <SettingsGroup>
           <SettingsRow
             accessibilityRole="button"
@@ -555,7 +503,7 @@ export default function Account() {
             <SettingsSwitch
               label={t("Live working status")}
               value={notifications.liveConnection}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(liveConnection) =>
                 void updateNotifications({ ...notifications, liveConnection })
               }
@@ -564,13 +512,13 @@ export default function Account() {
               label={t("Agent messages")}
               detail={t("Replies and completed work")}
               value={notifications.messages}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
               value={notifications.scheduledTasks}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(scheduledTasks) =>
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
@@ -579,16 +527,18 @@ export default function Account() {
               label={t("Needs attention")}
               detail={t("Questions, approvals, takeover")}
               value={notifications.needsAttention}
-              disabled={notificationPending || !notificationsReady}
+              disabled={!notificationsReady}
               onChange={(needsAttention) =>
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <SettingsRow
-              accessibilityRole="button"
-              onPress={() => void openPromotedNotificationSettings()}
-              title={t("Live update settings")}
-            />
+            {hasLiveUpdateSettings() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                onPress={() => void openPromotedNotificationSettings()}
+                title={t("Live update settings")}
+              />
+            ) : null}
             <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
@@ -599,42 +549,34 @@ export default function Account() {
         ) : null}
 
         <SettingsGroup>
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/models")}
-            title={t("Models")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/voice")}
-            title={t("Voice")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/integrations")}
-            title={t("Integrations")}
-          />
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            disabled={pending}
-            onPress={() => router.push("/ai-data-sharing")}
-            title={t("AI data sharing")}
-          />
-          {me?.isDeploymentOwner ? (
+          {me?.billingEnabled ? (
             <SettingsRow
-              accessibilityRole="button"
+              title={t("Billing")}
               chevron="right"
-              onPress={() => router.push("/integration-setup")}
-              title={t("Server integrations")}
+              onPress={() => router.push("/billing")}
             />
           ) : null}
+          {(
+            [
+              { title: t("Artifacts"), href: "/artifacts" },
+              { title: t("Models"), href: "/models" },
+              { title: t("Voice"), href: "/voice" },
+              { title: t("Integrations"), href: "/integrations" },
+              { title: t("AI data sharing"), href: "/ai-data-sharing" },
+            ] as const
+          ).map(({ title, href }) => (
+            <SettingsRow
+              key={href}
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // Artifacts lives on the root stack, so it closes the sheet before opening.
+              onPress={() =>
+                isSettingsLink(href) ? router.push(href) : openFromSettingsSheet(router, href)
+              }
+              title={title}
+            />
+          ))}
         </SettingsGroup>
 
         <SettingsGroup>
@@ -849,38 +791,6 @@ function createAccountStyles() {
     section: {
       gap: 7,
     },
-    options: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    optionsStacked: {
-      flexDirection: "column",
-    },
-    option: {
-      minHeight: 48,
-      borderRadius: 14,
-      borderCurve: "continuous",
-      borderWidth: 2,
-      borderColor: "transparent",
-      backgroundColor: native.groupedCell,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    optionSideBySide: {
-      flex: 1,
-    },
-    avatarOption: {
-      minHeight: 96,
-      gap: 8,
-    },
-    optionLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-      textAlign: "center",
-    },
     about: {
       alignItems: "center",
       gap: 16,
@@ -963,9 +873,6 @@ function createAccountStyles() {
     },
     disabled: {
       opacity: 0.45,
-    },
-    pressed: {
-      backgroundColor: native.fillPressed,
     },
   });
 }

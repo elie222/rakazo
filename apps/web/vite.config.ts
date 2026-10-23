@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import http from "node:http";
 import https from "node:https";
@@ -7,6 +8,7 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
   CSP_REPORTING_ENDPOINTS,
@@ -24,6 +26,7 @@ import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
+import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
 import { appendForwardedFor } from "./src/forwarded-for.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
@@ -35,6 +38,7 @@ import {
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
 } from "./src/novnc-html.js";
+import { rakazoPwa } from "./src/pwa/plugin.js";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -44,6 +48,7 @@ import {
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
+const SCREEN_UPSTREAM_TIMEOUT_MS = 20_000;
 const screenLog = createServiceLogger({ service: "rakazo-web" });
 
 function screenPolicy(url: string | undefined) {
@@ -158,7 +163,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         return;
       }
       res.statusCode = 502;
-      res.end("Screen unavailable");
+      res.end(`Screen unavailable (${reason})`);
     };
     function requestUpstream() {
       if (res.destroyed) return;
@@ -207,6 +212,15 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           incoming.pipe(res);
         },
       );
+      // A silent upstream would leave the frame blank for as long as the browser waits. The limit
+      // covers only the wait for response headers; a slow or idle body after that keeps flowing.
+      const request = upstream;
+      const headersTimer = setTimeout(() => {
+        finishUnavailable("upstream_timeout");
+        request.destroy();
+      }, SCREEN_UPSTREAM_TIMEOUT_MS);
+      request.once("response", () => clearTimeout(headersTimer));
+      request.once("close", () => clearTimeout(headersTimer));
       upstream.on("error", (error) => {
         if (
           retryable &&
@@ -383,7 +397,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
+  // Names this build in every API request; the dev server has none, so the handshake stays off.
+  const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const apiProxy = Object.fromEntries(
@@ -440,11 +456,23 @@ export default defineConfig(({ mode }) => {
     ),
   });
   return {
+    build: { sourcemap: true },
+    define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
+      {
+        // The API reads this to name the deployed build, and a tab fetches it to confirm the
+        // server already serves a newer build before it reloads.
+        name: "rakazo-build-id",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "build-id", source: `${buildId}\n` });
+        },
+      },
       react(),
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),
       tailwindcss(),
+      rakazoPwa(buildId),
       {
         // Production only: the dev server injects inline scripts for React Refresh.
         name: "rakazo-content-security-policy",
@@ -462,11 +490,21 @@ export default defineConfig(({ mode }) => {
       {
         name: "rakazo-missing-asset-404",
         configurePreviewServer({ config, middlewares }) {
+          const outDir = path.resolve(config.root, config.build.outDir);
+          const assetsDir = path.join(outDir, config.build.assetsDir);
+          let archive: string | null = null;
+          try {
+            archive = archiveAssets({
+              assetsDir,
+              archiveDir: path.resolve(config.root, ASSET_ARCHIVE_DIR),
+              buildId: readFileSync(path.join(outDir, "build-id"), "utf8").trim(),
+              now: Date.now(),
+            });
+          } catch (error) {
+            screenLog.warn("web.asset_archive_failed", { "error.code": socketErrorCode(error) });
+          }
           middlewares.use(
-            missingAssetMiddleware(
-              path.resolve(config.root, config.build.outDir, config.build.assetsDir),
-              `${config.base}${config.build.assetsDir}/`,
-            ),
+            missingAssetMiddleware(assetsDir, `${config.base}${config.build.assetsDir}/`, archive),
           );
         },
       },

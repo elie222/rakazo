@@ -80,6 +80,22 @@ E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
 Until it exists, new computers use the stock desktop template. Existing computers keep
 the size they were created with until they are replaced.
 
+### Boat computer snapshot
+
+Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
+desktop tools installed. The hash follows the setup in `packages/adapters/src/boat-sandbox.ts`,
+so changing it produces a new name and existing computers keep the one they started from.
+
+No setup is needed: when the snapshot for the current setup is missing, the API or worker
+logs `sandbox.base_image` with `outcome: "missing"`, builds it once in the background from a
+fresh sandbox with no account environment and no bot data, and deletes the build sandbox.
+Until it is ready, new computers install the tools themselves. To build it ahead of the
+first computer, in the Boat account that owns `BOAT_API_KEY`:
+
+```bash
+BOAT_API_KEY=<deployment key> pnpm sandbox:boat-snapshot
+```
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that

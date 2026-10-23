@@ -29,6 +29,7 @@ function messageMenu(role: "bot" | "user", blocks: string[]) {
     blockText: () => text,
     quotableMessageSegments: () => [],
     canReactToThreadMessage: () => false,
+    canMarkMessageUnread: () => false,
     markdownCodeBlocks,
     Clipboard: { setStringAsync },
     MESSAGE_REACTIONS: [],

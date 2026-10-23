@@ -1,13 +1,14 @@
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, Text, TextInput } from "react-native";
+import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
 import type { MobileBot, MobileGroup } from "../lib/api";
 import { rpc } from "../lib/api";
 import { notifyArchivedChatsChanged } from "../lib/archived-chats";
+import { confirmDeleteGroup } from "../lib/bot-lifecycle";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -62,22 +63,10 @@ export default function GroupSettingsScreen() {
 
   function remove() {
     if (!groupId || !group) return;
-    Alert.alert(group.name, t("Delete this group? Bots and their solo threads are kept."), [
-      { text: t("Cancel"), style: "cancel" },
-      {
-        text: t("Delete"),
-        style: "destructive",
-        onPress: () =>
-          void rpc("groups/remove", { groupId })
-            .then(() => {
-              notifyArchivedChatsChanged();
-              router.replace("/");
-            })
-            .catch((err) =>
-              Alert.alert(t("Could not delete group"), errorText(err, t("Try again."))),
-            ),
-      },
-    ]);
+    confirmDeleteGroup({ id: groupId, name: group.name }, () => {
+      notifyArchivedChatsChanged();
+      router.replace("/");
+    });
   }
 
   return (

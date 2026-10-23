@@ -257,6 +257,16 @@ describe("readScreenUrl", () => {
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 
+  it("stops at a refused read but retries through a 503", async () => {
+    const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+    const refused = httpError(403);
+    const request = vi.fn().mockRejectedValueOnce(httpError(503)).mockRejectedValue(refused);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await expect(readScreenUrl(request, { attempts: 5, sleep })).rejects.toBe(refused);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
   it("returns null when every attempt succeeds without a URL", async () => {
     const request = vi.fn().mockResolvedValue({ url: null });
     const sleep = vi.fn().mockResolvedValue(undefined);

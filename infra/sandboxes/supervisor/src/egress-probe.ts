@@ -28,6 +28,16 @@ export const EGRESS_NOT_ENFORCED =
   "SANDBOX_COMPUTER_EGRESS=restricted is not enforced on this Docker host: run infra/compose/restrict-computer-egress.sh on the host, or set SANDBOX_COMPUTER_EGRESS=open (see docs/self-host.md)";
 
 /**
+ * A completed probe that shows the rules are missing, as opposed to a probe that could not finish
+ * (a Docker error, an unexpected exit, the deadline). Only this one lets `auto` fall back to open.
+ */
+export class EgressNotEnforced extends Error {
+  constructor(reason: string) {
+    super(`${EGRESS_NOT_ENFORCED} (${reason})`);
+  }
+}
+
+/**
  * Shell run in the probe container; exits 0 only when every gateway port timed out
  * and the metadata endpoint did not accept a connection.
  */
@@ -75,10 +85,10 @@ export async function verifyRestrictedEgress(docker: Docker, image: string) {
   try {
     const info = await network.inspect();
     if (info.Options?.["com.docker.network.bridge.name"] !== EGRESS_PROBE_BRIDGE) {
-      throw new Error(`${EGRESS_NOT_ENFORCED} (probe network lacks the named bridge)`);
+      throw new EgressNotEnforced("probe network lacks the named bridge");
     }
     const gateway = info.IPAM?.Config?.find((entry) => entry.Gateway?.includes("."))?.Gateway;
-    if (!gateway) throw new Error(`${EGRESS_NOT_ENFORCED} (probe network has no IPv4 gateway)`);
+    if (!gateway) throw new EgressNotEnforced("probe network has no IPv4 gateway");
     container = await docker.createContainer({
       Image: image,
       Entrypoint: ["bash", "-c", egressProbeScript(gateway)],
@@ -102,10 +112,10 @@ export async function verifyRestrictedEgress(docker: Docker, image: string) {
     ]);
     const verdict = egressProbeVerdict(result?.StatusCode);
     if (verdict === "host-reachable") {
-      throw new Error(`${EGRESS_NOT_ENFORCED} (a computer bridge reached the host)`);
+      throw new EgressNotEnforced("a computer bridge reached the host");
     }
     if (verdict === "metadata-reachable") {
-      throw new Error(`${EGRESS_NOT_ENFORCED} (a computer bridge reached the metadata endpoint)`);
+      throw new EgressNotEnforced("a computer bridge reached the metadata endpoint");
     }
     if (verdict === "inconclusive") {
       throw new Error(

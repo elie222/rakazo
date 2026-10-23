@@ -1,7 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import {
-  actorMayUsePrivateEndpoint,
   createVoiceProvider,
   isFishSpeechModelId,
   isVoiceProviderId,
@@ -14,7 +14,7 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
-import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
+import type { Actor, VoiceAccountErrorCode, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { toUtterances } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
@@ -40,14 +40,9 @@ export interface VoiceDeps {
 }
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
-async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, actor: Actor, provider: string) {
+async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, _actor: Actor, provider: string) {
   return (
-    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
-    actorMayUsePrivateEndpoint(
-      deps.prisma,
-      actor.userId,
-      deps.env?.mcpAllowPrivateEndpoint === true,
-    )
+    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && deps.env?.mcpAllowPrivateEndpoint === true
   );
 }
 
@@ -616,6 +611,11 @@ function decodeAudioBase64(value: string): Uint8Array {
   }
 }
 
+/** Spent credit is 402; a rejected key is 403, never 401, which clients read as a lost session. */
+export function voiceAccountErrorStatus(code: VoiceAccountErrorCode) {
+  return code === "VOICE_OUT_OF_CREDIT" ? 402 : 403;
+}
+
 function voiceHttpError(c: Context, error: unknown) {
   if (error instanceof IsolationError) {
     return c.json({ error: "Resource not found" }, 404);
@@ -628,6 +628,13 @@ function voiceHttpError(c: Context, error: unknown) {
     const status =
       code === "UNAUTHORIZED" ? 401 : code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
     return c.json({ error: error.message }, status);
+  }
+  if (error instanceof VoiceAccountError) {
+    getLogger().warn("voice provider account rejected the request", {
+      route: c.req.path,
+      reason: error.code,
+    });
+    return c.json({ error: error.message, code: error.code }, voiceAccountErrorStatus(error.code));
   }
   const message = error instanceof Error ? error.message : "Voice request failed.";
   // Message only: request bodies, keys and audio never reach the log.

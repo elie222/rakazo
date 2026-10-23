@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sentry = vi.hoisted(() => ({ init: vi.fn(), captureReactException: vi.fn() }));
+const sentry = vi.hoisted(() => ({
+  init: vi.fn(),
+  captureReactException: vi.fn(),
+  captureException: vi.fn(),
+}));
 vi.mock("@sentry/react", () => sentry);
+const recovery = vi.hoisted(() => ({ reloading: false }));
+vi.mock("./preload-recovery", async (load) => ({
+  ...(await load<Record<string, unknown>>()),
+  recoveringByReload: () => recovery.reloading,
+}));
 
 import { reportCaughtReactError, startMonitoring } from "./monitoring";
 
@@ -26,6 +35,27 @@ describe("browser monitoring", () => {
     expect(sentry.captureReactException).toHaveBeenCalledWith(early, {
       componentStack: "\n    at App",
     });
+    consoleError.mockRestore();
+  });
+
+  it("does not report failures the recovery reload is about to replace", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    sentry.init.mockClear();
+    sentry.captureReactException.mockClear();
+    expect(await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }))).toBe(
+      true,
+    );
+    const { beforeSend } = sentry.init.mock.calls[0]![0];
+    recovery.reloading = true;
+    fresh.reportCaughtReactError(new TypeError("Failed to fetch dynamically imported module"), {
+      componentStack: "",
+    });
+    expect(sentry.captureReactException).not.toHaveBeenCalled();
+    expect(beforeSend({ message: "stale chunk" })).toBeNull();
+    recovery.reloading = false;
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
     consoleError.mockRestore();
   });
 
@@ -155,28 +185,8 @@ describe("browser monitoring", () => {
     expect(options.integrations([{ name: "BrowserSession" }, { name: "GlobalHandlers" }])).toEqual([
       { name: "GlobalHandlers" },
     ]);
-    expect(options.beforeBreadcrumb({ category: "console", message: "x" })).toBeNull();
-    expect(options.beforeBreadcrumb({ category: "fetch" })).toEqual({ category: "fetch" });
-
-    for (const category of ["ui.click", "ui.input"]) {
-      expect(options.beforeBreadcrumb({ category, message: "private text" })).toBeNull();
-    }
-    for (const category of ["fetch", "xhr", "navigation"]) {
-      expect(
-        options.beforeBreadcrumb({
-          category,
-          data: {
-            url: "https://example.com/path?token=secret#private",
-            from: "/before?query=secret",
-            to: "/after#private",
-            status_code: 500,
-          },
-        }),
-      ).toEqual({
-        category,
-        data: { url: "https://example.com/path", from: "/before", to: "/after", status_code: 500 },
-      });
-    }
+    expect(options.maxBreadcrumbs).toBe(0);
+    expect(options.integrations([{ name: "Breadcrumbs" }])).toEqual([]);
     expect(
       options.beforeSend({
         request: {
@@ -226,5 +236,37 @@ describe("browser monitoring", () => {
     });
     expect(consoleError).toHaveBeenCalledWith(error);
     consoleError.mockRestore();
+  });
+
+  it("keeps connection failures out of error reports but reports real failures", async () => {
+    vi.resetModules();
+    sentry.captureException.mockReset();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    for (const message of [
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+    ])
+      fresh.reportClientError(new TypeError(message), "rpc.transport");
+    fresh.reportClientError(new DOMException("signal timed out", "TimeoutError"), "rpc.transport");
+    expect(sentry.captureException).not.toHaveBeenCalled();
+
+    // A request the browser refused to build is a bug, and other operations keep their reports.
+    const invalid = new TypeError("Failed to execute 'fetch' on 'Window': Invalid name");
+    fresh.reportClientError(invalid, "rpc.transport");
+    const chunk = new TypeError("Failed to fetch dynamically imported module: /assets/a.js");
+    fresh.reportClientError(chunk, "react.render");
+    expect(sentry.captureException.mock.calls.map(([error]) => error)).toEqual([invalid, chunk]);
+
+    const { beforeSend } = sentry.init.mock.calls.at(-1)![0];
+    const timeout = new DOMException("signal timed out", "TimeoutError");
+    expect(beforeSend({}, { originalException: timeout })).toBeNull();
+    expect(
+      beforeSend({}, { originalException: new DOMException("aborted", "AbortError") }),
+    ).toBeNull();
+    expect(beforeSend({}, { originalException: new Error("boom") })).toEqual({
+      user: { ip_address: null },
+    });
   });
 });
