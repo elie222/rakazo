@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import type { ColorSchemeName, GestureResponderEvent } from "react-native";
 import { Platform, Pressable, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { createDoubleTapDetector } from "../lib/double-tap";
 import type { MessageMenuEntry, MessageMenuSymbol } from "../lib/message-context-menu";
 
 const symbols = {
@@ -16,6 +16,12 @@ const symbols = {
   select: "character.cursor.ibeam",
   unread: "message.badge",
 } as const satisfies Record<MessageMenuSymbol, Extract<NonNullable<MenuAction["image"]>, string>>;
+
+const tapPoint = (event: GestureResponderEvent) => ({
+  x: event.nativeEvent.pageX,
+  y: event.nativeEvent.pageY,
+  time: event.nativeEvent.timestamp,
+});
 
 export function MessageContextMenu({
   actions,
@@ -37,29 +43,23 @@ export function MessageContextMenu({
   /** Double tapping the message, used to react with a thumbs up. */
   onDoubleTap?: () => void;
 }) {
-  const doubleTap = useMemo(
-    () =>
-      Gesture.Tap()
-        .numberOfTaps(2)
-        .maxDelay(250)
-        .enabled(Boolean(onDoubleTap))
-        .runOnJS(true)
-        .onEnd((_event, success) => {
-          if (success) onDoubleTap?.();
-        }),
-    [onDoubleTap],
-  );
+  const detector = useMemo(() => createDoubleTapDetector(), [onDoubleTap]);
+  // Touches reach these handlers only when no inner link, image or control claimed them,
+  // so inner taps stay immediate and never count toward a double tap.
+  const release = (event: GestureResponderEvent) => {
+    if (detector.end(tapPoint(event))) onDoubleTap?.();
+  };
   if (Platform.OS !== "ios") {
     return (
-      <GestureDetector gesture={doubleTap}>
-        <Pressable
-          accessible={false}
-          onLongPress={onLongPress}
-          style={{ maxWidth: "100%", width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
-        >
-          {children}
-        </Pressable>
-      </GestureDetector>
+      <Pressable
+        accessible={false}
+        onLongPress={onLongPress}
+        onPressIn={onDoubleTap ? (event) => detector.start(tapPoint(event)) : undefined}
+        onPress={onDoubleTap ? release : undefined}
+        style={{ maxWidth: "100%", width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
+      >
+        {children}
+      </Pressable>
     );
   }
   return (
@@ -71,11 +71,17 @@ export function MessageContextMenu({
       style={{ maxWidth: "100%", flexShrink: 1 }}
     >
       {/* The SwiftUI bridge measures its trigger without a horizontal constraint. */}
-      <GestureDetector gesture={doubleTap}>
-        <View style={{ maxWidth, width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}>
-          {children}
-        </View>
-      </GestureDetector>
+      <View
+        style={{ maxWidth, width: fullWidth ? maxWidth : undefined, flexShrink: 1 }}
+        onStartShouldSetResponder={() => Boolean(onDoubleTap)}
+        onResponderGrant={(event) => detector.start(tapPoint(event))}
+        onResponderMove={(event) => detector.move(tapPoint(event))}
+        onResponderRelease={release}
+        onResponderTerminationRequest={() => true}
+        onResponderTerminate={() => detector.cancel()}
+      >
+        {children}
+      </View>
     </MenuView>
   );
 }

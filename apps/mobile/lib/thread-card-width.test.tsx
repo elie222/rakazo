@@ -50,7 +50,7 @@ const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
 const bubbleSource = source.slice(
   source.indexOf("const MessageBubble = memo(function MessageBubble({"),
-  source.indexOf("function MessageTextCard({"),
+  source.indexOf("function AgentEventLabel({"),
 );
 const scope = {
   typeScale,
@@ -69,6 +69,12 @@ const scope = {
   View,
   Text,
   Pressable,
+  blockText: (message: MobileMessage) =>
+    message.blocks.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join("\n"),
+  MessageCaption: ({ text }: { text: string }) => <span>{text}</span>,
+  memberName: () => undefined,
+  speakerColorFor: () => undefined,
+  messagePresentationSegments: (blocks: MessageBlock[]) => [{ kind: "content", blocks }],
   AskActions: () => <button type="button">Answer</button>,
 };
 const MessageBubble = new Function(
@@ -137,6 +143,27 @@ describe("thread cards", () => {
     );
     return question?.parentElement;
   }
+
+  it.each([false, true])(
+    "keeps text passive when surface gestures are enabled: %s",
+    (doubleTapSurface) => {
+      act(() =>
+        root.render(
+          <MessageBubble
+            botId="bot-1"
+            bots={[]}
+            message={{ id: "text-1", role: "bot", blocks: [{ kind: "text", text: "Hello" }] }}
+            canAnswer={false}
+            onAnswer={async () => undefined}
+            actionProps={{}}
+            doubleTapSurface={doubleTapSurface}
+          />,
+        ),
+      );
+      expect(container.textContent).toBe("Hello");
+      expect(container.querySelectorAll("button").length).toBe(doubleTapSurface ? 0 : 1);
+    },
+  );
 
   // The iOS message menu hosts each bubble without a definite width, so a percentage width
   // resolves against the card's own cap instead of the message column and overflows the screen.
