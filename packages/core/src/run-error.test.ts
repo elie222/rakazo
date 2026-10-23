@@ -156,6 +156,12 @@ describe("normalizeRunError", () => {
         "Your Anthropic is overloaded right now. Try again in a moment.",
       ],
       ['503: {"message":"Service Unavailable"}', overloaded],
+      ["502 Bad Gateway", overloaded],
+      ["503 provider unavailable", overloaded],
+      [
+        '502: {"message":"Gateway error","metadata":{"provider":"OpenAI"}}',
+        "Your OpenAI is overloaded right now. Try again in a moment.",
+      ],
       ["Codex error: Our servers are currently overloaded. Please try again later.", overloaded],
       [
         '400: {"error":{"message":"This model\'s maximum context length is 128000 tokens. However, your messages resulted in 130512 tokens.","code":"context_length_exceeded"}}',

@@ -62,7 +62,7 @@ export function normalizeRunError(
   kind?: "key" | "credit" | "spending" | "rate" | "auth" | "model";
   period?: "none" | "daily" | "weekly" | "monthly";
 } {
-  const prefix = details.trim().match(/^(\d{3})\s*:\s*/);
+  const prefix = details.trim().match(/^(\d{3})(?:\s*:\s*|\s+)/);
   const body = details.trim().slice(prefix?.[0].length ?? 0);
   let parsed: unknown;
   try {
