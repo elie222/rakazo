@@ -315,18 +315,20 @@ function LayoutContent() {
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
-      ])
-        .then(() => {
-          // Notification restoration must not keep the native splash visible.
-          void loadSessionToken()
-            .then((token) =>
-              resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""),
-            )
-            .catch(() => undefined);
-        })
-        .catch(() => undefined),
+      ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
-    ]).finally(() => setReady(true));
+    ])
+      .then(() => {
+        // The native poller stores the locale its notification copy uses, so the
+        // restart waits for the language to load rather than saving the default.
+        // Notification restoration must not keep the native splash visible.
+        void loadSessionToken()
+          .then((token) =>
+            resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""),
+          )
+          .catch(() => undefined);
+      })
+      .finally(() => setReady(true));
   }, []);
 
   return (

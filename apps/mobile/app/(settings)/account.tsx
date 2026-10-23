@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -203,15 +204,32 @@ export default function Account() {
         archivedCounts.current = archivedChatCounts(archivedCounts.current, loaded);
         setArchivedCount(archivedCounts.current.bots + archivedCounts.current.groups);
       });
-      if (Platform.OS === "android") {
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  // Granting notifications in system settings leaves this screen mounted, so the
+  // row would keep saying blocked until the app comes back to the foreground.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      let active = true;
+      const read = () => {
         void Notifications.getPermissionsAsync()
           .then((permission) => {
             if (active) setNotificationPermission(permission.status);
           })
           .catch(() => undefined);
-      }
+      };
+      read();
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") read();
+      });
       return () => {
         active = false;
+        subscription.remove();
       };
     }, []),
   );

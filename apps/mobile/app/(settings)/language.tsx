@@ -22,11 +22,13 @@ export default function Language() {
     setError(null);
     void setUiLocale(code)
       .then(async () => {
+        // Native notification copy follows the locale, but a failure there must
+        // not read as a failed language change: the choice is already applied.
         await resumeLiveNotifications(
           currentApiBase(),
           await loadSessionToken(),
           selectedSpaceId() ?? "",
-        );
+        ).catch(() => undefined);
       })
       .catch(() => {
         setError(t("Could not change language"));

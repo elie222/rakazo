@@ -20,6 +20,7 @@ vi.mock("expo-notifications", () => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
+  AppState: { addEventListener: () => ({ remove: () => undefined }) },
   KeyboardAvoidingView: element("div"),
   Modal: ({ children, visible }: { children?: ReactNode; visible?: boolean }) =>
     visible ? createElement("section", null, children) : null,
