@@ -3539,6 +3539,10 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
+// A running helper's live card and the saved message that replaces it have different ids, so
+// its row mounts again when the helper finishes. Remember open cards by agent id across that.
+const openHelpers = new Set<string>();
+
 const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
@@ -3587,7 +3591,9 @@ const MessageBubble = memo(function MessageBubble({
   const tokens = mobileTokens();
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
-  const [subagentOpen, setSubagentOpen] = useState(false);
+  const [subagentOpen, setSubagentOpen] = useState(() =>
+    message.blocks.some((block) => block.kind === "subagent" && openHelpers.has(block.agentId)),
+  );
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -3753,7 +3759,11 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <Pressable
         {...actionProps}
-        onPress={() => setSubagentOpen((open) => !open)}
+        onPress={() => {
+          if (subagentOpen) openHelpers.delete(special.agentId);
+          else openHelpers.add(special.agentId);
+          setSubagentOpen(!subagentOpen);
+        }}
         accessibilityRole="button"
         accessibilityState={{ expanded: subagentOpen }}
         style={{

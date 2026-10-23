@@ -11,20 +11,28 @@ import { useState } from "react";
 
 type SubagentBlock = Extract<ThreadMessage["blocks"][number], { kind: "subagent" }>;
 
+// A running helper's live card and the saved message that replaces it have different ids, so
+// its row mounts again when the helper finishes. Remember open cards by agent id across that.
+const openHelpers = new Set<string>();
+
 /**
  * A helper's card. It starts folded to its name, status and one line of the task, so a long
  * brief or report does not fill the chat. The header opens it to the full task and the result
  * or progress.
  */
 export function SubagentCard({ block }: { block: SubagentBlock }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => openHelpers.has(block.agentId));
   const running = block.status === "running";
   const failed = block.status === "failed";
   const body = block.result || block.progress || "";
   return (
     <Collapsible
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        if (next) openHelpers.add(block.agentId);
+        else openHelpers.delete(block.agentId);
+        setOpen(next);
+      }}
       data-testid="subagent-card"
       className="w-[420px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
     >

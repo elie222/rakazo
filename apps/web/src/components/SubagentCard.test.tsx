@@ -44,7 +44,7 @@ const finished = {
 
 describe("SubagentCard", () => {
   it("starts folded to one line of the task, without the result", () => {
-    const card = mountCard(finished);
+    const card = mountCard({ ...finished, agentId: "agent-folded" });
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("false");
     expect(card.get("subagent-task")?.textContent).toBe("A long brief");
     expect(card.get("subagent-task")?.className).toContain("truncate");
@@ -53,7 +53,7 @@ describe("SubagentCard", () => {
   });
 
   it("opens to the full task and result, and folds again", async () => {
-    const card = mountCard(finished);
+    const card = mountCard({ ...finished, agentId: "agent-toggle" });
     card.click();
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("true");
     expect(card.get("subagent-task")?.className).not.toContain("truncate");
@@ -69,6 +69,7 @@ describe("SubagentCard", () => {
   it("shows progress when opened while the helper runs", () => {
     const card = mountCard({
       ...finished,
+      agentId: "agent-progress",
       status: "running",
       result: undefined,
       progress: "Reading files",
@@ -81,10 +82,32 @@ describe("SubagentCard", () => {
   });
 
   it("has no body before the helper reports anything", () => {
-    const card = mountCard({ ...finished, status: "running", result: undefined });
+    const card = mountCard({
+      ...finished,
+      agentId: "agent-silent",
+      status: "running",
+      result: undefined,
+    });
     card.click();
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("true");
     expect(card.get("subagent-body")).toBeNull();
     card.unmount();
+  });
+
+  it("stays open when the saved message replaces the live card", () => {
+    const running = mountCard({
+      ...finished,
+      agentId: "agent-saved",
+      status: "running",
+      result: undefined,
+      progress: "Reading files",
+    });
+    running.click();
+    running.unmount();
+
+    const saved = mountCard({ ...finished, agentId: "agent-saved" });
+    expect(saved.toggle()?.getAttribute("aria-expanded")).toBe("true");
+    expect(saved.get("subagent-body")?.textContent).toBe("A long report");
+    saved.unmount();
   });
 });

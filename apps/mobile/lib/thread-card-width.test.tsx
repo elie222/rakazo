@@ -91,6 +91,7 @@ const scope = {
   AskActions: () => <button type="button">Answer</button>,
   safeDisplayName: (name: string) => name,
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
+  openHelpers: new Set<string>(),
 };
 const MessageBubble = new Function(
   ...Object.keys(scope),
@@ -227,7 +228,7 @@ describe("thread cards", () => {
     expect(styleOf(card).width).toBeUndefined();
   });
 
-  it("folds a helper card to one line of the task until it is pressed", () => {
+  it("folds a helper card to one line of the task until it is pressed, across its saved message", () => {
     const message = {
       id: "message-1",
       role: "bot",
@@ -256,6 +257,15 @@ describe("thread cards", () => {
     expect(card()?.getAttribute("aria-expanded")).toBe("true");
     expect(task()?.hasAttribute("data-number-of-lines")).toBe(false);
     expect(container.textContent).toContain("A long report");
+
+    // The saved message replaces the live card under a new id; the card stays open.
+    const saved = { ...message, id: "message-2" };
+    act(() =>
+      root.render(
+        <MessageBubble key="saved" botId="bot-1" bots={[]} message={saved} actionProps={{}} />,
+      ),
+    );
+    expect(card()?.getAttribute("aria-expanded")).toBe("true");
 
     act(() => (card() as HTMLElement).click());
     expect(card()?.getAttribute("aria-expanded")).toBe("false");
