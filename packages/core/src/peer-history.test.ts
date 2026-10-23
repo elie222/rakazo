@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadPeerHistory } from "./peer-history";
+import { loadPeerHistory } from "./peer-history.js";
 
 function message(id: string, seq: number): ThreadMessage {
   return { id, seq } as ThreadMessage;
@@ -15,7 +15,7 @@ describe("peer history loading", () => {
       .mockResolvedValueOnce({ messages: [message("new", 2)], olderCursor: 2 })
       .mockResolvedValueOnce({ messages: [message("old", 1)], olderCursor: null });
 
-    const messages = await loadPeerHistory({
+    const messages = await loadPeerHistory<ThreadMessage>({
       signal: new AbortController().signal,
       loadPage,
     });
@@ -33,7 +33,7 @@ describe("peer history loading", () => {
         }),
     );
 
-    const loading = loadPeerHistory({
+    const loading = loadPeerHistory<ThreadMessage>({
       signal: new AbortController().signal,
       loadPage,
       pageTimeoutMs: 100,
@@ -54,7 +54,7 @@ describe("peer history loading", () => {
         }),
     );
 
-    const loading = loadPeerHistory({
+    const loading = loadPeerHistory<ThreadMessage>({
       signal: new AbortController().signal,
       loadPage,
       pageTimeoutMs: 1_000,
@@ -75,7 +75,7 @@ describe("peer history loading", () => {
         }),
     );
 
-    const loading = loadPeerHistory({ signal: lifecycle.signal, loadPage });
+    const loading = loadPeerHistory<ThreadMessage>({ signal: lifecycle.signal, loadPage });
     const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });
     lifecycle.abort();
 

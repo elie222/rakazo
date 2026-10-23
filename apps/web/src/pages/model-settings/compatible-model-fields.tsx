@@ -12,10 +12,16 @@ import {
   NativeSelectOption,
 } from "@rakazo/ui-web";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
 export function CompatibleModelFields({
+  resetOpenAiCompatibleProbe,
+  headerRows,
+  setHeaderRows,
+  savedHeaderEndpointMatches,
+  credential,
   baseUrl,
   busy,
   cancelOAuthAttempt,
@@ -50,6 +56,11 @@ export function CompatibleModelFields({
   updateBaseUrl,
 }: Pick<
   ModelSettingsState,
+  | "resetOpenAiCompatibleProbe"
+  | "headerRows"
+  | "setHeaderRows"
+  | "savedHeaderEndpointMatches"
+  | "credential"
   | "baseUrl"
   | "busy"
   | "cancelOAuthAttempt"
@@ -250,7 +261,19 @@ export function CompatibleModelFields({
           setNotice(null);
         }}
         maxImagesLabel={t`Maximum images per request`}
-      />
+      >
+        <ModelHeadersEditor
+          rows={headerRows}
+          savedNames={savedHeaderEndpointMatches ? credential?.headerNames : []}
+          disabled={busy}
+          onChange={(rows) => {
+            setHeaderRows(rows);
+            resetOpenAiCompatibleProbe();
+            invalidatePreflight();
+            setNotice(null);
+          }}
+        />
+      </ModelThinkingOptions>
     </div>
   );
 }

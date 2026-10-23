@@ -95,3 +95,11 @@ export function settleReadBoundary(
   if (answer.visit !== openVisit) return current;
   return current?.visit === openVisit ? current : answer;
 }
+
+/**
+ * Any sent message, the user's own included, can be marked unread; the next open starts the
+ * divider at the first reply from it. Live progress and subagent rows aren't stored messages.
+ */
+export function canMarkMessageUnread(message: { id: string }): boolean {
+  return !message.id.startsWith("progress:") && !message.id.startsWith("subagent:");
+}

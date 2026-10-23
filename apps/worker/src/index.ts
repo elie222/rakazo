@@ -10,6 +10,7 @@ loadRootEnv();
 import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
+  createAgentHomeStore,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
@@ -29,12 +30,12 @@ import {
   ExpoPushProvider,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
+  homeStorageSweeper,
   InMemoryJobQueue,
   InstalledConnectorProvider,
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalAgentHomeStore,
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
@@ -188,7 +189,7 @@ async function main() {
   ]);
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = new LocalAgentHomeStore(dataDir);
+  const home = createAgentHomeStore(dataDir, prisma);
   const artifacts = new LocalArtifactStore(dataDir, contentEncryptionOf(prisma)?.ring);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool);
@@ -316,6 +317,7 @@ async function main() {
       prisma,
       securityEventRetentionDays(),
     ),
+    reconcileHomeStorage: homeStorageSweeper(home),
   });
   reconciler.start();
   const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);

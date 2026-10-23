@@ -109,6 +109,7 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import { ModelHeadersSchema } from "./model-headers.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
@@ -270,6 +271,8 @@ export const appContract = {
       .input(
         z.object({
           baseUrl: z.string(),
+          credentialId: z.string().optional(),
+          headers: ModelHeadersSchema.optional(),
           apiKey: z.string().optional(),
         }),
       )
@@ -502,7 +505,10 @@ export const appContract = {
     markRead: oc
       .input(threadTarget)
       .output(z.object({ ok: z.literal(true), unreadAfterSeq: z.number().int().nullable() })),
-    markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    /** With `messageId`, the chat reads as unread from that message: the next open puts New above it. */
+    markUnread: oc
+      .input(threadTarget.and(z.object({ messageId: Id.optional() })))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),

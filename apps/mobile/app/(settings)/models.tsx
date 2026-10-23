@@ -1,5 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { ModelBackupChoice, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelBackupChoice,
+  ModelHeaderRow,
+  ModelOAuthBegin,
+  ThinkingLevel,
+} from "@rakazo/contracts";
+
 import {
   backupChoiceKey,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
@@ -10,7 +16,10 @@ import {
   MAX_MODEL_BACKUPS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
   moveBackupChoice,
+  normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
@@ -138,6 +147,7 @@ export default function Models() {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
@@ -268,6 +278,7 @@ export default function Models() {
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
+      setHeaderRows(null);
       setReasoning(nextCredential?.reasoning ?? false);
       setThinkingLevel(
         clampCatalogThinkingLevel(
@@ -492,7 +503,8 @@ export default function Models() {
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
-    modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
@@ -502,6 +514,7 @@ export default function Models() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
@@ -547,6 +560,7 @@ export default function Models() {
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
     setApiKey("");
+    setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
     setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
@@ -560,7 +574,12 @@ export default function Models() {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
+      request: (input) =>
+        rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
@@ -723,6 +742,7 @@ export default function Models() {
           ? {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
+              headers: modelHeadersInput(headerRows),
               modelId: modelId.trim(),
               // The server adds the default itself.
               enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
@@ -908,6 +928,26 @@ export default function Models() {
     );
   }
 
+  let savedHeaderEndpointMatches = false;
+  try {
+    savedHeaderEndpointMatches =
+      Boolean(credential?.baseUrl) &&
+      normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
+  } catch {
+    // An incomplete URL cannot inherit saved header placeholders.
+  }
+  const visibleHeaderRows =
+    headerRows ??
+    (savedHeaderEndpointMatches ? (credential?.headerNames ?? []) : []).map((name) => ({
+      name,
+      value: "",
+    }));
+  function changeHeaderRows(rows: ModelHeaderRow[]) {
+    setHeaderRows(rows);
+    resetOpenAiCompatibleProbe();
+    clearFeedback();
+  }
+
   const compatConfig = isOpenAiCompatible ? (
     <>
       <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
@@ -1072,6 +1112,67 @@ export default function Models() {
               />
             </View>
           </View>
+          <Text style={styles.sectionTitle}>{t("Headers")}</Text>
+          {visibleHeaderRows.map((row, index) => (
+            <View key={index} style={styles.keySection}>
+              <TextInput
+                accessibilityLabel={t("Header name")}
+                placeholder={t("Header name")}
+                placeholderTextColor={native.tertiaryLabel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                editable={!busy}
+                maxLength={256}
+                style={styles.keyInput}
+                value={row.name}
+                onChangeText={(name) =>
+                  changeHeaderRows(
+                    visibleHeaderRows.map((entry, i) => (i === index ? { ...entry, name } : entry)),
+                  )
+                }
+              />
+              <TextInput
+                accessibilityLabel={t("Header value")}
+                placeholder={
+                  savedHeaderEndpointMatches && credential?.headerNames?.includes(row.name)
+                    ? "••••••••"
+                    : t("Header value")
+                }
+                placeholderTextColor={native.tertiaryLabel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
+                textContentType="none"
+                secureTextEntry
+                editable={!busy}
+                maxLength={1024}
+                style={styles.keyInput}
+                value={row.value}
+                onChangeText={(value) =>
+                  changeHeaderRows(
+                    visibleHeaderRows.map((entry, i) =>
+                      i === index ? { ...entry, value } : entry,
+                    ),
+                  )
+                }
+              />
+              <NativeActionButton
+                accessibilityLabel={t("Remove header")}
+                icon={{ ios: "xmark", android: "close" }}
+                prominence="plain"
+                disabled={busy}
+                onPress={() => changeHeaderRows(visibleHeaderRows.filter((_, i) => i !== index))}
+              />
+            </View>
+          ))}
+          <NativeActionButton
+            label={t("Add header")}
+            prominence="secondary"
+            disabled={busy || visibleHeaderRows.length >= 8}
+            onPress={() => changeHeaderRows([...visibleHeaderRows, { name: "", value: "" }])}
+          />
           {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
           {limitField(
             t("Maximum output tokens"),

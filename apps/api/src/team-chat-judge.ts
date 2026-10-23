@@ -12,9 +12,11 @@ import {
   hostedModelCreditObserver,
   matchesFailedOAuthSecret,
   resolveModelAuth,
+  secretValuesToRedact,
   serializeModelSecret,
   toOAuthCredential,
 } from "@rakazo/adapters";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   findDefaultModelCredential,
@@ -133,9 +135,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   constructor(private readonly deps: ModelTeamChatEngagementJudgeDeps) {}
 
   async decide(input: TeamChatEngagementInput): Promise<TeamChatEngagementDecision> {
+    let secretsToRedact: string[] = [];
     try {
       const resolved = await this.resolveModel(input.bot);
       if (!resolved) return { act: false };
+      secretsToRedact = secretValuesToRedact({
+        kind: "openai_compatible",
+        baseUrl: resolved.model.baseUrl ?? "",
+        apiKey: resolved.model.apiKey,
+        headers: resolved.model.headers,
+      });
       // Standing rules can be time-based ("only during work hours"): judge them in the owner's zone.
       let ownerTimeZone: string | null | undefined;
       try {
@@ -206,7 +215,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       }
       return parseTeamChatEngagementDecision(text);
     } catch (error) {
-      getLogger().error("team chat engagement judge failed", safeError(error));
+      getLogger().error(
+        "team chat engagement judge failed",
+        redactSecrets(safeError(error), secretsToRedact),
+      );
       return { act: false };
     }
   }
@@ -333,7 +345,9 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
+          headers: parsed.headers,
           allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+
           ...limit,
           ...context,
         },

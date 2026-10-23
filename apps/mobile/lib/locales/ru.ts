@@ -28,6 +28,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
 
+  Headers: "Заголовки",
+  "Add header": "Добавить заголовок",
+  "Remove header": "Удалить заголовок",
+  "Header name": "Название заголовка",
+  "Header value": "Значение заголовка",
   Resets: "Сброс",
   Limit: "Лимит",
   "Provider message": "Сообщение провайдера",
@@ -476,6 +481,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Loading…": "Загрузка…",
   "Mark as Read": "Отметить как прочитанное",
   "Mark as Unread": "Отметить как непрочитанное",
+  "Mark as unread": "Отметить как непрочитанное",
   "Long press to pin or move to a section":
     "Нажмите и удерживайте, чтобы закрепить или переместить в раздел",
   "Long press to pin, move, or silence notifications":
@@ -831,6 +837,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "No matching artifacts": "Нет подходящих артефактов",
   "Long press to delete": "Нажмите и удерживайте, чтобы удалить",
   "Could not load artifacts.": "Не удалось загрузить артефакты.",
+  "Could not load this chat.": "Не удалось загрузить этот чат.",
   "Could not load this artifact.": "Не удалось загрузить этот артефакт.",
   "Could not delete this artifact": "Не удалось удалить этот артефакт",
   "Could not share this artifact": "Не удалось поделиться этим артефактом",

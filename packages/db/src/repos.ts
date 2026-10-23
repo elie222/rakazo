@@ -20,7 +20,12 @@ import { createThreadMessageInTransaction } from "./messages.js";
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, latestBotRunSelection, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  latestBotRunSelection,
+  previewFromBlocks,
+  primaryActiveRun,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 /** Newest messages loaded for sidebar preview; enough to skip a short peer-run tail. */
@@ -195,6 +200,7 @@ export function createRepos(
     const bots = await withNewestThreadMessages(prisma, rows, 1);
     return bots.map((bot) => {
       if (!bot.thread) throw new IsolationError("Bot is missing its thread");
+      const activeRun = primaryActiveRun(bot.runs);
       return {
         id: bot.id,
         spaceId: bot.spaceId,
@@ -207,8 +213,8 @@ export function createRepos(
         unread: bot.thread.unread,
         parentBotId: bot.parentBotId,
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
-        status: bot.runs[0]?.status ?? "idle",
-        runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
+        status: activeRun?.status ?? "idle",
+        runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
     });
@@ -455,11 +461,12 @@ export function createRepos(
             });
             if (messages.length === 0) break;
           }
+          const activeRun = primaryActiveRun(bot.runs);
           return mapBot(
             bot,
             preview,
-            bot.runs[0]?.status ?? "idle",
-            rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
+            activeRun?.status ?? "idle",
+            rosterRunErrorId(bot.thread?.runs[0], activeRun),
             updatedAt,
             ringingCall(
               bot.thread && callsByThread.has(bot.thread.id)

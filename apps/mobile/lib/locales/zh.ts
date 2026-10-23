@@ -28,6 +28,11 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",
 
+  Headers: "请求头",
+  "Add header": "添加请求头",
+  "Remove header": "移除请求头",
+  "Header name": "请求头名称",
+  "Header value": "请求头值",
   Resets: "重置时间",
   Limit: "限额",
   "Provider message": "提供商消息",
@@ -449,6 +454,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Loading…": "正在加载…",
   "Mark as Read": "标为已读",
   "Mark as Unread": "标为未读",
+  "Mark as unread": "标为未读",
   "Long press to pin or move to a section": "长按可置顶或移动到分组",
   "Long press to pin, move, or silence notifications": "长按可置顶、移动或静音通知",
   "Show less": "收起",
@@ -801,6 +807,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "No matching artifacts": "没有匹配的制品",
   "Long press to delete": "长按以删除",
   "Could not load artifacts.": "无法加载制品。",
+  "Could not load this chat.": "无法加载此聊天。",
   "Could not load this artifact.": "无法加载此制品。",
   "Could not delete this artifact": "无法删除此制品",
   "Could not share this artifact": "无法分享此制品",

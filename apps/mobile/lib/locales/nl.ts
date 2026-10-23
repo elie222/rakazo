@@ -28,6 +28,11 @@ export const NL_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring.",
 
+  Headers: "Headers",
+  "Add header": "Header toevoegen",
+  "Remove header": "Header verwijderen",
+  "Header name": "Headernaam",
+  "Header value": "Headerwaarde",
   Resets: "Resetdatum",
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
@@ -174,6 +179,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Expand {name}": "{name} uitklappen",
   "Mark as Read": "Markeren als gelezen",
   "Mark as Unread": "Markeren als ongelezen",
+  "Mark as unread": "Markeren als ongelezen",
   "Long press to pin or move to a section":
     "Lang indrukken om vast te zetten of naar een sectie te verplaatsen",
   "Long press to pin, move, or silence notifications":
@@ -289,6 +295,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Artifacts: "Artefacten",
   "Could not delete this artifact": "Dit artefact verwijderen mislukt",
   "Could not load artifacts.": "Artefacten laden mislukt.",
+  "Could not load this chat.": "Deze chat kon niet worden geladen.",
   "Could not load this artifact.": "Dit artefact laden mislukt.",
   "Could not share this artifact": "Dit artefact delen mislukt",
   "Long press to delete": "Lang indrukken om te verwijderen",

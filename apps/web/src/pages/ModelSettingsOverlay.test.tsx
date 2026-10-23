@@ -124,16 +124,20 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     Checkbox,
     Label,
     ModelThinkingOptions: (props: {
+      children?: ReactNode;
       maxTokens?: string;
       maxTokensLabel?: string;
       onMaxTokensChange?: (value: string) => void;
     }) =>
       props.onMaxTokensChange ? (
-        <input
-          aria-label={props.maxTokensLabel}
-          value={props.maxTokens ?? ""}
-          onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
-        />
+        <>
+          <input
+            aria-label={props.maxTokensLabel}
+            value={props.maxTokens ?? ""}
+            onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+          />
+          {props.children}
+        </>
       ) : null,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
@@ -764,6 +768,136 @@ it("drops the saved ticks and rows when the server URL changes, and restores the
     );
     await typeInto(field, compatibleCredential.baseUrl);
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("probes with the editing credential id without sending saved header values", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith({
+      baseUrl: compatibleCredential.baseUrl,
+      apiKey: undefined,
+      headers: undefined,
+      credentialId: compatibleCredential.id,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows saved header names only, preserves untouched headers and explicitly clears removed headers", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([{ ...compatibleCredential, headerNames: ["x-session"] }]);
+  const view = await renderSettings();
+  try {
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    expect(name.value).toBe("x-session");
+    expect(value.type).toBe("password");
+    expect(value.placeholder).toBe("••••••••");
+    expect(value.value).toBe("");
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ headers: undefined }),
+    );
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>('button[aria-label="Remove header"]')
+        ?.click();
+    });
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(expect.objectContaining({ headers: {} }));
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each([" http://127.0.0.1:8000/v1 ", "http://127.0.0.1:8000/v1/", "http://127.0.0.1:8000"])(
+  "preserves saved header rows at the equivalent endpoint %s",
+  async (endpoint) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+    models.list.mockResolvedValue([compatibleEntry]);
+    models.credentials.mockResolvedValue([
+      { ...compatibleCredential, headerNames: ["x-session", "x-route"] },
+    ]);
+    const view = await renderSettings();
+    try {
+      await typeInto(baseUrlField(view.container), endpoint);
+      const names = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header name"]',
+      );
+      const values = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header value"]',
+      );
+      expect([...names].map((input) => input.value)).toEqual(["x-session", "x-route"]);
+      expect([...values].map((input) => input.placeholder)).toEqual(["••••••••", "••••••••"]);
+      expect([...values].map((input) => input.value)).toEqual(["", ""]);
+      await typeInto(values[0]!, "fake-session-secret");
+      // Editing one saved header must retain the other row and require its value too.
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+      await typeInto(values[1]!, "fake-routing-secret");
+      await act(async () => buttons(view.container, "Save")[0]?.click());
+      expect(models.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          headers: { "x-session": "fake-session-secret", "x-route": "fake-routing-secret" },
+        }),
+      );
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("does not inherit saved header rows or placeholders at another origin", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([{ ...compatibleCredential, headerNames: ["x-session"] }]);
+  const view = await renderSettings();
+  try {
+    await typeInto(baseUrlField(view.container), "http://other.test/v1");
+    expect(view.container.querySelector('input[aria-label="Header name"]')).toBeNull();
+    await act(async () => buttons(view.container, "Add header")[0]?.click());
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>('input[aria-label="Header name"]')!,
+      "x-session",
+    );
+    const value = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Header value"]',
+    )!;
+    expect(value.placeholder).toBe("");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("disables Save for invalid custom header names", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    await act(async () => {
+      buttons(view.container, "Add header")[0]?.click();
+    });
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    await typeInto(name, "Authorization");
+    await typeInto(value, "long-session-secret");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(name, "bad name");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
   } finally {
     await view.unmount();
   }

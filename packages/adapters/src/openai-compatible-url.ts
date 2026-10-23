@@ -68,13 +68,16 @@ export function assertAllowedOpenAiCompatibleUrl(
 export function assertHttpsForKeyedOpenAiCompatibleUrl(
   url: URL,
   apiKey: string | undefined | null,
+  hasHeaders = false,
 ): void {
-  if (!apiKey?.trim()) return;
+  if (!apiKey?.trim() && !hasHeaders) return;
   if (url.protocol === "https:") return;
   const hostname = normalizeHostname(url.hostname);
   if (isPrivateOpenAiCompatibleHostname(hostname)) return;
   throw new Error(
-    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
+    hasHeaders
+      ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, or omit the API key and custom headers on a private HTTP endpoint."
+      : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
   );
 }
 

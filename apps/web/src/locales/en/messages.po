@@ -471,6 +471,10 @@ msgstr "Add GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "Add GraphQL endpoint"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Add header"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Add item"
@@ -2634,15 +2638,21 @@ msgstr "header"
 msgid "Header \"{header}\""
 msgstr "Header \"{header}\""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Header name"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Header value"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Headers"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3014,6 +3024,10 @@ msgstr "Manual setup required"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "Mark as Read"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "Mark as unread"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -4014,6 +4028,10 @@ msgstr "Remove change trigger"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Remove Git event"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Remove header"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx

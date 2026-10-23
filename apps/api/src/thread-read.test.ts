@@ -2,7 +2,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ThreadTarget } from "./thread-target.js";
-import { markThreadRead } from "./thread-target.js";
+import { markThreadRead, markThreadUnreadFrom } from "./thread-target.js";
 
 const actor = {
   userId: "user-1",
@@ -31,7 +31,13 @@ function threadStore(initial: Row, beforeWrite?: (row: Row) => void) {
   const findFirst = vi.fn(async ({ where }: { where: Record<string, string> }) =>
     where.userId === actor.userId && where.spaceId === actor.spaceId ? { ...row } : null,
   );
-  const prisma = { thread: { findFirst, updateMany } } as unknown as PrismaClient;
+  // Message 4 of this thread; any other id or thread is unknown.
+  const message = {
+    findFirst: vi.fn(async ({ where }: { where: { id: string; threadId: string } }) =>
+      where.id === "message-4" && where.threadId === "thread-1" ? { seq: 4 } : null,
+    ),
+  };
+  const prisma = { thread: { findFirst, updateMany }, message } as unknown as PrismaClient;
   return { prisma, updateMany, row: () => row };
 }
 
@@ -116,5 +122,22 @@ describe("markThreadRead", () => {
       markThreadRead(store.prisma, { ...actor, spaceId: "space-2" }, target),
     ).resolves.toBeNull();
     expect(store.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("markThreadUnreadFrom", () => {
+  it("moves the cursor to just before the message so the next open starts New there", async () => {
+    const store = threadStore({ unread: false, lastReadSeq: 6, nextMessageSeq: 7 });
+    await markThreadUnreadFrom(store.prisma, actor, target, "message-4");
+    expect(store.row()).toEqual({ unread: true, lastReadSeq: 3, nextMessageSeq: 7 });
+    await expect(markThreadRead(store.prisma, actor, target)).resolves.toBe(3);
+  });
+
+  it("refuses a message that isn't in the thread", async () => {
+    const store = threadStore({ unread: false, lastReadSeq: 6, nextMessageSeq: 7 });
+    await expect(
+      markThreadUnreadFrom(store.prisma, actor, target, "message-elsewhere"),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(store.row()).toEqual({ unread: false, lastReadSeq: 6, nextMessageSeq: 7 });
   });
 });

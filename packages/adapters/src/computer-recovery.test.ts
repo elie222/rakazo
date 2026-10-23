@@ -8,6 +8,8 @@ import { ComputerBusyError, provisionComputer, replaceComputer } from "./compute
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { LocalAgentHomeStore } from "./home.js";
+import { ObjectAgentHomeStore } from "./home-object-store.js";
+import { MemoryObjectStorage } from "./object-storage.test-support.js";
 
 const context = {
   operationId: "recovery",
@@ -80,6 +82,27 @@ async function fixture(provider: "fake" | "desktop" = "fake") {
 }
 
 describe("computer recovery preserves live work", () => {
+  it("brings an object-stored home into the local cache before a computer boots on it", async () => {
+    const { deps, row, root } = await fixture();
+    row.state = "stopped";
+    row.providerRef = null;
+    const home = new ObjectAgentHomeStore(path.join(root, "homes"), new MemoryObjectStorage(), {
+      load: async () => undefined,
+      create: async () => undefined,
+      advance: async () => false,
+      revisions: async () => new Map(),
+    });
+    const hydrate = vi.spyOn(home, "hydrate");
+    const provision = vi.spyOn(deps.sandbox, "provision");
+
+    await provisionComputer({ ...deps, home }, row.id, context);
+
+    expect(hydrate).toHaveBeenCalledWith("bot");
+    expect(hydrate.mock.invocationCallOrder[0]).toBeLessThan(
+      provision.mock.invocationCallOrder[0]!,
+    );
+  });
+
   it("blocks competing maintenance and boots while an update owns the computer", async () => {
     const { deps, row } = await fixture();
     row.maintenanceId = "other-update";

@@ -335,6 +335,20 @@ function liveMessageText(blocks: readonly MessageBlock[]): string {
     .join("");
 }
 
+/**
+ * Whether a live message is writing reply text right now: its newest block is the bot's
+ * own narration, with no tool waiting to run. Tool status lines don't count.
+ */
+export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
+  const tail = blocks.at(-1);
+  return (
+    tail?.kind === "progress" &&
+    !tail.activity &&
+    !tail.pendingToolNames?.length &&
+    tail.text.trim().length > 0
+  );
+}
+
 export type ToolStep = { label: string; count: number };
 
 export function appendToolStep(steps: readonly ToolStep[], toolName: string): ToolStep[] {

@@ -224,6 +224,23 @@ class AuditShipTests(unittest.TestCase):
             audit_ship.ship_once(sources, state_path, saved, send)
             self.assertEqual([body[0]["watch"] for _, body in FakeSink.requests], ["persistence"])
 
+    def test_heartbeat_settings_and_event(self):
+        self.assertEqual(audit_ship.heartbeat_seconds(""), 3 * 60 * 60)
+        self.assertEqual(audit_ship.heartbeat_seconds("600"), 600)
+        with self.assertRaises(ValueError):
+            audit_ship.heartbeat_seconds("10")
+        event = audit_ship.heartbeat_event("h", 0)
+        self.assertEqual(
+            event,
+            {
+                "_time": "1970-01-01T00:00:00Z",
+                "host": "h",
+                "source": "shipper",
+                "event": "shipper.heartbeat",
+                "message": "Audit shipper heartbeat",
+            },
+        )
+
     def test_redirects_are_not_followed(self):
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeSink)
         threading.Thread(target=server.serve_forever, daemon=True).start()

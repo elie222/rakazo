@@ -1038,6 +1038,7 @@ export type MobileMe = Pick<
 
 export type MobileModel = ModelCatalogEntry;
 
+/** Shared DTO includes headerNames only; header values remain in the server secret. */
 export type MobileModelCredential = ModelCredential;
 
 export type MobileMessage = {

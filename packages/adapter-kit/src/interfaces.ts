@@ -331,6 +331,20 @@ export interface AgentHomeStore {
   ): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
 }
 
+/**
+ * A bucket of opaque objects on an S3-compatible service (or a test fake). Only the API and
+ * worker hold one; sandboxes never receive its credentials or object URLs.
+ */
+export interface ObjectStorage {
+  /** Writes the whole stream as one object, replacing any object with that key. */
+  put(key: string, body: AsyncIterable<Uint8Array>): Promise<void>;
+  /** Throws when the object does not exist. */
+  get(key: string): AsyncIterable<Uint8Array>;
+  list(prefix: string): AsyncIterable<{ key: string; lastModified: Date }>;
+  /** Missing keys are not an error. */
+  delete(keys: readonly string[]): Promise<void>;
+}
+
 /** Identifies the data key being wrapped; implementations bind it into the wrap. */
 export interface KeyWrapContext {
   spaceId: string;

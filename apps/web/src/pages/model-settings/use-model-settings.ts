@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { Me, ThinkingLevel } from "@rakazo/contracts";
+import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
@@ -7,6 +7,9 @@ import {
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
+  normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -65,6 +68,7 @@ export function useModelSettings(onClose: () => void) {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
@@ -148,6 +152,7 @@ export function useModelSettings(onClose: () => void) {
       setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
+        setHeaderRows(null);
         setReasoning(nextCredential?.reasoning ?? false);
         setThinkingLevel(
           clampCatalogThinkingLevel(
@@ -293,10 +298,19 @@ export function useModelSettings(onClose: () => void) {
       : null;
   const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
+  let savedHeaderEndpointMatches = false;
+  try {
+    savedHeaderEndpointMatches =
+      Boolean(credential?.baseUrl) &&
+      normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
+  } catch {
+    // An incomplete URL cannot inherit saved header placeholders.
+  }
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
-    modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -327,6 +341,7 @@ export function useModelSettings(onClose: () => void) {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
@@ -385,6 +400,7 @@ export function useModelSettings(onClose: () => void) {
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
     setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
@@ -404,7 +420,12 @@ export function useModelSettings(onClose: () => void) {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: rpc.models.probeOpenAiCompatible,
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
@@ -581,6 +602,7 @@ export function useModelSettings(onClose: () => void) {
           ? {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
+              headers: modelHeadersInput(headerRows),
               modelId: modelId.trim(),
               // The server adds the default itself.
               enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
@@ -662,6 +684,10 @@ export function useModelSettings(onClose: () => void) {
   }
 
   return {
+    resetOpenAiCompatibleProbe,
+    headerRows,
+    setHeaderRows,
+    savedHeaderEndpointMatches,
     acceptsKey,
     accountId,
     activeThinkingLabel,

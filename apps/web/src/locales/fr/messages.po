@@ -471,6 +471,10 @@ msgstr "Ajouter GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "Ajouter un point de terminaison GraphQL"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Ajouter un en-tête"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Ajouter un élément"
@@ -2634,15 +2638,21 @@ msgstr "en-tête"
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Nom de l'en-tête"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Valeur de l'en-tête"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "En-têtes"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3014,6 +3024,10 @@ msgstr "Configuration manuelle requise"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "Marquer comme lu"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "Marquer comme non lu"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -4014,6 +4028,10 @@ msgstr "Supprimer le déclencheur de changement"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Retirer l'événement Git"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Supprimer l'en-tête"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx

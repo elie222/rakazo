@@ -6,7 +6,7 @@ const userVisibleBotRunTriggers = ["bot_message", ...BACKGROUND_RUN_TRIGGERS];
 const latestBotRunOrderBy = [{ createdAt: "desc" as const }, { id: "desc" as const }];
 
 /**
- * The newest conversational/foreground run for a bot's sidebar status. Background
+ * Active conversational/foreground runs for a bot's sidebar status. Background
  * ticket runs keep working silently, so they must not make the avatar spin.
  */
 export const activeRunSelection = {
@@ -15,9 +15,18 @@ export const activeRunSelection = {
     trigger: { notIn: backgroundRunTriggers },
   },
   orderBy: { createdAt: "desc" as const },
-  take: 1,
   select: { status: true },
 } as const;
+
+/** Waiting, running, then leased work wins over queued work, regardless of creation order. */
+export function primaryActiveRun<T extends { status: string }>(runs: readonly T[]): T | undefined {
+  return (
+    runs.find((run) => run.status === "waiting_takeover" || run.status === "waiting_input") ??
+    runs.find((run) => run.status === "running") ??
+    runs.find((run) => run.status === "leased") ??
+    runs[0]
+  );
+}
 
 /** Latest user-visible run for a bot roster error signal; later success clears an older failure. */
 export const latestBotRunSelection = {

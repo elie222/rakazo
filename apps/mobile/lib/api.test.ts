@@ -4,7 +4,7 @@ import { isServerUnreachable, withLiveStreamingProgress } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
-import type { MobileMessage, MobileSnapshot } from "./api.js";
+import type { MobileMessage, MobileModelCredential, MobileSnapshot } from "./api.js";
 import {
   adoptDeletedSpaceFallback,
   applyMobileThreadEvent,
@@ -999,6 +999,49 @@ describe("mobile API authentication", () => {
     await expect(rpc("bots/create", { name: "Ada" })).rejects.toThrow(
       new Error("Something went wrong. Try again."),
     );
+  });
+
+  it("sends model headers unchanged and reads names-only credential DTOs", async () => {
+    const credential: MobileModelCredential = {
+      id: "credential",
+      provider: "openai-compatible",
+      label: "Local",
+      hasKey: false,
+      isDefault: true,
+      headerNames: ["x-session"],
+    };
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ json: credential }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "custom",
+      headers: { "x-session": "fake-session-secret" },
+    };
+    expect(await rpc<MobileModelCredential>("models/connect", input)).toEqual(credential);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ json: input });
+    fetchMock.mockResolvedValueOnce(jsonResponse({ json: [credential] }));
+    const listed = await rpc<MobileModelCredential[]>("models/credentials");
+    expect(listed[0]?.headerNames).toEqual(["x-session"]);
+    expect(JSON.stringify(listed)).not.toContain("fake-session-secret");
+    await rpc("models/connect", { ...input, headers: undefined });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)).json).not.toHaveProperty(
+      "headers",
+    );
+    await rpc("models/connect", { ...input, headers: {} });
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body)).json.headers).toEqual({});
+    await rpc("models/probeOpenAiCompatible", {
+      baseUrl: input.baseUrl,
+      headers: input.headers,
+      credentialId: credential.id,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body)).json).toEqual({
+      baseUrl: input.baseUrl,
+      headers: input.headers,
+      credentialId: credential.id,
+    });
   });
 
   it("keeps the Space when a non-401 failure mentions unauthorized", async () => {

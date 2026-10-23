@@ -471,6 +471,10 @@ msgstr "GraphQL ekle"
 msgid "Add GraphQL endpoint"
 msgstr "GraphQL uç noktası ekle"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Üstbilgi ekle"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Öğe ekle"
@@ -2634,15 +2638,21 @@ msgstr ""
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Üstbilgi adı"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Üstbilgi değeri"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Üstbilgiler"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3014,6 +3024,10 @@ msgstr ""
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "Okundu olarak işaretle"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "Okunmadı olarak işaretle"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -4014,6 +4028,10 @@ msgstr "Değişiklik tetikleyicisini kaldır"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr ""
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Üstbilgiyi kaldır"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx

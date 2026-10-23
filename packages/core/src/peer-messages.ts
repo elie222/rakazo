@@ -1,4 +1,7 @@
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
+
+/** The fields peer exchanges read, so web and mobile message shapes both fit. */
+type PeerSource = { id: string; createdAt: string; blocks: readonly MessageBlock[] };
 
 export interface PeerMessage {
   messageId: string;
@@ -23,7 +26,7 @@ export function isPeerBlock(block: MessageBlock): block is PeerBlock {
   return block.kind === "bot_message_sent" || block.kind === "bot_message_received";
 }
 
-export function peerMessagesFrom(messages: readonly ThreadMessage[]): PeerMessage[] {
+export function peerMessagesFrom(messages: readonly PeerSource[]): PeerMessage[] {
   const collected: PeerMessage[] = [];
   for (const message of messages) {
     for (const block of message.blocks) {
@@ -53,7 +56,7 @@ export function peerMessagesFrom(messages: readonly ThreadMessage[]): PeerMessag
 }
 
 /** One conversation per peer, most recently active first. */
-export function peerConversations(messages: readonly ThreadMessage[]): PeerConversation[] {
+export function peerConversations(messages: readonly PeerSource[]): PeerConversation[] {
   const byPeer = new Map<string, PeerConversation>();
   for (const peerMessage of peerMessagesFrom(messages)) {
     const existing = byPeer.get(peerMessage.peerBotId);

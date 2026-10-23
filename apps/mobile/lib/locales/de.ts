@@ -28,6 +28,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Ordne die Seitenleiste und bearbeite Bots. Änderungen an Gruppen, Anweisungen, Modellen und Routinen brauchen deine Zustimmung.",
 
+  Headers: "Header",
+  "Add header": "Header hinzufügen",
+  "Remove header": "Header entfernen",
+  "Header name": "Header-Name",
+  "Header value": "Header-Wert",
   Resets: "Zurückgesetzt",
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
@@ -179,6 +184,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Expand {name}": "{name} ausklappen",
   "Mark as Read": "Als gelesen markieren",
   "Mark as Unread": "Als ungelesen markieren",
+  "Mark as unread": "Als ungelesen markieren",
   "Long press to pin or move to a section":
     "Lange drücken, um anzuheften oder in einen Abschnitt zu verschieben",
   "Long press to pin, move, or silence notifications":
@@ -295,6 +301,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Artifacts: "Artefakte",
   "Could not delete this artifact": "Dieses Artefakt konnte nicht gelöscht werden",
   "Could not load artifacts.": "Artefakte konnten nicht geladen werden.",
+  "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
   "Could not load this artifact.": "Dieses Artefakt konnte nicht geladen werden.",
   "Could not share this artifact": "Dieses Artefakt konnte nicht geteilt werden",
   "Long press to delete": "Zum Löschen gedrückt halten",

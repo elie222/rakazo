@@ -16,6 +16,7 @@ import {
   McpTransportSchema,
   parseMcpOAuthAuthorizationParams,
 } from "./mcp.js";
+import { ModelHeadersSchema } from "./model-headers.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 
@@ -1163,6 +1164,7 @@ export const ModelCredentialSchema = z.object({
   label: z.string(),
   hasKey: z.boolean(),
   isDefault: z.boolean(),
+  headerNames: z.array(z.string()).optional(),
   baseUrl: z.string().optional(),
   accountId: z.string().optional(),
   gatewayId: z.string().optional(),
@@ -1215,6 +1217,7 @@ export const ModelConnectInputSchema = z
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
+    headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),

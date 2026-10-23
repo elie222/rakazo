@@ -471,6 +471,10 @@ msgstr "הוספת GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "הוספת נקודת קצה של GraphQL"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "הוספת header"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "הוספת פריט"
@@ -2634,15 +2638,21 @@ msgstr "header"
 msgid "Header \"{header}\""
 msgstr "Header \"{header}\""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "שם ה-header"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "ערך ה-header"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Headers"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3014,6 +3024,10 @@ msgstr "נדרשת הגדרה ידנית"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "סימון כנקראה"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "סימון כלא נקראה"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -4014,6 +4028,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "הסרת אירוע Git"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "הסרת header"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx

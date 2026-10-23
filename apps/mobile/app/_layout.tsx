@@ -47,6 +47,7 @@ import {
 import { clearAppBadge } from "../lib/app-badge";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
+import { AvatarScreenFocus } from "../lib/avatar-life";
 import { loadAvatarStyle } from "../lib/avatar-style";
 import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
@@ -330,6 +331,9 @@ function LayoutContent() {
                 <View style={{ flex: 1 }}>
                   <SplitFrame>
                     <Stack
+                      screenLayout={({ navigation, children }) => (
+                        <AvatarScreenFocus navigation={navigation}>{children}</AvatarScreenFocus>
+                      )}
                       screenOptions={{
                         headerStyle: { backgroundColor: navigationTheme.colors.background },
                         ...floatingHeaderOptions(),
