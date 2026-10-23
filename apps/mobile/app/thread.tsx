@@ -2375,10 +2375,15 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                     animated: false,
                   });
                 } else {
-                  scroll.current?.scrollToOffset({
-                    offset: helperHeaderOffset(helperScrollOffset.current, target, after),
-                    animated: false,
-                  });
+                  const offset = helperHeaderOffset(helperScrollOffset.current, target, after);
+                  scroll.current?.scrollToOffset({ offset, animated: false });
+                  // The settled list ignores this scroll's event, so record where it now sits.
+                  helperScrollOffset.current = offset;
+                  const previous = scrollBehavior.current.state();
+                  const next = scrollBehavior.current.onUserScroll(offset);
+                  if (reconcileThreadScrollState(previous, next) !== previous) {
+                    publishThreadScrollState(next);
+                  }
                 }
               });
             }),
