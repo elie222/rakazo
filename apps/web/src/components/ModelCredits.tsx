@@ -125,7 +125,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Your API key</Trans>
+              <Trans>Your subscription or API key</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
@@ -133,7 +133,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               <Trans>Free</Trans>
             </p>
             <p className="text-sm text-muted-foreground">
-              <Trans>Pay your model provider directly.</Trans>
+              <Trans>ChatGPT, Claude, or any model provider.</Trans>
             </p>
             <ul className="space-y-3 text-sm">
               {features.map((feature) => (
@@ -151,7 +151,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               disabled={pending || !status.canManage}
               onClick={() => void choose(true)}
             >
-              <Trans>Use my API key</Trans>
+              <Trans>Connect my own</Trans>
             </Button>
           </CardFooter>
         </Card>
@@ -358,7 +358,7 @@ export function ModelCreditsSettings({
             })
           }
         >
-          <Trans>Use my API key</Trans>
+          <Trans>Use my subscription or API key</Trans>
         </Button>
       ) : null}
       {error ? (

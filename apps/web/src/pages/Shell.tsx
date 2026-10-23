@@ -32,6 +32,7 @@ import {
   anySignal,
   attachmentsForThread,
   buildComposerMentionOptions,
+  chatUserBubbleColors,
   createChatQueues,
   dismissableAskMessageIds,
   foldPeerReplies,
@@ -51,7 +52,6 @@ import {
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import {
-  AvatarStyleProvider,
   BotAvatar,
   Button,
   DropdownMenu,
@@ -782,6 +782,10 @@ function SpaceShell() {
 
   const inGroup = Boolean(groupId);
   const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
+  const userBubble = useMemo(
+    () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
+    [active?.color, active?.id],
+  );
   const computerBot =
     (computerBotId ? bots.find((bot) => bot.id === computerBotId) : undefined) ?? active;
   computerOpenRef.current = computerOpen;
@@ -3510,6 +3514,7 @@ function SpaceShell() {
             dismissableAskIds={dismissableAskIds}
             running={transcriptRunning}
             workingBots={workingBots}
+            userBubble={userBubble}
             onCallBack={
               bootstrapMe?.phoneCallsEnabled && !inGroup && active
                 ? () => callBot(active)
@@ -4082,7 +4087,6 @@ function SpaceShell() {
             usage={usage}
             onUsageOpen={refreshUsage}
             initialSection={settingsSection}
-            avatarStyle={bootstrapMe?.avatarStyle ?? "organic"}
             billingEnabled={bootstrapMe?.billingEnabled === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
             onSandboxProviderChange={(sandboxProvider) =>
@@ -4092,13 +4096,6 @@ function SpaceShell() {
             onOpenMessaging={() => {
               setSettingsOpen(false);
               setMessagingSettingsOpen(true);
-            }}
-            onAvatarStyleChange={async (avatarStyle) => {
-              const nextMe = await rpc.preferences.update({ avatarStyle });
-              // Merge only the saved field: a concurrent save's response must not be undone.
-              setBootstrapMe((prev) =>
-                prev ? { ...prev, avatarStyle: nextMe.avatarStyle } : nextMe,
-              );
             }}
             timezone={bootstrapMe?.timezone ?? null}
             onTimezoneChange={async (timezone) => {
@@ -4172,9 +4169,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "organic"}>{shell}</AvatarStyleProvider>
-  );
+  return shell;
 }
 
 function firstThreadRoute(

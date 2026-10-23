@@ -95,6 +95,7 @@ export function sanitizeMonitoringEvent<T extends MonitoringEvent>(event: T, use
 
 export type ClientOperation =
   | "react.render"
+  | "mobile.startup"
   | "voice.microphone"
   | "voice.turn"
   | "rpc.transport"

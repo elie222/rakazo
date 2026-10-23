@@ -68,7 +68,7 @@ export function CallCard() {
     >
       <KeepScreenOnDuringCall />
       <View style={styles.row}>
-        <BotAvatar color={call.botColor} identity={call.botId} size={28} />
+        <BotAvatar color={call.botColor} identity={call.botId} size={28} motion="live" />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("On a call with {name}", { name: call.botName })}

@@ -172,7 +172,8 @@ describe("archived chats row", () => {
     const row = footer.indexOf("<ArchivedChatsRow");
     expect(row).toBeGreaterThan(footer.indexOf('t("Tap + to create a bot")'));
     expect(footer.slice(row)).toContain('onPress={() => router.push("/archived-bots")}');
-    expect(footer.slice(footer.indexOf("/>", row) + 2).trim()).toBe("</>\n              }");
+    // Nothing but the end of the footer follows the row, however the list is wrapped.
+    expect(footer.slice(footer.indexOf("/>", row) + 2).replace(/\s/g, "")).toBe("</>}");
   });
 });
 

@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  ServerError,
+  TemporarilyUnavailableError,
+} from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -137,6 +141,9 @@ function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined
     return "reconnect";
   if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403))
     return "reconnect";
+  // The server's own OAuth endpoint failed or is overloaded; it usually recovers by itself.
+  if (error instanceof ServerError || error instanceof TemporarilyUnavailableError)
+    return "unreachable";
   const code = (error as { code?: unknown }).code;
   if (code === "ENOTFOUND") return "reconnect";
   if (typeof code === "string" && UNREACHABLE_CODES.has(code)) return "unreachable";

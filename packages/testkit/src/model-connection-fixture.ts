@@ -5,7 +5,10 @@ export function createModelConnectionFixtureFetch(
   return async (input, init) => {
     const request = new Request(input, init);
     request.signal.throwIfAborted();
-    if (request.url === "https://openrouter.ai/api/v1/key") {
+    if (
+      request.url === "https://openrouter.ai/api/v1/key" ||
+      request.url === "https://ollama.com/api/balance"
+    ) {
       const authorization = request.headers.get("authorization");
       const accepted =
         authorization?.startsWith("Bearer ") && authorization !== "Bearer rejected-fixture-key";
@@ -17,6 +20,9 @@ export function createModelConnectionFixtureFetch(
           .filter((model) => model.provider === "openrouter")
           .map((model) => ({ id: model.id })),
       });
+    }
+    if (request.url === "https://ollama.com/v1/models") {
+      return Response.json({ data: [{ id: "fixture-model" }] });
     }
     throw new Error("Unexpected model connection request in the offline fixture");
   };

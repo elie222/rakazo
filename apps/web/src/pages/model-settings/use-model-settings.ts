@@ -1,18 +1,22 @@
 import { useLingui } from "@lingui/react/macro";
-import type { Me, ThinkingLevel } from "@rakazo/contracts";
+import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
+  compatibleConnectionName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
@@ -65,6 +69,7 @@ export function useModelSettings(onClose: () => void) {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
@@ -148,6 +153,7 @@ export function useModelSettings(onClose: () => void) {
       setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
+        setHeaderRows(null);
         setReasoning(nextCredential?.reasoning ?? false);
         setThinkingLevel(
           clampCatalogThinkingLevel(
@@ -215,7 +221,12 @@ export function useModelSettings(onClose: () => void) {
     const query = providerQuery.trim().toLowerCase();
     const matched = query
       ? groups.filter((group) =>
-          [group.id, group.name, ...group.entries.flatMap((entry) => [entry.id, entry.label])]
+          [
+            group.id,
+            group.name,
+            group.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Ollama Cloud" : "",
+            ...group.entries.flatMap((entry) => [entry.id, entry.label]),
+          ]
             .join(" ")
             .toLowerCase()
             .includes(query),
@@ -253,7 +264,10 @@ export function useModelSettings(onClose: () => void) {
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
-  const selectedProviderName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedProviderName = compatibleConnectionName(
+    baseUrl,
+    selected?.providerName ?? selected?.provider ?? "",
+  );
   const disconnectName = selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -293,10 +307,17 @@ export function useModelSettings(onClose: () => void) {
       : null;
   const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
+  const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey:
+      apiKey ||
+      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
+        ? "stored"
+        : ""),
     baseUrl: effectiveBaseUrl,
-    modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -327,6 +348,7 @@ export function useModelSettings(onClose: () => void) {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
@@ -351,10 +373,13 @@ export function useModelSettings(onClose: () => void) {
     );
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, presetBaseUrl?: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider && (!presetBaseUrl || entry.baseUrl === presetBaseUrl),
+    );
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -381,10 +406,13 @@ export function useModelSettings(onClose: () => void) {
     setModelId(nextModelId);
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
+        : "",
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
     setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
@@ -404,7 +432,12 @@ export function useModelSettings(onClose: () => void) {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: rpc.models.probeOpenAiCompatible,
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
@@ -581,6 +614,7 @@ export function useModelSettings(onClose: () => void) {
           ? {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
+              headers: modelHeadersInput(headerRows),
               modelId: modelId.trim(),
               // The server adds the default itself.
               enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
@@ -662,6 +696,10 @@ export function useModelSettings(onClose: () => void) {
   }
 
   return {
+    resetOpenAiCompatibleProbe,
+    headerRows,
+    setHeaderRows,
+    savedHeaderEndpointMatches,
     acceptsKey,
     accountId,
     activeThinkingLabel,

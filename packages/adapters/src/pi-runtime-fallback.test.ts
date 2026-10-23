@@ -57,6 +57,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { estimateModelContextTokens } from "./model-context.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MESSAGE, PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS, MODEL_STREAM_TIMEOUT_MS } from "./pi-runtime-limits.js";
@@ -2198,5 +2199,162 @@ describe("Pi runtime thinking blocks bound to a different conversation", () => {
     expect(thinkingParts(contexts[2]!)).toEqual([]);
     expect(thinkingParts(contexts[3]!)).toEqual([]);
     expect(providerState.delay).not.toHaveBeenCalled();
+  });
+});
+
+describe("Pi runtime output reservation recovery", () => {
+  const limited = model("openrouter", "fixture-limited", 32_768);
+  const budgetError =
+    '402: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 1024.","metadata":{"limit_source":"openrouter_credits"}}';
+
+  function limitedRequest() {
+    providerState.models.set(
+      `${limited.provider}/${limited.id}`,
+      limited as unknown as Record<string, unknown>,
+    );
+    return {
+      ...request(),
+      model: { provider: limited.provider, id: limited.id, apiKey: "fixture-key" },
+    };
+  }
+
+  it("lowers the rejected reservation once and retains it through subsequent tool turns", async () => {
+    const input = limitedRequest();
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      caps.push(options.maxTokens);
+      if (caps.length === 1) return stream(target, message(target, [], "error", budgetError));
+      if (caps.length === 2)
+        return stream(
+          target,
+          message(
+            target,
+            [
+              {
+                type: "toolCall",
+                id: "fixture-call",
+                name: "write_effect",
+                arguments: { value: "fixture" },
+              },
+            ],
+            "toolUse",
+          ),
+        );
+      return stream(target, message(target, [{ type: "text", text: "Ready" }], "stop"));
+    });
+    const events = await run(input);
+    expect(caps).toEqual([4096, 1024, 1024]);
+    expect(input.executeTool).toHaveBeenCalledOnce();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
+  });
+
+  it("never loops when the reduced request is rejected too", async () => {
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) =>
+      stream(target, message(target, [], "error", budgetError)),
+    );
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(input.executeTool).not.toHaveBeenCalled();
+  });
+
+  it.each(["text", "toolCall"] as const)(
+    "does not retry a response with a partial %s block",
+    async (part) => {
+      const input = limitedRequest();
+      providerState.stream.mockImplementation((target) =>
+        stream(
+          target,
+          message(
+            target,
+            part === "text"
+              ? [{ type: "text", text: "Partial" }]
+              : [
+                  {
+                    type: "toolCall",
+                    id: "fixture-call",
+                    name: "write_effect",
+                    arguments: { value: "fixture" },
+                  },
+                ],
+            "error",
+            budgetError,
+          ),
+        ),
+      );
+      await expect(run(input)).rejects.toThrow("This request requires more credits");
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      expect(input.executeTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not treat a local reservation failure as a provider rejection", async () => {
+    const input = limitedRequest();
+    const beforeCall = vi.fn<ModelCallObserver["beforeCall"]>(async () => {
+      throw new Error(budgetError);
+    });
+    await expect(
+      run(
+        input,
+        [],
+        new PiAgentRuntime({ modelCallObserver: { beforeCall, afterCall: async () => undefined } }),
+      ),
+    ).rejects.toThrow("This request requires more credits");
+    expect(beforeCall).toHaveBeenCalledOnce();
+    expect(providerState.stream).not.toHaveBeenCalled();
+  });
+
+  it("does not retry after the original request deadline", async () => {
+    vi.useFakeTimers();
+    const input = limitedRequest();
+    providerState.stream.mockImplementation((target) => {
+      vi.setSystemTime(Date.now() + MODEL_STREAM_TIMEOUT_MS + 1);
+      return stream(target, message(target, [], "error", budgetError));
+    });
+    await expect(run(input)).rejects.toThrow("This request requires more credits");
+    expect(providerState.stream).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Pi runtime account request ceilings", () => {
+  it("rebuilds a rejected Groq context once without changing saved/requested settings", async () => {
+    const targetModel = model("groq", "fixture-limited", 32_768);
+    providerState.models.set(
+      `${targetModel.provider}/${targetModel.id}`,
+      targetModel as unknown as Record<string, unknown>,
+    );
+    const input = {
+      ...request(),
+      model: { provider: targetModel.provider, id: targetModel.id, apiKey: "fixture-key" },
+      history: [{ role: "user" as const, content: "Synthetic older context. ".repeat(2000) }],
+    };
+    const windows: number[] = [];
+    const caps: number[] = [];
+    providerState.stream.mockImplementation((target, _context, options) => {
+      windows.push(target.contextWindow);
+      caps.push(options.maxTokens);
+      if (windows.length > 1) {
+        expect(estimateModelContextTokens(_context)).toBeLessThan(
+          target.contextWindow - options.maxTokens,
+        );
+      }
+      return stream(
+        target,
+        windows.length === 1
+          ? message(
+              target,
+              [],
+              "error",
+              '413: {"code":"rate_limit_exceeded","type":"tokens","message":"Request too large on tokens per minute (TPM): Limit 6000, Requested 7000, please reduce your message size."}',
+            )
+          : message(target, [{ type: "text", text: "Ready" }], "stop"),
+      );
+    });
+    const events = await run(input);
+    expect(windows).toEqual([32768, 5100]);
+    expect(caps).toEqual([4096, 1275]);
+    expect(input.model).not.toHaveProperty("contextWindow");
+    expect(input.executeTool).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
   });
 });

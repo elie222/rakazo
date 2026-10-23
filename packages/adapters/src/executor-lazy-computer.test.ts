@@ -38,6 +38,7 @@ async function runRoutine(
     copyFailureOnce?: boolean;
     parallel?: boolean;
     priorSetupFailures?: number;
+    exportError?: Error;
   } = {},
 ) {
   const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
@@ -208,9 +209,10 @@ async function runRoutine(
     listFiles: vi.fn(async () => [{ path: "notes.txt", kind: "file", size: 4 }]),
     writeFile: vi.fn(async () => undefined),
     releaseScreen: vi.fn(async () => undefined),
-    async *exportWorkspace() {
+    exportWorkspace: vi.fn(async function* () {
+      if (options.exportError) throw options.exportError;
       yield* [];
-    },
+    }),
   };
   if (options.copyFailureOnce)
     sandbox.writeFile.mockRejectedValueOnce(new Error("temporary copy failure"));
@@ -420,6 +422,22 @@ describe("run computer provisioning", () => {
     expect(toolResults[0]).toMatchObject({ entries: [{ path: "notes.txt" }] });
     expect(sleepJobs).toHaveLength(1);
     expect(sandbox.releaseScreen).toHaveBeenCalledWith(COMPUTER, expect.anything());
+  });
+
+  it("completes the run when its closing workspace checkpoint fails", async () => {
+    const { finalizeRun, sandbox } = await runRoutine(
+      [{ name: "list_files", args: { path: "" } }],
+      {
+        attachments: "file",
+        exportError: new Error("Boat API request failed (HTTP 502, sandbox_direct_failed)"),
+      },
+    );
+
+    expect(sandbox.exportWorkspace).toHaveBeenCalled();
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "computer.checkpoint_deferred" }),
+    );
   });
 
   it("starts the computer before handing its screen to the user", async () => {

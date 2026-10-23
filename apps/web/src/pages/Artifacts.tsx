@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, ArtifactVersion, Bot } from "@rakazo/contracts";
@@ -17,6 +18,7 @@ import {
   NativeSelectOption,
   parseBotAvatar,
   resolvePersonaColorDef,
+  Spinner,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
@@ -423,7 +425,7 @@ function BrowsingPane({
   if (items === null) {
     return (
       <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
-        {loadError ?? <Trans>Loading…</Trans>}
+        {loadError ?? <Spinner aria-label={t`Loading…`} />}
       </div>
     );
   }
@@ -470,8 +472,15 @@ function BrowsingPane({
 function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
   return (
     <div className="mt-4 flex justify-center">
-      <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
-        {loading ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loading}
+        onClick={onClick}
+        aria-label={t`Load more`}
+      >
+        {loading ? <Spinner aria-label={t`Loading…`} /> : null}
+        <Trans>Load more</Trans>
       </Button>
     </div>
   );
@@ -500,7 +509,7 @@ function EmptyArtifacts({
       <div className="flex flex-col items-center gap-3">
         <span>
           {loadingMore ? (
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           ) : (
             <Trans>No matching artifacts on this page.</Trans>
           )}
@@ -534,7 +543,7 @@ function IndexPane({
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
         <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
-          {loadError ?? <Trans>Loading…</Trans>}
+          {loadError ?? <Spinner aria-label={t`Loading…`} />}
         </div>
       ) : items.length === 0 ? (
         <EmptyArtifacts
@@ -859,7 +868,7 @@ function PreviewPane({
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[16px] font-semibold">
-            {state.status === "ready" ? state.artifact.name : t`Loading…`}
+            {state.status === "ready" ? state.artifact.name : null}
           </h2>
           {state.status === "ready" && state.artifact.description ? (
             <p className="truncate text-[12.5px] text-muted-foreground">
@@ -914,7 +923,7 @@ function PreviewPane({
       <div className="min-h-0 flex-1 p-5">
         {state.status === "loading" ? (
           <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
           <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">

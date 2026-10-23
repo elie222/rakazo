@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ServerError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
@@ -823,6 +824,31 @@ describe("MCP connector session cache", () => {
         const tried = requests.mock.calls.length;
 
         // A host that is only down is tried again once the short backoff passes.
+        vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+        await connector.discoverTools(context);
+        expect(requests.mock.calls.length).toBeGreaterThan(tried);
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when the server's OAuth endpoint fails, and retries it on the usual backoff", async () => {
+      const requests = vi.fn(async () => {
+        throw new ServerError("");
+      });
+      vi.stubGlobal("fetch", requests);
+      const connector = connectorWith(SERVER);
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.any(String),
+        });
+        const tried = requests.mock.calls.length;
+
         vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
         await connector.discoverTools(context);
         expect(requests.mock.calls.length).toBeGreaterThan(tried);

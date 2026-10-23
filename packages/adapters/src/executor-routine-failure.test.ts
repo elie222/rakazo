@@ -1,7 +1,8 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
-import { TransientModelError } from "@rakazo/adapter-kit";
+import { ModelAccountError, TransientModelError } from "@rakazo/adapter-kit";
 import type * as DbModule from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -33,6 +34,7 @@ interface Scenario {
   retryEnqueueFails?: boolean;
   unreadChats?: number;
   badgeFails?: boolean;
+  switchToBackup?: { provider: string; modelId: string };
 }
 
 async function failRun(scenario: Scenario) {
@@ -54,8 +56,12 @@ async function failRun(scenario: Scenario) {
     retryOfRunId: scenario.retryOfRunId ?? null,
     leaseFence: 0,
   };
-  const runtimeRun = vi.fn(async function* () {
+  const runtimeRun = vi.fn(async function* (request: {
+    onModelChange?: (provider: string, modelId: string) => Promise<void>;
+  }) {
     yield* [];
+    const backup = scenario.switchToBackup;
+    if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
     throw scenario.error;
   });
   const prisma = {
@@ -123,7 +129,9 @@ async function failRun(scenario: Scenario) {
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: { findMany: vi.fn(async () => []) },
+    spaceBackupModel: {
+      findMany: vi.fn(async () => (scenario.switchToBackup ? [scenario.switchToBackup] : [])),
+    },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -757,6 +765,67 @@ describe("exhausted routine retry notification", () => {
       await executor.notifyRoutineRetryAttemptsExhausted("run-1");
 
       expect(send).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("reporting a failed run", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  async function failedRunLog(error: Error, scenario: Partial<Scenario> = {}) {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await failRun({ ...scenario, error, trigger: "user" });
+    return sink.events.filter((event) => event.message === "run.failed");
+  }
+
+  it.each([
+    ["a provider outage that outlasted its retries", overloaded()],
+    ["a rejected model key", new ModelAccountError('401: {"message":"Invalid API-key provided."}')],
+  ])("logs %s as a warning, not an error report", async (_label, error) => {
+    expect(await failedRunLog(error)).toEqual([
+      expect.objectContaining({ level: "warn", "run.failure": error.name, reason: error.message }),
+    ]);
+  });
+
+  it("reports any other failure as an error", async () => {
+    expect(await failedRunLog(new Error("Unexpected message role"))).toEqual([
+      expect.objectContaining({ level: "error" }),
+    ]);
+  });
+
+  it.each([
+    ["warning", overloaded()],
+    ["error", new Error("Unexpected message role")],
+  ])("names the model that failed on the %s", async (_level, error) => {
+    const events = await failedRunLog(error);
+    expect(events).toEqual([
+      expect.objectContaining({
+        "model.provider": "openrouter",
+        "model.id": "deepseek/deepseek-v4-flash-0731",
+      }),
+    ]);
+  });
+
+  it.each([
+    ["warning", overloaded()],
+    ["error", new Error("Unexpected message role")],
+  ])(
+    "names the backup model that failed on the %s, without its endpoint or key",
+    async (_level, error) => {
+      const events = await failedRunLog(error, {
+        switchToBackup: { provider: "openai-compatible", modelId: "local-model" },
+      });
+      expect(events).toEqual([
+        expect.objectContaining({
+          "model.provider": "openai-compatible",
+          "model.id": "local-model",
+        }),
+      ]);
+      const fields = events.map(({ error: _stack, ...rest }) => rest);
+      expect(JSON.stringify(fields)).not.toMatch(/fake-deployment-key|:\/\//);
     },
   );
 });

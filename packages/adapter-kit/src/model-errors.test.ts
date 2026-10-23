@@ -53,6 +53,7 @@ describe("transient model errors", () => {
       },
     ],
     ["billing", { status: 402, message: "provider quota exhausted" }],
+    ["payment required", '402: {"message":"This request requires more credits.","code":402}'],
     ["credit balance", "Your credit balance is too low to access the API."],
     ...[
       "You have hit your ChatGPT usage limit.",

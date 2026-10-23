@@ -60,7 +60,7 @@ describe("collaboration transcript markers", () => {
     const html = renderToString(
       <ActiveBotGlyph
         bots={[{ botId: "research", color: "#14B8A6", status: "running" }]}
-        label="Research is working"
+        label="Searching the web: injury news"
       />,
     );
 

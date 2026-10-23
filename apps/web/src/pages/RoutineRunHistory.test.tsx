@@ -77,7 +77,8 @@ it("shows loading, then the real run and its exact message link", async () => {
   );
   const view = await mounted();
   try {
-    expect(view.container.textContent).toContain("Loading");
+    expect(view.container.querySelector('[role="status"][aria-label="Loading…"]')).not.toBeNull();
+    expect(view.container.textContent).not.toContain("Loading");
     expect(view.container.textContent).not.toContain("No runs yet");
     await act(async () => finish([run]));
     expect(view.container.querySelectorAll("li")).toHaveLength(1);

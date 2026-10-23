@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { expect, it } from "vitest";
 import { messagePresentationSegments } from "./message-presentation";
+import { withUserBubble } from "./user-bubble";
 
 const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
 const helpers = source.slice(
@@ -22,6 +23,7 @@ const scope = {
   memo: <T,>(component: T) => component,
   useResolvedAppearance: () => "dark",
   mobileTokens: () => darkTokens,
+  withUserBubble,
   useI18n: () => ({ t: (text: string) => text }),
   resolvePersonaColorDef,
   messagePresentationSegments,

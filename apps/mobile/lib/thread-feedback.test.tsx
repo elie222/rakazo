@@ -391,6 +391,26 @@ describe("scoped mobile outbox", () => {
     expect(router.push).not.toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
   });
+  it.each([
+    [409, "Stop teaching first"],
+    [426, "Update required"],
+  ])("keeps a %i rejection retryable", async (status, message) => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error(message), { status }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(container.textContent).toContain("Not sent · Tap to retry");
+    act(() => container.querySelector("button")!.click());
+    expect(retry).toHaveBeenCalledOnce();
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+  });
   it("reports real errors and reuses uploaded artifacts on manual retry", async () => {
     const attempt = feedback.sendAttempt(payload());
     request

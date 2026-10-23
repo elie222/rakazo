@@ -6,6 +6,8 @@ export * from "./app-connect.js";
 export * from "./artifact-sandbox.js";
 export * from "./async.js";
 export * from "./attachments.js";
+export * from "./avatar-clips.js";
+export * from "./avatar-life.js";
 export * from "./avatar-motion.js";
 export * from "./avatar-shape.js";
 export * from "./barge-in.js";

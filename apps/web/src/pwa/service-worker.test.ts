@@ -110,6 +110,15 @@ describe("service worker", () => {
     );
   });
 
+  it("never answers an online navigation from the cached shell", async () => {
+    network = async () => new Response("first deploy");
+    const sw = setup({ precache: ["/"] });
+    await sw.dispatch("install", {});
+    network = async () => new Response("next deploy");
+    expect(await (await sw.fetch("/", "navigate"))!.text()).toBe("next deploy");
+    expect(await (await sw.fetch("/t/1", "navigate"))!.text()).toBe("next deploy");
+  });
+
   it("caches lazy assets as they load, but not an HTML fallback", async () => {
     network = async (request) =>
       request.url.endsWith("missing.js")
@@ -124,12 +133,22 @@ describe("service worker", () => {
   it("keeps only the current and newest previous shell caches on activate", async () => {
     network = async () => new Response("ok");
     const sw = setup();
-    await sw.scope.caches.open("rakazo-shell-old");
-    await sw.scope.caches.open("rakazo-shell-previous");
+    await sw.scope.caches.open("rakazo-shell-20261022100000");
+    await sw.scope.caches.open("rakazo-shell-20261020100000");
     await sw.scope.caches.open("someone-else");
     await sw.scope.caches.open(CACHE);
     await sw.dispatch("activate", {});
-    expect([...sw.stores.keys()]).toEqual(["rakazo-shell-previous", "someone-else", CACHE]);
+    expect([...sw.stores.keys()]).toEqual(["rakazo-shell-20261022100000", "someone-else", CACHE]);
+  });
+
+  it("prefers a build-named previous shell over a legacy hash-named one", async () => {
+    network = async () => new Response("ok");
+    const sw = setup();
+    await sw.scope.caches.open("rakazo-shell-abcdef0123456789");
+    await sw.scope.caches.open("rakazo-shell-20261022100000");
+    await sw.scope.caches.open(CACHE);
+    await sw.dispatch("activate", {});
+    expect([...sw.stores.keys()]).toEqual(["rakazo-shell-20261022100000", CACHE]);
   });
 
   it("serves an old-version asset from the previous cache after activation while offline", async () => {

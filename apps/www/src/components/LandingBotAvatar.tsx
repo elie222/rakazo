@@ -9,5 +9,5 @@ export function LandingBotAvatar({
   size?: number;
   className?: string;
 }) {
-  return <BotAvatar color={color} size={size} className={className} variant="organic" />;
+  return <BotAvatar color={color} size={size} className={className} />;
 }

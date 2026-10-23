@@ -1,6 +1,5 @@
 import { BotAvatar, Button, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
-import { LoadingState } from "./primitives";
 
 /**
  * Lightweight peer event shown without exposing the exchanged message body. `replies` adds a
@@ -61,10 +60,14 @@ export function CollaborationMarker({
   );
 }
 
+/** The working bot with what it is doing right now, such as its current tool call. */
 export function ActiveBotGlyph({ bots, label }: { bots: GroupAvatarMember[]; label: string }) {
   return (
-    <div className="flex min-h-10 items-center px-1">
-      <LoadingState indicator={<GroupAvatar members={bots} size={28} />} label={label} />
+    <div role="status" className="flex min-h-10 min-w-0 items-center gap-2.5 px-1">
+      <GroupAvatar members={bots} size={28} />
+      <span dir="auto" className="min-w-0 truncate text-[15px] text-muted-foreground text-shimmer">
+        {label}
+      </span>
     </div>
   );
 }

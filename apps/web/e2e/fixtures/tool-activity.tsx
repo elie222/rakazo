@@ -111,8 +111,6 @@ function SettingsFixture() {
       <SettingsOverlay
         email="owner@example.test"
         name="Owner"
-        avatarStyle="robot"
-        onAvatarStyleChange={() => Promise.resolve()}
         memoryConfig={null}
         onMemoryConfigChange={() => {}}
         onClose={() => {}}

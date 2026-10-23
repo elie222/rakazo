@@ -15,6 +15,7 @@ import {
   installPreloadRecovery,
   lazyComponent,
   readPreloadRecoveryState,
+  recoveringByReload,
 } from "./preload-recovery";
 
 const uninstalls: Array<() => void> = [];
@@ -114,6 +115,7 @@ describe("preload recovery", () => {
     expect(await settled(first)).toBe("pending");
     expect(await settled(second)).toBe("pending");
     expect(reload).toHaveBeenCalledOnce();
+    expect(recoveringByReload()).toBe(true);
   });
 
   it("lets a failure after the recovery reload reach the error boundary", async () => {
@@ -121,6 +123,7 @@ describe("preload recovery", () => {
 
     await expect(importChunk(failChunk)).rejects.toThrow("dynamically imported module");
     expect(reload).not.toHaveBeenCalled();
+    expect(recoveringByReload()).toBe(false);
   });
 
   it("leaves an offline failure to the error boundary instead of reloading", async () => {

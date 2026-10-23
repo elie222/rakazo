@@ -132,12 +132,7 @@ function SessionApp() {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (
-      <div
-        className="grid h-full place-items-center text-muted-foreground/80"
-        data-rakazo-app-state="session-pending"
-      >
-        <Trans>Loading…</Trans>
-      </div>
+      <div className="h-full bg-background" data-rakazo-app-state="session-pending" />
     );
   }
 
