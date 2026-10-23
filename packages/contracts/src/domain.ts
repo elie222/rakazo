@@ -3,9 +3,10 @@ import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { BotAvatarValueSchema } from "./bot-avatar.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 import {
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   cloudflareGatewayRoutingId,
+  cloudflareModelConfigMessage,
   isCloudflareAiGatewayProvider,
+  isCloudflareModelProvider,
 } from "./cloudflare-ai-gateway.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
@@ -1243,18 +1244,22 @@ export const ModelConnectInputSchema = z
         path: ["maxTokens"],
       });
     }
-    if (isCloudflareAiGatewayProvider(value.provider)) {
+    if (isCloudflareModelProvider(value.provider)) {
       if (value.accountId !== undefined && !cloudflareGatewayRoutingId(value.accountId)) {
         ctx.addIssue({
           code: "custom",
-          message: CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+          message: cloudflareModelConfigMessage(value.provider),
           path: ["accountId"],
         });
       }
-      if (value.gatewayId !== undefined && !cloudflareGatewayRoutingId(value.gatewayId)) {
+      if (
+        isCloudflareAiGatewayProvider(value.provider) &&
+        value.gatewayId !== undefined &&
+        !cloudflareGatewayRoutingId(value.gatewayId)
+      ) {
         ctx.addIssue({
           code: "custom",
-          message: CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+          message: cloudflareModelConfigMessage(value.provider),
           path: ["gatewayId"],
         });
       }

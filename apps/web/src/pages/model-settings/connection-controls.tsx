@@ -24,6 +24,7 @@ export function ConnectionControls({
   copyOAuthCode,
   credential,
   gatewayId,
+  isCloudflare,
   isCloudflareGateway,
   isOpenAiCompatible,
   oauth,
@@ -58,6 +59,7 @@ export function ConnectionControls({
   | "copyOAuthCode"
   | "credential"
   | "gatewayId"
+  | "isCloudflare"
   | "isCloudflareGateway"
   | "isOpenAiCompatible"
   | "oauth"
@@ -251,7 +253,7 @@ export function ConnectionControls({
 
       {acceptsKey ? (
         <div className="mt-5 first:mt-0">
-          {isCloudflareGateway ? (
+          {isCloudflare ? (
             <>
               <label
                 className="block text-[13.5px] text-muted-foreground"
@@ -267,25 +269,27 @@ export function ConnectionControls({
                   className="mt-2 h-10 text-foreground"
                 />
               </label>
-              <label
-                className="mt-4 block text-[13.5px] text-muted-foreground"
-                htmlFor="cloudflare-gateway-id"
-              >
-                <Trans>Gateway ID</Trans>
-                <Input
-                  id="cloudflare-gateway-id"
-                  value={gatewayId}
-                  onChange={(event) => setGatewayId(event.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="mt-2 h-10 text-foreground"
-                />
-              </label>
+              {isCloudflareGateway ? (
+                <label
+                  className="mt-4 block text-[13.5px] text-muted-foreground"
+                  htmlFor="cloudflare-gateway-id"
+                >
+                  <Trans>Gateway ID</Trans>
+                  <Input
+                    id="cloudflare-gateway-id"
+                    value={gatewayId}
+                    onChange={(event) => setGatewayId(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-2 h-10 text-foreground"
+                  />
+                </label>
+              ) : null}
             </>
           ) : null}
           {acceptsKey ? (
             <label
-              className={`block text-[13.5px] text-muted-foreground ${isCloudflareGateway ? "mt-4" : ""}`}
+              className={`block text-[13.5px] text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
               htmlFor="model-api-key"
             >
               {credential ? (

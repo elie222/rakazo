@@ -122,6 +122,21 @@ describe("contracts", () => {
     expect(valid.success).toBe(true);
   });
 
+  it("validates Workers AI account routing without requiring a gateway", () => {
+    const provider = "cloudflare-workers-ai";
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider,
+        accountId: "account-fixture",
+        apiKey: "fixture-key",
+      }).success,
+    ).toBe(true);
+    expect(ModelConnectInputSchema.safeParse({ provider, maxTokens: 2048 }).success).toBe(true);
+    for (const accountId of ["", "../account", "account/other", "a".repeat(65)]) {
+      expect(ModelConnectInputSchema.safeParse({ provider, accountId }).success).toBe(false);
+    }
+  });
+
   it("validates each Cloudflare routing id and allows an update to send only one", () => {
     const provider = CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
     expect(

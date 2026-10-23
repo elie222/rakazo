@@ -2,10 +2,11 @@ import { useLingui } from "@lingui/react/macro";
 import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareGatewayRouting,
+  cloudflareModelRouting,
   compatibleConnectionName,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isCloudflareModelProvider,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
@@ -272,8 +273,9 @@ export function useModelSettings(onClose: () => void) {
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
-    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
+    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -330,7 +332,7 @@ export function useModelSettings(onClose: () => void) {
     !isOpenAiCompatible &&
     Boolean(credential) &&
     (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
-      (isCloudflareGateway &&
+      (isCloudflare &&
         (accountId.trim() !== (credential?.accountId ?? "") ||
           gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
@@ -630,9 +632,7 @@ export function useModelSettings(onClose: () => void) {
           : {
               provider: selected.provider,
               ...(newKey ? { apiKey: newKey } : {}),
-              ...(isCloudflareGateway
-                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
-                : {}),
+              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -737,6 +737,7 @@ export function useModelSettings(onClose: () => void) {
     hostCredentialSource,
     invalidatePreflight,
     isActive,
+    isCloudflare,
     isCloudflareGateway,
     isOpenAiCompatible,
     loading,

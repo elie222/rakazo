@@ -228,7 +228,7 @@ import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
-import { cloudflareGatewayProviderEnv } from "./cloudflare-ai-gateway.js";
+import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import type { PluginConnectionRow } from "./composio-connector.js";
 import {
   collectLogIds,
@@ -10198,7 +10198,7 @@ async function resolveModelKeyMaterial(
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
-        cloudflareGatewayProviderEnv({ provider });
+        cloudflareProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
@@ -10280,7 +10280,7 @@ async function resolveModelKeyMaterial(
             credential.defaultModel?.trim() === modelId.trim()));
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareGatewayProviderEnv({ provider, accountId, gatewayId });
+      cloudflareProviderEnv({ provider, accountId, gatewayId });
       return {
         apiKey: resolved.apiKey,
         accountId,
@@ -10341,7 +10341,7 @@ async function resolveModelKeyMaterial(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  cloudflareGatewayProviderEnv({ provider });
+  cloudflareProviderEnv({ provider });
   return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 
