@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Models from "../app/(settings)/models";
 
 const savedEndpoint = "https://models.example.test/v1";
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({}),
@@ -37,7 +38,11 @@ vi.mock("./api", () => ({
   },
 }));
 vi.mock("expo-router", () => ({
+  useRouter: () => ({ push }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
+}));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
@@ -78,6 +83,8 @@ vi.mock("react-native", () => {
     ActivityIndicator: () => null,
     Alert: { alert: vi.fn() },
     Keyboard: { dismiss: vi.fn() },
+    Platform: { OS: "ios" },
+    useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
     Linking: { openURL: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,
