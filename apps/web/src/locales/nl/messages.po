@@ -2780,6 +2780,15 @@ msgstr "Als je dat hoorde, is de stem klaar."
 msgid "Ignore"
 msgstr "Negeren"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Gebied voor afbeeldingsuploads"
@@ -4483,6 +4492,10 @@ msgstr "Stuur <0>{linkCode}</0> binnen 10 minuten naar het gesprek met de bot in
 msgid "Send answer"
 msgstr "Antwoord verzenden"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Als bestand verzenden"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Verwijderingscode verzenden"
@@ -4970,6 +4983,15 @@ msgstr "Dit bestand is geen geldige UTF-8-tekst."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "deze Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

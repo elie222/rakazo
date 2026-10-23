@@ -6,6 +6,18 @@ export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
 
+/** Only the structured server response enables explicit file confirmation. */
+export function isImageInputConfirmation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { status?: unknown; data?: { reason?: unknown } };
+  return value.status === 409 && value.data?.reason === "model_image_input_unsupported";
+}
+
+export const MODEL_IMAGE_INPUT_UNKNOWN = "Image input is not configured for this model.";
+
+export const MODEL_IMAGE_INPUT_ERROR =
+  "This model cannot read images. Choose a model that supports images.";
+
 /** Recognize the send rejection across RPC errors and persisted outbox messages. */
 export function isModelRequiredSendError(error: unknown): boolean {
   const message =
@@ -62,6 +74,14 @@ export function normalizeRunError(
   kind?: "key" | "credit" | "spending" | "rate" | "auth" | "model";
   period?: "none" | "daily" | "weekly" | "monthly";
 } {
+  if ([MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN].includes(details.trim())) {
+    return {
+      summary: translate(details.trim()),
+      details,
+      recovery: "model",
+      kind: "model",
+    };
+  }
   const prefix = details.trim().match(/^(\d{3})(?:\s*:\s*|\s+)/);
   const body = details.trim().slice(prefix?.[0].length ?? 0);
   let parsed: unknown;

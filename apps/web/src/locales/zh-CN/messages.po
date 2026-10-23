@@ -2780,6 +2780,15 @@ msgstr "如果听到了，说明语音已就绪。"
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未配置图片输入。"
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未配置图片输入。"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "图片上传区域"
@@ -4483,6 +4492,10 @@ msgstr "请在 10 分钟内从聊天应用向该线路发送 <0>{linkCode}</0>�
 msgid "Send answer"
 msgstr "发送回答"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "作为文件发送"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "发送删除验证码"
@@ -4970,6 +4983,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "这台 Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型无法读取图片。请选择支持图片的模型。"
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型无法读取图片。请选择支持图片的模型。"
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

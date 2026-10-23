@@ -2780,6 +2780,15 @@ msgstr "Si vous avez entendu cela, la voix est prête."
 msgid "Ignore"
 msgstr "Ignorer"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La saisie d’images n’est pas configurée pour ce modèle."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La saisie d’images n’est pas configurée pour ce modèle."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Zone de téléchargement d'image"
@@ -4483,6 +4492,10 @@ msgstr "Envoyez <0>{linkCode}</0> au numéro depuis votre application de discuss
 msgid "Send answer"
 msgstr "Envoyer la réponse"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Envoyer comme fichier"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Envoyer le code de suppression"
@@ -4970,6 +4983,15 @@ msgstr "Ce fichier n'est pas un texte UTF-8 valide."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ce Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Ce modèle ne peut pas lire les images. Choisissez un modèle qui les prend en charge."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Ce modèle ne peut pas lire les images. Choisissez un modèle qui les prend en charge."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

@@ -2515,15 +2515,32 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
-        if ((await modelSetup(deps, context.actor)).needsModel) {
+        const setup = await modelSetup(deps, context.actor);
+        if (setup.needsModel) {
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         }
+        const confirmingImages =
+          input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);
+        // Reuse the funding modelSetup resolved; a send never asks billing twice.
+        const { funding } = setup;
+        const deployment = setup.hasDeployment
+          ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
+          : null;
         return sendThreadMessage(
-          deps,
+          {
+            ...deps,
+            imageAdmission: confirmingImages
+              ? {
+                  secrets: deps.secrets,
+                  deployment,
+                  hostedProvider: funding?.funding === "credits" ? deployment?.provider : undefined,
+                }
+              : undefined,
+          },
           context.actor,
           target,
           input,
@@ -7068,6 +7085,8 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
   return {
     credential,
     settings,
+    funding,
+    hasDeployment,
     needsModel: deps.env.agentRuntime !== "scripted" && !credential && !hasDeployment,
   };
 }

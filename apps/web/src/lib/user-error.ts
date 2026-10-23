@@ -1,10 +1,25 @@
 import { t } from "@lingui/core/macro";
 import { isVoiceAccountErrorCode } from "@rakazo/contracts";
 import type { CredentialField } from "@rakazo/core";
-import { authErrorMessage, userErrorMessage } from "@rakazo/core";
+import {
+  authErrorMessage,
+  MODEL_IMAGE_INPUT_ERROR,
+  MODEL_IMAGE_INPUT_UNKNOWN,
+  userErrorMessage,
+} from "@rakazo/core";
 
 /** Text for a failure: human messages pass through; network and implementation detail become copy. */
 export function errorText(error: unknown, fallback = t`Something went wrong. Try again.`): string {
+  const message =
+    typeof error === "string"
+      ? error
+      : error && typeof error === "object" && "message" in error
+        ? error.message
+        : undefined;
+  if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_ERROR)
+    return t`This model cannot read images. Choose a model that supports images.`;
+  if (typeof message === "string" && message.trim() === MODEL_IMAGE_INPUT_UNKNOWN)
+    return t`Image input is not configured for this model.`;
   return (
     voiceAccountErrorText(error) ??
     userErrorMessage(error, { fallback, offline: t`Could not reach the server` })

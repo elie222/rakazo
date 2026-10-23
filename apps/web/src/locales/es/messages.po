@@ -2780,6 +2780,15 @@ msgstr "Si escuchaste eso, la voz está lista."
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La entrada de imágenes no está configurada para este modelo."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La entrada de imágenes no está configurada para este modelo."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Área de carga de imagen"
@@ -4483,6 +4492,10 @@ msgstr "Envía <0>{linkCode}</0> a la línea desde tu app de chat en un plazo de
 msgid "Send answer"
 msgstr "Enviar respuesta"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Enviar como archivo"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Enviar código de eliminación"
@@ -4970,6 +4983,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "esta Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Este modelo no puede leer imágenes. Elige un modelo que admita imágenes."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Este modelo no puede leer imágenes. Elige un modelo que admita imágenes."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

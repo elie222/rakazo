@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  isImageInputConfirmation,
   isModelRequiredSendError,
+  MODEL_IMAGE_INPUT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
   normalizeRunError,
 } from "./run-error.js";
@@ -302,4 +304,21 @@ describe("isModelRequiredSendError", () => {
   ])("rejects unrelated values: %s", (error) => {
     expect(isModelRequiredSendError(error)).toBe(false);
   });
+});
+
+it("normalizes the shared image rejection with model recovery", () => {
+  const translate = (message: string) => `translated:${message}`;
+  expect(normalizeRunError(MODEL_IMAGE_INPUT_ERROR, translate)).toMatchObject({
+    summary: `translated:${MODEL_IMAGE_INPUT_ERROR}`,
+    recovery: "model",
+    kind: "model",
+  });
+});
+
+it("requires structured server metadata before offering file confirmation", () => {
+  expect(
+    isImageInputConfirmation({ status: 409, data: { reason: "model_image_input_unsupported" } }),
+  ).toBe(true);
+  expect(isImageInputConfirmation({ status: 409, message: MODEL_IMAGE_INPUT_ERROR })).toBe(false);
+  expect(isImageInputConfirmation(MODEL_IMAGE_INPUT_ERROR)).toBe(false);
 });

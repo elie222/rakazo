@@ -1,4 +1,9 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Not sent · Tap for options": "未发送 · 轻点查看选项",
+  "Image input is not configured for this model.": "此模型尚未配置图片输入。",
+  "Send as file": "作为文件发送",
+  "This model cannot read images. Choose a model that supports images.":
+    "此模型无法读取图片。请选择支持图片的模型。",
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API 密钥",
   "Show password": "显示密码",

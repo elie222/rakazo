@@ -262,6 +262,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("image"),
+    /** Explicit visual input requested by a confirmation-aware client. */
+    imageHandling: z.literal("confirm").optional(),
     artifactId: Id,
     mimeType: z.string(),
     name: z.string(),

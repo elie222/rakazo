@@ -2780,6 +2780,15 @@ msgstr "Bunu duyduysan ses hazır."
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Görüntü yükleme alanı"
@@ -4483,6 +4492,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Yanıtı gönder"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Dosya olarak gönder"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Silme kodu gönder"
@@ -4970,6 +4983,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "bu Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

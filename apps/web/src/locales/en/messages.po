@@ -2780,6 +2780,15 @@ msgstr "If you heard that, voice is ready."
 msgid "Ignore"
 msgstr "Ignore"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Image upload area"
@@ -4483,6 +4492,10 @@ msgstr "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes.
 msgid "Send answer"
 msgstr "Send answer"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Send as file"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Send deletion code"
@@ -4970,6 +4983,15 @@ msgstr "This file is not valid UTF-8 text."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "this Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"

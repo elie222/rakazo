@@ -8,6 +8,7 @@ import { translateRunError } from "../../lib/run-error";
 
 export function ComposerError({
   sendError,
+  onSendAsFile,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -16,6 +17,7 @@ export function ComposerError({
   textareaRef,
 }: {
   sendError: string | null;
+  onSendAsFile?: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -83,6 +85,13 @@ export function ComposerError({
             ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
             : null))
         )}
+        {sendError && onSendAsFile ? (
+          <button
+            type="button"
+            className="ml-2 underline underline-offset-2"
+            onClick={onSendAsFile}
+          >{t`Send as file`}</button>
+        ) : null}
         {!sendError && runError ? (
           <details key={runError} className="mt-1">
             <summary className="w-fit cursor-pointer">{t`Details`}</summary>

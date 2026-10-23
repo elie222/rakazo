@@ -606,3 +606,57 @@ it("hides call dictation until the server enables it", () => {
   renderComposer(vi.fn().mockResolvedValue(true));
   expect(container?.querySelector('button[aria-label="Hold to talk"]')).toBeNull();
 });
+
+it("shows file confirmation only for a recognized server response", () => {
+  renderComposer(async () => false, {
+    sendError: "This model cannot read images. Choose a model that supports images.",
+  });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(false);
+  rerenderComposer({ imageConfirmation: true });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(true);
+});
+
+it("never carries file confirmation into a later run error after send error dismissal", () => {
+  renderComposer(async () => false, {
+    sendError: "Image input is not configured for this model.",
+    imageConfirmation: true,
+  });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(true);
+  rerenderComposer({ sendError: null, runError: "Another failure", runErrorId: "later-run" });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(false);
+});
+
+it("invalidates confirmation on user text, attachment removal and replacement only", async () => {
+  const onDraftEdited = vi.fn();
+  const attachment = { id: "attachment", file: new File(["old"], "old.txt"), threadKey: "bot-1" };
+  const textarea = renderComposer(async () => false, {
+    onDraftEdited,
+    pendingAttachments: [attachment],
+  });
+  type(textarea, "edited");
+  expect(onDraftEdited).toHaveBeenCalledTimes(1);
+  act(() => container!.querySelector<HTMLButtonElement>('[aria-label="Remove old.txt"]')!.click());
+  expect(onDraftEdited).toHaveBeenCalledTimes(2);
+  pickAttachment();
+  expect(onDraftEdited).toHaveBeenCalledTimes(3);
+  onDraftEdited.mockClear();
+  await act(async () => pressEnter(textarea));
+  expect(textarea.value).toBe("edited");
+  expect(onDraftEdited).not.toHaveBeenCalled();
+});

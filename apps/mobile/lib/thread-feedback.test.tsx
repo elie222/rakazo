@@ -224,6 +224,123 @@ describe("scoped mobile outbox", () => {
       request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
     ).toEqual(["First", "Second"]);
   });
+  it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(
+        Object.assign(
+          new Error("This model cannot read images. Choose a model that supports images."),
+          { status: 409 },
+        ),
+      );
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    expect(attempt.payload.attachments).toHaveLength(1);
+    expect(attempt.artifactIds.size).toBe(1);
+    expect(container.textContent).toContain("Not sent · Tap to retry");
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends).toHaveLength(2);
+    expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
+  });
+  it.each(["ios", "android"])(
+    "offers explicit file confirmation on %s and reuses the original upload",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request
+        .mockResolvedValueOnce({ id: "artifact-a" })
+        .mockRejectedValueOnce(
+          Object.assign(
+            new Error("This model cannot read images. Choose a model that supports images."),
+            { status: 409, data: { reason: "model_image_input_unsupported" } },
+          ),
+        );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      expect(attempt.imageConfirmation).toBe(true);
+      expect(container.textContent).toContain("Not sent · Tap for options");
+      act(() =>
+        container
+          .querySelector("button")!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+      );
+      if (os === "ios") {
+        const [options, choose] = vi
+          .mocked(ActionSheetIOS.showActionSheetWithOptions)
+          .mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
+        await act(async () => {
+          choose(0);
+        });
+      } else {
+        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+        expect(buttons.map(({ text }) => text)).toEqual(["Send as file", "Delete", "Cancel"]);
+        await act(async () => {
+          buttons[0]!.onPress?.();
+        });
+      }
+      expect(attempt.imageHandling).toBe("file");
+      await act(async () => {
+        await feedback.send(attempt, true);
+      });
+      const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+      expect(sends.at(-1)?.[1]).toEqual({ ...sends[0]?.[1], imageHandling: "file" });
+      expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+      Platform.OS = "ios";
+    },
+  );
+
+  it.each(["ios", "android"])(
+    "opens discoverable file and retry choices on tap (%s)",
+    async (os) => {
+      Platform.OS = os as typeof Platform.OS;
+      const attempt = feedback.sendAttempt(payload());
+      request.mockResolvedValueOnce({ id: "artifact-a" }).mockRejectedValueOnce(
+        Object.assign(new Error("Image input is not configured for this model."), {
+          status: 409,
+          data: { reason: "model_image_input_unsupported" },
+        }),
+      );
+      await act(async () => {
+        await feedback.send(attempt);
+      });
+      act(() => container.querySelector("button")!.click());
+      if (os === "ios") {
+        const [options, choose] = vi
+          .mocked(ActionSheetIOS.showActionSheetWithOptions)
+          .mock.calls.at(-1)!;
+        expect(options.options).toEqual(["Send as file", "Try Again", "Cancel"]);
+        act(() => choose(1));
+      } else {
+        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+        expect(buttons.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
+        act(() => buttons[1]!.onPress?.());
+      }
+      expect(retry).toHaveBeenCalledOnce();
+      expect(attempt.imageHandling).toBeUndefined();
+      Platform.OS = "ios";
+    },
+  );
+  it("does not offer new confirmation for an older server's unstructured error", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(Object.assign(new Error("Conflict"), { status: 409 }));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.imageConfirmation).toBe(false);
+    expect(attempt.state).toBe("failed");
+  });
   it("drops late failures and further uploads after a session wipe", async () => {
     let finish!: (value: { id: string }) => void;
     request.mockImplementation(
