@@ -275,15 +275,19 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   return next;
 }
 
-// Interval-shaped schedules recur from the scheduled fire, not from cron field
-// boundaries. Creation/editing still uses nextCronDate for the initial anchor.
+// Uneven interval steps recur from the scheduled fire instead of resetting at
+// cron field boundaries. Even steps keep cron's local wall-clock positions.
+// Creation/editing still uses nextCronDate for the initial anchor.
 export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
   const from = new Date(Math.max(anchor.getTime(), now.getTime()));
   const preset = presetFromCron(cron);
   if (
     cron.trim().split(/\s+/).length !== 5 ||
     preset.freq !== "Interval" ||
-    preset.n > CRON_INTERVAL_MAX[preset.unit]
+    preset.n > CRON_INTERVAL_MAX[preset.unit] ||
+    (preset.unit === "minutes" && 60 % preset.n === 0) ||
+    (preset.unit === "hours" && 24 % preset.n === 0) ||
+    (preset.unit === "days" && preset.n === 1)
   ) {
     return nextCronDate(cron, from, timezone);
   }
@@ -315,30 +319,36 @@ export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezo
   return next;
 }
 
-// Wakeup-only tolerant variant: keep the earliest anchored recurrence, skipping
-// one-shot and malformed schedules just as nextCronDateAcross does.
+// The shared anchor belongs to an interval only with one recurring schedule.
+// Multiple schedules keep cron matches because their individual anchors are
+// unknown. Skip one-shot and malformed schedules as nextCronDateAcross does.
 export function nextRoutineRunDateAcross(
   crons: string[],
   anchor: Date,
   now: Date,
   timezone = "UTC",
 ): Date | null {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const recurring: string[] = [];
   let earliest: Date | null = null;
   for (const cron of crons) {
     if (isOneShotRoutineCron(cron)) continue;
     let next: Date;
     try {
-      next = nextRoutineRunDate(cron, anchor, now, timezone);
+      next = nextCronDate(cron, from, timezone);
     } catch {
       continue;
     }
+    recurring.push(cron);
     if (!earliest || next < earliest) earliest = next;
   }
+  const onlyCron = recurring.length === 1 ? recurring[0] : undefined;
+  if (onlyCron) return nextRoutineRunDate(onlyCron, anchor, now, timezone);
   return earliest;
 }
 
 // Nearest next calendar match, ignoring one-shot and malformed schedules.
-// Routine wakeups use nextRoutineRunDateAcross to preserve interval phase.
+// Routine wakeups use nextRoutineRunDateAcross to preserve single-interval phase.
 // Anything persisting crons must reject malformed input instead — see
 // nextCronDateAcrossStrict.
 export function nextCronDateAcross(crons: string[], from: Date, timezone = "UTC"): Date | null {
