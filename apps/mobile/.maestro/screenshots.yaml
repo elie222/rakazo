@@ -110,6 +110,11 @@ tags:
     timeout: 10000
 - assertNotVisible: "Active model"
 - takeScreenshot: "11-models"
+- tapOn: "Thinking"
+- assertVisible: "Medium"
+- takeScreenshot: "11a-thinking-menu"
+- back
+- assertNotVisible: "Medium"
 - scrollUntilVisible:
     element: "Advanced"
     direction: DOWN
@@ -179,6 +184,9 @@ tags:
 - assertVisible: "Speak message"
 - takeScreenshot: "15b-message-actions"
 - back
+# Settle the keyboard inset before measuring the next message target.
+- hideKeyboard
+- waitForAnimationToEnd
 # User messages omit Speak.
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"

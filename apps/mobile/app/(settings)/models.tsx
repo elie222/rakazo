@@ -1077,16 +1077,18 @@ export default function Models() {
                 disabled={busy}
                 onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
               >
-                <SettingsRow
-                  title={t("Reasoning effort")}
-                  value={reasoningEffortValue}
-                  chevron="down"
-                  accessibilityRole="button"
-                  accessible
-                  accessibilityLabel={t("Reasoning effort")}
-                  accessibilityState={{ disabled: busy }}
-                  accessibilityValue={{ text: reasoningEffortValue }}
-                />
+                <View>
+                  <SettingsRow
+                    title={t("Reasoning effort")}
+                    value={reasoningEffortValue}
+                    chevron="down"
+                    accessibilityRole="button"
+                    accessible
+                    accessibilityLabel={t("Reasoning effort")}
+                    accessibilityState={{ disabled: busy }}
+                    accessibilityValue={{ text: reasoningEffortValue }}
+                  />
+                </View>
               </MenuPickerMenu>
             ) : null}
             <View style={[styles.modelRow, styles.singleRow]}>
@@ -1363,16 +1365,18 @@ export default function Models() {
               disabled={busy}
               onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
             >
-              <SettingsRow
-                title={t("Thinking")}
-                value={reasoningEffortValue}
-                chevron="down"
-                accessibilityRole="button"
-                accessible
-                accessibilityLabel={t("Thinking")}
-                accessibilityState={{ disabled: busy }}
-                accessibilityValue={{ text: reasoningEffortValue }}
-              />
+              <View>
+                <SettingsRow
+                  title={t("Thinking")}
+                  value={reasoningEffortValue}
+                  chevron="down"
+                  accessibilityRole="button"
+                  accessible
+                  accessibilityLabel={t("Thinking")}
+                  accessibilityState={{ disabled: busy }}
+                  accessibilityValue={{ text: reasoningEffortValue }}
+                />
+              </View>
             </MenuPickerMenu>
           ) : null}
         </View>
