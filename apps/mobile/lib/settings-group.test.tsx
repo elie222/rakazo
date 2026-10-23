@@ -16,13 +16,18 @@ vi.mock("react-native", () => {
     accessible?: boolean;
     accessibilityLabel?: string;
     accessibilityElementsHidden?: boolean;
+    accessibilityRole?: string;
+    accessibilityValue?: { text?: string };
+    accessibilityState?: { disabled?: boolean };
   }) {
     return createElement(
       "div",
       {
-        role: props.accessible ? "group" : undefined,
+        role: props.accessible ? (props.accessibilityRole ?? "group") : undefined,
         "aria-label": props.accessibilityLabel,
         "aria-hidden": props.accessibilityElementsHidden ? "true" : undefined,
+        "aria-valuetext": props.accessibilityValue?.text,
+        "aria-disabled": props.accessibilityState?.disabled,
         "data-style": JSON.stringify(props.style ?? null),
       },
       props.children,
@@ -133,6 +138,24 @@ function separators(container: HTMLElement) {
 }
 
 describe("settings group", () => {
+  it("preserves the value and disabled state when a native menu owns the row action", () => {
+    const view = render(
+      <SettingsRow
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Thinking"
+        accessibilityValue={{ text: "High" }}
+        accessibilityState={{ disabled: true }}
+        title="Thinking"
+        value="High"
+      />,
+    );
+    const row = view.querySelector('[aria-label="Thinking"]');
+    expect(row?.getAttribute("role")).toBe("button");
+    expect(row?.getAttribute("aria-valuetext")).toBe("High");
+    expect(row?.getAttribute("aria-disabled")).toBe("true");
+  });
+
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
