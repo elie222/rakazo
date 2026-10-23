@@ -1,18 +1,17 @@
-import {
-  OLLAMA_CLOUD_BASE_URL,
-  OLLAMA_CLOUD_KEY_CHECK_URL,
-  OLLAMA_CLOUD_PROVIDER_ID,
-} from "@rakazo/adapters";
-
-/** Providers whose catalog is public, so their key is checked on a separate endpoint. */
+/**
+ * Providers whose catalog is public, so their key is checked on a separate
+ * endpoint. Literal URLs, mirroring the table in the adapters package: the test
+ * harness imports this file before the Prisma client exists, and importing
+ * `@rakazo/adapters` here would load the database client too early.
+ */
 const KEY_CHECK_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1/key",
-  [OLLAMA_CLOUD_PROVIDER_ID]: OLLAMA_CLOUD_KEY_CHECK_URL,
+  "ollama-cloud": "https://ollama.com/api/balance",
 };
 
 const MODELS_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1/models",
-  [OLLAMA_CLOUD_PROVIDER_ID]: `${OLLAMA_CLOUD_BASE_URL}/models`,
+  "ollama-cloud": "https://ollama.com/v1/models",
 };
 
 /** Offline provider HTTP; the public catalogs deliberately accept rejected keys. */
