@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /** Synthetic eval transport evidence, after SDK serialization. No prompt or request identifiers. */
 export type DiagnosticWireObservation = {
   request: number;
@@ -6,6 +8,8 @@ export type DiagnosticWireObservation = {
   results?: Array<{
     position: number;
     bytes: number;
+    /** SHA-256 of the result as sent, so a rewrite shows without retaining text. */
+    contentDigest: string;
     jsonValid: boolean;
     cursor?: string;
     segment?: number;
@@ -108,6 +112,7 @@ export function diagnosticWireFetch(
                 results.push({
                   position: results.length + 1,
                   bytes: Buffer.byteLength(message.content),
+                  contentDigest: createHash("sha256").update(message.content).digest("hex"),
                   jsonValid: valid,
                   ...(calls.get(message.tool_call_id)
                     ? { cursor: calls.get(message.tool_call_id) }
@@ -138,18 +143,5 @@ export function diagnosticWireFetch(
       if (observation) observations.push(observation);
     }
     return upstream(input, init);
-  };
-}
-
-/** CLI owns one synthetic workflow at a time; restore even when startup or cleanup throws. */
-export function installDiagnosticWireObserver(
-  modelId: string,
-  observations: DiagnosticWireObservation[],
-) {
-  const prior = globalThis.fetch;
-  const wrapped = diagnosticWireFetch(prior, modelId, observations);
-  globalThis.fetch = wrapped;
-  return () => {
-    if (globalThis.fetch === wrapped) globalThis.fetch = prior;
   };
 }

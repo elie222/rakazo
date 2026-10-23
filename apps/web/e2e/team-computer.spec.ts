@@ -1,9 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
+  expandAdvancedSection,
   realSandboxTimeout,
   rpc,
   signup,
@@ -22,7 +24,9 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
   const chiefId = activeBotId(page);
 
   await openComputerPanel(page);
-  await expect(page.getByText("Team Computer", { exact: true }).last()).toBeVisible();
+  await expect(
+    page.getByTestId("side-panel").getByText("Chief's screen", { exact: true }),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "41-team-computer");
 
   const writerId = await createBot(page, "Writer", "team");
@@ -91,7 +95,7 @@ test("user control leaves another Team bot's screen available", async ({ page },
   const workerId = await createBot(page, "Worker", "team");
 
   await openBot(page, "Chief");
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
@@ -130,7 +134,7 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
-test("opening and releasing the computer keep a view-only stream with maintenance available", async ({
+test("opening and releasing the computer keep a view-only stream; a failed release can be retried", async ({
   page,
 }, testInfo) => {
   await signup(page, `view-only-${Date.now()}@rakazo.test`, "password12", "Computer");
@@ -147,6 +151,8 @@ test("opening and releasing the computer keep a view-only stream with maintenanc
   const take = chrome.getByRole("button", { name: "Take control", exact: true });
   const release = chrome.getByRole("button", { name: "Release control", exact: true });
   const more = chrome.getByRole("button", { name: "More computer actions" });
+  // The overlay covers the conversation header, which drags the desktop window.
+  await expect(chrome).toHaveCSS("-webkit-app-region", "no-drag");
   const checkViewOnly = async () => {
     await expect(take).toBeVisible();
     await expect(release).toHaveCount(0);
@@ -174,19 +180,9 @@ test("opening and releasing the computer keep a view-only stream with maintenanc
   await checkViewOnly();
   expect(takeovers).toBe(1);
   await captureScreenshot(page, testInfo, "computer-released-view-only");
-  await chrome.getByRole("button", { name: "Close computer" }).click();
-  await expect(chrome).toBeHidden();
-});
 
-test("a failed control release keeps the computer open for retry", async ({ page }, testInfo) => {
-  await signup(page, `team-release-${Date.now()}@rakazo.test`, "password12", "Team Release");
-  await completeOnboarding(page);
-  await page.getByTitle("Agent computer").click();
-  await page.getByTestId("computer-preview").hover();
-  await page.getByTestId("computer-preview-open").click();
-  const chrome = page.getByTestId("computer-chrome");
-  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
-  const release = chrome.getByRole("button", { name: "Release control", exact: true });
+  // A release that fails keeps the computer open so it can be retried.
+  await take.click();
   await expect(release).toBeVisible();
   await page.route("**/rpc/computer/release", (route) =>
     route.fulfill({ status: 500, body: "release unavailable" }),
@@ -197,8 +193,9 @@ test("a failed control release keeps the computer open for retry", async ({ page
   await captureScreenshot(page, testInfo, "48-team-computer-release-retry");
   await page.unroute("**/rpc/computer/release");
   await release.click();
-  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(take).toBeVisible();
+  await chrome.getByRole("button", { name: "Close computer" }).click();
+  await expect(chrome).toBeHidden();
 });
 
 test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
@@ -241,7 +238,7 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     .poll(async () => (await threadSnapshot(page, chiefId)).run?.status ?? "idle")
     .toBe("running");
 
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel.getByRole("button", { name: /Take control/i })).toHaveCount(0);
   await page.getByTestId("computer-preview").hover();
@@ -298,11 +295,11 @@ async function setComputerMode(
 ) {
   await page.getByRole("button", { name: botName, exact: true }).last().click();
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.locator("label:has-text('Name') input")).toHaveValue(botName);
+  await expect(settings.getByRole("button", { name: "Edit name", exact: true })).toHaveText(
+    botName,
+  );
   const advanced = settings.getByTestId("bot-settings-advanced");
-  await advanced.evaluate((element) => {
-    (element as HTMLDetailsElement).open = true;
-  });
+  await expandAdvancedSection(advanced);
   await settings
     .getByRole("button", { name: mode === "team" ? "Team" : "Private", exact: true })
     .click();
@@ -324,7 +321,7 @@ async function openBot(page: Page, name: string) {
 }
 
 async function openComputerPanel(page: Page) {
-  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   await expect(page.getByTestId("computer-preview")).toBeVisible();
   await expect(page.getByTestId("computer-preview-open")).toHaveCount(1);
 }

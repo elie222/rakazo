@@ -30,6 +30,9 @@ export interface InfisicalSecretStoreOptions {
 }
 type RestResult = { accessToken?: string; expiresIn?: number; secret?: { secretValue?: string } };
 type CacheEntry = { value: string; expires: number; timer: ReturnType<typeof setTimeout> };
+const SECRETS_PATH = "/api/v4/secrets";
+// Infisical rate limits per 60s window; a longer wait is the caller's retry, not ours.
+const MAX_RETRY_AFTER_MS = 5_000;
 
 /** Targeted REST reads only: no plaintext folder snapshot. */
 export class InfisicalSecretStore extends SecretChanges implements SecretStore {
@@ -69,8 +72,14 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
   async start(): Promise<void> {
     try {
       await this.authenticate();
-    } catch {
+      // Reading an absent key fails differently when the project, environment or folder is missing.
+      await this.request(`${SECRETS_PATH}/rakazo_start_check?${this.readQuery()}`, "GET");
+    } catch (error) {
+      if (error instanceof SecretNotFoundError) return;
       this.degraded = true;
+      getLogger().warn("Infisical secret storage is unreachable or misconfigured", {
+        status: error instanceof SecretStoreUnavailableError ? error.status : undefined,
+      });
     }
   }
   async close(): Promise<void> {
@@ -138,11 +147,18 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
   }
   private scope() {
     return {
-      workspaceId: this.options.projectId,
+      projectId: this.options.projectId,
       environment: this.options.environment,
       secretPath: this.options.folder,
       type: "shared",
     };
+  }
+  private readQuery(): URLSearchParams {
+    return new URLSearchParams({
+      ...this.scope(),
+      expandSecretReferences: "false",
+      includeImports: "false",
+    });
   }
   async put(
     plaintext: string,
@@ -156,7 +172,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     const ref = INFISICAL_REF_PREFIX + key;
     try {
       await this.request(
-        `/api/v3/secrets/raw/${key}`,
+        `${SECRETS_PATH}/${key}`,
         "POST",
         { ...this.scope(), secretValue: plaintext },
         context.signal,
@@ -207,18 +223,13 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
   }
   private async loadFresh(ref: string, context: SecretContext): Promise<string> {
     const key = this.key(ref, context);
-    const query = new URLSearchParams({
-      ...this.scope(),
-      expandSecretReferences: "false",
-      includeImports: "false",
-    });
     const read = { invalidated: false };
     const reads = this.reads.get(ref) ?? new Set<{ invalidated: boolean }>();
     reads.add(read);
     this.reads.set(ref, reads);
     let value: string;
     try {
-      const result = await this.request(`/api/v3/secrets/raw/${key}?${query}`, "GET");
+      const result = await this.request(`${SECRETS_PATH}/${key}?${this.readQuery()}`, "GET");
       if (typeof result?.secret?.secretValue !== "string") {
         this.degraded = true;
         throw new SecretStoreUnavailableError();
@@ -240,7 +251,7 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     const key = this.key(ref, context);
     try {
       await this.request(
-        `/api/v3/secrets/raw/${key}`,
+        `${SECRETS_PATH}/${key}`,
         "DELETE",
         this.scope(),
         typeof context === "string" ? undefined : context.signal,
@@ -353,13 +364,19 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
           signal,
         });
         if (response.status === 404 && token !== undefined) {
-          await response.body?.cancel();
+          // A missing project, environment or folder is also a 404, and that is misconfiguration.
+          const { message } = (await response.json().catch(() => ({}))) as { message?: unknown };
+          if (typeof message !== "string" || !/^Secret\b.*\bnot found$/.test(message))
+            throw new SecretStoreUnavailableError(404);
           this.degraded = false;
           throw new SecretNotFoundError();
         }
         if ((response.status === 429 || response.status >= 500) && attempt < 2) {
           await response.body?.cancel();
-          await this.pause(100 * 2 ** attempt, signal);
+          const wait =
+            retryAfterMs(response.headers.get("retry-after"), this.now()) ?? 100 * 2 ** attempt;
+          if (wait > MAX_RETRY_AFTER_MS) throw new SecretStoreUnavailableError(response.status);
+          await this.pause(wait, signal);
           continue;
         }
         if (!response.ok) {
@@ -383,4 +400,12 @@ export class InfisicalSecretStore extends SecretChanges implements SecretStore {
     }
     throw new SecretStoreUnavailableError();
   }
+}
+
+function retryAfterMs(header: string | null, now: number): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - now);
 }

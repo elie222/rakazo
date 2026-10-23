@@ -1,5 +1,4 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   DurableMemoryScope,
@@ -9,15 +8,16 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
-import { isCloudMetadataHost, isLocalMcpHost } from "@rakazo/contracts";
-import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
-import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
-import { isPrivateRemoteMcpHostname } from "./remote-mcp.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import {
+  assertLocalServiceBaseUrlSync,
+  LocalServiceHost,
+  parseServiceBaseUrl,
+  pinLocalServiceHost,
+} from "./local-service-endpoint.js";
+import type { ResolveHostname } from "./network-address.js";
 import type { SupermemoryConnectionConfig } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,
-  parseSupermemoryBaseUrl,
   probeSupermemory,
   SUPERMEMORY_CLOUD_BASE_URL,
   saveSupermemoryMemoryToContainers,
@@ -27,87 +27,8 @@ import {
 export const SUPERMEMORY_PROVIDER_ID = "supermemory";
 export { SUPERMEMORY_CLOUD_BASE_URL };
 
-const LOCAL_NETWORK_ERROR = "Local mode requires a loopback or private-network address.";
-const BLOCKED_TARGET_ERROR = "Local mode cannot target a blocked address.";
-
-const defaultResolveHostname: ResolveHostname = (hostname) =>
-  lookup(hostname, { all: true, verbatim: true });
-
-export function supermemoryRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+export function supermemoryRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
   return settings.mode === "local";
-}
-
-function hostnameOf(url: URL): string {
-  return url.hostname
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "")
-    .toLowerCase();
-}
-
-function isBlockedSupermemoryHost(host: string): boolean {
-  if (isCloudMetadataHost(host)) return true;
-  return isIP(host) !== 0 && (isCloudMetadataAddress(host) || isLinkLocalAddress(host));
-}
-
-function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
-  if (
-    addresses.some(
-      (entry) => isCloudMetadataAddress(entry.address) || isLinkLocalAddress(entry.address),
-    )
-  ) {
-    throw new Error(BLOCKED_TARGET_ERROR);
-  }
-  if (addresses.length === 0 || addresses.some((entry) => !isPrivateAddress(entry.address))) {
-    throw new Error(LOCAL_NETWORK_ERROR);
-  }
-}
-
-/** Literals and metadata names. Hostnames are classified by assertSupermemoryLocalBaseUrl. */
-function assertSupermemoryLocalBaseUrlSync(baseUrl: string): void {
-  const host = hostnameOf(parseSupermemoryBaseUrl(baseUrl));
-  if (isBlockedSupermemoryHost(host)) throw new Error(BLOCKED_TARGET_ERROR);
-  if (isLocalMcpHost(host) || isPrivateRemoteMcpHostname(host)) return;
-  if (isIP(host) !== 0) throw new Error(LOCAL_NETWORK_ERROR);
-}
-
-/**
- * Local mode accepts loopback or a private-network host (Compose DNS, RFC1918, LAN suffixes).
- * Public hosts stay rejected. Private hosts require deployment-owner authorization.
- * Returns the pinned addresses for a hostname, or undefined when the host needs no DNS pin.
- */
-async function pinSupermemoryPrivateHost(
-  baseUrl: string,
-  options: {
-    allowPrivateEndpoint?: boolean;
-    resolveHostname?: ResolveHostname;
-  } = {},
-): Promise<ResolvedAddress[] | undefined> {
-  assertSupermemoryLocalBaseUrlSync(baseUrl);
-  const host = hostnameOf(parseSupermemoryBaseUrl(baseUrl));
-  if (isLocalMcpHost(host)) return undefined;
-  if (options.allowPrivateEndpoint !== true) {
-    throw new MemoryProviderDeploymentOwnerRequiredError();
-  }
-  if (isIP(host) !== 0) return undefined;
-  const resolve = options.resolveHostname ?? defaultResolveHostname;
-  let addresses: ResolvedAddress[];
-  try {
-    addresses = await resolve(host);
-  } catch {
-    throw new Error(LOCAL_NETWORK_ERROR);
-  }
-  assertPrivateLanAddresses(addresses);
-  return addresses.map((entry) => ({ address: entry.address, family: entry.family }));
-}
-
-export async function assertSupermemoryLocalBaseUrl(
-  baseUrl: string,
-  options: {
-    allowPrivateEndpoint?: boolean;
-    resolveHostname?: ResolveHostname;
-  } = {},
-): Promise<void> {
-  await pinSupermemoryPrivateHost(baseUrl, options);
 }
 
 function isSupermemoryCloudBaseUrl(baseUrl: string): boolean {
@@ -136,8 +57,14 @@ function parseSupermemoryConnection(
   if (apiKey.length < 8) throw new Error("apiKey must contain at least 8 characters");
   const baseUrl =
     mode === "cloud" ? SUPERMEMORY_CLOUD_BASE_URL : requiredValue(settings, "baseUrl");
-  if (mode === "local") assertSupermemoryLocalBaseUrlSync(baseUrl);
-  parseSupermemoryBaseUrl(baseUrl);
+  if (mode === "local") {
+    // The cloud origin takes the unpinned cloud transport, so it cannot be a local endpoint.
+    if (isSupermemoryCloudBaseUrl(baseUrl)) {
+      throw new Error("Local mode cannot use the Supermemory Cloud URL.");
+    }
+    assertLocalServiceBaseUrlSync(baseUrl);
+  }
+  parseServiceBaseUrl(baseUrl);
   return { mode, baseUrl, apiKey };
 }
 
@@ -152,15 +79,23 @@ export async function prepareSupermemoryConnection(
 ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
   const { mode, baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
   const pinnedAddresses =
-    mode === "local" ? await pinSupermemoryPrivateHost(baseUrl, options) : undefined;
-  const probe = await probeSupermemory({
+    mode === "local" ? await pinLocalServiceHost(baseUrl, options) : undefined;
+  const connection: SupermemoryConnectionConfig = {
     baseUrl,
     apiKey,
     resolveHostname: options?.resolveHostname,
     fetch: options?.fetch,
     ...(pinnedAddresses ? { pinnedAddresses } : {}),
-  });
+  };
+  const probe = await probeSupermemory(connection);
   if (!probe.ok) throw new Error(probe.error);
+  // Clearing a conversation deletes its memory, which only owner and admin keys may do.
+  // Deleting a fresh random tag checks that without touching anyone's data.
+  const deletable = await deleteSupermemoryContainer(
+    `rakazo:delete-probe:${randomUUID()}`,
+    connection,
+  );
+  if (!deletable.ok) throw new Error(deletable.error);
   return { settings: { mode, baseUrl }, credentials: { apiKey } };
 }
 
@@ -197,39 +132,20 @@ function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: stri
 }
 
 export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
-  private pinnedAddresses?: ResolvedAddress[];
-  private hostReady = false;
-  private pinTask?: Promise<void>;
+  private readonly localHost?: LocalServiceHost;
 
-  constructor(private readonly connection: SupermemoryConnectionConfig) {}
-
-  private async localBaseUrlBlock(): Promise<string | null> {
-    if (isSupermemoryCloudBaseUrl(this.connection.baseUrl)) return null;
-    // One successful check per provider. Repeating it would let a DNS blip block
-    // a host this provider already reached, and multi-tag recall would redo it.
-    if (this.hostReady) return null;
-    this.pinTask ??= this.resolvePin();
-    try {
-      await this.pinTask;
-      this.hostReady = true;
-      return null;
-    } catch (error) {
-      this.pinTask = undefined;
-      return error instanceof Error ? error.message : BLOCKED_TARGET_ERROR;
+  constructor(private readonly connection: SupermemoryConnectionConfig) {
+    if (!isSupermemoryCloudBaseUrl(connection.baseUrl)) {
+      this.localHost = new LocalServiceHost(connection.baseUrl, connection.resolveHostname);
     }
   }
 
-  private async resolvePin(): Promise<void> {
-    const pinned = await pinSupermemoryPrivateHost(this.connection.baseUrl, {
-      allowPrivateEndpoint: true,
-      resolveHostname: this.connection.resolveHostname,
-    });
-    if (pinned) this.pinnedAddresses = pinned;
+  private localBaseUrlBlock(): Promise<string | null> {
+    return this.localHost?.block() ?? Promise.resolve(null);
   }
 
   private connectionForRequest(): SupermemoryConnectionConfig {
-    if (!this.pinnedAddresses) return this.connection;
-    return { ...this.connection, pinnedAddresses: this.pinnedAddresses };
+    return this.localHost?.withPin(this.connection) ?? this.connection;
   }
 
   describe() {
@@ -250,6 +166,8 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     request: SemanticMemoryRecallRequest,
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>> {
+    // Supermemory rejects an empty search query.
+    if (!request.query.trim()) return { ok: true, value: [] };
     const blocked = await this.localBaseUrlBlock();
     if (blocked) return { ok: false, error: blocked };
     const result = await searchSupermemoryContainers(

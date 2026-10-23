@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import {
   McpSession,
+  McpStdioLaunchError,
   secureFetch,
   validateUrl,
   withEndpointOriginFallback,
@@ -54,6 +55,48 @@ describe("MCP transport seam", () => {
     assert.ok(true);
   });
 
+  it("explains a stdio process that exits with the tail of its stderr", async () => {
+    const session = new McpSession();
+    const error = await session
+      .connectStdio({
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.stderr.write('\\u001b[31mnoise\\u001b[0m\\n'.repeat(500)); console.error('sh: gmail-mcp: not found'); process.exit(127)",
+        ],
+        allowedCommands: [process.execPath],
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(McpStdioLaunchError);
+    const launch = error as McpStdioLaunchError;
+    expect(launch.message).toMatch(
+      /Connection closed[\s\S]*stderr: [\s\S]*sh: gmail-mcp: not found$/,
+    );
+    expect(launch.stderr).not.toContain("\u001b");
+    expect(launch.stderr.length).toBeLessThanOrEqual(4_096);
+    await session.close();
+  });
+
+  it("launches only package bins that Rakazo installed", async () => {
+    const session = new McpSession();
+    await expect(
+      session.connectStdio({
+        command: "npx",
+        allowedCommands: ["npx"],
+        installedBin: { binPath: process.execPath },
+      }),
+    ).rejects.toThrow("not installed by Rakazo");
+    // The launcher itself must still be allowlisted.
+    await expect(
+      session.connectStdio({
+        command: "npx",
+        allowedCommands: [],
+        installedBin: { binPath: process.execPath },
+      }),
+    ).rejects.toThrow("allowlist");
+    await session.close();
+  });
+
   it("rejects remote endpoints that resolve to a private address", async () => {
     const fetchImpl = vi.fn();
     const session = new McpSession();
@@ -76,6 +119,73 @@ describe("MCP transport seam", () => {
     await expect(session.listTools()).rejects.toThrow("not connected");
     await expect(session.callTool("echo")).rejects.toThrow("not connected");
   });
+
+  it.each([
+    [
+      "follows every cursor",
+      3,
+      2,
+      ["page0-tool0", "page0-tool1", "page1-tool0", "page1-tool1", "page2-tool0", "page2-tool1"],
+      3,
+    ],
+    ["stops at the tool cap", 3, 100, 250, 3],
+    ["stops at the page cap of a server that never ends", Number.POSITIVE_INFINITY, 1, 20, 20],
+  ] as const)(
+    "lists paginated tools: %s",
+    async (_name, pages, perPage, expected, requestedPages) => {
+      const cursors: Array<string | undefined> = [];
+      const session = new McpSession();
+      try {
+        await session.connectRemote({
+          url: "https://mcp.example.test/mcp",
+          network: {
+            ...TEST_NETWORK,
+            fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const request = new Request(input, init);
+              if (request.method !== "POST") return new Response(null, { status: 405 });
+              const message = await request.json();
+              if (message.method === "initialize") {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  result: {
+                    protocolVersion: "2025-11-25",
+                    capabilities: { tools: {} },
+                    serverInfo: { name: "paginated", version: "1" },
+                  },
+                });
+              }
+              if (message.method !== "tools/list") return new Response(null, { status: 202 });
+              const cursor: string | undefined = message.params?.cursor;
+              cursors.push(cursor);
+              const page = cursor ? Number(cursor.replace("page-", "")) : 0;
+              return Response.json({
+                jsonrpc: "2.0",
+                id: message.id,
+                result: {
+                  tools: Array.from({ length: perPage }, (_, index) => ({
+                    name: `page${page}-tool${index}`,
+                    inputSchema: { type: "object" },
+                  })),
+                  ...(page + 1 < pages ? { nextCursor: `page-${page + 1}` } : {}),
+                },
+              });
+            }),
+          },
+        });
+
+        const names = (await session.listTools()).tools.map((tool) => tool.name);
+
+        if (typeof expected === "number") expect(names).toHaveLength(expected);
+        else expect(names).toEqual(expected);
+        expect(cursors).toHaveLength(requestedPages);
+        expect(cursors[0]).toBeUndefined();
+        expect(cursors[1]).toBe("page-1");
+      } finally {
+        await session.close();
+      }
+    },
+  );
 
   it("preserves SDK session and protocol headers after stateful initialization", async () => {
     const requests: Request[] = [];

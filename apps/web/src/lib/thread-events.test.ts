@@ -4,15 +4,14 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { withLiveStreamingProgress } from "@rakazo/core";
+import { answerableAskMessageIds, withLiveStreamingProgress } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
   clearActiveThreadRuns,
-  computerPanelAutoBoot,
-  computerPanelAutoUsesBoot,
   computerPanelNeedsMaintenance,
+  computerPanelNeedsScreen,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -42,6 +41,24 @@ describe("thread event reduction", () => {
     });
     expect(next?.activeRuns).toEqual([next?.run]);
     expect(next?.messages).toBe(initial.messages);
+  });
+
+  it("keeps a private card answerable through a new send receipt and run start", () => {
+    const paused = { ...threadRun("paused"), status: "waiting_input" as const };
+    const ask = {
+      ...message("ask", [{ kind: "ask", text: "Which city?", status: "pending" }], 1),
+      runId: paused.id,
+    };
+    const initial = { ...snapshot([ask]), run: paused, activeRuns: [paused] };
+    const receipt = applyThreadSendReceipt(initial, {
+      botId: "bot-1",
+      runId: "new",
+      taskId: "task-new",
+    });
+    expect(receipt?.activeRuns?.map((run) => run.id)).toEqual(["paused", "new"]);
+    const started = reduceThreadSnapshot(receipt, event({ type: "run.started", runId: "new" }));
+    expect(answerableAskMessageIds(started)).toEqual(new Set(["ask"]));
+    expect(started?.activeRuns?.map((run) => run.id)).toEqual(["paused", "new"]);
   });
 
   it("does not replace authoritative active or group run state with a send receipt", () => {
@@ -1712,25 +1729,19 @@ describe("computer event reduction", () => {
     });
   });
 
-  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
-    expect(computerPanelAutoBoot("stopped")).toBe("boot");
-    expect(computerPanelAutoBoot("error")).toBe("boot");
-    expect(computerPanelAutoBoot(undefined)).toBe("boot");
-    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
-    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
-    expect(computerPanelAutoBoot("booting")).toBe("wait");
-    expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  it("only reconnects a running computer whose screen has no URL", () => {
+    expect(computerPanelNeedsScreen("running", null)).toBe(true);
+    expect(computerPanelNeedsScreen("running", "https://screen.example")).toBe(false);
+    expect(computerPanelNeedsScreen("stopped")).toBe(false);
+    expect(computerPanelNeedsScreen("error")).toBe(false);
+    expect(computerPanelNeedsScreen(undefined)).toBe(false);
+    expect(computerPanelNeedsScreen("booting")).toBe(false);
+    expect(computerPanelNeedsScreen("suspended")).toBe(false);
   });
 
-  it("maps recover-screen to computer.boot, not computer.recover", () => {
-    expect(computerPanelAutoUsesBoot("recover-screen")).toBe(true);
-    expect(computerPanelAutoUsesBoot("boot")).toBe(true);
-    expect(computerPanelAutoUsesBoot("wait")).toBe(false);
-  });
-
-  it("shows maintenance only after a stopped or errored computer finishes booting", () => {
+  it("shows maintenance only for an errored computer that is not booting", () => {
     expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
-    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(true);
+    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
     expect(computerPanelNeedsMaintenance("error", true)).toBe(false);
     expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
     expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
@@ -1740,7 +1751,7 @@ describe("computer event reduction", () => {
     const panel = "computer";
     const booting = false;
     const showInSidePanel = (computerOpen: boolean) =>
-      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("stopped", booting);
+      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("error", booting);
 
     expect(showInSidePanel(false)).toBe(true);
     expect(showInSidePanel(true)).toBe(false);
@@ -1822,3 +1833,47 @@ function event(overrides: Partial<ProductEvent>): ProductEvent {
     ...overrides,
   };
 }
+
+describe("stale helper projection", () => {
+  it.each([
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+  ] as const)("settles helpers on %s without reviving them on resume", (type) => {
+    const base = {
+      id: "fixture",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
+    let next = reduceThreadSnapshot(
+      snapshot([]),
+      event({ ...base, type: "thread.subagent", payload: helper }),
+    );
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 2, type, payload: {} }));
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+      result: "stopped",
+    });
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 3, type: "run.started", payload: {} }));
+    next = reduceThreadSnapshot(
+      next,
+      event({
+        ...base,
+        seq: 4,
+        type: "thread.subagent",
+        payload: { ...helper, agentId: "resumed" },
+      }),
+    );
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+    });
+    expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
+      status: "running",
+    });
+  });
+});

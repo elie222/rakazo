@@ -244,3 +244,15 @@ describe("strip and connector intent", () => {
     expect(routineScheduleSubtitle(["0 9 * * 1-5"], "Chief")).toContain("Chief");
   });
 });
+
+it("searches the readable fallback when a mention name is opaque", () => {
+  expect(
+    buildComposerMentionOptions({
+      query: "bot",
+      bots: [{ id: "bot-1", name: "__TestTok1__" }],
+      groups: [],
+      routines: [],
+      connectors: [],
+    }),
+  ).toEqual([{ kind: "bot", id: "bot-1", name: "Bot", subtitle: "Bot", color: undefined }]);
+});

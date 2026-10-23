@@ -9,6 +9,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
   const endpointId = useId();
   const endpointErrorId = useId();
   const tokenId = useId();
+  const writesLabelId = useId();
   const brainLabelId = useId();
   const [endpoint, setEndpoint] = useState("");
   const [endpointError, setEndpointError] = useState<SerenityEndpointFieldError | null>(null);
@@ -29,7 +30,7 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
 
   return (
     <>
-      <Field className="mt-1" data-invalid={endpointError ? true : undefined}>
+      <Field className="mt-4" data-invalid={endpointError ? true : undefined}>
         <FieldLabel htmlFor={endpointId}>
           <Trans>MCP endpoint</Trans>
         </FieldLabel>
@@ -83,35 +84,34 @@ export function SerenitySettingsForm({ busy, onConnect }: MemoryProviderSettings
         />
       </Field>
 
-      <div className="mt-4 text-[13.5px] text-muted-foreground">
-        <Trans>Allow writing</Trans>
-        <div className="mt-2 flex gap-2">
+      <Field className="mt-4" aria-labelledby={writesLabelId}>
+        <FieldLabel id={writesLabelId}>
+          <Trans>Allow writing</Trans>
+        </FieldLabel>
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
           <Toggle
-            variant="outline"
             pressed={!allowWrites}
             disabled={busy}
             onPressedChange={() => setAllowWrites(false)}
-            className="flex-1 font-normal text-muted-foreground aria-pressed:text-foreground"
+            className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             <Trans>Recall only</Trans>
           </Toggle>
           <Toggle
-            variant="outline"
             pressed={allowWrites}
             disabled={busy}
             onPressedChange={() => setAllowWrites(true)}
-            className="flex-1 font-normal text-muted-foreground aria-pressed:text-foreground"
+            className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
           >
             <Trans>Recall and write</Trans>
           </Toggle>
         </div>
-      </div>
+      </Field>
 
       <Button
         type="button"
         variant="secondary"
         className="mt-5 rounded-full"
-        size="sm"
         disabled={busy || token.trim().length < 8}
         onClick={() => void connect()}
       >

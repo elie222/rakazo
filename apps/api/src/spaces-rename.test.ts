@@ -41,7 +41,15 @@ function renameHarness(target: TargetSpace, currentOrganizationId: string | null
   const transaction = vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
     callback(tx),
   );
-  const prisma = { $transaction: transaction } as unknown as PrismaClient;
+  const prisma = {
+    $transaction: transaction,
+    // The router checks membership before scoping the database to the target Space.
+    spaceMember: {
+      findFirst: vi.fn(async (args: { where: { spaceId: string } }) =>
+        tx.spaceMember.findUnique({ where: { spaceId_userId: { spaceId: args.where.spaceId } } }),
+      ),
+    },
+  } as unknown as PrismaClient;
   const deps = {
     prisma,
     env: {

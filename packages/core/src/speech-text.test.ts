@@ -137,6 +137,7 @@ describe("narrateTool", () => {
     expect(narrateTool("browser_snapshot")).toBe("using the page");
     expect(narrateTool("write_file")).toBe("writing a file");
     expect(narrateTool("run_subagent")).toBe("starting a subagent");
+    expect(narrateTool("list_fleet")).toBe("checking your bots");
     expect(narrateTool("create_group")).toBe("creating a group");
     expect(narrateTool("update_group")).toBe("updating a group");
     expect(narrateTool("set_child_instructions")).toBe("rewriting a bot's instructions");

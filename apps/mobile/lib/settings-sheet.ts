@@ -1,9 +1,12 @@
+import type { Href } from "expo-router";
+
 // On iOS a screen opened on the root stack while the settings sheet is open is presented as a
 // second sheet over it, so navigation that leaves settings closes the sheet first.
 let closeSheet: (() => void) | null = null;
 
 // The pages in app/(settings). A link to one of them opens inside the sheet.
 const settingsScreens = new Set([
+  "billing",
   "account",
   "ai-data-sharing",
   "archived-bots",
@@ -42,6 +45,12 @@ export function settingsSheetCloser(sheet: SheetNavigation): () => void {
 /** Closes the settings sheet if one is open. */
 export function closeSettingsSheet() {
   closeSheet?.();
+}
+
+/** Opens a root route after dismissing settings, matching navigation from archived chats. */
+export function openFromSettingsSheet(router: { push(href: Href): void }, href: Href): void {
+  closeSettingsSheet();
+  router.push(href);
 }
 
 /** The screen a link (`rakazo:///models`, `rakazo://models` or `/models`) opens. */

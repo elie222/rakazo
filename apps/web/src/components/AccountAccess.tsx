@@ -52,7 +52,7 @@ export function AccountAccess({
     }
   }
   return (
-    <div className="mt-3 space-y-3">
+    <div className="space-y-3">
       {security?.sso && !security.ssoLinked ? (
         <Button
           variant="outline"
@@ -76,7 +76,11 @@ export function AccountAccess({
           <Trans>Link SSO</Trans>
         </Button>
       ) : null}
-      <Button variant="ghost" onClick={() => setOpen((value) => !value)}>
+      <Button
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setOpen((value) => !value)}
+      >
         <Trans>Delete account</Trans>
       </Button>
       {open ? (

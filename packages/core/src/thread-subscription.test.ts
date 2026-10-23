@@ -46,13 +46,17 @@ function setup(committed: typeof head | null = head) {
     loadHead: vi.fn(async () => head as typeof head | null),
     refresh: vi.fn(async () => {}),
     currentSnapshot: () => state.committed,
-    subscribe: vi.fn(async (_cursor: number) => channel.events),
+    subscribe: vi.fn(async (_cursor: number, _signal: AbortSignal) => channel.events),
     applyEvent: vi.fn(),
     onEvent: vi.fn(),
   };
   return { abort, channel, state, callbacks };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("thread subscription recovery", () => {
   it("falls back to head with backoff and buffers until a snapshot commits", async () => {
@@ -66,7 +70,7 @@ describe("thread subscription recovery", () => {
     const running = runThreadSubscription(callbacks);
     await vi.advanceTimersByTimeAsync(250);
     expect(callbacks.loadHead).toHaveBeenCalledTimes(2);
-    expect(callbacks.subscribe).toHaveBeenCalledWith(10);
+    expect(callbacks.subscribe).toHaveBeenCalledWith(10, expect.any(AbortSignal));
     channel.send(event(11));
     await vi.advanceTimersByTimeAsync(0);
     channel.send(event(12));
@@ -86,6 +90,8 @@ describe("thread subscription recovery", () => {
     callbacks.subscribe.mockRejectedValueOnce(new Error("offline"));
     const running = runThreadSubscription(callbacks);
     await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe.mock.calls[0]?.[1].aborted).toBe(true);
+    expect(callbacks.subscribe.mock.calls[1]?.[1].aborted).toBe(false);
     channel.send(event(12));
     await vi.advanceTimersByTimeAsync(0);
     channel.send(event(11));
@@ -97,6 +103,58 @@ describe("thread subscription recovery", () => {
     expect(callbacks.onEvent).toHaveBeenLastCalledWith(event(11), head);
     abort.abort();
     channel.end();
+    await running;
+  });
+
+  it("stops reconnecting once the server rejects the session", async () => {
+    vi.useFakeTimers();
+    const { callbacks } = setup();
+    callbacks.subscribe.mockRejectedValue(
+      Object.assign(new Error("Unauthorized"), { status: 401 }),
+    );
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("stops retrying the head lookup once the server rejects the session", async () => {
+    vi.useFakeTimers();
+    const { callbacks } = setup(null);
+    callbacks.loadInitial.mockResolvedValue(null);
+    callbacks.loadHead.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.loadHead).toHaveBeenCalledTimes(1);
+    expect(callbacks.subscribe).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 404, 426])("stops reconnecting on a %i", async (status) => {
+    vi.useFakeTimers();
+    const { callbacks } = setup();
+    callbacks.subscribe.mockRejectedValue(Object.assign(new Error("Refused"), { status }));
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps reconnecting through server errors and waits as long as a 429 asks", async () => {
+    vi.useFakeTimers();
+    const { abort, callbacks } = setup();
+    callbacks.subscribe
+      .mockRejectedValueOnce(Object.assign(new Error("Unavailable"), { status: 503 }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Slow down"), { status: 429, retryAfterMs: 10_000 }),
+      )
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(3);
+    abort.abort();
     await running;
   });
 
@@ -167,6 +225,21 @@ describe("thread subscription recovery", () => {
     await running;
     expect(callbacks.subscribe).not.toHaveBeenCalled();
     expect(callbacks.loadHead).not.toHaveBeenCalled();
+  });
+
+  it("aborts the current transport and ignores a late frame after switching away", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    const transportSignal = callbacks.subscribe.mock.calls[0]?.[1];
+    abort.abort();
+    expect(transportSignal?.aborted).toBe(true);
+    channel.send(event(11));
+    await running;
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    expect(callbacks.onEvent).not.toHaveBeenCalled();
+    expect(callbacks.refresh).not.toHaveBeenCalled();
   });
 
   it("skips displaced-snapshot events while retaining effects and subsequent live updates", async () => {
@@ -240,5 +313,74 @@ describe("thread subscription recovery", () => {
     abort.abort();
     channel.end();
     await running;
+  });
+
+  it("aborts the silent transport before refreshing and opening its replacement", async () => {
+    vi.useFakeTimers();
+    const { abort, callbacks } = setup();
+    const signals: AbortSignal[] = [];
+    const abortedAtRefresh: boolean[] = [];
+    let openTransports = 0;
+    callbacks.subscribe.mockImplementation(async (_cursor, transportSignal) => {
+      // An async generator's return queues behind its pending read. Only aborting
+      // the request releases the socket, even when return has already been called.
+      const signal = transportSignal ?? abort.signal;
+      signals.push(signal);
+      openTransports += 1;
+      return (async function* () {
+        try {
+          yield heartbeat();
+          await new Promise<void>((resolve) => {
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          signal.throwIfAborted();
+          yield event(11);
+        } finally {
+          openTransports -= 1;
+        }
+      })();
+    });
+    callbacks.refresh.mockImplementation(async () => {
+      abortedAtRefresh.push(signals.at(-1)?.aborted === true);
+    });
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 250);
+      expect(signals[attempt]?.aborted).toBe(true);
+      expect(openTransports).toBe(1);
+      expect(abort.signal.aborted).toBe(false);
+    }
+    expect(new Set(signals).size).toBe(9);
+    expect(abortedAtRefresh).toEqual(Array(8).fill(true));
+    abort.abort();
+    await running;
+    expect(openTransports).toBe(0);
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+  });
+
+  it("forwards cancellation without AbortSignal.any and removes retired parent listeners", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    vi.stubGlobal("AbortSignal", { any: undefined });
+    const add = vi.spyOn(abort.signal, "addEventListener");
+    const remove = vi.spyOn(abort.signal, "removeEventListener");
+    const running = runThreadSubscription(callbacks);
+    void running.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+    const firstListener = add.mock.calls[0]?.[1];
+    channel.end();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith("abort", firstListener);
+    const currentSignal = callbacks.subscribe.mock.calls[1]?.[1];
+    const reason = new Error("switched thread");
+    abort.abort(reason);
+    expect(currentSignal?.aborted).toBe(true);
+    expect(currentSignal?.reason).toBe(reason);
+    channel.end();
+    await expect(running).resolves.toBeUndefined();
+    expect(add.mock.calls.length).toBe(remove.mock.calls.length);
   });
 });

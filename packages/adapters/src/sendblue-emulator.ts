@@ -1,8 +1,5 @@
-import type { Adapter } from "chat";
-import { SendblueAdapter } from "chat-adapter-sendblue";
-import SendblueAPI from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
-import { parseSendblueStatus } from "./messaging-platforms.js";
+import { messagingPlatformsFromEnv } from "./messaging-platforms.js";
 
 interface SentMessage {
   kind: "dm" | "group";
@@ -151,51 +148,20 @@ export class SendBlueEmulator {
 }
 
 /**
- * The production sendblue platform wired to the emulator: the real Chat SDK
- * adapter and official Sendblue SDK, with only the HTTP boundary swapped.
+ * The production sendblue platform wired to the emulator: the same
+ * messagingPlatformsFromEnv wiring, with only the HTTP boundary swapped.
  */
 export function createEmulatedSendbluePlatform(emulator: SendBlueEmulator): MessagingPlatform {
-  const adapter = new SendblueAdapter({
-    apiKey: "emulated-key",
-    apiSecret: "emulated-secret",
-    defaultFromNumber: emulator.phoneNumber,
-    webhookSecret: emulator.signingSecret,
-    allowedServices: ["iMessage", "SMS", "RCS"],
-  });
-  const sdk = new SendblueAPI({
-    apiKey: "emulated-key",
-    apiSecret: "emulated-secret",
-    baseURL: "https://api.sendblue.com",
-    fetch: emulator.fetch,
-  });
-  // The adapter builds its own SDK client without fetch injection; swap it
-  // for one that speaks to the emulator instead of the live vendor. Also
-  // supply the Adapter.isDM hook chat-adapter-sendblue@0.2.0 omits (chat@4.39
-  // derives thread.isDM solely from it), mirroring messagingPlatformsFromEnv.
-  Object.assign(adapter as unknown as Record<string, unknown>, { sdk });
-  Object.assign(adapter, {
-    isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-  } satisfies Pick<Adapter, "isDM">);
-  return {
-    provider: "sendblue",
-    capabilities: { direct: true, groups: true, receipt: "typing" },
-    adapter,
-    directThreadId: (address) =>
-      adapter.encodeThreadId({ fromNumber: emulator.phoneNumber, contactNumber: address }),
-    peekStatus: (payload) => parseSendblueStatus(payload),
-    participants: (raw) => {
-      const participants = (raw as { participants?: unknown }).participants;
-      return Array.isArray(participants)
-        ? participants.filter(
-            (entry): entry is string => typeof entry === "string" && entry !== emulator.phoneNumber,
-          )
-        : [];
+  const [platform] = messagingPlatformsFromEnv(
+    {
+      sendblueApiKeyId: "emulated-key",
+      sendblueApiSecret: "emulated-secret",
+      sendblueSigningSecret: emulator.signingSecret,
+      sendbluePhoneNumber: emulator.phoneNumber,
     },
-    channelName: (raw) => {
-      const name = (raw as { group_display_name?: unknown }).group_display_name;
-      return typeof name === "string" && name ? name : null;
-    },
-  };
+    { sendblueTransport: { baseURL: "https://api.sendblue.com", fetch: emulator.fetch } },
+  );
+  return platform!;
 }
 
 function parseBody(body: BodyInit | null | undefined): Record<string, unknown> {

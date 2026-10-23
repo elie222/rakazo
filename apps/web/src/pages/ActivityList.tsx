@@ -1,12 +1,22 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
-import { isAgedStuckWork } from "@rakazo/core";
-import { Button, Input, Label, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
+import { isAgedStuckWork, isRetryableError } from "@rakazo/core";
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  Input,
+  Label,
+  NativeSelect,
+  NativeSelectOption,
+  Spinner,
+} from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
   activityFiltersActive,
+  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,
@@ -25,15 +35,24 @@ export function statusTone(status: RunActivityRow["status"], updatedAt?: string)
 
 type ActivityListProps = {
   onOpenRun: (run: RunActivityRow) => void;
+  filters: ActivityListFilters;
+  onFiltersChange: (next: ActivityListFilters) => void;
+  filtersExpanded: boolean;
+  filtersId: string;
 };
 
-export function ActivityList({ onOpenRun }: ActivityListProps) {
+export function ActivityList({
+  onOpenRun,
+  filters,
+  onFiltersChange,
+  filtersExpanded,
+  filtersId,
+}: ActivityListProps) {
   const { t } = useLingui();
   const [activeRuns, setActiveRuns] = useState<RunActivityRow[]>([]);
   const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<ActivityListFilters>(emptyActivityFilters);
 
   const reloadRef = useRef<(() => void) | null>(null);
 
@@ -49,6 +68,7 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
         timer = undefined;
       }
       void (async () => {
+        let retry = true;
         try {
           const [active, recent] = await Promise.all([
             rpc.runs.list({ filter: "active" }),
@@ -59,12 +79,13 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
           setRecentRuns(recent.runs);
           setError(null);
         } catch (err) {
+          retry = isRetryableError(err);
           if (cancelled || requestId !== generation) return;
           setError(err instanceof Error ? err.message : t`Could not load activity`);
         } finally {
           if (!cancelled && requestId === generation) {
             setLoading(false);
-            timer = window.setTimeout(load, 15_000);
+            if (retry) timer = window.setTimeout(load, 15_000);
           }
         }
       })();
@@ -85,37 +106,30 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 
   const filteredActive = useMemo(
     () => filterActivityRuns(activeRuns, filters),
-    [activeRuns, filters],
+    [activeRuns, filters, t],
   );
   const filteredRecent = useMemo(
     () => filterActivityRuns(recentRuns, filters),
-    [recentRuns, filters],
+    [recentRuns, filters, t],
   );
 
   const filtersOn = activityFiltersActive(filters);
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
 
-  if (loading && !hasAnyRuns && !filtersOn) {
-    return (
-      <div className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
-        <Trans>Loading activity…</Trans>
-      </div>
-    );
-  }
-
-  if (!hasAnyRuns && !filtersOn) {
-    if (!error) return null;
-    return (
-      <div className="px-2.5 py-2" role="alert">
-        <ActivityError error={error} onRetry={() => reloadRef.current?.()} />
-      </div>
-    );
-  }
-
   return (
-    <div className="mb-2 border-b border-border pb-2" data-testid="activity-list">
-      <ActivityFilters filters={filters} onChange={setFilters} />
+    <div
+      className={
+        hasAnyRuns || filtersOn || filtersExpanded ? "mb-2 border-b border-border pb-2" : undefined
+      }
+      data-testid="activity-list"
+    >
+      <ActivityFilters
+        filters={filters}
+        onChange={onFiltersChange}
+        expanded={filtersExpanded}
+        id={filtersId}
+      />
 
       {error ? (
         <div className="px-2.5 pb-2" role="alert">
@@ -124,8 +138,8 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
       ) : null}
 
       {loading && !hasAnyRuns ? (
-        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
-          <Trans>Loading activity…</Trans>
+        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80">
+          <Spinner aria-label={t`Loading activity…`} />
         </p>
       ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
         <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
@@ -205,12 +219,15 @@ function ActivityError({
 function ActivityFilters({
   filters,
   onChange,
+  expanded,
+  id,
 }: {
+  expanded: boolean;
+  id: string;
   filters: ActivityListFilters;
   onChange: (next: ActivityListFilters) => void;
 }) {
   const { t } = useLingui();
-  const searchId = useId();
   const statusId = useId();
   const fromId = useId();
   const toId = useId();
@@ -218,86 +235,77 @@ function ActivityFilters({
   const statusLabelText = filters.status === "all" ? null : statusLabel(filters.status);
 
   return (
-    <div className="mb-2 flex flex-col gap-2 px-2.5 pt-1">
-      <div>
-        <Label htmlFor={searchId} className="sr-only">
-          <Trans>Search activity</Trans>
-        </Label>
-        <Input
-          id={searchId}
-          data-testid="activity-search"
-          value={filters.query}
-          onChange={(event) => onChange({ ...filters, query: event.target.value })}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") onChange(clearActivityFilterField(filters, "query"));
-          }}
-          placeholder={t`Search runs`}
-          autoComplete="off"
-          className="rounded-xl bg-card text-[13px] dark:bg-input"
-        />
-      </div>
-      <div>
-        <Label htmlFor={statusId} className="text-[12.5px] text-muted-foreground/80">
-          <Trans>Status</Trans>
-        </Label>
-        <NativeSelect
-          id={statusId}
-          data-testid="activity-status-filter"
-          value={filters.status}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              status: event.target.value as ActivityListFilters["status"],
-            })
-          }
-          className="mt-1 w-full"
-        >
-          <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
-          {STATUS_FILTERS.map((status) => (
-            <NativeSelectOption key={status} value={status}>
-              {statusLabel(status)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      </div>
-      <div>
-        <Label htmlFor={fromId} className="text-[12.5px] text-muted-foreground/80">
-          <Trans>From</Trans>
-        </Label>
-        <Input
-          id={fromId}
-          data-testid="activity-date-from"
-          type="date"
-          value={filters.dateRange.from}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              dateRange: { ...filters.dateRange, from: event.target.value },
-            })
-          }
-          className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
-        />
-      </div>
-      <div>
-        <Label htmlFor={toId} className="text-[12.5px] text-muted-foreground/80">
-          <Trans>To</Trans>
-        </Label>
-        <Input
-          id={toId}
-          data-testid="activity-date-to"
-          type="date"
-          value={filters.dateRange.to}
-          onChange={(event) =>
-            onChange({
-              ...filters,
-              dateRange: { ...filters.dateRange, to: event.target.value },
-            })
-          }
-          className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
-        />
-      </div>
+    <div className="flex flex-col">
+      <Collapsible open={expanded} className="contents">
+        <CollapsibleContent id={id} keepMounted className="flex flex-col">
+          <div className="space-y-2 pt-1 pb-2">
+            <div>
+              <Label htmlFor={statusId} className="text-[12.5px] text-muted-foreground/80">
+                <Trans>Status</Trans>
+              </Label>
+              <NativeSelect
+                id={statusId}
+                data-testid="activity-status-filter"
+                value={filters.status}
+                onChange={(event) =>
+                  onChange({
+                    ...filters,
+                    status: event.target.value as ActivityListFilters["status"],
+                  })
+                }
+                className="mt-1 w-full"
+              >
+                <NativeSelectOption value="all">{t`All statuses`}</NativeSelectOption>
+                {STATUS_FILTERS.map((status) => (
+                  <NativeSelectOption key={status} value={status}>
+                    {statusLabel(status)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="min-w-0">
+                <Label htmlFor={fromId} className="text-[12.5px] text-muted-foreground/80">
+                  <Trans>From</Trans>
+                </Label>
+                <Input
+                  id={fromId}
+                  data-testid="activity-date-from"
+                  type="date"
+                  value={filters.dateRange.from}
+                  onChange={(event) =>
+                    onChange({
+                      ...filters,
+                      dateRange: { ...filters.dateRange, from: event.target.value },
+                    })
+                  }
+                  className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
+                />
+              </div>
+              <div className="min-w-0">
+                <Label htmlFor={toId} className="text-[12.5px] text-muted-foreground/80">
+                  <Trans>To</Trans>
+                </Label>
+                <Input
+                  id={toId}
+                  data-testid="activity-date-to"
+                  type="date"
+                  value={filters.dateRange.to}
+                  onChange={(event) =>
+                    onChange({
+                      ...filters,
+                      dateRange: { ...filters.dateRange, to: event.target.value },
+                    })
+                  }
+                  className="mt-1 rounded-xl bg-card text-[13px] dark:bg-input"
+                />
+              </div>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
       {filtersOn ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 pt-1">
           {filters.query.trim() ? (
             <FilterChip
               label={t`Search: ${filters.query.trim()}`}
@@ -359,6 +367,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
   const tone = statusTone(run.status, run.updatedAt);
+  const preview = activityPreview(run);
   return (
     <button
       type="button"
@@ -378,9 +387,9 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
           </span>
         </div>
         <div className="mt-0.5 flex items-baseline gap-2">
-          {run.promptSnippet ? (
+          {preview ? (
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-              {run.promptSnippet}
+              {preview}
             </span>
           ) : null}
           <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>

@@ -3,7 +3,7 @@ import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
 import { useI18n } from "../lib/i18n";
@@ -62,7 +62,7 @@ export function ComputerUpdateProgress() {
               style={styles.pill}
               fallbackStyle={[
                 styles.pillFallback,
-                { backgroundColor: tokens.card, borderColor: tokens.border },
+                { backgroundColor: tokens.glassFill, borderColor: tokens.glassStroke },
               ]}
             >
               {!computerUpdateNeedsAttention(update) ? (
@@ -126,35 +126,6 @@ export function ComputerUpdateProgress() {
               <Text accessibilityRole="alert" style={{ color: tokens.destructive }}>
                 {t("Could not complete action")}
               </Text>
-            ) : null}
-            {selected.status === "interrupted" && selected.canReleaseReservation ? (
-              <NativeActionButton
-                label={t("Release computer")}
-                prominence="secondary"
-                fill
-                busy={busy}
-                onPress={() =>
-                  Alert.alert(
-                    t("Release interrupted computer?"),
-                    t("Make sure nothing is still running on this computer."),
-                    [
-                      { text: t("Cancel"), style: "cancel" },
-                      {
-                        text: t("Nothing is still running"),
-                        style: "destructive",
-                        onPress: () => {
-                          setBusy(true);
-                          setError(false);
-                          void computerUpdates
-                            .releaseInterrupted(selected.id)
-                            .catch(() => setError(true))
-                            .finally(() => setBusy(false));
-                        },
-                      },
-                    ],
-                  )
-                }
-              />
             ) : null}
             {selected.status === "failed" ? (
               <NativeActionButton

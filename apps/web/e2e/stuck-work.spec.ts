@@ -96,9 +96,10 @@ test("aged queued work is marked and an expired wait leaves a status line", asyn
               groupName: null,
               threadId: "thread-aged",
               status: "queued",
-              trigger: "user",
+              trigger: "bot_message",
               notificationsEnabled: true,
-              promptSnippet: "finish the report",
+              // Older servers send only the composed English preview.
+              promptSnippet: "Maya asked: finish the report",
               updatedAt: agedAt,
             },
           ]
@@ -113,10 +114,13 @@ test("aged queued work is marked and an expired wait leaves a status line", asyn
   await activityToggle.click();
   await page.reload();
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Loading activity…")).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: "Loading activity…" })).toBeHidden({
+    timeout: 20_000,
+  });
   const row = activityRow(page, "Chief");
   await expect(row).toBeVisible({ timeout: 20_000 });
   await expect(row).toContainText("2d ago");
+  await expect(row).toContainText("Maya asked: finish the report");
   await expect(row.locator(".text-warning").filter({ hasText: "Queued" })).toBeVisible();
   await captureActivitySidebar(page, testInfo, "stuck-queued-activity");
 

@@ -16,8 +16,11 @@ esac
 readonly DOWNLOAD_BASE
 
 readonly COMPOSE_FILE="docker-compose.images.yml"
+# Optional operator overlay, layered after the base file the way Compose itself does by default.
+readonly OVERRIDE_FILE="docker-compose.override.yml"
 readonly ENV_EXAMPLE=".env.images.example"
 readonly ENV_FILE=".env"
+readonly EGRESS_SCRIPT="restrict-computer-egress.sh"
 
 prepare_only=false
 skip_existing=false
@@ -211,6 +214,7 @@ download() {
 }
 
 create_env() {
+  local generated_encryption_key=false
   umask 077
   temporary_file=$(mktemp "./${ENV_FILE}.tmp.XXXXXX")
 
@@ -219,11 +223,15 @@ create_env() {
       "POSTGRES_PASSWORD=")
         printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
         ;;
+      "POSTGRES_APP_PASSWORD=")
+        printf 'POSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+        ;;
       "BETTER_AUTH_SECRET=")
         printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -hex 32)"
         ;;
       "ENCRYPTION_KEY=")
         printf 'ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)"
+        generated_encryption_key=true
         ;;
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
@@ -241,12 +249,27 @@ create_env() {
   mv -- "$temporary_file" "$ENV_FILE"
   temporary_file=""
   echo "Created .env with random secrets."
+  # Name the variable and file only: the key itself never reaches the terminal or its logs.
+  if [[ "$generated_encryption_key" == true ]]; then
+    echo "Back up ENCRYPTION_KEY from ${PWD}/${ENV_FILE}. Encrypted content cannot be recovered without it."
+  fi
+}
+
+# Secrets added after a .env was created. Append them so an upgrade still starts,
+# leaving every existing line untouched.
+add_missing_secrets() {
+  if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' "$ENV_FILE"; then
+    [[ ! -s "$ENV_FILE" || -z "$(tail -c 1 "$ENV_FILE")" ]] || printf '\n' >> "$ENV_FILE"
+    printf 'POSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> "$ENV_FILE"
+    echo "Added POSTGRES_APP_PASSWORD to .env."
+  fi
 }
 
 validate_required_secrets() {
-  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f - config --environment <<'YAML' | awk '
+  if ! docker compose --env-file "$ENV_FILE" "${compose_files[@]}" -f - config --environment <<'YAML' | awk '
     BEGIN {
       required["POSTGRES_PASSWORD"] = 1
+      required["POSTGRES_APP_PASSWORD"] = 1
       required["BETTER_AUTH_SECRET"] = 1
       required["ENCRYPTION_KEY"] = 1
       required["SCREEN_PROXY_SECRET"] = 1
@@ -273,6 +296,7 @@ services:
   api:
     environment:
       _RAKAZO_VALIDATE_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      _RAKAZO_VALIDATE_POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}
       _RAKAZO_VALIDATE_BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
       _RAKAZO_VALIDATE_ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
       _RAKAZO_VALIDATE_SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
@@ -283,27 +307,89 @@ YAML
   fi
 }
 
+# The Compose file passes each container only the settings it names. Say which .env settings it
+# does not name, such as TELEGRAM_BOT_TOKEN_<NAME>, rather than let an upgrade drop them silently.
+warn_unpassed_settings() {
+  local key unpassed=""
+  while IFS= read -r key; do
+    [[ "$key" == COMPOSE_* ]] || grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
+  done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
+  [[ -n "$unpassed" ]] || return 0
+  echo "Warning: no container receives these .env settings:${unpassed}." >&2
+  echo "List them in an override file; see Settings with names you choose in docs/self-host.md." >&2
+}
+
+# Why this host cannot take the restricted-egress firewall rules; empty when it can.
+egress_rules_unsupported() {
+  local os security
+  [[ "$(uname -s)" == Linux ]] || { echo "Docker runs in a VM on this OS"; return; }
+  os=$(docker info --format '{{.OperatingSystem}}' 2>/dev/null) || { echo "docker info failed"; return; }
+  [[ "$os" != *"Docker Desktop"* ]] || { echo "Docker Desktop keeps its networks in a VM"; return; }
+  security=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null) || security=""
+  [[ "$security" != *rootless* ]] || { echo "rootless Docker"; return; }
+  command -v iptables >/dev/null 2>&1 || echo "iptables is not installed"
+}
+
+# Compose defaults computers to restricted egress, which only works once the host
+# rules are in place. Install them where possible; otherwise record open explicitly
+# so computers keep working, and say what that leaves reachable.
+configure_computer_egress() {
+  local reason
+  # Compose takes the shell value over .env, so either one is the operator's choice.
+  if [[ -n "${SANDBOX_COMPUTER_EGRESS:-}" ]] ||
+    grep -Eq '^[[:space:]]*SANDBOX_COMPUTER_EGRESS=' "$ENV_FILE"; then
+    return 0
+  fi
+  reason=$(egress_rules_unsupported)
+  if [[ -z "$reason" ]] && ! (trap cleanup EXIT; download "$EGRESS_SCRIPT"); then
+    reason="$EGRESS_SCRIPT could not be downloaded"
+  fi
+  if [[ -z "$reason" ]]; then
+    echo "Restricting bot computer egress; installing host firewall rules needs root."
+    if bash "./$EGRESS_SCRIPT"; then
+      printf '\nSANDBOX_COMPUTER_EGRESS=restricted\n' >>"$ENV_FILE"
+      return 0
+    fi
+    reason="the host firewall rules could not be installed"
+  fi
+  printf '\nSANDBOX_COMPUTER_EGRESS=open\n' >>"$ENV_FILE"
+  echo "Warning: bot computers can reach this host, its LAN and cloud metadata ($reason)." >&2
+  echo "See Restricted computer egress in docs/self-host.md." >&2
+}
+
 download "$COMPOSE_FILE"
 download "$ENV_EXAMPLE"
 
+compose_files=(-f "$COMPOSE_FILE")
+override_present=""
+if [[ -f "$OVERRIDE_FILE" ]]; then
+  compose_files+=(-f "$OVERRIDE_FILE")
+  override_present=1
+  echo "Using ${OVERRIDE_FILE}."
+fi
+
 if [[ -e "$ENV_FILE" ]]; then
   echo "Keeping existing .env."
+  add_missing_secrets
 else
   create_env
 fi
 
 validate_required_secrets
+warn_unpassed_settings
 
 if [[ "$prepare_only" == true ]]; then
   echo "Rakazo files are ready. Edit .env, then run: bash install-images.sh"
   exit 0
 fi
 
+configure_computer_egress
+
 prepare_proxy_env
 if [[ "$pull_never" == true ]]; then
   echo "Skipping image pull (--pull-never / --offline); images must already be on this Docker host."
 else
-  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull; then
+  if ! docker compose --env-file "$ENV_FILE" "${compose_files[@]}" pull; then
     fail "could not pull images. Shell HTTP_PROXY often does not reach the Docker daemon. Configure daemon proxy/registry-mirrors, set image env vars to a reachable registry, or preload images then compose up with --pull never."
   fi
 fi
@@ -321,9 +407,9 @@ fi
 # bash 3.2 + set -u: "${arr[@]}" aborts when arr is empty.
 if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
   echo "Waiting for healthy services."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"} --wait --wait-timeout 300
+  docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"} --wait --wait-timeout 300
 else
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
+  docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
 
 echo "Rakazo is starting at http://127.0.0.1:5173"

@@ -51,9 +51,10 @@ test("instruction proposals support edit, approval, undo and mandatory human app
     timeout: 30_000,
   });
   await page.getByTestId("bot-settings-trigger").click();
-  await page.getByTestId("bot-settings-advanced").getByText("Advanced", { exact: true }).click();
-  await expect(page.getByText("Instruction history", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Instruction history", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Restore", exact: true }).first()).toBeVisible();
   await captureScreenshot(page, testInfo, "instruction-settings-history");
+  await page.keyboard.press("Escape");
   const saved = (await rpc<{ instructions: string }>(page, "bots/get", { botId })).instructions;
   const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
   await instructions.fill("Unsaved draft");

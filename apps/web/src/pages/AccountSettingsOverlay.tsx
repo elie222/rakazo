@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity } from "@rakazo/contracts";
+import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakazo/core";
 import {
-  BotAvatar,
   Button,
   Field,
   FieldLabel,
@@ -9,19 +9,21 @@ import {
   Label,
   NativeSelect,
   NativeSelectOption,
+  OptionSelect,
   Switch,
-  Toggle,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
 import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
-import { Link } from "react-router-dom";
 import { AccountAccess } from "../components/AccountAccess";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
-import { ListboxSelect } from "../components/ListboxSelect";
-import { SoftwareUpdateSection } from "../components/SoftwareUpdateSection";
+import { PasskeySettings } from "../components/PasskeySettings";
 import { authClient } from "../lib/auth";
+import type { BotsSidebarDensity } from "../lib/bots-sidebar-density-pref";
 import {
   getBotsSidebarDensity,
   setBotsSidebarDensity,
@@ -55,28 +57,23 @@ import { authErrorText } from "../lib/user-error";
 export type SettingsGeneralProps = {
   email?: string | null;
   name: string;
-  avatarStyle: AvatarStyle;
-  onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
-  isDeploymentOwner?: boolean;
 };
 
 export function GeneralSettingsPanels({
   email,
   name,
-  avatarStyle,
-  onAvatarStyleChange,
   timezone = null,
   onTimezoneChange,
   messagingEnabled = false,
   onOpenMessaging,
-  isDeploymentOwner = false,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
+  const account = accountDisplay({ name, email }, t`You`);
   const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const localeRequestRef = useRef(0);
@@ -107,8 +104,6 @@ export function GeneralSettingsPanels({
     () => getRemoteImagesPreference() === "on",
   );
   const loadRemoteImagesId = useId();
-  const [avatarPending, setAvatarPending] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const timezoneId = useId();
   const [timezonePending, setTimezonePending] = useState(false);
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
@@ -122,19 +117,6 @@ export function GeneralSettingsPanels({
       if (requestId !== localeRequestRef.current) return;
       setLocale(activated);
     });
-  }
-
-  async function chooseAvatarStyle(next: AvatarStyle) {
-    if (avatarPending || next === avatarStyle) return;
-    setAvatarPending(true);
-    setAvatarError(null);
-    try {
-      await onAvatarStyleChange(next);
-    } catch {
-      setAvatarError(t`Couldn't update avatars`);
-    } finally {
-      setAvatarPending(false);
-    }
   }
 
   async function chooseTimezone(next: string) {
@@ -156,14 +138,17 @@ export function GeneralSettingsPanels({
         <h3 className="text-[15px] font-medium text-foreground">
           <Trans>Account</Trans>
         </h3>
-        <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
-        {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
-        <AccountAccess onSecurity={setAccountSecurity} />
+        <p className="mt-3 text-[14px] text-foreground/75">{account.label}</p>
+        {email && account.label !== email ? (
+          <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p>
+        ) : null}
       </section>
 
       {accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false ? (
         <ChangePasswordSection email={email} />
       ) : null}
+
+      <PasskeySettings />
 
       {messagingEnabled && onOpenMessaging ? (
         <section className="rounded-xl border border-border px-4 py-4">
@@ -191,28 +176,31 @@ export function GeneralSettingsPanels({
           <span id={sidebarDensityLabelId} className="text-[13px] text-foreground/75">
             <Trans>Sidebar density</Trans>
           </span>
-          <fieldset
+          <ToggleGroup
             aria-labelledby={sidebarDensityLabelId}
             data-testid="bots-sidebar-density-select"
-            className="grid min-w-0 grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+            value={[sidebarDensity]}
+            onValueChange={([next]) => {
+              if (next) setBotsSidebarDensity(next as BotsSidebarDensity);
+            }}
+            spacing={1}
+            className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
           >
-            <Toggle
+            <ToggleGroupItem
+              value="comfortable"
               data-testid="bots-sidebar-density-comfortable"
-              pressed={sidebarDensity === "comfortable"}
-              onPressedChange={() => setBotsSidebarDensity("comfortable")}
               className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               <Trans>Comfortable</Trans>
-            </Toggle>
-            <Toggle
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="compact"
               data-testid="bots-sidebar-density-compact"
-              pressed={sidebarDensity === "compact"}
-              onPressedChange={() => setBotsSidebarDensity("compact")}
               className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
             >
               <Trans>Compact</Trans>
-            </Toggle>
-          </fieldset>
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </section>
 
@@ -267,56 +255,12 @@ export function GeneralSettingsPanels({
         </section>
       ) : null}
 
-      <section
-        className="rounded-xl border border-border px-4 py-4"
-        data-testid="avatar-style-select"
+      <Disclosure
+        data-testid="advanced-settings"
+        className="group rounded-xl border border-border"
+        summary={<Trans>Advanced</Trans>}
+        summaryClassName="w-full flex items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75"
       >
-        <h3 className="text-[15px] font-medium text-foreground">
-          <Trans>Avatars</Trans>
-        </h3>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {(["robot", "organic"] as const).map((style) => (
-            <Toggle
-              key={style}
-              variant="outline"
-              pressed={style === avatarStyle}
-              disabled={avatarPending}
-              onPressedChange={() => void chooseAvatarStyle(style)}
-              data-testid={`avatar-style-${style}`}
-              className="h-auto justify-start gap-3 px-3.5 py-3 text-[14px] font-normal"
-            >
-              <BotAvatar
-                color="#D9508A"
-                identity="avatar-style-preview"
-                size={32}
-                variant={style}
-              />
-              <span>{style === "robot" ? <Trans>Robot</Trans> : <Trans>Organic</Trans>}</span>
-            </Toggle>
-          ))}
-        </div>
-        {avatarError ? (
-          <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-            {avatarError}
-          </p>
-        ) : null}
-      </section>
-
-      {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
-          <Trans>Server integrations</Trans>
-        </Button>
-      ) : null}
-
-      <details data-testid="advanced-settings" className="group rounded-xl border border-border">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 text-[14px] text-foreground/75">
-          <span className="block text-[15px] text-foreground">
-            <Trans>Advanced</Trans>
-          </span>
-          <span aria-hidden="true" className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
         <div className="border-t border-border px-4 pb-5">
           <div className="flex items-start gap-3 pt-5">
             <Switch
@@ -382,7 +326,9 @@ export function GeneralSettingsPanels({
             </Label>
           </div>
         </div>
-      </details>
+      </Disclosure>
+
+      <AccountAccess onSecurity={setAccountSecurity} />
     </div>
   );
 }
@@ -450,15 +396,10 @@ export function ComputerSettingsPanel({
   );
 }
 
-export function UpdatesSettingsPanel({
-  isDeploymentOwner = false,
-}: {
-  isDeploymentOwner?: boolean;
-}) {
+export function UpdatesSettingsPanel() {
   return (
     <div className="space-y-5">
       <DesktopUpdateSection />
-      <SoftwareUpdateSection isDeploymentOwner={isDeploymentOwner} />
     </div>
   );
 }
@@ -545,7 +486,7 @@ function ChangePasswordSection({ email }: { email?: string | null }) {
       <div className="mt-4 flex items-center gap-3">
         <Button
           className="rounded-full"
-          disabled={pending || currentPassword.length < 8 || newPassword.length < 8}
+          disabled={pending || !currentPassword || !newPassword}
           onClick={() => void changePassword()}
         >
           {pending ? <Trans>Changing…</Trans> : <Trans>Change password</Trans>}
@@ -575,7 +516,8 @@ function SettingsPasswordInput({
         id={id}
         type="password"
         autoComplete={autoComplete}
-        minLength={8}
+        minLength={autoComplete === "new-password" ? MIN_PASSWORD_LENGTH : undefined}
+        maxLength={MAX_PASSWORD_LENGTH}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -598,23 +540,27 @@ function AppearancePicker({
   ];
 
   return (
-    <fieldset
+    <ToggleGroup
       aria-label={t`Appearance`}
       data-testid="ui-appearance-select"
-      className="mt-3 grid min-w-0 grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+      value={[value]}
+      onValueChange={([next]) => {
+        if (next) onChange(next as AppearancePreference);
+      }}
+      spacing={1}
+      className="mt-3 grid w-full min-w-0 grid-cols-3 rounded-lg bg-muted p-1"
     >
       {options.map((option) => (
-        <Toggle
+        <ToggleGroupItem
           key={option.value}
+          value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          pressed={option.value === value}
-          onPressedChange={() => onChange(option.value)}
           className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
         >
           {option.label}
-        </Toggle>
+        </ToggleGroupItem>
       ))}
-    </fieldset>
+    </ToggleGroup>
   );
 }
 
@@ -627,13 +573,13 @@ function UiLocalePicker({
 }) {
   const { t } = useLingui();
   return (
-    <ListboxSelect
+    <OptionSelect
       className="mt-3"
-      testId="ui-locale-select"
-      label={t`Language`}
+      data-testid="ui-locale-select"
+      aria-label={t`Language`}
       options={UI_LOCALES.map((code) => ({ value: code, label: UI_LOCALE_LABELS[code] }))}
       value={value}
-      onChange={onChange}
+      onValueChange={onChange}
     />
   );
 }

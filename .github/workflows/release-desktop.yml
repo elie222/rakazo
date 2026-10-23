@@ -172,26 +172,45 @@ jobs:
           set -euo pipefail
           app="apps/desktop/out/mac-universal/Rakazo.app"
           codesign --verify --deep --strict --verbose=2 "$app"
+          # Without this entitlement the hardened runtime silences the microphone.
+          # Check the app and every helper it signs, and require the value to be true.
+          entitlements="$(mktemp)"
+          while IFS= read -r -d '' bundle; do
+            codesign -d --entitlements :- "$bundle" > "$entitlements" 2>/dev/null
+            mic="$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.device.audio-input" "$entitlements" 2>/dev/null || true)"
+            if [ "$mic" != "true" ]; then
+              echo "::error::$bundle is missing the microphone entitlement"
+              exit 1
+            fi
+          done < <(find "$app" -type d -name "*.app" -print0)
+          rm -f "$entitlements"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
           grep -Fqx "provider: github" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
 
-      - name: Verify the packaged native bridge dependency
+      - name: Verify packaged native dependencies
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app="apps/desktop/out/mac-universal/Rakazo.app"
-          native="$app/Contents/Resources/app.asar.unpacked/node_modules/@koromix"
-          lipo "$native/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
-          lipo "$native/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
+          native="$app/Contents/Resources/app.asar.unpacked/node_modules"
+          lipo "$native/@koromix/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
+          lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
+          lipo "$native/@oxc-parser/binding-darwin-x64/parser.darwin-x64.node" -verify_arch x86_64
+          lipo "$native/@oxc-parser/binding-darwin-arm64/parser.darwin-arm64.node" -verify_arch arm64
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
             const { createRequire } = require("node:module");
             const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);
             const koffi = appRequire("koffi");
             if (koffi.load(null).func("int getpid()")() !== process.pid) {
               throw new Error("Packaged native bridge dependency failed");
+            }
+            const native = `${process.argv[1]}/Contents/Resources/app.asar.unpacked/node_modules`;
+            const parser = appRequire(`${native}/@oxc-parser/binding-darwin-${process.arch}/parser.darwin-${process.arch}.node`);
+            if (parser.parseSync("smoke.js", "const ready = true;").errors.length !== 0) {
+              throw new Error("Packaged monitoring parser dependency failed");
             }
           ' "$PWD/$app"
 

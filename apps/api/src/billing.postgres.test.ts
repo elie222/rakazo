@@ -1,7 +1,7 @@
 import { BillingEmulator } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { billingAccountForOrganization, createDb } from "@rakazo/db";
+import { billingAccountForOrganization, createBillingAccount, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BILLING_RETURN_PATH, createBillingService, TRIAL_DAYS } from "./billing.js";
 
@@ -76,9 +76,9 @@ describePostgres("billing service (PostgreSQL)", () => {
     });
   });
 
-  it("grants the deployment owner access without a subscription", async () => {
+  it("requires a subscription for admins too", async () => {
     await expect(billing.status({ ...owner, isDeploymentOwner: true })).resolves.toMatchObject({
-      access: true,
+      access: false,
     });
   });
 
@@ -162,5 +162,59 @@ describePostgres("billing service (PostgreSQL)", () => {
       access: false,
       state: "canceled",
     });
+  });
+
+  it("replaces a customer the provider deleted instead of locking billing", async () => {
+    const previous = (await billingAccountForOrganization(prisma, organizationId))!;
+    emulator.deleteCustomer(previous.customerId);
+    await billing.sync(previous.customerId);
+
+    await expect(billing.checkout(owner)).resolves.toMatchObject({
+      url: expect.stringContaining("checkout"),
+    });
+    const account = (await billingAccountForOrganization(prisma, organizationId))!;
+    expect(account.customerId).not.toBe(previous.customerId);
+    expect(account.subscribedAt).toEqual(previous.subscribedAt);
+    expect(emulator.checkouts.get(account.customerId)?.trialDays).toBeUndefined();
+
+    emulator.deleteCustomer(account.customerId);
+    await expect(billing.portal(owner)).resolves.toMatchObject({
+      url: expect.stringContaining("portal"),
+    });
+    expect((await billingAccountForOrganization(prisma, organizationId))!.customerId).not.toBe(
+      account.customerId,
+    );
+  });
+
+  it("sends an unpaid subscription to the portal instead of a second checkout", async () => {
+    const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
+    await billing.checkout(owner);
+    emulator.completeCheckout(customerId, "unpaid");
+    await billing.sync(customerId);
+    await expect(billing.status(owner)).resolves.toMatchObject({
+      access: false,
+      state: "unpaid",
+    });
+    await expect(billing.checkout(owner)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(billing.portal(owner)).resolves.toMatchObject({
+      url: expect.stringContaining("portal"),
+    });
+  });
+
+  it("keeps the first customer when two creates race", async () => {
+    const raced = `${organizationId}-race`;
+    await prisma.organization.create({
+      data: { id: raced, name: "Race Org", slug: raced, createdAt: new Date() },
+    });
+    try {
+      const accounts = await Promise.all(
+        ["cus_race_a", "cus_race_b"].map((customerId) =>
+          createBillingAccount(prisma, { organizationId: raced, customerId }),
+        ),
+      );
+      expect(accounts[0]!.customerId).toBe(accounts[1]!.customerId);
+    } finally {
+      await prisma.organization.deleteMany({ where: { id: raced } });
+    }
   });
 });

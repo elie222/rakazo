@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { HistorySearchInputSchema } from "@rakazo/contracts";
+import { escapeJsonSearchWildcards } from "@rakazo/core";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "./client.js";
@@ -48,6 +49,26 @@ postgres("history retrieval (PostgreSQL)", () => {
     await prisma?.$disconnect();
     await pool?.end();
   });
+  it.each([
+    { text: String.raw`back\slash`, query: String.raw`back\slash`, matches: true },
+    { text: 'say "hi"', query: 'say "hi"', matches: true },
+    { text: "50%_off", query: "50%_off", matches: true },
+    { text: "line\nbreak", query: "line\nbreak", matches: true },
+    { text: "café/東京", query: "café/東京", matches: true },
+    { text: "500 off", query: "50%", matches: false },
+    { text: "plain text", query: "_", matches: false },
+  ])(
+    "matches literal JSONB message text: $query in $text ($matches)",
+    async ({ text, query, matches }) => {
+      // Bypass encrypted message writes and blind indexes to exercise PostgreSQL's JSONB rendering.
+      const blocks = JSON.stringify([{ kind: "text", text }]);
+      const result = await pool.query<{ matches: boolean }>(
+        "SELECT $1::jsonb::text ILIKE $2 AS matches",
+        [blocks, `%${escapeJsonSearchWildcards(query)}%`],
+      );
+      expect(result.rows).toEqual([{ matches }]);
+    },
+  );
   it("finds a distant fact in 10,000 messages using the full text index", async () => {
     const querySpy = vi.spyOn(prisma, "$queryRaw");
     const results = await searchHistory(prisma, scope, { query: "exports batching" });

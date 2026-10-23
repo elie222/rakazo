@@ -1,4 +1,8 @@
-import { TransientModelError } from "@rakazo/adapter-kit";
+import type { NotificationMessage } from "@rakazo/adapter-kit";
+import { ModelAccountError, TransientModelError } from "@rakazo/adapter-kit";
+import type * as DbModule from "@rakazo/db";
+import { countUnreadInboxChats } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -8,6 +12,11 @@ vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   acquireComputerExecutionLease: async () => null,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+}));
+
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof DbModule>()),
+  countUnreadInboxChats: vi.fn(),
 }));
 
 const NOW = new Date("2026-03-02T09:00:00.000Z");
@@ -23,9 +32,16 @@ interface Scenario {
   toolCalls?: number;
   botMessages?: number;
   retryEnqueueFails?: boolean;
+  unreadChats?: number;
+  badgeFails?: boolean;
+  switchToBackup?: { provider: string; modelId: string };
 }
 
 async function failRun(scenario: Scenario) {
+  vi.mocked(countUnreadInboxChats).mockImplementation(async () => {
+    if (scenario.badgeFails) throw new Error("count unavailable");
+    return scenario.unreadChats ?? 0;
+  });
   const trigger = scenario.trigger ?? "routine";
   const run = {
     id: "run-1",
@@ -40,8 +56,12 @@ async function failRun(scenario: Scenario) {
     retryOfRunId: scenario.retryOfRunId ?? null,
     leaseFence: 0,
   };
-  const runtimeRun = vi.fn(async function* () {
+  const runtimeRun = vi.fn(async function* (request: {
+    onModelChange?: (provider: string, modelId: string) => Promise<void>;
+  }) {
     yield* [];
+    const backup = scenario.switchToBackup;
+    if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
     throw scenario.error;
   });
   const prisma = {
@@ -109,7 +129,9 @@ async function failRun(scenario: Scenario) {
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: { findMany: vi.fn(async () => []) },
+    spaceBackupModel: {
+      findMany: vi.fn(async () => (scenario.switchToBackup ? [scenario.switchToBackup] : [])),
+    },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -128,7 +150,7 @@ async function failRun(scenario: Scenario) {
   const enqueue = vi.fn(async (job: { name: string }) => {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
@@ -157,13 +179,14 @@ async function failRun(scenario: Scenario) {
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send };
+  return { retries, send, prisma };
 }
 
 const overloaded = () =>
   new TransientModelError("Our servers are currently overloaded. Please try again later.");
 
 beforeEach(() => {
+  vi.mocked(countUnreadInboxChats).mockReset().mockResolvedValue(0);
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
 });
@@ -184,6 +207,24 @@ describe("routine failure notifications", () => {
       expect.objectContaining({ kind: "failure", title: "Assistant failed" }),
       expect.anything(),
     );
+  });
+
+  it("puts the unread chats across the user's Spaces on the app icon", async () => {
+    const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "failure", badge: 3 }),
+      expect.anything(),
+    );
+    expect(countUnreadInboxChats).toHaveBeenCalledWith(prisma, {
+      userId: "user-1",
+      spaceId: "space-1",
+    });
+  });
+
+  it("still sends without a badge when counting fails", async () => {
+    const { send } = await failRun({ error: new Error("Invalid API key"), badgeFails: true });
+    expect(send).toHaveBeenCalled();
+    expect(send.mock.calls[0]?.[0]).not.toHaveProperty("badge");
   });
 
   it("stays quiet about a failed routine that turned notifications off", async () => {
@@ -271,6 +312,7 @@ interface RetryScenario {
 }
 
 function retryHarness(scenario: RetryScenario = {}) {
+  vi.mocked(countUnreadInboxChats).mockResolvedValue(1);
   const failedAt = new Date(NOW.getTime() - 12 * MINUTE);
   const failed = {
     id: "run-1",
@@ -352,7 +394,7 @@ function retryHarness(scenario: RetryScenario = {}) {
   const enqueue = vi.fn(async () => {
     if (scenario.enqueueFails) throw new Error("queue down");
   });
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue },
@@ -406,6 +448,7 @@ describe("running a routine retry", () => {
           kind: "failure",
           title: "Assistant failed",
           body: overloaded().message,
+          badge: 1,
           botId: "bot-1",
           threadId: "thread-1",
         },
@@ -722,6 +765,67 @@ describe("exhausted routine retry notification", () => {
       await executor.notifyRoutineRetryAttemptsExhausted("run-1");
 
       expect(send).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("reporting a failed run", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  });
+
+  async function failedRunLog(error: Error, scenario: Partial<Scenario> = {}) {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    await failRun({ ...scenario, error, trigger: "user" });
+    return sink.events.filter((event) => event.message === "run.failed");
+  }
+
+  it.each([
+    ["a provider outage that outlasted its retries", overloaded()],
+    ["a rejected model key", new ModelAccountError('401: {"message":"Invalid API-key provided."}')],
+  ])("logs %s as a warning, not an error report", async (_label, error) => {
+    expect(await failedRunLog(error)).toEqual([
+      expect.objectContaining({ level: "warn", "run.failure": error.name, reason: error.message }),
+    ]);
+  });
+
+  it("reports any other failure as an error", async () => {
+    expect(await failedRunLog(new Error("Unexpected message role"))).toEqual([
+      expect.objectContaining({ level: "error" }),
+    ]);
+  });
+
+  it.each([
+    ["warning", overloaded()],
+    ["error", new Error("Unexpected message role")],
+  ])("names the model that failed on the %s", async (_level, error) => {
+    const events = await failedRunLog(error);
+    expect(events).toEqual([
+      expect.objectContaining({
+        "model.provider": "openrouter",
+        "model.id": "deepseek/deepseek-v4-flash-0731",
+      }),
+    ]);
+  });
+
+  it.each([
+    ["warning", overloaded()],
+    ["error", new Error("Unexpected message role")],
+  ])(
+    "names the backup model that failed on the %s, without its endpoint or key",
+    async (_level, error) => {
+      const events = await failedRunLog(error, {
+        switchToBackup: { provider: "openai-compatible", modelId: "local-model" },
+      });
+      expect(events).toEqual([
+        expect.objectContaining({
+          "model.provider": "openai-compatible",
+          "model.id": "local-model",
+        }),
+      ]);
+      const fields = events.map(({ error: _stack, ...rest }) => rest);
+      expect(JSON.stringify(fields)).not.toMatch(/fake-deployment-key|:\/\//);
     },
   );
 });

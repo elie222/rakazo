@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   authRateLimitOptions,
@@ -5,7 +6,7 @@ import {
   createAuth,
   isBlockedAuthPath,
   passwordResetEmail,
-  resolveSignupPolicy,
+  signInCodeEmail,
 } from "./index.js";
 
 describe("auth policy", () => {
@@ -45,7 +46,14 @@ describe("auth policy", () => {
     const error = new Error("database unavailable");
     const log = vi.fn();
     const auth = createAuth(
-      { deploymentSettings: { findUnique: vi.fn().mockRejectedValue(error) } } as never,
+      {
+        user: {
+          findFirst: vi.fn().mockRejectedValue(error),
+          findMany: vi.fn().mockRejectedValue(error),
+          count: vi.fn().mockRejectedValue(error),
+          create: vi.fn().mockRejectedValue(error),
+        },
+      } as never,
       {
         secret: "offline-auth-secret-at-least-32-characters",
         baseURL: "https://api.example.test",
@@ -102,6 +110,11 @@ describe("authRateLimitOptions", () => {
         "/sign-in/email": { window: 15 * 60, max: 10 },
         "/sign-up/email": { window: 15 * 60, max: 10 },
         "/request-password-reset": { window: 15 * 60, max: 10 },
+        "/email-otp/send-verification-otp": { window: 15 * 60, max: 10 },
+        "/sign-in/email-otp": { window: 15 * 60, max: 10 },
+        "/passkey/verify-authentication": { window: 15 * 60, max: 10 },
+        "/passkey/verify-registration": { window: 15 * 60, max: 10 },
+        "/passkey/generate-authenticate-options": { window: 60, max: 30 },
       },
     });
   });
@@ -154,55 +167,107 @@ describe("passwordResetEmail", () => {
   });
 });
 
-describe("resolveSignupPolicy", () => {
-  it("uses environment defaults before deployment settings exist", async () => {
-    const prisma = {
-      deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "you@example.com,@company.test",
-      }),
-    ).resolves.toEqual({
-      enabled: false,
-      allowlist: ["you@example.com", "@company.test"],
+describe("signInCodeEmail", () => {
+  it("puts the code in plain text and HTML without links", () => {
+    const message = signInCodeEmail("ada@example.test", "042517");
+    expect(message).toMatchObject({ to: "ada@example.test", subject: "Your Rakazo sign-in code" });
+    expect(message.text).toContain("042517");
+    expect(message.html).toContain("042517");
+    expect(`${message.text}${message.html}`).not.toMatch(/https?:/);
+  });
+});
+
+describe("stored account names", () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  it.each(["", " ", "__TestTok1__", "550e8400-e29b-41d4-a716-446655440000"])(
+    "normalizes unusable names on creation and updates: %s",
+    async (name) => {
+      const hooks = auth.options.databaseHooks!.user!;
+      expect(
+        await hooks.create!.before!({ name, email: "demo@example.com" } as never),
+      ).toMatchObject({ data: { name: "" } });
+      expect(await hooks.update!.before!({ name })).toMatchObject({ data: { name: "" } });
+    },
+  );
+  it("preserves real names and does not change names during unrelated updates", async () => {
+    const hook = auth.options.databaseHooks!.user!.update!.before!;
+    expect(await hook({ name: " 李雷 " })).toMatchObject({ data: { name: "李雷" } });
+    const result = await hook({ emailVerified: true });
+    expect(result).toEqual({ data: { emailVerified: true } });
+  });
+});
+
+it("preserves readable numbered account names on writes", async () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  expect(
+    await auth.options.databaseHooks!.user!.create!.before!({
+      name: "CustomerSupportBot2026",
+      email: "demo@example.com",
+    } as never),
+  ).toMatchObject({ data: { name: "CustomerSupportBot2026" } });
+});
+
+describe("bearer sessions", () => {
+  const secret = "offline-auth-secret-at-least-32-characters";
+  const token = "fakeSessionToken0123456789abcdef";
+
+  function authWithSessionLookups() {
+    const lookups: unknown[] = [];
+    const model = new Proxy(
+      {},
+      {
+        get: () =>
+          vi.fn(async (query: unknown) => {
+            lookups.push(query);
+            return null;
+          }),
+      },
+    );
+    const prisma = new Proxy({}, { get: (_target, name) => (name === "then" ? undefined : model) });
+    const auth = createAuth(prisma as never, {
+      secret,
+      baseURL: "https://api.example.test",
+      webOrigin: "https://app.example.test",
+      signupsEnabled: "true",
+      signupAllowlist: "",
     });
+    return { auth, lookups };
+  }
+
+  function signed(value: string, key = secret) {
+    return `${value}.${createHmac("sha256", key).update(value).digest("base64")}`;
+  }
+
+  it.each([
+    ["a raw session token", token],
+    ["a token signed with another key", signed(token, "another-secret-of-at-least-32-chars")],
+  ])("never looks up a session for %s", async (_label, bearer) => {
+    const { auth, lookups } = authWithSessionLookups();
+    const session = await auth.api.getSession({
+      headers: new Headers({ authorization: `Bearer ${bearer}` }),
+    });
+    expect(session).toBeNull();
+    expect(JSON.stringify(lookups)).not.toContain(token);
   });
 
-  it("keeps using the environment policy for a pre-upgrade uninitialized row", async () => {
-    const prisma = {
-      deploymentSettings: {
-        findUnique: vi.fn().mockResolvedValue({
-          signupsEnabled: true,
-          signupAllowlist: "",
-          signupPolicyInitialized: false,
-        }),
-      },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "existing-policy@example.com",
-      }),
-    ).resolves.toEqual({ enabled: false, allowlist: ["existing-policy@example.com"] });
-  });
-
-  it("uses live deployment settings as the effective policy after initial seeding", async () => {
-    const prisma = {
-      deploymentSettings: {
-        findUnique: vi.fn().mockResolvedValue({
-          signupsEnabled: false,
-          signupAllowlist: "approved@example.com",
-          signupPolicyInitialized: true,
-        }),
-      },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "environment-only@example.com",
-      }),
-    ).resolves.toEqual({ enabled: false, allowlist: ["approved@example.com"] });
+  it.each([
+    ["raw", signed(token)],
+    ["URL-encoded", encodeURIComponent(signed(token))],
+  ])("looks up the session for a %s signed token", async (_label, bearer) => {
+    const { auth, lookups } = authWithSessionLookups();
+    await auth.api.getSession({ headers: new Headers({ authorization: `Bearer ${bearer}` }) });
+    expect(JSON.stringify(lookups)).toContain(token);
   });
 });

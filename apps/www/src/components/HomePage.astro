@@ -1,35 +1,49 @@
 ---
 import Button from "./Button.astro";
 import Footer from "./Footer.astro";
-import GetStartedDialog from "./GetStartedDialog.astro";
+import GetStartedActions from "./GetStartedActions.astro";
 import Header from "./Header.astro";
+import { LandingBotAvatar } from "./LandingBotAvatar";
+import PhoneMockup from "./PhoneMockup.astro";
 import { ProductDemo } from "./ProductDemo";
+import FeatureIllustration from "./FeatureIllustration.astro";
+import RepoCard from "./RepoCard.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
-import { getHomeCopy } from "../i18n/home";
+import type { Locale } from "../i18n/locales";
+import chatgptLogo from "./provider-logos/chatgpt.svg?raw";
+import claudeLogo from "./provider-logos/claude.svg?raw";
+import grokLogo from "./provider-logos/grok.svg?raw";
+import lmStudioLogo from "./provider-logos/lmstudio.svg?raw";
+import ollamaLogo from "./provider-logos/ollama.svg?raw";
+import openRouterLogo from "./provider-logos/openrouter.svg?raw";
+import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
 import {
   DEFAULT_LOCALE,
   LOCALES,
   LOCALE_HTML_LANG,
   isLocale,
   localeHomePath,
-  type Locale,
 } from "../i18n/locales";
-import { fetchGithubStars, formatStarCount } from "../github";
+import {
+  availableDesktopPlatforms,
+  desktopDownloadHref,
+  fetchDesktopDownloads,
+  fetchGithubStars,
+  fetchRecentChanges,
+  formatStarCount,
+} from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
 import {
+  ANDROID_APK_URL,
+  APP_URL,
   GITHUB_URL,
-  OPENCLAW_ALTERNATIVE_PATH,
+  IOS_APP_URL,
   SELF_HOST_GUIDE_PATH,
   SETUP_PROMPT_URL,
   SITE_URL,
 } from "../site";
 
-function testimonialInitials(attribution: string): string {
-  const name = attribution.startsWith("@") ? attribution.slice(1) : attribution;
-  const letters = name.replace(/[^a-z]/gi, "");
-  return (letters.slice(0, 2) || name.slice(0, 2)).toUpperCase();
-}
 
 const locale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
@@ -41,9 +55,23 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const stars = await fetchGithubStars();
+const [stars, desktopDownloads, recentChanges] = await Promise.all([
+  fetchGithubStars(),
+  fetchDesktopDownloads(),
+  fetchRecentChanges(5),
+]);
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
+const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
+const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
+const PROVIDER_LOGOS: Record<string, string> = {
+  Claude: claudeLogo,
+  ChatGPT: chatgptLogo,
+  OpenRouter: openRouterLogo,
+  Grok: grokLogo,
+  Ollama: ollamaLogo,
+  "LM Studio": lmStudioLogo,
+};
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = homeStructuredData({
@@ -71,23 +99,46 @@ const structuredData = homeStructuredData({
     <Header locale={locale} copy={copy.nav} starsLabel={starsLabel} homeHref={homeHref} />
 
     <main id="main">
-      <GetStartedDialog copy={copy.getStartedDialog} waitlist={copy.waitlist} />
+      <script is:inline>
+        (() => {
+          const ua = navigator.userAgent;
+          document.documentElement.dataset.platform =
+            /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+              ? "ios"
+              : /Android/.test(ua)
+                ? "android"
+                : /Windows/.test(ua)
+                  ? "windows"
+                  : /Linux|X11/.test(ua) && !/CrOS|aarch64|arm/i.test(ua)
+                    ? "linux"
+                    : /Macintosh/.test(ua)
+                      ? "mac"
+                      : "web";
+          // Chromium freezes the Linux UA at x86_64; the AppImage is x64-only.
+          if (document.documentElement.dataset.platform === "linux") {
+            navigator.userAgentData
+              ?.getHighEntropyValues(["architecture"])
+              .then(({ architecture }) => {
+                if (architecture !== "x86") document.documentElement.dataset.platform = "web";
+              })
+              .catch(() => undefined);
+          }
+        })();
+      </script>
 
       <section class="hero">
-        <a class="hero__pill" href="#selfhost">
-          <span class="hero__badge">{copy.hero.badge}</span>
-          <span>{copy.hero.pill}</span>
-        </a>
+        {/* Hidden while the headline already says open source. */}
+        {/* <a class="hero__pill" href="#open-source">{copy.hero.eyebrow}</a> */}
         <h1>{copy.hero.heading}</h1>
         <p class="lead">
           {copy.hero.lead}
         </p>
-        <div class="hero__actions">
-          <button class="button button--primary" type="button" data-get-started-open>
-            {copy.hero.getStarted}
-          </button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
-        </div>
+        <GetStartedActions
+          class="hero__actions"
+          copy={copy.hero}
+          placement="hero"
+          githubLabel={copy.openSource.starOnGithub}
+        />
         <div class="hero__agent-setup">
           <button
             class="setup-copy"
@@ -109,49 +160,6 @@ const structuredData = homeStructuredData({
 
       <section id="demo">
         <ProductDemo locale={locale} client:load />
-      </section>
-
-      <section id="selfhost" class="section">
-        <div class="section-intro">
-          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
-          <h2 class="section-heading">{copy.selfHost.heading}</h2>
-          <p class="section-copy">
-            {copy.selfHost.copy}
-          </p>
-        </div>
-        <div class="selfhost-cta">
-          <button class="button button--primary" type="button" data-get-started-open>
-            {copy.hero.getStarted}
-          </button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
-          <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">{copy.openSource.readTheDocs}</Button>
-        </div>
-        <div class="card-grid-3">
-          {
-            copy.selfHost.features.map((feature) => (
-              <article class="feature-card">
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </article>
-            ))
-          }
-        </div>
-      </section>
-
-      <section id="faq" class="section" aria-labelledby="faq-heading">
-        <div class="section-intro">
-          <h2 id="faq-heading" class="section-heading">{copy.faq.heading}</h2>
-        </div>
-        <div class="home-faq">
-          {
-            copy.faq.items.map((item) => (
-              <article>
-                <h3>{item.question}</h3>
-                <p>{item.answer}</p>
-              </article>
-            ))
-          }
-        </div>
       </section>
 
       <section id="roster" class="section">
@@ -181,11 +189,14 @@ const structuredData = homeStructuredData({
           <button
             class="testimonial-pause"
             type="button"
+            aria-label={copy.testimonials.pause}
+            title={copy.testimonials.pause}
             data-testimonial-pause
             data-pause-label={copy.testimonials.pause}
             data-play-label={copy.testimonials.play}
           >
-            {copy.testimonials.pause}
+            <svg class="testimonial-pause__pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.5" height="10" rx="1" /><rect x="9.5" y="3" width="2.5" height="10" rx="1" /></svg>
+            <svg class="testimonial-pause__play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.4v9.2a.8.8 0 0 0 1.2.7l7.4-4.6a.8.8 0 0 0 0-1.4L6.2 2.7A.8.8 0 0 0 5 3.4Z" /></svg>
           </button>
         </div>
         <div
@@ -204,15 +215,19 @@ const structuredData = homeStructuredData({
                   inert={clone ? true : undefined}
                   data-testimonial-clone={clone ? "" : undefined}
                 >
-                  {copy.testimonials.items.map((item) => (
+                  {copy.testimonials.items.map((item, index) => (
                     <figure class="testimonial-card" lang="en">
-                      <figcaption>
-                        <span class="testimonial-avatar" aria-hidden="true">{testimonialInitials(item.attribution)}</span>
-                        <span>{item.attribution}</span>
-                      </figcaption>
                       <blockquote>
                         <p>{item.quote}</p>
                       </blockquote>
+                      <figcaption>
+                        <LandingBotAvatar
+                          color={copy.roster.bots[index % copy.roster.bots.length].color}
+                          size={32}
+                          className="testimonial-avatar"
+                        />
+                        <span>{item.attribution}</span>
+                      </figcaption>
                     </figure>
                   ))}
                 </div>
@@ -222,46 +237,115 @@ const structuredData = homeStructuredData({
         </div>
       </section>
 
-      <section id="open-source" class="section">
+      <section id="selfhost" class="section">
+        <div class="selfhost__intro">
+          <div class="section-intro">
+            <h2 class="section-heading">{copy.selfHost.heading}</h2>
+            <p class="section-copy">
+              {copy.selfHost.copy}
+            </p>
+          </div>
+          <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
+        </div>
+        <div class="card-grid-3">
+          {
+            copy.selfHost.features.map((feature, index) => (
+              <article class="feature-card">
+                <FeatureIllustration kind={index === 0 ? "model" : index === 1 ? "schedule" : "approval"} labels={copy.selfHost.mock} />
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+              </article>
+            ))
+          }
+        </div>
+        <div class="works-with">
+          <span>{copy.selfHost.worksWith}</span>
+          {HOME_MODEL_PROVIDERS.map((name) => (
+            <span class="provider-chip">
+              <Fragment set:html={PROVIDER_LOGOS[name]} />
+              {name}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section id="platforms" class="section platforms">
         <div class="section-intro">
-          <div class="eyebrow">{copy.openSource.eyebrow}</div>
+          <h2 class="section-heading">{copy.platforms.heading}</h2>
+          <div class="platforms__cards">
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="5" y="9" width="38" height="30" rx="4" />
+                <path d="M5 17h38" />
+                <circle cx="10.5" cy="13" r="1" />
+                <circle cx="14.5" cy="13" r="1" />
+                <circle cx="18.5" cy="13" r="1" />
+              </svg>
+              <h3>{copy.platforms.web}</h3>
+              <div class="platform-card__links">
+                <a href={APP_URL}>{copy.hero.getStarted}</a>
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="9" y="10" width="30" height="21" rx="3" />
+                <path d="M4 36h40l-3 3H7z" />
+              </svg>
+              <h3>{copy.platforms.desktop}</h3>
+              <div class="platform-card__links">
+                {desktopPlatforms.map((platform) => (
+                  <a href={desktopDownloadHref(platform)}>{PLATFORM_NAMES[platform]}</a>
+                ))}
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="14" y="5" width="20" height="38" rx="5" />
+                <path d="M21 9.5h6" />
+              </svg>
+              <h3>{copy.platforms.mobile}</h3>
+              <div class="platform-card__links">
+                <a href={IOS_APP_URL}>iOS</a>
+                <a href={ANDROID_APK_URL}>Android</a>
+              </div>
+            </article>
+          </div>
+        </div>
+        <PhoneMockup locale={locale} />
+      </section>
+
+      <section id="open-source" class:list={["section", recentChanges.length > 0 && "open-source"]}>
+        <div>
           <h2 class="section-heading">{copy.openSource.heading}</h2>
           <p class="section-copy">
             {copy.openSource.copy}
           </p>
+          <div class="source-links">
+            <Button href={GITHUB_URL} external data-attr="open-source-github">
+              {copy.openSource.starOnGithub}
+            </Button>
+          </div>
         </div>
-        <div class="comparison-grid">
-          <article class="comparison-card">
-            <h3>{copy.openSource.selfHostTitle}</h3>
-            <p class="comparison-meta">{copy.openSource.selfHostMeta}</p>
-            <div class="comparison-list">
-              {copy.openSource.selfHostItems.map((item) => <div>{item}</div>)}
-            </div>
-            <div class="comparison-actions">
-              <Button href={GITHUB_URL} size="sm" external>{copy.openSource.starOnGithub}</Button>
-              <Button href={SELF_HOST_GUIDE_PATH} variant="secondary" size="sm">
-                {copy.openSource.readTheDocs}
-              </Button>
-              <Button href={OPENCLAW_ALTERNATIVE_PATH} variant="secondary" size="sm">
-                {copy.openSource.openClawAlternative}
-              </Button>
-            </div>
-          </article>
-          <article class="comparison-card comparison-card--muted">
-            <div class="comparison-kicker">
-              <h3>{copy.openSource.cloudTitle}</h3>
-              <span class="comparison-badge">{copy.openSource.cloudBadge}</span>
-            </div>
-            <p class="comparison-meta">{copy.openSource.cloudMeta}</p>
-            <div class="comparison-list comparison-list--muted">
-              {copy.openSource.cloudItems.map((item) => <div>{item}</div>)}
-            </div>
-            <div class="comparison-actions">
-              <button class="button button--primary button--small" type="button" data-get-started-open>
-                {copy.openSource.getStarted}
-              </button>
-            </div>
-          </article>
+        {
+          recentChanges.length > 0 && (
+            <RepoCard locale={locale} starsLabel={stars === null ? null : starsLabel} changes={recentChanges} />
+          )
+        }
+      </section>
+
+      <section id="faq" class="section" aria-labelledby="faq-heading">
+        <div class="section-intro">
+          <h2 id="faq-heading" class="section-heading">{copy.faq.heading}</h2>
+        </div>
+        <div class="home-faq">
+          {
+            copy.faq.items.map((item) => (
+              <article>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </article>
+            ))
+          }
         </div>
       </section>
 
@@ -269,12 +353,12 @@ const structuredData = homeStructuredData({
         <div>
           <h2>{copy.cta.heading}</h2>
           <p>{copy.cta.copy}</p>
-          <div class="cta-actions">
-            <button class="button button--primary" type="button" data-get-started-open>
-              {copy.cta.getStarted}
-            </button>
-            <Button href={GITHUB_URL} variant="secondary" external>{copy.cta.viewOnGithub}</Button>
-          </div>
+          <GetStartedActions
+            class="cta-actions"
+            copy={copy.hero}
+            downloads={desktopDownloads}
+            placement="cta"
+          />
         </div>
         <div class="stats-grid">
           {
@@ -334,7 +418,7 @@ const structuredData = homeStructuredData({
   const marqueeGroup = marquee?.querySelector<HTMLElement>(".testimonial-group");
   if (marquee && marqueeGroup) {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const pixelsPerSecond = 36;
+    const pixelsPerSecond = 18;
     let frame = 0;
     let last = 0;
     let offset = 0;
@@ -436,7 +520,8 @@ const structuredData = homeStructuredData({
     pauseButton?.addEventListener("click", () => {
       held = !held;
       pauseButton.classList.toggle("is-paused", held);
-      pauseButton.textContent = held ? playLabel : pauseLabel;
+      pauseButton.setAttribute("aria-label", held ? playLabel : pauseLabel);
+      pauseButton.title = held ? playLabel : pauseLabel;
       if (held) stop();
       else resume();
     });

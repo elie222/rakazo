@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { loadIosScreenshotCatalog } from "../ios-screenshot-catalog.js";
 import type { IosGallerySection } from "../ios-screenshot-gallery.js";
 import { renderIosScreenshotGallery } from "../ios-screenshot-gallery.js";
+import { captureIosProviderLimitError } from "./ios-screenshot-error.js";
 import { seedIosScreenshotFixture } from "./ios-screenshot-seed.js";
 import { runProcess } from "./process.js";
 
@@ -64,34 +65,40 @@ async function main() {
     await rm(work, { recursive: true, force: true });
     await mkdir(work, { recursive: true });
     try {
-      await runProcess(
-        "maestro",
-        [
-          "--udid",
-          udid,
-          "test",
-          "--no-ansi",
-          "--flatten-debug-output",
-          "--debug-output",
-          path.join(work, "debug"),
-          "--test-output-dir",
-          path.join(work, "out"),
-          "-e",
-          `RAKAZO_SCREENSHOT_EMAIL=${email}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_EMPTY_EMAIL=${emptyEmail}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_PASSWORD=${password}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
-          path.join(CATALOG_DIR, section.flow),
-        ],
-        process.env,
-      );
+      const capture = () =>
+        runProcess(
+          "maestro",
+          [
+            "--udid",
+            udid,
+            "test",
+            "--no-ansi",
+            "--flatten-debug-output",
+            "--debug-output",
+            path.join(work, "debug"),
+            "--test-output-dir",
+            path.join(work, "out"),
+            "-e",
+            `RAKAZO_SCREENSHOT_EMAIL=${email}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_EMPTY_EMAIL=${emptyEmail}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_PASSWORD=${password}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
+            "-e",
+            `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
+            path.join(CATALOG_DIR, section.flow),
+          ],
+          process.env,
+        );
+      if (section.id === "thread-errors") {
+        await captureIosProviderLimitError(databaseUrl, fixture.botId, capture);
+      } else {
+        await capture();
+      }
       results.push({
         id: section.id,
         title: section.title,

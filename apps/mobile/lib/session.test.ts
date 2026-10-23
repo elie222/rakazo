@@ -1,7 +1,8 @@
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAppBadge, syncAppBadge } from "./app-badge";
 import { artifactCacheSession } from "./artifact-cache-session";
-import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
 import { clearNetworkCache } from "./network-cache.js";
 import {
   clearSessionToken,
@@ -10,7 +11,6 @@ import {
   loadVerifiedIntegrationsScope,
   registerSessionDiskCache,
   restoreSessionToken,
-  saveAvatarStyleIfCurrent,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
@@ -18,6 +18,8 @@ import {
   tokenFromAuthResponse,
 } from "./session.js";
 import { clearFailedSends } from "./thread-feedback.js";
+
+vi.mock("expo-notifications", () => ({ setBadgeCountAsync: vi.fn(async () => true) }));
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -77,6 +79,17 @@ describe("mobile session storage", () => {
     expect(clear.mock.calls.length).toBeGreaterThan(2);
   });
 
+  it("clears the icon badge on sign-out and server-session restoration", async () => {
+    registerSessionDiskCache(() => void clearAppBadge());
+    await syncAppBadge(3);
+    vi.mocked(Notifications.setBadgeCountAsync).mockClear();
+    await clearSessionToken();
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+    await syncAppBadge(2);
+    await restoreSessionToken("fake-other-server");
+    expect(Notifications.setBadgeCountAsync).toHaveBeenLastCalledWith(0);
+  });
+
   it("still signs out and runs every other wipe when one disk cache throws", async () => {
     const after = vi.fn();
     registerSessionDiskCache(() => {
@@ -129,84 +142,6 @@ describe("mobile session storage", () => {
     expect(clearFailedSends).toHaveBeenCalledOnce();
   });
 
-  it("forgets the cached avatar style on sign-out", async () => {
-    await saveAvatarStyle("robot");
-    await clearSessionToken();
-
-    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
-    expect(getCachedAvatarStyle()).toBe("organic");
-  });
-
-  it("ignores an avatar style response from a session that was cleared", async () => {
-    const generation = currentSessionGeneration();
-    await clearSessionToken();
-    vi.mocked(SecureStore.setItemAsync).mockClear();
-
-    await expect(saveAvatarStyleIfCurrent(generation, "organic")).resolves.toBe(false);
-    expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
-    expect(getCachedAvatarStyle()).toBe("organic");
-  });
-
-  it("does not let an in-flight style write land after sign-out", async () => {
-    const disk = new Map<string, string>();
-    let releaseWrite: () => void = () => undefined;
-    const write = new Promise<void>((resolve) => {
-      releaseWrite = resolve;
-    });
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === AVATAR_STYLE_KEY) await write;
-      disk.set(key, value);
-    });
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      disk.delete(key);
-    });
-
-    try {
-      const generation = currentSessionGeneration();
-      const saving = saveAvatarStyleIfCurrent(generation, "organic");
-      await Promise.resolve();
-      const clearing = clearSessionToken();
-      releaseWrite();
-      await saving;
-      await clearing;
-
-      expect(disk.has(AVATAR_STYLE_KEY)).toBe(false);
-      expect(getCachedAvatarStyle()).toBe("organic");
-    } finally {
-      releaseWrite();
-      vi.mocked(SecureStore.setItemAsync).mockReset();
-      vi.mocked(SecureStore.deleteItemAsync).mockReset();
-    }
-  });
-
-  it("still clears the session when the avatar style cannot be wiped", async () => {
-    const disk = new Map<string, string>();
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      disk.set(key, value);
-    });
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      disk.delete(key);
-    });
-    await saveAvatarStyle("organic");
-    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
-      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
-      disk.delete(key);
-    });
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
-      if (key === AVATAR_STYLE_KEY) throw new Error("device locked");
-      disk.set(key, value);
-    });
-
-    try {
-      await expect(clearSessionToken()).resolves.toBe(true);
-      expect(disk.has("rakazo.session_token")).toBe(false);
-      expect(disk.get(AVATAR_STYLE_KEY)).toBe("organic");
-    } finally {
-      vi.mocked(SecureStore.setItemAsync).mockReset();
-      vi.mocked(SecureStore.deleteItemAsync).mockReset();
-    }
-  });
-
   it("overwrites the token when SecureStore delete fails", async () => {
     vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
       if (key === "rakazo.session_token") throw new Error("device locked");
@@ -256,14 +191,33 @@ describe("mobile session storage", () => {
 });
 
 describe("auth response token parsing", () => {
-  it("prefers explicit JSON tokens, including nested session responses", () => {
+  it("prefers the signed set-auth-token header over the cookie and an unsigned body token", () => {
     const response = new Response(null, {
-      headers: { "set-cookie": "better-auth.session_token=cookie-token; Path=/" },
+      headers: {
+        "set-auth-token": "header-token.c2lnbmF0dXJl%2B%3D",
+        "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/",
+      },
     });
 
-    expect(tokenFromAuthResponse(response, { token: "body-token" })).toBe("body-token");
-    expect(tokenFromAuthResponse(response, { session: { token: "nested-token" } })).toBe(
-      "nested-token",
+    expect(tokenFromAuthResponse(response, { token: "header-token" })).toBe(
+      "header-token.c2lnbmF0dXJl+=",
+    );
+  });
+
+  it("prefers the signed cookie over an unsigned body token", () => {
+    const response = new Response(null, {
+      headers: { "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/" },
+    });
+
+    expect(tokenFromAuthResponse(response, { token: "cookie-token" })).toBe("cookie-token.sig");
+  });
+
+  it("falls back to JSON tokens, including nested session responses", () => {
+    const response = new Response(null);
+
+    expect(tokenFromAuthResponse(response, { token: "body-token.sig" })).toBe("body-token.sig");
+    expect(tokenFromAuthResponse(response, { session: { token: "nested-token.sig" } })).toBe(
+      "nested-token.sig",
     );
   });
 

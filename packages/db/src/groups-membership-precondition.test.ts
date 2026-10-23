@@ -43,6 +43,7 @@ function fixture(activeIds: string[]) {
       findFirstOrThrow: vi.fn().mockResolvedValue(record),
     },
     chatGroupMember: { deleteMany: remove, createMany: create },
+    message: { findMany: vi.fn(async () => []) },
   };
   const prisma = {
     bot: { findMany: vi.fn().mockResolvedValue(owned) },

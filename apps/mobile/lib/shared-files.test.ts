@@ -4,6 +4,10 @@ const state = vi.hoisted(() => ({ read: vi.fn(), base64: vi.fn() }));
 vi.mock("./incoming-share", () => ({ readIncomingShareFile: state.read }));
 vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({}));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () => null,
+  Platform: { OS: "android" },
+}));
 vi.mock("expo-file-system", () => ({
   File: class {
     info() {

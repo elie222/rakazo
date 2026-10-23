@@ -34,10 +34,51 @@ describe("run triggers", () => {
           status: "running",
           trigger,
           notificationsEnabled: false,
+          agentMessage: null,
           promptSnippet: "",
           updatedAt: "2026-01-01T00:00:00.000Z",
         }).trigger,
       ).toBe(trigger);
     }
+  });
+});
+
+describe("activity message metadata", () => {
+  const row = {
+    runId: "run-1",
+    botId: "bot-1",
+    botName: "Helper",
+    groupId: null,
+    groupName: null,
+    threadId: "thread-1",
+    status: "running",
+    trigger: "bot_message",
+    notificationsEnabled: false,
+    promptSnippet: "Ready",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  it("requires nullable metadata and accepts structured text or an unknown source", () => {
+    expect(RunActivityRowSchema.safeParse(row).success).toBe(false);
+    expect(RunActivityRowSchema.safeParse({ ...row, agentMessage: null }).success).toBe(true);
+    for (const agentMessage of [
+      { fromBotName: "", kind: "update", text: "" },
+      { fromBotName: "Peer", kind: "request", text: "x".repeat(120) },
+      { kind: "unknown" },
+    ]) {
+      expect(RunActivityRowSchema.parse({ ...row, agentMessage }).agentMessage).toEqual(
+        agentMessage,
+      );
+    }
+  });
+
+  it.each([
+    { fromBotName: "Peer", kind: "invalid", text: "Ready" },
+    { fromBotName: "Peer", kind: "update" },
+    { fromBotName: "Peer", kind: "request", text: null },
+    { fromBotName: "Peer", kind: "update", text: "x".repeat(121) },
+    { fromBotName: "Peer", kind: "request", text: "Ready", extra: true },
+    { kind: "unknown", text: "internal" },
+  ])("rejects invalid or extra metadata: %j", (agentMessage) => {
+    expect(RunActivityRowSchema.safeParse({ ...row, agentMessage }).success).toBe(false);
   });
 });

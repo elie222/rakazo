@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HonchoConnectionConfig } from "./honcho-client.js";
-import { ensureHonchoWorkspace, honchoPeerChat } from "./honcho-client.js";
+import {
+  deleteHonchoConclusion,
+  ensureHonchoWorkspace,
+  getHonchoConclusion,
+  honchoPeerChat,
+  queryHonchoConclusions,
+} from "./honcho-client.js";
 
 const config: HonchoConnectionConfig = {
   baseUrl: "https://api.honcho.dev",
@@ -11,6 +17,36 @@ const chat = { peerId: "bot-1", target: "user-1", query: "Relevant facts?" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Honcho client boundaries", () => {
+  it.each([".", "..", "../other", "id/other", "id?query", "x".repeat(513)])(
+    "rejects unsafe conclusion id %s before transport",
+    async (id) => {
+      const fetch = vi.fn();
+      for (const operation of [getHonchoConclusion, deleteHonchoConclusion]) {
+        expect(await operation({ ...config, fetch }, "team", id)).toEqual({
+          ok: false,
+          error: "Invalid Honcho conclusion id.",
+        });
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects unsafe ids returned by a conclusion search", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json([
+        { id: "..", content: "Fact", observer_id: "bot-1", observed_id: "rakazo-shared" },
+      ]),
+    );
+    expect(
+      await queryHonchoConclusions({ ...config, fetch }, "team", {
+        query: "Fact",
+        observerId: "bot-1",
+        observedId: "rakazo-shared",
+        topK: 100,
+      }),
+    ).toEqual({ ok: false, error: "Honcho returned invalid conclusions." });
+  });
+
   it("bounds every fetch with the correct timeout and passes caller cancellation", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const controller = new AbortController();
@@ -54,6 +90,27 @@ describe("Honcho client boundaries", () => {
       });
     },
   );
+
+  it("treats a null dialectic answer as empty", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ content: null })));
+    expect(await honchoPeerChat({ ...config, fetch }, "team", chat)).toEqual({
+      ok: true,
+      value: "",
+    });
+  });
+
+  it("truncates the dialectic query to Honcho's limit without splitting a character", async () => {
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ content: "A fact" })),
+    );
+    await honchoPeerChat({ ...config, fetch }, "team", {
+      ...chat,
+      query: `a${"😀".repeat(6_000)}`,
+    });
+    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body)) as { query: string };
+    expect(body.query).toBe(`a${"😀".repeat(4_999)}`);
+  });
 
   it.each(["not JSON hch-test-key", JSON.stringify({ content: "x".repeat(1024 * 1024) })])(
     "rejects unreadable or oversized chat bodies",

@@ -1,19 +1,38 @@
 import type { RunStatus } from "@rakazo/contracts";
 
-export const ACTIVE_RUN_STATUSES = [
+/** Runs the bot is working on, which the chat shows as working. */
+export const WORKING_RUN_STATUSES = [
   "queued",
   "leased",
   "running",
+] as const satisfies readonly RunStatus[];
+/** Runs paused on the user: an answer, an approval, or a computer takeover. Their card is the state. */
+export const WAITING_ON_USER_RUN_STATUSES = [
   "waiting_input",
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
+export const ACTIVE_RUN_STATUSES = [
+  ...WORKING_RUN_STATUSES,
+  ...WAITING_ON_USER_RUN_STATUSES,
+] as const satisfies readonly RunStatus[];
+/** Runs that hold new work in the queue. A pending card holds no compute. */
+export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
+  (status) => status !== "waiting_input",
+);
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.
- * Routine and webhook runs are not the conversation. The creation intro has no tools;
- * a message that lands during it waits, and the continuation after the intro finishes answers it.
+ * Routine and webhook runs are not the conversation, and neither is a wake from another bot:
+ * its reply goes back to that bot. The creation intro has no tools; a message that lands
+ * during any of them waits, and the continuation after the turn finishes answers it.
  */
-const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook", "created", "tickets"]);
+const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
+  "routine",
+  "webhook",
+  "created",
+  "tickets",
+  "bot_message",
+]);
 
 /**
  * Background triggers do internal work that must not leak into the chat: the
@@ -53,9 +72,20 @@ export function isActive(status: RunStatus): boolean {
   return (ACTIVE_RUN_STATUSES as readonly RunStatus[]).includes(status);
 }
 
+export function isRunWorking(status: string | null | undefined): boolean {
+  return WORKING_RUN_STATUSES.some((working) => working === status);
+}
+
+export function isRunWaitingOnUser(status: string | null | undefined): boolean {
+  return WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status);
+}
+
 export function isTerminal(status: RunStatus): boolean {
   return TERMINAL.includes(status);
 }
+
+/** Prompt of a run created to answer messages that waited behind another turn. */
+export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";
 
 /** Whether a run's turn is part of the thread's conversation and may take user steering. */
 export function isConversationalRun(trigger: string | null | undefined): boolean {

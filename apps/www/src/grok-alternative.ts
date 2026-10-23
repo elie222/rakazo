@@ -42,7 +42,7 @@ export const COMPARE_ROWS = [
   {
     topic: "Price",
     rakazo:
-      "No license fee to self-host. You pay your model provider and the computer you run. Hosted Rakazo Cloud is not generally available.",
+      "No license fee to self-host. You pay your model provider and the computer you run. Hosted Rakazo Cloud is in beta.",
     grok: "Included with paid individual Cursor plans, Cursor Teams, and SuperGrok subscriptions. SuperGrok is listed at $30/month and includes Grok Bot access. Plans include weekly usage; extra usage can be billed. The free plan on the pricing page does not list Grok Bot.",
   },
   {
@@ -156,7 +156,7 @@ export const GROK_SECTIONS = [
     paragraphs: [
       "Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant. It is in beta. Each bot keeps conversations, memory, routines, and history. It can use a browser, a terminal, files, and a graphical desktop, and it can hand work to another bot or a short-lived subagent. The clients are the web app, the Electron desktop app, and the Expo mobile app.",
       "Like Grok Bot, Rakazo is just chat once it is running. You set up the bot and manage it from that chat. A new bot interviews you about the work. Routines are readable Markdown and can run on a schedule. A bot can pause for approval when a task crosses a boundary you set, and actions are recorded in an audit log. Optional connectors can attach Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark. They are not required.",
-      "The parts that are not Grok Bot are the ones you operate. The license is Apache-2.0. You self-host with published Docker images or from source. Hosted Rakazo Cloud is not generally available. Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok, or bring a key for OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, or a local model server such as Ollama or LM Studio. Rakazo does not pay the model bill. Each bot can use a different model. Connector credentials are encrypted on your server and are not returned by the API.",
+      "The parts that are not Grok Bot are the ones you operate. The license is Apache-2.0. You self-host with published Docker images or from source. Hosted Rakazo Cloud is in beta. Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok, or bring a key for OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, or a local model server such as Ollama or LM Studio. Rakazo does not pay the model bill. Each bot can use a different model. Connector credentials are encrypted on your server and are not returned by the API.",
       "Computers are separate from the chat product. Local Docker is the default. E2B, Daytona, CreateOS, and Boat are optional remote computers. An explicit desktop provider can run on the host, and it is not the default. Team computers are shared. Private computers are isolated. That split is the opposite of Grok Bot's shared cloud computer for every bot on the account.",
     ],
   },
@@ -254,7 +254,7 @@ export const GROK_ALTERNATIVE_FAQ = [
   {
     question: "How is Rakazo different from Grok Bot?",
     answer:
-      "Both are persistent bots that can use a computer, sign in to tools, keep context, and run routines. Grok Bot hosts that computer for you and comes with paid Cursor plans and SuperGrok subscriptions. Rakazo is open source: you host it, you choose the model, and team computers and private computers stay separate. Hosted Rakazo Cloud is not generally available yet.",
+      "Both are persistent bots that can use a computer, sign in to tools, keep context, and run routines. Grok Bot hosts that computer for you and comes with paid Cursor plans and SuperGrok subscriptions. Rakazo is open source: you host it or use Rakazo Cloud, in beta, you choose the model, and team computers and private computers stay separate.",
   },
   {
     question: "Is Rakazo just chat, like Grok Bot?",

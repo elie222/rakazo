@@ -2,12 +2,70 @@ import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from 
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
+import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { readIncomingShareFile } from "./incoming-share";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
+
+/** A phone photo does not need its native resolution to be useful in chat. */
+const MAX_IMAGE_EDGE = 1_600;
+const IMAGE_COMPRESSION = 0.7;
+
+let imageManipulator: typeof ImageManipulatorModule | null | undefined;
+
+function loadImageManipulator() {
+  if (imageManipulator !== undefined) return imageManipulator;
+  imageManipulator = null;
+  try {
+    if (requireOptionalNativeModule("ExpoImageManipulator")) {
+      imageManipulator = require("expo-image-manipulator") as typeof ImageManipulatorModule;
+    }
+  } catch {
+    // Older binaries may not be able to load the package.
+  }
+  return imageManipulator;
+}
+
+function compressedImageName(name: string, format: ImageManipulatorModule.SaveFormat): string {
+  const extension = format === "png" ? ".png" : ".jpg";
+  return `${name.replace(/\.[^./\\]+$/, "") || "photo"}${extension}`;
+}
+
+async function prepareImage(
+  uri: string,
+  name: string,
+  sourceMimeType: string | null | undefined,
+  width: number | undefined,
+  height: number | undefined,
+) {
+  const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
+  // Preserve animation and transparency in GIF and WebP images.
+  if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
+  if (!width || !height || Math.max(width, height) <= MAX_IMAGE_EDGE) {
+    return { uri, name, mimeType };
+  }
+  const manipulator = loadImageManipulator();
+  if (!manipulator) return { uri, name, mimeType };
+  const format =
+    mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
+  try {
+    const context = manipulator.ImageManipulator.manipulate(uri);
+    context.resize(width >= height ? { width: MAX_IMAGE_EDGE } : { height: MAX_IMAGE_EDGE });
+    const image = await context.renderAsync();
+    const saved = await image.saveAsync({ compress: IMAGE_COMPRESSION, format });
+    return {
+      uri: saved.uri,
+      name: compressedImageName(name, format),
+      mimeType: format === "png" ? "image/png" : "image/jpeg",
+    };
+  } catch {
+    // An unreadable or unsupported image should not block the whole picker.
+    return { uri, name, mimeType };
+  }
+}
 
 async function readUriAsBase64(
   uri: string,
@@ -36,15 +94,44 @@ export async function pickFromLibrary(
     quality: 1,
   });
   if (result.canceled) return { attachments: [], skipped: [] };
-  const candidates = await Promise.all(
-    result.assets.map(async (asset) => {
-      const name = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
-      const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-      const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
-      return { name, mimeType, size, contentBase64, previewUri: asset.uri };
-    }),
-  );
-  return filterPickedAttachments(existingCount, candidates, maxBytes);
+  const attachments: PickedAttachment[] = [];
+  const skipped: PickSkip[] = [];
+  for (const asset of result.assets) {
+    const originalName = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
+    // Once full, let the filter report the skip without processing the file.
+    let candidate: Parameters<typeof filterPickedAttachments>[1][number] = {
+      name: originalName,
+      mimeType: inferAttachmentMimeType(originalName, asset.mimeType ?? undefined),
+      size: 0,
+      contentBase64: "",
+      previewUri: asset.uri,
+    };
+    if (existingCount + attachments.length < ATTACHMENT_MAX_COUNT) {
+      const prepared = await prepareImage(
+        asset.uri,
+        originalName,
+        asset.mimeType,
+        asset.width,
+        asset.height,
+      );
+      const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
+      candidate = {
+        name: prepared.name,
+        mimeType: prepared.mimeType,
+        size,
+        contentBase64,
+        previewUri: prepared.uri,
+      };
+    }
+    const filtered = filterPickedAttachments(
+      existingCount + attachments.length,
+      [candidate],
+      maxBytes,
+    );
+    attachments.push(...filtered.attachments);
+    skipped.push(...filtered.skipped);
+  }
+  return { attachments, skipped };
 }
 
 export async function takePhoto(
@@ -62,12 +149,26 @@ export async function takePhoto(
   if (result.canceled) return { attachments: [], skipped: [] };
   const asset = result.assets[0];
   if (!asset) return { attachments: [], skipped: [] };
-  const name = asset.fileName ?? `photo-${Date.now()}.jpg`;
-  const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-  const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
+  const originalName = asset.fileName ?? `photo-${Date.now()}.jpg`;
+  const prepared = await prepareImage(
+    asset.uri,
+    originalName,
+    asset.mimeType,
+    asset.width,
+    asset.height,
+  );
+  const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
   return filterPickedAttachments(
     existingCount,
-    [{ name, mimeType, size, contentBase64, previewUri: asset.uri }],
+    [
+      {
+        name: prepared.name,
+        mimeType: prepared.mimeType,
+        size,
+        contentBase64,
+        previewUri: prepared.uri,
+      },
+    ],
     maxBytes,
   );
 }
@@ -101,6 +202,8 @@ export async function readSharedFiles(
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
 ) {
+  // Loaded with the first share, so ordinary pickers never pull the share module.
+  const { readIncomingShareFile } = await import("./incoming-share");
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   const failedFiles: typeof files = [];

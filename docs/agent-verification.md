@@ -23,6 +23,37 @@ command. Nightly verification never starts computer sandboxes or requests model
 or sandbox credentials.
 Missing live credentials mean **not run**, not a passing model evaluation.
 
+## Paused turn continuity
+
+Human waits release the agent loop and worker compute. Before an approval,
+`ask_user`, `request_takeover`, or `request_secret` pause, the executor stores
+one versioned transcript in an internal external-effect row. It uses the same
+space content keys and encryption setting as messages, never client events or
+the run's choice/takeover marker column. Run and space deletion cascade the row;
+terminal completion, failure, cancellation and expiration clear it.
+
+The next attempt restores the original system prompt and the last provider
+prefix, appending the paused call and its result under its original call ID.
+Approved calls pass through the executor's canonical argument, resource and
+idempotency checks before another model request. Answers and takeover outcomes
+complete the pending interaction; protected input still stays in the secret
+entry path. Restored outside content taints the attempt. Changing models removes
+prior thinking, and aborted assistant tails are discarded.
+
+Restored messages pass through the normal newest-first whole-result allowance,
+monotonic shortening, stale page/screenshot pruning and context budget. Even the
+`current` diagnostic strategy uses bounded retrieval when restoring a turn.
+Prefix reuse is conditional on fitting the current model limits and retaining
+the same tool definitions. Main tool batches execute sequentially so a pause
+captures completed preceding calls. Checkpoints cover human waits; recovering
+an interrupted attempt is a separate concern.
+
+The offline pause tests use the real executor and Pi with a loopback model
+emulator and in-memory storage/provider fixtures. They assert original call IDs,
+earlier marker results, exact approved arguments, one execution, and no second
+card. Separate tests verify encryption, lease fencing, terminal cleanup,
+serialization, model changes and context bounds without a database server.
+
 ## Deterministic Pi tests
 
 `packages/testkit/src/model-emulator.ts` serves a loopback OpenAI-compatible
@@ -168,7 +199,7 @@ shell commands instead of pretending to run them. If outcome checks fail after
 that limitation is encountered, the trial is attributed to the harness. Confirm
 shell-dependent outcomes in the real Docker or live computer lane. Release monitoring
 checks a daily schedule and a newly introduced release; unchanged-release
-notification deduplication is not covered by this suite.
+notification deduplication is covered separately by the silence suite.
 
 Grading reads files, service records, recorded effects and persisted product
 state. A model's claim of completion is not sufficient. Cases do not receive
@@ -189,9 +220,57 @@ The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
 
-Keep functional criteria deterministic. Add a model judge only for a quality
-that cannot be graded directly, with a versioned rubric and human calibration.
-Do not let a judge override forbidden effects or missing artifacts.
+Keep assertions about effects and structured contracts deterministic. Use an LLM
+judge for natural-language meaning, with a versioned rubric and calibration
+against reviewed examples. Do not match prose against keywords or regexes, and
+do not let a judge override forbidden effects or missing artifacts.
+
+### Routine silence evals
+
+```sh
+pnpm test:evals --suite silence --list
+pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/silence.json
+```
+
+The five synthetic cases cover unchanged releases, an empty successful listing,
+a new release followed by an identical check, an unavailable source, and release
+notes that try to override the owner's silence instruction. A routine is created
+through the product API with notifications enabled, then awakened through the
+scheduler. Setup does not pay a model to author the routine. Each wake must read
+the source; a skipped or failed read cannot pass as an unchanged check.
+
+Deterministic graders inspect every wake's persisted bot blocks, transient
+progress captured at realtime publication, unread state, connector calls, and requests to the
+notification provider. Finalization deletes transient progress rows, so a final
+chat snapshot alone cannot establish silence. Hidden tool audit blocks are
+allowed; empty bubbles, text, progress, unread badges, and notifications fail quiet checks. New
+releases and failed checks must produce a grounded reply and notification. The
+second wake sees the same source and must avoid repeating an already reported
+release, using the bot's durable state. Missing observation fails the eval.
+
+The offline model-protocol fixture exercises these same product paths and proves
+that all-clear messages, missed new releases, and swallowed source errors fail the
+graders. It also streams pre-tool narration to catch text or sentinel leaks before
+completion. Scripted model responses validate delivery and grading, not live model
+judgment. Native push delivery and rendered UI pixels are outside this fixture.
+Live reports include redacted per-wake observations under `routine-observations`;
+ordinary tests remain offline and deterministic.
+
+The `silence-meaning-v1` judge rubric grades release facts and honest failure
+reporting by meaning, including the push text. It accepts paraphrases and rejects
+contradictory all-clears. The judge uses a separately configured standard model
+connection, has no tools, and runs only after deterministic checks pass. Its
+usage and cost are reported separately under `judge`; subject and judge calls
+share the same total spend guard. Calibration runs before product trials against
+reference labels covering paraphrases, uncertainty, contradictions, and invented
+facts. These anchors still need human review before using scores for qualification.
+A missing, unavailable, malformed, or miscalibrated judge cannot produce a pass.
+Ordinary tests use offline judge fixtures; they do not establish judge quality.
+
+The initial live baseline is inconclusive: fourteen of fifteen trials ended with
+model-call timeout errors, mostly within two seconds rather than at the trial's
+three-minute deadline. The saved report lacks transport diagnostics to establish
+the cause. No live qualification of the suite or its judge is claimed.
 
 ### Long conversation and cost evals
 

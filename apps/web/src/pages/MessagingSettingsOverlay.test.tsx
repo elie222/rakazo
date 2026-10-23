@@ -140,6 +140,19 @@ it("stops polling once the link code expires", async () => {
   expect(messaging.status.mock.calls.length).toBe(calls);
 });
 
+it.each([
+  [403, 1],
+  [404, 1],
+  [503, 4],
+])("after a %i status poll, link polls total %i", async (status, polls) => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  await startLink();
+  const calls = messaging.status.mock.calls.length;
+  messaging.status.mockRejectedValueOnce(Object.assign(new Error("Refused"), { status }));
+  await act(async () => vi.advanceTimersByTimeAsync(12_000));
+  expect(messaging.status).toHaveBeenCalledTimes(calls + polls);
+});
+
 it("detects a same-address relink to the selected bot", async () => {
   messaging.status.mockResolvedValue(
     statusWith([{ ...identity, botId: "bot-2", botName: "Other" }]),

@@ -27,6 +27,7 @@ import {
   speechUploadName,
   voiceDeadline,
   voiceHttpError,
+  voiceRequestError,
 } from "./voice-http.js";
 
 export { DEFAULT_COMPATIBLE_STT_MODEL, DEFAULT_COMPATIBLE_TTS_MODEL };
@@ -78,8 +79,9 @@ export function serializeOpenAiCompatibleVoiceSecret(
     sttModel?: string;
   },
   previousPlaintext?: string,
+  policy?: { allowPrivate?: boolean },
 ): string {
-  const url = assertAllowedOpenAiCompatibleUrl(input.baseUrl);
+  const url = assertAllowedOpenAiCompatibleUrl(input.baseUrl, policy);
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
@@ -162,7 +164,7 @@ export function openAiCompatibleVoiceServer(
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
-function serverError(status: number, what: string, body: unknown, apiKey?: string): string {
+function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
   const detail =
     body && typeof body === "object"
       ? (body as { detail?: unknown; error?: unknown; message?: unknown })
@@ -175,7 +177,7 @@ function serverError(status: number, what: string, body: unknown, apiKey?: strin
     ?.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
-  return voiceHttpError(status, PROVIDER_NAME, what, short ? { detail: short } : null);
+  return voiceRequestError(status, PROVIDER_NAME, what, short ? { detail: short } : null, body);
 }
 
 const KOKORO_ID = /^([abefhijpz])([fm])_([a-z]+)$/;
@@ -279,8 +281,10 @@ function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string): string {
 export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   private readonly fetch: typeof globalThis.fetch;
 
-  constructor(options: { fetch?: typeof globalThis.fetch } = {}) {
-    this.fetch = createOpenAiCompatibleFetch(options.fetch);
+  constructor(options: { fetch?: typeof globalThis.fetch; allowPrivateEndpoint?: boolean } = {}) {
+    this.fetch = createOpenAiCompatibleFetch(options.fetch, undefined, {
+      allowPrivate: options.allowPrivateEndpoint,
+    });
   }
 
   describe(): AdapterDescriptor<VoiceCapabilities> {
@@ -370,8 +374,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
       }),
       signal,
     });
-    if (!res.ok)
-      throw new Error(serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey));
+    if (!res.ok) throw serverError(res.status, "speaking", await readVoiceJson(res), secret.apiKey);
     const type = mediaType(res);
     // mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip.
     if (type !== "audio/mpeg" && type !== "audio/mp3") {
@@ -406,7 +409,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw new Error(serverError(res.status, "transcribing", parseJson(raw), secret.apiKey));
+      throw serverError(res.status, "transcribing", parseJson(raw), secret.apiKey);
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);

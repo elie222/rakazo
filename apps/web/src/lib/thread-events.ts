@@ -16,9 +16,12 @@ import {
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
+  QUEUE_HOLDING_RUN_STATUSES,
   reduceLiveMessageBlocks,
   replyMetadata,
   runFailureError,
+  settleRunSubagents,
+  stopsRunHelpers,
   subagentBlockFromPayload,
   takeLiveMessage,
   updateCloudAgentMessages,
@@ -89,7 +92,8 @@ export function applyThreadSendReceipt(
     return snapshot;
   }
   const currentRuns = activeThreadRuns(snapshot);
-  if (currentRuns.some((run) => isActive(run.status as RunStatus))) return snapshot;
+  if (currentRuns.some((run) => QUEUE_HOLDING_RUN_STATUSES.some((s) => s === run.status)))
+    return snapshot;
   const createdAt = receipt.createdAt ?? new Date().toISOString();
   const run: Run = {
     id: receipt.runId,
@@ -106,7 +110,11 @@ export function applyThreadSendReceipt(
     completedAt: null,
     createdAt,
   };
-  return { ...snapshot, run, activeRuns: [run] };
+  return {
+    ...snapshot,
+    run,
+    activeRuns: [...currentRuns.filter((r) => isActive(r.status as RunStatus)), run],
+  };
 }
 
 /** Reason the newest run stopped, until the reader dismisses that run's failure. */
@@ -261,6 +269,11 @@ export function reduceThreadSnapshot(
   event: ProductEvent,
 ): ThreadSnapshot | null {
   if (!prev) return prev;
+  if (stopsRunHelpers(event)) {
+    const messages = settleRunSubagents(prev.messages, event.runId);
+    if (messages !== prev.messages) prev = { ...prev, messages };
+  }
+
   if (event.type === "thread.cleared") {
     return {
       ...prev,
@@ -291,8 +304,8 @@ export function reduceThreadSnapshot(
     const without = (prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
       (candidate) => candidate.id !== run.id,
     );
-    // Bot threads keep a single primary run; groups accumulate concurrent member runs.
-    const activeRuns = prev.groupId ? [...without, run] : [run];
+    // Paused cards remain answerable when new work starts in any thread.
+    const activeRuns = [...without.filter((r) => isActive(r.status as RunStatus)), run];
     return {
       ...prev,
       cursor: event.seq,
@@ -568,27 +581,23 @@ export function computerTakeoverBlocked(
   return isActive(runStatus as RunStatus);
 }
 
-export function computerPanelAutoBoot(
+/**
+ * The panel only reconnects a computer that is already running; starting a stopped one waits
+ * for the user to open it, so showing the panel or switching bots never boots a sandbox.
+ * Reconnect must use computer.boot — never computer.recover (that destroys the sandbox).
+ */
+export function computerPanelNeedsScreen(
   state: ComputerStatus["state"] | undefined,
   screenUrl?: string | null,
-): "boot" | "recover-screen" | "wait" {
-  if (state === "booting" || state === "suspended") return "wait";
-  if (state === "running") return screenUrl ? "wait" : "recover-screen";
-  return "boot";
-}
-
-/** Auto panel reconnect must use computer.boot — never computer.recover (that destroys the sandbox). */
-export function computerPanelAutoUsesBoot(
-  action: ReturnType<typeof computerPanelAutoBoot>,
 ): boolean {
-  return action === "boot" || action === "recover-screen";
+  return state === "running" && !screenUrl;
 }
 
 export function computerPanelNeedsMaintenance(
   state: ComputerStatus["state"] | undefined,
   booting: boolean,
 ): boolean {
-  return !booting && (state === "error" || state === "stopped");
+  return !booting && state === "error";
 }
 
 export function reduceComputerStatus(

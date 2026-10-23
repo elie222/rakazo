@@ -1,12 +1,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SupermemorySaveResponse } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,
   MAX_MEMORY_CONTENT_CHARS,
   MAX_RECALLED_MEMORIES,
   MAX_SUPERMEMORY_RESPONSE_BYTES,
   probeSupermemory,
+  SUPERMEMORY_DELETE_FORBIDDEN_ERROR,
   saveSupermemoryMemory,
   saveSupermemoryMemoryToContainers,
   searchSupermemory,
@@ -315,12 +317,20 @@ describe("deleteSupermemoryContainer", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports a non-OK response instead of throwing", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
-    const result = await deleteSupermemoryContainer("rakazo:bot-123", config);
-    expect(result).toEqual({ ok: false, error: expect.stringContaining("404") });
-    vi.unstubAllGlobals();
-  });
+  // DELETE /v3/container-tags/{containerTag} responses from the Supermemory OpenAPI spec.
+  it.each([
+    [200, { ok: true }],
+    [404, { ok: true }],
+    [403, { ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR }],
+    [401, { ok: false, error: "Supermemory container delete failed: 401" }],
+    [500, { ok: false, error: "Supermemory container delete failed: 500" }],
+  ] satisfies [number, SupermemorySaveResponse][])(
+    "maps a %i response",
+    async (status, expected) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status })));
+      await expect(deleteSupermemoryContainer("rakazo:bot-123", config)).resolves.toEqual(expected);
+    },
+  );
 });
 
 describe("probeSupermemory", () => {

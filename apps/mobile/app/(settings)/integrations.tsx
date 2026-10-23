@@ -1,15 +1,24 @@
-import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import type {
+  CapabilityInstall,
+  Connection,
+  ConnectionCatalogItem,
+  McpServer,
+} from "@rakazo/contracts";
 import {
-  abortableDelay,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
+  catalogItemAccounts,
+  catalogItemKey,
+  connectCatalogItem,
   EMPTY_PLUGIN_CATALOG_MESSAGE,
   filterConnectionCatalogItems,
   humanizeToolName,
+  isCatalogItemConnected,
 } from "@rakazo/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -44,10 +53,6 @@ type ConnectionTool = { name: string; description: string };
 
 const LOGO_SIZE = 32;
 
-function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
-  return `${item.connectorId}:${item.slug}`;
-}
-
 export default function Integrations() {
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useI18n();
@@ -57,6 +62,8 @@ export default function Integrations() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpError, setMcpError] = useState<string | null>(null);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -169,6 +176,8 @@ export default function Integrations() {
     applySnapshot({ catalog: [], connections: [] });
     setCatalogReady(false);
     setSources([]);
+    setMcpServers([]);
+    setMcpError(null);
     setDetailKey(null);
     setLabelDrafts({});
     setPending(null);
@@ -199,6 +208,8 @@ export default function Integrations() {
       applySnapshot({ catalog: [], connections: [] });
       setCatalogReady(false);
       setSources([]);
+      setMcpServers([]);
+      setMcpError(null);
       setDetailKey(null);
       setLabelDrafts({});
     }
@@ -209,6 +220,27 @@ export default function Integrations() {
     }
     const generation = ++refreshGeneration.current;
     const sourceGeneration = ++sourcesGeneration.current;
+    void rpc<McpServer[]>("mcp/servers/list")
+      .then((servers) => {
+        if (
+          mounted.current &&
+          focus === focusGeneration.current &&
+          isIntegrationsScopeCurrent(scope) &&
+          sourceGeneration === sourcesGeneration.current
+        ) {
+          setMcpServers(servers);
+          setMcpError(null);
+        }
+      })
+      .catch((reason) => {
+        if (
+          mounted.current &&
+          focus === focusGeneration.current &&
+          isIntegrationsScopeCurrent(scope) &&
+          sourceGeneration === sourcesGeneration.current
+        )
+          setMcpError(errorText(reason, t("Could not load MCP servers")));
+      });
     void rpc<CapabilityInstall[]>("capabilities/list")
       .then((installs) => {
         if (
@@ -227,10 +259,9 @@ export default function Integrations() {
     setCatalogError(null);
     let next: IntegrationsSnapshot;
     try {
-      const [catalog, connections] = await Promise.all([
-        rpc<ConnectionCatalogItem[]>("connections/catalog"),
-        rpc<Connection[]>("connections/list"),
-      ]);
+      // The catalog call reconciles connection rows, so list them after it.
+      const catalog = await rpc<ConnectionCatalogItem[]>("connections/catalog");
+      const connections = await rpc<Connection[]>("connections/list");
       next = { catalog, connections };
     } catch (reason) {
       if (!mounted.current || focus !== focusGeneration.current) return;
@@ -339,16 +370,11 @@ export default function Integrations() {
   }
 
   function accountsFor(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
-    return connections.filter(
-      (row) =>
-        row.connectorId === item.connectorId &&
-        row.provider === item.slug &&
-        (row.status === "connected" || row.status === "pending"),
-    );
+    return catalogItemAccounts(connections, item);
   }
 
   function itemConnected(item: ConnectionCatalogItem) {
-    return item.connected || accountsFor(item).some((row) => row.status === "connected");
+    return isCatalogItemConnected(connections, item);
   }
 
   async function notifyAppConnected(item: ConnectionCatalogItem, isCurrent: () => boolean) {
@@ -368,39 +394,29 @@ export default function Integrations() {
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     setPending(key);
     setCatalogError(null);
     try {
-      const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
-        "connections/begin",
-        {
-          connectorId: item.connectorId,
-          provider: item.slug,
-          displayName: (() => {
-            const count = accountsFor(item).filter((row) => row.status === "connected").length;
-            return count <= 0 ? item.name : `${item.name} ${count + 1}`;
-          })(),
-        },
-      );
-      if (!isCurrent() || controller.signal.aborted) return;
-      if (started.authorizationUrl) await Linking.openURL(started.authorizationUrl);
-      for (let attempt = 0; attempt < 45; attempt += 1) {
-        if (controller.signal.aborted || !isCurrent()) return;
-        const row = await rpc<Connection>("connections/complete", {
-          connectionId: started.connectionId,
-        }).catch(() => undefined);
-        if (row?.status === "connected") {
-          if (controller.signal.aborted || !isCurrent()) return;
-          updateAccount(row);
-          void notifyAppConnected(item, isCurrent);
-          await refresh();
-          if (isCurrent()) setToolsTick((tick) => tick + 1);
-          return;
-        }
-        await abortableDelay(2_000, controller.signal);
+      const result = await connectCatalogItem(item, connections, {
+        begin: (input) =>
+          rpc<{ connectionId: string; authorizationUrl: string | null }>(
+            "connections/begin",
+            input,
+          ),
+        complete: (input) => rpc<Connection>("connections/complete", input),
+        openUrl: (url) => Linking.openURL(url),
+        signal: controller.signal,
+        isCurrent,
+      });
+      if (result.status === "aborted") return;
+      if (result.status === "connected") {
+        if (result.row) updateAccount(result.row);
+        void notifyAppConnected(item, isCurrent);
+        await refresh();
+        if (isCurrent()) setToolsTick((tick) => tick + 1);
+        return;
       }
-      if (controller.signal.aborted || !isCurrent()) return;
       Alert.alert(
         t("Connection pending"),
         t("Finish connecting in the browser, then refresh this page."),
@@ -462,7 +478,7 @@ export default function Integrations() {
     const isCurrent = captureConnectionScope();
     if (!isCurrent()) return;
     const matches = accountsFor(item);
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     if (matches.length === 0) {
       closeDetail();
       return;
@@ -549,7 +565,7 @@ export default function Integrations() {
   }
 
   function renderCatalogActions(item: ConnectionCatalogItem, label: string) {
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
     if (connected) {
@@ -593,7 +609,7 @@ export default function Integrations() {
     if (connected) {
       return (
         <Pressable
-          key={itemKey(item)}
+          key={catalogItemKey(item)}
           accessibilityRole="button"
           onPress={() => openDetail(item)}
           style={tileStyle}
@@ -603,7 +619,7 @@ export default function Integrations() {
       );
     }
     return (
-      <View key={itemKey(item)} style={tileStyle}>
+      <View key={catalogItemKey(item)} style={tileStyle}>
         {body}
       </View>
     );
@@ -611,7 +627,7 @@ export default function Integrations() {
 
   function renderDetail(item: ConnectionCatalogItem) {
     const accounts = accountsFor(item);
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     const connecting = pending === key;
     const uninstalling = pending === `uninstall:${key}`;
     const toolCount = tools.length;
@@ -694,7 +710,10 @@ export default function Integrations() {
           {toolsOpen ? (
             <View style={styles.toolsBody}>
               {toolsLoading ? (
-                <Text style={styles.secondary}>{t("Loading tools…")}</Text>
+                <ActivityIndicator
+                  color={native.secondaryLabel}
+                  accessibilityLabel={t("Loading tools…")}
+                />
               ) : tools.length === 0 ? (
                 <Text style={styles.secondary}>{t("No tools available.")}</Text>
               ) : (
@@ -733,6 +752,48 @@ export default function Integrations() {
             returnKeyType="search"
             style={styles.input}
           />
+        ) : null}
+
+        {!detailItem && (mcpServers.length > 0 || mcpError) ? (
+          <View testID="registered-mcp-servers" style={styles.catalogStack}>
+            <Text style={styles.section}>{t("MCP servers")}</Text>
+            {mcpError ? (
+              <View>
+                <Text style={styles.error}>{mcpError}</Text>
+                <NativeActionButton
+                  label={t("Retry")}
+                  fill={false}
+                  onPress={() => void retryRefresh()}
+                  prominence="secondary"
+                />
+              </View>
+            ) : null}
+            {mcpServers
+              .filter((server) =>
+                `${server.name} ${server.description}`
+                  .toLowerCase()
+                  .includes(query.trim().toLowerCase()),
+              )
+              .map((server) => (
+                <View key={server.id} testID="registered-mcp-server" style={styles.row}>
+                  <ConnectorIcon name={server.name} size={LOGO_SIZE} />
+                  <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+                    {server.name}
+                  </Text>
+                  <Text style={styles.secondary}>
+                    {!server.enabled
+                      ? t("Disabled")
+                      : server.oauthStatus === "reconnect"
+                        ? t("OAuth expired")
+                        : server.oauthStatus === "connected"
+                          ? t("OAuth connected")
+                          : server.hasSecret
+                            ? t("Credential saved")
+                            : t("No auth")}
+                  </Text>
+                </View>
+              ))}
+          </View>
         ) : null}
 
         {catalogError ? (
@@ -782,7 +843,7 @@ export default function Integrations() {
                 {showFeatured
                   ? featuredTiles.map((tile) => {
                       const item = tile.item;
-                      const key = item ? itemKey(item) : tile.id;
+                      const key = item ? catalogItemKey(item) : tile.id;
                       const disabled = tile.missing || !item;
                       if (item && !tile.missing) {
                         return renderCatalogTile(item, tile.label);

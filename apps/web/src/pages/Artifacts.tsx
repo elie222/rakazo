@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, ArtifactVersion, Bot } from "@rakazo/contracts";
@@ -17,6 +18,9 @@ import {
   NativeSelectOption,
   parseBotAvatar,
   resolvePersonaColorDef,
+  Spinner,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@rakazo/ui-web";
 import {
   ChevronLeft,
@@ -32,6 +36,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { IconTooltip } from "../components/IconTooltip";
 import { PdfViewer } from "../components/PdfViewer";
 import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
@@ -245,22 +250,34 @@ export function ArtifactsPage() {
               <Trans>Filters</Trans>
             </button>
             {!artifactId ? (
-              <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
-                <ViewModeButton
-                  active={viewMode === "grid"}
-                  label={t`Card view`}
-                  onClick={() => setMode("grid")}
-                >
-                  <LayoutGrid size={15} strokeWidth={1.9} />
-                </ViewModeButton>
-                <ViewModeButton
-                  active={viewMode === "list"}
-                  label={t`List view`}
-                  onClick={() => setMode("list")}
-                >
-                  <List size={15} strokeWidth={1.9} />
-                </ViewModeButton>
-              </div>
+              <ToggleGroup
+                value={[viewMode]}
+                onValueChange={([next]) => {
+                  if (next) setMode(next as ViewMode);
+                }}
+                spacing={1}
+                size="sm"
+                className="rounded-lg border border-border p-0.5"
+              >
+                <IconTooltip label={t`Card view`}>
+                  <ToggleGroupItem
+                    value="grid"
+                    aria-label={t`Card view`}
+                    className="size-7 min-w-7 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+                  >
+                    <LayoutGrid size={15} strokeWidth={1.9} />
+                  </ToggleGroupItem>
+                </IconTooltip>
+                <IconTooltip label={t`List view`}>
+                  <ToggleGroupItem
+                    value="list"
+                    aria-label={t`List view`}
+                    className="size-7 min-w-7 rounded-md px-0 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-accent-foreground"
+                  >
+                    <List size={15} strokeWidth={1.9} />
+                  </ToggleGroupItem>
+                </IconTooltip>
+              </ToggleGroup>
             ) : null}
           </div>
         </div>
@@ -408,7 +425,7 @@ function BrowsingPane({
   if (items === null) {
     return (
       <div className="grid flex-1 place-items-center text-sm text-muted-foreground/80">
-        {loadError ?? <Trans>Loading…</Trans>}
+        {loadError ?? <Spinner aria-label={t`Loading…`} />}
       </div>
     );
   }
@@ -455,8 +472,15 @@ function BrowsingPane({
 function LoadMoreButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
   return (
     <div className="mt-4 flex justify-center">
-      <Button variant="outline" size="sm" disabled={loading} onClick={onClick}>
-        {loading ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={loading}
+        onClick={onClick}
+        aria-label={t`Load more`}
+      >
+        {loading ? <Spinner aria-label={t`Loading…`} /> : null}
+        <Trans>Load more</Trans>
       </Button>
     </div>
   );
@@ -485,7 +509,7 @@ function EmptyArtifacts({
       <div className="flex flex-col items-center gap-3">
         <span>
           {loadingMore ? (
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           ) : (
             <Trans>No matching artifacts on this page.</Trans>
           )}
@@ -519,7 +543,7 @@ function IndexPane({
     <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-e border-border">
       {items === null ? (
         <div className="grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground/80">
-          {loadError ?? <Trans>Loading…</Trans>}
+          {loadError ?? <Spinner aria-label={t`Loading…`} />}
         </div>
       ) : items.length === 0 ? (
         <EmptyArtifacts
@@ -609,33 +633,6 @@ function BotFilterChip({
   );
 }
 
-function ViewModeButton({
-  active,
-  label,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={onClick}
-      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-        active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function ArtifactCard({
   artifact,
   bot,
@@ -687,19 +684,20 @@ function ArtifactCard({
           <span className="shrink-0">{formatRelativeTime(artifact.createdAt)}</span>
         </div>
       </Link>
-      <button
-        type="button"
-        aria-label={t`Delete ${artifact.name}`}
-        title={t`Delete ${artifact.name}`}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onRequestDelete(artifact);
-        }}
-        className="absolute bottom-3 end-3 grid h-7 w-7 place-items-center rounded-lg bg-card text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
-      >
-        <Trash2 size={14} strokeWidth={1.9} />
-      </button>
+      <IconTooltip label={t`Delete ${artifact.name}`}>
+        <button
+          type="button"
+          aria-label={t`Delete ${artifact.name}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onRequestDelete(artifact);
+          }}
+          className="absolute bottom-3 end-3 grid h-7 w-7 place-items-center rounded-lg bg-card text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <Trash2 size={14} strokeWidth={1.9} />
+        </button>
+      </IconTooltip>
     </div>
   );
 }
@@ -746,19 +744,20 @@ function ArtifactRow({
           <span>{formatRelativeTime(artifact.createdAt)}</span>
         </div>
       </Link>
-      <button
-        type="button"
-        aria-label={t`Delete ${artifact.name}`}
-        title={t`Delete ${artifact.name}`}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onRequestDelete(artifact);
-        }}
-        className="absolute end-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
-      >
-        <Trash2 size={14} strokeWidth={1.9} />
-      </button>
+      <IconTooltip label={t`Delete ${artifact.name}`}>
+        <button
+          type="button"
+          aria-label={t`Delete ${artifact.name}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onRequestDelete(artifact);
+          }}
+          className="absolute end-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <Trash2 size={14} strokeWidth={1.9} />
+        </button>
+      </IconTooltip>
     </div>
   );
 }
@@ -869,7 +868,7 @@ function PreviewPane({
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[16px] font-semibold">
-            {state.status === "ready" ? state.artifact.name : t`Loading…`}
+            {state.status === "ready" ? state.artifact.name : null}
           </h2>
           {state.status === "ready" && state.artifact.description ? (
             <p className="truncate text-[12.5px] text-muted-foreground">
@@ -903,19 +902,20 @@ function PreviewPane({
               <Download className="me-1.5" size={15} strokeWidth={1.9} />
               <Trans>Download</Trans>
             </Button>
-            <button
-              type="button"
-              aria-label={maximized ? t`Show list` : t`Maximize`}
-              title={maximized ? t`Show list` : t`Maximize`}
-              onClick={onToggleMaximize}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent"
-            >
-              {maximized ? (
-                <Minimize2 size={15} strokeWidth={1.9} />
-              ) : (
-                <Maximize2 size={15} strokeWidth={1.9} />
-              )}
-            </button>
+            <IconTooltip label={maximized ? t`Show list` : t`Maximize`}>
+              <button
+                type="button"
+                aria-label={maximized ? t`Show list` : t`Maximize`}
+                onClick={onToggleMaximize}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent"
+              >
+                {maximized ? (
+                  <Minimize2 size={15} strokeWidth={1.9} />
+                ) : (
+                  <Maximize2 size={15} strokeWidth={1.9} />
+                )}
+              </button>
+            </IconTooltip>
           </>
         ) : null}
       </header>
@@ -923,7 +923,7 @@ function PreviewPane({
       <div className="min-h-0 flex-1 p-5">
         {state.status === "loading" ? (
           <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-            <Trans>Loading…</Trans>
+            <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
           <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">

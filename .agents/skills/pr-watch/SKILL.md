@@ -31,8 +31,11 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 ## The cycle
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
-   every check run and commit status on the exact head SHA is terminal, then
-   prints the digest. You are re-invoked when it exits.
+   there is something to act on: a review finding you have not seen, a check
+   that newly failed, or every check run and commit status on the exact head
+   SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   Review bots usually answer long before the slowest check, so expect to
+   handle comments while CI is still running.
 
    Never wait in the foreground. `sleep` is blocked and an `until` loop is
    killed at the execution tool's timeout, costing an error round-trip plus a
@@ -45,7 +48,7 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
    | `green` | Check the completion gate below, then report. |
    | `failures` | Triage below. |
    | `open-comments` | Answer them below. |
-   | `pending` | A check registered late. Back to 1. |
+   | `pending` | Checks are still running (you woke early, or one registered late). Back to 1. |
    | `out-of-sync` | Push or reconcile, then back to 1. |
 
 3. After any push or reply, go back to 1 once. A verdict is only good for the
@@ -156,7 +159,7 @@ clean or stopped at a limit. If you stopped at a limit, say what was pending.
 
 ```
 "$PRD" [PR]            one-shot digest
-"$PRD" --watch [PR]    block until checks settle, then digest
+"$PRD" --watch [PR]    block until something is actionable or checks settle
 "$PRD" --all [PR]      reprint findings already shown once
 "$PRD" --logs JOB_ID   failing CI log, stripped
 "$PRD" --reply ID BODY reply to a review thread

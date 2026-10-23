@@ -1,16 +1,25 @@
+import { lookup } from "node:dns/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { assertLocalServiceBaseUrl } from "./local-service-endpoint.js";
 import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
-import { assertSupermemoryLocalBaseUrl } from "./supermemory-memory-provider.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 
 function resolverFor(
   plaintext: string,
-  options: { mode?: "cloud" | "local"; ownerUserId?: string | null; baseUrl?: string } = {},
+  options: {
+    provider?: string;
+    mode?: "cloud" | "local";
+    allowPrivateEndpoint?: boolean;
+    baseUrl?: string;
+  } = {},
 ) {
+  vi.stubEnv("MCP_ALLOW_PRIVATE_ENDPOINT", options.allowPrivateEndpoint ? "true" : "false");
   const prisma = {
     spaceMemoryConfig: {
       findUnique: vi.fn(async () => ({
         userId: "config-author",
-        provider: "supermemory",
+        provider: options.provider ?? "supermemory",
         settings: {
           mode: options.mode ?? "cloud",
           baseUrl: options.baseUrl ?? "https://api.supermemory.ai",
@@ -18,9 +27,6 @@ function resolverFor(
         defaultMemoryScope: "shared",
         secret: { ciphertext: "encrypted" },
       })),
-    },
-    deploymentSettings: {
-      findUnique: vi.fn(async () => ({ ownerUserId: options.ownerUserId ?? null })),
     },
   };
   const secrets = { load: vi.fn(() => plaintext) };
@@ -31,18 +37,78 @@ function resolverFor(
   };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.resetAllMocks();
+});
 
 describe("SpaceMemoryProviderResolver", () => {
-  it.each([null, "another-user"])(
-    "disables saved local configurations without current deployment-owner authorization: %s",
-    async (ownerUserId) => {
+  it.each(["honcho", "supermemory"])(
+    "disables %s without loading credentials when local DNS revalidation fails",
+    async (provider) => {
+      vi.mocked(lookup).mockRejectedValue(new Error("DNS unavailable"));
+      const { resolver, secrets } = resolverFor(JSON.stringify({ apiKey: "fake-key" }), {
+        provider,
+        mode: "local",
+        baseUrl: "http://memory.example.test:8000",
+        allowPrivateEndpoint: true,
+      });
+
+      await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
+      expect(lookup).toHaveBeenCalled();
+      expect(secrets.load).not.toHaveBeenCalled();
+    },
+  );
+
+  it("gates and revalidates saved local Honcho endpoints like other local providers", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const local = { provider: "honcho", mode: "local" as const };
+
+    const notOwner = resolverFor("honcho-admin-token", {
+      ...local,
+      baseUrl: "http://10.0.0.8:8000",
+      allowPrivateEndpoint: false,
+    });
+    await expect(notOwner.resolver.resolve("workspace-1")).resolves.toBeNull();
+    expect(notOwner.secrets.load).not.toHaveBeenCalled();
+
+    const publicHost = resolverFor("honcho-admin-token", {
+      ...local,
+      baseUrl: "http://203.0.113.10:8000",
+      allowPrivateEndpoint: true,
+    });
+    await expect(publicHost.resolver.resolve("workspace-1")).resolves.toBeNull();
+    expect(publicHost.secrets.load).not.toHaveBeenCalled();
+
+    const missingUrl = resolverFor("honcho-admin-token", {
+      ...local,
+      baseUrl: "",
+      allowPrivateEndpoint: true,
+    });
+    await expect(missingUrl.resolver.resolve("workspace-1")).resolves.toBeNull();
+    expect(missingUrl.secrets.load).not.toHaveBeenCalled();
+
+    const owned = resolverFor(JSON.stringify({ apiKey: "honcho-admin-token" }), {
+      ...local,
+      baseUrl: "http://10.0.0.8:8000",
+      allowPrivateEndpoint: true,
+    });
+    const configured = await owned.resolver.resolve("workspace-1");
+    expect(configured?.provider.describe().id).toBe("honcho");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([false, undefined])(
+    "disables saved local configurations without explicit operator authorization: %s",
+    async (allowPrivateEndpoint) => {
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
       const { resolver, secrets } = resolverFor("sm_fake_key", {
         mode: "local",
         baseUrl: "http://127.0.0.1:8123/internal-action#",
-        ownerUserId,
+        allowPrivateEndpoint,
       });
 
       await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
@@ -57,7 +123,7 @@ describe("SpaceMemoryProviderResolver", () => {
     const { resolver } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://localhost:6767/memory/",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
     const configured = await resolver.resolve("workspace-1");
     await configured!.provider.recall(
@@ -73,26 +139,25 @@ describe("SpaceMemoryProviderResolver", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:6767/memory/v4/search");
   });
 
-  it("rejects ambiguous persisted URLs even when the deployment owner configured them", async () => {
+  it("disables ambiguous persisted URLs even when the deployment owner configured them", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const { resolver } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://127.0.0.1:8123/internal-action#",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
-    await expect(resolver.resolve("workspace-1")).rejects.toThrow(/base URL/);
+    await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("loads generic JSON credential payloads", async () => {
-    const { resolver, prisma } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
+    const { resolver } = resolverFor(JSON.stringify({ apiKey: "sm_json_key" }));
 
     const configured = await resolver.resolve("workspace-1");
 
     expect(configured?.provider.describe().id).toBe("supermemory");
     expect(configured?.defaultScope).toBe("shared");
-    expect(prisma.deploymentSettings.findUnique).not.toHaveBeenCalled();
   });
 
   it("keeps legacy raw Supermemory credentials usable after the schema migration", async () => {
@@ -107,19 +172,19 @@ describe("SpaceMemoryProviderResolver", () => {
     const { resolver, secrets } = resolverFor("sm_fake_key", {
       mode: "local",
       baseUrl: "http://203.0.113.10:6767",
-      ownerUserId: "config-author",
+      allowPrivateEndpoint: true,
     });
-    await expect(resolver.resolve("workspace-1")).rejects.toThrow(/private-network/);
+    await expect(resolver.resolve("workspace-1")).resolves.toBeNull();
     expect(secrets.load).not.toHaveBeenCalled();
 
     await expect(
-      assertSupermemoryLocalBaseUrl("https://memory.example.com", {
+      assertLocalServiceBaseUrl("https://memory.example.com", {
         allowPrivateEndpoint: true,
         resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
       }),
     ).rejects.toThrow(/private-network/);
     await expect(
-      assertSupermemoryLocalBaseUrl("http://example.com:6767", {
+      assertLocalServiceBaseUrl("http://example.com:6767", {
         allowPrivateEndpoint: true,
         resolveHostname: async () => [{ address: "203.0.113.10", family: 4 as const }],
       }),
@@ -159,5 +224,6 @@ describe("SpaceMemoryProviderResolver", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.supermemory.ai/v4/search");
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });

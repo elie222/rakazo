@@ -1,3 +1,5 @@
+import { accountDisplay } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
@@ -44,7 +46,7 @@ export function CallCard() {
     if (!onCall || cachedInitial !== null) return;
     void rpc<MobileMe>("me")
       .then((me) => {
-        cachedInitial = (me.name ?? me.email ?? "").trim().slice(0, 1).toUpperCase();
+        cachedInitial = accountDisplay(me, t("You")).initial ?? "";
         setInitial(cachedInitial);
       })
       .catch(() => undefined);
@@ -58,15 +60,15 @@ export function CallCard() {
       fallbackStyle={[
         styles.cardFallback,
         {
-          backgroundColor: tokens.card,
-          borderColor: tokens.border,
+          backgroundColor: tokens.glassFill,
+          borderColor: tokens.glassStroke,
           shadowColor: tokens.foreground,
         },
       ]}
     >
       <KeepScreenOnDuringCall />
       <View style={styles.row}>
-        <BotAvatar color={call.botColor} identity={call.botId} size={28} />
+        <BotAvatar color={call.botColor} identity={call.botId} size={28} motion="live" />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("On a call with {name}", { name: call.botName })}
@@ -115,8 +117,8 @@ export function CallCard() {
           ios="phone.down.fill"
           android="call-outline"
           color={tokens.destructiveForeground}
-          border={tokens.destructive}
-          background={tokens.destructive}
+          border={tokens.destructiveFill}
+          background={tokens.destructiveFill}
           onPress={endCall}
         />
       </View>
@@ -244,7 +246,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  name: { fontSize: 15, fontWeight: "500", maxWidth: 110, writingDirection: "auto" },
+  name: { ...typeScale.cardTitle, maxWidth: 110, writingDirection: "auto" },
   waveform: {
     flex: 1,
     flexDirection: "row",
@@ -263,5 +265,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
   buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
   transcript: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, gap: 5 },
-  line: { fontSize: 13, writingDirection: "auto" },
+  line: { ...typeScale.secondary, writingDirection: "auto" },
 });

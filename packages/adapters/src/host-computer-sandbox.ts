@@ -9,7 +9,7 @@ import type {
   WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { describeDesktopSandbox } from "./desktop-sandbox.js";
 import type {
   HostComputerEnvironment,
   HostComputerFrame,
@@ -28,7 +28,7 @@ export class HostComputerSandbox implements SandboxProvider {
     private readonly token: string,
   ) {}
   describe() {
-    return new DesktopSandboxProvider().describe();
+    return describeDesktopSandbox();
   }
 
   private async *request<T>(input: HostComputerRequest, context: AdapterContext): AsyncIterable<T> {
@@ -37,11 +37,15 @@ export class HostComputerSandbox implements SandboxProvider {
     const body = JSON.stringify({ ...input, runId: context.runId });
     if (Buffer.byteLength(body) > HOST_COMPUTER_MAX_BYTES)
       throw new Error("Local computer request is too large");
+    const signal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(hostComputerDeadlineMs(input)),
+    ]);
     const response = await fetch(new URL("/computer", this.url), {
       method: "POST",
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
       body,
-      signal: AbortSignal.any([context.signal, AbortSignal.timeout(hostComputerDeadlineMs(input))]),
+      signal,
       redirect: "error",
     });
     if (!response.ok || !response.body) {
@@ -51,15 +55,23 @@ export class HostComputerSandbox implements SandboxProvider {
       );
     }
     const reader = response.body.getReader();
+    const abort = () => {
+      void reader.cancel(signal.reason).catch(() => undefined);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
     const decoder = new TextDecoder();
     let pending = "";
     try {
       while (true) {
+        signal.throwIfAborted();
         const chunk = await reader.read();
+        signal.throwIfAborted();
         if (chunk.done) break;
         pending += decoder.decode(chunk.value, { stream: true });
         let newline = pending.indexOf("\n");
         while (newline !== -1) {
+          signal.throwIfAborted();
           if (newline > HOST_COMPUTER_MAX_BYTES)
             throw new Error("Local computer response is too large");
           const frame = JSON.parse(pending.slice(0, newline)) as HostComputerFrame<T>;
@@ -80,7 +92,9 @@ export class HostComputerSandbox implements SandboxProvider {
       }
       throw new Error("Local computer disconnected. Check the result before retrying.");
     } finally {
-      await reader.cancel().catch(() => undefined);
+      signal.removeEventListener("abort", abort);
+      const cancellation = reader.cancel().catch(() => undefined);
+      if (!signal.aborted) await cancellation;
       reader.releaseLock();
     }
   }

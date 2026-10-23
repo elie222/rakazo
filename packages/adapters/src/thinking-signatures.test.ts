@@ -1,6 +1,10 @@
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { isThinkingSignatureMismatch, withoutThinkingBlocks } from "./thinking-signatures.js";
+import {
+  isThinkingSignatureMismatch,
+  withoutThinkingBlocks,
+  withoutThinkingFrom,
+} from "./thinking-signatures.js";
 
 describe("thinking signatures bound to a different conversation", () => {
   it("recognizes the provider error, also through proxies", () => {
@@ -46,5 +50,37 @@ describe("thinking signatures bound to a different conversation", () => {
     expect(context.messages[1]).toMatchObject({ content: { length: 3 } });
     const plain = { messages: [context.messages[0]] } as unknown as TranscriptContext;
     expect(withoutThinkingBlocks(plain)).toBe(plain);
+  });
+
+  it("removes thinking only from messages at or after the given index", () => {
+    const assistant = (id: string) =>
+      ({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: id, thinkingSignature: id },
+          { type: "toolCall", id, name: "tool", arguments: {} },
+        ],
+        timestamp: 0,
+      }) as unknown as TranscriptContext["messages"][number];
+    const onlyThinking = {
+      role: "assistant",
+      content: [{ type: "thinking", thinking: "t", thinkingSignature: "t" }],
+      timestamp: 0,
+    } as unknown as TranscriptContext["messages"][number];
+    const messages = [assistant("a"), assistant("b"), onlyThinking];
+    const thinking = (list: typeof messages) =>
+      list.map((message) =>
+        message.role === "assistant"
+          ? message.content.filter((part) => part.type === "thinking").length
+          : 0,
+      );
+    expect(thinking(withoutThinkingFrom(messages, 0))).toEqual([0, 0, 0]);
+    expect(thinking(withoutThinkingFrom(messages, 1))).toEqual([1, 0, 0]);
+    expect(withoutThinkingFrom(messages, 3)).toBe(messages);
+    expect(withoutThinkingFrom(messages, 99)).toBe(messages);
+    // A message left empty stays in place so indexes keep lining up; the provider adapter skips it.
+    expect(withoutThinkingFrom(messages, 2)[2]).toMatchObject({ role: "assistant", content: [] });
+    const plain = [{ role: "user", content: "hi", timestamp: 0 }] as TranscriptContext["messages"];
+    expect(withoutThinkingFrom(plain, 0)).toBe(plain);
   });
 });

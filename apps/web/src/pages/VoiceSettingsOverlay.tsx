@@ -16,9 +16,11 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  Spinner,
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { importChunk } from "../lib/preload-recovery";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
@@ -198,7 +200,7 @@ export function VoiceSettingsOverlay({
     setNotice(null);
     markPending("test");
     try {
-      const { speaker } = await import("../lib/tts.js");
+      const { speaker } = await importChunk(() => import("../lib/tts.js"));
       await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, { spaceId });
       if (speaker.state.error) {
         setError(speaker.state.error);
@@ -284,7 +286,7 @@ export function VoiceSettingsOverlay({
         <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
           {loading ? (
             <p className="text-sm text-muted-foreground">
-              <Trans>Loading voice providers…</Trans>
+              <Spinner aria-label={t`Loading voice providers…`} />
             </p>
           ) : null}
           {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}

@@ -1,7 +1,14 @@
-import { ORPCError } from "@orpc/server";
+import { ORPCError, onError, os } from "@orpc/server";
+import { RPCHandler } from "@orpc/server/fetch";
+import {
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+  VoiceAccountError,
+} from "@rakazo/adapter-kit";
+import { IsolationError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
-import { logUnexpectedRpcError } from "./app.js";
+import { handleRpcError, logUnexpectedRpcError } from "./app.js";
 
 describe("logUnexpectedRpcError", () => {
   afterEach(() => {
@@ -38,5 +45,133 @@ describe("logUnexpectedRpcError", () => {
         cause: { message: "connect ECONNREFUSED 127.0.0.1:7091" },
       },
     });
+  });
+
+  it("returns a provider rate limit as too many requests and still logs the cause", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxRateLimitError({ cause: new Error("HTTP 429, rate_limited") });
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "TOO_MANY_REQUESTS", message: error.message });
+    expect(sink.events[0]).toMatchObject({
+      message: "rpc computer/boot failed",
+      error: { cause: { message: "HTTP 429, rate_limited" } },
+    });
+  });
+
+  it("returns a computer the provider never started as a retryable 503 without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxUnavailableError({ cause: new Error("sandbox did not become ready") });
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "SERVICE_UNAVAILABLE", message: error.message });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/boot computer unavailable",
+        reason: "sandbox did not become ready",
+      }),
+    ]);
+  });
+
+  it("sends a provider rate limit to the client as HTTP 429 with the plain message", async () => {
+    installLogger(createLogger({ service: "rakazo-api", sinks: [createTestSink()] }));
+    const router = {
+      boot: os.handler(() => {
+        throw new SandboxRateLimitError({ cause: new Error("HTTP 429, rate_limited") });
+      }),
+    };
+    const rpc = new RPCHandler(router, {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
+
+    const { response } = await rpc.handle(
+      new Request("http://localhost/rpc/boot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(response?.status).toBe(429);
+    expect(await response?.text()).toContain("Too many computer requests. Try again later.");
+  });
+
+  it("sends a spent voice provider account to the client as HTTP 402 with its code and no error report", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const router = {
+      voices: os.handler(() => {
+        throw new VoiceAccountError(
+          "VOICE_OUT_OF_CREDIT",
+          "OpenAI says this account is out of credit.",
+        );
+      }),
+    };
+    const rpc = new RPCHandler(router, {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
+
+    const { response } = await rpc.handle(
+      new Request("http://localhost/rpc/voices", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(response?.status).toBe(402);
+    expect(await response?.json()).toMatchObject({
+      json: { code: "VOICE_OUT_OF_CREDIT", message: "OpenAI says this account is out of credit." },
+    });
+    expect(sink.events.map((event) => event.level)).toEqual(["warn"]);
+  });
+
+  it("sends a missing or foreign resource to the client as HTTP 404 without an error report", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const router = {
+      read: os.handler(() => {
+        throw new IsolationError();
+      }),
+    };
+    const rpc = new RPCHandler(router, {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
+
+    const { response } = await rpc.handle(
+      new Request("http://localhost/rpc/read", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(response?.status).toBe(404);
+    expect(await response?.json()).toMatchObject({
+      json: { code: "NOT_FOUND", message: "Resource not found" },
+    });
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc read not found"],
+    ]);
   });
 });

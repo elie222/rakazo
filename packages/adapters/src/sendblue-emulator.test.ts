@@ -40,6 +40,7 @@ describe("emulated sendblue platform inbound", () => {
     expect(events[0]).toEqual({
       type: "message",
       provider: "sendblue",
+      transport: "iMessage",
       handle: "handle-dm-1",
       threadId: expect.stringMatching(/^sendblue:/),
       isDirect: true,
@@ -122,11 +123,13 @@ describe("emulated sendblue platform outbound", () => {
   it("rejects the send when the vendor API fails", async () => {
     const { emulator, surface } = createHarness();
     const threadId = await surface.openDirectThread("sendblue", "+15557654321", context);
-    // The official SDK retries 5xx twice before surfacing the failure.
-    emulator.failNextSends(3);
+    emulator.failNextSends(1);
 
     await expect(surface.sendToThread({ threadId, body: "will fail" }, context)).rejects.toThrow();
     expect(emulator.sent).toHaveLength(0);
+    // The SDK must not retry on its own (no idempotency key): the outbox does.
+    await surface.sendToThread({ threadId, body: "next" }, context);
+    expect(emulator.sent.map((message) => message.body)).toEqual(["next"]);
   });
 });
 

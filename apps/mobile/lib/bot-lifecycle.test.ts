@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { rpc, alert } = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("react-native", () => ({ Alert: { alert } }));
-vi.mock("./i18n", () => ({ t: (message: string) => message }));
+vi.mock("./i18n", () => ({
+  t: (message: string, values?: { name: string }) =>
+    message.replace("{name}", values?.name ?? "{name}"),
+}));
 vi.mock("./user-error", () => ({ errorText: () => "Try again." }));
 
-import { confirmDeleteBot, restoreArchivedBot } from "./bot-lifecycle";
+import { confirmDeleteBot, confirmDeleteGroup, restoreArchivedBot } from "./bot-lifecycle";
 
 beforeEach(() => vi.clearAllMocks());
 describe("archived bot lifecycle", () => {
@@ -39,4 +42,58 @@ describe("archived bot lifecycle", () => {
     });
     expect(deleted).toHaveBeenCalledOnce();
   });
+});
+
+describe("group deletion", () => {
+  it("asks with a named deletion title and retention message and removes nothing on cancel", () => {
+    const deleted = vi.fn();
+    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
+    const [title, message, buttons] = alert.mock.calls[0]!;
+    expect([title, message]).toEqual(["Delete Team?", "Bots and their own chats stay."]);
+    expect(
+      buttons.map(({ text, style }: { text: string; style: string }) => [text, style]),
+    ).toEqual([
+      ["Cancel", "cancel"],
+      ["Delete", "destructive"],
+    ]);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(deleted).not.toHaveBeenCalled();
+  });
+
+  it("removes the group only after Delete succeeds, and alerts on failure", async () => {
+    const deleted = vi.fn();
+    rpc.mockResolvedValueOnce({ ok: true });
+    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
+    alert.mock.calls[0]![2][1].onPress();
+    await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledWith("groups/remove", { groupId: "group-fixture" });
+
+    rpc.mockRejectedValueOnce(new Error("offline"));
+    confirmDeleteGroup({ id: "group-fixture", name: "Team" }, deleted);
+    alert.mock.calls[1]![2][1].onPress();
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledTimes(3));
+    expect(alert.mock.calls[2]!.slice(0, 2)).toEqual(["Could not delete group", "Try again."]);
+    expect(deleted).toHaveBeenCalledOnce();
+  });
+});
+
+it("keeps deletion bound to the archived bot's space through confirmation", async () => {
+  const requestContext = {
+    apiBase: "https://example.test",
+    headers: { "x-rakazo-space-id": "space-b" },
+  };
+  const deleted = vi.fn();
+  rpc.mockResolvedValueOnce({ ok: true });
+  confirmDeleteBot({ id: "bot-b", name: "Bot" }, deleted, () => true, requestContext);
+  await alert.mock.calls[0]![2][1].onPress();
+  await Promise.resolve();
+  expect(rpc).toHaveBeenCalledWith(
+    "bots/remove",
+    { botId: "bot-b", deleteMemories: false },
+    {
+      requestContext,
+      skipSpaceAuthRecovery: true,
+    },
+  );
+  expect(deleted).toHaveBeenCalledOnce();
 });

@@ -12,16 +12,22 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 
+/** Fixtures connect as the deployment owner, who may use local model servers. */
+const connectAsOwner = (
+  input: Parameters<typeof buildModelConnectPlaintext>[0],
+  previous?: string,
+  options?: Parameters<typeof buildModelConnectPlaintext>[2],
+) => buildModelConnectPlaintext(input, previous, { allowPrivateEndpoint: true, ...options });
+
 const modelId = "arbitrary-model";
 const baseUrl = "http://127.0.0.1:8090/v1";
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
 });
 
 it("keeps the existing keyless connection format", () => {
-  const plaintext = buildModelConnectPlaintext({ provider: "openai-compatible", baseUrl, modelId });
+  const plaintext = connectAsOwner({ provider: "openai-compatible", baseUrl, modelId });
   expect(plaintext).toContain(baseUrl);
   expect(plaintext).not.toContain("apiKey");
 });
@@ -94,10 +100,10 @@ describe("OpenAI-compatible standard thinking transport", () => {
       payload = JSON.parse(String(init?.body)) as Payload;
       return fixtureResponse();
     });
-    vi.stubGlobal("fetch", mockFetch);
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
       modelId,
       baseUrl,
+      allowPrivate: true,
       reasoning: supportsThinking,
       maxTokens,
     });

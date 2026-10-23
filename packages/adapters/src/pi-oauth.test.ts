@@ -1,5 +1,6 @@
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -2000,4 +2001,15 @@ describe("PiOAuthLogins", () => {
       expect(vi.getTimerCount()).toBe(armed - 1);
     });
   });
+});
+
+it("redacts long custom header secrets without corrupting short routing values", () => {
+  const secrets = secretValuesToRedact({
+    kind: "openai_compatible",
+    baseUrl: "https://example.invalid/v1",
+    headers: { "x-region": "us", "x-session": "long-session-secret" },
+  });
+  expect(redactSecrets("Tell us: long-session-secret", secrets)).toBe("Tell us: [redacted]");
+  expect(containsSecret("Tell us", secrets)).toBe(false);
+  expect(secrets).toEqual(["long-session-secret"]);
 });

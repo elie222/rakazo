@@ -1,7 +1,8 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
+import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
 import {
   prepareSupermemoryConnection,
   SupermemoryMemoryProvider,
@@ -123,6 +124,29 @@ describe("SupermemoryMemoryProvider", () => {
     ]);
   });
 
+  it("purges a generation that never got a container", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 404 })));
+    await expect(
+      provider().purgeHistory({ botId: "bot-1", generations: [4, 5] }, context),
+    ).resolves.toEqual({ ok: true, value: undefined });
+  });
+
+  it("reports a purge the key is not allowed to make", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 403 })));
+    await expect(
+      provider().purgeHistory({ botId: "bot-1", generations: [4] }, context),
+    ).resolves.toEqual({ ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR });
+  });
+
+  it.each(["", "  "])("recalls nothing for an empty query without searching", async (query) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      provider().recall({ query, scope: "shared", botId: "bot-1", limit: 5 }, context),
+    ).resolves.toEqual({ ok: true, value: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("does not fetch when a saved local base URL is a public address", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -143,9 +167,46 @@ const credentials = { apiKey: "sm_test_key" };
 const privateResolver = async () => [{ address: "172.18.0.4", family: 4 as const }];
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
+describe("Supermemory connection setup", () => {
+  function setupFetch(deleteStatus: number) {
+    return vi.fn(async (url: string | URL | Request, init?: RequestInit) =>
+      init?.method === "DELETE"
+        ? new Response("{}", { status: deleteStatus })
+        : Response.json(
+            { containerTags: [] },
+            { status: String(url).endsWith("/list") ? 200 : 404 },
+          ),
+    );
+  }
+
+  it("checks that the key may delete memory without deleting real data", async () => {
+    const fetchMock = setupFetch(404);
+    vi.stubGlobal("fetch", fetchMock);
+    await prepareSupermemoryConnection({ mode: "cloud" }, credentials);
+    expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, String(url)])).toEqual([
+      ["GET", "https://api.supermemory.ai/v3/container-tags/list"],
+      [
+        "DELETE",
+        expect.stringMatching(
+          /^https:\/\/api\.supermemory\.ai\/v3\/container-tags\/rakazo%3Adelete-probe%3A[0-9a-f-]{36}$/,
+        ),
+      ],
+    ]);
+  });
+
+  it("rejects a key that cannot delete memory from cleared conversations", async () => {
+    vi.stubGlobal("fetch", setupFetch(403));
+    await expect(prepareSupermemoryConnection({ mode: "cloud" }, credentials)).rejects.toThrow(
+      SUPERMEMORY_DELETE_FORBIDDEN_ERROR,
+    );
+  });
+});
+
 describe("Supermemory local base URL", () => {
   it("accepts loopback", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response("[]"),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const prepared = await prepareSupermemoryConnection(
@@ -161,7 +222,9 @@ describe("Supermemory local base URL", () => {
   it.each(["http://10.0.0.8:6767", "http://192.168.1.20:6767", "http://[fd00::1]:6767"])(
     "accepts private literal %s for the deployment owner",
     async (baseUrl) => {
-      const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+      const fetchMock = vi.fn(
+        async (_url: string | URL | Request, _init?: RequestInit) => new Response("[]"),
+      );
       vi.stubGlobal("fetch", fetchMock);
 
       const prepared = await prepareSupermemoryConnection({ mode: "local", baseUrl }, credentials, {
@@ -174,7 +237,9 @@ describe("Supermemory local base URL", () => {
   );
 
   it("accepts a Compose service name that resolves to a private address", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response("[]"),
+    );
     const resolveHostname = vi.fn(privateResolver);
 
     const prepared = await prepareSupermemoryConnection(
@@ -191,7 +256,9 @@ describe("Supermemory local base URL", () => {
   });
 
   it("accepts Docker Desktop and private-suffix hosts that resolve privately", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) => new Response("[]"),
+    );
 
     await prepareSupermemoryConnection(
       { mode: "local", baseUrl: "http://host.docker.internal:6767" },
@@ -238,6 +305,20 @@ describe("Supermemory local base URL", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects the Supermemory Cloud URL as a local endpoint", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      prepareSupermemoryConnection(
+        { mode: "local", baseUrl: "https://api.supermemory.ai" },
+        credentials,
+        { allowPrivateEndpoint: true, resolveHostname: privateResolver },
+      ),
+    ).rejects.toThrow(/Cloud URL/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects cloud metadata and link-local targets", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -273,14 +354,14 @@ describe("Supermemory local base URL", () => {
         credentials,
         { allowPrivateEndpoint: false, resolveHostname },
       ),
-    ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
     await expect(
       prepareSupermemoryConnection(
         { mode: "local", baseUrl: "http://supermemory:6767" },
         credentials,
         { allowPrivateEndpoint: false, resolveHostname },
       ),
-    ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+    ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
 
     expect(resolveHostname).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();

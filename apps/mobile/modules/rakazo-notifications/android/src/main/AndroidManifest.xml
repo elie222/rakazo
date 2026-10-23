@@ -5,6 +5,12 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
+  <queries>
+    <intent>
+      <action android:name="android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS" />
+    </intent>
+  </queries>
+
   <application>
     <service
       android:name=".RakazoNotificationService"

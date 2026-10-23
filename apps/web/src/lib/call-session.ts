@@ -15,6 +15,7 @@ import {
 import { useSyncExternalStore } from "react";
 import { pickUp } from "./call-pickup.js";
 import { dictation } from "./dictation.js";
+import { reportClientError } from "./monitoring";
 import { rpc } from "./rpc.js";
 import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
@@ -276,7 +277,7 @@ function watchThread(botId: string) {
     loadHead: () => rpc.threads.head({ botId }, { signal: controller.signal }),
     refresh: load,
     currentSnapshot: () => thread,
-    subscribe: (cursor) => rpc.threads.subscribe({ botId, cursor }, { signal: controller.signal }),
+    subscribe: (cursor, signal) => rpc.threads.subscribe({ botId, cursor }, { signal }),
     applyEvent: (event) => {
       if (isThreadSnapshotEvent(event)) commit(reduceThreadSnapshot(thread, event));
     },
@@ -365,6 +366,7 @@ async function openMic() {
     });
   } catch (error) {
     micOpen = false;
+    reportClientError(error, "voice.microphone");
     set({ caption: errorText(error, t`Microphone failed`) });
   }
 }

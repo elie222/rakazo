@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 import type { ModelEmulatorRequest } from "./model-emulator.js";
 import { startModelEmulator } from "./model-emulator.js";
+import { asSystem } from "./system-db.js";
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const origin = "http://127.0.0.1:5173";
@@ -176,13 +177,14 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           agentRuntime: "pi",
           wakeupDriver: "memory",
           signupsEnabled: "true",
-          composio: new ComposioEmulator(),
+          composio: new ComposioConnector({ client: new FakeComposioClient() }),
           encryptionKey: "history-fixture-encryption-key",
           deploymentModelKey: fakeSecrets[0],
           composioApiKey: fakeSecrets[1],
           cursorApiKey: fakeSecrets[2],
         });
         stop = handles.stop;
+        const db = asSystem(handles.prisma);
         const signup = await handles.app.request("/api/auth/sign-up/email", {
           method: "POST",
           headers: { "content-type": "application/json", origin },
@@ -228,9 +230,9 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           modelProvider: model.model.provider,
           modelId: model.model.id,
         });
-        const thread = await handles.prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
-        await handles.prisma.$transaction([
-          handles.prisma.message.create({
+        const thread = await db.thread.findFirstOrThrow({ where: { botId: bot.id } });
+        await db.$transaction(async (tx) => {
+          await tx.message.create({
             data: {
               id: messageId,
               threadId: thread.id,
@@ -240,10 +242,10 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
                 { kind: "text", text: `history redaction canary: ${fakeSecrets.join(" | ")}` },
               ],
             },
-          }),
-          handles.prisma.thread.update({ where: { id: thread.id }, data: { nextMessageSeq: 101 } }),
-        ]);
-        await handles.prisma.message.createMany({
+          });
+          await tx.thread.update({ where: { id: thread.id }, data: { nextMessageSeq: 101 } });
+        });
+        await db.message.createMany({
           data: Array.from({ length: 100 }, (_, index) => ({
             threadId: thread.id,
             seq: index + 1,
@@ -256,7 +258,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             ],
           })),
         });
-        await handles.prisma.memoryDocument.create({
+        await db.memoryDocument.create({
           data: {
             spaceId: thread.spaceId,
             userId: thread.userId,
@@ -267,7 +269,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             revision: 1,
           },
         });
-        const openWork = await handles.prisma.scratchpadItem.create({
+        const openWork = await db.scratchpadItem.create({
           data: {
             spaceId: thread.spaceId,
             userId: thread.userId,
@@ -284,8 +286,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
         await expect
           .poll(
             async () => {
-              const status = (await handles.prisma.run.findUnique({ where: { id: run.runId } }))
-                ?.status;
+              const status = (await db.run.findUnique({ where: { id: run.runId } }))?.status;
               if (status === "failed") model.assertComplete();
               return status;
             },
@@ -298,10 +299,9 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
         });
         expect(proposal.content).toBe("batch=37; approval=pending; mode=proposal");
         expect(
-          (await handles.prisma.scratchpadItem.findUniqueOrThrow({ where: { id: openWork.id } }))
-            .status,
+          (await db.scratchpadItem.findUniqueOrThrow({ where: { id: openWork.id } })).status,
         ).toBe("open");
-        const actualCalls = await handles.prisma.event.findMany({
+        const actualCalls = await db.event.findMany({
           where: { runId: run.runId, type: "agent.tool.called" },
         });
         expect(actualCalls).toHaveLength(4);
@@ -317,11 +317,11 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           name: "History group",
           botIds: [bot.id, peer.id],
         });
-        const groupThread = await handles.prisma.thread.findUniqueOrThrow({
+        const groupThread = await db.thread.findUniqueOrThrow({
           where: { id: group.threadId },
         });
-        await handles.prisma.$transaction([
-          handles.prisma.message.create({
+        await db.$transaction(async (tx) => {
+          await tx.message.create({
             data: {
               id: groupMessageId,
               threadId: group.threadId,
@@ -329,13 +329,13 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
               role: "user",
               blocks: [{ kind: "text", text: "Group history canary" }],
             },
-          }),
-          handles.prisma.thread.update({
+          });
+          await tx.thread.update({
             where: { id: group.threadId },
             data: { nextMessageSeq: 1 },
-          }),
-        ]);
-        const historicalTask = await handles.prisma.task.create({
+          });
+        });
+        const historicalTask = await db.task.create({
           data: {
             spaceId: groupThread.spaceId,
             userId: groupThread.userId,
@@ -345,7 +345,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             status: "completed",
           },
         });
-        const historicalRun = await handles.prisma.run.create({
+        const historicalRun = await db.run.create({
           data: {
             spaceId: groupThread.spaceId,
             userId: groupThread.userId,
@@ -357,7 +357,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             sourceMessageId: groupMessageId,
           },
         });
-        await handles.prisma.artifact.create({
+        await db.artifact.create({
           data: {
             spaceId: groupThread.spaceId,
             userId: groupThread.userId,
@@ -371,7 +371,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             storageKey: "synthetic-storage",
           },
         });
-        await handles.prisma.artifact.createMany({
+        await db.artifact.createMany({
           data: Array.from({ length: 100 }, (_, index) => ({
             spaceId: groupThread.spaceId,
             userId: groupThread.userId,
@@ -394,7 +394,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           .poll(
             async () => {
               const status = (
-                await handles.prisma.run.findFirst({
+                await db.run.findFirst({
                   where: { threadId: group.threadId, botId: bot.id },
                   orderBy: { createdAt: "desc" },
                 })

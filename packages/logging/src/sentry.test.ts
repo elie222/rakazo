@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRootLogger } from "./axiom.js";
 import { createLogger } from "./logger.js";
+import { monitoringUserId } from "./pseudonym.js";
 import { createSentrySink, createSentrySinkFromEnv, sentryConfigFromEnv } from "./sentry.js";
 
 const DSN = "https://publickey@errors.example.com/7";
@@ -86,7 +87,10 @@ describe("sentry sink", () => {
     const logger = createLogger({ service: "rakazo-worker", sinks: [sink] });
     const error = new Error("run failed", { cause: new TypeError("bad input") });
     logger.error("job crashed", error, {
-      jobId: "j1",
+      "job.id": "j1",
+      "run.id": "r1",
+      "model.provider": "openai-compatible",
+      "model.id": "local-model",
       apiKey: "sk-secret",
       content: "private message",
       "user.id": "u1",
@@ -99,7 +103,13 @@ describe("sentry sink", () => {
       environment: "prod-acme",
       release: "abc",
       level: "error",
-      tags: { service: "rakazo-worker", jobId: "j1" },
+      tags: {
+        service: "rakazo-worker",
+        "job.id": "j1",
+        "run.id": "r1",
+        "model.provider": "openai-compatible",
+        "model.id": "local-model",
+      },
       extra: { "log.message": "job crashed" },
     });
     expect(event.extra).toEqual({ "log.message": "job crashed" });
@@ -108,6 +118,31 @@ describe("sentry sink", () => {
     const values = event.exception.values;
     expect(values.map((value: { type: string }) => value.type)).toEqual(["TypeError", "Error"]);
     expect(values[1].stacktrace.frames.at(-1).filename).toContain("sentry.test.ts");
+  });
+
+  it("titles database errors by code and model operation", async () => {
+    const { events, transport } = recordingTransport();
+    const logger = createLogger({
+      service: "rakazo-api",
+      sinks: [createSentrySink("rakazo-api", { dsn: DSN }, transport)],
+    });
+    const error = Object.assign(
+      new Error(
+        "\nInvalid `prisma.connection.findMany()` invocation:\n\n\nTransaction API error: expired transaction.",
+      ),
+      { name: "PrismaClientKnownRequestError", code: "P2028" },
+    );
+    logger.error("rpc connections/begin failed", error);
+    logger.error(
+      "socket closed",
+      Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+    );
+    await logger.flush();
+
+    expect(events.map((event) => event.exception.values.at(-1).value)).toEqual([
+      "P2028 connection.findMany: Transaction API error: expired transaction.",
+      "read ECONNRESET",
+    ]);
   });
 
   it("redacts what it copies out when handed an event directly", async () => {
@@ -139,6 +174,40 @@ describe("sentry sink", () => {
     expect(JSON.stringify(event)).not.toMatch(/hunter2|sk-live|ada@example/);
   });
 
+  it("names the user only by a keyed hash of the logged account id", async () => {
+    const { events, transport } = recordingTransport();
+    const secret = "test-pseudonym-secret";
+    const sink = createSentrySink("rakazo-api", { dsn: DSN, pseudonymSecret: secret }, transport);
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    await logger.withContext({ "user.id": "user-raw-1", "space.id": "space-1" }, async () => {
+      logger.error("rpc failed for ada@example.com", new Error("boom"));
+    });
+    logger.error("no user here", new Error("boom"));
+    await logger.flush();
+
+    expect(events).toHaveLength(2);
+    expect(events[0]!.user).toEqual({
+      id: monitoringUserId(secret, "user-raw-1"),
+      ip_address: null,
+    });
+    expect(events[1]!.user).toEqual({ ip_address: null });
+    expect(JSON.stringify(events)).not.toMatch(/user-raw-1|ada@example\.com/);
+  });
+
+  it("sends no user without a pseudonym secret", async () => {
+    const { events, transport } = recordingTransport();
+    const sink = createSentrySink("rakazo-api", { dsn: DSN }, transport);
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    logger.error("failed", new Error("boom"), { "user.id": "user-raw-2" });
+    await logger.flush();
+    expect(events[0]!.user).toEqual({ ip_address: null });
+    expect(JSON.stringify(events)).not.toContain("user-raw-2");
+    expect(
+      sentryConfigFromEnv({ SENTRY_DSN: DSN, ANALYTICS_PSEUDONYM_SECRET: " s " }).config
+        ?.pseudonymSecret,
+    ).toBe("s");
+  });
+
   it("scrubs SDK and scope metadata before sending", async () => {
     const { events, transport } = recordingTransport();
     const sink = createSentrySink("rakazo-api", { dsn: DSN }, transport);
@@ -158,7 +227,7 @@ describe("sentry sink", () => {
     expect(events).toHaveLength(1);
     const event = events[0]!;
     expect(event.request).toBeUndefined();
-    expect(event.user).toBeUndefined();
+    expect(event.user).toEqual({ ip_address: null });
     expect(event.breadcrumbs).toBeUndefined();
     expect(event.server_name).toBeUndefined();
     expect(event.extra).toEqual({ "log.message": "token=[Redacted]" });
@@ -177,6 +246,7 @@ describe("sentry sink", () => {
     });
     logger.info("started");
     logger.warn("slow");
+    logger.error("http.request.completed", { "error.report": false });
     logger.error("queue unavailable", { "request.id": "req-1" });
     logger.error("mail sync failed");
     await logger.flush();

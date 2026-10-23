@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { displayName } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
@@ -16,7 +17,7 @@ export class SpaceLimitError extends Error {
 
 export class InvalidSpaceNameError extends Error {
   constructor() {
-    super("Space name must be between 1 and 60 characters");
+    super("Space name must be readable and between 1 and 60 characters");
     this.name = "InvalidSpaceNameError";
   }
 }
@@ -181,7 +182,7 @@ async function copyProviderPreferences(
 
 function normalizeSpaceName(name: string): string {
   const trimmed = name.trim();
-  if (!trimmed || trimmed.length > 60) throw new InvalidSpaceNameError();
+  if (!displayName(trimmed, "") || trimmed.length > 60) throw new InvalidSpaceNameError();
   return trimmed;
 }
 

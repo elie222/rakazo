@@ -17,7 +17,7 @@ interface ComposeService {
 }
 
 const composeFile = path.resolve(import.meta.dirname, "../../compose/docker-compose.prod.yml");
-const compose = parse(readFileSync(composeFile, "utf8")) as {
+const compose = parse(readFileSync(composeFile, "utf8"), { merge: true }) as {
   services: Record<string, ComposeService>;
   networks: Record<string, unknown>;
 };
@@ -25,7 +25,6 @@ const updater = compose.services.updater as ComposeService;
 
 describe("the production computer provider", () => {
   it.each(["api", "worker"])("lets .env select the %s provider with an E2B default", (name) => {
-    expect(compose.services[name]?.env_file).toEqual(["../../.env"]);
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(compose.services[name]?.environment?.SANDBOX_PROVIDER).toBe("${SANDBOX_PROVIDER:-e2b}");
   });
@@ -48,6 +47,7 @@ describe("worker error reporting configuration", () => {
   ])("passes optional settings through %s", (file) => {
     const { services } = parse(
       readFileSync(path.resolve(import.meta.dirname, "../../compose", file), "utf8"),
+      { merge: true },
     ) as { services: Record<string, ComposeService> };
     for (const key of ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "SENTRY_RELEASE"]) {
       expect(services.worker?.environment?.[key]).toBe(interpolated(key));
@@ -115,7 +115,7 @@ describe("the updater compose service", () => {
     expect(updater.image).toContain("ghcr.io/elie222/rakazo/updater");
     expect(compose.services.api?.image).toContain("ghcr.io/elie222/rakazo/app");
     expect(compose.services.postgres?.image).toMatch(
-      /^\$\{POSTGRES_IMAGE:-postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5\}$/,
+      /^\$\{POSTGRES_IMAGE:-postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6\}$/,
     );
     expect(compose.services.caddy?.image).toMatch(
       /^\$\{CADDY_IMAGE:-caddy:2@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d\}$/,
@@ -151,7 +151,8 @@ describe("the updater compose service", () => {
 
   it("does not let the api container reach the Docker socket to update itself", () => {
     expect(compose.services.api?.volumes ?? []).not.toContain("/var/run/docker.sock");
-    expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBe("http://updater:7092");
+    expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBeUndefined();
+    expect(compose.services.api?.environment?.RAKAZO_UPDATER_TOKEN).toBeUndefined();
   });
 
   it("passes logging configuration without using env_file", () => {

@@ -41,7 +41,7 @@ function stepsOf(n: number) {
   return Array.from({ length: n }, (_, i) => ({ label: `step-${i}`, count: 1 }));
 }
 
-const OPEN_DETAILS = /<details[^>]* open/;
+const OPEN_TRIGGER = /aria-expanded="true"/;
 
 function mountCard() {
   const container = document.createElement("div");
@@ -54,8 +54,8 @@ function mountCard() {
         </ToolActivityDisclosure>,
       ),
     );
-  const details = () => container.querySelector("details");
-  const summary = () => container.querySelector("summary");
+  const details = () => container.querySelector("button[aria-expanded]");
+  const summary = () => container.querySelector<HTMLButtonElement>("button[aria-expanded]");
   return { render, details, summary, unmount: () => root.unmount() };
 }
 
@@ -85,23 +85,23 @@ describe("ToolActivityDisclosure", () => {
   });
 
   it("starts open while working", () => {
-    expect(markup({ live: true, stepCount: 2 })).toMatch(OPEN_DETAILS);
+    expect(markup({ live: true, stepCount: 2 })).toMatch(OPEN_TRIGGER);
   });
 
   it("is collapsed once done and expands to the tool rows", () => {
     const html = markup({ live: false, stepCount: 2 });
-    expect(html).toContain("<details");
-    expect(html).not.toMatch(OPEN_DETAILS);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toMatch(OPEN_TRIGGER);
     expect(html).toContain("Shell ×2");
   });
 
   it("folds when the run finishes", () => {
     const card = mountCard();
     card.render(true);
-    expect(card.details()?.open).toBe(true);
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("true");
 
     card.render(false);
-    expect(card.details()?.open).toBe(false);
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
     expect(card.summary()?.textContent).toContain("Done · 2 tools");
     card.unmount();
   });
@@ -109,26 +109,26 @@ describe("ToolActivityDisclosure", () => {
   it("keeps a manual collapse while more tools arrive in the same run", () => {
     const card = mountCard();
     card.render(true, 2);
-    card.summary()?.click();
-    expect(card.details()?.open).toBe(false);
+    flushSync(() => card.summary()?.click());
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
 
     card.render(true, 3);
-    expect(card.details()?.open).toBe(false);
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
     expect(card.summary()?.textContent).toContain("Working… · 3 tools");
 
     card.render(false, 3);
-    expect(card.details()?.open).toBe(false);
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("false");
     card.unmount();
   });
 
   it("can still be expanded by hand once done", () => {
     const card = mountCard();
     card.render(false);
-    card.summary()?.click();
-    expect(card.details()?.open).toBe(true);
+    flushSync(() => card.summary()?.click());
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("true");
 
     card.render(false);
-    expect(card.details()?.open).toBe(true);
+    expect(card.details()?.getAttribute("aria-expanded")).toBe("true");
     card.unmount();
   });
 });
@@ -185,13 +185,13 @@ describe("StandaloneToolActivity", () => {
   it("is open with a windowed list while live, and lists every step once done", () => {
     const steps = stepsOf(9);
     const live = renderToStaticMarkup(<StandaloneToolActivity live steps={steps} stepCount={9} />);
-    expect(live).toMatch(OPEN_DETAILS);
+    expect(live).toMatch(OPEN_TRIGGER);
     expect(live).toContain("+3 earlier steps");
 
     const done = renderToStaticMarkup(
       <StandaloneToolActivity live={false} steps={steps} stepCount={9} />,
     );
-    expect(done).not.toMatch(OPEN_DETAILS);
+    expect(done).not.toMatch(OPEN_TRIGGER);
     expect(done).not.toContain("earlier");
     for (let i = 0; i < 9; i++) expect(done).toContain(`step-${i}<`);
   });
@@ -204,7 +204,7 @@ describe("ToolOnlyNarration", () => {
     );
     expect(html).toContain('data-testid="tool-activity-line"');
     expect(html).toContain("Working… · 2 tools");
-    expect(html).toMatch(OPEN_DETAILS);
+    expect(html).toMatch(OPEN_TRIGGER);
     expect(html).not.toContain("bg-muted");
   });
 
@@ -220,6 +220,6 @@ describe("ToolOnlyNarration", () => {
     );
     expect(html.match(/data-testid="tool-activity-line"/g)).toHaveLength(2);
     expect(html).toContain("Done · 3 tools · 12s");
-    expect(html).not.toMatch(OPEN_DETAILS);
+    expect(html).not.toMatch(OPEN_TRIGGER);
   });
 });

@@ -37,7 +37,7 @@ faq:
   - question: "Where does the data live?"
     answer: "Postgres, bot files, browser profiles, and the audit log stay on the deployment you run. Prompts you send to a model provider are processed by that provider."
   - question: "Is hosted Rakazo Cloud required?"
-    answer: "No. Hosted Rakazo Cloud is not generally available. Self-hosting is the way to run it."
+    answer: "No. Self-hosting runs the same product. Rakazo Cloud is in beta if you would rather not run it."
 comparison:
   caption: "The short local install, and the longer production path."
   columns:
@@ -78,7 +78,7 @@ Postgres, bot files, browser profiles, and the audit log stay on the machine you
   <figcaption>A Rakazo deployment. Postgres, bot files, and the audit log stay on the machine you run. Prompts still go to the model provider you choose.</figcaption>
 </figure>
 
-The software is Apache-2.0. Hosted Rakazo Cloud is not generally available, so this install is how you run it today.
+The software is Apache-2.0. This install runs the same product as Rakazo Cloud, which is in beta.
 
 ## What the machine needs
 
@@ -166,7 +166,7 @@ This server path is why a public install is not the same job as the local script
 
 ## Install from source only if you are developing
 
-Clone the repository, copy `.env.example` to `.env`, and set `POSTGRES_PASSWORD` to a URI-safe random value that also appears in `DATABASE_URL`. Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random values. Docker sandboxes need their own `SANDBOX_SUPERVISOR_TOKEN`. Keep these in `.env`, not in git.
+Clone the repository, copy `.env.example` to `.env`, and set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` to URI-safe random values that also appear in `DATABASE_MIGRATION_URL` and `DATABASE_URL`. Set `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random values. Docker sandboxes need their own `SANDBOX_SUPERVISOR_TOKEN`. Keep these in `.env`, not in git.
 
 For host-side development with Docker Desktop, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` so the supervisor publishes its control service on a loopback port. Leave that unset when the supervisor runs inside Compose. `docker compose down -v` deletes Postgres data.
 

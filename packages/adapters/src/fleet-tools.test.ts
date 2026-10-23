@@ -841,21 +841,24 @@ describe("prepareFleetRequest keeps the card whole and honest", () => {
     ).toEqual({ ok: false, error: "Pass group_id or group_name, not both." });
   });
 
-  it("refuses an unknown timezone", async () => {
-    const { deps } = fakeFleet(fleet);
-    expect(
-      await prepareFleetRequest(deps, run, "create_child_routine", {
-        bot_id: "bot-writer",
-        name: "Daily",
-        prompt: "Check in",
-        cron: "0 9 * * *",
-        timezone: "Mars/Olympus",
-      }),
-    ).toEqual({
-      ok: false,
-      error: 'Unknown timezone "Mars/Olympus". Use an IANA name like Europe/Paris.',
-    });
-  });
+  it.each(["Mars/Olympus", "+01:00", "x".repeat(65)])(
+    "refuses invalid timezone %j",
+    async (timezone) => {
+      const { deps } = fakeFleet(fleet);
+      expect(
+        await prepareFleetRequest(deps, run, "create_child_routine", {
+          bot_id: "bot-writer",
+          name: "Daily",
+          prompt: "Check in",
+          cron: "0 9 * * *",
+          timezone,
+        }),
+      ).toEqual({
+        ok: false,
+        error: `Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`,
+      });
+    },
+  );
 });
 
 describe("listFleet", () => {

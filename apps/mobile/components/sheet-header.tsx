@@ -65,6 +65,7 @@ export function cancelHeaderOptions(label: string, onPress: () => void) {
             {
               type: "button" as const,
               label,
+              icon: { type: "sfSymbol" as const, name: "xmark" as const },
               variant: "plain" as const,
               onPress,
             },
@@ -91,6 +92,7 @@ export function trailingHeaderOptions(label: string, onPress: () => void, disabl
             {
               type: "button" as const,
               label,
+              icon: { type: "sfSymbol" as const, name: "checkmark" as const },
               variant: "done" as const,
               tintColor: native.label,
               disabled,

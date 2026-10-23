@@ -108,8 +108,8 @@ function createStyles() {
       borderRadius: 18,
       paddingHorizontal: 10,
       borderWidth: 1,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      borderColor: tokens.glassStroke,
+      backgroundColor: tokens.glassFill,
     },
     name: { flexGrow: 1, flexShrink: 1, fontSize: 13, fontWeight: "600" },
     button: {

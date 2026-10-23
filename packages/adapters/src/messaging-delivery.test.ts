@@ -1,6 +1,7 @@
 import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { MessagingSendError } from "./chat-sdk-surface.js";
 import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
@@ -50,6 +51,10 @@ function createFakeSurface(sendError?: Error) {
     }),
     platforms: () => [
       { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
+      {
+        provider: "telegram",
+        capabilities: { direct: true, groups: false, receipt: null, files: true },
+      },
     ],
     handleWebhook: () => null,
     onInbound: () => undefined,
@@ -68,6 +73,7 @@ function createDeps(overrides: {
   existingOutbox?: unknown;
   sendError?: Error;
   connectionStatus?: string | null;
+  artifacts?: Array<Record<string, unknown>>;
 }) {
   const rows = [...(overrides.outboundRows ?? [])] as Array<Record<string, unknown>>;
   const { messaging, sendToThread, openDirectThread } = createFakeSurface(overrides.sendError);
@@ -96,6 +102,14 @@ function createDeps(overrides: {
         return identityRow;
       }),
     },
+    artifact: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; spaceId: string } }) =>
+          (overrides.artifacts ?? []).find(
+            (artifact) => artifact.id === where.id && artifact.spaceId === where.spaceId,
+          ) ?? null,
+      ),
+    },
     agentConnection: {
       findUnique: vi.fn(async () =>
         overrides.connectionStatus === null
@@ -118,7 +132,7 @@ function createDeps(overrides: {
       }),
       findMany: vi.fn(async ({ where }: { where?: { status?: string; OR?: unknown[] } } = {}) => {
         const now = Date.now();
-        return rows.filter((row) => {
+        const found = rows.filter((row) => {
           if (where?.status && row.status !== where.status) return false;
           if (!where?.OR) return row.status === "pending";
           const next = row.nextAttemptAt;
@@ -126,7 +140,34 @@ function createDeps(overrides: {
           const nextMs = next instanceof Date ? next.getTime() : new Date(String(next)).getTime();
           return nextMs <= now;
         });
+        // The drain reads in send order (orderBy createdAt).
+        return found.every((row) => row.createdAt instanceof Date)
+          ? found.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime())
+          : found;
       }),
+      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            sourceMessageId: string;
+            createdAt: { lt: Date };
+            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
+          };
+        }) =>
+          rows.find((row) => {
+            if (row.sourceMessageId !== where.sourceMessageId) return false;
+            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
+            return where.OR.some((condition) =>
+              condition.status === "pending"
+                ? row.status === "pending"
+                : row.status === "sent" &&
+                  row.providerHandle == null &&
+                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
+            );
+          }) ?? null,
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
         for (const item of data) {
@@ -178,6 +219,7 @@ function createDeps(overrides: {
       notify: vi.fn(async () => undefined),
     } as unknown as MessagingDeliveryDeps["events"],
     jobs: { enqueue: vi.fn(async () => undefined) },
+    artifacts: { get: vi.fn(async (storageKey: string) => new TextEncoder().encode(storageKey)) },
     sendToThread,
     openDirectThread,
     rows,
@@ -698,6 +740,29 @@ function createChannelDeps(
           return nextMs <= now;
         });
       }),
+      // Earlier undelivered part of the same reply (see hasUndeliveredEarlierPart).
+      findFirst: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            sourceMessageId: string;
+            createdAt: { lt: Date };
+            OR: Array<{ status: string; updatedAt?: { gt: Date } }>;
+          };
+        }) =>
+          rows.find((row) => {
+            if (row.sourceMessageId !== where.sourceMessageId) return false;
+            if (!((row.createdAt as Date) < where.createdAt.lt)) return false;
+            return where.OR.some((condition) =>
+              condition.status === "pending"
+                ? row.status === "pending"
+                : row.status === "sent" &&
+                  row.providerHandle == null &&
+                  ((row.updatedAt as Date | undefined) ?? new Date()) > condition.updatedAt!.gt,
+            );
+          }) ?? null,
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         for (const item of data)
           rows.push({ id: `out-${rows.length + 1}`, status: "pending", ...item });
@@ -739,6 +804,7 @@ function createChannelDeps(
     messaging,
     events: { sendUserMessage, notify } as unknown as MessagingDeliveryDeps["events"],
     jobs: { enqueue },
+    artifacts: { get: vi.fn() },
     sendToThread,
     sendUserMessage,
     notify,
@@ -953,5 +1019,381 @@ describe("deliverMessagingOutbound retry enqueue failure", () => {
     expect(deps.rows).toEqual([
       expect.objectContaining({ kind: "dm", status: "sent", providerHandle: "handle-out-1" }),
     ]);
+  });
+});
+
+describe("deliverMessagingOutbound send failure classification", () => {
+  it("fails a permanently rejected row at once instead of retrying it", async () => {
+    const deps = createDeps({
+      sendError: new MessagingSendError(new Error("channel_not_found"), {
+        permanent: true,
+        retryAfterMs: null,
+      }),
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows).toEqual([expect.objectContaining({ status: "failed", attempts: 1 })]);
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("waits at least the provider's retry-after before the next attempt", async () => {
+    const deps = createDeps({
+      sendError: new MessagingSendError(new Error("rate limited"), {
+        permanent: false,
+        retryAfterMs: 30_000,
+      }),
+    });
+    const before = Date.now();
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    const retryAt = deps.rows[0]!.nextAttemptAt as Date;
+    expect(deps.rows[0]).toEqual(expect.objectContaining({ status: "pending", attempts: 1 }));
+    expect(retryAt.getTime()).toBeGreaterThanOrEqual(before + 30_000);
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "messaging.deliver", availableAt: retryAt }),
+    );
+  });
+});
+
+describe("deliverMessagingOutbound conversation order", () => {
+  const whatsapp = { provider: "whatsapp", address: "15551234567", dmThreadId: "whatsapp:p:1" };
+  const part = (letter: string) => letter.repeat(3000);
+  const longReply = [part("a"), part("b"), part("c")].join("\n\n");
+
+  it("queues a long WhatsApp reply as one row per message-sized part", async () => {
+    const deps = createDeps({
+      identity: whatsapp,
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.body, row.status])).toEqual([
+      ["msg:m-1", part("a"), "sent"],
+      ["msg:m-1:2", part("b"), "sent"],
+      ["msg:m-1:3", part("c"), "sent"],
+    ]);
+    expect(deps.rows.every((row) => row.sourceMessageId === "m-1")).toBe(true);
+  });
+
+  it("re-sends only the parts that failed, in order", async () => {
+    const deps = createDeps({
+      identity: whatsapp,
+      messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
+    });
+    deps.sendToThread
+      .mockResolvedValueOnce({ handle: "wamid.1" })
+      .mockRejectedValueOnce(new Error("WhatsApp API error"));
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    // The third part waits behind the failed second one.
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
+    expect(deps.rows[2]!.attempts ?? 0).toBe(0);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual(
+      [part("a"), part("b"), part("b"), part("c")].map((body) => ({
+        threadId: "whatsapp:p:1",
+        body,
+      })),
+    );
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+  });
+
+  it.each([
+    ["in flight in another drain", "sent", new Date(), false],
+    ["abandoned mid-send long ago", "sent", new Date(Date.now() - 10 * 60_000), true],
+    ["permanently failed", "failed", new Date(), true],
+  ] as const)(
+    "a later part whose first part is %s is sent=%s",
+    async (_label, status, updatedAt, sent) => {
+      const part = (id: string, key: string, offset: number, extra: Record<string, unknown>) => ({
+        id,
+        idempotencyKey: key,
+        kind: "dm",
+        identityId: "mi-1",
+        body: id,
+        sourceMessageId: "m-1",
+        providerHandle: null,
+        attempts: 0,
+        nextAttemptAt: null,
+        createdAt: new Date(1_000 + offset),
+        ...extra,
+      });
+      const deps = createDeps({
+        run: null,
+        identity: whatsapp,
+        outboundRows: [
+          part("p-1", "msg:m-1", 0, { status, updatedAt }),
+          part("p-2", "msg:m-1:2", 1, { status: "pending" }),
+        ],
+      });
+      await deliverMessagingOutbound(deps, {}, context);
+
+      expect(deps.sendToThread).toHaveBeenCalledTimes(sent ? 1 : 0);
+      expect(deps.rows[1]!.status).toBe(sent ? "sent" : "pending");
+    },
+  );
+
+  it("holds later rows to a conversation while an earlier one waits out its backoff", async () => {
+    const pendingRow = (id: string, body: string, nextAttemptAt: Date | null) => ({
+      id,
+      idempotencyKey: `msg:${id}`,
+      kind: "dm",
+      identityId: "mi-1",
+      body,
+      status: "pending",
+      attempts: nextAttemptAt ? 1 : 0,
+      nextAttemptAt,
+      providerHandle: null,
+    });
+    const deps = createDeps({
+      run: null,
+      outboundRows: [
+        pendingRow("out-1", "first", new Date(Date.now() + 60_000)),
+        pendingRow("out-2", "second", null),
+        {
+          ...pendingRow("out-3", "elsewhere", null),
+          identityId: null,
+          kind: "group",
+          threadId: "sendblue:grp",
+        },
+      ],
+    });
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "sendblue:grp", body: "elsewhere" },
+      context,
+    );
+    expect(deps.rows.map((row) => row.status)).toEqual(["pending", "pending", "sent"]);
+  });
+});
+
+describe("deliverMessagingOutbound attachments", () => {
+  const telegram = { provider: "telegram", address: "123", dmThreadId: "telegram:123" };
+  const artifacts = [
+    {
+      id: "art-1",
+      spaceId: "ws-1",
+      userId: "user-1",
+      name: "chart.png",
+      mimeType: "image/png",
+      storageKey: "key-1",
+    },
+    {
+      id: "art-2",
+      spaceId: "ws-1",
+      userId: "user-1",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      storageKey: "key-2",
+    },
+  ];
+  const reply = {
+    id: "m-1",
+    blocks: [
+      { kind: "text", text: "Here you go" },
+      { kind: "image", artifactId: "art-1", mimeType: "image/png", name: "chart.png" },
+      {
+        kind: "file",
+        artifactId: "art-2",
+        mimeType: "application/pdf",
+        name: "report.pdf",
+        size: 5,
+      },
+    ],
+  };
+  const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
+  const sentBodies = (deps: ReturnType<typeof createDeps>) =>
+    deps.sendToThread.mock.calls.map((call) => {
+      const request = (call as unknown[])[0] as { body: string; attachment?: { name: string } };
+      return request.attachment ? `file:${request.attachment.name}` : request.body;
+    });
+
+  it("sends a reply's image and file after its text, one row each", async () => {
+    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      { threadId: "telegram:123", body: "Here you go" },
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "chart.png", mimeType: "image/png", data: bytes("key-1") },
+      },
+      {
+        threadId: "telegram:123",
+        body: "",
+        attachment: { name: "report.pdf", mimeType: "application/pdf", data: bytes("key-2") },
+      },
+    ]);
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+      ["msg:m-1", "sent"],
+      ["msg:m-1:file:art-1", "sent"],
+      ["msg:m-1:file:art-2", "sent"],
+    ]);
+    // Bytes come from the artifact store, read in the artifact's own Space.
+    expect(deps.artifacts.get).toHaveBeenCalledWith(
+      "key-1",
+      expect.objectContaining({ spaceId: "ws-1", userId: "user-1" }),
+    );
+  });
+
+  it("sends a reply that is only a file", async () => {
+    const deps = createDeps({
+      identity: telegram,
+      messages: [{ id: "m-1", blocks: [reply.blocks[1]] }],
+      artifacts,
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual(["file:chart.png"]);
+  });
+
+  it("keeps text-only delivery on platforms that cannot send files", async () => {
+    const deps = createDeps({ messages: [reply], artifacts });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(deps.sendToThread).toHaveBeenCalledExactlyOnceWith(
+      { threadId: "sendblue:dm-1", body: "Here you go" },
+      context,
+    );
+    expect(deps.rows).toHaveLength(1);
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed file without sending the text again", async () => {
+    const deps = createDeps({ identity: telegram, messages: [reply], artifacts });
+    deps.sendToThread
+      .mockResolvedValueOnce({ handle: "text-1" })
+      .mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    // The second file waits behind the failed first one.
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "pending", "pending"]);
+
+    deps.rows[1]!.nextAttemptAt = new Date(Date.now() - 1);
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual([
+      "Here you go",
+      "file:chart.png",
+      "file:chart.png",
+      "file:report.pdf",
+    ]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "sent", "sent"]);
+  });
+
+  it("queues a short notice once a file's attempts run out, without repeating the text", async () => {
+    const fileRow = {
+      id: "out-2",
+      idempotencyKey: "msg:m-1:file:art-1",
+      kind: "dm",
+      identityId: "mi-1",
+      body: "",
+      sourceMessageId: "m-1",
+      status: "pending",
+      attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
+      nextAttemptAt: null,
+      providerHandle: null,
+      createdAt: new Date(1_001),
+    };
+    const deps = createDeps({
+      run: null,
+      identity: telegram,
+      artifacts,
+      outboundRows: [
+        {
+          ...fileRow,
+          id: "out-1",
+          idempotencyKey: "msg:m-1",
+          body: "Here you go",
+          status: "sent",
+          providerHandle: "text-1",
+          createdAt: new Date(1_000),
+        },
+        fileRow,
+      ],
+    });
+    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, {}, context);
+
+    expect(deps.rows.map((row) => [row.idempotencyKey, row.status])).toEqual([
+      ["msg:m-1", "sent"],
+      ["msg:m-1:file:art-1", "failed"],
+      ["msg:m-1:file:art-1:notice", "pending"],
+    ]);
+    expect(deps.rows[2]).toEqual(
+      expect.objectContaining({ kind: "dm", identityId: "mi-1", sourceMessageId: "m-1" }),
+    );
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "messaging.deliver" }),
+    );
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(sentBodies(deps)).toEqual(["file:chart.png", 'Could not send "chart.png".']);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "sent"]);
+  });
+
+  it("sends the notice in the file's place, before a later reply already queued", async () => {
+    const deps = createDeps({
+      run: null,
+      identity: telegram,
+      artifacts,
+      outboundRows: [
+        {
+          id: "out-1",
+          idempotencyKey: "msg:m-1:file:art-1",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "",
+          sourceMessageId: "m-1",
+          status: "pending",
+          attempts: MESSAGING_OUTBOUND_MAX_ATTEMPTS - 1,
+          nextAttemptAt: null,
+          providerHandle: null,
+          createdAt: new Date(1_000),
+        },
+        {
+          id: "out-2",
+          idempotencyKey: "msg:m-2",
+          kind: "dm",
+          identityId: "mi-1",
+          body: "Later reply",
+          sourceMessageId: "m-2",
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: null,
+          providerHandle: null,
+          createdAt: new Date(2_000),
+        },
+      ],
+    });
+    deps.sendToThread.mockRejectedValueOnce(new Error("Telegram 500"));
+    await deliverMessagingOutbound(deps, {}, context);
+    // The failure and its notice are saved together.
+    expect(deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(sentBodies(deps)).toEqual([
+      "file:chart.png",
+      'Could not send "chart.png".',
+      "Later reply",
+    ]);
+  });
+
+  it("drops a file whose artifact is gone or belongs to another Space", async () => {
+    const deps = createDeps({
+      identity: telegram,
+      messages: [reply],
+      artifacts: [{ ...artifacts[0]!, spaceId: "ws-2" }],
+    });
+    await deliverMessagingOutbound(deps, { runId: "run-1" }, context);
+
+    expect(sentBodies(deps)).toEqual(["Here you go"]);
+    expect(deps.rows.map((row) => row.status)).toEqual(["sent", "failed", "failed"]);
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
   });
 });

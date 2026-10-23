@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const sentry = vi.hoisted(() => ({ init: vi.fn(), captureReactException: vi.fn() }));
+const sentry = vi.hoisted(() => ({
+  init: vi.fn(),
+  captureReactException: vi.fn(),
+  captureException: vi.fn(),
+}));
 vi.mock("@sentry/react", () => sentry);
+const recovery = vi.hoisted(() => ({ reloading: false }));
+vi.mock("./preload-recovery", async (load) => ({
+  ...(await load<Record<string, unknown>>()),
+  recoveringByReload: () => recovery.reloading,
+}));
 
 import { reportCaughtReactError, startMonitoring } from "./monitoring";
 
@@ -29,6 +38,27 @@ describe("browser monitoring", () => {
     consoleError.mockRestore();
   });
 
+  it("does not report failures the recovery reload is about to replace", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    sentry.init.mockClear();
+    sentry.captureReactException.mockClear();
+    expect(await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }))).toBe(
+      true,
+    );
+    const { beforeSend } = sentry.init.mock.calls[0]![0];
+    recovery.reloading = true;
+    fresh.reportCaughtReactError(new TypeError("Failed to fetch dynamically imported module"), {
+      componentStack: "",
+    });
+    expect(sentry.captureReactException).not.toHaveBeenCalled();
+    expect(beforeSend({ message: "stale chunk" })).toBeNull();
+    recovery.reloading = false;
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+    consoleError.mockRestore();
+  });
+
   it("drops queued errors when monitoring is off", async () => {
     vi.resetModules();
     const fresh = await import("./monitoring");
@@ -40,6 +70,74 @@ describe("browser monitoring", () => {
     );
     expect(sentry.captureReactException).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it("tags reports with the server-minted pseudonym and clears it on sign-out", async () => {
+    vi.resetModules();
+    sentry.init.mockReset();
+    const fresh = await import("./monitoring");
+    const PSEUDONYM = "a".repeat(64);
+    expect(await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }))).toBe(
+      true,
+    );
+    const beforeSend = sentry.init.mock.calls[0]![0].beforeSend;
+    const signedInConfig = respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM });
+
+    await fresh.identifyMonitoringUser(true, signedInConfig);
+    expect(signedInConfig).toHaveBeenCalledWith("/api/monitoring/config");
+    expect(beforeSend({ user: { id: "raw-user", email: "ada@example.com" } })).toEqual({
+      user: { id: PSEUDONYM, ip_address: null },
+    });
+
+    await fresh.identifyMonitoringUser(false);
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+
+    // A malformed id is never sent, and a sign-out that lands first wins over a slow sign-in.
+    await fresh.identifyMonitoringUser(true, respond({ dsn: "x", userId: "raw-user" }));
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+    let release!: () => void;
+    const slow = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Response(JSON.stringify({ userId: PSEUDONYM }));
+    }) as unknown as typeof fetch;
+    const signingIn = fresh.identifyMonitoringUser(true, slow);
+    await fresh.identifyMonitoringUser(false);
+    release();
+    await signingIn;
+    expect(beforeSend({})).toEqual({ user: { ip_address: null } });
+  });
+
+  it("uses the startup pseudonym for errors queued before the session resolves", async () => {
+    vi.resetModules();
+    sentry.init.mockReset();
+    const fresh = await import("./monitoring");
+    const PSEUDONYM = "b".repeat(64);
+    await fresh.startMonitoring(
+      respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM }),
+    );
+    const beforeSend = sentry.init.mock.calls[0]![0].beforeSend;
+    expect(beforeSend({})).toEqual({ user: { id: PSEUDONYM, ip_address: null } });
+
+    // A sign-out that resolved before startup finished is not overridden.
+    vi.resetModules();
+    sentry.init.mockReset();
+    const signedOut = await import("./monitoring");
+    await signedOut.identifyMonitoringUser(false);
+    await signedOut.startMonitoring(
+      respond({ dsn: "https://key@errors.example.com/8", userId: PSEUDONYM }),
+    );
+    expect(sentry.init.mock.calls[0]![0].beforeSend({})).toEqual({ user: { ip_address: null } });
+  });
+
+  it("does not ask for a pseudonym when monitoring is off", async () => {
+    vi.resetModules();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: null }));
+    const fetchImpl = respond({ dsn: null });
+    await fresh.identifyMonitoringUser(true, fetchImpl);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   beforeEach(() => {
@@ -87,28 +185,8 @@ describe("browser monitoring", () => {
     expect(options.integrations([{ name: "BrowserSession" }, { name: "GlobalHandlers" }])).toEqual([
       { name: "GlobalHandlers" },
     ]);
-    expect(options.beforeBreadcrumb({ category: "console", message: "x" })).toBeNull();
-    expect(options.beforeBreadcrumb({ category: "fetch" })).toEqual({ category: "fetch" });
-
-    for (const category of ["ui.click", "ui.input"]) {
-      expect(options.beforeBreadcrumb({ category, message: "private text" })).toBeNull();
-    }
-    for (const category of ["fetch", "xhr", "navigation"]) {
-      expect(
-        options.beforeBreadcrumb({
-          category,
-          data: {
-            url: "https://example.com/path?token=secret#private",
-            from: "/before?query=secret",
-            to: "/after#private",
-            status_code: 500,
-          },
-        }),
-      ).toEqual({
-        category,
-        data: { url: "https://example.com/path", from: "/before", to: "/after", status_code: 500 },
-      });
-    }
+    expect(options.maxBreadcrumbs).toBe(0);
+    expect(options.integrations([{ name: "Breadcrumbs" }])).toEqual([]);
     expect(
       options.beforeSend({
         request: {
@@ -119,8 +197,8 @@ describe("browser monitoring", () => {
         },
         user: { email: "private@example.com" },
       }),
-    ).toEqual({ request: { url: "https://example.com/path" } });
-    expect(options.beforeSend({})).toEqual({});
+    ).toEqual({ request: { url: "https://example.com/path" }, user: { ip_address: null } });
+    expect(options.beforeSend({})).toEqual({ user: { ip_address: null } });
     expect(
       options.beforeSend({
         message: "Failed for someone@example.com",
@@ -129,6 +207,7 @@ describe("browser monitoring", () => {
     ).toEqual({
       message: "Failed for [Redacted]",
       exception: { values: [{ value: "401 Bearer [Redacted] from [Redacted]" }] },
+      user: { ip_address: null },
     });
     expect(
       options.beforeSend({
@@ -142,6 +221,7 @@ describe("browser monitoring", () => {
       exception: {
         values: [{ stacktrace: { frames: [{ filename: "https://app.example.com/a.js" }] } }],
       },
+      user: { ip_address: null },
     });
     expect(options.tracesSampleRate).toBeUndefined();
     expect(options.profilesSampleRate).toBeUndefined();
@@ -156,5 +236,37 @@ describe("browser monitoring", () => {
     });
     expect(consoleError).toHaveBeenCalledWith(error);
     consoleError.mockRestore();
+  });
+
+  it("keeps connection failures out of error reports but reports real failures", async () => {
+    vi.resetModules();
+    sentry.captureException.mockReset();
+    const fresh = await import("./monitoring");
+    await fresh.startMonitoring(respond({ dsn: "https://key@errors.example.com/8" }));
+    for (const message of [
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+    ])
+      fresh.reportClientError(new TypeError(message), "rpc.transport");
+    fresh.reportClientError(new DOMException("signal timed out", "TimeoutError"), "rpc.transport");
+    expect(sentry.captureException).not.toHaveBeenCalled();
+
+    // A request the browser refused to build is a bug, and other operations keep their reports.
+    const invalid = new TypeError("Failed to execute 'fetch' on 'Window': Invalid name");
+    fresh.reportClientError(invalid, "rpc.transport");
+    const chunk = new TypeError("Failed to fetch dynamically imported module: /assets/a.js");
+    fresh.reportClientError(chunk, "react.render");
+    expect(sentry.captureException.mock.calls.map(([error]) => error)).toEqual([invalid, chunk]);
+
+    const { beforeSend } = sentry.init.mock.calls.at(-1)![0];
+    const timeout = new DOMException("signal timed out", "TimeoutError");
+    expect(beforeSend({}, { originalException: timeout })).toBeNull();
+    expect(
+      beforeSend({}, { originalException: new DOMException("aborted", "AbortError") }),
+    ).toBeNull();
+    expect(beforeSend({}, { originalException: new Error("boom") })).toEqual({
+      user: { ip_address: null },
+    });
   });
 });

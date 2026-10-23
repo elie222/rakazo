@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
+import { runAsSystem, runAsSystemInTransaction } from "./row-security.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 export type { ComputerMode } from "@rakazo/contracts";
@@ -10,16 +12,36 @@ export function parseComputerMode(scope: string): ComputerMode {
   throw new Error(`Unknown computer scope: ${scope}`);
 }
 
-export function computerScopeKey(mode: ComputerMode, spaceId: string, botId?: string) {
-  if (mode === "team") return `team:${spaceId}`;
-  if (!botId) throw new Error("Dedicated computers require a bot id");
-  return `bot:${botId}`;
+export type ComputerKeyInput = {
+  mode: ComputerMode;
+  spaceId: string;
+  /** The bot owner's user id. A team computer is shared only by one user's bots in a space. */
+  userId: string;
+  botId?: string;
+};
+
+export function computerScopeKey(input: ComputerKeyInput) {
+  if (input.mode === "team") return `team:${input.spaceId}:${input.userId}`;
+  if (!input.botId) throw new Error("Dedicated computers require a bot id");
+  return `bot:${input.botId}`;
 }
 
-export function computerHomeKey(mode: ComputerMode, spaceId: string, botId?: string) {
-  if (mode === "team") return `team-${spaceId}`;
-  if (!botId) throw new Error("Dedicated computers require a bot id");
-  return botId;
+/**
+ * Sandbox providers receive the home key as the computer's bot id, and the Docker supervisor
+ * keeps only its first 40 characters in container names, so a team key is a fixed-length
+ * digest that stays distinct per space and user. Migration 20261021000000 computes the same
+ * value in SQL. Team computers created before the per-user split keep `team-<spaceId>`.
+ */
+export function computerHomeKey(input: ComputerKeyInput) {
+  if (input.mode === "team") {
+    const digest = createHash("sha256")
+      .update(`${input.spaceId}:${input.userId}`)
+      .digest("hex")
+      .slice(0, 32);
+    return `team-${digest}`;
+  }
+  if (!input.botId) throw new Error("Dedicated computers require a bot id");
+  return input.botId;
 }
 
 type ComputerDb = Pick<PrismaClient, "computer">;
@@ -34,7 +56,7 @@ type ExecutionLeaseDb = Pick<PrismaClient, "computerExecutionLease">;
  *
  * Each Computer row becomes a sandbox container once provisioned, so an unbounded
  * record count means an unbounded container fleet for one user. A team computer is
- * one row per space shared by its bots and counts once, not per bot.
+ * one row per space and user, shared by that user's bots there, and counts once, not per bot.
  */
 export function resolveMaxComputersPerUser(
   value = process.env.SANDBOX_MAX_COMPUTERS_PER_USER,
@@ -64,18 +86,26 @@ export class ComputerLimitError extends Error {
  * intermediate reference must not count against the final live set.
  */
 async function countInUseComputersForUser(
-  prisma: ComputerDb,
+  prisma: ComputerDb & Partial<Pick<PrismaClient, "$queryRaw">>,
   userId: string,
   excludeBotId?: string,
 ): Promise<number> {
-  return prisma.computer.count({
-    where: {
-      userId,
-      bots: {
-        some: excludeBotId ? { archivedAt: null, id: { not: excludeBotId } } : { archivedAt: null },
+  const count = () =>
+    prisma.computer.count({
+      where: {
+        userId,
+        bots: {
+          some: excludeBotId
+            ? { archivedAt: null, id: { not: excludeBotId } }
+            : { archivedAt: null },
+        },
       },
-    },
-  });
+    });
+  // The quota is per person, so it counts the computers of all their Spaces.
+  const reason = "computer quota across the user's Spaces";
+  return prisma.$queryRaw
+    ? runAsSystemInTransaction(prisma as Pick<PrismaClient, "$queryRaw">, reason, count)
+    : runAsSystem(reason, count);
 }
 
 /**
@@ -105,8 +135,8 @@ export async function assertComputerQuotaForRestore(
 ): Promise<void> {
   const limit = resolveMaxComputersPerUser();
   if (limit <= 0) return;
-  // If another live bot already references this row (team computer shared
-  // across the space), restoring this bot adds nothing to the count.
+  // If another live bot already references this row (a team computer shared
+  // by the user's bots in the space), restoring this bot adds nothing to the count.
   const alreadyLive = await prisma.computer.count({
     where: {
       id: input.computerId,
@@ -181,7 +211,7 @@ function upsertComputerRecord(
       userId: input.userId,
       scope: input.mode,
       scopeKey,
-      homeKey: computerHomeKey(input.mode, input.spaceId, input.botId),
+      homeKey: computerHomeKey(input),
       kind: input.kind,
     },
     update: {},
@@ -201,8 +231,8 @@ async function ensureComputerRecordWithQuota(
   scopeKey: string,
 ) {
   await lockUserForComputerQuota(tx, input.userId);
-  // Only a new row consumes quota: the upsert below reuses the existing team
-  // computer on every bot created in that space, and reusing it with the count
+  // Only a new row consumes quota: the upsert below reuses the user's team
+  // computer on every bot they create in that space, and reusing it with the count
   // already at the cap would wrongly refuse a second bot on a shared computer.
   const existing = await tx.computer.findUnique({
     where: { scopeKey },
@@ -240,7 +270,7 @@ export async function ensureComputerRecord(
   },
 ) {
   const limit = resolveMaxComputersPerUser();
-  const scopeKey = computerScopeKey(input.mode, input.spaceId, input.botId);
+  const scopeKey = computerScopeKey(input);
   if (limit <= 0) return upsertComputerRecord(prisma, input, scopeKey);
 
   // Cap is set: hold a per-user advisory lock across find + count + create so

@@ -32,10 +32,26 @@ vi.mock("@rakazo/ui-web", () => {
     size: _size,
     ...props
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />;
+  const Div = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Button,
-    NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
-    NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
+    DropdownMenu: Div,
+    DropdownMenuContent: ({ children }: { children?: ReactNode }) => (
+      <div role="menu">{children}</div>
+    ),
+    DropdownMenuGroup: Div,
+    DropdownMenuLabel: ({ children }: { children?: ReactNode }) => (
+      <div data-testid="menu-label">{children}</div>
+    ),
+    DropdownMenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+      <button type="button" role="menuitem" onClick={onClick}>
+        {children}
+      </button>
+    ),
+    DropdownMenuTrigger: ({
+      render: _render,
+      ...props
+    }: ComponentProps<"button"> & { render?: ReactNode }) => <button {...props} />,
   };
 });
 
@@ -82,7 +98,7 @@ function button(name: string): HTMLButtonElement {
 
 function backupRows(): string[] {
   return [...container.querySelectorAll('[data-testid^="model-backup-"]')].map(
-    (row) => row.children[1]?.firstElementChild?.textContent ?? "",
+    (row) => row.firstElementChild?.firstElementChild?.textContent ?? "",
   );
 }
 
@@ -90,18 +106,37 @@ async function clickButton(name: string): Promise<void> {
   await act(async () => button(name).click());
 }
 
-async function pickConnectedModel(label: string): Promise<void> {
-  const select = container.querySelector<HTMLSelectElement>(
-    'select[aria-label="Add connected model"]',
+function menuItems(): string[] {
+  return [...container.querySelectorAll('[role="menuitem"]')].map(
+    (item) => item.textContent?.trim() ?? "",
   );
-  if (!select) throw new Error("Missing connected model picker");
-  const option = [...select.options].find((item) => item.textContent?.trim() === label);
-  if (!option) throw new Error(`Missing model option: ${label}`);
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
-    setter?.call(select, option.value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+async function addBackup(label: string): Promise<void> {
+  const item = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!item) throw new Error(`Missing model option: ${label}`);
+  await act(async () => item.click());
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
+  return { promise, resolve, reject };
+}
+
+async function renderSettings(props: Partial<ComponentProps<typeof ModelBackupsSettings>> = {}) {
+  await act(async () => {
+    root.render(
+      <ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} {...props} />,
+    );
+  });
+  await flush();
 }
 
 async function flush(): Promise<void> {
@@ -133,11 +168,8 @@ describe("ModelBackupsSettings", () => {
     backupApi.backups
       .mockRejectedValueOnce(new Error("Temporary load failure"))
       .mockResolvedValueOnce([{ provider: "openai", modelId: "gpt-test" }]);
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
-    expect(button("Save backups").disabled).toBe(true);
+    await renderSettings();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Temporary load failure");
     await clickButton("Retry");
     await flush();
     expect(backupRows()).toEqual(["OpenAI · GPT test"]);
@@ -146,84 +178,124 @@ describe("ModelBackupsSettings", () => {
     expect(backupApi.setBackups).not.toHaveBeenCalled();
   });
 
-  it("keeps editing disabled after a failed load so an unseen saved list cannot be replaced", async () => {
-    backupApi.backups.mockRejectedValueOnce(new Error("Load failed"));
-    backupApi.backups.mockResolvedValueOnce([]);
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
+  it("offers no editing after a failed load so an unseen saved list cannot be replaced", async () => {
+    backupApi.backups.mockRejectedValueOnce(new Error("Load failed")).mockResolvedValueOnce([]);
+    await renderSettings();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Load failed");
-    expect(container.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
-    expect(button("Add").disabled).toBe(true);
-    expect(button("Save backups").disabled).toBe(true);
+    expect(container.textContent).not.toContain("Add backup model");
+    expect(menuItems()).toEqual([]);
     expect(backupApi.setBackups).not.toHaveBeenCalled();
+
     await clickButton("Retry");
     await flush();
-    expect(backupApi.backups).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.querySelector<HTMLSelectElement>("select")?.disabled).toBe(false);
-    await pickConnectedModel("Anthropic · Claude Sonnet");
-    expect(button("Add").disabled).toBe(false);
+    expect(button("Add backup model").disabled).toBe(false);
+    await addBackup("Claude Sonnet");
+    await flush();
+    expect(backupApi.setBackups).toHaveBeenCalledWith(
+      [{ provider: "anthropic", modelId: "claude-sonnet" }],
+      { context: { spaceId: scope.spaceId } },
+    );
   });
 
-  it("starts empty and disabled when no backup models are configured", async () => {
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
-
+  it("explains backups and groups addable models by provider", async () => {
+    await renderSettings();
     const section = container.querySelector('[data-testid="model-backups"]');
     expect(section?.getAttribute("aria-labelledby")).toBe("model-backups-title");
     expect(section?.querySelector("h3#model-backups-title")?.textContent).toBe("Backup models");
-    expect(container.textContent).toContain("Add connected models to use them as backups.");
-    expect(container.textContent).not.toContain("Connect a provider to add backups.");
-    expect(button("Save backups").disabled).toBe(true);
-    expect(backupApi.backups).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Tried in order if the active model fails.");
+    expect(button("Add backup model").disabled).toBe(false);
+    expect(
+      [...container.querySelectorAll('[data-testid="menu-label"]')].map(
+        (label) => label.textContent,
+      ),
+    ).toEqual(["Anthropic", "OpenAI"]);
+    expect(menuItems()).toEqual(["Claude Sonnet", "GPT test"]);
+    expect(container.querySelector("select")).toBeNull();
+    expect(container.textContent).not.toContain("Save");
     expect(backupApi.setBackups).not.toHaveBeenCalled();
   });
 
-  it("adds, removes, and explicitly reorders choices before saving in that order", async () => {
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
-
-    await pickConnectedModel("Anthropic · Claude Sonnet");
-    await clickButton("Add");
-    await pickConnectedModel("OpenAI · GPT test");
-    await clickButton("Add");
-    expect(backupRows()).toEqual(["Anthropic · Claude Sonnet", "OpenAI · GPT test"]);
-
-    await clickButton("Move OpenAI · GPT test up");
-    expect(backupRows()).toEqual(["OpenAI · GPT test", "Anthropic · Claude Sonnet"]);
-    await clickButton("Remove Anthropic · Claude Sonnet");
-    expect(backupRows()).toEqual(["OpenAI · GPT test"]);
-
-    await clickButton("Save backups");
-    await flush();
-    expect(backupApi.setBackups).toHaveBeenCalledWith(
-      [{ provider: "openai", modelId: "gpt-test" }],
-      { context: { spaceId: scope.spaceId } },
-    );
-    expect(container.textContent).toContain("Backup models saved.");
-    expect(button("Save backups").disabled).toBe(true);
+  it("omits provider labels when only one provider is connected", async () => {
+    await renderSettings({ credentials: [credentials[0]!] });
+    expect(container.querySelector('[data-testid="menu-label"]')).toBeNull();
+    expect(menuItems()).toEqual(["Claude Sonnet"]);
   });
 
-  it("reloads the saved order and leaves disconnected entries removable without substitution", async () => {
+  it("hides the section while loading and when there is nothing to configure", async () => {
+    const load = deferred<never[]>();
+    backupApi.backups.mockReturnValueOnce(load.promise);
+    await renderSettings({ credentials: [] });
+    expect(container.querySelector('[data-testid="model-backups"]')).toBeNull();
+    await act(async () => load.resolve([]));
+    await flush();
+    expect(container.querySelector('[data-testid="model-backups"]')).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
+  it("saves every add, move, and remove immediately in order", async () => {
+    await renderSettings();
+
+    await addBackup("Claude Sonnet");
+    await flush();
+    await addBackup("GPT test");
+    await flush();
+    expect(backupRows()).toEqual(["Anthropic · Claude Sonnet", "OpenAI · GPT test"]);
+    expect(container.textContent).not.toContain("Add backup model");
+
+    await clickButton("Move OpenAI · GPT test up");
+    await flush();
+    expect(backupRows()).toEqual(["OpenAI · GPT test", "Anthropic · Claude Sonnet"]);
+    expect(button("Move OpenAI · GPT test up").disabled).toBe(true);
+    expect(button("Move Anthropic · Claude Sonnet down").disabled).toBe(true);
+    await clickButton("Remove Anthropic · Claude Sonnet");
+    await flush();
+    expect(backupRows()).toEqual(["OpenAI · GPT test"]);
+    expect(() => button("Move OpenAI · GPT test up")).toThrow();
+
+    const anthropic = { provider: "anthropic", modelId: "claude-sonnet" };
+    const openai = { provider: "openai", modelId: "gpt-test" };
+    expect(backupApi.setBackups.mock.calls.map(([choices]) => choices)).toEqual([
+      [anthropic],
+      [anthropic, openai],
+      [openai, anthropic],
+      [openai],
+    ]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("serializes rapid edits so the server ends at the latest list", async () => {
+    const first = deferred<{ ok: true }>();
+    backupApi.setBackups.mockReturnValueOnce(first.promise);
+    await renderSettings();
+
+    await addBackup("Claude Sonnet");
+    await flush();
+    await addBackup("GPT test");
+    await flush();
+    expect(backupApi.setBackups).toHaveBeenCalledTimes(1);
+    expect(backupRows()).toEqual(["Anthropic · Claude Sonnet", "OpenAI · GPT test"]);
+
+    await act(async () => first.resolve({ ok: true }));
+    await flush();
+    await flush();
+    expect(backupApi.setBackups).toHaveBeenCalledTimes(2);
+    expect(backupApi.setBackups.mock.calls[1]?.[0]).toEqual([
+      { provider: "anthropic", modelId: "claude-sonnet" },
+      { provider: "openai", modelId: "gpt-test" },
+    ]);
+  });
+
+  it("reloads the saved order and saves removal of a disconnected entry", async () => {
     backupApi.backups.mockResolvedValue([
       { provider: "openai", modelId: "gpt-test" },
       { provider: "disconnected-provider", modelId: "old-model" },
     ]);
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
+    await renderSettings();
 
     expect(backupRows()).toEqual(["OpenAI · GPT test", "disconnected-provider · old-model"]);
     expect(container.textContent).toContain("Not connected");
     await clickButton("Remove disconnected-provider · old-model");
-    await clickButton("Save backups");
     await flush();
     expect(backupApi.setBackups).toHaveBeenCalledWith(
       [{ provider: "openai", modelId: "gpt-test" }],
@@ -231,31 +303,65 @@ describe("ModelBackupsSettings", () => {
     );
   });
 
-  it("keeps the edited order and surfaces a backend duplicate or limit error", async () => {
+  it("reverts to the saved list and shows the error when a save fails", async () => {
     backupApi.backups.mockResolvedValue([{ provider: "anthropic", modelId: "claude-sonnet" }]);
-    backupApi.setBackups.mockRejectedValue(
-      new Error("Backup model choices must be unique (maximum 10)."),
+    const save = deferred<never>();
+    backupApi.setBackups.mockReturnValueOnce(save.promise);
+    await renderSettings();
+    await addBackup("GPT test");
+    expect(backupRows()).toEqual(["Anthropic · Claude Sonnet", "OpenAI · GPT test"]);
+    await act(async () =>
+      save.reject(new Error("Backup model choices must be unique (maximum 10).")),
     );
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
-    await pickConnectedModel("OpenAI · GPT test");
-    await clickButton("Add");
-    await clickButton("Move OpenAI · GPT test up");
-    const expected = ["OpenAI · GPT test", "Anthropic · Claude Sonnet"];
-
-    await clickButton("Save backups");
     await flush();
 
-    expect(backupRows()).toEqual(expected);
+    expect(backupRows()).toEqual(["Anthropic · Claude Sonnet"]);
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       "Backup model choices must be unique (maximum 10).",
     );
-    expect(button("Save backups").disabled).toBe(false);
+    expect(() => button("Retry")).toThrow();
+    expect(menuItems()).toEqual(["GPT test"]);
   });
 
-  it("does not let an old-space save overwrite the newly selected space", async () => {
+  it("keeps saving queued edits after leaving Models and reloads only once they land", async () => {
+    const first = deferred<{ ok: true }>();
+    backupApi.setBackups.mockReturnValueOnce(first.promise);
+    await renderSettings();
+    await addBackup("Claude Sonnet");
+    await flush();
+    await addBackup("GPT test");
+    await flush();
+
+    await act(async () => root.render(<div />));
+    await act(async () => first.resolve({ ok: true }));
+    await flush();
+    await flush();
+    expect(backupApi.setBackups).toHaveBeenCalledTimes(2);
+    expect(backupApi.setBackups.mock.calls[1]?.[0]).toEqual([
+      { provider: "anthropic", modelId: "claude-sonnet" },
+      { provider: "openai", modelId: "gpt-test" },
+    ]);
+  });
+
+  it("waits for pending saves before reloading the list", async () => {
+    const save = deferred<{ ok: true }>();
+    backupApi.setBackups.mockReturnValueOnce(save.promise);
+    await renderSettings();
+    await addBackup("Claude Sonnet");
+    await flush();
+
+    await act(async () => root.render(<div />));
+    backupApi.backups.mockClear();
+    await renderSettings();
+    expect(backupApi.backups).not.toHaveBeenCalled();
+
+    await act(async () => save.resolve({ ok: true }));
+    await flush();
+    await flush();
+    expect(backupApi.backups).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves an old-space edit to its own space, never the newly selected one", async () => {
     let resolveOldSpaceMe: ((value: { userId: string; spaceId: string }) => void) | undefined;
     backupApi.me.mockImplementation((options: { context: { spaceId: string } }) => {
       const requestedSpaceId = options.context.spaceId;
@@ -277,57 +383,31 @@ describe("ModelBackupsSettings", () => {
             : [{ provider: "openai", modelId: "gpt-test" }],
         ),
     );
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
-    await flush();
-    await pickConnectedModel("Anthropic · Claude Sonnet");
-    await clickButton("Add");
-    await clickButton("Save backups");
+    await renderSettings();
+    await addBackup("Claude Sonnet");
 
     backupApi.selectedSpaceId.mockReturnValue("space-b");
-    await act(async () => {
-      root.render(
-        <ModelBackupsSettings
-          userId="user-b"
-          spaceId="space-b"
-          catalog={catalog}
-          credentials={credentials}
-        />,
-      );
-    });
-    await flush();
+    await renderSettings({ userId: "user-b", spaceId: "space-b" });
     resolveOldSpaceMe?.({ userId: "user-a", spaceId: "space-a" });
     await flush();
 
     expect(backupRows()).toEqual(["OpenAI · GPT test"]);
-    expect(backupApi.setBackups).not.toHaveBeenCalled();
+    expect(backupApi.setBackups).toHaveBeenCalledTimes(1);
+    expect(backupApi.setBackups.mock.calls[0]?.[1]).toEqual({ context: { spaceId: "space-a" } });
   });
 
-  it("keeps add, reorder, and save disabled when the backup list fails to load", async () => {
-    backupApi.backups.mockRejectedValue(new Error("Could not load backup models"));
-    await act(async () => {
-      root.render(<ModelBackupsSettings {...scope} catalog={catalog} credentials={credentials} />);
-    });
+  it("refuses to save when the session now belongs to another space", async () => {
+    backupApi.me
+      .mockResolvedValueOnce({ userId: scope.userId, spaceId: scope.spaceId })
+      .mockResolvedValueOnce({ userId: scope.userId, spaceId: "space-b" });
+    await renderSettings();
+    await addBackup("Claude Sonnet");
     await flush();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Could not load backup models",
-    );
-    expect(container.querySelector('[data-testid="model-backup-1"]')).toBeNull();
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="Add connected model"]',
-    );
-    expect(select?.disabled).toBe(true);
-    expect(button("Add").disabled).toBe(true);
-    expect(button("Save backups").disabled).toBe(true);
-
-    await pickConnectedModel("Anthropic · Claude Sonnet");
-    await clickButton("Add");
-    await clickButton("Save backups");
-    await flush();
-
-    expect(backupRows()).toEqual([]);
     expect(backupApi.setBackups).not.toHaveBeenCalled();
+    expect(backupRows()).toEqual([]);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Space changed. Reopen Models to save its backup list.",
+    );
   });
 });

@@ -18,7 +18,7 @@ describe("thread foreground subscription", () => {
     async (mode) => {
       const applied: number[] = [];
       const cursors: number[] = [];
-      let deliver: (event: { type: string; seq: number }) => void = () => {};
+      let deliver: (event: { type: string; seq: number; runId?: string }) => void = () => {};
       const hooks: { deps: unknown[]; cleanup?: () => void }[] = [];
       let hookIndex = 0;
       const snapshot = { cursor: 10 };
@@ -82,23 +82,29 @@ describe("thread foreground subscription", () => {
       };
       await render();
       deliver({ type: "thread.message.updated", seq: 11 });
+      scope.refresh.mockClear();
+      // Another device paused a run; the event has no owner to expose Dismiss.
+      deliver({ type: "run.waiting_input", seq: 12, runId: "run-other-device" });
+      expect(applied).toEqual([11, 12]);
+      expect(scope.refresh).toHaveBeenCalledTimes(mode === "latest" ? 1 : 0);
+      expect(scope.refreshMentionBots).not.toHaveBeenCalled();
       scope.foreground = false;
       await render();
       // A late callback from the aborted stream must not advance the saved cursor.
-      deliver({ type: "thread.message.updated", seq: 12 });
+      deliver({ type: "thread.message.updated", seq: 13 });
       snapshot.cursor = 20;
       scope.foreground = true;
       await render();
-      expect(cursors).toEqual([10, 11]);
-      deliver({ type: "thread.message.updated", seq: 12 });
-      deliver({ type: "thread.cleared", seq: 13 });
-      expect(applied).toEqual([11, 12, 13]);
+      expect(cursors).toEqual([10, 12]);
+      deliver({ type: "thread.message.updated", seq: 13 });
+      deliver({ type: "thread.cleared", seq: 14 });
+      expect(applied).toEqual([11, 12, 13, 14]);
       expect(scope.expandedHistoryThread.current).toBeNull();
       expect(scope.pinnedAroundRef.current).toBeNull();
       expect(scope.jumpScrollTarget.current).toBeNull();
       scope.botId = "bot-2";
       await render();
-      expect(cursors).toEqual([10, 11, 20]);
+      expect(cursors).toEqual([10, 12, 20]);
       for (const hook of hooks) hook.cleanup?.();
     },
   );

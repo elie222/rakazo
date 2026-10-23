@@ -7,19 +7,19 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../app/group-settings";
-import NewGroup from "../app/new-group";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import type { MobileBot, MobileGroup } from "./api";
 
-const { rpc, back, replace } = vi.hoisted(() => ({
+const { rpc, back, push, replace } = vi.hoisted(() => ({
   rpc: vi.fn(),
   back: vi.fn(),
+  push: vi.fn(),
   replace: vi.fn(),
 }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back, replace }),
+  useRouter: () => ({ back, push, replace }),
   useLocalSearchParams: () => ({ groupId: "group-1" }),
 }));
 vi.mock("react-native", () => {
@@ -27,6 +27,21 @@ vi.mock("react-native", () => {
   return {
     View,
     ScrollView: View,
+    Pressable: ({
+      children,
+      onPress,
+      disabled,
+      accessibilityLabel,
+    }: {
+      children?: ReactNode;
+      onPress: () => void;
+      disabled?: boolean;
+      accessibilityLabel?: string;
+    }) => (
+      <button type="button" onClick={onPress} disabled={disabled} aria-label={accessibilityLabel}>
+        {children}
+      </button>
+    ),
     Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
     TextInput: ({
       value,
@@ -169,15 +184,6 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   expect(back).toHaveBeenCalledOnce();
 });
 
-it("starts new groups with the roster expanded and excludes archived bots", async () => {
-  rpc.mockResolvedValue([...bots, { ...bots[0], id: "archived", archivedAt: "2026-01-01" }]);
-  await act(async () => root.render(<NewGroup />));
-  expect(container.querySelector('[aria-label="Filter bots"]')).not.toBeNull();
-  expect(switches()).toHaveLength(3);
-  await filter("prose");
-  expect(switches()[0]?.getAttribute("aria-label")).toBe("Writer");
-});
-
 it("limits additions while still allowing members to be removed", async () => {
   const roster = Array.from({ length: GROUP_MEMBER_MAX + 1 }, (_, index) => ({
     ...bots[0],
@@ -197,4 +203,49 @@ it("limits additions while still allowing members to be removed", async () => {
   expect(switches()[0]?.disabled).toBe(false);
   await act(async () => switches()[0]!.click());
   expect(switches().at(-1)?.disabled).toBe(false);
+});
+
+function openButtons() {
+  return [...container.querySelectorAll<HTMLButtonElement>("button[aria-label]")];
+}
+
+it("opens a member's profile from group settings without touching membership", async () => {
+  await act(async () => root.render(<GroupSettings />));
+  expect(openButtons().map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Researcher",
+    "Writer",
+  ]);
+  await act(async () => switches()[1]!.click());
+  expect(push).not.toHaveBeenCalled();
+  await act(async () => openButtons()[0]!.click());
+  expect(push).toHaveBeenCalledExactlyOnceWith({
+    pathname: "/bot-profile",
+    params: { botId: "bot-1", name: "Researcher" },
+  });
+  // The member edit made before opening the profile is still there to save.
+  expect(switches().map((input) => input.checked)).toEqual([true, false]);
+});
+
+it("keeps members closed while a save is running", async () => {
+  let finish = () => {};
+  rpc.mockImplementation((procedure: string) =>
+    procedure === "groups/update"
+      ? new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve(
+          procedure === "groups/list" ? [group] : procedure === "bots/list" ? bots : undefined,
+        ),
+  );
+  await act(async () => root.render(<GroupSettings />));
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('[placeholder="Group name"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Crew");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save");
+  expect(rpc).toHaveBeenCalledWith("groups/update", { groupId: "group-1", name: "Crew" });
+  expect(openButtons()).toHaveLength(2);
+  expect(openButtons().every((button) => button.disabled)).toBe(true);
+  await act(async () => finish());
 });

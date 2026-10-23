@@ -4,10 +4,14 @@ set -Eeuo pipefail
 
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 SSH_PORT="${SSH_PORT:-22}"
+[[ "${SSH_PORT}" =~ ^[0-9]+$ ]] && ((SSH_PORT > 0 && SSH_PORT <= 65535)) || { echo "Invalid SSH_PORT" >&2; exit 1; }
 
 if [[ "${EUID}" -ne 0 ]]; then
-  exec sudo --preserve-env=DEPLOY_USER,SSH_PORT bash "$0" "$@"
+  exec sudo --preserve-env=DEPLOY_USER,SSH_PORT,SSH_CONNECTION,RAKAZO_DEPLOY_DIR bash "$0" "$@"
 fi
+
+# Validate the guard's session identity before installing packages or writing host settings.
+[[ -n "${SSH_CONNECTION:-}" ]] || { echo "SSH_CONNECTION is required; use sudo --preserve-env=SSH_CONNECTION" >&2; exit 1; }
 
 if ! id "${DEPLOY_USER}" >/dev/null 2>&1; then
   echo "Deploy user ${DEPLOY_USER} does not exist" >&2
@@ -17,6 +21,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
+  age \
   apparmor \
   apparmor-utils \
   auditd \
@@ -114,30 +119,73 @@ net.ipv6.conf.default.accept_source_route = 0
 EOF
 sysctl --system >/dev/null
 
+if [[ -z "${RAKAZO_DEPLOY_DIR:-}" && -r /etc/rakazo/deploy.env ]]; then
+  RAKAZO_DEPLOY_DIR="$(sed -n 's/^RAKAZO_DEPLOY_DIR=//p' /etc/rakazo/deploy.env | tail -1 | tr -d '"')"
+fi
+DEPLOY_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
+[[ "${DEPLOY_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
+DEPLOY_HOME="$(getent passwd "${DEPLOY_USER}" | cut -d: -f6)"
+
+# The kernel needs a watched path's parent directory to exist; rerun after creating a skipped one.
 install -d -m 750 /etc/audit/rules.d
-cat >/etc/audit/rules.d/50-rakazo.rules <<'EOF'
--w /etc/ssh/sshd_config -p wa -k sshd_config
--w /etc/ssh/sshd_config.d/ -p wa -k sshd_config
--w /etc/sudoers -p wa -k sudoers
--w /etc/sudoers.d/ -p wa -k sudoers
--w /etc/passwd -p wa -k identity
--w /etc/group -p wa -k identity
--w /etc/shadow -p wa -k identity
--w /etc/gshadow -p wa -k identity
-EOF
+audit_watches=(
+  "/etc/ssh/sshd_config sshd_config"
+  "/etc/ssh/sshd_config.d/ sshd_config"
+  "/etc/sudoers sudoers"
+  "/etc/sudoers.d/ sudoers"
+  "/etc/passwd identity"
+  "/etc/group identity"
+  "/etc/shadow identity"
+  "/etc/gshadow identity"
+  "${DEPLOY_HOME}/.ssh/authorized_keys ssh_keys"
+  "/root/.ssh ssh_keys"
+  "/etc/rakazo rakazo_config"
+  "${DEPLOY_DIR}/.env app_secrets"
+  "/usr/local/sbin host_scripts"
+  "/etc/systemd/system persistence"
+  "/etc/cron.d persistence"
+  "/var/spool/cron persistence"
+  "/etc/docker/daemon.json docker_config"
+)
+for watch in "${audit_watches[@]}"; do
+  read -r path key <<<"${watch}"
+  if [[ -d "$(dirname "${path}")" ]]; then
+    printf -- '-w %s -p wa -k %s\n' "${path}" "${key}"
+  else
+    echo "Skipping audit watch on ${path}: its directory does not exist" >&2
+  fi
+done >/etc/audit/rules.d/50-rakazo.rules
 augenrules --load >/dev/null
 
-ufw --force reset >/dev/null
-ufw default deny incoming
-ufw default allow outgoing
-ufw limit "${SSH_PORT}/tcp" comment 'Rate-limited SSH'
-ufw allow 80/tcp comment 'HTTP for ACME redirect'
-ufw allow 443/tcp comment 'HTTPS'
-ufw allow 443/udp comment 'HTTP/3'
-ufw --force enable
+# Keep existing private-network rules. Roll back unless a fresh SSH session confirms.
+install -m 0755 "$(dirname "$0")/firewall-change.sh" /usr/local/sbin/rakazo-firewall-change
+/usr/local/sbin/rakazo-firewall-change apply bash -euc '
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw limit "$1/tcp" comment "Rate-limited SSH"
+  ufw allow 80/tcp comment "HTTP for ACME redirect"
+  ufw allow 443/tcp comment "HTTPS"
+  ufw allow 443/udp comment "HTTP/3"
+  ufw --force enable
+' _ "${SSH_PORT}"
 
 systemctl enable --now apparmor auditd fail2ban unattended-upgrades
 systemctl restart fail2ban
 systemctl reload ssh
 
-echo "Rakazo host hardening applied. Verify a fresh SSH session before closing the current one."
+# Ship the audit trail off the host only when an operator configured a sink; see docs/self-host.md.
+AUDIT_ENV=/etc/rakazo/audit-ship.env
+if grep -q '^RAKAZO_AUDIT_SINK_URL=.' "${AUDIT_ENV}" 2>/dev/null; then
+  audit_token="$(sed -n 's/^RAKAZO_AUDIT_TOKEN_FILE=//p' "${AUDIT_ENV}" | tail -1 | tr -d '"')"
+  audit_token="${audit_token:-/etc/rakazo/audit-ship.token}"
+  [[ -s "${audit_token}" ]] || { echo "Audit sink is configured but ${audit_token} is missing or empty" >&2; exit 1; }
+  chown root:root "${AUDIT_ENV}" "${audit_token}"
+  chmod 600 "${AUDIT_ENV}" "${audit_token}"
+  install -m 0755 "$(dirname "$0")/audit-ship.py" /usr/local/sbin/rakazo-audit-ship
+  install -m 0644 "$(dirname "$0")/../systemd/rakazo-audit-ship.service" /etc/systemd/system/rakazo-audit-ship.service
+  systemctl daemon-reload
+  systemctl enable rakazo-audit-ship.service
+  systemctl restart rakazo-audit-ship.service
+fi
+
+echo "Host hardening applied. Confirm the firewall token from a fresh SSH session within three minutes."

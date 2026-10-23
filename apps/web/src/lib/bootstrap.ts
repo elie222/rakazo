@@ -1,6 +1,8 @@
 import type { AppBootstrap } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes } from "@rakazo/contracts";
+import { displayIdentityResult } from "@rakazo/core";
 import { initialBootstrapTarget } from "./bootstrap-target";
+import { identityLabels } from "./identity-display";
 import { markOnce } from "./performance";
 import { rpc, selectedSpaceId } from "./rpc";
 
@@ -53,7 +55,11 @@ export function takeInitialBootstrap(botId?: string) {
     primed.botId === botId &&
     (primed.spaceId === undefined || primed.spaceId === selectedSpaceId())
   ) {
-    return primed.spaceId === undefined ? primed.promise : primed.promise.then(applyCapabilities);
+    return (
+      primed.spaceId === undefined ? primed.promise : primed.promise.then(applyCapabilities)
+    ).then(
+      (value) => displayIdentityResult(["bootstrap"], value, identityLabels()) as AppBootstrap,
+    );
   }
   return requestBootstrap(botId);
 }

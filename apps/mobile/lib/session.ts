@@ -1,7 +1,5 @@
-import type { AvatarStyle } from "@rakazo/contracts";
 import * as SecureStore from "expo-secure-store";
 import { invalidateArtifactCacheSession } from "./artifact-cache-session";
-import { clearAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import { stopLiveNotifications } from "./live-notifications";
 import { clearNetworkCache } from "./network-cache";
 import { clearFailedSends } from "./thread-feedback";
@@ -179,16 +177,8 @@ export async function clearSessionToken(): Promise<boolean> {
   await stopLiveNotifications(true).catch(() => undefined);
   const tokenCleared = await clearingToken;
   await clearingScope;
-  // Best-effort: a stuck style must not block sign-out or restore a wiped token.
-  await clearAvatarStyle();
   if (generation === sessionGeneration) publishSessionGeneration();
   return tokenCleared;
-}
-
-/** Saves a style response only when it still belongs to the current session. */
-export function saveAvatarStyleIfCurrent(generation: number, style: AvatarStyle): Promise<boolean> {
-  if (generation !== sessionGeneration) return Promise.resolve(false);
-  return saveAvatarStyle(style).then(() => generation === sessionGeneration);
 }
 
 async function clearStoredSessionToken(generation: number): Promise<boolean> {
@@ -277,12 +267,16 @@ export async function snapshotSessionToken(): Promise<{ ok: true; value: string 
   }
 }
 
+/**
+ * The server only accepts a signed bearer. `set-auth-token` and the session cookie are signed on
+ * every server version; the body token is signed only by servers that refuse unsigned bearers.
+ */
 export function tokenFromAuthResponse(res: Response, body: unknown) {
-  const fromJson = jsonToken(body);
-  if (fromJson) return fromJson;
   const cookies = res.headers.get("set-cookie") ?? "";
-  const encoded = cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
-  if (!encoded) return "";
+  const encoded =
+    res.headers.get("set-auth-token") ||
+    cookies.match(/(?:^|,\s*)(?:__Secure-)?better-auth\.session_token=([^;,]*)/)?.[1];
+  if (!encoded) return jsonToken(body);
   try {
     return decodeURIComponent(encoded);
   } catch {

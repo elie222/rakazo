@@ -1,0 +1,19 @@
+appId: com.rakazo.app
+name: Thread error recovery
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*weekly limit.*"
+    timeout: 20000
+- assertVisible: "Set your own key"
+- assertVisible: "Change model"
+- takeScreenshot: 01-limit-banner
+- tapOn: "Details"
+- extendedWaitUntil:
+    visible: ".*reply stopped at its key's weekly limit.*"
+    timeout: 10000
+- takeScreenshot: 02-limit-details

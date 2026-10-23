@@ -3,17 +3,19 @@ import type { LookupFunction } from "node:net";
 import { isIP } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { isCloudMetadataHost, isLocalMcpHost, isPrivateNetworkHost } from "@rakazo/contracts";
 import { Agent } from "undici";
 import { combineSignals } from "./connector-safety.js";
 import {
   createAddressCheckedLookup,
+  egressRefused,
   isCloudMetadataAddress,
   isLinkLocalAddress,
   isLoopbackAddress,
   isPrivateAddress,
-  isTailscaleAddress,
   type ResolvedAddress,
   type ResolveHostname,
   withPinnedDnsLookup,
@@ -52,28 +54,27 @@ const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
-  return withRemoteMcpClient(options, async (client, signal) => {
-    const tools: ConnectorTool[] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_MCP_PAGES && tools.length < MAX_MCP_TOOLS; page += 1) {
-      const result = await client.listTools(cursor ? { cursor } : undefined, {
-        signal,
-        timeout: MCP_TIMEOUT_MS,
-      });
-      for (const tool of result.tools) {
-        if (tools.length >= MAX_MCP_TOOLS) break;
-        tools.push({
-          name: tool.name,
-          description: tool.description ?? tool.title ?? tool.name,
-          inputSchema: tool.inputSchema,
-          readOnly: tool.annotations?.readOnlyHint,
-        });
-      }
-      cursor = result.nextCursor;
-      if (!cursor) break;
-    }
-    return tools;
-  });
+  return withRemoteMcpClient(options, async (client, signal) =>
+    (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? tool.title ?? tool.name,
+      inputSchema: tool.inputSchema,
+      readOnly: tool.annotations?.readOnlyHint,
+    })),
+  );
+}
+
+/** Follow `tools/list` cursors, bounded by the shared page and tool caps. */
+export async function listMcpTools(client: Client, options: RequestOptions): Promise<Tool[]> {
+  const tools: Tool[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_MCP_PAGES && tools.length < MAX_MCP_TOOLS; page += 1) {
+    const result = await client.listTools(cursor ? { cursor } : undefined, options);
+    tools.push(...result.tools.slice(0, MAX_MCP_TOOLS - tools.length));
+    cursor = result.nextCursor;
+    if (!cursor) break;
+  }
+  return tools;
 }
 
 /** Call through the guarded transport, optionally projecting before the final byte limit. */
@@ -159,7 +160,8 @@ async function inspectSafeRemoteUrl(
   if (url.username || url.password) throw new Error("Connector URL must not contain credentials");
   if (url.hash) throw new Error("Connector URL must not contain a fragment");
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  if (isBlockedRemoteHostname(hostname)) throw new Error("Connector URL targets a private host");
+  if (isBlockedRemoteHostname(hostname))
+    throw egressRefused(hostname, new Error("Connector URL targets a private host"));
   // Loopback is a private endpoint too: only the private-endpoint escape reaches it.
   const allowPrivate = policy.allowPrivateEndpoint === true;
   const privateHost = isPrivateRemoteMcpHostname(hostname);
@@ -167,7 +169,7 @@ async function inspectSafeRemoteUrl(
     throw new Error("Connector URL must use HTTPS");
   }
   if (privateHost && !allowPrivate) {
-    throw new Error("Connector URL targets a private host");
+    throw egressRefused(hostname, new Error("Connector URL targets a private host"));
   }
   const literal = literalAddresses(hostname);
   if (url.protocol === "http:" && isLocalMcpHost(hostname)) {
@@ -175,7 +177,11 @@ async function inspectSafeRemoteUrl(
   }
   if (privateHost && literal) return { url, addresses: literal };
   const addresses = await resolve(hostname);
-  assertAllowedAddresses(addresses, hostname, policy);
+  try {
+    assertAllowedAddresses(addresses, policy);
+  } catch (error) {
+    throw egressRefused(hostname, error);
+  }
   if (url.protocol === "http:" && addresses.some((entry) => !isPrivateAddress(entry.address))) {
     throw new Error("Connector URL must use HTTPS");
   }
@@ -330,7 +336,7 @@ export function createSafeLookup(
       assertLoopbackAddresses(addresses);
       return;
     }
-    assertAllowedAddresses(addresses, hostname, policy);
+    assertAllowedAddresses(addresses, policy);
   });
 }
 
@@ -369,16 +375,12 @@ function assertLoopbackAddresses(addresses: ResolvedAddress[]): void {
   }
 }
 
-function assertAllowedAddresses(
-  addresses: ResolvedAddress[],
-  hostname: string | undefined,
-  policy: RemoteUrlPolicy,
-): void {
+function assertAllowedAddresses(addresses: ResolvedAddress[], policy: RemoteUrlPolicy): void {
   if (policy.allowPrivateEndpoint === true) {
     assertUnmixedAddresses(addresses);
     return;
   }
-  assertPublicAddresses(addresses, hostname);
+  assertPublicAddresses(addresses);
 }
 
 function assertUnmixedAddresses(addresses: ResolvedAddress[]): void {
@@ -400,18 +402,15 @@ function assertUnmixedAddresses(addresses: ResolvedAddress[]): void {
   }
 }
 
-function assertPublicAddresses(addresses: ResolvedAddress[], hostname?: string): void {
+/** Tailnet (*.ts.net) answers are private addresses too, so they need the private-endpoint escape. */
+function assertPublicAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.length === 0) {
     throw new Error("Connector URL resolves to a private address");
   }
-  const magicDns = hostname != null && isTailscaleMagicDnsHostname(hostname);
   if (
-    addresses.some((entry) => {
-      if (isCloudMetadataAddress(entry.address)) return true;
-      if (!isPrivateAddress(entry.address)) return false;
-      // Allow only Tailscale ranges for MagicDNS; keep other private ranges blocked.
-      return !(magicDns && isTailscaleAddress(entry.address));
-    })
+    addresses.some(
+      (entry) => isCloudMetadataAddress(entry.address) || isPrivateAddress(entry.address),
+    )
   ) {
     throw new Error("Connector URL resolves to a private address");
   }

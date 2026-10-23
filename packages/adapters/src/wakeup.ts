@@ -1,16 +1,41 @@
 import type {
   BackgroundJob,
   BackgroundJobHandlers,
+  BackgroundJobName,
   JobPublisher,
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import { isTooManyDatabaseConnections } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import type { Runner, WorkerUtils } from "graphile-worker";
 import { makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
+
+// Adapter-local task name: the shared job contract remains run.continue. Older
+// publishers can keep publishing it while a new worker drains the legacy queue.
+const INTERACTIVE_RUN_TASK = "run.interactive";
+type RunLookup = Pick<PrismaClient, "run">;
+type Workload = "interactive" | "background" | "maintenance";
+
+async function isInteractiveRun(prisma: RunLookup, runId: string): Promise<boolean> {
+  const run = await prisma.run.findUnique({ where: { id: runId }, select: { trigger: true } });
+  return Boolean(
+    run &&
+      [
+        "user",
+        "follow_up",
+        "reaction",
+        "call_end",
+        "messaging",
+        "created",
+        "skill",
+        "resume",
+      ].includes(run.trigger),
+  );
+}
 
 // Share the caller's pg.Pool instead of opening a separate connectionString-based
 // pool per graphile-worker component: three independent pools per worker process
@@ -20,19 +45,52 @@ export class GraphileJobPublisher implements JobPublisher {
   private utils: Promise<WorkerUtils> | undefined;
   private closed = false;
 
-  constructor(private readonly pgPool: Pool) {}
+  constructor(
+    private readonly pgPool: Pool,
+    private readonly prisma?: RunLookup,
+  ) {}
 
   async enqueue(job: BackgroundJob): Promise<void> {
     const utils = await this.getUtils();
     // replace resets attempts and run_at. unsafe_dedupe leaves both, so an
-    // exhausted row would stay queued forever. Dedupe only while attempts remain.
+    // exhausted row would stay queued forever. Dedupe only while attempts remain,
+    // and not a job locked by replaceLockedBefore: Graphile never unlocks a job
+    // whose worker died, and replace detaches a locked job and inserts a new one.
     const jobKeyMode = await this.keepExistingMode(utils, job);
-    await utils.addJob(job.name, wrapJobPayload(job.payload), {
+    const task =
+      job.name === "run.continue" &&
+      this.prisma &&
+      (await isInteractiveRun(this.prisma, job.payload.runId))
+        ? INTERACTIVE_RUN_TASK
+        : job.name;
+    await utils.addJob(task, wrapJobPayload(job.payload), {
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
       ...(jobKeyMode ? { jobKeyMode } : {}),
     });
+    if (
+      task === INTERACTIVE_RUN_TASK &&
+      jobKeyMode === "unsafe_dedupe" &&
+      job.name === "run.continue"
+    ) {
+      // unsafe_dedupe preserves the old task identifier too. Move a legacy job
+      // without resetting its retry budget, backoff, payload, or correlation.
+      // Never move a locked job out from under the worker already processing it.
+      await utils.withPgClient((client) =>
+        client.query(
+          `update graphile_worker._private_jobs as jobs
+           set task_id = target.id
+           from graphile_worker._private_tasks as target,
+                graphile_worker._private_tasks as previous
+           where jobs.key = $1 and jobs.locked_at is null
+             and jobs.task_id = previous.id and previous.identifier = 'run.continue'
+             and target.identifier = $2
+             and coalesce(jobs.payload->>'runId', jobs.payload->'payload'->>'runId') = $3`,
+          [job.replaceKey, INTERACTIVE_RUN_TASK, job.payload.runId],
+        ),
+      );
+    }
   }
 
   async cancel(key: string): Promise<void> {
@@ -61,14 +119,47 @@ export class GraphileJobPublisher implements JobPublisher {
     const key = job.replaceKey;
     if (!job.keepExisting || !key) return undefined;
     const existing = await utils.withPgClient(async (client) => {
-      const found = await client.query<{ attempts: number; max_attempts: number }>(
-        "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+      const found = await client.query<{
+        attempts: number;
+        max_attempts: number;
+        locked_at: Date | null;
+      }>(
+        "select attempts, max_attempts, locked_at from graphile_worker._private_jobs where key = $1",
         [key],
       );
       return found.rows[0];
     });
-    if (!existing || Number(existing.attempts) >= Number(existing.max_attempts)) return undefined;
+    if (!existing) return undefined;
+    const lockedAt = existing.locked_at;
+    if (lockedAt && job.replaceLockedBefore && lockedAt <= job.replaceLockedBefore)
+      return undefined;
+    if (Number(existing.attempts) >= Number(existing.max_attempts)) return undefined;
     return "unsafe_dedupe";
+  }
+}
+
+/**
+ * Job payloads carry only ids. Dispatch starts as system rather than inheriting
+ * whichever request enqueued the job (the in-memory queue's timers would otherwise
+ * keep its tenant); each handler then narrows to the tenant of the row it acts for
+ * (see createBackgroundJobHandlers).
+ */
+function dispatchJob(handlers: BackgroundJobHandlers, name: string, payload: unknown) {
+  return runAsSystem(`background job ${name}`, () =>
+    dispatchBackgroundJob(handlers, name, payload),
+  );
+}
+
+/**
+ * Install or upgrade graphile-worker's schema. Runs as the migration role during
+ * `pnpm db:migrate`, so the runtime role only needs grants on that schema.
+ */
+export async function migrateJobQueue(connectionString: string): Promise<void> {
+  const utils = await makeWorkerUtils({ connectionString });
+  try {
+    await utils.migrate();
+  } finally {
+    await utils.release();
   }
 }
 
@@ -90,6 +181,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       concurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
+      /** Omit for a worker that handles every task (tests and embedded hosts). */
+      workload?: Workload;
       /** Test seam: delay between 53300 restart attempts. */
       sleep?: (ms: number) => Promise<void>;
     } = {},
@@ -123,19 +216,26 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     const handlers = this.handlers;
     if (!handlers) throw new Error("Background job worker has no handlers");
     const taskList = Object.fromEntries(
-      Object.keys(handlers).map((name) => [
-        name,
-        async (payload: unknown) => {
-          const unpacked = unwrapJobPayload(payload);
-          await runCorrelatedJob({
-            name,
-            payload: unpacked.payload,
-            correlation: unpacked.correlation,
-            run: () => dispatchBackgroundJob(handlers, name, unpacked.payload),
-          });
-        },
-      ]),
+      (Object.keys(handlers) as BackgroundJobName[])
+        .filter((name) => {
+          if (this.options.workload === "maintenance") return name !== "run.continue";
+          if (this.options.workload) return name === "run.continue";
+          return true;
+        })
+        .map((name) => [
+          this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
+          async (payload: unknown) => {
+            const unpacked = unwrapJobPayload(payload);
+            await runCorrelatedJob({
+              name,
+              payload: unpacked.payload,
+              correlation: unpacked.correlation,
+              run: () => dispatchJob(handlers, name, unpacked.payload),
+            });
+          },
+        ]),
     );
+    if (!this.options.workload) taskList[INTERACTIVE_RUN_TASK] = taskList["run.continue"]!;
     const runner = await run({
       pgPool: this.pgPool,
       concurrency: this.options.concurrency ?? 4,
@@ -200,6 +300,39 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       }
     }
   }
+}
+
+/** Long agent turns cannot occupy the capacity reserved for other workloads. */
+export function createReservedGraphileJobWorkerHost(
+  pool: Pool,
+  options: { concurrency?: number; pollInterval?: number; noHandleSignals?: boolean } = {},
+): JobWorkerHost {
+  const hosts = (["interactive", "background", "maintenance"] as const).map(
+    (workload) =>
+      new GraphileJobWorkerHost(pool, {
+        ...options,
+        concurrency: workload === "interactive" ? options.concurrency : 1,
+        workload,
+      }),
+  );
+  const stop = async () => {
+    const results = await Promise.allSettled(hosts.map((host) => host.stop()));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
+  return {
+    async start(handlers) {
+      try {
+        // Legacy jobs that are already locked finish with their original queue
+        // identity and retry accounting. Reconciliation promotes unlocked chat.
+        for (const host of hosts) await host.start(handlers);
+      } catch (error) {
+        await stop();
+        throw error;
+      }
+    },
+    stop,
+  };
 }
 
 /** Exhausted retry rows are durable notice requests, including across worker restarts. */
@@ -411,7 +544,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       name: job.name,
       payload: unpacked.payload,
       correlation: unpacked.correlation,
-      run: () => dispatchBackgroundJob(handlers, job.name, unpacked.payload),
+      run: () => dispatchJob(handlers, job.name, unpacked.payload),
     }).catch(() => {
       this.failures.set(job.name, (this.failures.get(job.name) ?? 0) + 1);
     });

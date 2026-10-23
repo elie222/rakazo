@@ -5,13 +5,14 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerSleepJob } from "@rakazo/adapter-kit";
+import { computerSleepJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -291,14 +292,14 @@ export async function sleepComputerIfIdle(
     limitReached
       ? Promise.resolve(false)
       : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
-  if (await runHolds()) {
+  if ((await runHolds()) || (await backgroundHolds())) {
     scheduleComputerSleep(deps.jobs, computerId);
-    return;
-  }
-
-  if (await backgroundHolds()) {
-    scheduleComputerSleep(deps.jobs, computerId);
-    await deps.sandbox.keepAlive?.(ref);
+    try {
+      await deps.sandbox.keepAlive?.(ref);
+    } catch (error) {
+      // The holding run or the next idle check recovers a computer whose sandbox is gone.
+      if (!isSandboxGoneError(error)) throw error;
+    }
     return;
   }
 
@@ -370,6 +371,16 @@ export async function sleepComputerIfIdle(
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
+    // A sandbox too busy or stuck to answer cannot be checkpointed now; the next idle check
+    // tries again instead of reporting the same timeout every window.
+    if (error instanceof SandboxUnresponsiveError) {
+      getLogger().warn("computer.sleep_deferred", {
+        "computer.id": computerId,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+      return;
+    }
     throw error;
   }
 
@@ -412,7 +423,7 @@ export async function sleepComputerIfIdle(
     });
     throw error;
   }
-  await deps.prisma.computer.update({
+  const suspended = await deps.prisma.computer.updateMany({
     where: suspensionClaim,
     data: {
       state: "suspended",
@@ -423,6 +434,18 @@ export async function sleepComputerIfIdle(
       controlBotId: null,
       controlRunId: null,
     },
+  });
+  if (suspended.count !== 1) {
+    // A Reset, a stale-claim recovery, or a deletion took the computer while it stopped. The
+    // new owner restarts it from the saved revision; there is nothing left for this job to do.
+    getLogger().warn("computer.suspend_superseded", { "computer.id": computerId });
+    return;
+  }
+  getLogger().info("computer.suspended", {
+    "computer.id": computerId,
+    provider: computer.kind,
+    reason: limitReached ? "active_limit" : "idle",
+    activeMs: computer.runningSince ? Date.now() - computer.runningSince.getTime() : undefined,
   });
   const bots = await deps.prisma.bot.findMany({
     where: { computerId },

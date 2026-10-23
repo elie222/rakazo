@@ -91,7 +91,7 @@ describe("Infisical lifecycle and REST", () => {
     await a.close();
     await b.close();
   });
-  it("deduplicates login, reauthenticates proactively, retries 401 once and backs off 429/5xx", async () => {
+  it("deduplicates login, reauthenticates proactively, retries 401 once and honours Retry-After on 429 and backs off 5xx", async () => {
     const fake = infisicalFake();
     let now = 0;
     const store = new InfisicalSecretStore({ ...fake.options, now: () => now });
@@ -103,7 +103,7 @@ describe("Infisical lifecycle and REST", () => {
     fake.statuses.push(401, 429, 503, 200);
     await store.put("next", secretTestContext);
     expect(fake.logins).toBe(3);
-    expect(fake.sleep.mock.calls.map((call) => call[0])).toEqual([100, 200]);
+    expect(fake.sleep.mock.calls.map((call) => call[0])).toEqual([1000, 200]);
     fake.statuses.push(401, 401);
     await expect(store.put("private value", secretTestContext)).rejects.toMatchObject({
       status: 401,
@@ -222,6 +222,59 @@ describe("Infisical lifecycle and REST", () => {
     );
     await store.close();
   });
+  it.each([
+    { name: "folder", options: { folder: "/missing" } },
+    { name: "environment", options: { environment: "missing" } },
+  ])("reports a missing $name as misconfiguration, not a missing secret", async ({ options }) => {
+    const fake = infisicalFake();
+    const writer = new InfisicalSecretStore(fake.options);
+    const record = await writer.put("value", secretTestContext);
+    await writer.close();
+    const store = new InfisicalSecretStore({ ...fake.options, ...options });
+    await store.start();
+    expect(store.describe().capabilities.degraded).toBe(true);
+    for (const attempt of [
+      () => store.load(record.ref, record.id),
+      () => store.put("value", secretTestContext),
+      () => store.delete(record.ref, record.id),
+    ])
+      await expect(attempt()).rejects.toMatchObject({
+        name: "SecretStoreUnavailableError",
+        status: 404,
+      });
+    expect(store.describe().capabilities.degraded).toBe(true);
+    await store.close();
+  });
+  it("starts healthy and reports a missing secret as not found", async () => {
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore(fake.options);
+    await store.start();
+    expect(store.describe().capabilities.degraded).toBe(false);
+    const record = await store.put("value", secretTestContext);
+    fake.values.clear();
+    store.invalidate(record.ref);
+    await expect(store.load(record.ref, record.id)).rejects.toThrow("does not resolve");
+    await expect(store.delete(record.ref, record.id)).resolves.toBeUndefined();
+    expect(store.describe().capabilities.degraded).toBe(false);
+    await store.close();
+  });
+  it.each([
+    { retryAfter: undefined, sleeps: [100] },
+    { retryAfter: "2", sleeps: [2000] },
+    { retryAfter: new Date(Date.UTC(2026, 0, 1, 0, 0, 3)).toUTCString(), sleeps: [3000] },
+    { retryAfter: "60", sleeps: [] },
+  ])("waits for Retry-After $retryAfter within a bound", async ({ retryAfter, sleeps }) => {
+    const fake = infisicalFake();
+    fake.retryAfter = retryAfter;
+    const store = new InfisicalSecretStore({ ...fake.options, now: () => Date.UTC(2026, 0, 1) });
+    await store.start();
+    fake.statuses.push(429);
+    const put = store.put("value", secretTestContext);
+    if (sleeps.length) await expect(put).resolves.toMatchObject({ ref: expect.any(String) });
+    else await expect(put).rejects.toMatchObject({ status: 429 });
+    expect(fake.sleep.mock.calls.map((call) => call[0])).toEqual(sleeps);
+    await store.close();
+  });
   it("fans out invalidation across stores", async () => {
     const fake = infisicalFake();
     const fanout = new InMemoryRealtimeFanout();
@@ -314,7 +367,7 @@ describe("Infisical lifecycle and REST", () => {
     const store = new InfisicalSecretStore(fake.options);
     await Promise.all([store.start(), store.start()]);
     expect(fake.logins).toBe(3);
-    expect(fake.sleep.mock.calls.map((call) => call[0])).toEqual([100, 200]);
+    expect(fake.sleep.mock.calls.map((call) => call[0])).toEqual([1000, 200]);
     await store.close();
   });
   it("retries an invalidated read instead of installing its stale result", async () => {
@@ -333,7 +386,7 @@ describe("Infisical lifecycle and REST", () => {
     let first = true;
     const fetcher: typeof fetch = async (input, init) => {
       const response = await fake.fetcher(input, init);
-      if (init?.method === "GET" && first) {
+      if (init?.method === "GET" && !String(input).includes("rakazo_start_check") && first) {
         first = false;
         started();
         await gate;
@@ -470,7 +523,7 @@ describe("Infisical lifecycle and REST", () => {
     let gets = 0;
     const fetcher: typeof fetch = async (input, init) => {
       const response = await fake.fetcher(input, init);
-      if (init?.method === "GET" && ++gets === 1) {
+      if (init?.method === "GET" && !String(input).includes("rakazo_start_check") && ++gets === 1) {
         started();
         await gate;
       }

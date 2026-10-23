@@ -2,6 +2,7 @@ import { StyleSheet } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { transparentColor } from "../lib/color";
 import { HEADER_CONTROL_SIZE } from "../lib/native-controls";
+import { THREAD_HEADER_FADE_GRADIENT } from "../lib/thread-edges";
 
 export function createThreadHeaderStyles() {
   const tokens = mobileTokens();
@@ -17,9 +18,7 @@ export function createThreadHeaderStyles() {
       borderRadius: 999,
     },
     titleCapsuleFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      backgroundColor: tokens.glassFill,
     },
     title: {
       color: tokens.foreground,
@@ -39,8 +38,23 @@ export function createThreadHeaderStyles() {
     },
     composerFill: {
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
+      borderColor: tokens.glassStroke,
+      backgroundColor: tokens.glassFill,
+    },
+    headerFade: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: tokens.background,
+    },
+    headerFadeEdge: {
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      height: THREAD_HEADER_FADE_GRADIENT,
+      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${transparentBackground} 100%)`,
     },
     composerFade: {
       position: "absolute",

@@ -35,7 +35,6 @@ function evidence(): Evidence {
     approvalPending: false,
     pendingApproval: null,
     priorMemory: "",
-    destinationWrites: 0,
     toolNames: [],
     messaging: { originThreadId: null, outbound: [] },
   };
@@ -214,8 +213,6 @@ describe("independent outcome graders", () => {
       expect(passes(id, e)).toBe(true);
     e.files["results/totals.csv"] = "item,total\napples,7\npears,9";
     expect(passes("file-transform", e)).toBe(false);
-    e.destinationWrites = 1;
-    expect(passes("file-create", e)).toBe(false);
   });
   it("does not credit ungrounded inbox answers or irrelevant items", () => {
     const e = evidence();

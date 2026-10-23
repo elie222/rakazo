@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { avatarIdentitySeed, organicAvatarPath } from "./avatar-shape.js";
+import {
+  avatarIdentitySeed,
+  ORGANIC_AVATAR_FAMILY_COUNT,
+  organicAvatarFamily,
+  organicAvatarPath,
+} from "./avatar-shape.js";
 
 describe("organic avatar geometry", () => {
   it("is stable for an identity and changes across identities", () => {
@@ -20,5 +25,16 @@ describe("organic avatar geometry", () => {
     );
     expect(new Set(families)).toHaveLength(10);
     expect(families.every((path) => (path.match(/C/g) ?? []).length >= 12)).toBe(true);
+  });
+
+  it("names the family an identity is drawn with", () => {
+    // Without its per-identity phase, a body is its family's template.
+    const unphased = (seed: number) => organicAvatarPath(seed, -((seed % 360) * Math.PI) / 180);
+    for (const identity of ["research", "health", "cmh2x9k0a0000abcd1234efgh", "Chief"]) {
+      const family = organicAvatarFamily(identity);
+      expect(family).toBeGreaterThanOrEqual(0);
+      expect(family).toBeLessThan(ORGANIC_AVATAR_FAMILY_COUNT);
+      expect(unphased(avatarIdentitySeed(identity))).toBe(unphased(family));
+    }
   });
 });
