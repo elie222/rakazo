@@ -63,12 +63,24 @@ class RakazoFileDropModule : Module() {
     Thread {
       val files = mutableListOf<Map<String, Any>>()
       val tooLarge = mutableListOf<Map<String, Any>>()
+      val notCopied = mutableListOf<String>()
       var copiedBytes = 0.0
       try {
         for (uri in uris) {
           // A drop is bounded work: the thread keeps a handful of attachments, so
           // copying more than that only fills the cache with files nobody reads.
-          if (files.size >= MAX_DROP_FILES || copiedBytes >= MAX_DROP_BYTES) break
+          // The files left behind are named instead, so the chat can say so.
+          val full = files.size >= MAX_DROP_FILES
+          if (full || copiedBytes >= MAX_DROP_BYTES) {
+            if (notCopied.size < MAX_REPORTED_SKIPS) {
+              val name = displayName(activity, uri)
+              if (name != null) {
+                if (full) notCopied.add(name)
+                else tooLarge.add(mapOf("name" to name, "limit" to MAX_DROP_BYTES))
+              }
+            }
+            continue
+          }
           val file = copyToCache(activity, uri, tooLarge)
           if (file != null) {
             files.add(file)
@@ -78,12 +90,25 @@ class RakazoFileDropModule : Module() {
       } finally {
         permissions?.release()
       }
-      if (files.isNotEmpty() || tooLarge.isNotEmpty()) {
-        sendEvent("onFilesDropped", mapOf("files" to files, "tooLarge" to tooLarge))
+      if (files.isNotEmpty() || tooLarge.isNotEmpty() || notCopied.isNotEmpty()) {
+        sendEvent(
+          "onFilesDropped",
+          mapOf("files" to files, "tooLarge" to tooLarge, "skipped" to notCopied),
+        )
       }
     }.start()
     return true
   }
+
+  private fun displayName(activity: Activity, uri: Uri): String? = runCatching {
+    var queried: String? = null
+    activity.contentResolver
+      .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+      ?.use { cursor ->
+        if (cursor.moveToFirst() && !cursor.isNull(0)) queried = cursor.getString(0)
+      }
+    queried?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+  }.getOrNull()
 
   private fun copyToCache(
     activity: Activity,
@@ -96,13 +121,9 @@ class RakazoFileDropModule : Module() {
     // Provider calls and the copy stay inside one guard: a dropped URI can deny
     // access or fail mid-stream, and that must not escape the worker thread.
     val file: Map<String, Any>? = runCatching {
-      var queried: String? = null
-      resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst() && !cursor.isNull(0)) queried = cursor.getString(0)
-      }
-      val displayName = queried?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "file"
+      val fileName = displayName(activity, uri) ?: "file"
       directory.mkdirs()
-      val target = File(directory, displayName)
+      val target = File(directory, fileName)
       var copied = 0L
       var oversized = false
       resolver.openInputStream(uri)?.use { source ->
@@ -123,12 +144,12 @@ class RakazoFileDropModule : Module() {
         }
       } ?: return@runCatching null
       if (oversized) {
-        refused = displayName
+        refused = fileName
         null
       } else {
         mapOf(
           "uri" to Uri.fromFile(target).toString(),
-          "name" to displayName,
+          "name" to fileName,
           "mimeType" to (resolver.getType(uri) ?: "application/octet-stream"),
           "size" to copied.toDouble(),
         )
@@ -147,6 +168,7 @@ class RakazoFileDropModule : Module() {
     const val MAX_COPY_BYTES = 64L * 1024 * 1024
     const val MAX_DROP_BYTES = 64.0 * 1024 * 1024
     const val MAX_DROP_FILES = 8
+    const val MAX_REPORTED_SKIPS = 6
     const val COPY_BUFFER_BYTES = 64 * 1024
   }
 }

@@ -200,21 +200,26 @@ export async function pickDocuments(
 /**
  * Files dragged in from another window, already copied into the app's cache.
  * `tooLargeToCopy` holds the files the native module refused to copy, each with
- * the guard it crossed, so the notice names the limit that actually applied.
+ * the guard it crossed, and `notCopied` the ones it left behind once a drop had
+ * taken enough, so the notice names the limit that actually applied.
  */
 export async function readDroppedFiles(
   files: Array<{ uri: string; name: string; mimeType: string; size?: number }>,
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
   tooLargeToCopy: ReadonlyArray<{ name: string; limit: number }> = [],
+  notCopied: readonly string[] = [],
 ): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
-  const skipped: PickSkip[] = tooLargeToCopy.map((file) => ({
-    name: file.name,
-    reason: `over ${attachmentSizeLabel(file.limit)}`,
-  }));
+  const skipped: PickSkip[] = [
+    ...tooLargeToCopy.map((file) => ({
+      name: file.name,
+      reason: `over ${attachmentSizeLabel(file.limit)}`,
+    })),
+    ...notCopied.map((name) => ({ name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` })),
+  ];
   const candidates: Array<{
     uri: string;
     name: string;

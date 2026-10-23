@@ -2216,17 +2216,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   // Files dragged in from another app beside this one attach like picked files.
   // The target only exists while this chat is on screen, so a chat left behind
   // by a peer-chat push cannot collect a drop meant for the visible chat.
+  const dropIn = useRef(addAttachments);
+  dropIn.current = addAttachments;
   useFocusEffect(
-    useCallback(
-      () =>
-        addDropTarget(({ files, tooLarge }) => {
-          if (readOnly) return;
-          void addAttachments((count, maxBytes) =>
-            readDroppedFiles(files, count, maxBytes, tooLarge),
-          );
-        }),
-      [addAttachments, readOnly],
-    ),
+    useCallback(() => {
+      if (!threadKey) return;
+      return addDropTarget(threadKey, ({ files, tooLarge, skipped: skippedNames }) => {
+        if (readOnly) return;
+        void dropIn.current((count, maxBytes) =>
+          readDroppedFiles(files, count, maxBytes, tooLarge, skippedNames),
+        );
+      });
+    }, [readOnly, threadKey]),
   );
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
