@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { expect, it, vi } from "vitest";
 import { withGoogleToolHistory } from "./google-tool-history.js";
@@ -16,7 +16,7 @@ const model: Model<Api> = {
   contextWindow: 32768,
   maxTokens: 256,
 };
-const call = (id: string, args: Record<string, unknown>, signature?: string) => ({
+const call = (id: string, args: ToolCall["arguments"], signature?: string) => ({
   type: "toolCall" as const,
   id,
   name: "fixture_tool",
