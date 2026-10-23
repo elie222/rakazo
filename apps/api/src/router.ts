@@ -153,9 +153,12 @@ import type {
   BotSecretMetadata,
   ComputerReleaseReason,
   ComputerStatus,
+  CreateRoutineInput,
   ExportManifest,
   McpServer,
+  McpServerConfigInput,
   Me,
+  ModelConnectInput,
   ProductEvent,
   Routine,
   SpaceNavigation,
@@ -263,6 +266,8 @@ import {
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { AgentImportServices } from "./agent-import.js";
+import { createImportedBot, previewAgentImport } from "./agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
@@ -996,12 +1001,212 @@ export function createRouter(deps: RouterDeps) {
     void probeMcpServer(row, actor);
     return display;
   };
+  /** `mcp.servers.create` in three steps, shared with agent imports: validate and encrypt, */
+  const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
+    await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
+    if (input.transport === "stdio") {
+      assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
+      await assertMcpRemoteEndpoint(input.oauthClient?.authorizationServer, deps);
+    }
+    const secretPayload = buildMcpCredentialBlob(input);
+    return secretPayload
+      ? await deps.secrets.put(secretPayload, computerContext(actor, "mcp", "mcp.create"))
+      : null;
+  };
+  /** write the rows in the caller's transaction, */
+  const insertMcpServer = async (
+    tx: Prisma.TransactionClient,
+    actor: Actor,
+    input: McpServerConfigInput,
+    stored: Awaited<ReturnType<typeof prepareMcpServer>>,
+  ) => {
+    if (stored) {
+      await tx.secret.create({
+        data: {
+          id: stored.id,
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          kind: "mcp",
+          ciphertext: stored.ciphertext,
+        },
+      });
+    }
+    return tx.mcpServer.create({
+      data: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        slug: input.slug,
+        name: input.name,
+        description: input.description,
+        transport: input.transport,
+        endpoint: "endpoint" in input ? input.endpoint : null,
+        command: "command" in input ? input.command : null,
+        args: ("args" in input ? input.args : []) as Prisma.InputJsonValue,
+        env: ("env" in input
+          ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
+          : {}) as Prisma.InputJsonValue,
+        files: Object.fromEntries(
+          Object.keys("files" in input ? (input.files ?? {}) : {}).map((key) => [key, true]),
+        ) as Prisma.InputJsonValue,
+        headers: ("headers" in input
+          ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
+          : {}) as Prisma.InputJsonValue,
+        secretId: stored?.id,
+        enabled: input.enabled,
+      },
+    });
+  };
+  /** then start its first health check, as the form does. */
+  const announceMcpServer = async (row: McpServerRow, actor: Actor) => {
+    const oauth = await mcpOAuth.summaryFor(row, actor);
+    return mcpServerDto(await beginMcpProbe(row, actor, oauth), oauth);
+  };
+  /** After a routine row is written: tell its thread and schedule its first run. */
+  const announceRoutine = async (
+    actor: Actor,
+    bot: { id: string; thread: { id: string } | null },
+    row: Awaited<ReturnType<typeof deps.prisma.routine.create>>,
+  ) => {
+    if (bot.thread) {
+      await deps.events.append({
+        spaceId: actor.spaceId,
+        threadId: bot.thread.id,
+        botId: bot.id,
+        type: "routine.created",
+        payload: { name: row.name },
+      });
+    }
+    if (row.active && row.nextRunAt) {
+      await deps.jobs.enqueue(routineWakeupJob(row.id, row.nextRunAt));
+    }
+  };
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
+  /** Saves a model connection: the `models.connect` path, shared with agent imports. */
+  const connectModelCredential = async (
+    actor: Actor,
+    input: ModelConnectInput,
+    signal: AbortSignal | undefined,
+    options: { keepExistingDefault?: boolean } = {},
+  ) => {
+    let plaintext: string;
+    try {
+      let previousPlaintext: string | undefined;
+      let omitVisionModelIds = false;
+      const credential = await findModelCredential(deps.prisma, actor, input.provider);
+      if (credential) {
+        const secret = await deps.prisma.secret.findFirst({
+          where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+          select: { ciphertext: true },
+        });
+        if (secret) {
+          try {
+            previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
+          } catch (error) {
+            // Explicit key replacement must still succeed when the prior
+            // ciphertext is unreadable. For OpenAI-compatible connections,
+            // omit visionModelIds so a partial one-model list does not wipe
+            // other enabled models; DB supportsImages + defaultModel remain
+            // the legacy fallback.
+            if (input.apiKey === undefined) throw error;
+            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              omitVisionModelIds = true;
+            }
+          }
+        }
+      }
+      plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
+        omitVisionModelIds,
+        allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
+      });
+      if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+        const saved = parseModelSecret(plaintext);
+        if (saved.kind === "openai_compatible") {
+          await verifyOpenAiCompatibleApiKey(saved, deps.modelConnectionFetch, signal);
+        }
+      }
+      if (input.apiKey?.trim()) {
+        await verifyCatalogProviderApiKey(
+          { provider: input.provider, apiKey: input.apiKey },
+          deps.modelConnectionFetch,
+          signal,
+        );
+      }
+    } catch (error) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error instanceof Error ? error.message : "Invalid model connection",
+      });
+    }
+    if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+      // Limits: this runs before persistModelCredential's transaction. A pin saved in
+      // between can fall outside the stored list and then fails at run time with
+      // "Unknown model for that provider". Closing it needs every pin write (bots,
+      // routines, backups) serializable. Concurrent saves of the same connection are
+      // last-write-wins, as before this list existed, so one save's ticks can be dropped.
+      const saved = parseModelSecret(plaintext);
+      await assertNoDanglingModelPins(deps, actor, saved, input.modelId ?? "");
+    }
+    return persistModelCredential(
+      deps,
+      actor,
+      {
+        provider: input.provider,
+        plaintext,
+        label: input.label,
+        modelId: input.modelId,
+        // openai-compatible keeps its effort inside the stored endpoint
+        // secret; catalog providers store it on the space preference.
+        thinkingLevel:
+          input.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : input.thinkingLevel,
+        supportsImages: input.supportsImages,
+        signal,
+        keepExistingDefault: options.keepExistingDefault,
+      },
+      codexCatalog,
+    );
+  };
   const favicons = deps.favicons ?? createFaviconResolver();
   const refreshExpiredCredential =
     deps.refreshExpiredModelCredential ??
     ((scope: { userId: string; spaceId: string }, secretId: string, provider: string) =>
       kickModelCredentialRefresh(deps.prisma, deps.secrets, scope, secretId, provider));
+  /** What `bots.update` checks a bot's model against, shared with agent imports. */
+  const botModelValidation = (actor: Actor) => ({
+    prisma: deps.prisma,
+    secretStore: deps.secrets,
+    codexCatalog,
+    refreshExpiredCredential,
+    hostedProvider: deps.billing?.modelCreditsEnabled ? deps.env.defaultProvider : undefined,
+    defaultModel: async () => {
+      const me = await meDto(deps, actor);
+      return { provider: me.defaultProvider, model: me.defaultModel };
+    },
+  });
+  const agentImportServices: AgentImportServices = {
+    prisma: deps.prisma,
+    createBot: (actor, input) => repos.createBot(actor, input),
+    hasModelConnection: async (actor, provider) =>
+      Boolean(await findModelCredential(deps.prisma, actor, provider)),
+    connectModel: (actor, input, signal) =>
+      connectModelCredential(actor, input, signal, { keepExistingDefault: true }),
+    validateBotModel: async (actor, provider, modelId) => {
+      const result = await validateBotModelChange(botModelValidation(actor), {
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        provider,
+        model: modelId,
+        thinkingLevel: undefined,
+        current: { provider: null, model: null },
+      });
+      return result.ok ? null : result.error;
+    },
+    prepareMcpServer,
+    insertMcpServer,
+    announceMcpServer,
+    assertRoutineSchedule,
+    routineNextRunAt,
+    routineRowData,
+    announceRoutine,
+  };
   const catalogForSpace = async (actor: Actor) => {
     const auth = await modelCredentialAuthKindsForSpace(
       deps.prisma,
@@ -1507,82 +1712,9 @@ export function createRouter(deps: RouterDeps) {
         await replaceSpaceBackupModels(deps.prisma, context.actor, input);
         return { ok: true as const };
       }),
-      connect: authed.models.connect.handler(async ({ context, input }) => {
-        let plaintext: string;
-        try {
-          let previousPlaintext: string | undefined;
-          let omitVisionModelIds = false;
-          const credential = await findModelCredential(deps.prisma, context.actor, input.provider);
-          if (credential) {
-            const secret = await deps.prisma.secret.findFirst({
-              where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
-              select: { ciphertext: true },
-            });
-            if (secret) {
-              try {
-                previousPlaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
-              } catch (error) {
-                // Explicit key replacement must still succeed when the prior
-                // ciphertext is unreadable. For OpenAI-compatible connections,
-                // omit visionModelIds so a partial one-model list does not wipe
-                // other enabled models; DB supportsImages + defaultModel remain
-                // the legacy fallback.
-                if (input.apiKey === undefined) throw error;
-                if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-                  omitVisionModelIds = true;
-                }
-              }
-            }
-          }
-          plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
-            omitVisionModelIds,
-            allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-          });
-          if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-            const saved = parseModelSecret(plaintext);
-            if (saved.kind === "openai_compatible") {
-              await verifyOpenAiCompatibleApiKey(saved, deps.modelConnectionFetch, context.signal);
-            }
-          }
-          if (input.apiKey?.trim()) {
-            await verifyCatalogProviderApiKey(
-              { provider: input.provider, apiKey: input.apiKey },
-              deps.modelConnectionFetch,
-              context.signal,
-            );
-          }
-        } catch (error) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: error instanceof Error ? error.message : "Invalid model connection",
-          });
-        }
-        if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-          // Limits: this runs before persistModelCredential's transaction. A pin saved in
-          // between can fall outside the stored list and then fails at run time with
-          // "Unknown model for that provider". Closing it needs every pin write (bots,
-          // routines, backups) serializable. Concurrent saves of the same connection are
-          // last-write-wins, as before this list existed, so one save's ticks can be dropped.
-          const saved = parseModelSecret(plaintext);
-          await assertNoDanglingModelPins(deps, context.actor, saved, input.modelId ?? "");
-        }
-        return persistModelCredential(
-          deps,
-          context.actor,
-          {
-            provider: input.provider,
-            plaintext,
-            label: input.label,
-            modelId: input.modelId,
-            // openai-compatible keeps its effort inside the stored endpoint
-            // secret; catalog providers store it on the space preference.
-            thinkingLevel:
-              input.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : input.thinkingLevel,
-            supportsImages: input.supportsImages,
-            signal: context.signal,
-          },
-          codexCatalog,
-        );
-      }),
+      connect: authed.models.connect.handler(async ({ context, input }) =>
+        connectModelCredential(context.actor, input, context.signal),
+      ),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
@@ -1968,6 +2100,22 @@ export function createRouter(deps: RouterDeps) {
         });
         return bot;
       }),
+      importPreview: authed.bots.importPreview.handler(async ({ context, input }) =>
+        previewAgentImport(agentImportServices, context.actor, input.files, input.includeSecrets),
+      ),
+      importCreate: authed.bots.importCreate.handler(async ({ context, input }) => {
+        let bot: Bot;
+        try {
+          bot = await createImportedBot(agentImportServices, context.actor, input, context.signal);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
+        // Like a new bot, it states how it read its imported instructions.
+        await enqueueBotIntroRun(deps, context.actor, bot).catch((error) => {
+          getLogger().error("bot intro run enqueue", error);
+        });
+        return bot;
+      }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
@@ -2025,30 +2173,15 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
-        const modelChange = await validateBotModelChange(
-          {
-            prisma: deps.prisma,
-            secretStore: deps.secrets,
-            codexCatalog,
-            refreshExpiredCredential,
-            hostedProvider: deps.billing?.modelCreditsEnabled
-              ? deps.env.defaultProvider
-              : undefined,
-            defaultModel: async () => {
-              const me = await meDto(deps, context.actor);
-              return { provider: me.defaultProvider, model: me.defaultModel };
-            },
-          },
-          {
-            userId: context.actor.userId,
-            spaceId: context.actor.spaceId,
-            provider:
-              input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
-            model: input.modelId !== undefined ? input.modelId : existing.modelId,
-            thinkingLevel: input.thinkingLevel,
-            current: { provider: existing.modelProvider, model: existing.modelId },
-          },
-        );
+        const modelChange = await validateBotModelChange(botModelValidation(context.actor), {
+          userId: context.actor.userId,
+          spaceId: context.actor.spaceId,
+          provider:
+            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
+          model: input.modelId !== undefined ? input.modelId : existing.modelId,
+          thinkingLevel: input.thinkingLevel,
+          current: { provider: existing.modelProvider, model: existing.modelId },
+        });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
         if (!existing.thread) throw new IsolationError();
@@ -3718,16 +3851,7 @@ export function createRouter(deps: RouterDeps) {
         return listRoutinesDto(deps, context.actor, input.botId);
       }),
       create: authed.routines.create.handler(async ({ context, input }) => {
-        if (hasMixedOneShotSchedule(input.crons)) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "A one-time schedule can't be combined with other schedules.",
-          });
-        }
-        if (input.active && isOneShotRoutineCrons(input.crons)) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "One-shot schedules must be created from chat.",
-          });
-        }
+        assertRoutineSchedule(input);
         const bot = await repos.getBot(context.actor, input.botId);
         if (input.watch) {
           try {
@@ -3744,47 +3868,10 @@ export function createRouter(deps: RouterDeps) {
           }
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
-        // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
-        let nextRunAt: Date | null = null;
-        if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
-          const computedNextRunAt = nextRoutineDate(input.crons, input.timezone);
-          nextRunAt = input.active ? computedNextRunAt : null;
-        }
-        // A change trigger takes its first reading right away; that reading is the baseline.
-        if (input.watch && input.active) nextRunAt = firstWatchCheck();
         const row = await deps.prisma.routine.create({
-          data: {
-            spaceId: context.actor.spaceId,
-            botId: input.botId,
-            userId: context.actor.userId,
-            name: input.name,
-            prompt: input.prompt,
-            crons: input.crons,
-            timezone: input.timezone,
-            notify: input.notify,
-            active: input.active,
-            webhookEnabled: input.webhookEnabled,
-            githubEnabled: input.githubEnabled,
-            messageProvider: input.messageProvider,
-            modelProvider: input.modelProvider,
-            modelId: input.modelId,
-            thinkingLevel: input.thinkingLevel,
-            ...(input.watch ? { watch: input.watch as Prisma.InputJsonValue } : {}),
-            nextRunAt,
-          },
+          data: routineRowData(context.actor, input, routineNextRunAt(input)),
         });
-        if (bot.thread) {
-          await deps.events.append({
-            spaceId: context.actor.spaceId,
-            threadId: bot.thread.id,
-            botId: bot.id,
-            type: "routine.created",
-            payload: { name: row.name },
-          });
-        }
-        if (row.active && row.nextRunAt) {
-          await deps.jobs.enqueue(routineWakeupJob(row.id, row.nextRunAt));
-        }
+        await announceRoutine(context.actor, bot, row);
         return mapRoutine(row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
@@ -4586,60 +4673,11 @@ export function createRouter(deps: RouterDeps) {
           );
         }),
         create: authed.mcp.servers.create.handler(async ({ context, input }) => {
-          await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
-          if (input.transport === "stdio") {
-            assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
-            await assertMcpRemoteEndpoint(input.oauthClient?.authorizationServer, deps);
-          }
-          const secretPayload = buildMcpCredentialBlob(input);
-          const stored = secretPayload
-            ? await deps.secrets.put(
-                secretPayload,
-                computerContext(context.actor, "mcp", "mcp.create"),
-              )
-            : null;
-          const row = await deps.prisma.$transaction(async (tx) => {
-            if (stored) {
-              await tx.secret.create({
-                data: {
-                  id: stored.id,
-                  userId: context.actor.userId,
-                  spaceId: context.actor.spaceId,
-                  kind: "mcp",
-                  ciphertext: stored.ciphertext,
-                },
-              });
-            }
-            return tx.mcpServer.create({
-              data: {
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                slug: input.slug,
-                name: input.name,
-                description: input.description,
-                transport: input.transport,
-                endpoint: "endpoint" in input ? input.endpoint : null,
-                command: "command" in input ? input.command : null,
-                args: ("args" in input ? input.args : []) as Prisma.InputJsonValue,
-                env: ("env" in input
-                  ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
-                  : {}) as Prisma.InputJsonValue,
-                files: Object.fromEntries(
-                  Object.keys("files" in input ? (input.files ?? {}) : {}).map((key) => [
-                    key,
-                    true,
-                  ]),
-                ) as Prisma.InputJsonValue,
-                headers: ("headers" in input
-                  ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
-                  : {}) as Prisma.InputJsonValue,
-                secretId: stored?.id,
-                enabled: input.enabled,
-              },
-            });
-          });
-          const oauth = await mcpOAuth.summaryFor(row, context.actor);
-          return mcpServerDto(await beginMcpProbe(row, context.actor, oauth), oauth);
+          const stored = await prepareMcpServer(context.actor, input);
+          const row = await deps.prisma.$transaction((tx) =>
+            insertMcpServer(tx, context.actor, input, stored),
+          );
+          return announceMcpServer(row, context.actor);
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -7375,6 +7413,8 @@ async function persistModelCredential(
     thinkingLevel?: string | null;
     supportsImages?: boolean;
     signal?: AbortSignal;
+    /** Leave the space's existing default model as it is; set this one only if there is none. */
+    keepExistingDefault?: boolean;
   },
   codexCatalog: CodexLiveCatalog,
 ) {
@@ -7478,7 +7518,25 @@ async function persistModelCredential(
         thinkingLevel = defaultModel
           ? clampCatalogThinkingLevel(thinkingLevel, allowedThinking)
           : null;
-        await selectSpaceModelPreference(tx, actor, credential.id, defaultModel, thinkingLevel);
+        const makeDefault =
+          !input.keepExistingDefault ||
+          !(await tx.spaceModelPreference.findFirst({
+            where: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              isDefault: true,
+              credentialId: { not: credential.id },
+            },
+            select: { id: true },
+          }));
+        await selectSpaceModelPreference(
+          tx,
+          actor,
+          credential.id,
+          defaultModel,
+          thinkingLevel,
+          makeDefault,
+        );
         throwIfAborted(input.signal);
         if (existing) {
           await deleteUnreferencedCredentialSecret(tx, {
@@ -7488,13 +7546,61 @@ async function persistModelCredential(
           });
           throwIfAborted(input.signal);
         }
-        return { ...credential, isDefault: true, defaultModel };
+        return { ...credential, isDefault: makeDefault, defaultModel };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   return modelCredentialDto(cred, input.plaintext);
+}
+
+/** The `routines.create` schedule rules, shared with agent imports. */
+function assertRoutineSchedule(input: CreateRoutineInput): void {
+  if (hasMixedOneShotSchedule(input.crons)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "A one-time schedule can't be combined with other schedules.",
+    });
+  }
+  if (input.active && isOneShotRoutineCrons(input.crons)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "One-shot schedules must be created from chat.",
+    });
+  }
+}
+
+function routineNextRunAt(input: CreateRoutineInput): Date | null {
+  // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
+  let nextRunAt: Date | null = null;
+  if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
+    const computedNextRunAt = nextRoutineDate(input.crons, input.timezone);
+    nextRunAt = input.active ? computedNextRunAt : null;
+  }
+  // A change trigger takes its first reading right away; that reading is the baseline.
+  if (input.watch && input.active) nextRunAt = firstWatchCheck();
+  return nextRunAt;
+}
+
+function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunAt: Date | null) {
+  return {
+    spaceId: actor.spaceId,
+    botId: input.botId,
+    userId: actor.userId,
+    name: input.name,
+    prompt: input.prompt,
+    crons: input.crons,
+    timezone: input.timezone,
+    notify: input.notify,
+    active: input.active,
+    webhookEnabled: input.webhookEnabled,
+    githubEnabled: input.githubEnabled,
+    messageProvider: input.messageProvider,
+    modelProvider: input.modelProvider,
+    modelId: input.modelId,
+    thinkingLevel: input.thinkingLevel,
+    ...(input.watch ? { watch: input.watch as Prisma.InputJsonValue } : {}),
+    nextRunAt,
+  };
 }
 
 function throwIfAborted(signal?: AbortSignal) {

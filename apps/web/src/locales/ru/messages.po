@@ -292,6 +292,10 @@ msgstr "{summary} Сброс: {date}."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "{title}, saved as {savedAs}"
+msgstr "{title}, сохранится как {savedAs}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"
@@ -559,8 +563,9 @@ msgid "Agents:"
 msgstr "Агенты:"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "All bots"
-msgstr ""
+msgstr "Все боты"
 
 #: src/pages/model-settings/provider-list.tsx
 msgid "All providers"
@@ -613,6 +618,10 @@ msgstr ""
 msgid "Allowed once"
 msgstr "Разрешено один раз"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Already connected"
+msgstr "Уже подключено"
+
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "У вас уже есть аккаунт?"
@@ -648,6 +657,10 @@ msgstr "Инструмент интеграции"
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
 msgstr "Другой агент"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Another assistant"
+msgstr "Другой ассистент"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -692,6 +705,10 @@ msgstr "API-ключ"
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "Заголовок ключа API"
+
+#: src/pages/shell/agent-import.tsx
+msgid "API keys"
+msgstr "Ключи API"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -845,6 +862,7 @@ msgstr "Студия аватаров"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "Назад"
 
@@ -949,6 +967,10 @@ msgstr ""
 msgid "Browse MCP servers"
 msgstr "Просмотреть MCP-серверы"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Built in"
+msgstr "Встроено"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
 msgstr "Встроенный"
@@ -1004,6 +1026,7 @@ msgstr "Не может читать изображения"
 msgid "Cancel"
 msgstr "Отмена"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "Отменить создание бота"
@@ -1137,9 +1160,14 @@ msgstr "Выберите новый пароль"
 msgid "Choose a provider"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Выбрать файл"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose folder"
+msgstr "Выбрать папку"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1451,6 +1479,7 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Continue"
 msgstr "Продолжить"
 
@@ -1478,8 +1507,9 @@ msgstr "Продолжить по электронной почте"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr ""
+msgstr "Скопировано"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1490,6 +1520,10 @@ msgstr "Копировать"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Copy prompt"
+msgstr "Скопировать промпт"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -1572,6 +1606,7 @@ msgstr "Не удалось подключиться к экрану компь�
 msgid "Could not continue"
 msgstr "Не удалось продолжить"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not create bot"
 msgstr "Не удалось создать бота"
@@ -1765,6 +1800,10 @@ msgstr "Не удалось связаться с сервером модели.
 msgid "Could not reach the server"
 msgstr "Не удалось связаться с сервером"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Could not read these files"
+msgstr "Не удалось прочитать эти файлы"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1939,6 +1978,7 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -1989,6 +2029,7 @@ msgid "Created"
 msgstr "Создано"
 
 #: src/pages/GroupPanel.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
@@ -2756,6 +2797,14 @@ msgstr "игнорировать"
 msgid "Image upload area"
 msgstr "Область загрузки изображения"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Import"
+msgstr "Импорт"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Import an agent"
+msgstr "Импорт агента"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "Импортировать OpenAPI JSON"
@@ -2775,6 +2824,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Include API keys"
+msgstr "Включить ключи API"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -2810,8 +2863,13 @@ msgstr "История инструкций"
 
 #: src/components/AskCard.tsx
 #: src/components/InstructionSettings.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Instructions"
 msgstr "Инструкции"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions are too long. Untick some files."
+msgstr "Инструкции слишком длинные. Снимите отметку с некоторых файлов."
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -3092,6 +3150,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP-серверы"
 
@@ -3117,8 +3176,13 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Память"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory for {title}"
+msgstr "Память для {title}"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3219,6 +3283,7 @@ msgstr "Пропущенный звонок"
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "Модель"
@@ -3319,12 +3384,14 @@ msgstr "микрофон выключен"
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "Имя"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "Назовите этого бота"
@@ -3348,6 +3415,10 @@ msgstr "Требуется ввод данных"
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "Требуется передача управления"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs this provider's API key"
+msgstr "Нужен ключ API этого провайдера"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
@@ -3478,6 +3549,10 @@ msgstr "Каталога моделей нет."
 msgid "No models listed."
 msgstr "Модели не перечислены."
 
+#: src/pages/shell/agent-import.tsx
+msgid "No OpenClaw, Hermes or agent document found."
+msgstr "Не найдено файлов OpenClaw, Hermes или документа агента."
+
 #: src/pages/model-settings/provider-list.tsx
 msgid "No providers found."
 msgstr "Поставщики не найдены."
@@ -3519,6 +3594,10 @@ msgstr "Нет триггера"
 msgid "Normal"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not a valid skill"
+msgstr "Недопустимый навык"
+
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "Ещё не проверено"
@@ -3527,6 +3606,10 @@ msgstr "Ещё не проверено"
 msgid "Not connected"
 msgstr "Не подключена"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not imported"
+msgstr "Не импортировано"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "Нет в каталоге плагинов"
@@ -3534,6 +3617,14 @@ msgstr "Нет в каталоге плагинов"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Не сейчас"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not supported in Rakazo"
+msgstr "Не поддерживается в Rakazo"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not used by Rakazo"
+msgstr "Не используется в Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3670,6 +3761,10 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "URL-адрес сервера, совместимого с OpenAI"
 
+#: src/pages/shell/agent-import.tsx
+msgid "OpenClaw or Hermes"
+msgstr "OpenClaw или Hermes"
+
 #: src/pages/shell/message-view.tsx
 msgid "Opened its thread."
 msgstr "Диалог открыт."
@@ -3768,6 +3863,10 @@ msgstr "Вставьте запасной ключ"
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "Вставьте OpenAI-совместимый адрес со своего сервера. При необходимости Rakazo добавляет /v1."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Paste the reply"
+msgstr "Вставьте ответ"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -4274,6 +4373,7 @@ msgid "Routine"
 msgstr "Задача"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Routines"
 msgstr "Задачи"
 
@@ -4630,6 +4730,7 @@ msgid "Skill {0}"
 msgstr "Навык {0}"
 
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "Навыки"
 
@@ -4893,6 +4994,10 @@ msgstr "рассуждение"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "This bot"
+msgstr "Этот бот"
 
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."

@@ -97,6 +97,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/get", { botId: "missing-bot" }],
       ["bots/create", botInput("Unauthenticated")],
       ["bots/duplicate", { botId: "missing-bot" }],
+      ["bots/importPreview", { files: [{ path: "SOUL.md", content: "Calm." }] }],
+      [
+        "bots/importCreate",
+        {
+          files: [{ path: "SOUL.md", content: "Calm." }],
+          name: "Nope",
+          selection: { instructions: [], memory: [], skills: [] },
+        },
+      ],
       ["bots/update", { botId: "missing-bot", name: "Nope" }],
       ["bots/archive", { botId: "missing-bot" }],
       ["bots/restore", { botId: "missing-bot" }],

@@ -292,6 +292,10 @@ msgstr "{summary} {date} को रीसेट होगा।"
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "{title}, saved as {savedAs}"
+msgstr "{title}, {savedAs} नाम से सेव होगा"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr ""
@@ -559,8 +563,9 @@ msgid "Agents:"
 msgstr "एजेंट:"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "All bots"
-msgstr ""
+msgstr "सभी बॉट"
 
 #: src/pages/model-settings/provider-list.tsx
 msgid "All providers"
@@ -613,6 +618,10 @@ msgstr ""
 msgid "Allowed once"
 msgstr "एक बार अनुमति दी गई"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Already connected"
+msgstr "पहले से कनेक्ट है"
+
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "पहले से खाता है?"
@@ -648,6 +657,10 @@ msgstr "एक इंटीग्रेशन टूल"
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
 msgstr "दूसरा एजेंट"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Another assistant"
+msgstr "कोई दूसरा असिस्टेंट"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -692,6 +705,10 @@ msgstr "API कुंजी"
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API कुंजी हेडर"
+
+#: src/pages/shell/agent-import.tsx
+msgid "API keys"
+msgstr "API कुंजियाँ"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -845,6 +862,7 @@ msgstr "अवतार स्टूडियो"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "वापस"
 
@@ -949,6 +967,10 @@ msgstr ""
 msgid "Browse MCP servers"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Built in"
+msgstr "बिल्ट-इन"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
 msgstr "अंतर्निहित"
@@ -1004,6 +1026,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 msgid "Cancel"
 msgstr "रद्द करें"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "नया बॉट रद्द करें"
@@ -1137,9 +1160,14 @@ msgstr "नया पासवर्ड चुनें"
 msgid "Choose a provider"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "फ़ाइल चुनें"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose folder"
+msgstr "फ़ोल्डर चुनें"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1451,6 +1479,7 @@ msgstr "कॉन्टेक्स्ट सीमा"
 #: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Continue"
 msgstr "जारी रखें"
 
@@ -1478,8 +1507,9 @@ msgstr "ईमेल से जारी रखें"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr ""
+msgstr "कॉपी हो गया"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1490,6 +1520,10 @@ msgstr "कॉपी करें"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Copy prompt"
+msgstr "प्रॉम्प्ट कॉपी करें"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -1572,6 +1606,7 @@ msgstr ""
 msgid "Could not continue"
 msgstr "जारी नहीं रखा जा सका"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not create bot"
 msgstr "बॉट नहीं बनाया जा सका"
@@ -1765,6 +1800,10 @@ msgstr "मॉडल सर्वर तक नहीं पहुँच सक�
 msgid "Could not reach the server"
 msgstr "सर्वर से संपर्क नहीं हो सका"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Could not read these files"
+msgstr "ये फ़ाइलें पढ़ी नहीं जा सकीं"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1939,6 +1978,7 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -1989,6 +2029,7 @@ msgid "Created"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
@@ -2756,6 +2797,14 @@ msgstr ""
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Import"
+msgstr "इंपोर्ट करें"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Import an agent"
+msgstr "एजेंट इंपोर्ट करें"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON इम्पोर्ट करें"
@@ -2775,6 +2824,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Include API keys"
+msgstr "API कुंजियाँ शामिल करें"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -2810,8 +2863,13 @@ msgstr "निर्देशों का इतिहास"
 
 #: src/components/AskCard.tsx
 #: src/components/InstructionSettings.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Instructions"
 msgstr "निर्देश"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions are too long. Untick some files."
+msgstr "निर्देश बहुत लंबे हैं। कुछ फ़ाइलों से टिक हटाएँ।"
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -3092,6 +3150,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP सर्वर"
 
@@ -3117,8 +3176,13 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "मेमोरी"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory for {title}"
+msgstr "{title} के लिए मेमोरी"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3219,6 +3283,7 @@ msgstr "मिस्ड कॉल"
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "मॉडल"
@@ -3319,12 +3384,14 @@ msgstr "माइक बंद है"
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "नाम"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "इस बॉट को नाम दें"
@@ -3348,6 +3415,10 @@ msgstr "इनपुट चाहिए"
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "नियंत्रण लेना ज़रूरी"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs this provider's API key"
+msgstr "इस प्रदाता की API कुंजी चाहिए"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
@@ -3478,6 +3549,10 @@ msgstr "कोई मॉडल कैटलॉग उपलब्ध नही�
 msgid "No models listed."
 msgstr "कोई मॉडल सूचीबद्ध नहीं।"
 
+#: src/pages/shell/agent-import.tsx
+msgid "No OpenClaw, Hermes or agent document found."
+msgstr "कोई OpenClaw, Hermes या एजेंट दस्तावेज़ नहीं मिला।"
+
 #: src/pages/model-settings/provider-list.tsx
 msgid "No providers found."
 msgstr "कोई प्रोवाइडर नहीं मिला।"
@@ -3519,6 +3594,10 @@ msgstr ""
 msgid "Normal"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not a valid skill"
+msgstr "मान्य स्किल नहीं"
+
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "अभी तक जाँच नहीं हुई"
@@ -3527,6 +3606,10 @@ msgstr "अभी तक जाँच नहीं हुई"
 msgid "Not connected"
 msgstr "कनेक्ट नहीं है"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not imported"
+msgstr "इंपोर्ट नहीं हुआ"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr ""
@@ -3534,6 +3617,14 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "अभी नहीं"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not supported in Rakazo"
+msgstr "Rakazo में समर्थित नहीं"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not used by Rakazo"
+msgstr "Rakazo इसका उपयोग नहीं करता"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3670,6 +3761,10 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-संगत सर्वर URL"
 
+#: src/pages/shell/agent-import.tsx
+msgid "OpenClaw or Hermes"
+msgstr "OpenClaw या Hermes"
+
 #: src/pages/shell/message-view.tsx
 msgid "Opened its thread."
 msgstr "इसका थ्रेड खोला।"
@@ -3768,6 +3863,10 @@ msgstr "बदलने के लिए नई कुंजी पेस्ट 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "अपने सर्वर से OpenAI-संगत पता पेस्ट करें। ज़रूरत होने पर Rakazo /v1 जोड़ देता है।"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Paste the reply"
+msgstr "जवाब पेस्ट करें"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -4274,6 +4373,7 @@ msgid "Routine"
 msgstr "रूटीन"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Routines"
 msgstr "रूटीन्स"
 
@@ -4630,6 +4730,7 @@ msgid "Skill {0}"
 msgstr "स्किल {0}"
 
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "स्किल्स"
 
@@ -4893,6 +4994,10 @@ msgstr "सोच रहा है"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "This bot"
+msgstr "यह बॉट"
 
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."

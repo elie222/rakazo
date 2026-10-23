@@ -204,6 +204,7 @@ import { ResizableSidePanel } from "./ResizableSidePanel";
 import { RoutineEditor } from "./RoutineEditor";
 import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
+import { AgentImportForm } from "./shell/agent-import";
 import { ArchivedChats } from "./shell/archived-chats";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
 import type { PendingAttachment } from "./shell/chat-shared";
@@ -382,6 +383,9 @@ function SpaceShell() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modelFocusRequest, setModelFocusRequest] = useState(0);
   const [panel, setPanelState] = useState<Panel>(null);
+  const [importingBot, setImportingBot] = useState(false);
+  // Leaving the new bot panel returns it to the form next time.
+  if (importingBot && panel !== "create") setImportingBot(false);
   const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
   const panelStorageKeyRef = useRef<string | null>(null);
   const observedPanelKey = useRef<string | null>(null);
@@ -2587,6 +2591,16 @@ function SpaceShell() {
     setSettingsSpaceId(spaceId);
   }
 
+  function openCreatedBot(bot: Bot) {
+    // A roster requested before creation may omit this bot and redirect its new chat.
+    botsRefreshEpoch.current += 1;
+    setBots((current) =>
+      current.some((item) => item.id === bot.id) ? current : [bot, ...current],
+    );
+    navigate(`/app/${bot.id}`);
+    setPanel(null);
+  }
+
   async function createBot(input: {
     name: string;
     title: string;
@@ -2599,13 +2613,7 @@ function SpaceShell() {
       notifyOnFinish: true,
       computerMode: input.computerMode,
     });
-    // A roster requested before creation may omit this bot and redirect its new chat.
-    botsRefreshEpoch.current += 1;
-    setBots((current) =>
-      current.some((item) => item.id === bot.id) ? current : [bot, ...current],
-    );
-    navigate(`/app/${bot.id}`);
-    setPanel(null);
+    openCreatedBot(bot);
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
     cancelFocusPrompt();
@@ -3754,10 +3762,17 @@ function SpaceShell() {
                 covered={computerOpen}
               />
             ) : null}
-            {panel === "create" ? (
+            {panel === "create" && importingBot ? (
+              <AgentImportForm
+                onBack={() => setImportingBot(false)}
+                onCancel={() => setPanel(null)}
+                onCreated={openCreatedBot}
+              />
+            ) : panel === "create" ? (
               <CreateBotForm
                 onCancel={() => setPanel(null)}
                 onCreate={(input) => createBot(input)}
+                onImport={() => setImportingBot(true)}
               />
             ) : null}
             {panel === "settings" && active ? (

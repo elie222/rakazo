@@ -64,7 +64,7 @@ const KnowledgeSection = lazyComponent(() =>
 const rowLabelClass = "text-sm text-foreground";
 const fieldLabelClass = `mt-4 block ${rowLabelClass}`;
 
-function ComputerModePicker({
+export function ComputerModePicker({
   value,
   onChange,
   teamTestId,
@@ -107,6 +107,7 @@ function ComputerModePicker({
 export function CreateBotForm({
   onCreate,
   onCancel,
+  onImport,
 }: {
   onCreate: (input: {
     name: string;
@@ -115,6 +116,7 @@ export function CreateBotForm({
     computerMode: ComputerMode;
   }) => Promise<void>;
   onCancel: () => void;
+  onImport: () => void;
 }) {
   const { t } = useLingui();
   const ids = useId();
@@ -149,9 +151,14 @@ export function CreateBotForm({
         <span className="text-[13.5px] text-muted-foreground">
           <Trans>New bot</Trans>
         </span>
-        <Button variant="ghost" size="icon-sm" aria-label={t`Cancel new bot`} onClick={onCancel}>
-          <X size={16} strokeWidth={1.8} />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" data-testid="create-bot-import" onClick={onImport}>
+            <Trans>Import</Trans>
+          </Button>
+          <Button variant="ghost" size="icon-sm" aria-label={t`Cancel new bot`} onClick={onCancel}>
+            <X size={16} strokeWidth={1.8} />
+          </Button>
+        </div>
       </div>
       {error ? (
         <p

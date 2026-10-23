@@ -1,0 +1,394 @@
+import { describe, expect, it } from "vitest";
+import {
+  intervalCron,
+  normalizeImportProvider,
+  parseDotEnv,
+  readAgentImportSettings,
+} from "./agent-import-settings.js";
+
+// Shaped like a real `~/.openclaw/openclaw.json` (JSON5: comments and trailing commas).
+const openclawJson = `{
+  // written by onboarding
+  agents: {
+    entries: {
+      main: { name: "main", workspace: "/home/example/.openclaw/workspace", },
+      research: { workspace: "/home/example/.openclaw/workspace-research", model: "x-ai/grok-4" },
+    },
+    defaults: {
+      workspace: "/home/example/.openclaw/workspace",
+      model: { primary: "openrouter/anthropic/claude-sonnet-4.6" },
+    },
+  },
+  gateway: { auth: { mode: "token", token: "placeholder-gateway-token" } },
+  channels: { telegram: { botToken: "placeholder-channel-token" } },
+  env: { vars: { DEEPSEEK_API_KEY: "placeholder-deepseek-key" } },
+  models: { providers: { anthropic: { apiKey: "\${ANTHROPIC_API_KEY}" } } },
+  mcp: {
+    servers: {
+      docs: {
+        url: "https://mcp.example.com/mcp",
+        headers: { Authorization: "Bearer \${DOCS_TOKEN}" },
+      },
+      files: {
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        env: { EXAMPLE_TOKEN: { source: "env", id: "EXAMPLE_TOKEN" } },
+        toolFilter: { include: ["read_file"] },
+      },
+      vault: { command: "vault-mcp", env: { TOKEN: { source: "file", id: "/run/token" } } },
+      signin: { url: "https://mcp.example.com/oauth", auth: "oauth" },
+      partial: { url: "https://mcp.example.com/p", toolFilter: { exclude: ["delete"] } },
+    },
+  },
+}`;
+
+const openclawEnv = [
+  "# provider keys",
+  "OPENROUTER_API_KEY=placeholder-openrouter-key",
+  'ANTHROPIC_API_KEY="placeholder-anthropic-key"',
+  "DOCS_TOKEN=placeholder-docs-token",
+  "EXAMPLE_TOKEN=placeholder-env-token",
+  "TELEGRAM_BOT_TOKEN=placeholder-telegram-token",
+].join("\n");
+
+// Shaped like `openclaw cron list --json`, saved as cron/jobs.json.
+const openclawJobs = JSON.stringify({
+  jobs: [
+    {
+      name: "heartbeat-main",
+      declarationKey: "heartbeat:main",
+      enabled: true,
+      schedule: { kind: "every", everyMs: 1_800_000 },
+      payload: { kind: "heartbeat" },
+    },
+    {
+      name: "check",
+      enabled: true,
+      schedule: { kind: "every", everyMs: 1_800_000 },
+      payload: { kind: "agentTurn", message: "Check the inbox" },
+    },
+    {
+      name: "Memory Dreaming Promotion",
+      enabled: true,
+      schedule: { kind: "cron", expr: "0 3 * * *" },
+      payload: {
+        kind: "agentTurn",
+        message: "__openclaw_memory_core_short_term_promotion_dream__",
+      },
+    },
+    {
+      name: "morning",
+      enabled: false,
+      schedule: { kind: "cron", expr: "0 9 * * *", tz: "Asia/Kolkata" },
+      payload: { kind: "agentTurn", message: "Summarise my day" },
+    },
+    {
+      name: "odd",
+      schedule: { kind: "every", everyMs: 7 * 60_000 },
+      payload: { kind: "agentTurn", message: "Odd interval" },
+    },
+    {
+      name: "once",
+      schedule: { kind: "at", at: "2026-01-01T09:00:00Z" },
+      payload: { kind: "agentTurn", message: "Once" },
+    },
+    {
+      name: "theirs",
+      agentId: "research",
+      schedule: { kind: "cron", expr: "0 8 * * *" },
+      payload: { kind: "agentTurn", message: "Research digest" },
+    },
+  ],
+});
+
+const hermesConfig = `# Hermes config (mostly comments)
+model:
+  default: "anthropic/claude-sonnet-4.6"
+  # provider: auto
+  provider: "openrouter"
+  base_url: "https://openrouter.ai/api/v1"
+providers:
+  gemini:
+    api_key: placeholder-gemini-key
+mcp_servers:
+  docs:
+    url: https://mcp.example.com/mcp
+    headers:
+      Authorization: "Bearer placeholder-header-token"
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    env:
+      EXAMPLE_TOKEN: placeholder-env-token
+    tools:
+      include: [read_file, list_directory]
+`;
+
+const hermesJobs = JSON.stringify({
+  jobs: [
+    {
+      id: "a1",
+      name: "morning",
+      prompt: "Summarise my day",
+      schedule: { kind: "cron", expr: "0 9 * * *" },
+      enabled: true,
+      script: null,
+      no_agent: false,
+    },
+    {
+      id: "b2",
+      name: "check",
+      prompt: "Check the inbox",
+      schedule: { kind: "interval", minutes: 120 },
+      enabled: true,
+    },
+    { id: "c3", name: "later", prompt: "Once", schedule: { kind: "once", run_at: "2026-01-01" } },
+    {
+      id: "d4",
+      name: "backup",
+      prompt: "",
+      script: "backup.sh",
+      schedule: { kind: "cron", expr: "0 1 * * *" },
+    },
+  ],
+});
+
+const hermesAuth = JSON.stringify({
+  credential_pool: {
+    deepseek: [{ auth_type: "api_key", source: "manual", access_token: "placeholder-pool-key" }],
+    openai: [{ auth_type: "oauth", source: "device", access_token: "placeholder-oauth-token" }],
+  },
+});
+
+function openclaw(includeSecrets: boolean, root = "workspace") {
+  return readAgentImportSettings(
+    {
+      source: "openclaw",
+      root,
+      files: new Map([
+        ["openclaw.json", openclawJson],
+        [".env", openclawEnv],
+        ["cron/jobs.json", openclawJobs],
+      ]),
+    },
+    { includeSecrets },
+  );
+}
+
+function hermes(includeSecrets: boolean) {
+  return readAgentImportSettings(
+    {
+      source: "hermes",
+      root: ".hermes",
+      files: new Map([
+        ["config.yaml", hermesConfig],
+        [".env", "XAI_API_KEY=placeholder-xai-key\nTELEGRAM_BOT_TOKEN=placeholder-telegram"],
+        ["auth.json", hermesAuth],
+        ["cron/jobs.json", hermesJobs],
+      ]),
+    },
+    { includeSecrets },
+  );
+}
+
+describe("OpenClaw settings", () => {
+  it("reads the chosen agent's model, falling back to the defaults", () => {
+    expect(openclaw(false).model).toEqual({
+      title: "openrouter/anthropic/claude-sonnet-4.6",
+      provider: "openrouter",
+      modelId: "anthropic/claude-sonnet-4.6",
+      known: true,
+    });
+    expect(openclaw(false, "workspace-research").model).toMatchObject({
+      provider: "xai",
+      modelId: "grok-4",
+    });
+  });
+
+  it("maps MCP servers and skips what Rakazo cannot express", () => {
+    const settings = openclaw(false);
+    expect(settings.mcpServers.map((server) => [server.title, server.config])).toEqual([
+      [
+        "docs",
+        {
+          slug: "docs",
+          name: "docs",
+          description: "",
+          enabled: true,
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.com/mcp",
+          headers: {},
+        },
+      ],
+      [
+        "files",
+        {
+          slug: "files",
+          name: "files",
+          description: "",
+          enabled: true,
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+          env: {},
+        },
+      ],
+      ["vault", expect.objectContaining({ transport: "stdio", command: "vault-mcp", env: {} })],
+    ]);
+    expect(settings.mcpServers[1]!.allowedTools).toEqual(["read_file"]);
+    expect(settings.mcpServers[0]!.content).toBe("https://mcp.example.com/mcp\nAuthorization");
+    expect(settings.skipped.filter((item) => item.path.startsWith("openclaw.json"))).toEqual([
+      { path: "openclaw.json: signin", reason: "unsupported" },
+      { path: "openclaw.json: partial", reason: "unsupported" },
+    ]);
+  });
+
+  it("resolves credential values only with the opt-in, from the uploaded .env", () => {
+    const settings = openclaw(true);
+    const configs = Object.fromEntries(
+      settings.mcpServers.map((server) => [server.title, server.config]),
+    );
+    expect(configs.docs).toMatchObject({
+      headers: { Authorization: "Bearer placeholder-docs-token" },
+    });
+    expect(configs.files).toMatchObject({ env: { EXAMPLE_TOKEN: "placeholder-env-token" } });
+    // A file SecretRef cannot be read from an upload.
+    expect(configs.vault).toBeUndefined();
+    expect(settings.skipped).toContainEqual({
+      path: "openclaw.json: vault",
+      reason: "unsupported",
+    });
+  });
+
+  it("turns user jobs into routines and skips OpenClaw's own jobs", () => {
+    const settings = openclaw(false);
+    expect(
+      settings.routines.map(({ name, prompt, cron, timezone, active }) => ({
+        name,
+        prompt,
+        cron,
+        timezone,
+        active,
+      })),
+    ).toEqual([
+      {
+        name: "check",
+        prompt: "Check the inbox",
+        cron: "*/30 * * * *",
+        timezone: null,
+        active: true,
+      },
+      {
+        name: "morning",
+        prompt: "Summarise my day",
+        cron: "0 9 * * *",
+        timezone: "Asia/Kolkata",
+        active: false,
+      },
+    ]);
+    expect(settings.skipped.filter((item) => item.path.startsWith("cron"))).toEqual([
+      { path: "cron/jobs.json: heartbeat-main", reason: "builtin" },
+      { path: "cron/jobs.json: Memory Dreaming Promotion", reason: "builtin" },
+      { path: "cron/jobs.json: odd", reason: "unsupported" },
+      { path: "cron/jobs.json: once", reason: "unsupported" },
+    ]);
+  });
+
+  it("offers allowlisted provider keys only with the opt-in, never other tokens", () => {
+    expect(openclaw(false).apiKeys).toEqual([]);
+    expect(openclaw(false).keyValues.size).toBe(0);
+    const settings = openclaw(true);
+    expect(settings.apiKeys.map((key) => [key.provider, key.source])).toEqual([
+      ["anthropic", "openclaw.json"],
+      ["deepseek", "DEEPSEEK_API_KEY"],
+      ["openrouter", "OPENROUTER_API_KEY"],
+    ]);
+    expect(Object.fromEntries(settings.keyValues)).toEqual({
+      anthropic: "placeholder-anthropic-key",
+      deepseek: "placeholder-deepseek-key",
+      openrouter: "placeholder-openrouter-key",
+    });
+    const visible = JSON.stringify({ ...settings, keyValues: undefined });
+    for (const secret of [
+      "placeholder-gateway-token",
+      "placeholder-channel-token",
+      "placeholder-telegram-token",
+      "placeholder-openrouter-key",
+    ]) {
+      expect(visible).not.toContain(secret);
+    }
+  });
+});
+
+describe("Hermes settings", () => {
+  it("reads the model, MCP servers and jobs", () => {
+    const settings = hermes(false);
+    expect(settings.model).toMatchObject({
+      title: "openrouter/anthropic/claude-sonnet-4.6",
+      provider: "openrouter",
+      known: true,
+    });
+    expect(settings.mcpServers.map((server) => server.config.slug)).toEqual(["docs", "files"]);
+    expect(settings.mcpServers[1]!.allowedTools).toEqual(["read_file", "list_directory"]);
+    expect(settings.routines.map((routine) => [routine.name, routine.cron])).toEqual([
+      ["morning", "0 9 * * *"],
+      ["check", "0 */2 * * *"],
+    ]);
+    expect(settings.skipped).toEqual([
+      { path: "cron/jobs.json: later", reason: "unsupported" },
+      { path: "cron/jobs.json: backup", reason: "unsupported" },
+    ]);
+  });
+
+  it("reads manual pool keys, config keys and .env keys, but never OAuth grants", () => {
+    const settings = hermes(true);
+    expect(Object.fromEntries(settings.keyValues)).toEqual({
+      google: "placeholder-gemini-key",
+      deepseek: "placeholder-pool-key",
+      xai: "placeholder-xai-key",
+    });
+    expect(settings.mcpServers[0]!.config).toMatchObject({
+      headers: { Authorization: "Bearer placeholder-header-token" },
+    });
+  });
+});
+
+describe("helpers", () => {
+  it("converts intervals only when a cron fires at exactly that interval", () => {
+    expect([1, 15, 30, 60, 120, 180, 360, 1440].map(intervalCron)).toEqual([
+      "*/1 * * * *",
+      "*/15 * * * *",
+      "*/30 * * * *",
+      "0 */1 * * *",
+      "0 */2 * * *",
+      "0 */3 * * *",
+      "0 */6 * * *",
+      "0 0 * * *",
+    ]);
+    expect([7, 45, 90, 300, 2880, 0.5].map(intervalCron)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("normalises provider aliases", () => {
+    expect(["gemini", "Claude", "x-ai", "openrouter"].map(normalizeImportProvider)).toEqual([
+      "google",
+      "anthropic",
+      "xai",
+      "openrouter",
+    ]);
+  });
+
+  it("parses .env lines", () => {
+    expect(parseDotEnv('# c\nexport A=1\nB="two words"\nC=3 # note\n\nbad line')).toEqual({
+      A: "1",
+      B: "two words",
+      C: "3",
+    });
+  });
+});

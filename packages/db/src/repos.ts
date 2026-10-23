@@ -13,7 +13,7 @@ import {
   userVisibleMessages,
 } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
@@ -516,6 +516,8 @@ export function createRepos(
           blocks: MessageBlock[];
           runId?: string;
         };
+        /** Adds content in the creation transaction, after the bot and its MEMORY.md exist. */
+        seed?: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
       },
     ): Promise<Bot> {
       let modelProvider = input.modelProvider ?? null;
@@ -631,6 +633,7 @@ export function createRepos(
               content: initialBotMemory(input.name),
             },
           });
+          await input.seed?.(tx, created.id);
           return tx.bot.findFirstOrThrow({
             where: { id: created.id },
             include: { thread: true, computer: true },

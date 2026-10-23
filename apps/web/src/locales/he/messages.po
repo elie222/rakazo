@@ -292,6 +292,10 @@ msgstr "{summary} יתאפס ב-{date}."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "{title}, saved as {savedAs}"
+msgstr "{title}, יישמר בשם {savedAs}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"
@@ -559,6 +563,7 @@ msgid "Agents:"
 msgstr "סוכנים:"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "All bots"
 msgstr "כל הבוטים"
 
@@ -613,6 +618,10 @@ msgstr "לאפשר כתיבה"
 msgid "Allowed once"
 msgstr "אושר פעם אחת"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Already connected"
+msgstr "כבר מחובר"
+
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "כבר יש חשבון?"
@@ -648,6 +657,10 @@ msgstr ""
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
 msgstr "סוכן אחר"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Another assistant"
+msgstr "עוזר אחר"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -692,6 +705,10 @@ msgstr "מפתח API"
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "header של מפתח API"
+
+#: src/pages/shell/agent-import.tsx
+msgid "API keys"
+msgstr "מפתחות API"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -845,6 +862,7 @@ msgstr "Avatar Studio"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "חזרה"
 
@@ -949,6 +967,10 @@ msgstr "תווית Brain"
 msgid "Browse MCP servers"
 msgstr "עיון בשרתי MCP"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Built in"
+msgstr "מובנה"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
 msgstr "מובנה"
@@ -1004,6 +1026,7 @@ msgstr "לא ניתן לקרוא תמונות"
 msgid "Cancel"
 msgstr "ביטול"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "ביטול בוט חדש"
@@ -1137,9 +1160,14 @@ msgstr "בחירת סיסמה חדשה"
 msgid "Choose a provider"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "בחירת קובץ"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose folder"
+msgstr "בחירת תיקייה"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1451,6 +1479,7 @@ msgstr "מגבלת הקשר"
 #: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Continue"
 msgstr "המשך"
 
@@ -1478,6 +1507,7 @@ msgstr "המשך עם אימייל"
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Copied"
 msgstr "הועתק"
 
@@ -1490,6 +1520,10 @@ msgstr "העתקה"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr "העתקת דוגמת .env"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Copy prompt"
+msgstr "העתקת ההנחיה"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -1572,6 +1606,7 @@ msgstr "לא ניתן להתחבר למסך המחשב"
 msgid "Could not continue"
 msgstr "לא ניתן להמשיך"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not create bot"
 msgstr "לא ניתן ליצור את הבוט"
@@ -1765,6 +1800,10 @@ msgstr "אין גישה לשרת המודל."
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Could not read these files"
+msgstr "לא ניתן לקרוא את הקבצים האלה"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1939,6 +1978,7 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -1989,6 +2029,7 @@ msgid "Created"
 msgstr "נוצר"
 
 #: src/pages/GroupPanel.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
@@ -2756,6 +2797,14 @@ msgstr "התעלמות"
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Import"
+msgstr "ייבוא"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Import an agent"
+msgstr "ייבוא סוכן"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "ייבוא OpenAPI JSON"
@@ -2775,6 +2824,10 @@ msgstr "לא פעיל"
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr "תיבת דואר נכנס ואימייל"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Include API keys"
+msgstr "לכלול מפתחות API"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -2810,8 +2863,13 @@ msgstr "היסטוריית הנחיות"
 
 #: src/components/AskCard.tsx
 #: src/components/InstructionSettings.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Instructions"
 msgstr "הנחיות"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions are too long. Untick some files."
+msgstr "ההנחיות ארוכות מדי. בטלו את הסימון של חלק מהקבצים."
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -3092,6 +3150,7 @@ msgstr "נקודת קצה של MCP"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
@@ -3117,8 +3176,13 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "זיכרון"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory for {title}"
+msgstr "זיכרון עבור {title}"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3219,6 +3283,7 @@ msgstr ""
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "מודל"
@@ -3319,12 +3384,14 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "שם"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "שם לבוט"
@@ -3348,6 +3415,10 @@ msgstr "ממתין לקלט"
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs this provider's API key"
+msgstr "דרוש מפתח API של הספק הזה"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
@@ -3478,6 +3549,10 @@ msgstr "אין קטלוג מודלים זמין."
 msgid "No models listed."
 msgstr "לא נמצאו מודלים ברשימה."
 
+#: src/pages/shell/agent-import.tsx
+msgid "No OpenClaw, Hermes or agent document found."
+msgstr "לא נמצאו קבצי OpenClaw, Hermes או מסמך סוכן."
+
 #: src/pages/model-settings/provider-list.tsx
 msgid "No providers found."
 msgstr "לא נמצאו ספקים."
@@ -3519,6 +3594,10 @@ msgstr "ללא טריגר"
 msgid "Normal"
 msgstr "רגיל"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not a valid skill"
+msgstr "מיומנות לא תקינה"
+
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "טרם נבדק"
@@ -3527,6 +3606,10 @@ msgstr "טרם נבדק"
 msgid "Not connected"
 msgstr "לא מחובר"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not imported"
+msgstr "לא יובא"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "לא נמצא בקטלוג התוספים"
@@ -3534,6 +3617,14 @@ msgstr "לא נמצא בקטלוג התוספים"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "לא עכשיו"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not supported in Rakazo"
+msgstr "לא נתמך ב-Rakazo"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not used by Rakazo"
+msgstr "לא בשימוש ב-Rakazo"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3670,6 +3761,10 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "כתובת URL של שרת תואם OpenAI"
 
+#: src/pages/shell/agent-import.tsx
+msgid "OpenClaw or Hermes"
+msgstr "OpenClaw או Hermes"
+
 #: src/pages/shell/message-view.tsx
 msgid "Opened its thread."
 msgstr "השרשור שלו נפתח."
@@ -3768,6 +3863,10 @@ msgstr "יש להדביק מפתח חלופי"
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "יש להדביק את הכתובת התואמת ל-OpenAI מהשרת. Rakazo מוסיף /v1 במידת הצורך."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Paste the reply"
+msgstr "הדביקו את התשובה"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -4274,6 +4373,7 @@ msgid "Routine"
 msgstr "רוטינה"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Routines"
 msgstr "רוטינות"
 
@@ -4630,6 +4730,7 @@ msgid "Skill {0}"
 msgstr "מיומנות {0}"
 
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "מיומנויות"
 
@@ -4893,6 +4994,10 @@ msgstr "חשיבה"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr "חשיבה: {activeThinkingLabel}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "This bot"
+msgstr "הבוט הזה"
 
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."

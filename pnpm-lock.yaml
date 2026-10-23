@@ -848,6 +848,9 @@ importers:
       hast-util-to-text:
         specifier: 4.0.2
         version: 4.0.2
+      json5:
+        specifier: 2.2.3
+        version: 2.2.3
       mdast-util-to-hast:
         specifier: 13.2.1
         version: 13.2.1
@@ -863,6 +866,9 @@ importers:
       unified:
         specifier: 11.0.5
         version: 11.0.5
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
     devDependencies:
       '@types/d3-dsv':
         specifier: 3.0.7
