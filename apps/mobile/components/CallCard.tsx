@@ -45,6 +45,16 @@ export function CallCard() {
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
   const onCall = Boolean(call);
+  // A crash inside the call UI unmounts this card without ending the call, so the
+  // service and its wake lock are released here rather than on the next call change.
+  const mountedCall = useRef(false);
+  mountedCall.current = onCall;
+  useEffect(
+    () => () => {
+      if (mountedCall.current) void stopCallBackground();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!onCall || cachedInitial !== null) return;
