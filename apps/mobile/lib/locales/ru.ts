@@ -83,6 +83,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} сейчас перегружен. Повторите попытку чуть позже.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Этот разговор слишком длинный для модели. Повторная попытка не поможет. Начните новый чат или сократите сообщение.",
   "{provider} key hit its limit.": "{provider}: достигнут лимит ключа.",
   "{provider} key hit its daily limit.": "{provider}: достигнут дневной лимит ключа.",
   "{provider} key hit its weekly limit.": "{provider}: достигнут недельный лимит ключа.",
@@ -995,4 +999,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "{count} need attention": "Требуют внимания: {count}",
   "{label}, above": "{label}, выше",
   "{label}, below": "{label}, ниже",
+  Work: "Работа",
+  Both: "И то, и другое",
+  "How will you use Rakazo?": "Как вы будете использовать Rakazo?",
+  "What do you most want Rakazo to help with?":
+    "С чем Rakazo должен помогать вам в первую очередь?",
+  "How big is your team?": "Сколько человек в вашей команде?",
+  "How did you hear about us?": "Как вы о нас узнали?",
+  "Welcome to Rakazo": "Добро пожаловать в Rakazo",
 };

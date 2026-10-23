@@ -15,6 +15,7 @@ const settingsScreens = new Set([
   "integrations",
   "language",
   "models",
+  "signup-survey",
   "voice",
 ]);
 

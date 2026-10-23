@@ -48,6 +48,19 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} took too long to respond. Try again.",
         values,
       });
+    case "{provider} is overloaded right now. Try again in a moment.":
+      return i18n._({
+        id: "{provider} is overloaded right now. Try again in a moment.",
+        message: "{provider} is overloaded right now. Try again in a moment.",
+        values,
+      });
+    case "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+      return i18n._({
+        id: "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
+        message:
+          "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
+        values,
+      });
     case "{provider} key hit its limit.":
       return i18n._({
         id: "{provider} key hit its limit.",

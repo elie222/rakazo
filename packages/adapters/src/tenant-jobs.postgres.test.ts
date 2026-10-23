@@ -104,24 +104,28 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
   });
 
   /** A run whose tool forgets every filter: it sees only what the database lets it. */
-  function careless(prisma: PrismaClient) {
+  function careless(prisma: PrismaClient, afterHandoff?: Promise<void>) {
     const seen = new Map<string, { messages: string[]; connections: string[] }>();
     const ours = (ids: string[], key: "threadId" | "spaceId") =>
       [...new Set(ids)].filter((id) => tenants.some((t) => t[key] === id));
-    const continueRun = vi.fn(async (runId: string) => {
-      const messages = await prisma.message.findMany({ select: { threadId: true } });
-      const connections = await prisma.connection.findMany({ select: { spaceId: true } });
-      seen.set(runId, {
-        messages: ours(
-          messages.map((row) => row.threadId),
-          "threadId",
-        ),
-        connections: ours(
-          connections.map((row) => row.spaceId),
-          "spaceId",
-        ),
-      });
-    });
+    const continueRun = vi.fn(
+      async (runId: string, _workerId?: string, onRunStarted?: () => void) => {
+        onRunStarted?.();
+        await afterHandoff;
+        const messages = await prisma.message.findMany({ select: { threadId: true } });
+        const connections = await prisma.connection.findMany({ select: { spaceId: true } });
+        seen.set(runId, {
+          messages: ours(
+            messages.map((row) => row.threadId),
+            "threadId",
+          ),
+          connections: ours(
+            connections.map((row) => row.spaceId),
+            "spaceId",
+          ),
+        });
+      },
+    );
     const handlers = createBackgroundJobHandlers({
       executor: { continueRun } as unknown as ReturnType<typeof createRunExecutor>,
       prisma,
@@ -147,7 +151,11 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
   });
 
   it("runs tenant jobs through the Graphile queue", async () => {
-    const { handlers, seen, continueRun } = careless(app.prisma);
+    let release!: () => void;
+    const afterHandoff = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { handlers, seen, continueRun } = careless(app.prisma, afterHandoff);
     const publisher = new GraphileJobPublisher(app.pool, app.prisma);
     const host = createReservedGraphileJobWorkerHost(app.pool, {
       concurrency: 2,
@@ -164,9 +172,6 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
       await runAsTenant(a, () =>
         publisher.enqueue({ name: "run.continue", payload: { runId: `gone-${suffix}` } }),
       );
-      await vi.waitFor(() => expect(seen.size).toBe(2), { timeout: 10_000, interval: 25 });
-      expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
-      expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
       await vi.waitFor(
         async () => {
           const pending = await owner.pool.query(
@@ -179,8 +184,15 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
         },
         { timeout: 10_000, interval: 50 },
       );
+      // Reads happen after Graphile has completed every dispatch delivery.
+      expect(seen.size).toBe(0);
+      release();
+      await vi.waitFor(() => expect(seen.size).toBe(2), { timeout: 10_000, interval: 25 });
+      expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
+      expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
       expect(continueRun).toHaveBeenCalledTimes(2);
     } finally {
+      release();
       await host.stop();
       await publisher.close();
     }

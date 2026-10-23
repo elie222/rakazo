@@ -106,9 +106,12 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.unroute("**/rpc/threads/get");
   await page.reload();
 
+  // The route header renders before bootstrap finishes restoring the group.
+  // Wait for its composer before opening a panel that bootstrap may reset.
+  await expect(page.getByRole("combobox", { name: "Message Draft team" })).toBeVisible();
   await page.getByTestId("bot-settings-trigger").click();
   const desktopSettings = page.getByTestId("side-panel");
-  const groupName = desktopSettings.locator("label:has-text('Name') input");
+  const groupName = desktopSettings.getByRole("textbox", { name: "Name", exact: true });
   await groupName.fill("Unsaved Draft team name");
   const sidebar = page.locator("aside").first();
   await sidebar.getByRole("button", { name: /^Review team/ }).click();

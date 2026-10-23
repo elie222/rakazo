@@ -16,13 +16,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
-import type { PasswordResetCapabilities } from "../lib/api";
+import type { MobileMe, PasswordResetCapabilities } from "../lib/api";
 import {
   currentApiBase,
   displayApiHost,
   loadSessionToken,
   passwordResetCapabilities,
   requestPasswordReset,
+  rpc,
   sendSignInCode,
   signIn,
   signInWithCode,
@@ -188,7 +189,8 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      router.replace(hasIncomingShare() ? "/share" : "/");
+      if (hasIncomingShare()) router.replace("/share");
+      else await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -196,11 +198,20 @@ export default function SignIn() {
     }
   }
 
+  // Any sign-in can create the account (a code, SSO), so ask the server rather than the form.
+  async function openApp() {
+    const me = await rpc<MobileMe>("me").catch(() => null);
+    router.replace(me?.needsSignupSurvey ? "/signup-survey" : "/");
+  }
+
   async function externalSignIn(run: () => Promise<boolean>) {
     setPending(true);
     setError(null);
     try {
-      if (await run()) router.replace(hasIncomingShare() ? "/share" : "/");
+      if (await run()) {
+        if (hasIncomingShare()) router.replace("/share");
+        else await openApp();
+      }
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {

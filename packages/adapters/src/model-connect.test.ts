@@ -237,6 +237,30 @@ describe("openai-codex API key guard", () => {
     ).toBe("sk-test-key-123");
   });
 
+  it("stores Workers AI account routing and preserves it without a replacement key", () => {
+    const provider = "cloudflare-workers-ai";
+    const plaintext = connectAsOwner({
+      provider,
+      apiKey: "cf-test-key-value",
+      accountId: "account-fixture",
+    });
+    const saved = { kind: "api_key", key: "cf-test-key-value", accountId: "account-fixture" };
+    expect(parseModelSecret(plaintext)).toEqual(saved);
+    expect(parseModelSecret(connectAsOwner({ provider, maxTokens: 2048 }, plaintext))).toEqual({
+      ...saved,
+      maxTokens: 2048,
+    });
+    expect(
+      parseModelSecret(connectAsOwner({ provider, accountId: "account-updated" }, plaintext)),
+    ).toEqual({ ...saved, accountId: "account-updated" });
+    expect(() => connectAsOwner({ provider, apiKey: "cf-test-key-value" })).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
+    expect(() => connectAsOwner({ provider, accountId: "../account" }, plaintext)).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
+  });
+
   it("stores Cloudflare AI Gateway routing with the key and keeps it on a limit update", () => {
     const input = {
       provider: CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,

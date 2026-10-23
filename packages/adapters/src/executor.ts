@@ -47,7 +47,9 @@ import {
   BotSecretName,
   botSecretSubmissionSchema,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
   COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
+  cloudflareModelConfigMessage,
   disabledBuiltinToolSet,
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
@@ -228,7 +230,7 @@ import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
-import { cloudflareGatewayProviderEnv } from "./cloudflare-ai-gateway.js";
+import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import type { PluginConnectionRow } from "./composio-connector.js";
 import {
   collectLogIds,
@@ -3069,7 +3071,9 @@ export function isTerminalModelSetupError(error: unknown): boolean {
     error instanceof UnavailableModelForAuthError ||
     error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
-    (error instanceof Error && error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE)
+    (error instanceof Error &&
+      (error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE ||
+        error.message === cloudflareModelConfigMessage(CLOUDFLARE_WORKERS_AI_PROVIDER_ID)))
   );
 }
 
@@ -3583,7 +3587,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
 
-    async continueRun(runId: string, workerId: string) {
+    async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
       // Logs and security events raised by this run's tools name its account and space.
@@ -3770,7 +3774,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
       };
 
       const runSecrets = [...deps.secrets];
+      let dispatchHandedOff = false;
       try {
+        // Durable run ownership and its heartbeat now carry recovery. Model,
+        // integration and computer setup must not occupy a queue dispatch slot.
+        onRunStarted?.();
+        dispatchHandedOff = Boolean(onRunStarted);
         const sourceBlocks =
           run.trigger === "messaging" && run.sourceMessageId
             ? ((
@@ -8615,7 +8624,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               finishedAt: new Date(),
             },
           });
-          if (retryForever) {
+          if (retryForever || dispatchHandedOff) {
             await deps.jobs.enqueue({
               ...runContinueJob(runId),
               availableAt: new Date(Date.now() + computerRetryDelay(fence)),
@@ -10198,7 +10207,7 @@ async function resolveModelKeyMaterial(
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
-        cloudflareGatewayProviderEnv({ provider });
+        cloudflareProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
@@ -10280,7 +10289,7 @@ async function resolveModelKeyMaterial(
             credential.defaultModel?.trim() === modelId.trim()));
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareGatewayProviderEnv({ provider, accountId, gatewayId });
+      cloudflareProviderEnv({ provider, accountId, gatewayId });
       return {
         apiKey: resolved.apiKey,
         accountId,
@@ -10341,7 +10350,7 @@ async function resolveModelKeyMaterial(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  cloudflareGatewayProviderEnv({ provider });
+  cloudflareProviderEnv({ provider });
   return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 

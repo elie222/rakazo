@@ -79,6 +79,10 @@ export const ZH_MESSAGES: Record<string, string> = {
     "{provider}拒绝了 API 密钥。请检查连接设置。",
   "{provider} could not find the requested model.": "{provider}找不到请求的模型。",
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider}当前负载过高。请稍后再试。",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。",
   "{provider} key hit its limit.": "{provider}的密钥已达到限额。",
   "{provider} key hit its daily limit.": "{provider}的密钥已达到每日限额。",
   "{provider} key hit its weekly limit.": "{provider}的密钥已达到每周限额。",
@@ -961,4 +965,11 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} 个需要处理",
   "{label}, above": "{label}，上方",
   "{label}, below": "{label}，下方",
+  Work: "工作",
+  Both: "两者都有",
+  "How will you use Rakazo?": "你会如何使用 Rakazo？",
+  "What do you most want Rakazo to help with?": "你最希望 Rakazo 帮你做什么？",
+  "How big is your team?": "你的团队有多大？",
+  "How did you hear about us?": "你是如何知道我们的？",
+  "Welcome to Rakazo": "欢迎使用 Rakazo",
 };

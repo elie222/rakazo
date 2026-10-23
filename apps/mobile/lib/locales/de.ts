@@ -87,6 +87,10 @@ export const DE_MESSAGES: Record<string, string> = {
     "{provider} konnte das angeforderte Modell nicht finden.",
   "{provider} took too long to respond. Try again.":
     "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} ist gerade überlastet. Versuche es gleich noch einmal.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Diese Unterhaltung ist zu lang für das Modell. Ein erneuter Versuch hilft nicht. Starte einen neuen Chat oder kürze deine Nachricht.",
   "{provider} key hit its limit.": "{provider}: Schlüssellimit erreicht.",
   "{provider} key hit its daily limit.": "{provider}: tägliches Schlüssellimit erreicht.",
   "{provider} key hit its weekly limit.": "{provider}: wöchentliches Schlüssellimit erreicht.",
@@ -999,4 +1003,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} need attention": "{count} brauchen Aufmerksamkeit",
   "{label}, above": "{label}, oben",
   "{label}, below": "{label}, unten",
+  Work: "Arbeit",
+  Both: "Beides",
+  "How will you use Rakazo?": "Wie wirst du Rakazo nutzen?",
+  "What do you most want Rakazo to help with?": "Wobei soll dir Rakazo am meisten helfen?",
+  "How big is your team?": "Wie groß ist dein Team?",
+  "How did you hear about us?": "Wie hast du von uns erfahren?",
+  "Welcome to Rakazo": "Willkommen bei Rakazo",
 };

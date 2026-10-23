@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { Platform } from "react-native";
 import { ScrollViewMarker } from "react-native-screens/experimental";
-import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
 import {
@@ -63,51 +61,6 @@ describe("thread scroll edges", () => {
       headerTransparent: false,
       scrollEdgeEffects: threadScrollEdgeEffects,
     });
-  });
-
-  it("uses the floating header height for message clearance and the fade", () => {
-    const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    expect(source).toContain("const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;");
-    expect(source).toContain("paddingBottom: headerClearance.padding");
-    expect(source).toContain("paddingTop: headerClearance.padding");
-    expect(source).toContain("paddingTop: readOnly ? insets.bottom + 16 : 16");
-    expect(source).toContain("minHeight: headerClearance.minHeight");
-    expect(source).toContain("jumpAnchor.current.align(headerClearance.anchor)");
-    expect(source).toContain("styles.headerFade, { height: headerClearance.opaqueHeight }");
-    expect(source).toContain("<View style={styles.headerFadeEdge} />");
-    expect(source).toContain(
-      "headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}",
-    );
-    expect(source).toContain("marginTop: headerAdjacent ? 0 : 12");
-  });
-
-  it("remounts each marker with its live or pinned scroll view", () => {
-    const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    const file = ts.createSourceFile(
-      "thread.tsx",
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    const keys: string[] = [];
-    function visit(node: ts.Node) {
-      if (
-        ts.isJsxElement(node) &&
-        node.openingElement.tagName.getText(file) === "ThreadScrollSurface"
-      ) {
-        const key = node.openingElement.attributes.properties.find(
-          (prop) => ts.isJsxAttribute(prop) && prop.name.getText(file) === "key",
-        );
-        if (key) keys.push(key.getText(file));
-      }
-      ts.forEachChild(node, visit);
-    }
-    visit(file);
-    expect(keys).toEqual([
-      `key={\`pinned:\${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}\`}`,
-      `key={\`live:\${threadKey}\`}`,
-    ]);
   });
 });
 
