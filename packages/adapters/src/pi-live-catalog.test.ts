@@ -36,11 +36,20 @@ afterEach(() => {
 
 describe("live catalog merge and execution", () => {
   it("builds live entries for providers Rakazo registers itself", () => {
-    expect(liveCatalogEntry("ollama-cloud", "gemma4:cloud-next")).toMatchObject({
+    // A dated tag is a snapshot of the bundled model and keeps its capabilities.
+    expect(liveCatalogEntry("ollama-cloud", "deepseek-v4.1-flash:1017")).toMatchObject({
       provider: "ollama-cloud",
-      id: "gemma4:cloud-next",
+      id: "deepseek-v4.1-flash:1017",
       live: true,
       catalogProbe: true,
+      reasoning: true,
+      images: true,
+    });
+    // A size tag is another model; nothing is assumed about what it can do.
+    expect(liveCatalogEntry("ollama-cloud", "gemma4:9b")).toMatchObject({
+      id: "gemma4:9b",
+      reasoning: false,
+      images: false,
     });
     expect(liveCatalogEntry("local", "qwen3:4b")).toBeUndefined();
   });
