@@ -1,12 +1,20 @@
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
+import type { DroppedFile } from "./file-drop";
+import { releaseDroppedFile } from "./file-drop";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
-import { attachmentSkipReason, filterPickedAttachments } from "./pick-attachments-filter.js";
+import {
+  attachmentCountSkipReason,
+  attachmentSizeSkipReason,
+  attachmentSkipReason,
+  filterPickedAttachments,
+  pickedAttachment,
+} from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 
@@ -197,71 +205,53 @@ export async function pickDocuments(
   return filterPickedAttachments(existingCount, candidates, maxBytes);
 }
 
-/**
- * Files dragged in from another window, already copied into the app's cache.
- * `tooLargeToCopy` holds the files the native module refused to copy, each with
- * the guard it crossed, and `notCopied` the ones it left behind once a drop had
- * taken enough, so the notice names the limit that actually applied.
- */
 export async function readDroppedFiles(
-  files: Array<{ uri: string; name: string; mimeType: string; size?: number }>,
+  files: DroppedFile[],
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
-  tooLargeToCopy: ReadonlyArray<{ name: string; limit: number }> = [],
   notCopied: readonly string[] = [],
 ): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
-  const skipped: PickSkip[] = [
-    ...tooLargeToCopy.map((file) => ({
-      name: file.name,
-      reason: `over ${attachmentSizeLabel(file.limit)}`,
-    })),
-    ...notCopied.map((name) => ({ name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` })),
-  ];
-  const candidates: Array<{
-    uri: string;
-    name: string;
-    mimeType: string | null;
-    size: number;
-    contentBase64: string;
-    previewUri?: string;
-  }> = [];
-  for (const file of files) {
-    const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
-    // Reject before reading, so a drop that cannot be attached costs no memory.
-    const reason = attachmentSkipReason(
-      { name: file.name, size: file.size ?? 0, mimeType },
-      existingCount,
-      candidates.length,
-      maxBytes,
-    );
-    if (reason) {
-      skipped.push({ name: file.name, reason });
-      discardDroppedCopy(file.uri);
-      continue;
-    }
-    const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
-    const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
-    candidates.push({ uri: file.uri, name: file.name, mimeType, size, contentBase64, previewUri });
-  }
-  const filtered = filterPickedAttachments(existingCount, candidates, maxBytes);
-  // The native module copies every dropped file, so a file the thread refuses must
-  // not stay in the cache behind it.
-  const kept = new Set(filtered.attachments.map((attachment) => attachment.name));
-  for (const candidate of candidates) {
-    if (!kept.has(candidate.name)) discardDroppedCopy(candidate.uri);
-  }
-  return { attachments: filtered.attachments, skipped: [...skipped, ...filtered.skipped] };
-}
-
-/** Removes the cached copy of a dropped file that will not become an attachment. */
-function discardDroppedCopy(uri: string): void {
+  const skipped: PickSkip[] = notCopied.map((name) => ({
+    name,
+    reason: attachmentCountSkipReason(),
+  }));
+  const attachments: PickedAttachment[] = [];
   try {
-    const file = new File(uri);
-    if (file.exists) file.delete();
-  } catch {
-    // Nothing to clean up when the copy is already gone or is not a local file.
+    for (const file of files) {
+      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+      const reason = attachmentSkipReason(
+        { name: file.name, size: file.size ?? 0, mimeType },
+        existingCount,
+        attachments.length,
+        maxBytes,
+      );
+      if (reason) {
+        skipped.push({ name: file.name, reason });
+        continue;
+      }
+      if (!file.uri) continue;
+      const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
+      if (size > maxBytes) {
+        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        continue;
+      }
+      const previewUri = mimeType?.startsWith("image/")
+        ? `data:${mimeType};base64,${contentBase64}`
+        : undefined;
+      attachments.push(
+        pickedAttachment(
+          { name: file.name, mimeType, size, contentBase64, previewUri },
+          existingCount + attachments.length,
+        ),
+      );
+    }
+  } finally {
+    await Promise.allSettled(
+      files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
+    );
   }
+  return { attachments, skipped };
 }

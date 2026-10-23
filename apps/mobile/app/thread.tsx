@@ -192,7 +192,6 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { chatSettingsRoute } from "../lib/chat-settings-route";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
-import { addDropTarget } from "../lib/file-drop";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
@@ -231,6 +230,7 @@ import {
   readDroppedFiles,
   takePhoto,
 } from "../lib/pick-attachments";
+import { attachmentCountSkipReason } from "../lib/pick-attachments-filter";
 import { threadRefreshDelayMs } from "../lib/refresh";
 import {
   getCachedResponseStreamingEnabled,
@@ -265,6 +265,7 @@ import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll
 import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
+import { useFileDrop } from "../lib/use-file-drop";
 import type { UserBubble } from "../lib/user-bubble";
 import { withUserBubble } from "../lib/user-bubble";
 import { errorText } from "../lib/user-error";
@@ -2186,7 +2187,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     if ((groupId ?? botId) !== targetKey) return;
     // Two drops can overlap, so the room left is settled against the draft as it
     // is now, not as it was when this read began.
-    const room = Math.max(0, ATTACHMENT_MAX_COUNT - pendingAttachmentsRef.current.length);
+    const room = Math.max(
+      0,
+      ATTACHMENT_MAX_COUNT - attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
+    );
     const accepted = result.attachments.slice(0, room);
     if (accepted.length) {
       setPendingAttachments((current) => [
@@ -2201,7 +2205,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       ...result.skipped,
       ...result.attachments.slice(room).map((attachment) => ({
         name: attachment.name,
-        reason: `max ${ATTACHMENT_MAX_COUNT} attachments`,
+        reason: attachmentCountSkipReason(),
       })),
     ];
     setAttachmentNotice(
@@ -2213,21 +2217,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     );
   }
 
-  // Files dragged in from another app beside this one attach like picked files.
-  // The target only exists while this chat is on screen, so a chat left behind
-  // by a peer-chat push cannot collect a drop meant for the visible chat.
-  const dropIn = useRef(addAttachments);
-  dropIn.current = addAttachments;
-  useFocusEffect(
-    useCallback(() => {
-      if (!threadKey) return;
-      return addDropTarget(threadKey, ({ files, tooLarge, skipped: skippedNames }) => {
-        if (readOnly) return;
-        void dropIn.current((count, maxBytes) =>
-          readDroppedFiles(files, count, maxBytes, tooLarge, skippedNames),
-        );
-      });
-    }, [readOnly, threadKey]),
+  useFileDrop(
+    threadKey ?? null,
+    ({ files, skipped }) => {
+      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes, skipped));
+    },
+    {
+      enabled: !readOnly && Boolean(groupId ?? botId),
+      maxBytes: attachmentMaxBytes(uploadConfig),
+      maxFiles: ATTACHMENT_MAX_COUNT,
+    },
   );
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);

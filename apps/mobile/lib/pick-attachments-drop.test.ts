@@ -16,22 +16,21 @@ vi.mock("expo-file-system", () => ({
       this.uri = uri;
       state.file(uri);
     }
-    get exists() {
-      return true;
-    }
     info() {
       return state.info();
     }
     base64() {
       return state.base64();
     }
-    delete() {
-      state.deleted.push(this.uri);
-    }
   },
 }));
 vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({}));
+vi.mock("./file-drop", () => ({
+  releaseDroppedFile: async (uri: string) => {
+    state.deleted.push(uri);
+  },
+}));
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => null }));
 
 let readDroppedFiles: typeof ReadDroppedFiles;
@@ -72,7 +71,10 @@ describe("dropped file attachments", () => {
   it("deletes the cached copy of a file it will not attach", async () => {
     await readDroppedFiles([dropped("film.mp4", 20 * 1024 * 1024), dropped("note.png", 1024)]);
 
-    expect(state.deleted).toEqual(["file:///cache/dropped/film.mp4"]);
+    expect(state.deleted).toEqual([
+      "file:///cache/dropped/film.mp4",
+      "file:///cache/dropped/note.png",
+    ]);
   });
 
   it("rejects an unsupported file without reading it", async () => {
@@ -83,22 +85,55 @@ describe("dropped file attachments", () => {
     expect(state.base64).not.toHaveBeenCalled();
   });
 
-  it("stops reading once the draft is full", async () => {
-    const result = await readDroppedFiles([dropped("late.png", 1024)], ATTACHMENT_MAX_COUNT);
-
+  it("reports uncopied oversized files with the normal size reason without reading", async () => {
+    const result = await readDroppedFiles(
+      [{ name: "huge.mov", mimeType: "video/quicktime", size: 2 * 1024 * 1024 }],
+      0,
+      1024 * 1024,
+    );
     expect(result.attachments).toEqual([]);
-    expect(result.skipped).toEqual([
-      { name: "late.png", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
-    ]);
+    expect(result.skipped).toEqual([{ name: "huge.mov", reason: "over 1 MiB" }]);
     expect(state.base64).not.toHaveBeenCalled();
+    expect(state.deleted).toEqual([]);
   });
+});
 
-  it("reports files the drop guard refused to copy with the guard's own limit", async () => {
-    const result = await readDroppedFiles([], 0, undefined, [
-      { name: "huge.mov", limit: 64 * 1024 * 1024 },
-    ]);
+it("releases all copies when reading fails", async () => {
+  state.base64.mockRejectedValueOnce(new Error("unreadable"));
+  await expect(readDroppedFiles([dropped("one.png", 10), dropped("two.png", 10)])).rejects.toThrow(
+    "unreadable",
+  );
+  expect(state.deleted).toHaveLength(2);
+});
+it("uses a data preview and reads only remaining slots", async () => {
+  const result = await readDroppedFiles(
+    [dropped("one.png", 10), dropped("two.png", 10)],
+    ATTACHMENT_MAX_COUNT - 1,
+  );
+  expect(result.attachments[0]?.previewUri).toBe("data:image/png;base64,aGVsbG8=");
+  expect(state.base64).toHaveBeenCalledOnce();
+  expect(result.skipped[0]?.reason).toBe(`max ${ATTACHMENT_MAX_COUNT} attachments`);
+  expect(state.deleted).toHaveLength(2);
+});
 
-    expect(result.attachments).toEqual([]);
-    expect(result.skipped).toEqual([{ name: "huge.mov", reason: "over 64 MiB" }]);
-  });
+it("checks the copied file's actual size before reading", async () => {
+  state.info.mockReturnValue({ size: 20 * 1024 * 1024 });
+  const result = await readDroppedFiles([dropped("one.png", 10), dropped("two.png", 10)]);
+  expect(result.attachments).toEqual([]);
+  expect(result.skipped).toEqual([
+    { name: "one.png", reason: "over 10 MiB" },
+    { name: "two.png", reason: "over 10 MiB" },
+  ]);
+  expect(state.base64).not.toHaveBeenCalled();
+  expect(state.deleted).toHaveLength(2);
+});
+
+it("reports native overflow names without reading files", async () => {
+  const result = await readDroppedFiles([], 0, undefined, ["extra.png", "another.pdf"]);
+  expect(result.attachments).toEqual([]);
+  expect(result.skipped).toEqual([
+    { name: "extra.png", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
+    { name: "another.pdf", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
+  ]);
+  expect(state.base64).not.toHaveBeenCalled();
 });
