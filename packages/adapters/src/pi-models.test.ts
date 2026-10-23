@@ -107,6 +107,58 @@ describe("catalog provider authentication", () => {
     ).rejects.toThrow("Could not verify the API key. Try again.");
   });
 
+  it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
+    const controller = new AbortController();
+    let waitingForBody: (() => void) | undefined;
+    const bodyStarted = new Promise<void>((resolve) => {
+      waitingForBody = resolve;
+    });
+    const result = verifyCatalogProviderApiKey(
+      { provider: "google", apiKey: "fixture-key" },
+      async (_url, init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              body.enqueue(new TextEncoder().encode('{"error":'));
+              init?.signal?.addEventListener(
+                "abort",
+                () => body.error(new Error("private fixture-key details")),
+                { once: true },
+              );
+              waitingForBody?.();
+            },
+          }),
+          { status: 400 },
+        ),
+      controller.signal,
+    );
+    const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+    await bodyStarted;
+    controller.abort();
+    await assertion;
+  });
+
+  it("cancels an oversized Google error without waiting for the stream to finish", async () => {
+    const cancel = vi.fn();
+    const response = new Response(
+      new ReadableStream({
+        start(body) {
+          body.enqueue(new Uint8Array(4097));
+        },
+        cancel,
+      }),
+      { status: 400 },
+    );
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => response,
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
   it("bounds a stalled check and hides transport error details", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
