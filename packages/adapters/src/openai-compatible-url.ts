@@ -45,12 +45,12 @@ function isBlockedHostname(hostname: string): boolean {
 
 /**
  * Who may reach which model endpoints. `allowPrivate` comes from
- * `actorMayUsePrivateEndpoint` for the user whose connection this is; absent means deny.
+ * operator configuration; absent means deny.
  */
 export type OpenAiCompatibleUrlPolicy = { allowPublic?: boolean; allowPrivate?: boolean };
 
 export const PRIVATE_MODEL_ENDPOINT_MESSAGE =
-  "Private model endpoints are limited to the deployment owner.";
+  "Private model endpoints require operator authorization.";
 
 export function assertAllowedOpenAiCompatibleUrl(
   raw: string,

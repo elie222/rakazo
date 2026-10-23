@@ -8,7 +8,7 @@ import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
 import type { BoatRecovery } from "./boat-sandbox.test-support.js";
-import { FakeBoatApi } from "./boat-sandbox.test-support.js";
+import { BOAT_ARTIFACT_MAX_BYTES, boatError, FakeBoatApi } from "./boat-sandbox.test-support.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 // Polling waits advance a virtual clock, so state and deadline tests run instantly.
@@ -361,6 +361,99 @@ describe("BoatSandboxProvider", () => {
     expect(isSandboxGoneError(error)).toBe(true);
   });
 
+  it("recovers a sandbox whose machine stopped underneath it and retries the work once", async () => {
+    const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
+    const command = FakeBoatApi.prototype.command;
+    let machineStops = false;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      ...args
+    ) {
+      if (!machineStops) return command.apply(this, args);
+      machineStops = false;
+      this.fail(args[0].sandboxId);
+      throw boatError(409, "machine_not_running", "Sandbox machine is not running.");
+    });
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    machineStops = true;
+
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+      events.push(event);
+    }
+    expect(recover).toHaveBeenCalledOnce();
+    expect(events).toEqual([
+      { type: "stdout", data: "awake\n" },
+      { type: "exit", code: 0 },
+    ]);
+  });
+
+  it("waits for a resume another job already started instead of failing", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+    api.setState(computer.id, "archived");
+    resume.mockImplementationOnce(async ({ sandboxId }) => {
+      // The other resume finishes while this one is refused.
+      api.setState(sandboxId, "provisioning");
+      throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
+    });
+
+    expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    expect(resume).toHaveBeenCalledOnce();
+  });
+
+  it("retries a request that never reached Boat once, whatever the call", async () => {
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    const timeout = Object.assign(new Error("Connect Timeout Error"), {
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    const unreached = [
+      new Error("The request failed", { cause: new TypeError("fetch failed", { cause: timeout }) }),
+      // Boat's proxy could not connect to the sandbox machine.
+      boatError(502, "sandbox_direct_failed", "connect ECONNREFUSED 192.0.2.1:21034"),
+    ];
+    for (const failure of unreached) {
+      run.mockRejectedValueOnce(failure);
+      const events = [];
+      for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+        events.push(event);
+      }
+      expect(events).toEqual([
+        { type: "stdout", data: "awake\n" },
+        { type: "exit", code: 0 },
+      ]);
+    }
+  });
+
+  it("retries a Boat server error once for reads but never resends a command", async () => {
+    const lookup = FakeBoatApi.prototype.get;
+    const get = vi.spyOn(FakeBoatApi.prototype, "get");
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    get.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    get.mockImplementation(lookup);
+
+    await provider.stop(computer, context);
+    expect(api.state(computer.id)).toBe("archived");
+
+    await provider.prepare(computer, context);
+    run.mockClear();
+    run.mockRejectedValueOnce(boatError(500, "internal", "Something went wrong"));
+    const error = await (async () => {
+      for await (const _ of provider.execute(computer, { argv: ["true"] }, context)) {
+        // drain
+      }
+    })().catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 500");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
   it("keeps an errored sandbox when Boat refuses recover without a known code", async () => {
     const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
     const { api, provider, computer } = await boat();
@@ -607,6 +700,132 @@ describe("BoatSandboxProvider", () => {
       { signal: context.signal },
     );
   });
+
+  it("exports files over the artifact limit through a private download URL", async () => {
+    const { api, provider, computer } = await boat();
+    const large = Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1, 0xcd);
+    large[0] = 0;
+    const files = api.files(computer.id);
+    files.set("/home/user/rakazo-home/data/archive.bin", { content: large, executable: true });
+    files.set("/home/user/rakazo-home/notes.txt", {
+      content: Buffer.from("kept"),
+      executable: false,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) => api.serveDownload(String(url)));
+
+    const exported = [];
+    for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
+
+    expect(exported.map((file) => [file.path, file.executable])).toEqual([
+      ["data/archive.bin", true],
+      ["notes.txt", undefined],
+    ]);
+    expect(Buffer.from(exported[0]!.content).equals(large)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", redirect: "error" });
+    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+  });
+
+  it("keeps large files out of the same export batch", async () => {
+    const read = FakeBoatApi.prototype.artifactRaw;
+    const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+    const { api, provider, computer } = await boat();
+    const files = api.files(computer.id);
+    for (const name of ["a", "b", "c"]) {
+      files.set(`/home/user/rakazo-home/${name}.bin`, {
+        content: Buffer.alloc(40 * 1024 * 1024),
+        executable: false,
+      });
+    }
+    let active = 0;
+    let peak = 0;
+    artifactRaw.mockImplementation(async function (this: FakeBoatApi, request) {
+      peak = Math.max(peak, ++active);
+      await Promise.resolve();
+      active--;
+      return read.call(this, request);
+    });
+
+    let count = 0;
+    for await (const _file of provider.exportWorkspace(computer, context)) count++;
+
+    expect(count).toBe(3);
+    expect(peak).toBe(1);
+  });
+
+  it("refuses a capped read of a file over the artifact limit without downloading it", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl");
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+
+    await expect(
+      provider.readFile(computer, "large.bin", context, { maxBytes: 1024 }),
+    ).rejects.toThrow("computer file exceeds 1024 bytes");
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { url: "http://downloads.on.boat.dev/file" },
+    { url: "https://on.boat.dev.attacker.test/file" },
+    { type: "file.upload_url" },
+    { method: "PUT" },
+    { path: "/tmp/other.bin" },
+  ])("rejects invalid download capabilities before fetching: %j", async (override) => {
+    const mint = FakeBoatApi.prototype.createDownloadUrl;
+    vi.spyOn(FakeBoatApi.prototype, "createDownloadUrl").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      return { ...(await mint.call(this, request)), ...override } as FileUrlResponse;
+    });
+    const { api, provider, computer } = await boat();
+    api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+      content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+      executable: false,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("unexpected fetch"));
+
+    await expect(provider.readFile(computer, "large.bin", context)).rejects.toThrow(
+      "Boat returned an invalid file download URL",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["transport", "http"])(
+    "fails downloads without exposing signed URLs or response bodies (%s)",
+    async (failure) => {
+      const { api, provider, computer } = await boat();
+      api.files(computer.id).set("/home/user/rakazo-home/large.bin", {
+        content: Buffer.alloc(BOAT_ARTIFACT_MAX_BYTES + 1),
+        executable: false,
+      });
+      const secret = "fake-private-download-token";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+        if (failure === "transport")
+          throw new Error(`https://downloads.on.boat.dev/?token=${secret}`);
+        return new Response(secret, { status: 503 });
+      });
+
+      const error = await provider
+        .readFile(computer, "large.bin", context)
+        .catch((error: unknown) => error);
+      expect((error as Error).message).toBe(
+        failure === "transport"
+          ? "Boat file download failed"
+          : "Boat file download failed (HTTP 503)",
+      );
+      expect((error as Error).cause).toBeUndefined();
+      expect((error as Error).stack).not.toContain(secret);
+    },
+  );
 
   it.each([undefined, "1", "20"])(
     "cancels oversized downloads with content-length %s",

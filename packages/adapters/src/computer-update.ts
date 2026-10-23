@@ -27,19 +27,16 @@ const STALE_MS = 10 * 60_000;
 const UNCONFIRMED_HANDBACK_STATUSES = ["reserving", "revoking"] as const;
 const PENDING_HANDBACK_STATUSES = ["reserving", "revoking", "revoked"] as const;
 
-export function computerUpdateView(
-  row: {
-    action: string;
-    id: string;
-    botId: string;
-    status: string;
-    stage: string;
-    computer: { scope: string; bots: { id: string; name: string }[] };
-  },
-  isDeploymentOwner = false,
-): ComputerUpdate {
+export function computerUpdateView(row: {
+  action: string;
+  id: string;
+  botId: string;
+  status: string;
+  stage: string;
+  computer: { scope: string; bots: { id: string; name: string }[] };
+}): ComputerUpdate {
   return ComputerUpdateSchema.parse({
-    canReleaseReservation: isDeploymentOwner && row.status === "interrupted",
+    canReleaseReservation: false,
     action: row.action,
     id: row.id,
     botId: row.computer.bots.some((bot) => bot.id === row.botId)

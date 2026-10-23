@@ -46,12 +46,36 @@ describe("sealed screen capabilities", () => {
         .match(/<script type="module">([\s\S]*?)<\/script>/)![1]!
         .replace(/^\s*import[\s\S]*?;\s*$/gm, "");
       let socketUrl = "";
+      const rootClasses = new Set<string>();
+      const rootAttributes = new Map<string, string>();
+      const rfbListeners = new Map<string, (event: { detail?: Record<string, unknown> }) => void>();
       runInNewContext(script, {
-        document: { location: url, getElementById: () => ({}) },
+        document: {
+          location: url,
+          getElementById: () => ({}),
+          documentElement: {
+            classList: {
+              add: (...names: string[]) => {
+                for (const name of names) rootClasses.add(name);
+              },
+              remove: (...names: string[]) => {
+                for (const name of names) rootClasses.delete(name);
+              },
+            },
+            setAttribute: (name: string, value: string) => rootAttributes.set(name, value),
+            hasAttribute: (name: string) => rootAttributes.has(name),
+          },
+        },
         window: { location: url },
         RFB: class {
           constructor(_element: unknown, value: string) {
             socketUrl = value;
+          }
+          addEventListener(
+            type: string,
+            listener: (event: { detail?: Record<string, unknown> }) => void,
+          ) {
+            rfbListeners.set(type, listener);
           }
         },
         attachHostClipboardPaste: () => {},
@@ -65,6 +89,13 @@ describe("sealed screen capabilities", () => {
         attachMobileKeyboard: () => {},
         attachMobileTrackpad: () => {},
       });
+      // The page shim reports these classes to the app, as it does for stock noVNC.
+      expect([...rootClasses]).toEqual(["noVNC_connecting"]);
+      rfbListeners.get("connect")?.({});
+      expect([...rootClasses]).toEqual(["noVNC_connected"]);
+      rfbListeners.get("disconnect")?.({ detail: { clean: false } });
+      expect([...rootClasses]).toEqual([]);
+      expect(rootAttributes.get("data-rakazo-screen-error")).toBe("");
       const socket = new URL(socketUrl);
       expect(socket.protocol).toBe("wss:");
       expect(socket.host).toBe(url.host);

@@ -5,7 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "../../lib/rpc";
-import { ComposerReplyPreview, ReplyLine, TimeSeparator } from "./chat-context";
+import { ComposerReplyPreview, ReplyLine, TimeSeparator, UnreadDivider } from "./chat-context";
 
 vi.mock("../../lib/rpc", () => ({ rpc: { artifacts: { get: vi.fn() } } }));
 
@@ -45,6 +45,22 @@ it("renders an unselectable semantic separator", () => {
   );
   expect(container.querySelector("h3")?.textContent).toContain("4:05 PM");
   expect(container.querySelector("h3")?.className).toContain("select-none");
+});
+it("marks new messages with a visible New and a spoken New messages", () => {
+  act(() => root.render(<UnreadDivider />));
+  const divider = container.querySelector('[data-testid="unread-divider"]');
+  expect(divider?.querySelector('[aria-hidden="true"]:not(.h-px)')?.textContent).toBe("New");
+  expect(divider?.querySelector(".sr-only")?.textContent).toBe("New messages");
+  expect(divider?.className).toContain("select-none");
+  const label = divider?.querySelector(".sr-only")?.parentElement;
+  expect(label?.className).toContain("text-unread");
+  expect(label?.className).not.toContain("opacity-50");
+  for (const line of divider?.querySelectorAll(".h-px") ?? [])
+    expect(line.className).toContain("bg-unread");
+});
+it("avoids extra top spacing after a time separator", () => {
+  act(() => root.render(<UnreadDivider afterSeparator />));
+  expect(container.querySelector('[data-testid="unread-divider"]')?.className).toContain("pt-0");
 });
 it("shows a compact composer quote and dismisses it", () => {
   const onDismiss = vi.fn();

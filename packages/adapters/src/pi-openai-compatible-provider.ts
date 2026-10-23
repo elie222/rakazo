@@ -341,7 +341,7 @@ export function registerOpenAiCompatibleRuntime(
     acceptsImages?: boolean;
     maxTokens?: number;
     contextWindow?: number;
-    /** From `actorMayUsePrivateEndpoint` for the connection's owner. */
+    /** Explicit operator authorization for private endpoints. */
     allowPrivate?: boolean;
   },
 ): MutableModels {

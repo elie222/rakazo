@@ -12,6 +12,7 @@ import Computer from "../app/computer";
 const rpc = vi.hoisted(() => vi.fn());
 const textScale = vi.hoisted(() => ({ fontScale: 1 }));
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+const foreground = vi.hoisted(() => ({ value: true }));
 const screens = vi.hoisted(() => ({ mounts: 0 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -81,6 +82,9 @@ vi.mock("react-native", () => {
   };
 });
 
+vi.mock("./app-foreground", () => ({
+  useAppForeground: () => foreground.value,
+}));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardAvoidingView: ({ children }: { children: ReactNode }) =>
     createElement(Fragment, null, children),
@@ -243,6 +247,7 @@ describe("computer screen", () => {
     picker.mounts = 0;
     picker.props = undefined;
     appState.listeners.clear();
+    foreground.value = true;
     screens.mounts = 0;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -359,9 +364,10 @@ describe("computer screen", () => {
     expect(statusLabel(view).dataset.alignSelf).toBeUndefined();
   });
 
-  it("puts Take control under the status at accessibility text sizes", async () => {
-    // At AX5 the native button took the row and the label wrapped one letter per line.
-    textScale.fontScale = 3.571;
+  it("puts Take control under the status once text reaches its largest size", async () => {
+    // Text stops growing at xxxLarge but the native button doesn't: at AX5 it took the row and
+    // the label wrapped one letter per line.
+    textScale.fontScale = 1.353;
     respond(botWorking);
     const view = await render();
 
@@ -388,7 +394,7 @@ describe("computer screen", () => {
     const callsBefore = rpc.mock.calls.length;
 
     // The native picker keeps a stale height when the row above restacks.
-    textScale.fontScale = 3.571;
+    textScale.fontScale = 1.353;
     act(() => {
       root?.render(<Computer />);
     });
@@ -415,6 +421,57 @@ describe("computer screen", () => {
     const screen = view.querySelector("iframe");
     expect(screen?.getAttribute("data-elements-hidden")).toBe("true");
     expect(screen?.getAttribute("data-important")).toBe("no-hide-descendants");
+  });
+
+  async function setForeground(value: boolean) {
+    foreground.value = value;
+    act(() => root?.render(<Computer />));
+    await settle();
+  }
+
+  it.each([false, true])(
+    "unmounts the screen in the background and mounts fresh on return (full window: %s)",
+    async (fullWindow) => {
+      respond(botWorking);
+      const view = await render();
+      if (fullWindow) {
+        await act(async () => preview(view).click());
+        await settle();
+      }
+      expect(view.querySelectorAll("iframe")).toHaveLength(1);
+      const mounted = screens.mounts;
+
+      await setForeground(false);
+      expect(view.querySelector("iframe")).toBeNull();
+      expect(screens.mounts).toBe(mounted);
+
+      await setForeground(true);
+      expect(view.querySelectorAll("iframe")).toHaveLength(1);
+      expect(screens.mounts).toBe(mounted + 1);
+      expect(Boolean(view.querySelector("section iframe"))).toBe(fullWindow);
+    },
+  );
+
+  it("stops heartbeats in the background and resumes them on return", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      respond(botWorking);
+      await render();
+      expect(calls("computer/heartbeat")).toHaveLength(1);
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(calls("computer/heartbeat")).toHaveLength(2);
+
+      await setForeground(false);
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(calls("computer/heartbeat")).toHaveLength(2);
+
+      await setForeground(true);
+      expect(calls("computer/heartbeat")).toHaveLength(3);
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(calls("computer/heartbeat")).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the screen accessible in the full window while the user has control", async () => {

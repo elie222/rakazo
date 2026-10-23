@@ -7,8 +7,9 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
-  actorMayUsePrivateEndpoint,
   formatCurrentTimeInstruction,
+  hasHostedModelCredits,
+  hostedModelCreditObserver,
   matchesFailedOAuthSecret,
   resolveModelAuth,
   secretValuesToRedact,
@@ -252,10 +253,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       this.deps.deploymentModel;
     if (!provider || !modelId) return null;
 
-    if (!credential) {
+    const hosted =
+      settings?.modelCreditsEnabled &&
+      (await hasHostedModelCredits(this.deps.prisma, scope, provider));
+    if (!credential || hosted) {
       const apiKey =
         provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined;
-      return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}) } };
+      const callObserver = settings?.modelCreditsEnabled
+        ? await hostedModelCreditObserver(this.deps.prisma, scope)
+        : undefined;
+      return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
     }
 
     const secret = await this.deps.prisma.secret.findFirst({
@@ -339,11 +346,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
-          allowPrivateEndpoint: await actorMayUsePrivateEndpoint(
-            this.deps.prisma,
-            bot.userId,
-            this.deps.allowPrivateEndpoint === true,
-          ),
+          allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+
           ...limit,
           ...context,
         },

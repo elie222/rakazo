@@ -1,10 +1,10 @@
-import type { GrokColorDef } from "@rakazo/core";
+import type { BotColorDef } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   avatarIdentitySeed,
-  DEFAULT_GROK_BOT_COLOR,
-  GROK_BOT_COLORS,
-  GROK_COLOR_LIST,
+  BOT_AVATAR_COLORS,
+  BOT_COLOR_LIST,
+  DEFAULT_BOT_AVATAR_COLOR,
   organicAvatarPath,
   resolvePersonaColorDef,
   SHIPPED_BOT_AVATAR_CENTER,
@@ -22,23 +22,23 @@ import { useAvatarStyle } from "./avatar-style.js";
 import { cn } from "./lib/utils.js";
 import "./styles.css";
 
-export type { GrokColorDef };
-export { DEFAULT_GROK_BOT_COLOR, GROK_BOT_COLORS, GROK_COLOR_LIST, resolvePersonaColorDef };
+export type { BotColorDef };
+export { BOT_AVATAR_COLORS, BOT_COLOR_LIST, DEFAULT_BOT_AVATAR_COLOR, resolvePersonaColorDef };
 
-export const GROK_SHAPES = SHIPPED_BOT_AVATAR_SHAPES;
+export const BOT_SHAPES = SHIPPED_BOT_AVATAR_SHAPES;
 export const SHIPPED_SHAPE_KEYS = SHIPPED_BOT_AVATAR_SHAPE_KEYS;
 const VIEWBOX = SHIPPED_BOT_AVATAR_VIEWBOX;
 const CENTER = SHIPPED_BOT_AVATAR_CENTER;
 
-export const GROK_MASCOT_SHAPES = SHIPPED_SHAPE_KEYS.map(
-  (k) => GROK_SHAPES[k] ?? FALLBACK_SHAPE_PATH,
+export const BOT_MASCOT_SHAPES = SHIPPED_SHAPE_KEYS.map(
+  (k) => BOT_SHAPES[k] ?? FALLBACK_SHAPE_PATH,
 );
 
-const FALLBACK_SHAPE_PATH = GROK_SHAPES.hex ?? "";
+const FALLBACK_SHAPE_PATH = BOT_SHAPES.hex ?? "";
 
 export function resolvePersonaShape(identity: string, explicitShape?: string | null): string {
   if (explicitShape) {
-    const explicit = GROK_SHAPES[explicitShape];
+    const explicit = BOT_SHAPES[explicitShape];
     if (explicit) return explicit;
   }
   let hash = shippedHash(identity);
@@ -46,7 +46,7 @@ export function resolvePersonaShape(identity: string, explicitShape?: string | n
   hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
   const shapeIndex = ((hash ^ (hash >>> 16)) >>> 0) % SHIPPED_SHAPE_KEYS.length;
   const key = SHIPPED_SHAPE_KEYS[shapeIndex] ?? "hex";
-  return GROK_SHAPES[key] ?? FALLBACK_SHAPE_PATH;
+  return BOT_SHAPES[key] ?? FALLBACK_SHAPE_PATH;
 }
 
 export function parseBotAvatar(
@@ -83,7 +83,7 @@ const AVATAR_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 export function defaultBotAvatarValue(rawColor: string): string {
   const parsed = parseBotAvatar(rawColor);
   if (rawColor && !parsed.isImage && AVATAR_HEX.test(parsed.color)) return parsed.color;
-  return DEFAULT_GROK_BOT_COLOR;
+  return DEFAULT_BOT_AVATAR_COLOR;
 }
 
 export interface BotAvatarProps {
@@ -187,7 +187,7 @@ export const BotAvatar = memo(function BotAvatar({
   return (
     <div
       className={cn(
-        "rakazo-bot-avatar grok-avatar-container relative inline-flex items-center justify-center shrink-0 select-none",
+        "rakazo-bot-avatar bot-avatar-container relative inline-flex items-center justify-center shrink-0 select-none",
         className,
       )}
       style={{
@@ -244,14 +244,14 @@ export const BotAvatar = memo(function BotAvatar({
         }}
       >
         <defs>
-          <linearGradient id={`grok-ink-${id}`} x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={`bot-ink-${id}`} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor={colorDef.light} />
             <stop offset="100%" stopColor={colorDef.dark} />
           </linearGradient>
         </defs>
         <g>
-          <path d={shapePath} fill={`url(#grok-ink-${id})`} />
-          <g fill={colorDef.eyeColor} className="grok-character-eyes">
+          <path d={shapePath} fill={`url(#bot-ink-${id})`} />
+          <g fill={colorDef.eyeColor} className="bot-character-eyes">
             <ellipse cx={CENTER - 29} cy={CENTER - 8} rx={10} ry={7} />
             <ellipse cx={CENTER + 29} cy={CENTER - 8} rx={10} ry={7} />
           </g>
@@ -288,7 +288,7 @@ function RobotAvatar({
   identity,
   gradientId,
 }: {
-  colorDef: GrokColorDef;
+  colorDef: BotColorDef;
   size: number;
   isWorking: boolean;
   className?: string;
@@ -419,7 +419,7 @@ function OrganicAvatar({
     reducedMotionSnapshot,
     () => false,
   );
-  const seed = avatarIdentitySeed(identity || color || DEFAULT_GROK_BOT_COLOR);
+  const seed = avatarIdentitySeed(identity || color || DEFAULT_BOT_AVATAR_COLOR);
   const duration = `${4.8 + (seed % 24) / 10}s`;
   const shapeA = organicAvatarPath(seed);
   const shapeB = organicAvatarPath(seed, 0.42);
@@ -492,7 +492,7 @@ function subscribeToReducedMotion(onChange: () => void): () => void {
   return () => media.removeEventListener("change", onChange);
 }
 
-export function GrokShapePreview({
+export function BotShapePreview({
   shapeIndex,
   color,
   selected,

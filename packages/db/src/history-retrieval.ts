@@ -3,7 +3,7 @@ import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { searchTerms } from "./content-crypto.js";
-import { contentEncryptionOf } from "./content-encryption.js";
+import { contentEncryptionOf, INDEXED_MESSAGE, UNINDEXED_MESSAGE } from "./content-encryption.js";
 import { historyMessageText } from "./history-text.js";
 
 export { historyMessageText };
@@ -110,7 +110,7 @@ async function historyMatch(
     (tokens) => tokens.length,
   );
   const encrypted = tokenSets.map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
-  return Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(m."searchTokens" IS NULL AND ${fullText})`], " OR ")})`;
+  return Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(${UNINDEXED_MESSAGE} AND ${fullText})`], " OR ")})`;
 }
 function pageSize(value = 10): number {
   if (!Number.isInteger(value) || value < 1)
@@ -177,9 +177,7 @@ export async function searchHistory(
   // indexed candidate is kept only if its decrypted text has every query word.
   // False candidates are skipped and the scan continues, so pages stay full.
   const words = searchTerms(query);
-  const indexed = contentEncryptionOf(prisma)
-    ? Prisma.sql`m."searchTokens" IS NOT NULL`
-    : Prisma.sql`false`;
+  const indexed = contentEncryptionOf(prisma) ? INDEXED_MESSAGE : Prisma.sql`false`;
   const rows: HistoryRow[] = [];
   let cursor = beforeSeq;
   // Set when the scan budget runs out with candidates left: the page continues from there.

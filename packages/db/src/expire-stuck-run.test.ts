@@ -17,6 +17,7 @@ function tx(options?: {
   const events: Array<Record<string, unknown>> = [];
   const client = {
     $queryRaw: vi.fn(async () => []),
+    externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     run: {
       updateMany: vi.fn(async () => ({ count: options?.cancelled ?? 1 })),
       findUnique: vi.fn(async () => {

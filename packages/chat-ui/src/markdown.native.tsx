@@ -1,5 +1,5 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
-import { darkTokens, fontWeight, typeScale } from "@rakazo/ui-tokens";
+import { darkTokens, fontWeight, MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
 import type {
   ASTNode,
   MarkdownStyleMap,
@@ -64,7 +64,9 @@ const BODY_FONT_SIZE = typeScale.body.fontSize;
 // "ui-monospace" is iOS's own monospaced system font, SF Mono.
 const MONO_FONT = Platform.select({ ios: "ui-monospace", default: "monospace" });
 const BULLET_SIZE = 5;
-const NUMBER_COLUMN_WIDTH = 28;
+// List markers sit in an 18 pt column, 8 pt before the item text.
+const MARKER_COLUMN = 18;
+const MARKER_GAP = 8;
 // Advances at the list-number size (15 pt): a tabular digit, and the "." or ")" after it.
 const NUMBER_DIGIT_WIDTH = 9.6;
 const NUMBER_MARK_WIDTH = { ".": 4.1, ")": 5.6 };
@@ -78,7 +80,7 @@ function numberColumnWidth(list: ASTNode, markup: string, fontScale: number) {
   const last = (Number.isFinite(start) ? start : 1) + list.children.length - 1;
   const digits = String(Math.max(1, last)).length;
   const mark = markup === ")" ? NUMBER_MARK_WIDTH[")"] : NUMBER_MARK_WIDTH["."];
-  return Math.max(NUMBER_COLUMN_WIDTH, Math.ceil((digits * NUMBER_DIGIT_WIDTH + mark) * fontScale));
+  return Math.max(MARKER_COLUMN, Math.ceil((digits * NUMBER_DIGIT_WIDTH + mark) * fontScale));
 }
 const LINK_TILE_SIZE = 18;
 // Keeps the site icon on the line of the label's first word.
@@ -88,9 +90,6 @@ const ZERO_WIDTH_SPACE = "\u200B";
 // around the link.
 const ISOLATE = "\u2068";
 const POP_ISOLATE = "\u2069";
-
-// The library's own rules, for the blocks this file only sometimes replaces.
-const libraryRules = libraryRenderRules(Text);
 
 // One shared parser: the Markdown components memoize on its identity.
 const markdownParser = createMarkdownIt();
@@ -197,52 +196,73 @@ function markdownStyles(palette: ColorTokens) {
     // Code blocks keep the monospaced font's own line spacing.
     code_block: {
       color: palette.foreground,
-      backgroundColor: palette.background,
+      backgroundColor: palette.secondary,
       borderColor: palette.border,
       ...codeText,
       ...codeBox,
     },
+    // The header and code sit inside the fence; a fill of their own would stack the translucent one.
     fence: {
-      backgroundColor: palette.background,
+      backgroundColor: palette.secondary,
       borderColor: palette.border,
       ...codeBox,
     },
     fence_code: {
-      backgroundColor: palette.background,
+      backgroundColor: "transparent",
+    },
+    fence_header: {
+      backgroundColor: "transparent",
+      borderBottomColor: palette.border,
     },
     fence_token: codeText,
     fence_language_label: {
+      color: palette.foreground,
       fontFamily: MONO_FONT,
     },
-    // Bot bubbles are filled with `muted`, which `border` matches in light mode,
-    // so rules drawn inside a message use the muted foreground to stay visible.
+    // Quotes read as secondary text behind a faint bar.
     blockquote: {
       backgroundColor: "transparent",
-      borderLeftColor: palette.mutedForeground,
+      color: palette.mutedForeground,
+      borderLeftColor: palette.faintForeground,
       borderLeftWidth: 3,
       gap: BLOCK_GAP,
     },
+    bullet_list_icon: {
+      color: palette.faintForeground,
+    },
+    // Tables are rules only: secondary-text cells under a primary-text header.
     table: {
-      borderColor: palette.mutedForeground,
+      borderColor: palette.input,
       borderWidth: StyleSheet.hairlineWidth,
     },
     tr: {
-      borderColor: palette.mutedForeground,
+      borderColor: palette.input,
       borderBottomWidth: StyleSheet.hairlineWidth,
     },
     th: {
       ...typeScale.caption,
+      color: palette.foreground,
       fontWeight: fontWeight.medium,
     },
-    td: typeScale.caption,
+    td: {
+      ...typeScale.caption,
+      color: palette.mutedForeground,
+    },
+    bullet_list: {
+      gap: BLOCK_GAP,
+    },
+    ordered_list: {
+      gap: BLOCK_GAP,
+    },
     ordered_list_icon: {
+      color: palette.faintForeground,
       fontSize: typeScale.secondary.fontSize,
       fontVariant: ["tabular-nums"],
       marginLeft: 0,
       marginRight: 0,
     },
     hr: {
-      backgroundColor: palette.mutedForeground,
+      backgroundColor: palette.border,
       height: StyleSheet.hairlineWidth,
     },
     // Custom keys. An image label outside a text node inherits no color, so it carries the body color.
@@ -291,7 +311,7 @@ function markdownStyles(palette: ColorTokens) {
       color: palette.foreground,
       fontWeight: "500",
       textDecorationLine: "underline",
-      textDecorationColor: palette.mutedForeground,
+      textDecorationColor: palette.input,
     },
     link_favicon_plate: {
       backgroundColor: palette.faviconPlate,
@@ -892,8 +912,8 @@ function NumberColumn({
   reversed: boolean;
   children: ReactNode;
 }) {
-  // The number grows with the iOS text size, so its column does too.
-  const { fontScale } = useWindowDimensions();
+  // The number grows with the iOS text size up to the app's limit, so its column does too.
+  const fontScale = Math.min(useWindowDimensions().fontScale, MAX_FONT_SCALE);
   return (
     <View
       style={[
@@ -929,13 +949,13 @@ function listItemRule(
     (ancestor) => ancestor.type === "bullet_list" || ancestor.type === "ordered_list",
   );
   if (list?.type === "bullet_list") {
-    // A dot in the list-marker colour, centred on the item's first line. The invisible character
-    // gives the marker that line's height at the current text size.
+    // A dot in the list-marker colour, centred on the item's first line, at the end of the marker
+    // column. The invisible character gives the marker that line's height at the current text size.
     const dotColor = (StyleSheet.flatten(styleMap.bullet_list_icon) as TextStyle | undefined)
       ?.color;
     return (
       <View key={node.key} style={row}>
-        <View style={[styleMap._VIEW_SAFE_bullet_list_icon, layout.bulletMarker]}>
+        <View style={[layout.bulletMarker, direction ? layout.dotAfter : layout.dotBefore]}>
           <Text style={marker} accessible={false} importantForAccessibility="no">
             {ZERO_WIDTH_SPACE}
           </Text>
@@ -996,7 +1016,9 @@ const renderRules: RenderRules = {
         style={[{ borderWidth, borderColor, borderRadius, backgroundColor }, layout.codeFrame]}
       >
         <CodeScrollView code={node.content.replace(/\n$/, "")}>
-          {libraryRules.code_block?.(
+          {/* The library's own rule, made here so it draws with the app's Text, which the app
+              replaces after this file loads. */}
+          {libraryRenderRules(Text).code_block?.(
             node,
             children,
             parents,
@@ -1271,7 +1293,8 @@ export const LinkifiedText = memo(function LinkifiedText({
     color,
     fontWeight: "500",
     textDecorationLine: "underline",
-    textDecorationColor: palette.mutedForeground,
+    // Links in a bubble are the bubble's text colour, so the underline is what marks them.
+    textDecorationColor: linkColor,
   };
   return (
     <Text style={[{ color, ...typeScale.body }, contraryDirection(children) && layout.farSideText]}>
@@ -1364,14 +1387,22 @@ const layout = StyleSheet.create({
     minWidth: 0,
     flexShrink: 1,
   },
-  // The number ends where the item's text begins, on whichever side the row puts the text.
+  // The marker ends where the item's text begins, on whichever side the row puts the text.
   numberBefore: {
     alignItems: "flex-end",
-    marginRight: 10,
+    marginRight: MARKER_GAP,
   },
   numberAfter: {
     alignItems: "flex-start",
-    marginLeft: 10,
+    marginLeft: MARKER_GAP,
+  },
+  dotBefore: {
+    marginLeft: MARKER_COLUMN - BULLET_SIZE,
+    marginRight: MARKER_GAP,
+  },
+  dotAfter: {
+    marginLeft: MARKER_GAP,
+    marginRight: MARKER_COLUMN - BULLET_SIZE,
   },
   // Only as tall as the first line, so the dot stays on it when the item wraps. The dot sits
   // beside the invisible character and is centred on its line.

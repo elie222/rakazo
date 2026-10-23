@@ -28,7 +28,7 @@ import {
 export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
-  /** From `actorMayUsePrivateEndpoint`; private and loopback endpoints are refused without it. */
+  /** Private and loopback endpoints require explicit operator configuration. */
   allowPrivateEndpoint?: boolean;
 };
 

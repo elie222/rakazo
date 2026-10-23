@@ -45,6 +45,11 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   await expect(previewRow.locator("[data-roster-preview]")).toHaveClass(/line-clamp-2/);
   await expect(previewRow).toHaveAttribute("data-roster-unread", "true");
   await expect(previewRow).toHaveAccessibleName(/Compact Sample.*unread/i);
+  // The unread dot is the one blue in the sidebar, not ink.
+  await expect(previewRow.locator("[data-roster-unread-dot]")).toHaveCSS(
+    "background-color",
+    "rgb(0, 108, 235)",
+  );
   await previewRow.scrollIntoViewIfNeeded();
   const comfortableHeight = await previewRow.evaluate(
     (element) => element.getBoundingClientRect().height,

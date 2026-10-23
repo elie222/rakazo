@@ -9,11 +9,11 @@ import {
   isPrivateAddress,
 } from "./network-address.js";
 import { createPrivateNetworkFetch, isPrivateRemoteMcpHostname } from "./remote-mcp.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 /**
  * Self-hosted ("local") memory services: a loopback or private-network endpoint the
- * deployment owner runs. Hostnames are resolved once, checked, and pinned for requests.
+ * server operator runs. Hostnames are resolved once, checked, and pinned for requests.
  */
 
 const LOCAL_NETWORK_ERROR = "Local mode requires a loopback or private-network address.";
@@ -88,7 +88,7 @@ export function assertLocalServiceBaseUrlSync(baseUrl: string): void {
 
 /**
  * Local mode accepts loopback or a private-network host (Compose DNS, RFC1918, LAN suffixes).
- * Public hosts stay rejected. Private hosts require deployment-owner authorization.
+ * Public hosts stay rejected. Private hosts require operator authorization.
  * Returns the pinned addresses for a hostname, or undefined when the host needs no DNS pin.
  */
 export async function pinLocalServiceHost(
@@ -102,7 +102,7 @@ export async function pinLocalServiceHost(
   const host = hostnameOf(parseServiceBaseUrl(baseUrl));
   if (isLocalMcpHost(host)) return undefined;
   if (options.allowPrivateEndpoint !== true) {
-    throw egressRefused(host, new MemoryProviderDeploymentOwnerRequiredError());
+    throw egressRefused(host, new MemoryProviderPrivateEndpointRequiredError());
   }
   if (isIP(host) !== 0) return undefined;
   const resolve = options.resolveHostname ?? defaultResolveHostname;

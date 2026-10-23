@@ -27,7 +27,7 @@ import {
 export const SUPERMEMORY_PROVIDER_ID = "supermemory";
 export { SUPERMEMORY_CLOUD_BASE_URL };
 
-export function supermemoryRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+export function supermemoryRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
   return settings.mode === "local";
 }
 

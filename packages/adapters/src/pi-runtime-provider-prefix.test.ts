@@ -148,8 +148,10 @@ describe("Pi outgoing provider prefixes", () => {
 
   it("reserves input room in an unknown OpenRouter model's actual completion request", async () => {
     const requests: Array<{ max_completion_tokens?: number; messages?: unknown[] }> = [];
+    const authorizationHeaders: Array<string | undefined> = [];
     const server = createServer((request, response) => {
       void (async () => {
+        authorizationHeaders.push(request.headers.authorization);
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
         requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
@@ -208,6 +210,7 @@ describe("Pi outgoing provider prefixes", () => {
         expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
       }
       expect(requests).toHaveLength(3);
+      expect(authorizationHeaders).toEqual(Array(3).fill("Bearer fake-fixture-key"));
       expect(requests[0]).toMatchObject({ max_completion_tokens: 4096 });
       expect(requests[1]!.max_completion_tokens).toBeGreaterThan(0);
       // Pi may reduce this further for its own input safety margin on tiny windows.

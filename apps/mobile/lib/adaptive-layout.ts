@@ -5,7 +5,7 @@ export const READABLE_COLUMN_WIDTH = 720;
 
 type ScreenSize = { width: number; height: number };
 
-/** Use the full screen: Android window insets can move the short side below the bound on rotation. */
+/** The short side keeps phone classification stable across rotation. */
 export function isCompactScreen(screen: ScreenSize): boolean {
   return Math.min(screen.width, screen.height) < COMPACT_SCREEN;
 }
@@ -16,4 +16,10 @@ export function isCompactScreen(screen: ScreenSize): boolean {
  */
 export function readableGutter(windowWidth: number, edgeInset = 0): number {
   return Math.max(0, edgeInset, (windowWidth - READABLE_COLUMN_WIDTH) / 2);
+}
+
+/** Centre in the usable area while preserving each physical safe edge independently. */
+export function readableGutters(windowWidth: number, insets: { left: number; right: number }) {
+  const extra = readableGutter(windowWidth - insets.left - insets.right);
+  return { left: insets.left + extra, right: insets.right + extra };
 }

@@ -271,6 +271,11 @@ class TtlCache<V> {
 export interface ContentKeyRingOptions {
   /** How long unwrapped keys and the current version stay in memory. */
   ttlMs?: number;
+  /**
+   * False stores new content in plaintext (`CONTENT_ENCRYPTION=off`). Existing
+   * ciphertext still decrypts, so turning encryption off never strands data.
+   */
+  encryptWrites?: boolean;
 }
 
 /**
@@ -283,12 +288,15 @@ export class ContentKeyRing {
   private readonly versions: TtlCache<DataKey[]>;
   private readonly rows = new TtlCache<RowContext>(60 * 60_000, 50_000);
   private readonly inflight = new Map<string, Promise<unknown>>();
+  /** Whether new content is sealed; reads decrypt either way. */
+  readonly encryptWrites: boolean;
 
   constructor(
     readonly provider: KeyProvider,
     private readonly store: SpaceKeyStore,
     options: ContentKeyRingOptions = {},
   ) {
+    this.encryptWrites = options.encryptWrites ?? true;
     const ttl = options.ttlMs ?? 10 * 60_000;
     this.keys = new TtlCache(ttl, 20_000);
     this.versions = new TtlCache(ttl, 20_000);

@@ -254,7 +254,7 @@ export function AskCard({
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
-              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start"}`}
+              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start border-input bg-secondary"}`}
               disabled={submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate

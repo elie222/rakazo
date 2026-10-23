@@ -7,7 +7,10 @@ import {
   isCallBargeIn,
   isFarewell,
   isInterimCallBargeIn,
+  isRetryableError,
   latestSpokenCallReply,
+  retryDelayMs,
+  speechLocaleTag,
   spokenMemory,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
@@ -29,9 +32,11 @@ import {
   startWaitSound,
   stopWaitSound,
 } from "./call-sounds";
+import type { DictationGiveUp } from "./dictation";
 import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
-import { errorText } from "./user-error";
+import { reportMobileError } from "./monitoring";
+import { errorText, voiceAccountErrorText } from "./user-error";
 import { speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
@@ -55,6 +60,7 @@ export type CallClip = { base64: string; mimeType: string };
 export type DictationHandlers = {
   onInterim: (text: string) => void;
   onFinal: (text: string) => void;
+  onGiveUp: (reason: DictationGiveUp) => void;
 };
 
 /** Everything that touches the device or the server, so the loop stays testable. */
@@ -327,9 +333,20 @@ async function openMic(): Promise<void> {
           onFinal: (text) => {
             if (mine()) void handleTranscript(text);
           },
+          onGiveUp: (reason) => {
+            if (!mine()) return;
+            controller.abort();
+            micOpen = false;
+            clearInterim();
+            set({ heard: "" });
+            if (reason === "failed") onDevice = false;
+            // Recording must wait for playback; recognition can still hear a barge-in.
+            if (state?.phase !== "speaking" || onDevice !== false) void openMic();
+          },
         },
         controller.signal,
       );
+      if (!mine()) return;
       if (started) {
         onDevice = true;
         return;
@@ -357,8 +374,8 @@ async function openMic(): Promise<void> {
     micOpen = false;
     await handleTranscript(text);
   } catch (error) {
-    micOpen = false;
     if (!mine()) return;
+    micOpen = false;
     failTurn(error);
   }
 }
@@ -455,6 +472,7 @@ async function handleTranscript(raw: string): Promise<void> {
 }
 
 function failTurn(error: unknown): void {
+  reportMobileError(error, "voice.turn");
   failures += 1;
   if (failures >= MAX_TURN_FAILURES) {
     endCall();
@@ -642,7 +660,7 @@ function productionDeps(): CallDeps {
 /** The device's own speech recognition, which works with a speak-only voice provider. */
 async function dictateTurn(handlers: DictationHandlers, signal: AbortSignal): Promise<boolean> {
   if (!(await dictation.available())) return false;
-  await dictation.listen({ ...handlers, signal, lang: getActiveUiLocale() });
+  await dictation.listen({ ...handlers, signal, lang: speechLocaleTag(getActiveUiLocale()) });
   return true;
 }
 
@@ -708,8 +726,16 @@ async function transcribeClip(clip: CallClip, signal: AbortSignal): Promise<stri
     body: JSON.stringify({ audioBase64: clip.base64, mimeType: clip.mimeType }),
     signal,
   });
-  const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-  if (!res.ok) throw new Error(errorText(body.error ?? "", t("Could not transcribe that.")));
+  const body = (await res.json().catch(() => ({}))) as {
+    text?: string;
+    error?: string;
+    code?: string;
+  };
+  if (!res.ok) {
+    throw new Error(
+      voiceAccountErrorText(body) ?? errorText(body.error ?? "", t("Could not transcribe that.")),
+    );
+  }
   return body.text ?? "";
 }
 
@@ -745,6 +771,7 @@ function watchReplies(
     let lastSeen: string | null = null;
     let cursor = 0;
     let retry = FEED_RETRY_MIN_MS;
+    let failure: unknown;
     // The stream returns on an idle timeout as well as on a real failure, and a call
     // outlives both: pick it back up from the last seq until the caller hangs up. The
     // first snapshot is loaded in here too, so a failed load retries instead of
@@ -789,12 +816,15 @@ function watchReplies(
           controller.signal,
         );
         retry = FEED_RETRY_MIN_MS;
-      } catch {
-        if (controller.signal.aborted) return;
+        failure = undefined;
+      } catch (error) {
+        // A 4xx other than 408/429 is the server's answer; asking again only polls it.
+        if (controller.signal.aborted || !isRetryableError(error)) return;
         retry = Math.min(FEED_RETRY_MAX_MS, retry * 2);
+        failure = error;
       }
       if (controller.signal.aborted) return;
-      await abortableDelay(retry, controller.signal);
+      await abortableDelay(retryDelayMs(failure, retry), controller.signal);
     }
   })().catch(() => undefined);
   return () => controller.abort();

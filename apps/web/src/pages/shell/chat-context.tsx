@@ -69,6 +69,24 @@ export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale
   );
 }
 
+/** Marks where the messages the user hadn't seen yet begin. */
+export function UnreadDivider({ afterSeparator = false }: { afterSeparator?: boolean }) {
+  const { t } = useLingui();
+  return (
+    <div
+      data-testid="unread-divider"
+      className={`flex select-none items-center gap-2.5 pb-2 ${afterSeparator ? "pt-0" : "pt-3.5"}`}
+    >
+      <span aria-hidden="true" className="h-px flex-1 bg-unread opacity-50" />
+      <span className="text-[12px] leading-4 font-semibold uppercase tracking-[0.5px] text-unread">
+        <span aria-hidden="true">{t`New`}</span>
+        <span className="sr-only">{t`New messages`}</span>
+      </span>
+      <span aria-hidden="true" className="h-px flex-1 bg-unread opacity-50" />
+    </div>
+  );
+}
+
 export function ComposerReplyPreview({
   author,
   text,

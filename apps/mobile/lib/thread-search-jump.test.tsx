@@ -2,7 +2,12 @@
 
 import { readFileSync } from "node:fs";
 import type { ThreadScrollState } from "@rakazo/core";
-import { foldPeerReplies, openThreadWindow, withLiveStreamingProgress } from "@rakazo/core";
+import {
+  foldPeerReplies,
+  jumpTargetId,
+  openThreadWindow,
+  withLiveStreamingProgress,
+} from "@rakazo/core";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ts from "typescript";
@@ -73,6 +78,7 @@ function mountJumpProbe(latest: MobileSnapshot, page: unknown, targetKey: "botId
       setThreadScrollState,
       scrollBehavior: useRef(new ThreadScrollBehavior()),
       foldPeerReplies,
+      jumpTargetId,
       openThreadWindow,
       withLiveStreamingProgress,
       reconcileVisibleThreadSnapshot,

@@ -2,6 +2,7 @@ import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { phoneCallSettings } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { startWorkerHealth } from "./health.js";
 import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
@@ -14,6 +15,7 @@ import {
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
+  createModelCreditReconciler,
   createPostgresReconciliationLeadership,
   createProductAnalytics,
   createRoutineRetryNoticeReconciler,
@@ -23,6 +25,7 @@ import {
   createTicketChangeNotifier,
   createWebProvider,
   databaseCapacityBackoffMs,
+  deploymentModelUsageLookup,
   ExpoPushProvider,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -35,6 +38,7 @@ import {
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
+  mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -139,6 +143,7 @@ async function main() {
         .split(",")
         .map((v) => v.trim())
         .filter(Boolean),
+      ...mcpStdioOptionsFromEnv(process.env),
       events,
       allowPrivateEndpoint,
     },
@@ -258,6 +263,7 @@ async function main() {
     prisma,
     sandbox,
     home,
+    artifacts,
     jobs,
     events,
     workerId: process.pid.toString(),
@@ -295,6 +301,10 @@ async function main() {
     events,
     notifications,
     leadership: createPostgresReconciliationLeadership(pool),
+    reconcileModelCredits: createModelCreditReconciler({
+      prisma,
+      lookup: deploymentModelUsageLookup(),
+    }),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
@@ -308,12 +318,14 @@ async function main() {
     ),
   });
   reconciler.start();
+  const stopHealth = startWorkerHealth(reconciler.lastCompletedAt);
 
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
     try {
+      await stopHealth();
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();

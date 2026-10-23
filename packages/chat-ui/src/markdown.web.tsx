@@ -452,10 +452,15 @@ function LinkFavicon({ href }: { href: string }) {
 function WebsiteLink({
   href,
   children,
+  className,
   ...props
 }: React.ComponentPropsWithoutRef<"a"> & { href: string; children: ReactNode }) {
   return (
-    <ConfirmableAnchor {...props} href={href} className="rk-chat-link">
+    <ConfirmableAnchor
+      {...props}
+      href={href}
+      className={className ? `rk-chat-link ${className}` : "rk-chat-link"}
+    >
       <LinkFavicon href={href} />
       {/* bdi: direction characters in a label cannot reorder the text around the link. */}
       <bdi className="rk-chat-link-label">{children}</bdi>
@@ -518,11 +523,11 @@ export function LinkifiedText({ children }: { children: string }) {
         part.type === "text" ? (
           part.value
         ) : linkFaviconOrigin(part.href) ? (
-          <WebsiteLink key={index} href={part.href}>
+          <WebsiteLink key={index} href={part.href} className="rk-chat-link-in-bubble">
             {linkLabel(part.value, part.href)}
           </WebsiteLink>
         ) : (
-          <ConfirmableAnchor key={index} href={part.href} className="text-link underline">
+          <ConfirmableAnchor key={index} href={part.href} className="underline">
             {part.value}
           </ConfirmableAnchor>
         ),

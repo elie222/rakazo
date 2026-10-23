@@ -10,6 +10,7 @@ import {
   probeOpenAiCompatibleModels,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -31,6 +32,7 @@ export type PiCatalogEntry = {
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
+  live?: true;
 };
 
 const catalogProbeBaseUrls = new Map<string, string>();
@@ -39,6 +41,34 @@ const catalogProbeBaseUrls = new Map<string, string>();
 export function catalogProviderProbeBaseUrl(provider: string): string | null {
   listPiCatalog();
   return catalogProbeBaseUrls.get(canonicalPiProviderId(provider)) ?? null;
+}
+
+/** OpenRouter's public model list does not establish that a key can authenticate. */
+export async function verifyCatalogProviderApiKey(
+  input: { provider: string; apiKey: string },
+  fetchImpl: typeof fetch = globalThis.fetch,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (canonicalPiProviderId(input.provider) !== "openrouter") return;
+  let response: Response;
+  try {
+    response = await fetchImpl("https://openrouter.ai/api/v1/key", {
+      headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
+      redirect: "error",
+      signal: AbortSignal.any([
+        AbortSignal.timeout(MODEL_CONNECT_TIMEOUT_MS),
+        ...(signal ? [signal] : []),
+      ]),
+    });
+  } catch {
+    // Transport errors may contain the request's credential. Never forward them.
+    throw new Error("Could not verify the API key. Try again.");
+  }
+  void response.body?.cancel().catch(() => undefined);
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("API key was rejected by the provider.");
+  }
+  if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }
 
 /**
@@ -53,6 +83,7 @@ export async function probeCatalogProviderModels(
 ): Promise<string[]> {
   const baseUrl = catalogProviderProbeBaseUrl(input.provider);
   if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  await verifyCatalogProviderApiKey(input, fetchImpl, signal);
   return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
     allowPublic: true,
     catalogProbe: true,
@@ -219,7 +250,7 @@ function catalogBilling(
   const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[providerId];
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
-    return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+    return "Runs on infrastructure configured by the server operator. No model charges from Rakazo.";
   }
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
     return "Runs on a URL you control. Rakazo does not pay for model usage.";

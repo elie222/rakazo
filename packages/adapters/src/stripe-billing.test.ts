@@ -61,7 +61,9 @@ describe("Stripe billing HTTP boundary", () => {
 
     await provider.createCheckout({ customerId, seats: 4, ...urls });
     const plain = wire.requests.at(-1)!;
+    expect(STRIPE_API_VERSION).toBe("2026-09-30.endive");
     expect(plain.headers.get("stripe-version")).toBe(STRIPE_API_VERSION);
+    expect(plain.form["subscription_data[billing_mode][type]"]).toBe("classic");
     expect(plain.headers.get("content-type")).toBe("application/x-www-form-urlencoded");
     expect(plain.form).toMatchObject({
       mode: "subscription",
@@ -454,9 +456,18 @@ describe("stripeBillingConfigFromEnv", () => {
     ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake", priceId: "price_fake" });
   });
 
+  it("supports model credits without a legacy seat price", () => {
+    expect(
+      stripeBillingConfigFromEnv({
+        stripeSecretKey: "sk_test_fake",
+        stripeWebhookSecret: "whsec_fake",
+      }),
+    ).toEqual({ secretKey: "sk_test_fake", webhookSecret: "whsec_fake" });
+  });
+
   it("names the missing variables when partially configured", () => {
     expect(() => stripeBillingConfigFromEnv({ stripeSecretKey: "sk_test_fake" })).toThrow(
-      "STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID",
+      "STRIPE_WEBHOOK_SECRET",
     );
   });
 });

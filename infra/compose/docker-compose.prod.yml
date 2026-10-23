@@ -22,11 +22,12 @@ x-app-environment: &app-environment
   DATA_DIR: /data
   ENCRYPTION_KEY:
   ENCRYPTION_MASTER_KEYS:
+  # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
+  CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL:
   MAX_UPLOAD_SIZE_MB:
-  RAKAZO_IMAGE_TAG:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
@@ -72,6 +73,7 @@ x-app-environment: &app-environment
   PI_DEFAULT_MODEL:
   PI_DEFAULT_CREDENTIALS:
   PI_SESSION_RECORDING:
+  RAKAZO_LIVE_MODEL_CATALOG:
   OPENROUTER_API_KEY:
   ANTHROPIC_API_KEY:
   TYPESAFE_API_KEY:
@@ -198,6 +200,11 @@ x-app-environment: &app-environment
   PIPEDREAM_ENVIRONMENT:
   MCP_STDIO_ENABLED:
   MCP_STDIO_ALLOWED_COMMANDS:
+  MCP_STDIO_INSTALL_TIMEOUT_MS:
+  MCP_STDIO_STARTUP_TIMEOUT_MS:
+  MCP_STDIO_IDLE_MS:
+  MCP_DISCOVERY_TIMEOUT_MS:
+  MCP_PACKAGES_DIR:
   MCP_ALLOW_PRIVATE_ENDPOINT:
   # Messaging (outbound delivery runs in the worker)
   MESSAGING_OPEN_SIGNUP:
@@ -305,8 +312,6 @@ services:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_DESKTOP_STACK_TOKEN:
-      RAKAZO_UPDATER_URL: http://updater:7092
-      RAKAZO_UPDATER_TOKEN:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
@@ -321,6 +326,7 @@ services:
       TEAM_CHAT_JUDGE_PROVIDER:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
+      RAKAZO_MIN_CLIENT_BUILD:
     expose:
       - "3100"
     volumes:
@@ -356,6 +362,12 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
     command: ["node", "--enable-source-maps", "dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "dist/health-check.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
     init: true
     logging: *logging
     security_opt:

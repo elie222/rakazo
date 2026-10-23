@@ -202,6 +202,44 @@ describe("connected model choices", () => {
     ]);
   });
 
+  it("carries whether a catalog model reads images, and leaves custom ids unknown", () => {
+    const catalog = [
+      { provider: "openrouter", id: "text-only", label: "Text Only", images: false },
+      { provider: "openrouter", id: "sees", label: "Sees", images: true },
+      { provider: "openrouter", id: "unknown", label: "Unknown" },
+      { provider: "other", id: "custom", label: "Other provider", images: false },
+      {
+        provider: "openrouter",
+        id: "placeholder",
+        label: "Placeholder",
+        placeholder: true,
+        images: false,
+      },
+    ];
+    const choices = connectedModelChoices(
+      [{ provider: "openrouter", label: "OpenRouter" }],
+      catalog,
+    );
+    expect(choices.map((choice) => choice.images)).toEqual([false, true, undefined]);
+    const enabled = connectedModelChoices(
+      [
+        {
+          provider: "openrouter",
+          label: "OpenRouter",
+          enabledModelIds: ["text-only", "sees", "unknown", "custom", "placeholder"],
+        },
+      ],
+      catalog,
+    );
+    expect(enabled.map((choice) => choice.images)).toEqual([
+      false,
+      true,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("rewrites a catalog id that is only a display label", () => {
     const choices = connectedModelChoices(
       [{ provider: "deepseek", label: "DeepSeek", modelId: "deepseek-flash" }],
@@ -417,6 +455,15 @@ describe("chat model choices", () => {
     ]);
   });
 
+  it("marks the space default with its model's image support", () => {
+    expect(chatModelChoices(connected, "", "Space default", false)[0]).toEqual({
+      key: "",
+      label: "Space default",
+      images: false,
+    });
+    expect(chatModelChoices(connected, "", "Space default")[0]?.images).toBeUndefined();
+  });
+
   it("matches the label, model id, or provider, ignoring case", () => {
     const choices = chatModelChoices(connected, "", "Space default (Claude Sonnet)");
     expect(filterModelChoices(choices, "  SONNET ").map((choice) => choice.key)).toEqual([
@@ -429,6 +476,25 @@ describe("chat model choices", () => {
     expect(
       filterModelChoices([{ key: "openrouter::x", label: "X", provider: "openrouter" }], "router"),
     ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [
+          {
+            key: "cloudflare-ai-gateway::x",
+            label: "X",
+            provider: "cloudflare-ai-gateway",
+            providerLabel: "Cloudflare AI Gateway",
+          },
+        ],
+        "AI Gateway",
+      ),
+    ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [{ key: "google", label: "Google", providerLabel: "All providers" }],
+        "all",
+      ),
+    ).toEqual([]);
     expect(filterModelChoices(choices, "gemini")).toEqual([]);
     expect(filterModelChoices(choices, " ")).toBe(choices);
   });
@@ -539,4 +605,17 @@ describe("groupModelChoices", () => {
       "OpenRouter · Anthropic",
     ]);
   });
+});
+
+it("offers managed models without a personal key and hides unconnected providers", () => {
+  const catalog = [
+    { provider: "hosted", id: "small", label: "Small", managed: true },
+    { provider: "hosted", id: "large", label: "Large", managed: true },
+    { provider: "other", id: "unconnected", label: "Unconnected" },
+  ];
+  expect(connectedModelChoices([], catalog).map((choice) => choice.key)).toEqual([
+    "hosted::small",
+    "hosted::large",
+  ]);
+  expect(connectedModelChoices([{ provider: "hosted", label: "Hosted" }], catalog)).toHaveLength(2);
 });

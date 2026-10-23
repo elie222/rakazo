@@ -135,16 +135,17 @@ model RateLimit {
 }
 
 model Organization {
-  id          String       @id
-  name        String
-  slug        String
-  logo        String?
-  createdAt   DateTime
-  metadata    String?
-  members     Member[]
-  invitations Invitation[]
-  spaces      Space[]
-  billing     BillingAccount?
+  id           String              @id
+  name         String
+  slug         String
+  logo         String?
+  createdAt    DateTime
+  metadata     String?
+  members      Member[]
+  invitations  Invitation[]
+  spaces       Space[]
+  billing      BillingAccount?
+  modelCredits ModelCreditAccount?
 
   @@unique([slug])
   @@map("organization")
@@ -154,6 +155,7 @@ model BillingAccount {
   organizationId      String       @id
   organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customerId          String       @unique
+  creditAmountCents   Int?
   subscriptionId      String?
   subscriptionItemId  String?
   priceId             String?
@@ -218,7 +220,7 @@ model Member {
 }
 
 model Space {
-  aiDataConsents AiDataConsent[]
+  aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
   organization                Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -247,7 +249,6 @@ model Space {
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
-  usageRecords                UsageRecord[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
   externalEffects             ExternalEffect[]
@@ -260,7 +261,7 @@ model Space {
   memoryConfig                SpaceMemoryConfig?
   secrets                     Secret[]
   chatGroups                  ChatGroup[]
-  botSecrets BotSecret[]
+  botSecrets                  BotSecret[]
   externalConversations       ExternalConversation[]
   agentSecrets                AgentSecret[]
   board                       Board?
@@ -327,7 +328,9 @@ model Invitation {
 }
 
 model DeploymentSettings {
+  modelCreditsEnabled             Boolean  @default(false)
   id                              String   @id @default("default")
+  /// Deprecated: retained for rolling-release compatibility; never authorizes app users.
   ownerUserId                     String?
   signupsEnabled                  Boolean  @default(true)
   signupAllowlist                 String   @default("")
@@ -488,7 +491,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
-  fleetManagement        Boolean @default(false)
+  fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
@@ -599,6 +602,8 @@ model Thread {
   historyCompactionSummary    String?    @db.Text
   historyCompactionGeneration Int        @default(0)
   unread                      Boolean    @default(false)
+  /// Highest message seq the user has read; the "New" divider goes after it. -1 = none read.
+  lastReadSeq                 Int        @default(-1)
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]
@@ -678,15 +683,15 @@ model Task {
 }
 
 model Run {
-  id                   String           @id @default(cuid())
+  id                   String            @id @default(cuid())
   spaceId              String
-  space                Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space                Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   botId                String
-  bot                  Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot                  Bot               @relation(fields: [botId], references: [id], onDelete: Cascade)
   threadId             String
-  thread               Thread           @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread               Thread            @relation(fields: [threadId], references: [id], onDelete: Cascade)
   taskId               String
-  task                 Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task                 Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
   userId               String
   status               String
   trigger              String
@@ -695,29 +700,28 @@ model Run {
   thinkingLevel        String?
   // True when these columns are the model the run must keep. A later attempt
   // may record the model it used in the same columns without setting this.
-  modelPinned          Boolean          @default(false)
+  modelPinned          Boolean           @default(false)
   error                String?
   leaseOwner           String?
-  leaseFence           Int              @default(0)
+  leaseFence           Int               @default(0)
   leaseExpiresAt       DateTime?
   checkpoint           String?
   clientNonce          String?
   sourceMessageId      String?
-  sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
-  routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   // The failed routine run this run retries. Unique, so a run is retried at most once.
-  retryOfRunId         String?          @unique
+  retryOfRunId         String?           @unique
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
   messagingMirroredAt  DateTime?
   teamChatMirroredAt   DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
-  usageRecords         UsageRecord[]
   steeringMessages     SteeringMessage[]
   externalMessage      ExternalMessage?
 
@@ -1135,9 +1139,8 @@ model Artifact {
 }
 
 model UsageRecord {
-  id               String   @id @default(cuid())
-  spaceId          String
-  space            Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(cuid())
+  spaceId            String
   /// Which bot spent this. Deliberately NOT a relation: a usage row is spend that really
   /// happened, and no lifecycle event on the bot may delete it or blank its attribution.
   /// `Cascade` erased the row; `SetNull` would erase the attribution instead, and because
@@ -1146,31 +1149,34 @@ model UsageRecord {
   ///
   /// So the id outlives the bot and may dangle. Read it with a LEFT JOIN; `BotDeletion.id`
   /// IS the bot id, so a deleted bot's name is still reachable for display.
-  botId            String?
-  userId           String
-  runId            String?
-  run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
-  provider         String
-  model            String
+  botId              String?
+  userId             String
+  runId              String?
+  provider           String
+  model              String
   /// Uncached input; cache buckets are additional, reasoning is a subset of output.
-  inputTokens       Int?
-  outputTokens      Int?
-  cacheReadTokens   Int?
-  cacheWriteTokens  Int?
+  inputTokens        Int?
+  outputTokens       Int?
+  cacheReadTokens    Int?
+  cacheWriteTokens   Int?
   cacheWrite1hTokens Int?
-  reasoningTokens   Int?
-  totalTokens       Int?
-  costUsd           Float?
-  costSource        String?
-  pricingVersion    String?
-  usageSource       String?
-  callId            String? @unique
-  operationId       String?
-  operationKind     String  @default("answer")
+  reasoningTokens    Int?
+  totalTokens        Int?
+  costUsd            Float?
+  providerRequestId  String?
+  currency           String   @default("usd")
+  auditRevision      Int      @default(0)
+  costSource         String?
+  pricingVersion     String?
+  pricingSnapshot    Json?
+  usageSource        String?
+  callId             String?  @unique
+  operationId        String?
+  operationKind      String   @default("answer")
   /// Durable attribution, deliberately without lifecycle foreign keys.
-  parentRunId       String?
-  agentId           String?
-  createdAt         DateTime @default(now())
+  parentRunId        String?
+  agentId            String?
+  createdAt          DateTime @default(now())
 
   @@index([spaceId, userId, createdAt])
   @@map("usage_records")
@@ -1242,6 +1248,11 @@ model McpServer {
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
+  /// Last launch/discovery outcome: unknown | installing | ok | error.
+  healthStatus    String          @default("unknown")
+  healthMessage   String?
+  healthToolCount Int?
+  healthCheckedAt DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   assignments   BotMcpServer[]
@@ -1407,7 +1418,6 @@ model BotSecret {
   @@map("bot_secrets")
 }
 
-
 model ExternalConversation {
   id                       String            @id @default(cuid())
   provider                 String
@@ -1463,6 +1473,7 @@ model ExternalMessage {
 
   @@unique([externalConversationId, providerEventId])
   @@index([status, nextAttemptAt])
+  @@index([externalConversationId, senderIsBot, createdAt])
   @@map("external_messages")
 }
 
@@ -1550,4 +1561,89 @@ model TicketComment {
 
   @@index([ticketId, createdAt])
   @@map("ticket_comments")
+}
+
+/// Wallet projection; financial deltas live in the append-only billing journal.
+model ModelCreditAccount {
+  organizationId        String             @id
+  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mode                  String?
+  balanceMicros         BigInt             @default(0)
+  pendingCreditCheckout Boolean            @default(false)
+  entries               ModelCreditEntry[]
+  lots                  ModelCreditLot[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@map("model_credit_accounts")
+}
+
+/// Current purchase, reservation, or expiry projection. Database triggers journal every change.
+model ModelCreditEntry {
+  id                     String             @id @default(cuid())
+  organizationId         String
+  account                ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  source                 String             @unique
+  amountMicros           BigInt
+  pending                Boolean            @default(false)
+  callId                 String?            @unique
+  userId                 String?
+  spaceId                String?
+  runId                  String?
+  provider               String?
+  model                  String?
+  providerRequestId      String?
+  usage                  Json?
+  reconciliationState    String?
+  reconciliationAttempts Int                @default(0)
+  nextReconcileAt        DateTime?
+  auditRevision          Int                @default(0)
+  allocations            Json?
+  /// Sum of allocations; detects settlements by older writers without inferring credit provenance.
+  fundedMicros           BigInt?
+  createdAt              DateTime           @default(now())
+
+  @@index([reconciliationState, nextReconcileAt])
+  @@index([organizationId, createdAt])
+  @@map("model_credit_entries")
+}
+
+/// Immutable financial journal. Deliberately no lifecycle foreign keys.
+model BillingAuditEvent {
+  id                String   @id @default(cuid())
+  source            String   @unique
+  kind              String
+  organizationId    String?
+  callId            String?
+  userId            String?
+  spaceId           String?
+  provider          String?
+  model             String?
+  providerRequestId String?
+  amountMicros      BigInt   @default(0)
+  currency          String   @default("usd")
+  details           Json
+  createdAt         DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([callId, createdAt])
+  @@map("billing_audit_events")
+}
+
+/// Grant allocation projection. Used funds include reservations; null expiry means non-expiring.
+model ModelCreditLot {
+  id              String             @id
+  organizationId  String
+  account         ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  amountMicros    BigInt
+  availableMicros BigInt
+  usedMicros      BigInt             @default(0)
+  expiredMicros   BigInt             @default(0)
+  expiresAt       DateTime?
+  auditRevision   Int                @default(0)
+  createdAt       DateTime           @default(now())
+
+  @@index([organizationId, expiresAt])
+  // Partial indexes for outstanding grants are managed in SQL migrations.
+  @@map("model_credit_lots")
 }

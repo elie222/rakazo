@@ -4,7 +4,7 @@ import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from 
 test("a group a bot creates after approval appears in the sidebar without a reload", async ({
   page,
 }, testInfo) => {
-  await signup(page, `fleet-groups-${Date.now()}@rakazo.test`, "password12", "Fleet Groups");
+  await signup(page, `bot-management-groups-${Date.now()}@rakazo.test`, "password12", "Bot Groups");
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);
@@ -51,7 +51,7 @@ test("a group a bot creates after approval appears in the sidebar without a relo
 test("model approvals use catalog labels and fit wide and narrow chats", async ({
   page,
 }, testInfo) => {
-  await signup(page, `fleet-model-${Date.now()}@rakazo.test`, "password12", "Fleet Models");
+  await signup(page, `bot-management-model-${Date.now()}@rakazo.test`, "password12", "Bot Models");
   await completeOnboarding(page);
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);

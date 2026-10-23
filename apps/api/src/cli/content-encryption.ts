@@ -1,10 +1,14 @@
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { parseArgs } from "node:util";
 import { EncryptedSecretStore, LocalArtifactStore, upgradeLegacySecrets } from "@rakazo/adapters";
-import { resolveEncryptionKey } from "@rakazo/core";
+import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { ContentMigrationMode } from "@rakazo/db";
 import {
   contentEncryptionStatus,
   createDb,
+  exportContent,
   migrateContent,
   rewrapSpaceKeys,
   rotateSpaceDataKeys,
@@ -20,30 +24,89 @@ const USAGE = `Usage: content-encryption <command> [--dry-run]
   rotate [--reencrypt] Re-wrap space keys under the active master key; with
                        --reencrypt also add new data keys and re-encrypt content
   reencrypt            Re-encrypt content still under an older data key
-  decrypt              Write plaintext back before rolling back to an older release`;
+  decrypt              Write plaintext back, after CONTENT_ENCRYPTION=off or
+                       before rolling back to an older release
+  export [--space <id>] [--thread <id>] [--bot <id>] [--output <file>]
+                       Write decrypted threads, messages and memory as JSON lines`;
 
-const [command, ...flags] = process.argv.slice(2);
-const commands = ["status", "migrate", "rotate", "reencrypt", "decrypt"];
-if (
-  !command ||
-  !commands.includes(command) ||
-  flags.some((flag) => !["--dry-run", "--reencrypt"].includes(flag)) ||
-  (flags.includes("--reencrypt") && command !== "rotate")
-) {
+const COMMANDS = ["status", "migrate", "rotate", "reencrypt", "decrypt", "export"];
+const EXPORT_OPTIONS = ["space", "thread", "bot", "output"] as const;
+
+function parseCommand() {
+  try {
+    const { values, positionals } = parseArgs({
+      allowPositionals: true,
+      options: {
+        "dry-run": { type: "boolean" },
+        reencrypt: { type: "boolean" },
+        space: { type: "string" },
+        thread: { type: "string" },
+        bot: { type: "string" },
+        output: { type: "string" },
+      },
+    });
+    const [command, ...rest] = positionals;
+    const exporting = command === "export";
+    if (
+      !command ||
+      !COMMANDS.includes(command) ||
+      rest.length ||
+      (values.reencrypt && command !== "rotate") ||
+      (values["dry-run"] && exporting) ||
+      (!exporting && EXPORT_OPTIONS.some((name) => values[name] !== undefined)) ||
+      EXPORT_OPTIONS.some((name) => values[name] === "")
+    )
+      return undefined;
+    return { command, values };
+  } catch {
+    return undefined;
+  }
+}
+
+const parsed = parseCommand();
+if (!parsed) {
   process.stderr.write(`${USAGE}\n`);
   process.exit(2);
 }
-const dryRun = flags.includes("--dry-run");
+const { command, values: flags } = parsed;
+const dryRun = flags["dry-run"] === true;
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
 
+// Encrypting commands seal content whatever CONTENT_ENCRYPTION says; the rest
+// only read, or write plaintext back.
+const encrypting = ["migrate", "rotate", "reencrypt"].includes(command);
 const { prisma, pool, contentKeys } = createDb(process.env.DATABASE_URL, {
   applicationName: "rakazo-content-encryption",
+  ...(encrypting ? { encryptContent: true } : {}),
 });
 const artifacts = new LocalArtifactStore(process.env.DATA_DIR ?? "./data", contentKeys);
 const controller = new AbortController();
 process.once("SIGINT", () => controller.abort());
 process.once("SIGTERM", () => controller.abort());
 const write = (line: string) => process.stdout.write(`${line}\n`);
+
+/** JSON lines to stdout, or to a new owner-only file; the export holds plaintext. */
+async function exportJsonLines() {
+  let records = 0;
+  async function* lines() {
+    for await (const record of exportContent(
+      prisma,
+      { spaceId: flags.space, threadId: flags.thread, botId: flags.bot },
+      { signal: controller.signal },
+    )) {
+      records += 1;
+      yield `${JSON.stringify(record)}\n`;
+    }
+  }
+  // pipeline surfaces write errors (a full disk, a closed pipe) and closes the file on failure.
+  if (flags.output) {
+    await pipeline(lines(), createWriteStream(flags.output, { flags: "wx", mode: 0o600 }));
+    write(`export: ${records} records written to ${flags.output}`);
+  } else {
+    await pipeline(lines(), process.stdout, { end: false });
+    process.stderr.write(`export: ${records} records\n`);
+  }
+}
 
 async function rewriteContent(mode: ContentMigrationMode) {
   if (!(await artifacts.hasDirectory()))
@@ -96,7 +159,7 @@ async function upgradeCredentials() {
   if (counts.failed) process.exitCode = 1;
 }
 
-// Rewrites every tenant's content, so it runs across Spaces.
+// Reads or rewrites every tenant's content, so it runs across Spaces.
 try {
   await runAsSystem("content encryption maintenance", async () => {
     if (command === "status") {
@@ -117,6 +180,8 @@ try {
           : "artifacts: no artifact directory under DATA_DIR; run where the data volume is mounted",
       );
     } else if (command === "migrate") {
+      if (!resolveContentEncryption(process.env))
+        write("CONTENT_ENCRYPTION is off: new content is still stored in plaintext");
       await rewriteContent("encrypt");
       await upgradeCredentials();
     } else if (command === "rotate") {
@@ -125,7 +190,7 @@ try {
         signal: controller.signal,
       });
       write(`space keys: ${keys.rewrapped} re-wrapped, ${keys.current} already current`);
-      if (flags.includes("--reencrypt") && !dryRun) {
+      if (flags.reencrypt && !dryRun) {
         write(
           `data keys: ${await rotateSpaceDataKeys(prisma, contentKeys, { signal: controller.signal })} spaces rotated`,
         );
@@ -133,6 +198,8 @@ try {
       }
     } else if (command === "reencrypt") {
       await rewriteContent("reencrypt");
+    } else if (command === "export") {
+      await exportJsonLines();
     } else {
       await rewriteContent("decrypt");
     }

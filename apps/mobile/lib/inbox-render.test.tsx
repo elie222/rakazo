@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { ACTIVE_RUN_STATUSES, isRunWorking } from "@rakazo/core";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentType, ReactElement, ReactNode } from "react";
 import * as React from "react";
 import { act, memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -680,4 +681,187 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
     act(() => root.unmount());
     vi.unstubAllGlobals();
   }
+});
+
+it("gives the long-press menu, and with it Delete, only to chats in the current space", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const action = vi.fn();
+  const withMenu: string[] = [];
+  const scope = {
+    React,
+    memo,
+    useCallback,
+    useI18n: () => ({ t: (text: string) => text }),
+    previewSnippet: (text: string) => text,
+    formatThreadTime: () => "",
+    botTag: () => "",
+    ACTIVE_RUN_STATUSES,
+    isRunWorking,
+    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
+    FALLBACK_COLOR: "gray",
+    ConversationRow: () => null,
+    BotAvatar: () => null,
+    GroupAvatar: () => null,
+    WorkingIndicator: () => null,
+    InboxSwipeRow: ({ rowKey }: { rowKey: string }) => {
+      withMenu.push(rowKey);
+      return null;
+    },
+    inboxRowActionList,
+    appearance: "light",
+    botAction: action,
+    groupAction: action,
+    botSections: [],
+    editSectionFromMenu: action,
+    organizeFromMenu: action,
+    SWIPE_ROWS: true,
+    day: 0,
+    chooseInboxSpace: action,
+    collapsed: new Set(),
+    confirmDeleteSpace: action,
+    deleteSection: action,
+    me: { spaceId: "space-current" },
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeGroup: action,
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    styles: {},
+    t: action,
+    toggleCollapsed: action,
+  };
+  const rowSource = source.slice(
+    source.indexOf("const BotRow = memo("),
+    source.indexOf("function createHomeStyles()"),
+  );
+  const listSource = source.slice(
+    source.indexOf("  const renderItem = useCallback("),
+    source.indexOf("  if (!ready) {"),
+  );
+  const compiled = ts.transpileModule(
+    `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${listSource}
+      return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
+    };`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const chat = (id: string, spaceId: string) => ({
+    id,
+    spaceId,
+    name: id,
+    preview: "",
+    members: [],
+  });
+  // Chats listed from another space have no row menu, as with Archive.
+  const items = [
+    { type: "bot", bot: chat("current-bot", "space-current"), depth: 0, hasChildren: false },
+    { type: "group", group: chat("current-group", "space-current") },
+    { type: "bot", bot: chat("other-bot", "space-other"), depth: 0, hasChildren: false },
+    { type: "group", group: chat("other-group", "space-other") },
+  ];
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() => root.render(<List items={items} />));
+    expect(withMenu).toEqual(["bot:current-bot", "group:current-group"]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("sets inbox rows and section headings in the shared type scale", () => {
+  const stylesSource = source.slice(source.indexOf("function createHomeStyles()"));
+  const rowDimensions = source.slice(
+    source.indexOf("const INBOX_ROW ="),
+    source.indexOf("\n", source.indexOf("const COMPACT_INBOX_ROW =")),
+  );
+  const compiled = ts.transpileModule(
+    `${rowDimensions}\n${stylesSource}\nreturn createHomeStyles;`,
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    },
+  ).outputText;
+  const scope = {
+    StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 0.5 },
+    native: new Proxy({}, { get: (_target, name) => String(name) }),
+    mobileTokens: () => new Proxy({}, { get: (_target, name) => String(name) }),
+    typeScale,
+    fontWeight,
+  };
+  const styles = new Function(...Object.keys(scope), compiled)(...Object.values(scope))();
+
+  expect(styles.name).toMatchObject({ fontSize: 17, lineHeight: 22, fontWeight: "500" });
+  expect(styles.name).toMatchObject({ flexShrink: 0, maxWidth: "100%" });
+  expect(styles.tag).toMatchObject({ flexShrink: 1, minWidth: 0, overflow: "hidden" });
+  expect(styles.rowTop.alignItems).toBe("flex-start");
+  expect(styles.titleRow.overflow).toBe("hidden");
+  expect(styles.preview).toMatchObject({ fontSize: 15, lineHeight: 19 });
+  expect(styles.time).toMatchObject({ fontSize: 14, lineHeight: 18 });
+  expect(styles.tagLabel).toMatchObject({ fontSize: 14, fontWeight: "500" });
+  // At the largest text sizes the tag moves under the name instead of squeezing it.
+  expect(styles.titleRowWrapped).toEqual({ flexWrap: "wrap" });
+  for (const heading of [styles.sectionTitle, styles.sectionHeading]) {
+    expect(heading).toMatchObject({ fontSize: 15, lineHeight: 19 });
+    expect(heading.fontWeight).toBeUndefined();
+  }
+  expect(styles.sectionCount).toMatchObject({ fontSize: 14, lineHeight: 18 });
+
+  // Search results are drawn like inbox rows.
+  const searchSource = readFileSync(new URL("../app/search.tsx", testFileUrl), "utf8");
+  const searchStyles = new Function(
+    ...Object.keys(scope),
+    ts.transpileModule(
+      `${searchSource.slice(searchSource.indexOf("function createStyles()"))}\nreturn createStyles;`,
+      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+    ).outputText,
+  )(...Object.values(scope))();
+  for (const key of ["name", "time", "preview"] as const) {
+    expect(searchStyles[key]).toMatchObject({
+      fontSize: styles[key].fontSize,
+      lineHeight: styles[key].lineHeight,
+    });
+  }
+  expect(searchStyles.name.fontWeight).toBe(styles.name.fontWeight);
+});
+
+it("sets archived bot and group names in the inbox title scale", () => {
+  const archivedSource = readFileSync(
+    new URL("../components/archived-bot-list.tsx", testFileUrl),
+    "utf8",
+  );
+  const scope = {
+    React,
+    typeScale,
+    useI18n: () => ({ t: (text: string) => text }),
+    useResolvedAppearance: () => "light",
+    native: {},
+    ScrollView: "div",
+    View: "div",
+    MenuView: "div",
+    Pressable: "div",
+    Text: "span",
+    Chevron: () => null,
+    NativeSymbol: () => null,
+  };
+  const compiled = ts.transpileModule(
+    `${archivedSource.slice(archivedSource.indexOf("export function ArchivedBotList")).replace("export function", "function")}\nreturn ArchivedBotList;`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const ArchivedBotList = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const tree = ArchivedBotList({
+    bots: [{ id: "bot", name: "Helper" }],
+    groups: [{ id: "group", name: "Team" }],
+  });
+  const names: ReactElement<{ style: object; children: ReactNode }>[] = [];
+  function visit(node: ReactNode) {
+    React.Children.forEach(node, (child) => {
+      if (!React.isValidElement<{ style: object; children: ReactNode }>(child)) return;
+      if (child.type === "span") names.push(child);
+      visit(child.props.children);
+    });
+  }
+  visit(tree);
+  expect(names.map((name) => name.props.children)).toEqual(["Helper", "Team"]);
+  for (const name of names) expect(name.props.style).toMatchObject(typeScale.cardTitle);
 });

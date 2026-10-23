@@ -61,3 +61,82 @@ test("screen connection failures stay visible and can be retried", async ({ page
   await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+test("a framed screen that fails to connect says so and can be retried", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `screen-frame-${Date.now()}@rakazo.test`, "password12", "Screen Frame");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc(page, "computer/boot", { botId });
+  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
+    state: "running",
+  });
+
+  // What the proxy would serve: the page runs, then noVNC gives up on its socket.
+  let outcome: "failed" | "connected" = "failed";
+  const screenPath = "/novnc/session/view/1.frame-test/vnc.html?autoconnect=true";
+  await page.route("**/novnc/session/view/1.frame-test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      headers: { "content-security-policy": "sandbox allow-scripts allow-pointer-lock" },
+      body: `<!doctype html><title>Test desktop</title><script>
+        parent.postMessage({ rakazoScreen: "loading" }, "*");
+        parent.postMessage(${JSON.stringify(
+          outcome === "failed"
+            ? { rakazoScreen: "failed", detail: "Failed to connect to server" }
+            : { rakazoScreen: "connected" },
+        )}, "*");
+      </script><p>Desktop</p>`,
+    }),
+  );
+  await page.route("**/rpc/computer/screenUrl", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ json: { url: screenPath } }),
+    }),
+  );
+
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const preview = page.getByTestId("computer-preview");
+  await expect(preview.getByRole("alert")).toContainText("Failed to connect to server");
+  await expect(preview.locator("iframe")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-screen-frame-failed");
+
+  outcome = "connected";
+  await preview.getByRole("button", { name: "Retry screen" }).click();
+  await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.frame-test\/vnc\.html/);
+  await expect(preview.getByRole("alert")).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await expect(preview.getByRole("alert")).toHaveCount(0);
+});
+
+test("a framed screen the proxy refuses shows the proxy's reason", async ({ page }, testInfo) => {
+  await signup(page, `screen-refused-${Date.now()}@rakazo.test`, "password12", "Screen Refused");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc(page, "computer/boot", { botId });
+  await expect(rpc<{ state: string }>(page, "computer/status", { botId })).resolves.toMatchObject({
+    state: "running",
+  });
+  await page.route("**/novnc/session/view/1.refused-test/**", (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: "text/plain",
+      body: "Invalid or expired screen capability",
+    }),
+  );
+  await page.route("**/rpc/computer/screenUrl", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ json: { url: "/novnc/session/view/1.refused-test/vnc.html" } }),
+    }),
+  );
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const preview = page.getByTestId("computer-preview");
+  await expect(preview.getByRole("alert")).toContainText("Invalid or expired screen capability");
+  await expect(preview.locator("iframe")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-screen-frame-refused");
+});

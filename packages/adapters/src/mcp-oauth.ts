@@ -27,10 +27,10 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
-import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 import { deleteSecretBestEffort } from "./secret-store-factory.js";
@@ -275,6 +275,9 @@ type ProviderOptions = {
 /** Refresh before expiry to cover clock skew and request time. */
 export const TOKEN_REFRESH_SKEW_MS = 60_000;
 
+/** The OpenID Connect scope that asks the authorization server for a refresh token. */
+const OFFLINE_ACCESS = "offline_access";
+
 /** When the access token lapses, if the grant says. */
 export function accessTokenExpiresAt(oauth: OAuthState | undefined): number | undefined {
   const lifetimeSeconds = oauth?.tokens?.expires_in;
@@ -303,6 +306,29 @@ function canonicalResource(resource: string | undefined): URL | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The SDK requests the scopes the resource publishes (RFC 9728). `offline_access`
+ * is an authorization-server scope, so it never appears there, yet servers such as
+ * OpenIddict and Entra issue a refresh token only when it is requested. Without it
+ * the connection lapses with the first access token and asks for a reconnect.
+ * Those servers issue the refresh token without `prompt=consent`, which would
+ * force a consent screen on every reconnect; a server that needs it can get it
+ * through the client's `authorization_params`.
+ */
+function requestOfflineAccess(
+  authorizationUrl: URL,
+  discovery: OAuthDiscoveryState | undefined,
+): void {
+  // Without a requested scope the server applies its defaults; `offline_access`
+  // alone would narrow the grant to no API scope at all.
+  const scope = authorizationUrl.searchParams.get("scope");
+  if (!scope) return;
+  if (!discovery?.authorizationServerMetadata?.scopes_supported?.includes(OFFLINE_ACCESS)) return;
+  const scopes = scope.split(/\s+/);
+  if (scopes.includes(OFFLINE_ACCESS)) return;
+  authorizationUrl.searchParams.set("scope", [...scopes, OFFLINE_ACCESS].join(" "));
 }
 
 function applyGrant(oauth: OAuthState, grant: TokenGrant): void {
@@ -471,6 +497,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       for (const [key, value] of Object.entries(parseMcpOAuthAuthorizationParams(extra)))
         if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
     }
+    requestOfflineAccess(authorizationUrl, this.material.oauth?.discoveryState);
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
       this.options.onAuthorization(authorizationUrl);
@@ -949,7 +976,7 @@ export class McpOAuthBroker {
       target,
       this.network,
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
-      await actorMayUsePrivateEndpoint(this.prisma, input.userId, this.allowPrivateEndpoint),
+      this.allowPrivateEndpoint,
     );
     try {
       if (server.endpoint)
@@ -1108,7 +1135,7 @@ export class McpOAuthBroker {
       // Only for redacting errors: the exchange sends the client secret, but none of
       // the server's static headers.
       { oauth: { clientInformation: pending.provider.clientInformation() } },
-      await actorMayUsePrivateEndpoint(this.prisma, pending.userId, this.allowPrivateEndpoint),
+      this.allowPrivateEndpoint,
     );
     try {
       if (pending.stdio)
@@ -1144,9 +1171,9 @@ export class McpOAuthBroker {
         this.discardPending(sessionId, pending);
       }
     }
-    await this.prisma.mcpOAuthSession.deleteMany({
-      where: { createdAt: { lt: new Date(cutoff) } },
-    });
+    await runAsSystem("expire abandoned MCP sign-ins in every Space", () =>
+      this.prisma.mcpOAuthSession.deleteMany({ where: { createdAt: { lt: new Date(cutoff) } } }),
+    );
   }
 
   private discardPending(sessionId: string, pending: Pending): void {
@@ -1227,12 +1254,7 @@ export class McpOAuthBroker {
     onPersisted?: ProviderOptions["onPersisted"],
   ): Promise<TokenGrant> {
     // Resolve the network before taking a connection for the lock.
-    const network = oauthFetch(
-      target,
-      this.network,
-      {},
-      await actorMayUsePrivateEndpoint(this.prisma, context.userId, this.allowPrivateEndpoint),
-    );
+    const network = oauthFetch(target, this.network, {}, this.allowPrivateEndpoint);
     let stored: { id: string; ciphertext: string } | undefined;
     try {
       const result = await persistPreparedSecret(

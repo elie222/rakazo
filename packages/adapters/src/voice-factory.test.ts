@@ -1,3 +1,4 @@
+import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
@@ -606,7 +607,37 @@ describe("FishAudioVoiceProvider", () => {
       "error.detail": "model s1 is not enabled for [Redacted]",
     });
     expect(JSON.stringify(event)).not.toContain(apiKey);
+    expect(event?.level).toBe("error");
   });
+
+  it.each([
+    [402, "VOICE_OUT_OF_CREDIT", "Insufficient API credit."],
+    [401, "VOICE_KEY_REJECTED", "Invalid API key"],
+  ])(
+    "raises Fish %i as a voice account error logged as a warning",
+    async (status, code, message) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ message, status }), {
+            status,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+
+      const error = await new FishAudioVoiceProvider()
+        .synthesize({ text: "Hi", voiceId: "voice-id", apiKey: "sk-test" }, ctx)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(VoiceAccountError);
+      expect(error).toMatchObject({ code });
+      const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
+      expect(event).toMatchObject({ level: "warn", "http.status": status });
+    },
+  );
 
   it.each([
     [

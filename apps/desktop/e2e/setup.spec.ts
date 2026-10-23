@@ -1,10 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import type { Server, ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
+import type { ElectronApplication } from "@playwright/test";
+import { _electron as electron, expect, test } from "@playwright/test";
 
 const APP_MARKER = "Existing Rakazo instance ready";
 /** Outlasts the shell's 20s wait for a mounted app before it rejects the server. */
@@ -16,6 +18,7 @@ let serverUrl: string;
 let closedUrl: string;
 let userData: string;
 let app: ElectronApplication | undefined;
+let monitoringRequests = 0;
 
 /** A port nothing listens on, so a connection attempt is refused rather than blocked. */
 async function reserveClosedPort() {
@@ -32,6 +35,12 @@ async function reserveClosedPort() {
 
 test.beforeAll(async () => {
   server = createServer((request, response) => {
+    if (request.url === "/api/monitoring/config") {
+      monitoringRequests++;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ dsn: null }));
+      return;
+    }
     if (request.url === "/rpc/health" && request.method === "POST") {
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
@@ -598,7 +607,14 @@ test("the native application menu can reopen setup without exposing setup IPC to
 });
 
 test("servers on the same host but different ports do not share login cookies", async () => {
-  const first = createServer((_request, response) => {
+  const monitoringDisabled = (requestUrl: string | undefined, response: ServerResponse) => {
+    if (requestUrl !== "/api/monitoring/config") return false;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ dsn: null }));
+    return true;
+  };
+  const first = createServer((request, response) => {
+    if (monitoringDisabled(request.url, response)) return;
     response.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "set-cookie": "rakazo_session=fake-one; Path=/; SameSite=Lax",
@@ -606,6 +622,7 @@ test("servers on the same host but different ports do not share login cookies", 
     response.end("<!doctype html><main>Cookie stored</main>");
   });
   const second = createServer((request, response) => {
+    if (monitoringDisabled(request.url, response)) return;
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(`<!doctype html><main>Cookies: ${request.headers.cookie ?? "none"}</main>`);
   });
@@ -635,6 +652,8 @@ test("servers on the same host but different ports do not share login cookies", 
     const secondWindow = await app.firstWindow();
     await expect(secondWindow.getByText("Cookies: none")).toBeVisible();
   } finally {
+    await app?.close();
+    app = undefined;
     await Promise.all([
       new Promise<void>((resolve, reject) =>
         first.close((error) => (error ? reject(error) : resolve())),
@@ -656,3 +675,64 @@ test("setup IPC is not reachable from the connected app window", async () => {
   );
   expect(exposed).toEqual([]);
 });
+
+for (const failure of ["load", "save"] as const) {
+  test(`desktop monitoring follows the restored session after a ${failure} failure`, async () => {
+    await writeFile(
+      path.join(userData, "setup.json"),
+      JSON.stringify({ mode: "existing", serverUrl }),
+    );
+    const initialRequests = monitoringRequests;
+    app = await launch();
+    const previous = await app.firstWindow();
+    await expect(previous.getByText(APP_MARKER)).toBeVisible();
+    await expect.poll(() => monitoringRequests).toBeGreaterThan(initialRequests);
+    const connectedRequests = monitoringRequests;
+    const attempted = createServer((request, response) => {
+      if (request.url === "/rpc/health") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ json: { ok: true, version: "0.1.0" } }));
+      } else if (request.url === "/api/monitoring/config") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ dsn: null }));
+      } else {
+        response.writeHead(failure === "load" ? 500 : 200, { "content-type": "text/html" });
+        response.end(`<!doctype html><html><body><main>${APP_MARKER}</main></body></html>`);
+      }
+    });
+    await new Promise<void>((resolve) => attempted.listen(0, "127.0.0.1", resolve));
+    const address = attempted.address();
+    if (!address || typeof address === "string") throw new Error("fixture has no port");
+    try {
+      const setupPromise = app.waitForEvent("window");
+      await app.evaluate(({ Menu }) => {
+        const item = Menu.getApplicationMenu()?.getMenuItemById("change-rakazo-server");
+        if (!item) throw new Error("Change server menu item is missing");
+        item.click();
+      });
+      const setup = await setupPromise;
+      await setup.getByRole("radio", { name: /Existing instance/ }).check();
+      await setup.locator("#server-url").fill(`http://127.0.0.1:${address.port}`);
+      if (failure === "save") {
+        await rm(path.join(userData, "setup.json"));
+        await mkdir(path.join(userData, "setup.json"));
+      }
+      await setup.getByRole("button", { name: "Continue" }).click();
+      await expect(setup.locator("#status")).toContainText(
+        failure === "load" ? "Could not open that server." : "The previous instance was restored.",
+      );
+      if (failure === "save")
+        await expect.poll(() => monitoringRequests).toBeGreaterThan(connectedRequests);
+      // A cookie event on the original session must still refresh that server's identity.
+      const beforeCookie = monitoringRequests;
+      await previous.evaluate(() => {
+        document.cookie = `monitoring-test=${Date.now()}; path=/`;
+      });
+      await expect.poll(() => monitoringRequests).toBeGreaterThan(beforeCookie);
+    } finally {
+      await app?.close();
+      app = undefined;
+      await new Promise<void>((resolve) => attempted.close(() => resolve()));
+    }
+  });
+}

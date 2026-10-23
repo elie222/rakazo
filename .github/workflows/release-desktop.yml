@@ -190,20 +190,27 @@ jobs:
           grep -Fqx "owner: elie222" "$app/Contents/Resources/app-update.yml"
           grep -Fqx "repo: rakazo" "$app/Contents/Resources/app-update.yml"
 
-      - name: Verify the packaged native bridge dependency
+      - name: Verify packaged native dependencies
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app="apps/desktop/out/mac-universal/Rakazo.app"
-          native="$app/Contents/Resources/app.asar.unpacked/node_modules/@koromix"
-          lipo "$native/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
-          lipo "$native/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
+          native="$app/Contents/Resources/app.asar.unpacked/node_modules"
+          lipo "$native/@koromix/koffi-darwin-x64/darwin_x64/koffi.node" -verify_arch x86_64
+          lipo "$native/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node" -verify_arch arm64
+          lipo "$native/@oxc-parser/binding-darwin-x64/parser.darwin-x64.node" -verify_arch x86_64
+          lipo "$native/@oxc-parser/binding-darwin-arm64/parser.darwin-arm64.node" -verify_arch arm64
           ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Rakazo" -e '
             const { createRequire } = require("node:module");
             const appRequire = createRequire(`${process.argv[1]}/Contents/Resources/app.asar/package.json`);
             const koffi = appRequire("koffi");
             if (koffi.load(null).func("int getpid()")() !== process.pid) {
               throw new Error("Packaged native bridge dependency failed");
+            }
+            const native = `${process.argv[1]}/Contents/Resources/app.asar.unpacked/node_modules`;
+            const parser = appRequire(`${native}/@oxc-parser/binding-darwin-${process.arch}/parser.darwin-${process.arch}.node`);
+            if (parser.parseSync("smoke.js", "const ready = true;").errors.length !== 0) {
+              throw new Error("Packaged monitoring parser dependency failed");
             }
           ' "$PWD/$app"
 

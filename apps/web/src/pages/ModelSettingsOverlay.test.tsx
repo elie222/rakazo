@@ -49,10 +49,23 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Checkbox, Label, Popover, PopoverContent, PopoverTrigger } =
-    await importOriginal<UiWebModule>();
+  const actual = await importOriginal<UiWebModule>();
+  const {
+    Checkbox,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+    Label,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+  } = actual;
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    ...actual,
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
       open ? <div>{children}</div> : null,
     AlertDialogAction: ({
@@ -92,6 +105,12 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Dialog: Pass,
     DialogClose: Pass,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
     DialogContent: Pass,
     DialogDescription: ({ children }: { children?: ReactNode }) => (
       <p data-testid="model-description">{children}</p>
@@ -201,19 +220,13 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
-async function renderSettings(embedded = true, localOwner = false) {
+async function renderSettings(embedded = true) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(
-      <ModelSettingsOverlay
-        embedded={embedded}
-        localOwner={localOwner}
-        onClose={() => undefined}
-      />,
-    );
+    root.render(<ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />);
   });
   await act(async () => {
     await Promise.resolve();
@@ -238,6 +251,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   document.body.replaceChildren();
   vi.clearAllMocks();
 });
@@ -476,93 +490,6 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
   }
 });
 
-it("warns only on text-only models in the picker", async () => {
-  models.list.mockResolvedValue([
-    { ...deepseekEntry, images: false },
-    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision", images: true },
-    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
-  ]);
-  const view = await renderSettings();
-  try {
-    const describedAs = (element: Element) =>
-      (element.getAttribute("aria-describedby") ?? "")
-        .split(" ")
-        .map((id) => (id ? document.getElementById(id)?.textContent : null))
-        .filter(Boolean)
-        .join(" ");
-    const marked = (element: Element) =>
-      Boolean(element.querySelector(`[title="Can't read images"]`));
-    const trigger = view.container.querySelector('button[role="combobox"]');
-    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    const options = [...document.querySelectorAll('[role="option"]')];
-    // The label stays the model name; the icon is for eyes, the description for screen readers.
-    expect(
-      options.map((option) => [option.textContent, marked(option), describedAs(option)]),
-    ).toEqual([
-      ["DeepSeek Chat", true, "Can't read images"],
-      ["DeepSeek Vision", false, ""],
-      ["DeepSeek Unknown", false, ""],
-    ]);
-    await act(async () => {
-      (options[1] as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Vision",
-      false,
-      "",
-    ]);
-    await act(async () => {
-      trigger.click();
-    });
-    await act(async () => {
-      (document.querySelector('[role="option"]') as HTMLButtonElement).click();
-    });
-    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
-      "DeepSeek Chat",
-      true,
-      "Can't read images",
-    ]);
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("highlights the last model when ArrowUp reopens a searched picker", async () => {
-  models.list.mockResolvedValue([
-    deepseekEntry,
-    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision" },
-    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
-  ]);
-  const view = await renderSettings();
-  try {
-    const trigger = view.container.querySelector('button[role="combobox"]');
-    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
-    const search = () => document.querySelector('input[aria-label="Search models"]');
-    await act(async () => {
-      trigger.click();
-    });
-    await typeInto(search() as HTMLInputElement, "Vision");
-    await act(async () => {
-      trigger.click();
-    });
-    await act(async () => {
-      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
-    });
-    const active = search()?.getAttribute("aria-activedescendant");
-    expect(active ? document.getElementById(active)?.textContent : null).toBe("DeepSeek Unknown");
-  } finally {
-    await view.unmount();
-  }
-});
-
 it("omits the redundant description and connection prompt", async () => {
   const view = await renderSettings(false);
   try {
@@ -572,17 +499,6 @@ it("omits the redundant description and connection prompt", async () => {
       "Connect this provider to use it as your personal model.",
     );
     expect(keyField(view.container)).toBeInstanceOf(HTMLInputElement);
-  } finally {
-    await view.unmount();
-  }
-});
-
-it("keeps the server owner's description when relevant", async () => {
-  const view = await renderSettings(false, true);
-  try {
-    expect(view.container.querySelector('[data-testid="model-description"]')?.textContent).toBe(
-      "Models for the server owner’s default space.",
-    );
   } finally {
     await view.unmount();
   }

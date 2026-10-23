@@ -1,0 +1,71 @@
+import { darkTokens } from "@rakazo/ui-tokens";
+import type { Rolldown } from "vite";
+import { describe, expect, it } from "vitest";
+import { injectShell, shellFiles, webManifest } from "./plugin.js";
+
+function chunk(fileName: string, imports: string[], css: string[] = [], isEntry = false) {
+  return {
+    type: "chunk",
+    fileName,
+    imports,
+    isEntry,
+    viteMetadata: { importedCss: new Set(css), importedAssets: new Set() },
+  };
+}
+
+describe("PWA build", () => {
+  it("precaches the shell's static graph, styles and fonts, not lazy chunks", () => {
+    const bundle = {
+      "assets/index.js": chunk("assets/index.js", ["assets/react.js"], ["assets/index.css"], true),
+      "assets/react.js": chunk("assets/react.js", []),
+      "assets/lazy.js": chunk("assets/lazy.js", ["assets/react.js"]),
+      "sw.js": chunk("sw.js", [], [], true),
+      "assets/index.css": { type: "asset", fileName: "assets/index.css" },
+      "assets/geist.woff2": { type: "asset", fileName: "assets/geist.woff2" },
+      "index.html": { type: "asset", fileName: "index.html" },
+    } as unknown as Rolldown.OutputBundle;
+
+    expect(shellFiles(bundle)).toEqual([
+      "/",
+      "/assets/geist.woff2",
+      "/assets/index.css",
+      "/assets/index.js",
+      "/assets/react.js",
+    ]);
+  });
+
+  it("versions the cache by the precached files", () => {
+    const code = "install(self,__RAKAZO_SW_PRECACHE__,__RAKAZO_SW_CACHE__)";
+    const first = injectShell(code, ["/", "/assets/a.js"], "<html>first</html>");
+    expect(first).toMatch(
+      /^install\(self,\["\/","\/assets\/a\.js"\],"rakazo-shell-[0-9a-f]{16}"\)$/,
+    );
+    expect(injectShell(code, ["/", "/assets/b.js"], "<html>first</html>").slice(-18)).not.toBe(
+      first.slice(-18),
+    );
+    expect(() => injectShell("install(self)", [], "")).toThrow();
+  });
+
+  it("changes the cache name when only the HTML shell changes", () => {
+    const code = "install(self,__RAKAZO_SW_PRECACHE__,__RAKAZO_SW_CACHE__)";
+    const precache = ["/", "/assets/a.js"];
+    const first = injectShell(code, precache, "<html>first</html>");
+    const second = injectShell(code, precache, "<html>second</html>");
+    const cacheName = /rakazo-shell-[0-9a-f]{16}/;
+    expect(first.match(cacheName)?.[0]).toBeDefined();
+    expect(second.match(cacheName)?.[0]).not.toBe(first.match(cacheName)?.[0]);
+  });
+
+  it("takes the manifest colors from the shared tokens", () => {
+    const manifest = webManifest();
+    expect(manifest).toMatchObject({
+      id: "/",
+      scope: "/",
+      start_url: "/",
+      display: "standalone",
+      background_color: darkTokens.background,
+      theme_color: darkTokens.background,
+    });
+    expect(manifest.icons.filter((icon) => icon.purpose === "maskable")).toHaveLength(2);
+  });
+});

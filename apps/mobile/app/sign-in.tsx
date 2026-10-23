@@ -1,4 +1,3 @@
-import type { IntegrationSetupState } from "@rakazo/contracts";
 import { credentialIssue, MAX_PASSWORD_LENGTH, PASSWORD_RULES } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -23,7 +22,6 @@ import {
   loadSessionToken,
   passwordResetCapabilities,
   requestPasswordReset,
-  rpc,
   sendSignInCode,
   signIn,
   signInWithCode,
@@ -183,12 +181,7 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      // A code can create the account from either form.
-      const setup =
-        mode === "up" || usingCode
-          ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
-          : null;
-      router.replace(setup?.needsSetup ? "/integration-setup" : "/");
+      router.replace("/");
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {

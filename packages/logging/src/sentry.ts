@@ -1,6 +1,8 @@
 import * as Sentry from "@sentry/node";
+import { CORRELATION_TAG_KEYS } from "./monitoring.js";
 import { isMonitoringUserId, monitoringPseudonymSecret, monitoringUserId } from "./pseudonym.js";
 import { redactSensitiveText } from "./redaction.js";
+import { reportSinkError } from "./sink-guard.js";
 import type { LogEvent, LogSink, SerializedError } from "./types.js";
 
 // Error reporting to any Sentry-protocol collector (GlitchTip, Sentry, Bugsink). Only error-level
@@ -14,7 +16,6 @@ export interface SentryConfig {
   pseudonymSecret?: string;
 }
 
-const TAG_KEYS = ["request.id", "trace.id", "jobId", "runId"] as const;
 const FLUSH_TIMEOUT_MS = 2_000;
 
 export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
@@ -58,7 +59,26 @@ export function createSentrySink(
     dsn: config.dsn,
     environment: config.environment,
     release: config.release,
-    transport,
+    transport: (options) => {
+      const delegate = (transport ?? Sentry.makeNodeTransport)(options);
+      return {
+        send: async (envelope) => {
+          try {
+            const response = await delegate.send(envelope);
+            if (
+              response.statusCode !== undefined &&
+              (response.statusCode < 200 || response.statusCode >= 300)
+            )
+              reportSinkError(new Error(`Error collector returned HTTP ${response.statusCode}`));
+            return response;
+          } catch (error) {
+            reportSinkError(new Error("Error collector transport failed"));
+            throw error;
+          }
+        },
+        flush: (timeout) => delegate.flush(timeout),
+      };
+    },
     // A message-only error log would otherwise carry a stack captured inside this sink, and the
     // collector would group every such log as one issue titled after that frame.
     attachStacktrace: false,
@@ -89,12 +109,12 @@ export function createSentrySink(
   Sentry.setTag("service", service);
   return {
     write(event: LogEvent) {
-      if (event.level !== "error") return;
+      if (event.level !== "error" || event["error.report"] === false) return;
       const { "service.name": service, error } = event;
       const message = redactSensitiveText(event.message);
       Sentry.withScope((scope) => {
         scope.setTag("service", service);
-        for (const key of TAG_KEYS) {
+        for (const key of CORRELATION_TAG_KEYS) {
           const value = event[key];
           if (typeof value === "string" && value.length > 0 && value.length <= 200)
             scope.setTag(key, redactSensitiveText(value));

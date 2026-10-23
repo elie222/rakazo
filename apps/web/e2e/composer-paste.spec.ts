@@ -1,7 +1,10 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
-async function openComposer(page: Page) {
+test("pasting into the composer attaches images and inserts text", async ({
+  page,
+  context,
+}, testInfo) => {
   const stamp = Date.now();
   await signup(page, `composer-paste-${stamp}@rakazo.test`, "password12", "Paste Test");
   await completeOnboarding(page);
@@ -9,12 +12,16 @@ async function openComposer(page: Page) {
   await page.waitForURL(/\/app\/[^/]+$/);
   const composer = page.getByRole("combobox", { name: /Message/ });
   await expect(composer).toBeVisible();
-  return composer;
-}
 
-test("pasting an image into the composer creates an attachment", async ({ page }, testInfo) => {
-  const composer = await openComposer(page);
+  // Plain text still pastes as text.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText("pasted words"));
   await composer.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(composer).toHaveValue("pasted words");
+  await composer.fill("");
+
+  // An image becomes an attachment.
   await page.evaluate(() => {
     const target = document.querySelector("textarea[name='chat-message']");
     if (!target) throw new Error("composer textarea not found");
@@ -32,20 +39,8 @@ test("pasting an image into the composer creates an attachment", async ({ page }
   });
   await expect(page.getByRole("button", { name: "Remove paste.png" })).toBeVisible();
   await captureScreenshot(page, testInfo, "composer-paste-attachment");
-});
 
-test("pasting text into the composer still inserts text", async ({ page, context }) => {
-  const composer = await openComposer(page);
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.evaluate(() => navigator.clipboard.writeText("pasted words"));
-  await composer.click();
-  await page.keyboard.press("ControlOrMeta+v");
-  await expect(composer).toHaveValue("pasted words");
-});
-
-test("pasting an image with text keeps the attachment and inserts text", async ({ page }) => {
-  const composer = await openComposer(page);
-  await composer.click();
+  // An image with text keeps the attachment and inserts the text.
   await page.evaluate(() => {
     const target = document.querySelector("textarea[name='chat-message']");
     if (!(target instanceof HTMLTextAreaElement)) throw new Error("composer textarea not found");

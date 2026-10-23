@@ -26,6 +26,8 @@ const screenHtml = `<!doctype html><title>Fake screen</title>
     asset: loaded,
     cookie: attempt(() => document.cookie),
     storage: attempt(() => localStorage.getItem('app-data')),
+    session: attempt(() => { sessionStorage.setItem('k', 'v'); return sessionStorage.getItem('k'); }),
+    webcodecs: 'VideoDecoder' in window,
     // A blank child frame shares this opaque origin but not the shim, so it reaches the real
     // getter. Only a SecurityError proves the sandbox blocked it.
     realStorage: (() => {
@@ -213,6 +215,8 @@ for (const mode of ["development", "preview"] as const) {
         socket: "ok",
         cookie: "blocked",
         storage: null,
+        session: "v",
+        webcodecs: false,
         realStorage: "SecurityError",
         api: "blocked",
       });
@@ -234,7 +238,7 @@ for (const mode of ["development", "preview"] as const) {
         },
       });
       expect(response.status()).toBe(200);
-      expect(response.headers()["cache-control"]).toBe("no-store");
+      expect(response.headers()["cache-control"]).toBe("no-store, no-transform");
       expect(response.headers()["last-modified"]).toBeUndefined();
       expect(await response.text()).toContain("const items = new Map()");
     });
@@ -246,6 +250,8 @@ for (const mode of ["development", "preview"] as const) {
       expect(response?.headers()["content-encoding"]).toBe("gzip");
       expect(JSON.parse(await page.locator("body").innerText())).toMatchObject({
         storage: "blocked",
+        session: "blocked",
+        webcodecs: true,
         realStorage: "SecurityError",
       });
     });
@@ -294,6 +300,9 @@ for (const mode of ["development", "preview"] as const) {
         }
         await page.evaluate(
           ({ url, sandbox }) => {
+            const reports = (window as unknown as { screenReports: unknown[] }).screenReports ?? [];
+            (window as unknown as { screenReports: unknown[] }).screenReports = reports;
+            window.addEventListener("message", (event) => reports.push(event.data));
             const frame = document.createElement("iframe");
             if (sandbox !== null) frame.setAttribute("sandbox", sandbox);
             frame.src = url;
@@ -303,11 +312,19 @@ for (const mode of ["development", "preview"] as const) {
         );
         const body = page.frameLocator("iframe").locator("body");
         await expect(body).toContainText('"socket":"ok"');
+        // The rewritten page tells the app it ran, even though the app cannot look inside it.
+        expect(
+          await page.evaluate(
+            () => (window as unknown as { screenReports: unknown[] }).screenReports,
+          ),
+        ).toEqual([{ rakazoScreen: "loading" }]);
         expect(JSON.parse(await body.innerText())).toEqual({
           asset: "module loaded",
           socket: "ok",
           cookie: "blocked",
           storage: null,
+          session: "v",
+          webcodecs: false,
           realStorage: "SecurityError",
           parent: "blocked",
           api: "blocked",

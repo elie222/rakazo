@@ -7,7 +7,6 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettings from "../app/group-settings";
-import NewGroup from "../app/new-group";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import type { MobileBot, MobileGroup } from "./api";
 
@@ -185,15 +184,6 @@ it("loads members before mounting the collapsed picker and saves reversible edit
   expect(back).toHaveBeenCalledOnce();
 });
 
-it("starts new groups with the roster expanded and excludes archived bots", async () => {
-  rpc.mockResolvedValue([...bots, { ...bots[0], id: "archived", archivedAt: "2026-01-01" }]);
-  await act(async () => root.render(<NewGroup />));
-  expect(container.querySelector('[aria-label="Filter bots"]')).not.toBeNull();
-  expect(switches()).toHaveLength(3);
-  await filter("prose");
-  expect(switches()[0]?.getAttribute("aria-label")).toBe("Writer");
-});
-
 it("limits additions while still allowing members to be removed", async () => {
   const roster = Array.from({ length: GROUP_MEMBER_MAX + 1 }, (_, index) => ({
     ...bots[0],
@@ -258,11 +248,4 @@ it("keeps members closed while a save is running", async () => {
   expect(openButtons()).toHaveLength(2);
   expect(openButtons().every((button) => button.disabled)).toBe(true);
   await act(async () => finish());
-});
-
-it("leaves new-group rows as plain switches", async () => {
-  rpc.mockResolvedValue(bots);
-  await act(async () => root.render(<NewGroup />));
-  expect(switches()).toHaveLength(3);
-  expect(openButtons()).toHaveLength(0);
 });

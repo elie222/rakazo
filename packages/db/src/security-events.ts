@@ -3,6 +3,7 @@ import { SECURITY_EVENT_TYPES, SecurityEventTypeSchema } from "@rakazo/contracts
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
 import type { PrismaClient } from "./client.js";
 import { parsePositiveInteger } from "./client.js";
+import { runAsSystem } from "./row-security.js";
 
 export type { SecurityEventType } from "@rakazo/contracts";
 
@@ -71,7 +72,10 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
   });
   if (!store) return;
   try {
-    await store.securityEvent.create({ data: event });
+    // An event may name another user or no Space at all, and must never be lost to
+    // the caller's tenant; the table is only ever read as system.
+    const db = store;
+    await runAsSystem("append a security event", () => db.securityEvent.create({ data: event }));
   } catch (error) {
     getLogger().error("security.event.write_failed", error);
   }

@@ -172,6 +172,7 @@ describe("graphical computer spec", () => {
     expect(resolveComputerEgressMode("")).toBe("open");
     expect(resolveComputerEgressMode("open")).toBe("open");
     expect(resolveComputerEgressMode("restricted")).toBe("restricted");
+    expect(resolveComputerEgressMode("auto")).toBe("auto");
     for (const value of ["blocked", "RESTRICTED", "0"])
       expect(() => resolveComputerEgressMode(value)).toThrow(/SANDBOX_COMPUTER_EGRESS/);
   });

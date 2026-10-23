@@ -1,9 +1,11 @@
 import { execSync } from "node:child_process";
+import { globSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { createApp } from "../../../../apps/api/src/app.ts";
+import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -68,6 +70,7 @@ async function main() {
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = agentRuntime;
+    process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
     if (!integration) {
       process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
@@ -98,21 +101,10 @@ async function main() {
     execSync("pnpm db:migrate", { stdio: "inherit", env: process.env });
 
     if (integration) {
+      // Every *.postgres.test.ts file runs here, so a new one cannot be left out;
+      // the other suites need the database too but carry no suffix.
       const suites = [
-        "packages/testkit/src/pi-offline.postgres.test.ts",
-        "packages/testkit/src/usage-accounting.postgres.test.ts",
-        "packages/db/src/history-retrieval.postgres.test.ts",
-        "packages/db/src/content-encryption.postgres.test.ts",
-        "packages/testkit/src/history-retrieval.postgres.test.ts",
-        "packages/testkit/src/history-short-product.postgres.test.ts",
-        "packages/testkit/src/history-followup-product.postgres.test.ts",
-        "packages/testkit/src/history-search-continuation.postgres.test.ts",
-        "packages/testkit/src/history-product-loop.postgres.test.ts",
-        "packages/testkit/src/history-clarification.postgres.test.ts",
-        "packages/testkit/src/computer-approval.postgres.test.ts",
-        "packages/testkit/src/eval-history.postgres.test.ts",
-        "packages/testkit/src/eval-customer-support.postgres.test.ts",
-        "packages/testkit/src/eval-silence.postgres.test.ts",
+        ...globSync("{apps,packages}/*/src/**/*.postgres.test.ts").sort(),
         "packages/testkit/src/journeys.test.ts",
         "packages/testkit/src/authorization.test.ts",
         "packages/testkit/src/attachments.test.ts",
@@ -121,17 +113,6 @@ async function main() {
         "packages/testkit/src/executor-lifecycle.test.ts",
         "packages/testkit/src/connections.test.ts",
         "packages/testkit/src/bot-secrets.test.ts",
-        "packages/db/src/space-membership.postgres.test.ts",
-        "packages/db/src/row-security.postgres.test.ts",
-        "packages/db/src/messaging.postgres.test.ts",
-        "packages/db/src/billing.postgres.test.ts",
-        "apps/api/src/billing.postgres.test.ts",
-        "packages/memory/src/commit.postgres.test.ts",
-        "packages/adapters/src/wakeup.postgres.test.ts",
-        "packages/adapters/src/realtime.postgres.test.ts",
-        "packages/adapters/src/job-reconciler.postgres.test.ts",
-        "packages/adapters/src/call-request.postgres.test.ts",
-        "packages/adapters/src/cloud-agent.postgres.test.ts",
       ];
       // Each app reconciles all durable work in its database, including intentionally
       // unfinished fixture runs. Clone the pristine migrated schema so one suite
@@ -172,6 +153,8 @@ async function main() {
             REALTIME_DATABASE_URL: suiteUrl.toString(),
             OPENROUTER_API_KEY: "",
             MODEL_API_KEY: "",
+            // A developer .env may say development, which changes defaults such as encryption.
+            NODE_ENV: "test",
           });
         } catch {
           failed.push(suite);
@@ -193,6 +176,7 @@ async function main() {
       {
         ComposioConnector,
         FakeComposioClient,
+        listPiCatalog,
         DestinationEmulator,
         EmailEmulator,
         PipedreamConnector,
@@ -220,6 +204,7 @@ async function main() {
     const email = new EmailEmulator();
     const handles = await createApp({
       databaseUrl,
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       prisma: undefined,
       composio: new ComposioConnector({ client: new FakeComposioClient() }),
       connectors: [new DestinationEmulator()],

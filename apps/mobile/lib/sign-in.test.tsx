@@ -331,7 +331,7 @@ it("sends the code on the first Continue but never submits an unfinished code", 
   expect(sendSignInCode).toHaveBeenCalledTimes(1);
 });
 
-it("opens integration setup after a code sign-in from the sign-in form", async () => {
+it("opens the app after code sign-in without server setup", async () => {
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, emailCode: true });
   vi.mocked(rpc).mockResolvedValue({ needsSetup: true });
   await render();
@@ -339,8 +339,8 @@ it("opens integration setup after a code sign-in from the sign-in form", async (
   await press("Continue");
   await type(input("Code")!, "123456");
   expect(signInWithCode).toHaveBeenCalledWith("ada@example.test", "123456", undefined);
-  expect(rpc).toHaveBeenCalledWith("integrationSetup/get");
-  expect(router.replace).toHaveBeenCalledWith("/integration-setup");
+  expect(rpc).not.toHaveBeenCalledWith("integrationSetup/get");
+  expect(router.replace).toHaveBeenCalledWith("/");
 });
 
 function buttonNamed(label: string) {

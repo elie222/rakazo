@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug } from "@rakazo/core";
+import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import {
   Badge,
   Button,
@@ -25,12 +25,18 @@ import {
   TabsTrigger,
   Textarea,
   Toggle,
+  toast,
 } from "@rakazo/ui-web";
-import { Check, X } from "lucide-react";
+import { Disclosure } from "@rakazo/ui-web/components/ui/disclosure";
+import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { McpServerHealthLine } from "../components/McpServerHealthLine";
 import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
+
+/** How often the list is re-read while a server installs its package or is being tested. */
+const INSTALL_POLL_MS = 2500;
 
 type EnvRow = { id: number; name: string; value: string; file: boolean };
 
@@ -51,7 +57,7 @@ function envName(value: string): string {
 function oauthStatusText(server: McpServer): string | null {
   if (server.oauthStatus === "connected") return t`OAuth connected`;
   if (server.oauthStatus === "reconnect") return t`OAuth expired`;
-  return server.hasSecret ? t`credential saved` : null;
+  return server.hasSecret ? t`Credential saved` : null;
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
@@ -83,6 +89,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
+  const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
+  // A test can spend minutes installing a package; re-reading the list while it runs lets
+  // the card switch from "Checking…" to "Installing…" as soon as the server records it.
+  const shouldPoll =
+    testingIds.size > 0 || servers.some((server) => server.health.status === "installing");
 
   async function refresh() {
     const [nextServers, nextBots, assignments] = await Promise.all([
@@ -119,6 +130,28 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     };
     return () => channel.close();
   }, []);
+
+  // A freshly saved stdio server installs its package in the background, so its
+  // health moves installing -> ok/error on its own. Poll only while that is true (or a
+  // test is running); the effect unmounts with the overlay.
+  useEffect(() => {
+    if (!shouldPoll) return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void rpc.mcp.servers
+        .list()
+        .then((next) => {
+          if (!cancelled) setServers(next);
+        })
+        .catch((error) => {
+          if (!isRetryableError(error)) clearInterval(timer);
+        });
+    }, INSTALL_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [shouldPoll]);
 
   function toggleBot(id: string) {
     setSelectedBotIds((current) =>
@@ -293,6 +326,28 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function testServer(server: McpServer) {
+    setError(null);
+    setTestingIds((current) => new Set(current).add(server.id));
+    try {
+      const updated = await rpc.mcp.servers.test({ id: server.id });
+      setServers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      if (updated.health.status === "ok") {
+        toast.success(t`${updated.name} is running`);
+      } else if (updated.health.status === "error") {
+        toast.error(t`${updated.name} is not working`);
+      }
+    } catch (err) {
+      setError(errorText(err, t`Could not test MCP server`));
+    } finally {
+      setTestingIds((current) => {
+        const next = new Set(current);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  }
+
   async function disconnectOAuth(server: McpServer) {
     setError(null);
     try {
@@ -405,18 +460,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                     />
                   </Field>
                 )}
-                <details className="group rounded-xl border border-border">
-                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm text-foreground">
-                    <span>
-                      <Trans>Advanced</Trans>
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="text-muted-foreground transition-transform group-open:rotate-90"
-                    >
-                      ›
-                    </span>
-                  </summary>
+                <Disclosure
+                  className="group rounded-xl border border-border"
+                  summary={<Trans>Advanced</Trans>}
+                  summaryClassName="w-full flex items-center justify-between px-3 py-2.5 text-sm text-foreground"
+                >
                   <div className="space-y-4 border-t border-border p-3">
                     <Field>
                       <FieldLabel htmlFor="mcp-secret">
@@ -620,7 +668,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       </>
                     ) : null}
                   </div>
-                </details>
+                </Disclosure>
                 {bots.length > 0 ? (
                   <Field>
                     <FieldTitle>
@@ -682,9 +730,13 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {server.endpoint ?? server.command ?? server.slug}
                         </p>
+                        <McpServerHealthLine
+                          health={server.health}
+                          checking={testingIds.has(server.id)}
+                        />
                         {statusText ? (
                           <p
-                            className={`mt-2 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
+                            className={`mt-1.5 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
                           >
                             {statusText}
                           </p>
@@ -739,9 +791,27 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           ) : null}
                           <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              testingIds.has(server.id) || server.health.status === "installing"
+                            }
+                            onClick={() => void testServer(server)}
+                          >
+                            {testingIds.has(server.id) ? (
+                              <>
+                                <LoaderCircle aria-hidden="true" className="animate-spin" />
+                                <Trans>Testing…</Trans>
+                              </>
+                            ) : (
+                              <Trans>Test connection</Trans>
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
                             variant={confirmingDelete === server.id ? "destructive" : "outline"}
                             size="sm"
-                            className="ml-auto"
+                            className="ms-auto"
                             onClick={() => void deleteServer(server)}
                           >
                             {confirmingDelete === server.id ? (

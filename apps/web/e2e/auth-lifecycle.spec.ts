@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
@@ -143,17 +144,17 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  // Sign-out usually overlaps a bot refresh that the server rejects; when it does, wait
-  // for it so an unhandled rejection would surface before the assertion.
-  const refreshRejected = page
-    .waitForResponse(
-      (response) => response.url().includes("/rpc/spaces/list") && response.status() === 401,
-      { timeout: 5_000 },
-    )
-    .catch(() => undefined);
+  // Sign-out usually overlaps a bot refresh that the server rejects; wait for every
+  // refresh that started so an unhandled rejection would surface before the assertion.
+  const refreshes: Promise<unknown>[] = [];
+  const trackRefresh = (request: Request) => {
+    if (request.url().includes("/rpc/spaces/list")) refreshes.push(request.response());
+  };
+  page.on("request", trackRefresh);
   await page.getByRole("button", { name: "Log out" }).click();
-  await refreshRejected;
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  page.off("request", trackRefresh);
+  await Promise.all(refreshes);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
   expect(pageErrors).toEqual([]);
   await page.goto("/");

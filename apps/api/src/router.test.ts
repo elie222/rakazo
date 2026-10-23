@@ -5,6 +5,7 @@ import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { McpOAuthSummary } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -312,16 +313,25 @@ describe("billing", () => {
     const client = billingDeps(false);
     await expect(client.billing.status()).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(client.billing.checkout()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.billing.selectFunding({ funding: "credits" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      client.billing.purchaseCredits({ amountCents: 1000, monthly: true }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.billing.setMonthlyCredits({ amountCents: 2000 })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
     await expect(client.me()).resolves.toMatchObject({ billingEnabled: false });
   });
 
-  it("enables billing on me for everyone but the deployment owner", async () => {
+  it("enables billing on me for admins too", async () => {
     const billing = { status: vi.fn() } as unknown as RouterDeps["billing"];
     await expect(billingDeps(false, billing).me()).resolves.toMatchObject({
       billingEnabled: true,
     });
     await expect(billingDeps(true, billing).me()).resolves.toMatchObject({
-      billingEnabled: false,
+      billingEnabled: true,
     });
   });
 });
@@ -1074,6 +1084,7 @@ describe("MCP pre-registered OAuth client", () => {
         webOrigin: "http://127.0.0.1:5173",
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
+        mcpAllowPrivateEndpoint: isDeploymentOwner,
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -1453,7 +1464,7 @@ describe("MCP pre-registered OAuth client", () => {
       });
     });
 
-    it("lets the deployment owner point at a private authorization server", async () => {
+    it("allows a private authorization server only with operator configuration", async () => {
       const { client } = harness();
 
       await expect(
@@ -1470,7 +1481,7 @@ describe("MCP pre-registered OAuth client", () => {
 describe("MCP loopback endpoints", () => {
   const LOOPBACK = "http://localhost:3100/api/auth/get-session";
 
-  function mcpDeps() {
+  function mcpDeps(mcpAllowPrivateEndpoint = false) {
     const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
       ...data,
       id: "server-1",
@@ -1502,6 +1513,7 @@ describe("MCP loopback endpoints", () => {
         webOrigin: "http://127.0.0.1:5173",
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
+        mcpAllowPrivateEndpoint,
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -1543,8 +1555,8 @@ describe("MCP loopback endpoints", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("lets the deployment owner save a loopback endpoint", async () => {
-    const { create, handler } = mcpDeps();
+  it("allows a loopback endpoint under explicit operator configuration", async () => {
+    const { create, handler } = mcpDeps(true);
     const { response } = await handler.handle(rpc("mcp/servers/create", createInput), {
       prefix: "/rpc",
       context: { actor: actor(true) },
@@ -1574,6 +1586,371 @@ describe("MCP loopback endpoints", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("MCP server health", () => {
+  type Row = Record<string, unknown>;
+  const baseRow = (overrides: Row = {}): Row => ({
+    id: "server-1",
+    spaceId: "workspace-1",
+    userId: "owner-1",
+    slug: "gmail",
+    name: "Gmail",
+    description: "",
+    transport: "stdio",
+    endpoint: null,
+    command: "npx",
+    args: ["-y", "@klodr/gmail-mcp@2.0.2"],
+    env: {},
+    files: {},
+    headers: {},
+    secretId: null,
+    enabled: true,
+    revision: 1,
+    healthStatus: "unknown",
+    healthMessage: null,
+    healthToolCount: null,
+    healthCheckedAt: null,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    ...overrides,
+  });
+
+  function harness(options: { row?: Row | null; oauth?: McpOAuthSummary; probe?: unknown } = {}) {
+    let server: Row | null = options.row === undefined ? baseRow() : options.row;
+    const probe = vi.fn(
+      (options.probe as (() => Promise<unknown>) | undefined) ??
+        (async () => {
+          await recordHealth({ healthStatus: "ok", healthToolCount: 4 });
+          return { status: "ok", toolCount: 4 };
+        }),
+    );
+    const recordHealth = async (patch: Row) => {
+      if (server) server = { ...server, healthCheckedAt: new Date(5), ...patch };
+    };
+    const updateMany = vi.fn(async ({ data }: { data: Row }) => {
+      await recordHealth(data);
+      return { count: server ? 1 : 0 };
+    });
+    const matches = (where: Row) =>
+      Boolean(server) &&
+      Object.entries(where).every(([key, value]) => (server as Row)[key] === value);
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn(async ({ where }: { where: Row }) =>
+          matches(where) ? { ...server } : null,
+        ),
+        create: vi.fn(async ({ data }: { data: Row }) => {
+          server = baseRow({ ...data, id: "server-1" });
+          return { ...server };
+        }),
+        update: vi.fn(async ({ data }: { data: Row }) => {
+          const { revision: _revision, ...rest } = data;
+          server = { ...server, ...rest, revision: Number(server?.revision) + 1 };
+          return { ...server };
+        }),
+        updateMany,
+      },
+      secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 1),
+      $queryRaw: vi.fn(async () => []),
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
+    } as unknown as PrismaClient;
+    const summaryFor = vi.fn(async () => options.oauth ?? { status: "none", clientId: null });
+    const deps = {
+      prisma,
+      secrets: { put: vi.fn(), load: vi.fn() },
+      remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      mcpOAuth: { summaryFor, summaryForCiphertext: summaryFor },
+      mcp: { probe },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const clientFor = (actor: Partial<Actor> = {}) =>
+      createRouterClient(createRouter(deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+            ...actor,
+          },
+        } as never,
+      });
+    return {
+      client: clientFor(),
+      clientFor,
+      probe,
+      updateMany,
+      row: () => server,
+      deps,
+      createRouterWithoutProbe: () =>
+        createRouterClient(createRouter({ ...deps, mcp: undefined } as RouterDeps), {
+          context: {
+            actor: {
+              spaceId: "workspace-1",
+              userId: "owner-1",
+              email: "owner@rakazo.test",
+              isDeploymentOwner: true,
+            },
+          } as never,
+        }),
+    };
+  }
+
+  const stdioInput = {
+    transport: "stdio",
+    slug: "gmail",
+    name: "Gmail",
+    command: "npx",
+    args: ["-y", "@klodr/gmail-mcp@2.0.2"],
+  } as const;
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("lists servers with their health", async () => {
+    const h = harness({
+      row: baseRow({
+        healthStatus: "error",
+        healthMessage: "spawn npx ENOENT",
+        healthCheckedAt: new Date("2026-10-21T10:00:00.000Z"),
+      }),
+    });
+    (h.deps.prisma.mcpServer as unknown as { findMany: unknown }).findMany = vi.fn(async () => [
+      h.row(),
+    ]);
+
+    const [listed] = await h.client.mcp.servers.list();
+
+    expect(listed?.health).toEqual({
+      status: "error",
+      message: "spawn npx ENOENT",
+      toolCount: null,
+      checkedAt: "2026-10-21T10:00:00.000Z",
+    });
+  });
+
+  describe("test", () => {
+    it("probes the server and returns the recorded health", async () => {
+      const { client, probe } = harness();
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe.mock.calls[0]?.[1]).toMatchObject({ spaceId: "workspace-1", userId: "owner-1" });
+      expect(tested.health).toMatchObject({ status: "ok", toolCount: 4, message: null });
+      expect(tested.health.checkedAt).not.toBeNull();
+    });
+
+    it("refuses another user's server without probing it", async () => {
+      const { clientFor, probe } = harness();
+
+      await expect(
+        clientFor({ userId: "member-1" }).mcp.servers.test({ id: "server-1" }),
+      ).rejects.toThrow();
+      await expect(
+        clientFor({ spaceId: "workspace-2" }).mcp.servers.test({ id: "server-1" }),
+      ).rejects.toThrow();
+      await expect(clientFor().mcp.servers.test({ id: "does-not-exist" })).rejects.toThrow();
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("returns an error health instead of a 500 when the probe throws", async () => {
+      const { client } = harness({
+        probe: async () => {
+          throw new Error("MCP stdio is disabled");
+        },
+      });
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(tested.health).toMatchObject({
+        status: "error",
+        message: "Could not check this MCP server",
+      });
+    });
+
+    it("says why it did not probe when the server still needs its OAuth account", async () => {
+      const { client, probe } = harness({
+        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+      });
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(probe).not.toHaveBeenCalled();
+      expect(tested.health.status).toBe("unknown");
+      expect(tested.health.message).toMatch(/account/);
+    });
+
+    it.each([
+      [{ secret: "fake-token" }, true],
+      [{ headers: { Authorization: "fake-token" } }, true],
+      [{ secret: "fake-token", env: { TOKEN: "{{oauth.access_token}}" } }, false],
+      [{ secret: "fake-token", files: { CONFIG: "{{oauth.access_token}}" } }, false],
+    ])(
+      "checks static credentials unless templates need a grant: %j",
+      async (material, shouldProbe) => {
+        const h = harness({
+          row: baseRow({ secretId: "secret-1" }),
+          oauth: { status: "none", clientId: "fake-client" },
+        });
+        vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
+          id: "secret-1",
+          ciphertext: "fake-ciphertext",
+        } as never);
+        vi.mocked(h.deps.secrets.load).mockResolvedValue(JSON.stringify(material));
+        await h.client.mcp.servers.test({ id: "server-1" });
+        expect(h.probe).toHaveBeenCalledTimes(shouldProbe ? 1 : 0);
+      },
+    );
+
+    it("reports an error when this process has no MCP connector", async () => {
+      const h = harness();
+
+      const tested = await h.createRouterWithoutProbe().mcp.servers.test({ id: "server-1" });
+
+      expect(tested.health.status).toBe("error");
+    });
+  });
+
+  describe("automatic probe", () => {
+    it("shows a new stdio server as installing and probes it in the background", async () => {
+      const { client, probe, row } = harness({ row: null });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      expect(created.health.status).toBe("installing");
+      await flush();
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(row()?.healthStatus).toBe("ok");
+    });
+
+    it("probes a new remote server without claiming it is installing", async () => {
+      const { client, probe } = harness({ row: null });
+
+      const created = await client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "docs",
+        name: "Docs",
+        endpoint: "https://mcp.example.test/mcp",
+      });
+      await flush();
+
+      expect(created.health.status).toBe("unknown");
+      expect(probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fail the create when the probe fails", async () => {
+      const { client, row } = harness({
+        row: null,
+        probe: async () => {
+          throw new Error("boom");
+        },
+      });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      await flush();
+
+      expect(created.id).toBe("server-1");
+      expect(row()).toMatchObject({
+        healthStatus: "error",
+        healthMessage: "Could not check this MCP server",
+      });
+    });
+
+    it("does not probe a server whose OAuth account is not connected", async () => {
+      const { client, probe, row } = harness({
+        row: null,
+        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+      });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      await flush();
+
+      expect(probe).not.toHaveBeenCalled();
+      expect(created.health.status).toBe("unknown");
+      expect(row()?.healthMessage).toMatch(/account/);
+    });
+
+    it("does not probe a disabled server", async () => {
+      const { client, probe } = harness({ row: null });
+
+      await client.mcp.servers.create({ ...stdioInput, enabled: false });
+      await flush();
+
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("resets health when the config changes and probes the new config", async () => {
+      const { client, probe, row } = harness({
+        row: baseRow({ healthStatus: "error", healthMessage: "old failure", healthToolCount: 2 }),
+      });
+      const seen: unknown[] = [];
+      probe.mockImplementation(async () => {
+        seen.push({ ...row() });
+        return { status: "ok" };
+      });
+
+      const updated = await client.mcp.servers.update({
+        id: "server-1",
+        config: { ...stdioInput, name: "Gmail 2", args: ["-y", "@klodr/gmail-mcp@2.1.0"] },
+      });
+      await flush();
+
+      expect(updated.revision).toBe(2);
+      expect(updated.health.status).toBe("installing");
+      expect(updated.health.message).toBeNull();
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(seen[0]).toMatchObject({ healthStatus: "installing", healthMessage: null });
+    });
+
+    it("does not probe when no MCP connector is wired", async () => {
+      const h = harness({ row: null });
+
+      const created = await h.createRouterWithoutProbe().mcp.servers.create(stdioInput);
+
+      expect(created.health.status).toBe("unknown");
+      expect(h.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("probes the server once its OAuth session completes", async () => {
+      const h = harness({ row: baseRow() });
+      const complete = vi.fn(async () => undefined);
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete,
+        },
+      });
+      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
+      };
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await client.mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(h.probe).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -1634,7 +2011,7 @@ describe("private API connectors", () => {
   };
 
   it.each([
-    ["the deployment owner", true, false],
+    ["a legacy owner under the instance flag", true, true],
     ["every user under the instance flag", false, true],
   ])("lets %s install a loopback API connector", async (_label, owner, flag) => {
     const { create, handler } = privateDeps(flag);
@@ -1906,14 +2283,13 @@ describe("connections.complete", () => {
         const tx = {
           $executeRaw: vi.fn().mockResolvedValue(undefined),
           connection: {
-            findFirst: vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(null),
-            findMany: vi.fn().mockResolvedValue([]),
-            update: vi
+            findFirst: vi
               .fn()
-              .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-                ...row,
-                ...data,
-              })),
+              .mockResolvedValueOnce(row)
+              .mockResolvedValueOnce(null)
+              .mockResolvedValueOnce({ ...row, status: "connected" }),
+            findMany: vi.fn().mockResolvedValue([]),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           },
         };
         return fn(tx);
@@ -1963,6 +2339,218 @@ describe("connections.complete", () => {
     );
     expect(connectionReady).toHaveBeenCalled();
   });
+
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  function pollFixture(status: string) {
+    const row = {
+      id: "conn-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      connectorId: "composio",
+      provider: "gmail",
+      displayName: "Gmail",
+      providerRef: "gmail",
+      status,
+      createdAt: new Date("2026-08-26T00:00:00.000Z"),
+    };
+    const connection = {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === row.id ? { ...row } : null,
+      ),
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(
+        async ({ where, data }: { where: { status?: string }; data: Partial<typeof row> }) => {
+          if (where.status && where.status !== row.status) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      ),
+    };
+    const client = { connection, $executeRaw: vi.fn(async () => undefined) };
+    const prisma = {
+      ...client,
+      $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
+    } as unknown as PrismaClient;
+    const connector = {
+      complete: vi.fn(),
+      revoke: vi.fn(),
+      connectionReady: vi.fn(async () => true),
+    };
+    const handler = new RPCHandler(
+      createRouter({
+        prisma,
+        connectors: { managed: () => connector },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps),
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    async function complete(connectionId = row.id, signal?: AbortSignal) {
+      const { response } = await handler.handle(
+        new Request("http://127.0.0.1/rpc/connections/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { connectionId } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "workspace-1",
+              userId: "user-1",
+              email: "user@rakazo.test",
+              isDeploymentOwner: true,
+            },
+            signal,
+          },
+        },
+      );
+      return { status: response.status, body: await response.json() };
+    }
+    const securityEvents = () => sink.events.filter((event) => event.message === "security.event");
+    return { complete, connector, securityEvents, row };
+  }
+
+  it("records nothing but keeps the account id when the catalog connected the row first", async () => {
+    const { complete, connector, securityEvents, row } = pollFixture("pending");
+    // The catalog flips the row while complete is checking with the provider.
+    connector.connectionReady.mockImplementation(async () => {
+      row.status = "connected";
+      return true;
+    });
+    Object.assign(connector, { connectedAccountId: vi.fn(async () => "account-1") });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+    expect(row.providerRef).toBe("account-1");
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("reports a superseded connection as revoked instead of failing", async () => {
+    const { complete, connector, securityEvents } = pollFixture("revoked");
+
+    await expect(complete()).resolves.toMatchObject({
+      status: 200,
+      body: { json: { id: "conn-1", status: "revoked" } },
+    });
+    expect(connector.connectionReady).not.toHaveBeenCalled();
+    expect(securityEvents()).toEqual([]);
+  });
+
+  it("finishes removing a superseded remote after the poll that triggered it is aborted", async () => {
+    const { complete, connector, row } = pollFixture("revoked");
+    row.providerRef = "request-1";
+    const poll = new AbortController();
+    poll.abort();
+
+    await expect(complete(row.id, poll.signal)).resolves.toMatchObject({
+      body: { json: { status: "revoked" } },
+    });
+    expect(connector.revoke).toHaveBeenCalledWith(
+      "request-1",
+      expect.objectContaining({ signal: expect.objectContaining({ aborted: false }) }),
+    );
+  });
+
+  it("records one credential event per connection, not per poll", async () => {
+    const { complete, securityEvents } = pollFixture("pending");
+
+    for (let poll = 0; poll < 3; poll += 1) {
+      await expect(complete()).resolves.toMatchObject({
+        status: 200,
+        body: { json: { status: "connected" } },
+      });
+    }
+    expect(securityEvents()).toHaveLength(1);
+    expect(securityEvents()[0]).toMatchObject({
+      "security.event.type": "credential.created",
+      "security.event.metadata": {
+        procedure: "connections.complete",
+        kind: "connection",
+        connectionId: "conn-1",
+      },
+    });
+  });
+
+  it("records the credential once when the catalog finds the app connected", async () => {
+    const row = { id: "conn-1", provider: "gmail", displayName: "Gmail", status: "pending" };
+    const connection = {
+      findMany: vi.fn(async () => [{ ...row }]),
+      updateMany: vi.fn(async ({ where }: { where: { id?: string; status: string } }) => {
+        if (where.id !== row.id || row.status !== where.status) return { count: 0 };
+        row.status = "connected";
+        return { count: 1 };
+      }),
+    };
+    const prisma = {
+      connection,
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({ connection })),
+    } as unknown as PrismaClient;
+    const provider = {
+      describe: () => ({ id: "composio" }),
+      catalog: vi.fn(async () => [
+        {
+          connectorId: "composio",
+          slug: "gmail",
+          name: "Gmail",
+          logo: null,
+          connected: true,
+          noAuth: false,
+        },
+      ]),
+    };
+    const client = createRouterClient(
+      createRouter({
+        prisma,
+        connectors: { managed: () => provider },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps),
+      {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "user-1",
+            email: "user@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      },
+    );
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+
+    await client.connections.catalog({ connectorId: "composio" });
+    await client.connections.catalog({ connectorId: "composio" });
+
+    const events = sink.events.filter((event) => event.message === "security.event");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      "security.event.type": "credential.created",
+      "security.event.metadata": { procedure: "connections.catalog", connectionId: "conn-1" },
+    });
+  });
+
+  it("records nothing while the connection is still pending", async () => {
+    const { complete, connector, securityEvents } = pollFixture("pending");
+    connector.connectionReady.mockResolvedValue(false);
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    expect(securityEvents()).toEqual([]);
+  });
 });
 
 describe("updater owner gate", () => {
@@ -1987,8 +2575,6 @@ describe("updater owner gate", () => {
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
         gitSha: "deadbeef",
-        updaterUrl: undefined,
-        updaterToken: undefined,
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -2016,7 +2602,7 @@ describe("updater owner gate", () => {
     expect(response.status).toBe(403);
   });
 
-  it("lets the deployment owner read status without applying git", async () => {
+  it("denies a legacy owner server update status", async () => {
     const { handler } = updaterDeps();
     const actor = {
       spaceId: "workspace-1",
@@ -2034,11 +2620,7 @@ describe("updater owner gate", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.json.supported).toBe(false);
-    expect(["source", "compose"]).toContain(body.json.installKind);
-    expect(Array.isArray(body.json.manualCommands)).toBe(true);
+    expect(response.status).toBe(403);
   });
 
   it("refuses apply when the sidecar is not configured", async () => {
@@ -2059,11 +2641,7 @@ describe("updater owner gate", () => {
       { prefix: "/rpc", context: { actor } },
     );
 
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    const body = await response.json();
-    const message = JSON.stringify(body);
-    expect(message).toMatch(/sidecar/i);
-    expect(message).not.toMatch(/git (fetch|merge|pull)/i);
+    expect(response.status).toBe(403);
   });
 });
 
@@ -2474,10 +3052,10 @@ describe("computer terminal and file transfer", () => {
 describe("integration setup authorization", () => {
   it.each([
     { owner: false, configured: false, needsSetup: false },
-    { owner: true, configured: false, needsSetup: true },
+    { owner: true, configured: false, needsSetup: false },
     { owner: true, configured: true, needsSetup: false },
   ])(
-    "offers server setup only to an owner without configured providers: %j",
+    "never offers server setup to an app account: %j",
     async ({ owner, configured, needsSetup }) => {
       const lookup = vi.fn(async () => configured);
       const deps = {
@@ -2505,11 +3083,9 @@ describe("integration setup authorization", () => {
         },
       );
       const result = (await response.json()).json;
-      expect(result).toMatchObject({ canConfigure: owner, needsSetup });
-      if (!owner) {
-        expect(result.providers).toEqual([]);
-        expect(lookup).not.toHaveBeenCalled();
-      }
+      expect(result).toMatchObject({ canConfigure: false, needsSetup });
+      expect(result.providers).toEqual([]);
+      expect(lookup).not.toHaveBeenCalled();
     },
   );
 
@@ -2544,81 +3120,42 @@ describe("integration setup authorization", () => {
   });
 });
 
-describe("interrupted computer reservation release", () => {
-  function fixture() {
-    const order: string[] = [];
-    const computerUpdate = {
-      findFirst: vi.fn(async () => ({ id: "update-1", computerId: "computer-1" })),
-      updateMany: vi.fn(async () => {
-        order.push("operation");
-        return { count: 1 };
-      }),
-    };
-    const computer = {
-      updateMany: vi.fn(async () => {
-        order.push("computer");
-        return { count: 1 };
-      }),
-    };
-    const prisma = { computer, computerUpdate, $transaction: vi.fn(async (fn) => fn(prisma)) };
-    const handler = new RPCHandler(
-      createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
-    );
-    const call = async (owner: boolean, workersStopped?: boolean) =>
-      handler.handle(
-        new Request("http://127.0.0.1/rpc/computer/releaseInterrupted", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ json: { id: "update-1", workersStopped } }),
-        }),
+describe("server operation authorization", () => {
+  it.each([false, true])(
+    "rejects server administration even with legacy owner flag %s",
+    async (isDeploymentOwner) => {
+      const prisma = { deploymentSettings: { update: vi.fn() }, $transaction: vi.fn() };
+      const client = createRouterClient(
+        createRouter({
+          prisma,
+          env: { webOrigin: "https://example.test" },
+        } as unknown as RouterDeps),
         {
-          prefix: "/rpc",
           context: {
             actor: {
-              spaceId: "space-1",
-              userId: "user-1",
-              email: "user@rakazo.test",
-              isDeploymentOwner: owner,
+              userId: "user",
+              spaceId: "space",
+              email: "user@example.test",
+              isDeploymentOwner,
             },
-          },
+          } as never,
         },
       );
-    return { prisma, computer, computerUpdate, order, call };
-  }
-  it.each([
-    { owner: false, stopped: true, status: 403 },
-    { owner: true, stopped: false, status: 400 },
-    { owner: true, stopped: undefined, status: 400 },
-  ])(
-    "requires owner authorization and an explicit stopped-workers assertion: %j",
-    async ({ owner, stopped, status }) => {
-      const { call, prisma } = fixture();
-      const { response } = await call(owner, stopped);
-      expect(response.status).toBe(status);
+      for (const call of [
+        () => client.deployment.get(),
+        () => client.deployment.update({ signupsEnabled: true }),
+        () => client.security.events({}),
+        () => client.updater.status(),
+        () => client.updater.check({}),
+        () => client.updater.apply({}),
+        () => client.computer.releaseInterrupted({ id: "update-1", workersStopped: true }),
+        () => client.integrationSetup.save({ provider: "composio", apiKey: "fake-key" }),
+      ])
+        await expect(call()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(prisma.deploymentSettings.update).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     },
   );
-  it("atomically releases only an interrupted reservation in the owner's workspace", async () => {
-    const { call, computer, computerUpdate, order } = fixture();
-    const { response } = await call(true, true);
-    expect(response.status).toBe(200);
-    expect(computerUpdate.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: "update-1",
-        status: "interrupted",
-        computer: { spaceId: "space-1", bots: { some: { userId: "user-1", archivedAt: null } } },
-      },
-    });
-    expect(computerUpdate.updateMany).toHaveBeenCalledWith({
-      where: { id: "update-1", status: "interrupted" },
-      data: { status: "failed" },
-    });
-    expect(computer.updateMany).toHaveBeenCalledWith({
-      where: { id: "computer-1", maintenanceId: "update-1" },
-      data: { maintenanceId: null, state: "error" },
-    });
-    expect(order).toEqual(["operation", "computer"]);
-  });
 });
 
 describe("OpenAI-compatible model probes", () => {
@@ -2684,7 +3221,10 @@ describe("OpenAI-compatible model probes", () => {
         secret: { findMany: findSecret },
       },
       secrets: { load },
-      env: { sandboxProvider: "fake", mcpAllowPrivateEndpoint: options.mcpAllowPrivateEndpoint },
+      env: {
+        sandboxProvider: "fake",
+        mcpAllowPrivateEndpoint: options.mcpAllowPrivateEndpoint ?? true,
+      },
     } as unknown as RouterDeps;
     const client = createRouterClient(createRouter(deps), {
       context: { actor: options.actor ?? actor } as never,
@@ -2883,7 +3423,10 @@ describe("OpenAI-compatible model probes", () => {
   );
 
   it("refuses a private endpoint probe from a user who is not the deployment owner", async () => {
-    const { client, fetch } = fixture({ actor: { ...actor, isDeploymentOwner: false } });
+    const { client, fetch } = fixture({
+      actor: { ...actor, isDeploymentOwner: true },
+      mcpAllowPrivateEndpoint: false,
+    });
     await expect(
       client.models.probeOpenAiCompatible({ baseUrl, apiKey: "fake-typed-key" }),
     ).rejects.toThrow(adapters.PRIVATE_MODEL_ENDPOINT_MESSAGE);
@@ -3013,7 +3556,7 @@ describe("model credential persistence", () => {
   });
 
   it.each([
-    { isDeploymentOwner: true, mcpAllowPrivateEndpoint: false },
+    { isDeploymentOwner: true, mcpAllowPrivateEndpoint: true },
     { isDeploymentOwner: false, mcpAllowPrivateEndpoint: true },
   ])("lets a private model endpoint through for %j", async (who) => {
     const { deps, handler } = persistDeps();
@@ -3148,6 +3691,76 @@ describe("model credential persistence", () => {
         update: expect.objectContaining({ modelId: null }),
       }),
     );
+  });
+
+  it.each([401, 403, 503])(
+    "rejects an unverified OpenRouter replacement (%i) without changing the saved connection",
+    async (status) => {
+      const { upsert, deps, handler } = persistDeps();
+      const saved = {
+        id: "credential-fixture",
+        userId: actor.userId,
+        provider: "openrouter",
+        secretId: "secret-fixture",
+      };
+      vi.mocked(deps.prisma.userModelCredential.findFirst).mockResolvedValue(saved as never);
+      Object.assign(deps.prisma, {
+        secret: { findFirst: vi.fn().mockResolvedValue({ ciphertext: "fixture-ciphertext" }) },
+      });
+      Object.assign(deps.secrets, { load: vi.fn().mockResolvedValue("fixture-previous-key") });
+      const fetchImpl = vi.fn<typeof fetch>(
+        async () => new Response("private upstream details", { status }),
+      );
+      vi.stubGlobal("fetch", fetchImpl);
+      try {
+        const response = await call(handler, "models/connect", {
+          provider: "openrouter",
+          apiKey: "fixture-replacement-key",
+        });
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+          json: {
+            code: "BAD_REQUEST",
+            message:
+              status === 503
+                ? "Could not verify the API key. Try again."
+                : "API key was rejected by the provider.",
+          },
+        });
+        expect(fetchImpl).toHaveBeenCalledOnce();
+        expect(deps.secrets.put).not.toHaveBeenCalled();
+        expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+        expect(upsert).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("saves an OpenRouter key only after its authentication check succeeds", async () => {
+    const { deps, handler } = persistDeps();
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({ data: {} }));
+    vi.stubGlobal("fetch", fetchImpl);
+    try {
+      const response = await call(handler, "models/connect", {
+        provider: "openrouter",
+        apiKey: "fixture-key",
+      });
+      expect(response.status).toBe(200);
+      expect(fetchImpl).toHaveBeenCalledWith(
+        "https://openrouter.ai/api/v1/key",
+        expect.objectContaining({ headers: { Authorization: "Bearer fixture-key" } }),
+      );
+      expect(deps.secrets.put).toHaveBeenCalledWith(
+        "fixture-key",
+        expect.objectContaining({ userId: actor.userId }),
+      );
+      expect(fetchImpl.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(deps.secrets.put).mock.invocationCallOrder[0]!,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("rejects an API key for ChatGPT-subscription Codex before persisting", async () => {
@@ -3690,7 +4303,7 @@ describe("codex live catalog", () => {
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
       },
-      codexCatalog: new CodexCatalogCache({ fetch: fetchImpl }),
+      codexCatalog: new CodexCatalogCache({ enabled: true, fetch: fetchImpl }),
       refreshExpiredModelCredential,
     } as unknown as RouterDeps;
 
@@ -4345,6 +4958,7 @@ describe("bot model auth on save", () => {
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = {
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async () => [{ ...bot, name: "Ada renamed" }]),
@@ -4622,6 +5236,118 @@ describe("group restore with archived bots", () => {
 
 afterEach(() => {
   delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
+});
+
+describe("routine live Codex model validation", () => {
+  it.each(["create", "update"] as const)(
+    "saves a listed live-only model on %s and rejects an unlisted id",
+    async (operation) => {
+      const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+      const modelId = "gpt-6-luna-latest";
+      const stamp = new Date("2026-01-01T00:00:00Z");
+      const row = {
+        id: "routine-1",
+        botId: "bot-1",
+        name: "Check",
+        prompt: "Check changes",
+        crons: ["0 9 * * *"],
+        timezone: "UTC",
+        active: false,
+        notify: false,
+        webhookEnabled: false,
+        githubEnabled: false,
+        messageProvider: null,
+        modelProvider: null,
+        modelId: null,
+        thinkingLevel: null,
+        lastRunAt: null,
+        nextRunAt: null,
+        createdAt: stamp,
+      };
+      const save = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...row,
+        ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+      }));
+      const read = vi.fn(async () => [
+        {
+          slug: modelId,
+          reasoningEfforts: [],
+          supportsImages: true,
+          supportsFastTier: false,
+        },
+      ]);
+      const client = createRouterClient(
+        createRouter({
+          prisma: {
+            bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
+            routine: { findFirst: vi.fn(async () => row), create: save, update: save },
+            spaceModelPreference: { findMany: vi.fn(async () => []) },
+            userModelCredential: {
+              findMany: vi.fn(async () => [
+                {
+                  id: "credential-1",
+                  provider: "openai-codex",
+                  secretId: "secret-1",
+                  updatedAt: stamp,
+                  createdAt: stamp,
+                },
+              ]),
+            },
+            secret: {
+              findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "fake-cipher" })),
+            },
+          },
+          secrets: {
+            load: vi.fn(async () =>
+              JSON.stringify({
+                type: "oauth",
+                access: "fake-access",
+                refresh: "fake-refresh",
+                expires: Date.now() + 60_000,
+                accountId: "acct-test",
+              }),
+            ),
+          },
+          jobs: { cancel: vi.fn(async () => undefined) },
+          codexCatalog: { read },
+          env: { sandboxProvider: "fake" },
+        } as unknown as RouterDeps),
+        { context: { actor } as never },
+      );
+      const call = (id: string) =>
+        operation === "create"
+          ? client.routines.create({
+              botId: "bot-1",
+              name: "Check",
+              prompt: "Check changes",
+              crons: ["0 9 * * *"],
+              active: false,
+              modelProvider: "openai-codex",
+              modelId: id,
+            })
+          : client.routines.update({
+              routineId: "routine-1",
+              modelProvider: "openai-codex",
+              modelId: id,
+            });
+
+      await expect(call(modelId)).resolves.toMatchObject({
+        modelProvider: "openai-codex",
+        modelId,
+      });
+      expect(read).toHaveBeenCalledWith(
+        actor.userId,
+        expect.objectContaining({ accountId: "acct-test" }),
+        undefined,
+      );
+      expect(save).toHaveBeenCalledOnce();
+      await expect(call("gpt-6-luna-unlisted")).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Unknown model for that provider",
+      });
+      expect(save).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("routines.update", () => {
@@ -5041,6 +5767,7 @@ describe("openai-compatible enabled models", () => {
     const bot = botRow(options.botModelId ?? options.defaultModel);
     const prisma = {
       ...pins,
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
@@ -5120,6 +5847,7 @@ describe("openai-compatible enabled models", () => {
           screenProxySecret: "fake-test-secret",
           sandboxProvider: "fake",
           agentRuntime: "pi",
+          mcpAllowPrivateEndpoint: true,
         },
       } as unknown as RouterDeps),
     );
@@ -5947,6 +6675,7 @@ describe("groups.archive", () => {
     const groupUpdate = vi.fn();
     // As in production: the run's computer is known only through its execution lease.
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       chatGroup: {
         findFirst: vi.fn().mockResolvedValue({
@@ -6151,6 +6880,51 @@ describe("boards.rename", () => {
       where: { id: "board-1" },
       data: { name: "Launch" },
     });
+  });
+});
+
+describe("boards.tickets.list", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function listDeps() {
+    const findMany = vi.fn(async () => []);
+    const prisma = {
+      board: {
+        findUnique: vi.fn(async () => ({
+          id: "board-1",
+          spaceId: "workspace-1",
+          name: "Personal",
+          ticketPrefix: "RAK",
+          nextNumber: 2,
+          createdAt: new Date("2026-06-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+        })),
+      },
+      ticket: { findMany },
+    } as unknown as PrismaClient;
+    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
+    return { findMany, handler: new RPCHandler(createRouter(deps)) };
+  }
+
+  it("searches ticket text for the characters the user typed, not SQL wildcards", async () => {
+    const { findMany, handler } = listDeps();
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/tickets/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { q: "50%_off" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    expect(response?.status).toBe(200);
+    const where = findMany.mock.calls[0]?.[0]?.where;
+    expect(where?.OR?.[0]?.title?.contains).toBe("50\\%\\_off");
+    expect(where?.OR?.[1]?.description?.contains).toBe("50\\%\\_off");
   });
 });
 
@@ -6495,4 +7269,78 @@ describe("routine watch creation boundaries", () => {
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+});
+
+describe("API-key live model catalog", () => {
+  it.each([false, true])(
+    "merges a fake provider probe and keeps saved selections (failure=%s)",
+    async (fails) => {
+      const bundled = listPiCatalog().filter((entry) => entry.provider === "openai");
+      const retired = bundled[0]!.id;
+      const saved = bundled[1]!.id;
+      const liveOnly = "gpt-future-live-chat";
+      const probe = vi.fn(async () => {
+        if (fails) throw new Error("fake provider failure");
+        return [...bundled.slice(2).map((entry) => entry.id), liveOnly, "text-embedding-future"];
+      });
+      const credential = {
+        id: "credential-test",
+        provider: "openai",
+        secretId: "secret-test",
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      };
+      const prisma = {
+        userModelCredential: { findMany: vi.fn(async () => [credential]) },
+        spaceModelPreference: { findMany: vi.fn(async () => []) },
+        secret: {
+          findMany: vi.fn(async () => [{ id: "secret-test", ciphertext: "fake-ciphertext" }]),
+        },
+        bot: { findMany: vi.fn(async () => [{ modelProvider: "openai", modelId: saved }]) },
+        routine: { findMany: vi.fn(async () => []) },
+        spaceBackupModel: { findMany: vi.fn(async () => []) },
+        deploymentSettings: { findFirst: vi.fn(async () => null) },
+      };
+      const load = vi.fn(async () => "fake-api-key");
+      const deps = {
+        prisma,
+        secrets: { load },
+        providerCatalog: new adapters.ProviderCatalogCache({ enabled: true, probe }),
+        env: { agentRuntime: "pi", defaultProvider: "fake", defaultModel: "fake" },
+      } as unknown as RouterDeps;
+      const actor = {
+        userId: "user-test",
+        spaceId: "space-test",
+        email: "user@example.test",
+        isDeploymentOwner: false,
+      } satisfies Actor;
+      const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+      const entries = await client.models.list();
+      const openai = entries.filter((entry) => entry.provider === "openai");
+      expect(openai.some((entry) => entry.id === retired)).toBe(fails);
+      expect(openai.some((entry) => entry.id === saved)).toBe(true);
+      expect(openai.some((entry) => entry.id === liveOnly)).toBe(!fails);
+      expect(openai.some((entry) => entry.id === "text-embedding-future")).toBe(false);
+      if (!fails)
+        expect(openai.at(-1)).toMatchObject({
+          provider: "openai",
+          providerName: "OpenAI",
+          id: liveOnly,
+          label: liveOnly,
+          auth: "api-key",
+        });
+      await client.models.list();
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe).toHaveBeenCalledWith(
+        { provider: "openai", apiKey: "fake-api-key" },
+        undefined,
+        expect.any(AbortSignal),
+      );
+      expect(prisma.secret.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: actor.userId, spaceId: null }),
+        }),
+      );
+    },
+  );
 });

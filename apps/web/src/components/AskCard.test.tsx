@@ -17,6 +17,7 @@ vi.mock("@rakazo/chat-ui/web", () => ({
 }));
 vi.mock("../lib/rpc", () => ({ rpc: {} }));
 
+import { ChoiceCard } from "../pages/shell/message-cards";
 import type { AskBlock } from "./AskCard";
 import { AskCard } from "./AskCard";
 
@@ -221,6 +222,46 @@ it("keeps an accepted question choice answered until the block updates", async (
   await render({ ...block, status: "answered", answer: "london" });
   expect(container.textContent).toContain("Answered: London");
   expect(container.textContent).not.toContain("Answered: Paris");
+});
+
+it("gives question options a fill and border", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [{ id: "paris", label: "Paris" }],
+  });
+  const option = button("Paris")!;
+  expect(option.disabled).toBe(false);
+  expect(option.classList.contains("bg-secondary")).toBe(true);
+  expect(option.classList.contains("border-input")).toBe(true);
+});
+
+it("gives onboarding choices borderless rows and distinct interaction states", async () => {
+  await act(async () =>
+    root.render(
+      <ChoiceCard
+        botId="bot"
+        block={{
+          kind: "choice",
+          question: "Which city?",
+          options: [{ id: "paris", letter: "A", label: "Paris" }],
+        }}
+        onBotChanged={async () => {}}
+      />,
+    ),
+  );
+  const option = [...container.querySelectorAll("button")].find((item) =>
+    item.textContent?.includes("Paris"),
+  )!;
+  expect(option.disabled).toBe(false);
+  expect(option.classList.contains("bg-background")).toBe(true);
+  expect(option.classList.contains("border")).toBe(false);
+  expect(option.classList.contains("border-input")).toBe(false);
+  expect(option.classList.contains("enabled:hover:bg-foreground/5")).toBe(true);
+  expect(option.classList.contains("enabled:active:bg-foreground/15")).toBe(true);
+  expect(option.classList.contains("focus-visible:ring-2")).toBe(true);
+  expect(option.querySelector("span")?.classList.contains("bg-card")).toBe(true);
 });
 
 it.each([

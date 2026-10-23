@@ -63,6 +63,15 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");
     expect(service).toContain("cancel(threadId.hashCode())");
+    for (const request of [
+      "        val avatarStyle = selectedAvatarStyle",
+      "        val active = runs(",
+      "        val recent = runs(",
+      "          val reply = runCatching {",
+    ]) {
+      expect(service).toContain(`if (generation != sessionGeneration.get()) return\n${request}`);
+    }
+    expect(service).toContain("runCatching { context.startService(intent) }");
     expect(module).toContain('AsyncFunction("setOpenThread")');
     expect(live).toContain("setOpenNotificationThread");
     expect(thread).toContain("if (!navigation.isFocused() || !notificationThreadId) return");
