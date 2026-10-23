@@ -332,10 +332,20 @@ test("an unsupported-image rejection keeps the draft for a compatible resend", a
   await expect(page.getByTestId("composer-error")).toHaveText(/This model cannot read images/);
   await expect(composer).toHaveValue("Read this picture");
   await expect(remove).toBeVisible();
+  const sendAsFile = page.getByRole("button", { name: "Send as file", exact: true });
+  const changeModel = page.getByRole("button", { name: "Change model", exact: true });
+  await expect(sendAsFile).toBeVisible();
+  await expect(changeModel).toBeVisible();
   await captureScreenshot(page, testInfo, "image-model-rejection-keeps-draft");
-  await expect(page.getByRole("button", { name: "Send as file", exact: true })).toBeVisible();
+  // In a bot thread the bot's own model is the one this send used.
+  await changeModel.click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("combobox", { name: "Model", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
+  await expect(settings).toBeHidden();
+  await expect(composer).toHaveValue("Read this picture");
   const resent = page.waitForRequest("**/rpc/threads/send");
-  await page.getByRole("button", { name: "Send as file", exact: true }).click();
+  await sendAsFile.click();
   const body = (await resent).postDataJSON();
   expect(body.json).toEqual({ ...(rejectedBody as { json: object }).json, imageHandling: "file" });
   expect(uploads).toBe(1);

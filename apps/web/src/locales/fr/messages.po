@@ -1052,6 +1052,10 @@ msgstr "Annulé"
 msgid "Card view"
 msgstr "Vue en cartes"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Changer de modèle"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Changer le mot de passe"

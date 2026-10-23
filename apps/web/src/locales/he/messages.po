@@ -1052,6 +1052,10 @@ msgstr "בוטל"
 msgid "Card view"
 msgstr "תצוגת כרטיסים"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "החלפת מודל"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "שינוי סיסמה"

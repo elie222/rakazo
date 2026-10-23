@@ -455,6 +455,7 @@ export const Composer = memo(function Composer({
       </div>
       <ComposerError
         sendError={sendError}
+        imageConfirmation={imageConfirmation}
         onSendAsFile={imageConfirmation && !sending ? () => void send("file") : undefined}
         runError={runError}
         runErrorId={runErrorId}

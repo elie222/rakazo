@@ -660,3 +660,31 @@ it("invalidates confirmation on user text, attachment removal and replacement on
   expect(textarea.value).toBe("edited");
   expect(onDraftEdited).not.toHaveBeenCalled();
 });
+
+it("shows an image confirmation as a warning with file and model actions", () => {
+  const onOpenModels = vi.fn();
+  renderComposer(async () => false, {
+    sendError: "This model cannot read images. Choose a model that supports images.",
+    imageConfirmation: true,
+    onOpenModels,
+  });
+  const error = container!.querySelector('[data-testid="composer-error"]')!;
+  expect(error.className).toContain("text-warning");
+  expect(error.className).not.toContain("text-destructive");
+  const buttons = Array.from(error.querySelectorAll("button"));
+  expect(buttons.map((button) => button.textContent)).toEqual(
+    expect.arrayContaining(["Send as file", "Change model"]),
+  );
+  act(() => buttons.find((button) => button.textContent === "Change model")!.click());
+  expect(onOpenModels).toHaveBeenCalledOnce();
+  expect(container!.querySelector('[aria-label="Dismiss error"]')).not.toBeNull();
+
+  rerenderComposer({ sendError: "Could not send the message.", imageConfirmation: false });
+  expect(error.className).toContain("text-destructive");
+  expect(error.className).not.toContain("text-warning");
+  expect(
+    Array.from(error.querySelectorAll("button")).some(
+      (button) => button.textContent === "Change model",
+    ),
+  ).toBe(false);
+});

@@ -1052,6 +1052,10 @@ msgstr "Geannuleerd"
 msgid "Card view"
 msgstr "Kaartweergave"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Model wijzigen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
