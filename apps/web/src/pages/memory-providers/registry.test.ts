@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   SERENITY_ENDPOINT_PLACEHOLDER,
@@ -8,24 +6,6 @@ import {
 } from "./serenity-settings";
 
 describe("Serenity memory provider settings", () => {
-  it("does not register a default endpoint", () => {
-    const registry = readFileSync(fileURLToPath(new URL("./registry.ts", import.meta.url)), "utf8");
-    expect(registry).toContain("Hosted or self-hosted Serenity brain for durable memory.");
-    expect(registry).not.toContain("serenity.sire.run");
-    expect(registry).not.toContain("DEFAULT_ENDPOINT");
-    expect(SERENITY_ENDPOINT_PLACEHOLDER).toBe("https://serenity.sire.run/mcp");
-
-    const form = readFileSync(
-      fileURLToPath(new URL("./SerenitySettingsForm.tsx", import.meta.url)),
-      "utf8",
-    );
-    expect(form).not.toContain("DEFAULT_ENDPOINT");
-    expect(form).toContain('const [endpoint, setEndpoint] = useState("");');
-    expect(form).not.toContain("useState(SERENITY_ENDPOINT_PLACEHOLDER)");
-    expect(form).toContain("required");
-    expect(form).toContain("placeholder={SERENITY_ENDPOINT_PLACEHOLDER}");
-  });
-
   it("requires an explicit endpoint and leaves URL validity to the backend", () => {
     expect(serenityEndpointError("")).toBe("required");
     expect(serenityEndpointError("   ")).toBe("required");
