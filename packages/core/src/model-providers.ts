@@ -49,12 +49,11 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openai",
   "openai-codex",
   "anthropic",
-  "google",
+  "openai",
   "openrouter",
-  "vercel-ai-gateway",
+  "google",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
@@ -70,24 +69,6 @@ export function popularModelProvidersFirst<T>(
     return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
   };
   return [...items].sort((a, b) => rank(a) - rank(b));
-}
-
-/** Keep provider selection short while ensuring a deployment's current default is never hidden. */
-export function featuredModelProviders(
-  providers: readonly ModelCatalogEntry[],
-  selectedProvider: string,
-): ModelCatalogEntry[] {
-  const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
-  const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(canonicalPiProviderId(selectedProvider));
-
-  if (
-    !selected ||
-    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  )
-    return featured;
-  return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
 }
 
 /**

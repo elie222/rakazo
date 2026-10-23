@@ -947,9 +947,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Continue with credits": "使用额度继续",
   "Add credits": "充值",
   "Manage billing": "管理账单",
-  "Your API key": "你的 API 密钥",
-  "Free. Pay your model provider directly.": "免费。模型费用直接付给提供商。",
-  "Use my API key": "使用我的 API 密钥",
+  "Your subscription or API key": "你的订阅或 API 密钥",
+  "Free. ChatGPT, Claude, or any model provider.": "免费。ChatGPT、Claude 或任意模型提供商。",
+  "Use my subscription or API key": "使用我的订阅或 API 密钥",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "每月额度在续费时到期。单次充值额度不会过期。",
   "Use Rakazo credits": "使用 Rakazo 额度",

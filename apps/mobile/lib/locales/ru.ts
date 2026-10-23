@@ -980,9 +980,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Continue with credits": "Продолжить с кредитами",
   "Add credits": "Пополнить кредиты",
   "Manage billing": "Управление оплатой",
-  "Your API key": "Ваш API-ключ",
-  "Free. Pay your model provider directly.": "Бесплатно. Оплачивайте модель напрямую провайдеру.",
-  "Use my API key": "Использовать свой API-ключ",
+  "Your subscription or API key": "Ваша подписка или API-ключ",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Бесплатно. ChatGPT, Claude или любой провайдер моделей.",
+  "Use my subscription or API key": "Использовать свою подписку или API-ключ",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Ежемесячные кредиты истекают при продлении. Разовые пополнения не сгорают.",
   "Use Rakazo credits": "Использовать кредиты Rakazo",

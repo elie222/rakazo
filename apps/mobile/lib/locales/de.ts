@@ -984,9 +984,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Continue with credits": "Mit Guthaben fortfahren",
   "Add credits": "Guthaben hinzufügen",
   "Manage billing": "Abrechnung verwalten",
-  "Your API key": "Dein API-Schlüssel",
-  "Free. Pay your model provider directly.": "Kostenlos. Bezahle deinen Modellanbieter direkt.",
-  "Use my API key": "Meinen API-Schlüssel verwenden",
+  "Your subscription or API key": "Dein Abo oder API-Schlüssel",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Kostenlos. ChatGPT, Claude oder ein beliebiger Modellanbieter.",
+  "Use my subscription or API key": "Mein Abo oder meinen API-Schlüssel verwenden",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Monatliches Guthaben verfällt bei Verlängerung. Einmalige Aufladungen verfallen nicht.",
   "Use Rakazo credits": "Rakazo-Guthaben verwenden",

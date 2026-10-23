@@ -667,6 +667,10 @@ msgstr "응답: {0}"
 msgid "Answered: {answer}"
 msgstr "응답: {answer}"
 
+#: src/pages/Onboarding.tsx
+msgid "Anthropic API"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr ""
@@ -1049,6 +1053,14 @@ msgstr "채팅 앱"
 msgid "Chat Settings"
 msgstr "채팅 설정"
 
+#: src/pages/Onboarding.tsx
+msgid "ChatGPT subscription"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "ChatGPT, Claude, or any model provider."
+msgstr ""
+
 #: src/lib/identity-display.ts
 msgid "Chats"
 msgstr "채팅"
@@ -1117,12 +1129,20 @@ msgstr "Bot 선택…"
 msgid "Choose a new password"
 msgstr "새 비밀번호 선택"
 
+#: src/pages/Onboarding.tsx
+msgid "Choose a provider"
+msgstr ""
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "파일 선택"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
+msgstr ""
+
+#: src/pages/Onboarding.tsx
+msgid "Claude subscription"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -1366,6 +1386,10 @@ msgstr "Executor 연결"
 #: src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "MCP 서버 ‘{name}’ 연결"
+
+#: src/components/ModelCredits.tsx
+msgid "Connect my own"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
@@ -2040,9 +2064,7 @@ msgstr "거절"
 msgid "Default"
 msgstr "기본값"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -3624,6 +3646,10 @@ msgstr "메뉴 열기"
 msgid "Open work"
 msgstr "진행 중인 작업"
 
+#: src/pages/Onboarding.tsx
+msgid "OpenAI API"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
@@ -3738,10 +3764,6 @@ msgstr "API 키를 붙여넣은 뒤 다시 테스트하세요."
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr "일시 중지됨"
-
-#: src/components/ModelCredits.tsx
-msgid "Pay your model provider directly."
-msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
@@ -4846,7 +4868,6 @@ msgstr ""
 
 #: src/components/call/CallCard.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
@@ -5192,7 +5213,7 @@ msgid "Use email code"
 msgstr "이메일 코드 사용"
 
 #: src/components/ModelCredits.tsx
-msgid "Use my API key"
+msgid "Use my subscription or API key"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -5402,10 +5423,6 @@ msgstr "직접 조작 중"
 msgid "Your Anthropic"
 msgstr "사용 중인 Anthropic"
 
-#: src/components/ModelCredits.tsx
-msgid "Your API key"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "이메일 주소"
@@ -5428,6 +5445,10 @@ msgstr "사용 중인 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "사용 중인 OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your subscription or API key"
+msgstr ""
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

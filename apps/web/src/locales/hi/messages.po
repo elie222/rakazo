@@ -667,6 +667,10 @@ msgstr "उत्तर दिया: {0}"
 msgid "Answered: {answer}"
 msgstr "उत्तर: {answer}"
 
+#: src/pages/Onboarding.tsx
+msgid "Anthropic API"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr ""
@@ -1049,6 +1053,14 @@ msgstr ""
 msgid "Chat Settings"
 msgstr "चैट सेटिंग्स"
 
+#: src/pages/Onboarding.tsx
+msgid "ChatGPT subscription"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "ChatGPT, Claude, or any model provider."
+msgstr ""
+
 #: src/lib/identity-display.ts
 msgid "Chats"
 msgstr "चैट"
@@ -1117,12 +1129,20 @@ msgstr ""
 msgid "Choose a new password"
 msgstr "नया पासवर्ड चुनें"
 
+#: src/pages/Onboarding.tsx
+msgid "Choose a provider"
+msgstr ""
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "फ़ाइल चुनें"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
+msgstr ""
+
+#: src/pages/Onboarding.tsx
+msgid "Claude subscription"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -1366,6 +1386,10 @@ msgstr "Executor कनेक्ट करें"
 #: src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "MCP सर्वर “{name}” कनेक्ट करें"
+
+#: src/components/ModelCredits.tsx
+msgid "Connect my own"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
@@ -2040,9 +2064,7 @@ msgstr "अस्वीकार करें"
 msgid "Default"
 msgstr "डिफ़ॉल्ट"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -3624,6 +3646,10 @@ msgstr "नेविगेशन खोलें"
 msgid "Open work"
 msgstr "खुला कार्य"
 
+#: src/pages/Onboarding.tsx
+msgid "OpenAI API"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
@@ -3737,10 +3763,6 @@ msgstr "अपनी API कुंजी पेस्ट करें, फिर
 
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
-msgstr ""
-
-#: src/components/ModelCredits.tsx
-msgid "Pay your model provider directly."
 msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
@@ -4846,7 +4868,6 @@ msgstr ""
 
 #: src/components/call/CallCard.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
@@ -5192,7 +5213,7 @@ msgid "Use email code"
 msgstr "ईमेल कोड का उपयोग करें"
 
 #: src/components/ModelCredits.tsx
-msgid "Use my API key"
+msgid "Use my subscription or API key"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -5402,10 +5423,6 @@ msgstr "नियंत्रण आपके पास है"
 msgid "Your Anthropic"
 msgstr "आपका Anthropic"
 
-#: src/components/ModelCredits.tsx
-msgid "Your API key"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "आपका ईमेल पता"
@@ -5428,6 +5445,10 @@ msgstr "आपका OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "आपका OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your subscription or API key"
+msgstr ""
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

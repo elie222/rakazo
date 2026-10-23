@@ -667,6 +667,10 @@ msgstr "Répondu : {0}"
 msgid "Answered: {answer}"
 msgstr "Répondu : {answer}"
 
+#: src/pages/Onboarding.tsx
+msgid "Anthropic API"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr ""
@@ -1049,6 +1053,14 @@ msgstr "Applications de discussion"
 msgid "Chat Settings"
 msgstr "Paramètres de discussion"
 
+#: src/pages/Onboarding.tsx
+msgid "ChatGPT subscription"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "ChatGPT, Claude, or any model provider."
+msgstr ""
+
 #: src/lib/identity-display.ts
 msgid "Chats"
 msgstr "Discussions"
@@ -1117,12 +1129,20 @@ msgstr "Choisissez un bot…"
 msgid "Choose a new password"
 msgstr "Choisissez un nouveau mot de passe"
 
+#: src/pages/Onboarding.tsx
+msgid "Choose a provider"
+msgstr ""
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Choisir un fichier"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
+msgstr ""
+
+#: src/pages/Onboarding.tsx
+msgid "Claude subscription"
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
@@ -1366,6 +1386,10 @@ msgstr "Connecter l'exécuteur"
 #: src/pages/shell/message-cards.tsx
 msgid "Connect MCP server “{name}”"
 msgstr "Connecter le serveur MCP « {name} »"
+
+#: src/components/ModelCredits.tsx
+msgid "Connect my own"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
@@ -2040,9 +2064,7 @@ msgstr "Refuser"
 msgid "Default"
 msgstr "Par défaut"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -3624,6 +3646,10 @@ msgstr "Ouvrir la navigation"
 msgid "Open work"
 msgstr "Travaux en cours"
 
+#: src/pages/Onboarding.tsx
+msgid "OpenAI API"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
@@ -3738,10 +3764,6 @@ msgstr "Collez votre clé API, puis testez à nouveau."
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr "En pause"
-
-#: src/components/ModelCredits.tsx
-msgid "Pay your model provider directly."
-msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
@@ -4846,7 +4868,6 @@ msgstr ""
 
 #: src/components/call/CallCard.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
@@ -5192,7 +5213,7 @@ msgid "Use email code"
 msgstr "Utiliser un code par e-mail"
 
 #: src/components/ModelCredits.tsx
-msgid "Use my API key"
+msgid "Use my subscription or API key"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -5402,10 +5423,6 @@ msgstr "Vous avez le contrôle"
 msgid "Your Anthropic"
 msgstr "Votre Anthropic"
 
-#: src/components/ModelCredits.tsx
-msgid "Your API key"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Votre adresse e-mail"
@@ -5428,6 +5445,10 @@ msgstr "Votre OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Votre OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your subscription or API key"
+msgstr ""
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
