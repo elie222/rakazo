@@ -47,7 +47,9 @@ import {
   BotSecretName,
   botSecretSubmissionSchema,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
   COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
+  cloudflareModelConfigMessage,
   disabledBuiltinToolSet,
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
@@ -3069,7 +3071,9 @@ export function isTerminalModelSetupError(error: unknown): boolean {
     error instanceof UnavailableModelForAuthError ||
     error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
-    (error instanceof Error && error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE)
+    (error instanceof Error &&
+      (error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE ||
+        error.message === cloudflareModelConfigMessage(CLOUDFLARE_WORKERS_AI_PROVIDER_ID)))
   );
 }
 

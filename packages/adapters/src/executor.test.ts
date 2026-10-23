@@ -1,6 +1,11 @@
 import { normalizeContext } from "@earendil-works/pi-ai";
 import type { MessageBlock } from "@rakazo/contracts";
-import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE, FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import {
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
+  cloudflareModelConfigMessage,
+  FLEET_TOOL_NAMES,
+} from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
@@ -3868,6 +3873,11 @@ description: Prepare standup notes
 describe("terminal model setup errors", () => {
   it("fails an unroutable Cloudflare credential instead of retrying setup", () => {
     expect(isTerminalModelSetupError(new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE))).toBe(true);
+    expect(
+      isTerminalModelSetupError(
+        new Error(cloudflareModelConfigMessage(CLOUDFLARE_WORKERS_AI_PROVIDER_ID)),
+      ),
+    ).toBe(true);
     expect(isTerminalModelSetupError(new UnavailableModelForAuthError())).toBe(true);
     expect(isTerminalModelSetupError(new RetiredModelCredentialError("signed out"))).toBe(true);
     expect(isTerminalModelSetupError(new Error("socket hang up"))).toBe(false);
