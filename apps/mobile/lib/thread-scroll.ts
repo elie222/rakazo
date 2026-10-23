@@ -64,7 +64,11 @@ export class ThreadScrollBehavior {
     this.contentReady = true;
     if (latestRowKey === null || latestRowKey === this.latestRowKey) return null;
     const initial = this.latestRowKey === null;
+    const removed = this.latestRowKey?.startsWith(`${latestRowKey}:`) ?? false;
     this.latestRowKey = latestRowKey;
+    // Discarding the last outbox send shrinks the list; nobody wrote a message,
+    // so it is not an arrival and must not mark the thread unread.
+    if (removed) return null;
     if (this.userScrolling) {
       this.pendingFollow = true;
       if (this.currentState.detached) this.currentState = { detached: true, unread: true };

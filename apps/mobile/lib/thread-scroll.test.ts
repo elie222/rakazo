@@ -46,6 +46,18 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.onContentChanged(false, latestThreadRowKey("m2", []))).toBe("smooth");
   });
 
+  it("does not count a discarded failed send as an arrival", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestThreadRowKey("m1", []));
+    behavior.onContentChanged(false, latestThreadRowKey("m1", ["send-1"]));
+    behavior.onUserScroll(500);
+
+    expect(behavior.onContentChanged(false, latestThreadRowKey("m1", []))).toBe(null);
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+  });
+
   it("keeps the latest message visible when the viewport resizes", () => {
     const behavior = new ThreadScrollBehavior();
     behavior.openThread("thread-1");
