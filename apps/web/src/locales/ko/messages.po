@@ -4909,6 +4909,10 @@ msgstr "테스트 실행"
 msgid "Testing…"
 msgstr "테스트 중…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "Bot은 파일을 사용할 수 있지만 이미지는 볼 수 없습니다."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."

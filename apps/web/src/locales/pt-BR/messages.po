@@ -4909,6 +4909,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Testando…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "O bot pode usar o arquivo, mas não verá a imagem."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "O tempo da conexão se esgotou."

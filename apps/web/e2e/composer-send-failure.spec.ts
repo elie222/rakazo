@@ -336,6 +336,11 @@ test("an unsupported-image rejection keeps the draft for a compatible resend", a
   const changeModel = page.getByRole("button", { name: "Change model", exact: true });
   await expect(sendAsFile).toBeVisible();
   await expect(changeModel).toBeVisible();
+  const fileNote = "The bot can use the file but won't see the picture.";
+  await expect(
+    page.getByTestId("composer-error").getByText(fileNote, { exact: true }),
+  ).toBeVisible();
+  await expect(sendAsFile).toHaveAccessibleDescription(fileNote);
   await captureScreenshot(page, testInfo, "image-model-rejection-keeps-draft");
   // In a bot thread the bot's own model is the one this send used.
   await changeModel.click();

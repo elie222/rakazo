@@ -675,6 +675,12 @@ it("shows an image confirmation as a warning with file and model actions", () =>
   expect(buttons.map((button) => button.textContent)).toEqual(
     expect.arrayContaining(["Send as file", "Change model"]),
   );
+  const note = Array.from(error.querySelectorAll("p")).find(
+    (element) => element.textContent === "The bot can use the file but won't see the picture.",
+  );
+  expect(note).toBeDefined();
+  const sendAsFile = buttons.find((button) => button.textContent === "Send as file")!;
+  expect(sendAsFile.getAttribute("aria-describedby")).toBe(note!.id);
   act(() => buttons.find((button) => button.textContent === "Change model")!.click());
   expect(onOpenModels).toHaveBeenCalledOnce();
   expect(container!.querySelector('[aria-label="Dismiss error"]')).not.toBeNull();
@@ -682,6 +688,7 @@ it("shows an image confirmation as a warning with file and model actions", () =>
   rerenderComposer({ sendError: "Could not send the message.", imageConfirmation: false });
   expect(error.className).toContain("text-destructive");
   expect(error.className).not.toContain("text-warning");
+  expect(error.textContent).not.toContain("The bot can use the file but won't see the picture.");
   expect(
     Array.from(error.querySelectorAll("button")).some(
       (button) => button.textContent === "Change model",

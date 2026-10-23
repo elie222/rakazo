@@ -224,6 +224,7 @@ describe("scoped mobile outbox", () => {
       request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
     ).toEqual(["First", "Second"]);
   });
+  const fileNote = "The bot can use the file but won't see the picture.";
   it("retains an image rejection as retryable and reuses its uploaded artifact", async () => {
     const attempt = feedback.sendAttempt(payload());
     request
@@ -278,14 +279,16 @@ describe("scoped mobile outbox", () => {
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Delete", "Cancel"]);
+        expect(options.message).toContain(fileNote);
         await act(async () => {
           choose(0);
         });
       } else {
-        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
-        expect(buttons.map(({ text }) => text)).toEqual(["Send as file", "Delete", "Cancel"]);
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toContain(fileNote);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Delete", "Cancel"]);
         await act(async () => {
-          buttons[0]!.onPress?.();
+          buttons![0]!.onPress?.();
         });
       }
       expect(attempt.imageHandling).toBe("file");
@@ -319,11 +322,15 @@ describe("scoped mobile outbox", () => {
           .mocked(ActionSheetIOS.showActionSheetWithOptions)
           .mock.calls.at(-1)!;
         expect(options.options).toEqual(["Send as file", "Try Again", "Cancel"]);
+        expect(options.message).toBe(
+          `Image input is not configured for this model.\n\n${fileNote}`,
+        );
         act(() => choose(1));
       } else {
-        const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
-        expect(buttons.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
-        act(() => buttons[1]!.onPress?.());
+        const [, message, buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+        expect(message).toBe(`Image input is not configured for this model.\n\n${fileNote}`);
+        expect(buttons!.map(({ text }) => text)).toEqual(["Send as file", "Try Again", "Cancel"]);
+        act(() => buttons![1]!.onPress?.());
       }
       expect(retry).toHaveBeenCalledOnce();
       expect(attempt.imageHandling).toBeUndefined();

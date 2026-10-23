@@ -4909,6 +4909,10 @@ msgstr "הרצת בדיקה"
 msgid "Testing…"
 msgstr "בודק…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "תם הזמן הקצוב לחיבור."

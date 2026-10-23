@@ -4,7 +4,7 @@ import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { FileIcon, X } from "lucide-react";
 import type { RefObject } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { translateRunError } from "../../lib/run-error";
 
 export function ComposerError({
@@ -31,6 +31,7 @@ export function ComposerError({
 }) {
   const { t } = useLingui();
   const runErrorRef = useRef<HTMLDivElement>(null);
+  const fileNoteId = useId();
   const presentedRunErrorIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!runError || !runErrorId) return;
@@ -92,13 +93,22 @@ export function ComposerError({
         )}
         {warning && onSendAsFile ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onSendAsFile}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-describedby={fileNoteId}
+              onClick={onSendAsFile}
+            >
               <FileIcon data-icon="inline-start" aria-hidden="true" />
               {t`Send as file`}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={onOpenModels}>
               {t`Change model`}
             </Button>
+            <p id={fileNoteId} className="basis-full text-xs text-muted-foreground">
+              {t`The bot can use the file but won't see the picture.`}
+            </p>
           </div>
         ) : null}
         {!sendError && runError ? (

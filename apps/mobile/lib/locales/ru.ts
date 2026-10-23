@@ -2,6 +2,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Not sent · Tap for options": "Не отправлено · Нажмите для выбора действий",
   "Image input is not configured for this model.": "Ввод изображений не настроен для этой модели.",
   "Send as file": "Отправить как файл",
+  "The bot can use the file but won't see the picture.":
+    "Бот сможет использовать файл, но не увидит изображение.",
   "This model cannot read images. Choose a model that supports images.":
     "Эта модель не может читать изображения. Выберите модель с поддержкой изображений.",
   "Ollama Cloud": "Ollama Cloud",
