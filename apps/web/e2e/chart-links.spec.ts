@@ -54,7 +54,7 @@ for (const width of [1280, 375]) {
       page,
     }, testInfo) => {
       await page.goto(fixture);
-      const card = page.getByTestId("chart-card");
+      const card = page.getByRole("button", { name: "Expand", exact: true }).locator("..");
       const plot = card.locator("svg").first();
       await expect(plot).toBeVisible();
       await expectCardWidth(card, 552);
