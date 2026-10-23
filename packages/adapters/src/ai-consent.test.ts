@@ -16,6 +16,15 @@ describe("mobile AI recipient disclosure", () => {
     }
     expect(fetch).not.toHaveBeenCalled();
   });
+  it("links Ollama Cloud to its privacy policy", () => {
+    expect(
+      aiRecipient({ provider: "ollama-cloud", use: "model", modelId: "gemma4:31b" }),
+    ).toMatchObject({
+      name: "Ollama Cloud",
+      detail: "gemma4:31b",
+      privacyUrl: "https://ollama.com/privacy",
+    });
+  });
   it("uses only the model ID for direct providers", () => {
     expect(
       aiRecipient({ provider: "openai", use: "model", modelId: "example-model" })?.detail,

@@ -949,3 +949,48 @@ test("chat settings search a long model list", async ({ page }, testInfo) => {
     modelId: target.id,
   });
 });
+
+test("connects Ollama Cloud with a verified key and lists its models", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const stamp = Date.now();
+  await signup(page, `ollama-cloud-${stamp}@rakazo.test`, "password12", "Ollama Cloud");
+  await completeOnboarding(page);
+
+  await openUserSettings(page, "models");
+  await page.getByPlaceholder("Search providers").fill("ollama");
+  await page.getByRole("button", { name: /^Ollama Cloud( |$)/ }).click();
+  const apiKey = page.getByLabel("API key");
+  await expect(apiKey).toBeVisible();
+  await captureScreenshot(page, testInfo, "ollama-cloud-1-provider");
+
+  // The public model list accepts any key, so the balance check has to refuse this one.
+  await apiKey.fill("rejected-fixture-key");
+  await page.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(
+    page.getByText("API key was rejected by the provider.", { exact: true }),
+  ).toBeVisible();
+  const rejected = await rpc<Array<{ provider: string }>>(page, "models/credentials", {});
+  expect(rejected.some((credential) => credential.provider === "ollama-cloud")).toBe(false);
+
+  await apiKey.fill("fake-ollama-cloud-key");
+  await page.getByRole("button", { name: "Test API key", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(/^Models list OK\. \d+ models available\./);
+  await captureScreenshot(page, testInfo, "ollama-cloud-2-models-listed");
+
+  await page.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
+  const connected = await rpc<Array<{ provider: string }>>(page, "models/credentials", {});
+  expect(connected.some((credential) => credential.provider === "ollama-cloud")).toBe(true);
+
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  await model.click();
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await search.fill("gemma");
+  const options = page.getByRole("listbox", { name: "Model options" }).getByRole("option");
+  await expect(options.first()).toContainText("Gemma 4 31B");
+  await captureScreenshot(page, testInfo, "ollama-cloud-3-model-dropdown");
+  await search.press("Enter");
+  await expect(model).toContainText("Gemma 4 31B");
+});

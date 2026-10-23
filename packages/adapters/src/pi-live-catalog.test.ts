@@ -3,6 +3,7 @@ import { CodexCatalogCache } from "./pi-codex-catalog.js";
 import { liveModelCatalogEnabled } from "./pi-live-cache.js";
 import {
   applyProviderLiveCatalog,
+  liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
 } from "./pi-live-catalog.js";
@@ -34,6 +35,16 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
+  it("builds live entries for providers Rakazo registers itself", () => {
+    expect(liveCatalogEntry("ollama-cloud", "gemma4:cloud-next")).toMatchObject({
+      provider: "ollama-cloud",
+      id: "gemma4:cloud-next",
+      live: true,
+      catalogProbe: true,
+    });
+    expect(liveCatalogEntry("local", "qwen3:4b")).toBeUndefined();
+  });
+
   it("defaults probing on and honors the deployment off switch", () => {
     expect(liveModelCatalogEnabled({})).toBe(true);
     expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: " off " })).toBe(false);
