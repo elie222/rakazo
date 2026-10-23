@@ -1,14 +1,7 @@
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { groupBotsForSidebar, nestRosterByParent } from "@rakazo/core";
-import {
-  adoptDeletedSpaceFallback,
-  type MobileBot,
-  type MobileGroup,
-  type MobileSpace,
-  rpc,
-  selectedSpaceId,
-  selectSpace,
-} from "./api";
+import { groupBotsForSidebar } from "@rakazo/core";
+import type { MobileBot, MobileGroup, MobileSpace } from "./api";
+import { adoptDeletedSpaceFallback, rpc, selectedSpaceId, selectSpace } from "./api";
 import { t } from "./i18n";
 
 export type InboxSpace = Pick<
@@ -23,8 +16,6 @@ export type InboxSpaceItem =
   | {
       type: "bot";
       bot: MobileBot | SpaceBot;
-      depth: number;
-      hasChildren: boolean;
     }
   | { type: "group"; group: MobileGroup | SpaceGroup }
   | {
@@ -53,7 +44,7 @@ export function inboxNeedsCreateHint(items: readonly { type: string; count?: num
   return items.length > 0 && inboxHasNoChats(items);
 }
 
-/** `collapsed` holds both roster parent bot ids and section heading keys. */
+/** `collapsed` holds section heading keys. */
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsed: ReadonlySet<string> = new Set(),
@@ -65,7 +56,6 @@ export function spaceInboxItems(
         type: "bot" as const,
         bot: chat,
         id: chat.id,
-        parentBotId: chat.parentBotId,
         pinned: chat.pinned,
         sectionId: chat.sectionId,
       })),
@@ -99,16 +89,11 @@ export function spaceInboxItems(
         });
         if (collapsed.has(key)) continue;
       }
-      for (const row of nestRosterByParent(group.bots, collapsed)) {
-        if (row.item.type === "bot") {
-          items.push({
-            type: "bot",
-            bot: row.item.bot,
-            depth: row.depth,
-            hasChildren: row.hasChildren,
-          });
+      for (const item of group.bots) {
+        if (item.type === "bot") {
+          items.push({ type: "bot", bot: item.bot });
         } else {
-          items.push({ type: "group", group: row.item.group });
+          items.push({ type: "group", group: item.group });
         }
       }
     }

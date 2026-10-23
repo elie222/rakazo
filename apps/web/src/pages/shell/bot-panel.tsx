@@ -241,6 +241,7 @@ export function BotSettings({
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
+    crossSpaceCommunication?: boolean;
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
@@ -283,6 +284,13 @@ export function BotSettings({
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
+  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(
+    bot.crossSpaceCommunication ?? false,
+  );
+  useEffect(
+    () => setCrossSpaceCommunication(bot.crossSpaceCommunication ?? false),
+    [bot.crossSpaceCommunication],
+  );
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
@@ -345,6 +353,7 @@ export function BotSettings({
         color?: string;
         notifyOnFinish?: boolean;
         fleetManagement?: boolean;
+        crossSpaceCommunication?: boolean;
         disabledBuiltinTools?: string[];
         baseDisabledBuiltinTools?: string[];
       },
@@ -416,6 +425,7 @@ export function BotSettings({
       color?: string;
       notifyOnFinish?: boolean;
       fleetManagement?: boolean;
+      crossSpaceCommunication?: boolean;
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
     },
@@ -424,6 +434,10 @@ export function BotSettings({
     try {
       setSaving(true);
       setError(null);
+      if (patchOverrides?.crossSpaceCommunication !== undefined) {
+        await onSave({ crossSpaceCommunication: patchOverrides.crossSpaceCommunication });
+        return;
+      }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
         return;
@@ -518,6 +532,8 @@ export function BotSettings({
         revisions?.notifyOnFinish === automaticRevision.current.notifyOnFinish
       )
         setNotifyOnFinish(acceptedAutomatic.current.notifyOnFinish);
+      if (patchOverrides?.crossSpaceCommunication !== undefined)
+        setCrossSpaceCommunication(!patchOverrides.crossSpaceCommunication);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
       setError(errorText(err, t`Could not save`));
@@ -549,6 +565,7 @@ export function BotSettings({
     color?: string;
     notifyOnFinish?: boolean;
     fleetManagement?: boolean;
+    crossSpaceCommunication?: boolean;
     disabledBuiltinTools?: string[];
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
@@ -794,6 +811,20 @@ export function BotSettings({
               ) : null}
             </SettingsGroup>
             <SettingsGroup label={t`Permissions`}>
+              <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+                <label htmlFor={`${ids}-cross-space`} className={rowLabelClass}>
+                  <Trans>Allow cross-space bot communication</Trans>
+                </label>
+                <Switch
+                  id={`${ids}-cross-space`}
+                  checked={crossSpaceCommunication}
+                  disabled={saving}
+                  onCheckedChange={(checked) => {
+                    setCrossSpaceCommunication(checked);
+                    void enqueueSave({ crossSpaceCommunication: checked });
+                  }}
+                />
+              </div>
               <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
                 <div>
                   <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>

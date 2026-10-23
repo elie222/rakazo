@@ -270,7 +270,9 @@ export default function Models() {
         : pickCatalogModelId(
             nextCatalog,
             nextProvider,
-            preferred.modelId || nextCredential?.modelId || nextMe.defaultModel,
+            preferred.modelId ||
+              nextCredential?.modelId ||
+              (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
           );
     meRef.current = nextMe;
     setMe(nextMe);
@@ -549,7 +551,12 @@ export default function Models() {
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
-        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
+        : pickCatalogModelId(
+            catalog,
+            nextProvider,
+            nextCredential?.modelId ??
+              (nextProvider === me?.defaultProvider ? me.defaultModel : null),
+          );
     Keyboard.dismiss();
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);

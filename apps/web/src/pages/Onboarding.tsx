@@ -169,7 +169,6 @@ export function OnboardingPage() {
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
-  const deploymentDefaultModelRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -201,8 +200,6 @@ export function OnboardingPage() {
       .then(([me, models]) => {
         setBillingEnabled(me.billingEnabled);
         setCatalog(models);
-        // No provider is preselected; the deployment default only seeds the model once one is chosen.
-        deploymentDefaultModelRef.current = me.defaultModel;
         const next = me.needsModel ? "model" : "bot";
         afterSurveyRef.current = next;
         setStep(me.needsSignupSurvey ? "survey" : next);
@@ -335,7 +332,7 @@ export function OnboardingPage() {
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? ""
-        : pickCatalogModelId(catalog, nextProvider, deploymentDefaultModelRef.current),
+        : pickCatalogModelId(catalog, nextProvider),
     );
     setBaseUrl(presetBaseUrl ?? "");
     setReasoning(false);

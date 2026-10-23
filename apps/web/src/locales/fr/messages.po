@@ -589,6 +589,10 @@ msgstr "Autoriser le connecteur {0} sans demander"
 msgid "Allow {0} without asking"
 msgstr "Autoriser {0} sans demander"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Allow cross-space bot communication"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow email actions without asking"
 msgstr "Autoriser les actions e-mail sans demander"
@@ -1247,7 +1251,6 @@ msgid "Code"
 msgstr "Code"
 
 #. placeholder {0}: group.title
-#. placeholder {0}: item.chat.name
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr "Réduire {0}"
@@ -2442,7 +2445,6 @@ msgid "Expand"
 msgstr "Développer"
 
 #. placeholder {0}: group.title
-#. placeholder {0}: item.chat.name
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "Développer {0}"

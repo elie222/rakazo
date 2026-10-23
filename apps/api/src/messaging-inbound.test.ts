@@ -256,6 +256,14 @@ function createDeps(
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         ...txMock,
+        $queryRaw: vi.fn(async () =>
+          ["bot-1", "bot-9"].map((id) => ({
+            id,
+            spaceId: id,
+            crossSpaceCommunication: true,
+            archivedAt: null,
+          })),
+        ),
         agentConnection: prisma.agentConnection,
         messagingChannelMember: prisma.messagingChannelMember,
         messagingOutbound: prisma.messagingOutbound,
@@ -1280,6 +1288,14 @@ describe("createMessagingInboundHandler confirmation atomicity", () => {
     });
     deps.prisma.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
+        $queryRaw: vi.fn(async () =>
+          ["bot-1", "bot-9"].map((id) => ({
+            id,
+            spaceId: id,
+            crossSpaceCommunication: true,
+            archivedAt: null,
+          })),
+        ),
         agentConnection: deps.prisma.agentConnection,
         messagingOutbound: {
           createMany: txCreateMany,
