@@ -192,35 +192,62 @@ jobs:
         shell: bash
         env:
           BEFORE_SHA: ${{ github.event.before }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euo pipefail
-          base="$BEFORE_SHA"
+          # Compare against the commit installed builds already run, not just this push, so a
+          # change from a cancelled or skipped run is still published (or still blocks).
+          runtime="$(jq -r .expo.version apps/mobile/app.json)"
+          project="$(jq -r .expo.extra.eas.projectId apps/mobile/app.json)"
+          published="$(
+            curl -fsS https://api.expo.dev/graphql \
+              -H "authorization: Bearer $EXPO_TOKEN" \
+              -H "content-type: application/json" \
+              --data "$(jq -n --arg id "$project" '{
+                query: "query($id: String!) { app { byId(appId: $id) { updateBranchByName(name: \"production\") { updates(offset: 0, limit: 50) { gitCommitHash runtimeVersion isRollBackToEmbedded } } } } }",
+                variables: { id: $id }
+              }')" |
+              jq -r --arg runtime "$runtime" \
+                '[.data.app.byId.updateBranchByName.updates[]? | select(.runtimeVersion == $runtime and (.isRollBackToEmbedded | not) and .gitCommitHash != null)][0].gitCommitHash // ""'
+          )" || published=""
+          if [[ -n "$published" ]] && git merge-base --is-ancestor "$published" "$GITHUB_SHA" 2>/dev/null; then
+            base="$published"
+          else
+            echo "::warning::No published update for runtime $runtime on main's history; comparing with the previous push only."
+            base="$BEFORE_SHA"
+          fi
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}"; then
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "Could not resolve \`github.event.before\` for the full push range, so this job will not publish a partial-range update."
+              echo "Found neither the last published update for runtime \`$runtime\` nor \`github.event.before\`, so this job will not publish a partial-range update."
             } >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # Every package the mobile app resolves, transitive ones included, from the lockfile.
+          mobile_dependencies() {
+            git show "$1:pnpm-lock.yaml" | node .github/scripts/mobile-dependency-tree.mjs
+          }
+
           mapfile -t files < <(
             git diff --name-only "$base" "$GITHUB_SHA" -- \
-              .github/workflows/ci.yml \
               apps/mobile \
-              package.json \
               packages/chat-ui \
               packages/contracts \
-              packages/core \
-              pnpm-lock.yaml
+              packages/core
           )
+          if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
+            files+=("pnpm-lock.yaml (mobile dependency tree)")
+          fi
 
           publish=false
-          blocked=false
+          blocked=()
           for file in "${files[@]}"; do
+            # Tests, types, docs and device test flows never ship in the app.
             case "$file" in
-              *.test.ts|*.test.tsx|*.d.ts)
+              *.test.ts|*.test.tsx|*.test.js|*.d.ts|*.md|apps/mobile/.maestro/*|apps/mobile/e2e/*)
                 continue
                 ;;
             esac
@@ -247,28 +274,32 @@ jobs:
             if [[ "$eligible" == true ]]; then
               publish=true
             else
-              blocked=true
+              blocked+=("$file")
             fi
           done
 
-          if [[ "$blocked" == true ]]; then
+          if (( ${#blocked[@]} > 0 )); then
             publish=false
             {
               echo "### Mobile OTA skipped"
               echo
-              echo "This revision changes native-sensitive mobile configuration, dependencies, modules, assets, or workflow files. Create new iOS and Android builds instead of publishing it to an older native runtime."
+              echo "Since \`${base:0:9}\`, the last update installed builds run, these native-sensitive files changed:"
+              echo
+              printf -- '- `%s`\n' "${blocked[@]}"
+              echo
+              echo "Ship new iOS and Android builds, or publish by hand once the JavaScript is confirmed safe on the current builds."
             } >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$publish" == true ]]; then
             {
               echo "### Mobile OTA eligible"
               echo
-              echo "The revision only changes JavaScript, TypeScript, or bundled CSS used by the mobile client."
+              echo "Since \`${base:0:9}\`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo "### No mobile OTA needed"
               echo
-              echo "This revision does not change the shipped mobile bundle."
+              echo "Nothing in the shipped mobile bundle changed since \`${base:0:9}\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"

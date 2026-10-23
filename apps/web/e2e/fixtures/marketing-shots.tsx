@@ -490,7 +490,8 @@ function SubscriptionShot() {
       <SettingsOverlay
         email="ada@example.test"
         name="Ada"
-        initialSection="models"
+        section="models"
+        onSectionChange={() => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
         onUsageOpen={() => undefined}

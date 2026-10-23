@@ -364,6 +364,7 @@ export const OPENCLAW_RELATED = [
   { href: "/dots-alternative/", label: "OpenAI Dots" },
   { href: "/instinct-alternative/", label: "Instinct AI" },
   { href: "/hark-alternative/", label: "Hark Pro" },
+  { href: "/claude-duet-alternative/", label: "Claude Duet" },
   { href: "/hermes-alternative/", label: "Hermes Agent" },
   { href: "/alternatives/", label: "All comparisons" },
 ] as const;

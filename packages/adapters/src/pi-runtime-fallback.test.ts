@@ -848,6 +848,22 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.delay).not.toHaveBeenCalled();
   });
 
+  it("uses the configured backup for an explicit insufficient-balance error", async () => {
+    const balanceError =
+      '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}';
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", balanceError))
+        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+    const events = await run(
+      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
+    );
+    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
   it("retries a short usage window on the same model without a backup", async () => {
     providerState.stream
       .mockImplementationOnce(() =>
@@ -878,6 +894,7 @@ describe("Pi runtime ordered model fallback", () => {
     "You have hit your ChatGPT usage limit (plus plan). Try again in ~158 min.",
     '403 {"error":{"type":"permission_error","message":"You\'ve reached your 5-hour usage limit."}}',
     "402 provider quota exhausted",
+    '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}',
   ])(
     "does not retry the same model on an exhausted usage window without a backup: %s",
     async (error) => {

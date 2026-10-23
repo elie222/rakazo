@@ -29,6 +29,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search bots": "Bots suchen",
   "About {label}": "Über {label}",
   "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
+  "Allow cross-space bot communication":
+    "Kommunikation zwischen Bots in verschiedenen Spaces erlauben",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Ordne die Seitenleiste und bearbeite Bots. Änderungen an Gruppen, Anweisungen, Modellen und Routinen brauchen deine Zustimmung.",
 

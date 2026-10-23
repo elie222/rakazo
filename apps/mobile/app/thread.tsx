@@ -9,6 +9,7 @@ import type {
   Routine,
 } from "@rakazo/contracts";
 import {
+  ATTACHMENT_MAX_COUNT,
   attachmentMaxBytes,
   canReactToThreadMessage,
   isAttachmentAudioMimeType,
@@ -115,6 +116,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   ZoomIn,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
@@ -194,6 +196,7 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { canDoubleTapReact } from "../lib/double-tap";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
+import { helperHeaderOffset, helperOpenTarget } from "../lib/helper-header-offset";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
@@ -226,7 +229,13 @@ import {
 } from "../lib/notification-open";
 import { peerChipPress } from "../lib/peer-chip";
 import type { PickedAttachment } from "../lib/pick-attachments";
-import { pickDocuments, pickFromLibrary, takePhoto } from "../lib/pick-attachments";
+import {
+  pickDocuments,
+  pickFromLibrary,
+  readDroppedFiles,
+  takePhoto,
+} from "../lib/pick-attachments";
+import { attachmentCountSkipReason } from "../lib/pick-attachments-filter";
 import { threadRefreshDelayMs } from "../lib/refresh";
 import {
   getCachedResponseStreamingEnabled,
@@ -258,9 +267,15 @@ import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { threadKeyboardOffset } from "../lib/thread-keyboard-offset";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
-import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
+import {
+  isOwnThreadMessage,
+  latestArrivalMessage,
+  latestThreadRowKey,
+  ThreadScrollBehavior,
+} from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
+import { useFileDrop } from "../lib/use-file-drop";
 import type { UserBubble } from "../lib/user-bubble";
 import { withUserBubble } from "../lib/user-bubble";
 import { errorText } from "../lib/user-error";
@@ -520,6 +535,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const onCall = Boolean(botId) && call?.botId === botId;
   const voiceCallStarting = useRef(false);
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
+  const helperViewport = useRef<View>(null);
+  const helperScrollOffset = useRef(0);
+  const helperResize = useRef<(() => void) | null>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
@@ -735,8 +753,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
   );
   const visibleMessages = reactionView.visibleMessages;
-  const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
+  const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
+  const latestMessageId = latestMessage?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
+  // Read by a second drop that starts before the first one commits.
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  pendingAttachmentsRef.current = pendingAttachments;
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
     () =>
@@ -1857,6 +1879,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     });
   }
 
+  function followOwnSend() {
+    if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
+    performScroll(scrollBehavior.current.onOwnSend());
+    publishThreadScrollState(scrollBehavior.current.state());
+  }
+
   async function send() {
     if (readOnly) return;
     const initialBotTarget = botId;
@@ -1925,9 +1953,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     setReplyTarget(null);
     setReplyQuote(null);
     setAttachmentNotice(null);
-    if (pinnedAroundRef.current) showLatest();
-    performScroll(scrollBehavior.current.jumpToLatest());
-    publishThreadScrollState(scrollBehavior.current.state());
+    followOwnSend();
     await deliver(attempt);
   }
 
@@ -2177,23 +2203,49 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     if (!targetKey) return;
     const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
     if ((groupId ?? botId) !== targetKey) return;
-    if (result.attachments.length) {
+    // Two drops can overlap, so the room left is settled against the draft as it
+    // is now, not as it was when this read began.
+    const room = Math.max(
+      0,
+      ATTACHMENT_MAX_COUNT - attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
+    );
+    const accepted = result.attachments.slice(0, room);
+    if (accepted.length) {
       setPendingAttachments((current) => [
         ...current,
-        ...result.attachments.map((attachment) => ({
+        ...accepted.map((attachment) => ({
           ...attachment,
           threadKey: targetKey,
         })),
       ]);
     }
+    const skipped = [
+      ...result.skipped,
+      ...result.attachments.slice(room).map((attachment) => ({
+        name: attachment.name,
+        reason: attachmentCountSkipReason(),
+      })),
+    ];
     setAttachmentNotice(
-      result.skipped.length
+      skipped.length
         ? t("Skipped {items}", {
-            items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+            items: skipped.map((item) => formatAttachmentSkip(item)).join(", "),
           })
         : null,
     );
   }
+
+  useFileDrop(
+    threadKey ?? null,
+    ({ files, skipped }) => {
+      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes, skipped));
+    },
+    {
+      enabled: !readOnly && Boolean(groupId ?? botId),
+      maxBytes: attachmentMaxBytes(uploadConfig),
+      maxFiles: ATTACHMENT_MAX_COUNT,
+    },
+  );
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
@@ -2351,6 +2403,57 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
 
   // Event actions read the latest committed screen state without invalidating settled rows.
   const currentRowActions: MessageRowActions = {
+    helperToggle: (measure, toggle, opening) => {
+      if (Platform.OS !== "ios") {
+        toggle();
+        return;
+      }
+      measure((before) => {
+        const correct = () => {
+          requestAnimationFrame(() =>
+            measure((after, cardBottom) => {
+              helperViewport.current?.measureInWindow((_x, y, _width, height) => {
+                const target = opening
+                  ? helperOpenTarget({
+                      headerY: before,
+                      cardBottom: cardBottom + before - after,
+                      topLimit: headerClearance.anchor,
+                      visibleBottom: y + height - (readOnly ? insets.bottom : 0),
+                    })
+                  : before;
+                if (showPinnedPage) {
+                  pinnedScroll.current?.scrollTo({
+                    y: helperHeaderOffset(pinnedScrollMetrics.current.offset, after, target),
+                    animated: false,
+                  });
+                } else {
+                  const offset = helperHeaderOffset(helperScrollOffset.current, target, after);
+                  scroll.current?.scrollToOffset({ offset, animated: false });
+                  // The settled list ignores this scroll's event, so record where it now sits.
+                  helperScrollOffset.current = offset;
+                  const previous = scrollBehavior.current.state();
+                  const next = scrollBehavior.current.onUserScroll(offset);
+                  if (reconcileThreadScrollState(previous, next) !== previous) {
+                    publishThreadScrollState(next);
+                  }
+                }
+              });
+            }),
+          );
+        };
+        helperResize.current = correct;
+        toggle();
+        // A helper without a body may not change the list's content size.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (helperResize.current === correct) {
+              helperResize.current = null;
+              correct();
+            }
+          }),
+        );
+      });
+    },
     reply: (message) => {
       setReplyTarget(message);
       setReplyQuote(null);
@@ -2421,6 +2524,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   });
   const rowActions = useMemo<MessageRowActions>(
     () => ({
+      helperToggle: (measure, toggle, opening) =>
+        rowActionsRef.current.helperToggle(measure, toggle, opening),
       reply: (message) => rowActionsRef.current.reply(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
@@ -2650,7 +2755,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       key={attempt.clientNonce}
       attempt={attempt}
       needsModel={needsModel}
-      onRetry={() => void deliver(attempt, true)}
+      onRetry={() => {
+        followOwnSend();
+        void deliver(attempt, true);
+      }}
       onDelete={() => feedback.discard(attempt)}
       userBubble={userBubble}
     />
@@ -2700,7 +2808,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         }}
       >
         {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
-        <View style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}>
+        <View
+          ref={helperViewport}
+          collapsable={false}
+          style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}
+        >
           {showPinnedPage ? (
             <ThreadScrollSurface
               key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
@@ -2724,6 +2836,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 onContentSizeChange={(_, height) => {
                   pinnedScrollMetrics.current.content = height;
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    correctHelper();
+                    return;
+                  }
                   const jumpOffset = jumpAnchor.current.align(headerClearance.anchor);
                   if (jumpOffset != null) scrollPinnedTo(jumpOffset);
                   const armedAt = joinPinnedAfterLayout.current;
@@ -2809,6 +2927,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   liveScrollBack.current.onDragStart(event.nativeEvent);
                 }}
                 onScroll={(event) => {
+                  helperScrollOffset.current = event.nativeEvent.contentOffset.y;
                   if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
                     KeyboardController.dismiss();
                   }
@@ -2816,7 +2935,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 // Keep tracking after release: a fling can cross the threshold mid-momentum.
                 onScrollEndDrag={(event) => {
-                  updateUserScroll(event);
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
                   scrollBehavior.current.onUserDragEnd();
                   liveScrollBack.current.onDragEnd();
                   scheduleScrollIdle();
@@ -2837,6 +2956,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   publishThreadScrollState(scrollBehavior.current.state());
                 }}
                 onContentSizeChange={(_, height) => {
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
+                    correctHelper();
+                    return;
+                  }
                   publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
                   if (loadingOlderContent.current) {
                     loadingOlderContent.current = false;
@@ -2851,7 +2977,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                             pinnedAroundRef.current.groupId === groupId))) ||
                       expandedHistoryThread.current === snap?.threadId,
                   );
-                  performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+                  performScroll(
+                    scrollBehavior.current.onContentChanged(
+                      blocked,
+                      latestThreadRowKey(
+                        latestMessageId,
+                        feedback.unsentSends.map((attempt) => attempt.clientNonce),
+                        isOwnThreadMessage(latestMessage, userId),
+                      ),
+                    ),
+                  );
                   publishThreadScrollState(scrollBehavior.current.state());
                 }}
                 ListFooterComponent={loadEarlierControl}
@@ -3269,6 +3404,11 @@ function threadItemKey(item: ThreadItem<MobileMessage>) {
 }
 
 type MessageRowActions = {
+  helperToggle: (
+    measure: (done: (y: number, cardBottom: number) => void) => void,
+    toggle: () => void,
+    opening: boolean,
+  ) => void;
   reply: (message: MobileMessage) => void;
   quote: (message: MobileMessage) => void;
   select: (text: string) => void;
@@ -3699,6 +3839,7 @@ const MessageRow = memo(function MessageRow({
                 onOpenPeerChat={actions.openPeerChat}
                 actionProps={actionProps}
                 doubleTapSurface={Boolean(likeMessage)}
+                onHelperToggle={actions.helperToggle}
                 userBubble={userBubble}
               />
             </ThreadReadOnlyContext.Provider>
@@ -3742,6 +3883,10 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
+// A running helper's live card and the saved message that replaces it have different ids, so
+// its row mounts again when the helper finishes. Remember open cards by agent id across that.
+const openHelpers = new Set<string>();
+
 const MessageBubble = memo(function MessageBubble({
   botId,
   botName,
@@ -3763,8 +3908,10 @@ const MessageBubble = memo(function MessageBubble({
   onOpenPeerChat,
   actionProps,
   doubleTapSurface = false,
+  onHelperToggle,
   userBubble,
 }: {
+  onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
   botName?: string;
   showBotSenderName: boolean;
@@ -3796,6 +3943,23 @@ const MessageBubble = memo(function MessageBubble({
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  const helperHeader = useRef<View>(null);
+  const helperCard = useRef<View>(null);
+  const helperReducedMotion = useReducedMotion();
+  const [subagentOpen, setSubagentOpen] = useState(() =>
+    message.blocks.some((block) => block.kind === "subagent" && openHelpers.has(block.agentId)),
+  );
+  const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
+  useEffect(() => {
+    helperRotation.value = helperReducedMotion
+      ? subagentOpen
+        ? 180
+        : 0
+      : withTiming(subagentOpen ? 180 : 0, { duration: 150 });
+  }, [subagentOpen, helperReducedMotion, helperRotation]);
+  const helperChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${helperRotation.value}deg` }],
+  }));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -3973,46 +4137,93 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <Pressable
         {...actionProps}
+        ref={helperCard}
+        collapsable={false}
         style={{
           width: "90%",
           borderRadius: 18,
           backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
+        <Pressable
+          {...actionProps}
+          onPress={() => {
+            const toggle = () => {
+              if (subagentOpen) openHelpers.delete(special.agentId);
+              else openHelpers.add(special.agentId);
+              setSubagentOpen(!subagentOpen);
+            };
+            if (onHelperToggle) {
+              onHelperToggle(
+                (done) =>
+                  helperHeader.current?.measureInWindow((_x, y) => {
+                    helperCard.current?.measureInWindow((_cardX, cardY, _width, height) =>
+                      done(y, cardY + height),
+                    );
+                  }),
+                toggle,
+                !subagentOpen,
+              );
+            } else toggle();
           }}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: subagentOpen }}
+          style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
         >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {safeDisplayName(special.name, t("subagent"))}
-          </Text>
-          <Text
-            style={{
-              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              ...typeScale.caption,
-            }}
-          >
-            {running
-              ? t("Running")
-              : special.status === "failed"
-                ? t("Failed")
-                : special.status === "completed"
-                  ? t("Completed")
-                  : special.status}
-          </Text>
-        </View>
-        {special.task ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {special.task}
-          </Text>
-        ) : null}
-        {special.result || special.progress ? (
-          <View style={{ marginTop: 8 }}>
+          <View ref={helperHeader} collapsable={false}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <Text
+                style={{
+                  flexShrink: 1,
+                  flexGrow: 1,
+                  color: tokens.foreground,
+                  ...typeScale.cardTitle,
+                }}
+              >
+                {safeDisplayName(special.name, t("subagent"))}
+              </Text>
+              <Text
+                style={{
+                  color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+                  ...typeScale.caption,
+                }}
+              >
+                {running
+                  ? t("Running")
+                  : special.status === "failed"
+                    ? t("Failed")
+                    : special.status === "completed"
+                      ? t("Completed")
+                      : special.status}
+              </Text>
+              <Animated.View style={helperChevronStyle}>
+                <NativeSymbol
+                  ios="chevron.down"
+                  android="chevron-down"
+                  size={12}
+                  color={tokens.mutedForeground}
+                />
+              </Animated.View>
+            </View>
+            {special.task ? (
+              <Text
+                numberOfLines={subagentOpen ? undefined : 1}
+                style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
+              >
+                {special.task}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+        {subagentOpen && (special.result || special.progress) ? (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
             <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
               {special.result || special.progress || ""}
             </ChatMarkdown>

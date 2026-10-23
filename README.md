@@ -15,7 +15,7 @@ can run on your own machine. It is available on the web, as an Electron desktop 
 and computer provider, or run the complete stack locally.
 
 It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
-OpenClaw, and Hermes Agent.
+OpenClaw, Hermes Agent, and Claude Duet.
 
 Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
 

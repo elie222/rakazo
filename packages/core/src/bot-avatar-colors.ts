@@ -154,12 +154,10 @@ export function resolvePersonaColorDef(
 /** WCAG AA contrast for body text. */
 const BUBBLE_TEXT_CONTRAST = 4.5;
 const LIGHT_TEXT = "#FFFFFF";
-const DARK_TEXT = "#141414";
 
 /**
- * Your messages in a bot's chat wear that bot's color, with whichever text reads best on
- * it; a color too mid-toned for either is deepened until white text reads. A photo or the
- * white bot has no color that reads as a bubble, so those chats keep the neutral one.
+ * Your messages in a bot's chat wear that bot's color, deepened as needed for
+ * white body text to meet AA contrast. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
   avatarValue: string,
@@ -170,11 +168,6 @@ export function chatUserBubbleColors(
   const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
   if (def.id === "white") return undefined;
   let background = `#${expandHex(def.hex)}`.toUpperCase();
-  const light = contrastRatio(background, LIGHT_TEXT);
-  const dark = contrastRatio(background, DARK_TEXT);
-  if (Math.max(light, dark) >= BUBBLE_TEXT_CONTRAST) {
-    return { background, foreground: light >= dark ? LIGHT_TEXT : DARK_TEXT };
-  }
   while (contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST) {
     background = darkenHex(background, 5).toUpperCase();
   }

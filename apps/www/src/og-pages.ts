@@ -10,6 +10,11 @@ export type OgPage = {
 
 const BLOG_OG: readonly OgPage[] = [
   {
+    id: "blog-claude-duet-vs-grok-bot",
+    kicker: "Comparison",
+    title: "Claude Duet vs Grok Bot",
+  },
+  {
     id: "blog-best-open-source-ai-agents-2026",
     kicker: "Roundup",
     title: "Best open source AI agents in 2026",

@@ -219,8 +219,11 @@ export async function openUserSettings(
     | "billing"
     | "updates",
 ) {
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  // A reload keeps settings open because the URL holds them; closing clears the URL at once.
+  if (!new URL(page.url()).searchParams.has("settings")) {
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+  }
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
   if (section && section !== "general") {

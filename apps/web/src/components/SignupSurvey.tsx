@@ -1,14 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SignupSurvey as SignupSurveyAnswers } from "@rakazo/contracts";
-import { SIGNUP_SURVEY_TEAM_SIZES, signupSurveyAsksTeamSize } from "@rakazo/contracts";
+import {
+  SIGNUP_SURVEY_TEAM_SIZES,
+  signupSurveyAsksTeamSize,
+  signupSurveyTeamSizeLabel,
+} from "@rakazo/contracts";
 import {
   Button,
   Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  OptionSelect,
   Textarea,
   ToggleGroup,
   ToggleGroupItem,
@@ -19,13 +19,10 @@ import { rpc } from "../lib/rpc";
 type Use = NonNullable<SignupSurveyAnswers["use"]>;
 type TeamSize = NonNullable<SignupSurveyAnswers["teamSize"]>;
 
-const TEAM_SIZE_LABELS: Record<TeamSize, string> = {
-  "1": "1",
-  "2-10": "2–10",
-  "11-50": "11–50",
-  "51-200": "51–200",
-  "201+": "200+",
-};
+const TEAM_SIZE_OPTIONS = SIGNUP_SURVEY_TEAM_SIZES.map((value) => ({
+  value,
+  label: signupSurveyTeamSizeLabel(value),
+}));
 
 export function SignupSurvey({ onDone }: { onDone: () => void }) {
   const { t } = useLingui();
@@ -82,30 +79,21 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
         </ToggleGroupItem>
       </ToggleGroup>
       {signupSurveyAsksTeamSize(use ?? undefined) ? (
-        <div className="mt-6 text-sm font-medium text-foreground">
-          <span>
-            <Trans>How big is your team?</Trans>
-          </span>
-          <Select
-            value={teamSize}
-            onValueChange={(value) => setTeamSize((value as TeamSize | null) ?? null)}
-            items={SIGNUP_SURVEY_TEAM_SIZES.map((size) => ({
-              value: size,
-              label: TEAM_SIZE_LABELS[size],
-            }))}
+        <>
+          <label
+            htmlFor={`${fieldId}-team-size`}
+            className="mt-6 block text-sm font-medium text-foreground"
           >
-            <SelectTrigger aria-label={t`How big is your team?`} className="mt-2 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SIGNUP_SURVEY_TEAM_SIZES.map((size) => (
-                <SelectItem key={size} value={size}>
-                  {TEAM_SIZE_LABELS[size]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <Trans>How big is your team?</Trans>
+          </label>
+          <OptionSelect
+            id={`${fieldId}-team-size`}
+            value={teamSize}
+            options={TEAM_SIZE_OPTIONS}
+            onValueChange={setTeamSize}
+            className="mt-2"
+          />
+        </>
       ) : null}
       <label
         htmlFor={`${fieldId}-source`}

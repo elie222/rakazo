@@ -201,25 +201,22 @@ describe("spaceInboxItems", () => {
     };
     const items = spaceInboxItems([space({ isDefault: true, bots: [bot], groups: [group] })]);
     expect(items.map((item) => item.type)).toEqual(["bot", "group"]);
-    expect(items[0]).toMatchObject({ type: "bot", depth: 0, hasChildren: false });
+    expect(items[0]).toMatchObject({ type: "bot", bot });
   });
 
-  it("nests child bots under their parent and can collapse them", () => {
-    const parent = { ...bot, id: "parent", parentBotId: null };
-    const child = { ...bot, id: "child", parentBotId: "parent" };
-    const expanded = spaceInboxItems([space({ isDefault: true, bots: [parent, child] })]);
-    expect(expanded.map((item) => ("bot" in item ? [item.bot.id, item.depth] : item.type))).toEqual(
-      [
-        ["parent", 0],
-        ["child", 1],
-      ],
+  it("lists created bots as peers in roster order, ignoring saved parent collapse state", () => {
+    const chief = { ...bot, id: "chief", parentBotId: null };
+    const created = { ...bot, id: "created", parentBotId: "chief" };
+    const peer = { ...bot, id: "peer", parentBotId: null };
+    const items = spaceInboxItems(
+      [space({ isDefault: true, bots: [created, peer, chief] })],
+      new Set(["chief"]),
     );
-    expect(expanded[0]).toMatchObject({ hasChildren: true });
-    const collapsed = spaceInboxItems(
-      [space({ isDefault: true, bots: [parent, child] })],
-      new Set(["parent"]),
-    );
-    expect(collapsed.map((item) => ("bot" in item ? item.bot.id : item.type))).toEqual(["parent"]);
+    expect(items).toEqual([
+      { type: "bot", bot: created },
+      { type: "bot", bot: peer },
+      { type: "bot", bot: chief },
+    ]);
   });
 
   it("collapses one section heading and counts its chats", () => {

@@ -1318,10 +1318,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         <BotRow
           bot={item.bot}
           day={day}
-          depth={item.depth}
-          hasChildren={item.hasChildren}
-          collapsed={collapsed.has(item.bot.id)}
-          onToggleChildren={toggleCollapsed}
           onPress={openBot}
           onLongPress={!SWIPE_ROWS ? organizeBot : undefined}
           onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
@@ -1335,7 +1331,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       botAction,
       botSections,
       chooseInboxSpace,
-      collapsed,
       confirmDeleteSpace,
       deleteSection,
       day,
@@ -1647,10 +1642,6 @@ function ConversationRow({
   avatar,
   tag,
   unread,
-  depth = 0,
-  hasChildren = false,
-  collapsed = false,
-  onToggleChildren,
   onPress,
   onLongPress,
   actions = [],
@@ -1665,10 +1656,6 @@ function ConversationRow({
   avatar: ReactNode;
   tag?: string | null;
   unread?: boolean;
-  depth?: number;
-  hasChildren?: boolean;
-  collapsed?: boolean;
-  onToggleChildren?: () => void;
   onPress: () => void;
   onLongPress?: () => void;
   actions?: InboxRowAction[];
@@ -1682,27 +1669,21 @@ function ConversationRow({
   const tagBelow = stacksAtTextScale(useWindowDimensions().fontScale);
   const openChatId = useContext(SelectedChatContext);
   const selected = chatId !== undefined && openChatId === chatId;
-  const toggleLabel = collapsed
-    ? t("Expand {name}", { name: title })
-    : t("Collapse {name}", { name: title });
-  const rowActions = [
-    ...(hasChildren ? [{ name: "toggleChildren", label: toggleLabel }] : []),
-    ...actions.map((action) => ({ name: action, label: t(INBOX_ROW_ACTIONS[action].label) })),
-  ];
+  const rowActions = actions.map((action) => ({
+    name: action,
+    label: t(INBOX_ROW_ACTIONS[action].label),
+  }));
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      // Screen readers treat the row as one element, so the chevron and swipe actions are offered
-      // as row actions.
-      accessibilityState={hasChildren ? { expanded: !collapsed } : undefined}
+      // Screen readers access swipe actions through the row.
       accessibilityActions={rowActions.length > 0 ? rowActions : undefined}
       onAccessibilityAction={(event) => {
         const name = event.nativeEvent.actionName;
         const action = actions.find((item) => item === name);
-        if (name === "toggleChildren") onToggleChildren?.();
-        else if (action) onAction?.(action);
+        if (action) onAction?.(action);
       }}
       android_ripple={androidRipple()}
       onPress={onPress}
@@ -1712,30 +1693,9 @@ function ConversationRow({
         compact ? styles.compactRow : null,
         selected ? styles.rowSelected : null,
         selected && Platform.OS === "android" && { overflow: "hidden" },
-        depth > 0
-          ? {
-              paddingInlineStart:
-                (compact ? COMPACT_INBOX_ROW.padding : INBOX_ROW.padding) + depth * 16,
-            }
-          : null,
         pressed && Platform.OS !== "android" && styles.rowPressed,
       ]}
     >
-      {hasChildren ? (
-        <Pressable
-          accessible={false}
-          importantForAccessibility="no"
-          hitSlop={8}
-          onPress={onToggleChildren}
-          style={styles.treeToggle}
-        >
-          <NativeSymbol
-            ios={collapsed ? "chevron.right" : "chevron.down"}
-            android={collapsed ? "chevron-forward" : "chevron-down"}
-            size={14}
-          />
-        </Pressable>
-      ) : null}
       {avatar}
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
@@ -1951,10 +1911,6 @@ type RowMenuProps = {
 const BotRow = memo(function BotRow({
   bot,
   day,
-  depth = 0,
-  hasChildren = false,
-  collapsed = false,
-  onToggleChildren,
   onPress,
   onLongPress,
   onAction,
@@ -1964,10 +1920,6 @@ const BotRow = memo(function BotRow({
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
-  depth?: number;
-  hasChildren?: boolean;
-  collapsed?: boolean;
-  onToggleChildren?: (botId: string) => void;
   onPress: (bot: MobileBot | SpaceBot) => void;
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
@@ -1998,10 +1950,6 @@ const BotRow = memo(function BotRow({
       time={time}
       tag={tag}
       unread={bot.unread}
-      depth={depth}
-      hasChildren={hasChildren}
-      collapsed={collapsed}
-      onToggleChildren={onToggleChildren ? () => onToggleChildren(bot.id) : undefined}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
@@ -2230,13 +2178,6 @@ function createHomeStyles() {
     compactRow: {
       paddingHorizontal: COMPACT_INBOX_ROW.padding,
       gap: COMPACT_INBOX_ROW.gap,
-    },
-    treeToggle: {
-      width: 20,
-      height: 20,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: -4,
     },
     rowPressed: {
       opacity: 0.55,

@@ -203,6 +203,13 @@ export interface ScheduleToolDeps {
   jobs: JobPublisher;
 }
 
+/** The user's saved timezone, so "every morning at 9" means their 9, not UTC's. */
+export async function userTimeZone(prisma: PrismaClient, userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  const timezone = user?.timezone;
+  return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
+}
+
 /** Persist and enqueue a bot routine that wakes in the originating thread. */
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
@@ -225,7 +232,9 @@ export async function createScheduleFromTool(
   if (!name) return { error: "name is required." };
   if (!prompt) return { error: "prompt is required." };
 
-  const parsedTimezone = TimeZoneSchema.safeParse(input.timezone ?? "UTC");
+  const parsedTimezone = TimeZoneSchema.safeParse(
+    input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
+  );
   if (!parsedTimezone.success) {
     return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
   }

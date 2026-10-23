@@ -114,6 +114,8 @@ export function NativeActionButton({
         : undefined;
   const button = (
     <Host
+      // Expo UI reads matchContents only on mount. Wrapping changes which axis Yoga owns.
+      key={stretches ? "fill" : "intrinsic"}
       colorScheme={scheme}
       ignoreSafeArea="container"
       matchContents={stretches ? { vertical: true } : true}

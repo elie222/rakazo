@@ -193,9 +193,10 @@ test("choose free API keys or monthly credits, then add a one-time top-up", asyn
     await route.fulfill({ json: { json: { ok: true } } });
   });
   await captureScreenshot(page, testInfo, "billing-use-existing-credits");
+  // Switching reloads the page; the URL keeps Billing open to show the result.
   await existingCredits.getByRole("button", { name: "Use Rakazo credits", exact: true }).click();
-  await expect(page.getByText("Chief").first()).toBeVisible();
-  const reactivated = await openUserSettings(page, "billing");
+  const reactivated = page.getByTestId("user-settings");
+  await expect(reactivated).toHaveAttribute("data-settings-section", "billing");
   await expect(reactivated.getByText("$12.00", { exact: true })).toBeVisible();
   await expect(
     reactivated.getByRole("button", { name: "Use Rakazo credits", exact: true }),

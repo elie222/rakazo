@@ -253,3 +253,25 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await expect(documents).toBeVisible();
   await captureScreenshot(page, testInfo, "memory-dark-bottom");
 });
+
+test("shell overlays open from the URL and keep it in sync", async ({ page }, testInfo) => {
+  await signup(page, `settings-url-${Date.now()}@rakazo.test`, "password12", "Settings");
+  await completeOnboarding(page);
+  const botPath = new URL(page.url()).pathname;
+
+  await page.goto("/app?settings=usage");
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toHaveAttribute("data-settings-section", "usage");
+  await expect(page).toHaveURL((url) => url.pathname === botPath);
+  await settings.getByTestId("settings-nav-general").click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("settings") === "general");
+  await captureScreenshot(page, testInfo, "settings-from-url");
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(page).toHaveURL((url) => url.pathname === botPath && url.search === "");
+
+  const apps = page.getByPlaceholder("Search apps");
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await expect(apps).toBeVisible();
+  await expect(page).toHaveURL((url) => url.searchParams.has("integrations"));
+});

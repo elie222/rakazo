@@ -117,6 +117,7 @@ export const BotSchema = z.object({
   thinkingLevel: ThinkingLevelSchema.nullable(),
   teamChatAmbientEnabled: z.boolean(),
   teamChatRules: z.string(),
+  crossSpaceCommunication: z.boolean().optional(),
   fleetManagement: z.boolean().default(false),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
@@ -410,6 +411,7 @@ export const UpdateBotInput = z
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
+    crossSpaceCommunication: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
   })
@@ -1331,6 +1333,8 @@ export const SpaceMemoryConfigSchema = z.object({
 export type SpaceMemoryConfig = z.infer<typeof SpaceMemoryConfigSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
+  /** Preselected for a new connection when there is no saved model choice. */
+  recommended: z.boolean().optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
   provider: z.string(),
@@ -1549,6 +1553,11 @@ export const ModelCreditAmountSchema = z.union(
 
 export const SIGNUP_SURVEY_USES = ["personal", "work", "both"] as const;
 export const SIGNUP_SURVEY_TEAM_SIZES = ["1", "2-10", "11-50", "51-200", "201+"] as const;
+
+/** Team sizes as shown: en dashes for ranges, and the open-ended bucket as "200+". */
+export function signupSurveyTeamSizeLabel(size: (typeof SIGNUP_SURVEY_TEAM_SIZES)[number]): string {
+  return size === "201+" ? "200+" : size.replace("-", "–");
+}
 
 /** Every answer is optional; an empty survey records that the user skipped it. */
 export const SignupSurveySchema = z.object({

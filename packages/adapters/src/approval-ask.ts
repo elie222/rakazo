@@ -1,6 +1,13 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
-import { instructionUpdateDiff, redactSecrets, toolRequiresExplicitApproval } from "@rakazo/core";
+import {
+  CARD_TITLE_ESCAPED_CHARACTERS,
+  instructionUpdateDiff,
+  messagingProviderName,
+  redactSecrets,
+  sanitizeMessagingLabel,
+  toolRequiresExplicitApproval,
+} from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 
 export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
@@ -39,6 +46,30 @@ export function buildApprovalAskBlock(
         approvalDetailLength(toolName),
       ),
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+  }
+  if (toolName === "respond_agent_connection") {
+    const name = sanitizeMessagingLabel(String(args.requester_name ?? "agent")).replace(
+      new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"),
+      "\\$&",
+    );
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: redactSecrets(
+        `${args.accept === true ? "Approve" : "Decline"} connection with “${name}”?`,
+        secrets,
+      ),
+      detail: redactSecrets(
+        `${messagingProviderName(String(args.requester_provider ?? ""))}: ${String(args.requester_address ?? "").replace(/[\r\n]/g, " ")}`,
+        secrets,
+      ),
+      detailFormat: "text",
       status: "pending",
       actions: [
         { id: "allow", label: "Allow once" },

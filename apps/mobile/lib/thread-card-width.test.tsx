@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import type { MessageBlock } from "@rakazo/contracts";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import React, { act, useState } from "react";
+import React, { act, useEffect, useRef, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Pressable, Text, View } from "react-native";
@@ -20,8 +20,32 @@ vi.mock("react-native", async () => {
       : ((style as Record<string, unknown>) ?? {});
   const element =
     (tag: string) =>
-    ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-      createElement(tag, { "data-style": JSON.stringify(flatten(style)) }, children);
+    ({
+      children,
+      style,
+      onPress,
+      onLongPress,
+      numberOfLines,
+      accessibilityState,
+    }: {
+      children?: ReactNode;
+      style?: unknown;
+      onPress?: () => void;
+      onLongPress?: () => void;
+      numberOfLines?: number;
+      accessibilityState?: { expanded?: boolean };
+    }) =>
+      createElement(
+        tag,
+        {
+          "data-style": JSON.stringify(flatten(style)),
+          "data-number-of-lines": numberOfLines,
+          "aria-expanded": accessibilityState?.expanded,
+          onClick: onPress,
+          onContextMenu: onLongPress,
+        },
+        children,
+      );
   return {
     Alert: { alert: vi.fn() },
     Pressable: element("button"),
@@ -58,6 +82,14 @@ const scope = {
   React,
   memo: <T,>(component: T) => component,
   useState,
+  useRef,
+  useEffect,
+  useReducedMotion: () => true,
+  useSharedValue: (value: number) => ({ value }),
+  useAnimatedStyle: (style: () => unknown) => style(),
+  withTiming: (value: number) => value,
+  Animated: { View },
+  NativeSymbol: () => <i data-chevron="down" />,
   useResolvedAppearance: () => "light",
   mobileTokens: () => ({}),
   withUserBubble,
@@ -76,6 +108,9 @@ const scope = {
   speakerColorFor: () => undefined,
   messagePresentationSegments: (blocks: MessageBlock[]) => [{ kind: "content", blocks }],
   AskActions: () => <button type="button">Answer</button>,
+  safeDisplayName: (name: string) => name,
+  ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
+  openHelpers: new Set<string>(),
 };
 const MessageBubble = new Function(
   ...Object.keys(scope),
@@ -231,5 +266,84 @@ describe("thread cards", () => {
     expect(card?.textContent).toContain("Example notes");
     expect(styleOf(card)).toMatchObject({ maxWidth: 576 });
     expect(styleOf(card).width).toBeUndefined();
+  });
+
+  it("labels a running helper", () => {
+    const message = {
+      id: "running-message",
+      role: "bot",
+      blocks: [
+        {
+          kind: "subagent",
+          agentId: "running-helper",
+          name: "writer",
+          task: longQuestion,
+          status: "running",
+        },
+      ],
+    } as MobileMessage;
+    act(() =>
+      root.render(<MessageBubble botId="bot-1" bots={[]} message={message} actionProps={{}} />),
+    );
+    expect(container.textContent).toContain("Running");
+  });
+
+  it("folds a helper card to one line of the task until it is pressed, across its saved message", () => {
+    const message = {
+      id: "message-1",
+      role: "bot",
+      blocks: [
+        {
+          kind: "subagent",
+          agentId: "agent-1",
+          name: "writer",
+          task: longQuestion,
+          status: "completed",
+          result: "A long report",
+        },
+      ],
+    } as MobileMessage;
+    const onLongPress = vi.fn();
+    act(() =>
+      root.render(
+        <MessageBubble botId="bot-1" bots={[]} message={message} actionProps={{ onLongPress }} />,
+      ),
+    );
+    const card = () => container.querySelector("button[aria-expanded]");
+    expect(container.querySelector("[data-chevron=down]")).not.toBeNull();
+    expect(container.textContent).toContain("Completed");
+    act(() => card()?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+    expect(onLongPress).toHaveBeenCalled();
+    const task = () =>
+      [...container.querySelectorAll("span")].find((span) => span.textContent === longQuestion);
+    expect(card()?.getAttribute("aria-expanded")).toBe("false");
+    expect(task()?.getAttribute("data-number-of-lines")).toBe("1");
+    expect(container.textContent).not.toContain("A long report");
+
+    act(() => (card() as HTMLElement).click());
+    expect(card()?.getAttribute("aria-expanded")).toBe("true");
+    expect(task()?.hasAttribute("data-number-of-lines")).toBe(false);
+    expect(container.textContent).toContain("A long report");
+
+    onLongPress.mockClear();
+    act(() =>
+      container.querySelector("p")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
+    );
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+    act(() => container.querySelector("p")?.click());
+    expect(card()?.getAttribute("aria-expanded")).toBe("true");
+
+    // The saved message replaces the live card under a new id; the card stays open.
+    const saved = { ...message, id: "message-2" };
+    act(() =>
+      root.render(
+        <MessageBubble key="saved" botId="bot-1" bots={[]} message={saved} actionProps={{}} />,
+      ),
+    );
+    expect(card()?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => (card() as HTMLElement).click());
+    expect(card()?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("A long report");
   });
 });
