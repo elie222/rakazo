@@ -1855,6 +1855,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   // Import only once settings are available, and keep mixed text/files together.
   const importingShare = useRef(false);
   const [shareImporting, setShareImporting] = useState(false);
+  // Bumped when an import ends, so a share handed back to the queue by a pass
+  // that settings cancelled is claimed again with the settled settings.
+  const [shareImportTick, setShareImportTick] = useState(0);
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const share = takeIncomingShare();
@@ -1890,12 +1893,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       } finally {
         importingShare.current = false;
         setShareImporting(false);
+        setShareImportTick((tick) => tick + 1);
       }
     })();
     return () => {
       active = false;
     };
-  }, [threadKey, readOnly, uploadConfig]);
+  }, [threadKey, readOnly, uploadConfig, shareImportTick]);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
