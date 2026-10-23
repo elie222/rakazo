@@ -476,7 +476,10 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-muted p-4">
+      <div
+        data-testid="chart-card"
+        className="group relative w-[552px] max-w-full rounded-[20px] bg-muted p-4"
+      >
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
