@@ -1256,6 +1256,7 @@ export class McpOAuthBroker {
     // Resolve the network before taking a connection for the lock.
     const network = oauthFetch(target, this.network, {}, this.allowPrivateEndpoint);
     let stored: { id: string; ciphertext: string } | undefined;
+    let rotated: { material: OAuthMaterial; grant: TokenGrant; spent: string } | undefined;
     try {
       const result = await persistPreparedSecret(
         this.prisma,
@@ -1285,6 +1286,7 @@ export class McpOAuthBroker {
                 grant = {};
               }
               applyGrant(oauth, grant);
+              if (grant.tokens) rotated = { material, grant, spent: current };
               stored = await this.putMaterial(material, context);
               if (!(await this.commitMaterial(tx, serverId, context, snapshot, stored)))
                 throw new Error("MCP credentials changed during refresh; retry");
@@ -1299,7 +1301,21 @@ export class McpOAuthBroker {
       return result.grant;
     } catch (error) {
       if (stored) await deleteSecretBestEffort(this.secrets, stored.ciphertext, stored.id);
-      throw error;
+      if (!rotated) throw error;
+      // The authorization server already rotated the grant, so the stored one is spent.
+      // Store the new one over the grant it replaced; a login or disconnect that landed
+      // meanwhile wins. If that fails too, this run keeps the tokens it was issued.
+      getLogger().warn("MCP OAuth refresh commit failed; storing the rotated grant again");
+      try {
+        const kept = await this.replaceMaterial(serverId, rotated.material, context, {
+          expectedEndpoint: endpoint,
+          onPersisted,
+          storedRefreshToken: rotated.spent,
+        });
+        return kept ?? rotated.grant;
+      } catch {
+        return rotated.grant;
+      }
     } finally {
       await network.close().catch(() => undefined);
     }
@@ -1345,8 +1361,10 @@ export class McpOAuthBroker {
           (storedOAuth?.tokens?.refresh_token ?? null) !== options.storedRefreshToken
         ) {
           // Another process rotated or replaced the grant; never overwrite it with an older one.
+          // A disconnect removed the state altogether, and this write must not bring it back.
           kept = { tokens: storedOAuth?.tokens, obtainedAt: storedOAuth?.obtainedAt };
-          applyGrant(nextMaterial.oauth, kept);
+          if (storedOAuth) applyGrant(nextMaterial.oauth, kept);
+          else delete nextMaterial.oauth;
         }
       } else delete nextMaterial.oauth;
       const hasMaterial = Boolean(
