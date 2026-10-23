@@ -55,6 +55,110 @@ describe("catalog provider authentication", () => {
     },
   );
 
+  it.each([
+    ["deepseek", "https://api.deepseek.com/models", { Authorization: "Bearer fixture-key" }],
+    [
+      "google",
+      "https://generativelanguage.googleapis.com/v1beta/models",
+      { "x-goog-api-key": "fixture-key" },
+    ],
+  ])(
+    "checks %s without calling a model or putting the key in the URL",
+    async (provider, url, headers) => {
+      const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({}));
+      await verifyCatalogProviderApiKey({ provider, apiKey: " fixture-key " }, fetchImpl);
+      expect(fetchImpl).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ headers, redirect: "error" }),
+      );
+    },
+  );
+
+  it.each(["google", "deepseek"])("rejects unauthorized %s keys", async (provider) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider, apiKey: "fixture-key" },
+        async () => new Response("private upstream details", { status: 401 }),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it("recognizes Google's structured invalid-key response without exposing the body", async () => {
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "google", apiKey: "fixture-key" }, async () =>
+        Response.json(
+          { error: { message: "private details", details: [{ reason: "API_KEY_INVALID" }] } },
+          { status: 400 },
+        ),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it.each([
+    "invalid JSON",
+    JSON.stringify({ error: { details: [{ reason: "OTHER_REASON" }] } }),
+    "x".repeat(4097),
+  ])("does not label an unknown Google error as an invalid key", async (body) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => new Response(body, { status: 400 }),
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+  });
+
+  it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
+    const controller = new AbortController();
+    let waitingForBody: (() => void) | undefined;
+    const bodyStarted = new Promise<void>((resolve) => {
+      waitingForBody = resolve;
+    });
+    const result = verifyCatalogProviderApiKey(
+      { provider: "google", apiKey: "fixture-key" },
+      async (_url, init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              body.enqueue(new TextEncoder().encode('{"error":'));
+              init?.signal?.addEventListener(
+                "abort",
+                () => body.error(new Error("private fixture-key details")),
+                { once: true },
+              );
+              waitingForBody?.();
+            },
+          }),
+          { status: 400 },
+        ),
+      controller.signal,
+    );
+    const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+    await bodyStarted;
+    controller.abort();
+    await assertion;
+  });
+
+  it("cancels an oversized Google error without waiting for the stream to finish", async () => {
+    const cancel = vi.fn();
+    const response = new Response(
+      new ReadableStream({
+        start(body) {
+          body.enqueue(new Uint8Array(4097));
+        },
+        cancel,
+      }),
+      { status: 400 },
+    );
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => response,
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
   it("bounds a stalled check and hides transport error details", async () => {
     const deadline = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);

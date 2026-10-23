@@ -42,18 +42,17 @@ function measure(before: boolean) {
     memo: before ? (component: ComponentType) => component : memo,
     useCallback,
     useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => text,
+    previewSnippet: (text: string) => {
+      renders++;
+      return text;
+    },
     formatThreadTime: () => "",
     botTag: () => "",
     isRunWorking,
-    mobileBotAvatarPresentation: () => {
-      renders++;
-      return { kind: "color", color: "gray" };
-    },
     FALLBACK_COLOR: "gray",
     ConversationRow: () => null,
     BotAvatar: () => null,
-    WorkingIndicator: () => null,
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
     // Rows in the current space carry the iOS swipe host; it must not defeat the memo.
     InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
     inboxRowActionList,
@@ -200,12 +199,11 @@ it.each(["midnight", "focus", "foreground"])(
       formatThreadTime,
       botTag: () => "",
       isRunWorking,
-      mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
       FALLBACK_COLOR: "gray",
       ConversationRow: ({ time }: { time: string }) => <span>{time}</span>,
       BotAvatar: () => null,
+      AvatarRow: ({ children }: { children: ReactElement }) => children,
       GroupAvatar: () => null,
-      WorkingIndicator: () => null,
       InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
       inboxRowActionList,
       appearance: "light",
@@ -314,7 +312,6 @@ it("renders saved bot rows without a title or notification setting", () => {
     formatThreadTime,
     botTag,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
     ConversationRow: ({
       tag,
@@ -332,8 +329,12 @@ it("renders saved bot rows without a title or notification setting", () => {
         {avatar}
       </span>
     ),
-    BotAvatar: ({ muted }: { muted: boolean }) => (muted ? " muted" : null),
-    WorkingIndicator: () => null,
+    BotAvatar: ({ muted, motion }: { muted: boolean; motion?: string }) =>
+      `${muted ? " muted" : ""}${motion ? ` ${motion}` : ""}`,
+    // The row's avatar freezes while the row is scrolled out of view.
+    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
+      <i data-row={id}>{children}</i>
+    ),
   };
   const rowSource = source.slice(
     source.indexOf("const BotRow = memo("),
@@ -358,9 +359,14 @@ it("renders saved bot rows without a title or notification setting", () => {
       ),
     );
     expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Research|Research|Alpha, Research, Research",
-      "|No messages yet|Beta, No messages yet",
-      "|No messages yet|Gamma, notifications silenced, No messages yet muted",
+      "Research|Research|Alpha, Research, Research lazy",
+      "|No messages yet|Beta, No messages yet lazy",
+      "|No messages yet|Gamma, notifications silenced, No messages yet muted lazy",
+    ]);
+    expect(Array.from(container.querySelectorAll("i"), (row) => row.dataset.row)).toEqual([
+      "bot-a",
+      "bot-b",
+      "bot-c",
     ]);
   } finally {
     act(() => root.unmount());
@@ -368,7 +374,7 @@ it("renders saved bot rows without a title or notification setting", () => {
   }
 });
 
-it("shows the working dots only while the bot works, not while it waits on the user", () => {
+it("says working only while the bot works, and shows nothing beside the time", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const scope = {
     React,
@@ -379,22 +385,13 @@ it("shows the working dots only while the bot works, not while it waits on the u
     botTag: () => "",
     ACTIVE_RUN_STATUSES,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
-    ConversationRow: ({
-      accessibilityLabel,
-      indicator,
-    }: {
-      accessibilityLabel: string;
-      indicator: ReactElement | null;
-    }) => (
-      <span>
-        {accessibilityLabel}
-        {indicator}
-      </span>
+    // The avatar's motion and corner dot are the only working sign; the time stands alone.
+    ConversationRow: (props: { accessibilityLabel: string }) => (
+      <span data-indicator={"indicator" in props}>{props.accessibilityLabel}</span>
     ),
     BotAvatar: () => null,
-    WorkingIndicator: () => " dots",
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
   };
   const rowSource = source.slice(
     source.indexOf("const BotRow = memo("),
@@ -419,12 +416,72 @@ it("shows the working dots only while the bot works, not while it waits on the u
       ),
     );
     // A "Needs you" computer card or an ask card is the state; the row must not claim work.
+    expect(
+      Array.from(container.querySelectorAll("span"), (span) => span.dataset.indicator),
+    ).toEqual(["false", "false", "false", "false"]);
     expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Helper, Working…, Hi dots",
+      "Helper, Working…, Hi",
       "Helper, Hi",
       "Helper, Hi",
       "Helper, Hi",
     ]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const action = vi.fn();
+  const listSource = source.slice(
+    source.indexOf("  const renderItem = useCallback("),
+    source.indexOf("  if (!ready) {"),
+  );
+  // The list's own key for each item.
+  const keySource = source.slice(
+    source.indexOf("function inboxItemKey("),
+    source.indexOf("function inboxSignal("),
+  );
+  const scope = {
+    React,
+    useCallback,
+    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
+      <i data-row={id}>{children}</i>
+    ),
+    PinnedTiles: () => <b />,
+    appearance: "light",
+    botAction: action,
+    botSections: [],
+    chooseInboxSpace: action,
+    collapsed: new Set(),
+    confirmDeleteSpace: action,
+    deleteSection: action,
+    day: 0,
+    editSectionFromMenu: action,
+    groupAction: action,
+    me: { spaceId: "space-1" },
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeFromMenu: action,
+    organizeGroup: action,
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    styles: {},
+    t: action,
+    toggleCollapsed: action,
+  };
+  const compiled = ts.transpileModule(
+    `${keySource}\nreturn function List() {\n${listSource}\nreturn renderItem({ item: { type: "pinned", chats: [] } });\n};`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() => root.render(<List />));
+    expect(container.querySelector('[data-row="pinned"] > b')).not.toBeNull();
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();
@@ -697,12 +754,11 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     botTag: () => "",
     ACTIVE_RUN_STATUSES,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
     ConversationRow: () => null,
     BotAvatar: () => null,
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
     GroupAvatar: () => null,
-    WorkingIndicator: () => null,
     InboxSwipeRow: ({ rowKey }: { rowKey: string }) => {
       withMenu.push(rowKey);
       return null;

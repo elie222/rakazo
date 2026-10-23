@@ -6,6 +6,17 @@ export class TransientModelError extends Error {
   }
 }
 
+/**
+ * The user's model provider rejected the key, hit a credit or usage limit, or no longer serves
+ * the model. The user fixes it in their provider account or connection settings; not a server fault.
+ */
+export class ModelAccountError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelAccountError";
+  }
+}
+
 function errorFacts(value: unknown) {
   const text: string[] = [];
   const statuses = new Set<number>();
@@ -102,7 +113,9 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
  * structured status fields.
  */
 export function isTransientModelError(error: unknown): boolean {
-  const { text } = errorFacts(error);
+  const { text, statuses } = errorFacts(error);
+  // Payment required never clears during a retry.
+  if (statuses.has(402)) return false;
   // Short rate windows can reset during a retry; subscription and billing limits cannot.
   const shortWindow =
     /\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|retry[- ]after[: ]+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b/.test(

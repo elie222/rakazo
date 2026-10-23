@@ -180,7 +180,7 @@ function ThreadFixture({ snapshot }: { snapshot: ThreadSnapshot }) {
         {running && !hasLiveProgressText ? (
           <ActiveBotGlyph
             bots={[{ botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR }]}
-            label="Chief is working"
+            label="Working…"
           />
         ) : null}
       </div>

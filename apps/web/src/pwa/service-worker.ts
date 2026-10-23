@@ -4,6 +4,7 @@ export const CACHE_PREFIX = "rakazo-shell-";
 // Live data, auth callbacks and the screen proxy always go straight to the server.
 const BYPASS_PREFIXES = ["/api", "/rpc", "/novnc", "/.well-known", "/health"];
 const ACTIVATION_TIMEOUT_MS = 3_000;
+const BUILD_ID = /^\d{14}$/;
 
 type ExtendableEvent = { waitUntil(promise: Promise<unknown>): void };
 type FetchEvent = ExtendableEvent & {
@@ -60,11 +61,19 @@ export function installServiceWorker(
   scope.addEventListener("activate", (event) => {
     event.waitUntil(
       scope.caches.keys().then((names) => {
-        // Keep the newest previous shell for tabs still running its bundle.
+        // Keep the newest previous shell for tabs still running its bundle. Names end in the build
+        // id, which sorts oldest first; older workers named caches by a content hash instead, so
+        // one of those is kept only when no build-named cache exists.
         const previous = names.filter(
           (name) => name.startsWith(CACHE_PREFIX) && name !== cacheName,
         );
-        return Promise.all(previous.slice(0, -1).map((name) => scope.caches.delete(name)));
+        const byBuild = previous
+          .filter((name) => BUILD_ID.test(name.slice(CACHE_PREFIX.length)))
+          .sort();
+        const keep = byBuild.at(-1) ?? previous.at(-1);
+        return Promise.all(
+          previous.filter((name) => name !== keep).map((name) => scope.caches.delete(name)),
+        );
       }),
     );
   });

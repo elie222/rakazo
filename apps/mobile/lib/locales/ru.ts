@@ -1,4 +1,8 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "API-ключ Ollama",
+  "Show password": "Показать пароль",
+  "Hide password": "Скрыть пароль",
   Export: "Экспорт",
   "Edit avatar": "Изменить аватар",
   "Add open work": "Добавить задачу",
@@ -28,6 +32,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
 
+  Headers: "Заголовки",
+  "Add header": "Добавить заголовок",
+  "Remove header": "Удалить заголовок",
+  "Header name": "Название заголовка",
+  "Header value": "Значение заголовка",
   Resets: "Сброс",
   Limit: "Лимит",
   "Provider message": "Сообщение провайдера",
@@ -182,7 +191,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{name} is working": "{name} работает",
   "{name}’s computer": "Компьютер {name}",
   "{runs} runs · {tokens} tokens": "Запусков: {runs} · токенов: {tokens}",
-  "{style} avatars": "Аватары: {style}",
   "@{name}": "@{name}",
   "API key": "API-ключ",
   "Account ID": "ID аккаунта",
@@ -235,8 +243,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Authorization timed out. Please try again.":
     "Время авторизации истекло. Пожалуйста, попробуйте еще раз.",
   "Authorize {name}": "Авторизовать {name}",
-  Avatars: "Аватары",
-  "Avatar style": "Стиль аватара",
   "Bearer token": "Bearer-токен",
   "Back to sign in": "Вернуться ко входу",
   Back: "Назад",
@@ -384,7 +390,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not update computer": "Не удалось обновить компьютер",
   "Could not update notifications": "Не удалось обновить уведомления.",
   "Could not update reaction": "Не удалось обновить реакцию",
-  "Couldn't update avatars": "Не удалось обновить аватары",
   Create: "Создать",
   "Create section": "Создать раздел",
   "Create space": "Создать пространство",
@@ -530,7 +535,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "OpenAI-compatible server URL": "URL-адрес сервера, совместимого с OpenAI",
   Optional: "Необязательно",
   "Or connect an API key": "Или подключите API-ключ",
-  Organic: "Органичный",
   "Other model…": "Другая модель…",
   Password: "Пароль",
   "Password recovery is not configured for this server":
@@ -581,7 +585,6 @@ export const RU_MESSAGES: Record<string, string> = {
     "Восстановить последнее сохранённое рабочее пространство. Несохранённые данные на компьютере будут потеряны.",
   "Resume notifications": "Возобновить уведомления",
   "Return to inbox": "Вернуться во входящие",
-  Robot: "Робот",
   Routine: "Задача",
   "Routine link is incomplete": "Ссылка на задачу неполная",
   Routines: "Задачи",
@@ -977,9 +980,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Continue with credits": "Продолжить с кредитами",
   "Add credits": "Пополнить кредиты",
   "Manage billing": "Управление оплатой",
-  "Your API key": "Ваш API-ключ",
-  "Free. Pay your model provider directly.": "Бесплатно. Оплачивайте модель напрямую провайдеру.",
-  "Use my API key": "Использовать свой API-ключ",
+  "Your subscription or API key": "Ваша подписка или API-ключ",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Бесплатно. ChatGPT, Claude или любой провайдер моделей.",
+  "Use my subscription or API key": "Использовать свою подписку или API-ключ",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Ежемесячные кредиты истекают при продлении. Разовые пополнения не сгорают.",
   "Use Rakazo credits": "Использовать кредиты Rakazo",

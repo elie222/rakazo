@@ -18,17 +18,18 @@ test("onboarding preflight stays on the connection being tested", async ({ page 
   });
 
   const provider = page.getByRole("combobox", { name: "Provider" });
-  await expect(provider).toContainText("OpenRouter");
+  await provider.click();
+  await page.getByRole("option", { name: "OpenRouter", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test API key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Test sign-in" })).toHaveCount(0);
 
   await provider.click();
-  await page.getByRole("option", { name: "OpenAI", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI API", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test API key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Test sign-in" })).toHaveCount(0);
 
   await provider.click();
-  await page.getByRole("option", { name: "Anthropic" }).click();
+  await page.getByRole("option", { name: "Claude subscription", exact: true }).click();
   await expect(page.getByRole("button", { name: "Test sign-in" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Test API key" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-model-preflight");

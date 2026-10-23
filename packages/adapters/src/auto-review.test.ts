@@ -429,7 +429,7 @@ describe("runAutoReviewJudge timeout", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const runtime = {
       run: () => {
-        throw new Error(`fake-checker-key ${"x".repeat(300)}`);
+        throw new Error(`fake-checker-key fake-header-secret us ${"x".repeat(300)}`);
       },
     };
     await expect(
@@ -437,6 +437,7 @@ describe("runAutoReviewJudge timeout", () => {
         runtime: runtime as never,
         checker: { provider: "openrouter", model: "x" },
         apiKey: "fake-checker-key",
+        headers: { "x-session": "fake-header-secret", "x-region": "us" },
         prompt: "test",
         runId: "run",
         spaceId: "ws",
@@ -446,7 +447,39 @@ describe("runAutoReviewJudge timeout", () => {
       }),
     ).resolves.toMatchObject({ decision: "error", reason: "Checker failed." });
     expect(warn).toHaveBeenCalledExactlyOnceWith(
-      `[auto-review] checker openrouter/x failed: Error: [redacted] ${"x".repeat(181)}…`,
+      `[auto-review] checker openrouter/x failed: Error: [redacted] [redacted] us ${"x".repeat(167)}…`,
+    );
+  });
+
+  it("redacts header-only credentials from asynchronous checker failures", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = {
+      run: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text", text: "" };
+          throw new Error("status failed: 12345678 fake-session-secret us");
+        },
+      }),
+    };
+    await expect(
+      runAutoReviewJudge({
+        runtime: runtime as never,
+        checker: { provider: "openai-compatible", model: "fixture" },
+        headers: {
+          "x-boundary": "12345678",
+          "x-session": "fake-session-secret",
+          "x-region": "us",
+        },
+        prompt: "test",
+        runId: "run",
+        spaceId: "ws",
+        userId: "user",
+        botId: "bot",
+        threadId: "thread",
+      }),
+    ).resolves.toMatchObject({ decision: "error", reason: "Checker failed." });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "[auto-review] checker openai-compatible/fixture failed: Error: status failed: [redacted] [redacted] us",
     );
   });
 

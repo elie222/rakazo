@@ -26,6 +26,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import type { ViewToken } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -55,7 +56,6 @@ import { HomeErrorState } from "../components/home-error-state";
 import { InboxSwipeRow } from "../components/inbox-swipe-row";
 import { NativeSymbol } from "../components/native-symbol";
 import { useUnreadJumpPills } from "../components/unread-jump-overlay";
-import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   activityPreview,
   activityStatusLabel,
@@ -96,7 +96,7 @@ import {
   notifyArchivedChatsChanged,
   onArchivedChatsChanged,
 } from "../lib/archived-chats";
-import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { AvatarRow, AvatarViewportScope, createAvatarViewport } from "../lib/avatar-life";
 import { confirmDeleteBot, confirmDeleteGroup } from "../lib/bot-lifecycle";
 import type { CollapsedSections } from "../lib/collapsed-sections";
 import { loadCollapsedSections, saveCollapsedSections } from "../lib/collapsed-sections";
@@ -149,6 +149,8 @@ import type { LoadFailureKind } from "../lib/user-error";
 import { errorText, loadFailureKind } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
+/** A row counts as on screen as soon as any of it shows. */
+const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
 // A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
 const TAGLESS_LIST_WIDTH = 360;
 const CompactRowsContext = createContext(false);
@@ -1182,18 +1184,25 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     [loadBots, t],
   );
 
+  const [avatarViewport] = useState(createAvatarViewport);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) =>
+    avatarViewport.update(viewableItems.map((token) => token.key)),
+  ).current;
   const renderItem = useCallback(
     ({ item }: { item: InboxItem }) =>
       item.type === "pinned" ? (
-        <PinnedTiles
-          chats={item.chats}
-          onOpenBot={openBot}
-          onOpenGroup={openGroup}
-          onLongPressBot={organizeBot}
-          onLongPressGroup={organizeGroup}
-          onBotAction={botAction}
-          onGroupAction={groupAction}
-        />
+        // The pinned tiles' avatars freeze with their row when it scrolls away.
+        <AvatarRow id={inboxItemKey(item)}>
+          <PinnedTiles
+            chats={item.chats}
+            onOpenBot={openBot}
+            onOpenGroup={openGroup}
+            onLongPressBot={organizeBot}
+            onLongPressGroup={organizeGroup}
+            onBotAction={botAction}
+            onGroupAction={groupAction}
+          />
+        </AvatarRow>
       ) : item.type === "heading" ? (
         item.space ? (
           <View style={styles.spaceHeading}>
@@ -1435,76 +1444,81 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>
         <CompactRowsContext.Provider value={compactRows}>
           <View style={styles.listArea}>
-            <FlatList<InboxItem>
-              ref={listRef}
-              {...unreadJump.listProps}
-              style={{ flex: 1 }}
-              data={showLoadFailure ? [] : listData}
-              keyExtractor={inboxItemKey}
-              keyboardDismissMode="interactive"
-              keyboardShouldPersistTaps="handled"
-              indicatorStyle={appearance === "dark" ? "white" : "black"}
-              contentContainerStyle={[
-                styles.list,
-                { paddingLeft: columnInsets.left, paddingRight: columnInsets.right },
-              ]}
-              contentInsetAdjustmentBehavior="automatic"
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={() => {
-                    void refreshBots();
-                    void loadActivity();
-                  }}
-                  tintColor={native.secondaryLabel}
-                  colors={[tokens.mutedForeground]}
-                  progressBackgroundColor={tokens.muted}
-                />
-              }
-              ListHeaderComponent={
-                <>
-                  {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
-                  {spaceRecoveryId ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={spaceBusy}
-                      onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-                      style={styles.recoveryAction}
-                    >
-                      <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-                    </Pressable>
-                  ) : null}
-                  {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
-                    <ActivitySection activity={activity} bots={bots} />
-                  ) : null}
-                </>
-              }
-              ListEmptyComponent={
-                showLoadFailure && loadFailure ? (
-                  <HomeErrorState
-                    kind={loadFailure.kind}
-                    message={loadFailure.message}
-                    loading={inboxLoading && !refreshing}
-                    onRetry={() => void refreshBots()}
-                    onSignIn={() => void signInAgain()}
+            <AvatarViewportScope viewport={avatarViewport}>
+              <FlatList<InboxItem>
+                ref={listRef}
+                {...unreadJump.listProps}
+                style={{ flex: 1 }}
+                // Rows scrolled out of view freeze their avatars until they come back.
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={AVATAR_VIEWABILITY}
+                data={showLoadFailure ? [] : listData}
+                keyExtractor={inboxItemKey}
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
+                indicatorStyle={appearance === "dark" ? "white" : "black"}
+                contentContainerStyle={[
+                  styles.list,
+                  { paddingLeft: columnInsets.left, paddingRight: columnInsets.right },
+                ]}
+                contentInsetAdjustmentBehavior="automatic"
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => {
+                      void refreshBots();
+                      void loadActivity();
+                    }}
+                    tintColor={native.secondaryLabel}
+                    colors={[tokens.mutedForeground]}
+                    progressBackgroundColor={tokens.muted}
                   />
-                ) : (
-                  <Text style={styles.empty}>{me ? t("Tap + to create a bot") : null}</Text>
-                )
-              }
-              ListFooterComponent={
-                <>
-                  {!showLoadFailure && inboxNeedsCreateHint(listData) ? (
-                    <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
-                  ) : null}
-                  <ArchivedChatsRow
-                    count={archivedCount}
-                    onPress={() => router.push("/archived-bots")}
-                  />
-                </>
-              }
-              renderItem={renderItem}
-            />
+                }
+                ListHeaderComponent={
+                  <>
+                    {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
+                    {spaceRecoveryId ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={spaceBusy}
+                        onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+                        style={styles.recoveryAction}
+                      >
+                        <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+                      </Pressable>
+                    ) : null}
+                    {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
+                      <ActivitySection activity={activity} bots={bots} />
+                    ) : null}
+                  </>
+                }
+                ListEmptyComponent={
+                  showLoadFailure && loadFailure ? (
+                    <HomeErrorState
+                      kind={loadFailure.kind}
+                      message={loadFailure.message}
+                      loading={inboxLoading && !refreshing}
+                      onRetry={() => void refreshBots()}
+                      onSignIn={() => void signInAgain()}
+                    />
+                  ) : (
+                    <Text style={styles.empty}>{me ? t("Tap + to create a bot") : null}</Text>
+                  )
+                }
+                ListFooterComponent={
+                  <>
+                    {!showLoadFailure && inboxNeedsCreateHint(listData) ? (
+                      <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+                    ) : null}
+                    <ArchivedChatsRow
+                      count={archivedCount}
+                      onPress={() => router.push("/archived-bots")}
+                    />
+                  </>
+                }
+                renderItem={renderItem}
+              />
+            </AvatarViewportScope>
             {refreshing || showLoadFailure || inboxHasNoChats(listData) ? null : unreadJump.overlay}
           </View>
         </CompactRowsContext.Provider>
@@ -1611,7 +1625,12 @@ function ActivityRow({
       accessibilityLabel={`${title}, ${status}`}
       onPress={onPress}
       avatar={
-        <BotAvatar identity={run.botId} color={bot?.color ?? FALLBACK_COLOR} status={run.status} />
+        <BotAvatar
+          identity={run.botId}
+          color={bot?.color ?? FALLBACK_COLOR}
+          status={run.status}
+          motion="lazy"
+        />
       }
     />
   );
@@ -1626,7 +1645,6 @@ function ConversationRow({
   preview,
   time,
   avatar,
-  indicator,
   tag,
   unread,
   depth = 0,
@@ -1645,7 +1663,6 @@ function ConversationRow({
   preview: string;
   time: string;
   avatar: ReactNode;
-  indicator?: ReactNode;
   tag?: string | null;
   unread?: boolean;
   depth?: number;
@@ -1735,7 +1752,6 @@ function ConversationRow({
             ) : null}
           </View>
           <View style={styles.rowMeta}>
-            {indicator}
             {time ? <Text style={styles.time}>{time}</Text> : null}
             {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
           </View>
@@ -1903,6 +1919,7 @@ const PinnedTiles = memo(function PinnedTiles({
                 size={avatarSize}
                 status={chat.bot.status}
                 muted={chat.bot.notifyOnFinish === false}
+                motion="lazy"
               />
             ) : (
               <GroupAvatar members={chat.group.members} size={avatarSize} />
@@ -1960,10 +1977,6 @@ const BotRow = memo(function BotRow({
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
   const tag = botTag(bot.title, bot.name);
   const working = isRunWorking(bot.status);
-  // Only flat avatars carry a usable color; image avatars fall back to the muted dot.
-  const presentation = mobileBotAvatarPresentation(bot.color || FALLBACK_COLOR);
-  const tint =
-    presentation.kind === "shape" || presentation.kind === "color" ? presentation.color : undefined;
   // Spelled out because an explicit label replaces the one built from the row's children.
   const label = [
     bot.name,
@@ -1997,15 +2010,17 @@ const BotRow = memo(function BotRow({
       onLongPress={onLongPress ? () => onLongPress(bot) : undefined}
       actions={onAction ? inboxRowActionList(bot) : undefined}
       onAction={runAction}
-      indicator={working ? <WorkingIndicator compact tint={tint} /> : null}
       avatar={
-        <BotAvatar
-          color={bot.color || FALLBACK_COLOR}
-          identity={bot.id}
-          size={INBOX_ROW.avatarSize}
-          status={bot.status}
-          muted={bot.notifyOnFinish === false}
-        />
+        <AvatarRow id={bot.id}>
+          <BotAvatar
+            color={bot.color || FALLBACK_COLOR}
+            identity={bot.id}
+            size={INBOX_ROW.avatarSize}
+            status={bot.status}
+            muted={bot.notifyOnFinish === false}
+            motion="lazy"
+          />
+        </AvatarRow>
       }
     />
   );

@@ -66,6 +66,9 @@ vi.mock("react-native", () => {
     <div data-testid={testID}>{children}</div>
   );
   return {
+    ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) => (
+      <div role="progressbar" aria-label={accessibilityLabel} />
+    ),
     View,
     ScrollView: View,
     Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,

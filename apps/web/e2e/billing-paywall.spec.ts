@@ -103,7 +103,7 @@ test("choose free API keys or monthly credits, then add a one-time top-up", asyn
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
   await page.reload();
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Use my API key", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect my own", exact: true })).toBeVisible();
   await expect(page.getByText("Hosted computer included.", { exact: true })).toHaveCount(0);
   const planSelect = page.getByRole("combobox", { name: "Monthly credits" });
   await expect(planSelect).toHaveCSS("height", "48px");
@@ -176,7 +176,7 @@ test("choose free API keys or monthly credits, then add a one-time top-up", asyn
     });
     await route.fulfill({ json: { json: { ok: true } } });
   });
-  await page.getByRole("button", { name: "Use my API key", exact: true }).click();
+  await page.getByRole("button", { name: "Connect my own", exact: true }).click();
   await expect(page.getByText("Chief").first()).toBeVisible();
   status = billingStatus({
     access: true,

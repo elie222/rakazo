@@ -7,11 +7,11 @@ import {
   compatibleModelRows,
   connectedModelChoices,
   credentialForModel,
-  featuredModelProviders,
   filterModelCatalog,
   filterModelChoices,
   groupModelChoices,
   pickCatalogModelId,
+  popularModelProvidersFirst,
   resolveSelectableModelId,
   savedCompatibleModelIds,
   selectedProviderOutsideSearchResults,
@@ -28,62 +28,16 @@ function provider(provider: string): ModelCatalogEntry {
   };
 }
 
-describe("featuredModelProviders", () => {
-  it("shows popular providers in a stable order", () => {
-    const providers = [
-      provider("azure"),
-      provider("vercel-ai-gateway"),
-      provider("google"),
-      provider("openai"),
-      provider("anthropic"),
-      provider("openai-codex"),
-      provider("openrouter"),
-    ];
-
-    expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "openai",
+describe("popularModelProvidersFirst", () => {
+  it("lists subscriptions and the common API providers first", () => {
+    const ids = ["azure", "google", "openai", "anthropic", "openai-codex", "openrouter"];
+    expect(popularModelProvidersFirst(ids, (id) => id)).toEqual([
       "openai-codex",
       "anthropic",
+      "openai",
+      "openrouter",
       "google",
-      "openrouter",
-      "vercel-ai-gateway",
-    ]);
-  });
-
-  it("fills missing popular slots from the catalog", () => {
-    const providers = [
-      provider("azure"),
-      provider("openrouter"),
-      provider("bedrock"),
-      provider("anthropic"),
-    ];
-
-    expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "anthropic",
-      "openrouter",
       "azure",
-      "bedrock",
-    ]);
-  });
-
-  it("keeps a non-featured selected provider visible", () => {
-    const providers = [
-      provider("openrouter"),
-      provider("openai-codex"),
-      provider("anthropic"),
-      provider("openai"),
-      provider("google"),
-      provider("vercel-ai-gateway"),
-      provider("local"),
-    ];
-
-    expect(featuredModelProviders(providers, "local").map((entry) => entry.provider)).toEqual([
-      "openai",
-      "openai-codex",
-      "anthropic",
-      "google",
-      "openrouter",
-      "local",
     ]);
   });
 });

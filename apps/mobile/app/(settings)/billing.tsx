@@ -180,11 +180,11 @@ export default function BillingScreen() {
           ) : null}
           {!recurring || status.cancelAtPeriodEnd ? (
             <SettingsGroup
-              label={t("Your API key")}
-              footer={t("Free. Pay your model provider directly.")}
+              label={t("Your subscription or API key")}
+              footer={t("Free. ChatGPT, Claude, or any model provider.")}
             >
               <SettingsRow
-                title={t("Use my API key")}
+                title={t("Use my subscription or API key")}
                 disabled={pending}
                 onPress={() =>
                   void action(async () => {

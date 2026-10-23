@@ -176,7 +176,7 @@ export default function ArtifactDetailScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: content.status === "ready" ? content.artifact.name : t("Loading…"),
+      title: content.status === "ready" ? content.artifact.name : "",
       headerRight: () =>
         content.status === "ready" ? (
           <View style={styles.headerActions}>

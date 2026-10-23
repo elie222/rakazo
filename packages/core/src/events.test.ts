@@ -8,6 +8,7 @@ import {
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
+  liveActivityLine,
   normalizeResponseStreamingPreference,
   projectMessages,
   reduceLiveMessageBlocks,
@@ -852,5 +853,30 @@ describe("stale helper projection", () => {
     expect(next.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
       status: "running",
     });
+  });
+});
+
+describe("liveActivityLine", () => {
+  it("reads the tool status the live message is showing", () => {
+    expect(
+      liveActivityLine([
+        { id: "m1", blocks: [{ kind: "text", text: "Hi" }] },
+        {
+          id: "progress:run-1",
+          blocks: [{ kind: "progress", text: "Searching the web: injury news", activity: true }],
+        },
+      ]),
+    ).toBe("Searching the web: injury news");
+  });
+
+  it("is empty while the bot writes text or has no live message", () => {
+    expect(
+      liveActivityLine([
+        { id: "progress:run-1", blocks: [{ kind: "progress", text: "Checking that first." }] },
+      ]),
+    ).toBeUndefined();
+    expect(
+      liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
+    ).toBeUndefined();
   });
 });

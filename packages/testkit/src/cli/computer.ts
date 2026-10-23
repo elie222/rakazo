@@ -16,7 +16,7 @@ async function main() {
     if (!process.env[key]) throw new Error(`${key} is required`);
   }
   const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-computer-e2e-run-"));
-  const database = await new PostgreSqlContainer("postgres:16-alpine").start();
+  const database = await new PostgreSqlContainer("postgres:18-alpine").start();
   const env = {
     ...process.env,
     DATABASE_URL: database.getConnectionUri(),

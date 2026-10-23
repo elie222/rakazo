@@ -583,6 +583,9 @@ importers:
 
   packages/adapters:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1127.0
+        version: 3.1127.0
       '@boatdev/sdk':
         specifier: 1.10.0
         version: 1.10.0

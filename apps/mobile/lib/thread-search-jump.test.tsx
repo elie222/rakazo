@@ -74,6 +74,8 @@ function mountJumpProbe(latest: MobileSnapshot, page: unknown, targetKey: "botId
       snapRef: useRef<MobileSnapshot | null>(latest),
       streamResponsesRef: useRef(false),
       setSnap,
+      setComposingBots: vi.fn(),
+      liveMessageComposing: () => false,
       setExpandedPeerMarkers,
       setThreadScrollState,
       scrollBehavior: useRef(new ThreadScrollBehavior()),

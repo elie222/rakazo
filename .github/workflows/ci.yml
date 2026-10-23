@@ -144,6 +144,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
 
+  test-postgres-upgrade:
+    name: Postgres upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: bash infra/compose/upgrade-postgres.docker-test.sh
+
   test-e2e:
     name: Web E2E
     uses: ./.github/workflows/playwright.yml
@@ -319,7 +329,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     # The host pulls the image published for this commit; it builds only if that pull fails.
-    needs: [lint, check, build, test, test-integration, test-e2e, publish-server-image]
+    needs: [lint, check, build, test, test-integration, test-postgres-upgrade, test-e2e, publish-server-image]
     runs-on: ubuntu-latest
     # Matches infra/compose/deploy-main.sh's own limits, including a fallback build and rollback.
     timeout-minutes: 45

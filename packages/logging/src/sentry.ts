@@ -17,6 +17,8 @@ export interface SentryConfig {
 }
 
 const FLUSH_TIMEOUT_MS = 2_000;
+// Model fields let issues be filtered by the provider and model that failed.
+const TAG_KEYS = [...CORRELATION_TAG_KEYS, "model.provider", "model.id"] as const;
 
 export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
   config?: SentryConfig;
@@ -114,7 +116,7 @@ export function createSentrySink(
       const message = redactSensitiveText(event.message);
       Sentry.withScope((scope) => {
         scope.setTag("service", service);
-        for (const key of CORRELATION_TAG_KEYS) {
+        for (const key of TAG_KEYS) {
           const value = event[key];
           if (typeof value === "string" && value.length > 0 && value.length <= 200)
             scope.setTag(key, redactSensitiveText(value));
@@ -155,7 +157,7 @@ function releaseFromGitSha(sha: string | undefined): string | undefined {
 
 /** The logger hands sinks a serialized error; rebuild one Sentry can parse, cause chain included. */
 function rebuildError(serialized: SerializedError): Error {
-  const message = redactSensitiveText(serialized.message);
+  const message = reportedMessage(redactSensitiveText(serialized.message), serialized.code);
   const error = new Error(message);
   error.name = redactSensitiveText(serialized.name);
   error.stack = serialized.stack
@@ -163,6 +165,23 @@ function rebuildError(serialized: SerializedError): Error {
     : `${error.name}: ${message}`;
   if (serialized.cause) error.cause = rebuildError(serialized.cause);
   return error;
+}
+
+const PRISMA_INVOCATION = /^Invalid `(?:\w+\.)*(\w+\.\w+)\(\)` invocation/;
+
+/**
+ * The collector titles an issue by the first line of the message. Prisma's errors start with a
+ * blank line and name the failing call only in their body, so every one arrived untitled; lead
+ * with the error code and the model operation instead.
+ */
+function reportedMessage(message: string, code: string | undefined): string {
+  const lines = message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const call = lines[0]?.match(PRISMA_INVOCATION)?.[1];
+  const summary = call ? `${call}: ${lines.slice(1).join(" ")}` : message.trimStart();
+  return code && !summary.includes(code) ? `${code} ${summary}` : summary;
 }
 
 function redactEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {

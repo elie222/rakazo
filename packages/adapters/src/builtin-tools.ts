@@ -790,7 +790,7 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
-  // Space memory provider is configured (which hides `remember`), and
+  // Space memory provider is configured (`remember` stays), and
   // forget_memory only when that provider can forget.
   {
     name: "save_memory",
