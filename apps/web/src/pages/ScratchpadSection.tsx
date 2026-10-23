@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
 import { Button, Checkbox, Input } from "@rakazo/ui-web";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { rpc } from "../lib/rpc";
@@ -9,6 +9,8 @@ import { rpc } from "../lib/rpc";
 export function ScratchpadSection({ botId }: { botId: string }) {
   const { t } = useLingui();
   const [items, setItems] = useState<ScratchpadItem[]>([]);
+  const [showAll, setShowAll] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +48,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     try {
       const created = await rpc.scratchpad.create({ botId, title });
       setDraft("");
+      setAdding(false);
       setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       try {
         await refresh();
@@ -100,96 +103,98 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     }
   }
 
+  if (!items.length && !error) return null;
+
   return (
-    <div className="mt-8" data-testid="bot-scratchpad">
-      <h3 className="mb-3 text-[15px] font-medium text-foreground">
+    <div className="mt-6" data-testid="bot-scratchpad">
+      <h3 className="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground pe-1">
         <Trans>Open work</Trans>
-      </h3>
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent"
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Add open work`}
+          title={t`Add open work`}
+          onClick={() => setAdding((value) => !value)}
         >
-          <Checkbox
-            aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
-            checked={item.status === "done"}
-            disabled={busy}
-            onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
-            className="mt-0.5"
-          />
-          <div className="min-w-0 flex-1">
-            <div
-              className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
-              dir="auto"
-            >
-              {item.title}
-            </div>
-            {item.notes ? (
-              <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
-                {item.notes}
+          <Plus className="size-4" />
+        </Button>
+      </h3>
+      <div className="rounded-xl bg-muted/50 p-4">
+        {(showAll ? items : items.slice(0, 5)).map((item) => (
+          <div
+            key={item.id}
+            className="group -mx-2.5 flex items-start gap-2 rounded-lg px-2.5 py-2 hover:bg-accent/50"
+          >
+            <Checkbox
+              aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
+              checked={item.status === "done"}
+              disabled={busy}
+              onCheckedChange={(checked) => void setStatus(item, checked ? "done" : "open")}
+              className="mt-[3px]"
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className={`text-start text-[14.5px] ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+                dir="auto"
+              >
+                {item.title}
               </div>
-            ) : null}
+              {item.notes ? (
+                <div className="mt-0.5 text-[12.5px] text-muted-foreground/80" dir="auto">
+                  {item.notes}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t`Remove`}
+              disabled={busy}
+              onClick={() => void removeItem(item)}
+              className="-mt-0.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
+            >
+              <X />
+            </Button>
           </div>
-          <span className="shrink-0 text-[12px] text-muted-foreground/80">{item.status}</span>
-          {item.status === "open" ? (
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label={t`Park`}
-              disabled={busy}
-              onClick={() => void setStatus(item, "parked")}
-              className="shrink-0 text-muted-foreground/70"
-            >
-              <Trans>Park</Trans>
-            </Button>
-          ) : item.status === "parked" ? (
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label={t`Reopen`}
-              disabled={busy}
-              onClick={() => void setStatus(item, "open")}
-              className="shrink-0 text-muted-foreground/70"
-            >
-              <Trans>Open</Trans>
-            </Button>
-          ) : null}
+        ))}
+        {items.length > 5 && !showAll ? (
           <Button
             variant="ghost"
-            size="icon-xs"
-            aria-label={t`Remove`}
-            disabled={busy}
-            onClick={() => void removeItem(item)}
-            className="shrink-0 text-muted-foreground/70"
+            size="sm"
+            className="mt-2 w-full text-muted-foreground"
+            onClick={() => setShowAll(true)}
           >
-            <X />
+            <Trans>Show more</Trans>
           </Button>
-        </div>
-      ))}
-      <form
-        className={`flex items-center gap-2 ${items.length ? "mt-2" : ""}`}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void addItem();
-        }}
-      >
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={t`Add item`}
-          aria-label={t`New open-work item`}
-          maxLength={200}
-          className="min-w-0 flex-1"
-        />
-        <Button
-          variant="secondary"
-          className="rounded-full"
-          disabled={busy || !draft.trim()}
-          onClick={() => void addItem()}
-        >
-          <Trans>Add</Trans>
-        </Button>
-      </form>
+        ) : null}
+        {adding ? (
+          <form
+            className={`flex items-center gap-2 ${items.length ? "mt-2" : ""}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addItem();
+            }}
+          >
+            <Input
+              autoFocus
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t`Add item`}
+              aria-label={t`New open-work item`}
+              maxLength={200}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              variant="secondary"
+              className="rounded-full"
+              disabled={busy || !draft.trim()}
+              onClick={() => void addItem()}
+            >
+              <Trans>Add</Trans>
+            </Button>
+          </form>
+        ) : null}
+      </div>
       {error ? <div className="mt-2 text-[13px] text-destructive">{error}</div> : null}
     </div>
   );

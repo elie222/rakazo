@@ -33,6 +33,7 @@ import {
   DEFAULT_CONTEXT_STRATEGY,
   historyCompactJob,
   MEMORY_REVISION_CONFLICT_ERROR,
+  ModelAccountError,
   routineJobKey,
   routineRetryJob,
   routineWakeupJob,
@@ -46,7 +47,9 @@ import {
   BotSecretName,
   botSecretSubmissionSchema,
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
   COMPUTER_COMMAND_OUTPUT_MAX_CHARS,
+  cloudflareModelConfigMessage,
   disabledBuiltinToolSet,
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
@@ -88,8 +91,8 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   newSiteOutcome,
-  nextCronDateAcross,
   nextFence,
+  nextRoutineRunDateAcross,
   outboundSiteGate,
   planActionGate,
   promptInvokesSkill,
@@ -117,6 +120,7 @@ import {
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  countUnreadInboxChats,
   createSpaceForMember,
   createThreadMessageInTransaction,
   effectiveMemoryScope,
@@ -125,8 +129,10 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  loadRunTurnCheckpoint,
   Prisma,
   parseComputerMode,
+  RUN_TURN_CHECKPOINT_KIND,
   RunHistoryWriteError,
   readHistory,
   recordUsage,
@@ -134,9 +140,11 @@ import {
   retireModelCredential,
   runAsSystem,
   SpaceLimitError,
+  saveRunTurnCheckpoint,
   searchHistory,
   settleReleasedTakeoverCards,
   validateInstructionProposal,
+  withTransactionRetry,
   writeBotInstructions,
 } from "@rakazo/db";
 import { enrichLogContext, getLogger } from "@rakazo/logging";
@@ -222,7 +230,7 @@ import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
-import { cloudflareGatewayProviderEnv } from "./cloudflare-ai-gateway.js";
+import { cloudflareProviderEnv } from "./cloudflare-ai-gateway.js";
 import type { PluginConnectionRow } from "./composio-connector.js";
 import {
   collectLogIds,
@@ -307,8 +315,13 @@ import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { appendMemoryFact, selectMemoryTools } from "./memory-tools.js";
 import {
+  HostedModelCreditsRequiredError,
+  hostedModelCreditObserver,
+} from "./model-credit-observer.js";
+import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
+  hasHostedModelCredits,
   pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
@@ -329,6 +342,7 @@ import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
+import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import {
   isRetiredModelCredentialError,
@@ -341,6 +355,7 @@ import {
   serializeModelSecret,
   withModelCredentialLock,
 } from "./pi-oauth.js";
+import { namedAgentTools } from "./pi-runtime.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
@@ -350,7 +365,6 @@ import {
   renderPlotSpecToSvg,
   searchChartCatalog,
 } from "./plot-tool.js";
-import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
@@ -366,6 +380,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-checkpoint.js";
 
 export { selectRunConnections } from "./connection-context.js";
 
@@ -505,8 +520,15 @@ const TURN_ATTACHMENT_UNAVAILABLE =
 const STEERING_ATTACHMENT_UNAVAILABLE = TURN_ATTACHMENT_UNAVAILABLE;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
 
-/** Avoid an expensive remote workspace export when a turn never touched the computer. */
-export function createRunWorkspaceCheckpoint(checkpoint: () => Promise<unknown>) {
+/**
+ * Avoid an expensive remote workspace export when a turn never touched the computer. A failed
+ * export does not fail the run: its work is done, the computer keeps the files, and the idle
+ * sleep checkpoints them again before stopping it. Only cancelling the run stops it.
+ */
+export function createRunWorkspaceCheckpoint(
+  checkpoint: () => Promise<unknown>,
+  signal?: AbortSignal,
+) {
   let dirty = false;
   return {
     markDirty() {
@@ -523,7 +545,9 @@ export function createRunWorkspaceCheckpoint(checkpoint: () => Promise<unknown>)
         return true;
       } catch (error) {
         dirty = true;
-        throw error;
+        if (signal?.aborted) throw error;
+        getLogger().warn("computer.checkpoint_deferred", { error });
+        return false;
       }
     },
   };
@@ -2744,6 +2768,7 @@ export interface ExecutorDeps {
   };
   secrets: string[];
   secretStore: SecretStore;
+  billingEnabled?: boolean;
   deploymentModelKey?: string;
   /** The deployment default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured?: boolean;
@@ -2765,7 +2790,7 @@ export interface ExecutorDeps {
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;
-  /** Allow RFC1918 / Docker-network MCP URLs when the deployment owner enabled the escape. */
+  /** Allow RFC1918 / Docker-network MCP URLs when the operator enabled the escape. */
   mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
@@ -3044,8 +3069,11 @@ export function buildApprovalContinuation(
 export function isTerminalModelSetupError(error: unknown): boolean {
   return (
     error instanceof UnavailableModelForAuthError ||
+    error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
-    (error instanceof Error && error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE)
+    (error instanceof Error &&
+      (error.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE ||
+        error.message === cloudflareModelConfigMessage(CLOUDFLARE_WORKERS_AI_PROVIDER_ID)))
   );
 }
 
@@ -3062,12 +3090,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
     registerSecrets?: (values: string[]) => void,
     requireStoredSecret = false,
   ): Promise<AgentRunRequest["model"]> => {
+    const hostedProvider = (await modelCreditBillingEnabled(deps))
+      ? resolveDeploymentModel().provider
+      : undefined;
     const validationError = await validateConnectedModelChoice(
       deps.prisma,
       deps.secretStore,
       scope,
       provider,
       modelId,
+      { hostedProvider },
     );
     if (validationError) throw new Error(validationError);
     const credential = await findConnectedModelCredential(
@@ -3077,7 +3109,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       modelId,
     );
-    if (!credential) throw new Error("Connect that model provider first");
+    if (
+      !credential &&
+      !((await modelCreditBillingEnabled(deps)) && provider === resolveDeploymentModel().provider)
+    )
+      throw new Error("Connect that model provider first");
     const resolved = await resolveModelKey(
       deps,
       scope.userId,
@@ -3092,8 +3128,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       id: modelId,
       apiKey: resolved.oauth ? undefined : resolved.apiKey,
+      callObserver: resolved.callObserver,
       ...cloudflareRunFields(resolved),
       baseUrl: resolved.baseUrl,
+      headers: resolved.headers,
       allowPrivateEndpoint: resolved.allowPrivateEndpoint,
       cacheCapabilities: resolved.cacheCapabilities,
       contextWindow: resolved.contextWindow,
@@ -3103,8 +3141,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       acceptsImages: resolved.acceptsImages,
       maxImagesPerPrompt: resolved.maxImagesPerPrompt,
       thinkingLevel:
-        ((credential.defaultModel === modelId
-          ? credential.thinkingLevel
+        ((credential?.defaultModel === modelId
+          ? credential?.thinkingLevel
           : null) as AgentRunRequest["model"]["thinkingLevel"]) ??
         resolved.thinkingLevel ??
         null,
@@ -3156,6 +3194,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         overrideCredential,
         defaultCredential,
         settings,
+        hostedProvider: (await modelCreditBillingEnabled(deps))
+          ? resolveDeploymentModel().provider
+          : undefined,
         deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
       });
       const { credential, thinkingLevel } = selected;
@@ -3179,8 +3220,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         provider,
         id,
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
+        callObserver: resolved.callObserver,
         ...cloudflareRunFields(resolved),
         baseUrl: resolved.baseUrl,
+        headers: resolved.headers,
         allowPrivateEndpoint: resolved.allowPrivateEndpoint,
         cacheCapabilities: resolved.cacheCapabilities,
         contextWindow: resolved.contextWindow,
@@ -3259,9 +3302,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ? watchTick.nextRunAt
         : isOneShotRoutineCrons(routine.crons)
           ? null
-          : nextCronDateAcross(
+          : nextRoutineRunDateAcross(
               routine.crons,
-              new Date(Math.max(Date.now(), scheduledAt.getTime())),
+              scheduledAt,
+              new Date(Date.now()),
               routine.timezone,
             );
       const previousLastRunAt = routine.lastRunAt;
@@ -3543,7 +3587,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
 
-    async continueRun(runId: string, workerId: string) {
+    async continueRun(runId: string, workerId: string, onRunStarted?: () => void) {
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
       // Logs and security events raised by this run's tools name its account and space.
@@ -3671,6 +3715,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
         | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
         | undefined;
       let runAbortController: AbortController | null = null;
+      // Runtime cleanup can queue terminal events after the consumer has exited.
+      // Track only helpers whose running state this attempt actually persisted.
+      const runningHelpers = new Map<
+        string,
+        Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">
+      >();
+      const settleRunningHelpers = async () => {
+        for (const [agentId, block] of runningHelpers) {
+          try {
+            const stopped = {
+              ...block,
+              kind: "subagent",
+              status: "failed",
+              result: "stopped",
+            } as const;
+            await publishMessage(
+              deps,
+              run,
+              "bot",
+              [stopped],
+              subagentMarksUnread(run.trigger, "failed"),
+              undefined,
+              stopped,
+            );
+            runningHelpers.delete(agentId);
+          } catch (error) {
+            // Cleanup must not mask the run outcome or prevent other helpers settling.
+            getLogger().error("settle running helper", error);
+          }
+        }
+      };
+
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
         if (runCompleted) return;
@@ -3698,7 +3774,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
       };
 
       const runSecrets = [...deps.secrets];
+      let dispatchHandedOff = false;
       try {
+        // Durable run ownership and its heartbeat now carry recovery. Model,
+        // integration and computer setup must not occupy a queue dispatch slot.
+        onRunStarted?.();
+        dispatchHandedOff = Boolean(onRunStarted);
         const sourceBlocks =
           run.trigger === "messaging" && run.sourceMessageId
             ? ((
@@ -3974,14 +4055,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
         const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
-        const pinError = run.modelPinned
-          ? pinnedModelCredentialError(modelChoice, overrideCredential)
-          : undefined;
+        const pinError =
+          run.modelPinned &&
+          !(
+            (await modelCreditBillingEnabled(deps)) &&
+            modelChoice.modelProvider === runDeployment?.provider
+          )
+            ? pinnedModelCredentialError(modelChoice, overrideCredential)
+            : undefined;
         const selected = selectConfiguredModel({
           override: modelChoice,
           overrideCredential,
           defaultCredential,
           settings,
+          hostedProvider: (await modelCreditBillingEnabled(deps))
+            ? resolveDeploymentModel().provider
+            : undefined,
           deployment: runDeployment,
         });
         const { credential, thinkingLevel } = selected;
@@ -4074,7 +4163,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
           if (!runComputer.ready) return;
           await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
-        });
+        }, context.signal);
         const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
         let copyingTurnFiles = Promise.resolve();
         // Serialize copies before each tool, including attachments received while a boot is in flight.
@@ -4344,8 +4433,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         // Whether outside content has entered the run. A run someone else started begins tainted,
-        // and so does a later attempt, whose earlier tool results this worker did not see.
-        let runTainted = !ownerStartedRun;
+        // and so does a later attempt, including one with restored untrusted tool results.
+        let turnCheckpoint: string | undefined;
+        let checkpointLoadError: Error | undefined;
+        try {
+          turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+        } catch (error) {
+          checkpointLoadError =
+            error instanceof Error ? error : new Error("Unsupported turn checkpoint");
+        }
+        let runTainted =
+          !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         let earlierAttemptPromise: Promise<boolean> | undefined;
         const isRunTainted = async () => {
           if (runTainted) return true;
@@ -4488,6 +4586,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
+        const pendingTurnCheckpoints = new Map<string, () => string>();
+        const persistTurnCheckpoint = async (executionId?: string) => {
+          const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
+          if (capture) {
+            const saved = JSON.parse(capture());
+            saved.effectOccurrences = effectOccurrences;
+            await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+          }
+        };
         let handedOff = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
@@ -4587,10 +4694,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
 
         const mutatingEffectOccurrences = new Map<string, number>();
+        const effectOccurrences: Array<{
+          executionId: string;
+          fingerprint: string;
+          occurrence: number;
+        }> = [];
+        let restoredPendingEffect: (typeof effectOccurrences)[number] | undefined;
         const consumedEffectIds = new Set<string>();
-        const nextMutatingEffectOccurrence = (toolName: string, args: Record<string, unknown>) => {
+        const nextMutatingEffectOccurrence = (
+          toolName: string,
+          args: Record<string, unknown>,
+          executionId: string,
+        ) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
+          const previous = restoredPendingEffect;
+          if (previous?.executionId === executionId) {
+            restoredPendingEffect = undefined;
+            if (previous.fingerprint === fingerprint) return previous.occurrence;
+          }
           const occurrence = mutatingEffectOccurrences.get(fingerprint) ?? 0;
+          effectOccurrences.push({ executionId, fingerprint, occurrence });
           mutatingEffectOccurrences.set(fingerprint, occurrence + 1);
           return occurrence;
         };
@@ -4999,7 +5122,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const occurrence =
             name === "request_secret" || name === "connect_app"
               ? 0
-              : nextMutatingEffectOccurrence(replayEffectToolName, args);
+              : nextMutatingEffectOccurrence(replayEffectToolName, args, executionId);
           const effectKey =
             usesApprovalKey && occurrence === 0
               ? approvalEffectKey(runId, replayEffectToolName, args)
@@ -5096,9 +5219,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       runtime: deps.runtime,
                       checker: checker!,
                       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
+                      callObserver: judgeKey.callObserver,
                       accountId: judgeKey.accountId,
                       gatewayId: judgeKey.gatewayId,
                       baseUrl: judgeKey.baseUrl,
+                      headers: judgeKey.headers,
                       allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
                       cacheCapabilities: judgeKey.cacheCapabilities,
                       contextWindow: judgeKey.contextWindow,
@@ -5308,6 +5433,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForApproval();
             }
             await workspaceCheckpoint.flush();
+            await persistTurnCheckpoint(executionId);
+            await settleRunningHelpers();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -6387,11 +6514,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (parsed.endpoint) {
               try {
                 await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
-                  allowPrivateEndpoint: await actorMayUsePrivateEndpoint(
-                    deps.prisma,
-                    run.userId,
-                    deps.mcpAllowPrivateEndpoint === true,
-                  ),
+                  allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
                 });
               } catch (error) {
                 return finish({
@@ -6879,6 +7002,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForSecret();
             }
             await workspaceCheckpoint.flush();
+            await persistTurnCheckpoint(executionId);
+            await settleRunningHelpers();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -7393,11 +7518,78 @@ export function createRunExecutor(deps: ExecutorDeps) {
               parsePlaybook(invokedSkill.playbook),
             )}\n\n${taskPrompt}`
           : taskPrompt;
-        const approvalContinuation = buildApprovalContinuation(
-          approvedEffects,
-          (request) => redactSecrets(JSON.stringify(request), runSecrets),
-          { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
-        );
+        if (turnCheckpoint) {
+          try {
+            const saved = restoreTurnCheckpoint(turnCheckpoint, {
+              provider: runModelProvider,
+              id: runModelId,
+            });
+            const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
+            const namedTools = namedAgentTools(tools);
+            const available = new Set(namedTools.map((tool) => tool.name));
+            if (
+              saved.messages.some(
+                (message) =>
+                  message.role === "assistant" &&
+                  message.content.some(
+                    (call) =>
+                      call.type === "toolCall" &&
+                      unresolved.has(call) &&
+                      (saved.executionMode === "sequential" ||
+                        call.id === saved.pendingToolCallId) &&
+                      !available.has(call.name),
+                  ),
+              )
+            ) {
+              turnCheckpoint = undefined;
+            } else if (saved.effectOccurrences) {
+              effectOccurrences.push(...saved.effectOccurrences);
+              const pendingExecutionId = JSON.stringify([
+                "pi-tool",
+                "main",
+                saved.pendingToolCallId,
+              ]);
+              // Provider IDs can repeat in later responses. Only the restored
+              // pending call may consume its saved assignment, exactly once.
+              restoredPendingEffect = saved.effectOccurrences.findLast(
+                (entry) => entry.executionId === pendingExecutionId,
+              );
+              for (const { fingerprint, occurrence } of saved.effectOccurrences) {
+                mutatingEffectOccurrences.set(
+                  fingerprint,
+                  Math.max(mutatingEffectOccurrences.get(fingerprint) ?? 0, occurrence + 1),
+                );
+              }
+            } else {
+              // Older snapshots have no executor assignments. Retained completed
+              // calls still reserve their occurrences before pending calls run.
+              for (const message of saved.messages) {
+                if (message.role !== "assistant") continue;
+                for (const call of message.content) {
+                  if (call.type !== "toolCall" || unresolved.has(call)) continue;
+                  const tool = namedTools.find((tool) => tool.name === call.name)?.tool;
+                  if (tool && tool.name !== "request_secret" && tool.name !== "connect_app")
+                    nextMutatingEffectOccurrence(
+                      tool.name,
+                      call.arguments,
+                      JSON.stringify(["pi-tool", "main", call.id]),
+                    );
+                }
+              }
+            }
+          } catch {
+            // Incompatible transcripts use the existing canonical approval replay.
+            // Decryption happens earlier and must still fail closed.
+            turnCheckpoint = undefined;
+          }
+        }
+        const approvalContinuation = turnCheckpoint
+          ? undefined
+          : buildApprovalContinuation(
+              approvedEffects,
+              (request) => redactSecrets(JSON.stringify(request), runSecrets),
+              { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
+            );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         let userTimeZone: string | null | undefined;
         try {
@@ -7534,8 +7726,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             )
             .map((candidate) => JSON.stringify([candidate.provider, candidate.modelId])),
         );
+        // Provider kind and model id only: custom endpoints are identified by kind, never host.
+        const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
 
         try {
+          if (checkpointLoadError) throw checkpointLoadError;
           const runtimeEvents = deps.runtime.run(
             {
               botId: bot.id,
@@ -7594,8 +7789,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 provider: runModelProvider,
                 id: runModelId,
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
+                callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                headers: resolved.headers,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,
                 contextWindow: resolved.contextWindow,
@@ -7647,8 +7844,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (updated.count !== 1) {
                   throw new Error("Run lease was lost before the backup model could be used");
                 }
+                activeModel["model.provider"] = provider;
+                activeModel["model.id"] = modelId;
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
+              turnCheckpoint,
+              onCheckpoint: async (capture, executionId) => {
+                pendingTurnCheckpoints.set(executionId, capture);
+              },
+              resumeToolResult: {
+                content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
+              },
               script,
               allowSilentEmpty: allowSilentEmptyRun,
               emptyResponseText,
@@ -7659,8 +7865,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     resolveConnectedModel(run, provider, modelId, (values) =>
                       runSecrets.push(...values),
                     ),
-              onToolCompleted: (completion) =>
-                appendToolCompletionAudit(
+              onToolCompleted: (completion) => {
+                if (restoredPendingEffect?.executionId === completion.executionId)
+                  restoredPendingEffect = undefined;
+                if (!completion.paused) pendingTurnCheckpoints.delete(completion.executionId);
+                return appendToolCompletionAudit(
                   deps,
                   {
                     spaceId: run.spaceId,
@@ -7670,7 +7879,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   },
                   completion,
                   runSecrets,
-                ),
+                );
+              },
               claimSteering: async (seenIds) => {
                 const steering = await deps.events.claimSteering({
                   threadId: thread.id,
@@ -7808,6 +8018,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 label: redactSecrets(action.label, runSecrets),
               }));
               await workspaceCheckpoint.flush();
+              await persistTurnCheckpoint(event.executionId);
+              await settleRunningHelpers();
               const paused = await deps.events.pauseRunForInput({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -7882,6 +8094,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
+              await persistTurnCheckpoint(event.executionId);
+              await settleRunningHelpers();
               const paused = await deps.events.pauseRunForTakeover({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -7938,6 +8152,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   humanizeToolName(event.name),
                   toolCallStreak.count,
                 );
+                await settleRunningHelpers();
                 const stopped = await deps.events.finalizeRun({
                   spaceId: run.spaceId,
                   threadId: thread.id,
@@ -8036,6 +8251,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   result: safeResult,
                 },
               });
+              if (event.status === "running") {
+                runningHelpers.set(event.agentId, {
+                  agentId: event.agentId,
+                  name: event.name,
+                  task: safeTask,
+                  status: event.status,
+                  progress: safeProgress,
+                });
+              } else {
+                runningHelpers.delete(event.agentId);
+              }
               if (event.status === "completed" || event.status === "failed") {
                 publishedTerminalSubagent ||= !subagentMarksUnread(
                   run.trigger,
@@ -8195,6 +8421,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             run.trigger === "bot_message"
               ? botMessageOutcomeFromMidTurn(text, midTurnUserTexts)
               : null;
+          await settleRunningHelpers();
           const completed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
             threadId: thread.id,
@@ -8289,6 +8516,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
+          await settleRunningHelpers();
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
             threadId: thread.id,
@@ -8302,13 +8530,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
-          getLogger().error(
-            "run.failed",
-            sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
-            {
+          if (error instanceof TransientModelError || error instanceof ModelAccountError) {
+            // Provider outages that outlasted retries, and keys or limits the user fixes, are
+            // not server faults; the run error already tells the user what to do.
+            getLogger().warn("run.failed", {
               "run.outcome": "failed",
-            },
-          );
+              "run.failure": error.name,
+              reason: message,
+              ...activeModel,
+            });
+          } else {
+            getLogger().error(
+              "run.failed",
+              sanitizedError(error, (text) => redactSecrets(text, runSecrets)),
+              {
+                "run.outcome": "failed",
+                ...activeModel,
+              },
+            );
+          }
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -8384,7 +8624,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               finishedAt: new Date(),
             },
           });
-          if (retryForever) {
+          if (retryForever || dispatchHandedOff) {
             await deps.jobs.enqueue({
               ...runContinueJob(runId),
               availableAt: new Date(Date.now() + computerRetryDelay(fence)),
@@ -8420,6 +8660,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             data: { status: "interrupted", finishedAt: new Date() },
           })
           .catch(() => undefined);
+        await settleRunningHelpers();
       }
     },
   };
@@ -8623,15 +8864,31 @@ async function notifyRun(
     return null;
   });
   if (!notice?.enabled) return;
+  // The icon shows what the inbox shows: unread chats across the user's Spaces. Without a
+  // count the push leaves the badge as it is.
+  const badge = await countUnreadInboxChats(deps.prisma, {
+    userId: run.userId,
+    spaceId: run.spaceId,
+  }).catch((error) => {
+    getLogger().error("unread chat count", error);
+    return undefined;
+  });
   await deps.notifications
-    .send(notice.groupId ? { ...message, groupId: notice.groupId } : message, {
-      operationId: "notify",
-      traceId: run.botId,
-      spaceId: run.spaceId,
-      userId: run.userId,
-      botId: run.botId,
-      signal: new AbortController().signal,
-    })
+    .send(
+      {
+        ...message,
+        ...(notice.groupId ? { groupId: notice.groupId } : {}),
+        ...(badge === undefined ? {} : { badge }),
+      },
+      {
+        operationId: "notify",
+        traceId: run.botId,
+        spaceId: run.spaceId,
+        userId: run.userId,
+        botId: run.botId,
+        signal: new AbortController().signal,
+      },
+    )
     .catch((error) => {
       if (options.retryOnFailure) throw error;
       getLogger().error("run notification", error);
@@ -9544,13 +9801,45 @@ async function publishMessage(
   blocks: MessageBlock[],
   markUnread: boolean | undefined = run.trigger === "bot_message" ? false : undefined,
   clientNonce?: string,
+  stoppedHelper?: Extract<MessageBlock, { kind: "subagent" }> & {
+    status: "failed";
+    result: "stopped";
+  },
 ) {
   if (isBackgroundRunTrigger(run.trigger)) {
     blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
-    if (blocks.length === 0) return null;
+    if (blocks.length === 0 && !stoppedHelper) return null;
   }
-  const committed = await deps.prisma.$transaction((tx) =>
-    persistMessageInTransaction(tx, run, role, blocks, markUnread, clientNonce),
+  // Concurrent runs in one thread contend for its sequence counters; Postgres aborts a
+  // deadlock victim, which commits nothing, so retry instead of failing the run.
+  const committed = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      // Only synthetic terminal helper writes may bypass the cancellation guard.
+      // Commit their event and durable message together so cleanup retries are safe.
+      let helperEvent: { seq: number } | undefined;
+      if (stoppedHelper) {
+        const { kind: _kind, ...payload } = stoppedHelper;
+        helperEvent = await appendEventInTransaction(tx, {
+          spaceId: run.spaceId,
+          threadId: run.threadId,
+          botId: run.botId,
+          runId: run.id,
+          type: "thread.subagent",
+          payload,
+          allowCancelledRun: true,
+        });
+      }
+      if (blocks.length === 0 && helperEvent) return { message: null, eventSeq: helperEvent.seq };
+      return persistMessageInTransaction(
+        tx,
+        run,
+        role,
+        blocks,
+        markUnread,
+        clientNonce,
+        Boolean(stoppedHelper),
+      );
+    }),
   );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("thread message realtime notification", error);
@@ -9565,6 +9854,7 @@ async function persistMessageInTransaction(
   blocks: MessageBlock[],
   markUnread?: boolean,
   clientNonce?: string,
+  allowCancelledRun = false,
 ) {
   const message = await createThreadMessageInTransaction(tx, {
     threadId: run.threadId,
@@ -9574,6 +9864,7 @@ async function persistMessageInTransaction(
     runId: run.id,
     markUnread,
     clientNonce,
+    allowCancelledRun,
   });
   const event = await appendEventInTransaction(tx, {
     spaceId: run.spaceId,
@@ -9581,6 +9872,7 @@ async function persistMessageInTransaction(
     botId: run.botId,
     type: "thread.message.created",
     runId: run.id,
+    allowCancelledRun,
     payload: {
       messageId: message.id,
       role,
@@ -9635,9 +9927,12 @@ export async function recordEffect(
   legacyIdempotencyKey?: string,
   consumedIds?: Set<string>,
 ) {
+  if (kind === RUN_TURN_CHECKPOINT_KIND) throw new Error("Unsupported tool effect kind");
   const existing = await deps.prisma.externalEffect.findUnique({
     where: { idempotencyKey },
   });
+  if (existing?.kind === RUN_TURN_CHECKPOINT_KIND || existing?.status === RUN_TURN_CHECKPOINT_KIND)
+    throw new Error("Unsupported tool effect kind");
   if (existing && (existing.runId !== run.id || existing.spaceId !== run.spaceId)) {
     throw new Error("Stored tool execution does not belong to this run.");
   }
@@ -9816,7 +10111,53 @@ function assertCompatibleModelEnabled(
   }
 }
 
-async function resolveModelKey(
+async function modelCreditBillingEnabled(deps: ExecutorDeps): Promise<boolean> {
+  if (deps.billingEnabled !== undefined) return deps.billingEnabled;
+  return (
+    (
+      await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+        select: { modelCreditsEnabled: true },
+      })
+    )?.modelCreditsEnabled === true
+  );
+}
+
+async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
+  const [deps, userId, spaceId, , provider] = args;
+  const billingEnabled = await modelCreditBillingEnabled(deps);
+  const scope = { userId, spaceId };
+  if (
+    billingEnabled &&
+    !args[7]?.requireStoredSecret &&
+    (await hasHostedModelCredits(deps.prisma, scope, provider))
+  ) {
+    args[3] = null;
+  }
+  const credential = args[3];
+  const material = await resolveModelKeyMaterial(...args);
+  const deployment = resolveDeploymentModel();
+  // Local and compatible endpoints can intentionally be keyless. Host auth is
+  // allowed only for the deployment provider that explicitly opted into it.
+  const keyless =
+    provider === LOCAL_PROVIDER_ID ||
+    (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
+    (provider === "scripted" && deps.runtime?.describe().capabilities.scripted) ||
+    (!credential && deployment.provider === provider && deployment.hostCredentials);
+  // Match Pi's OpenRouter fallback only when no explicit key overrides it.
+  const runtimeKey =
+    material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
+      ? process.env.OPENROUTER_API_KEY
+      : undefined;
+  if (!material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
+    throw new UnavailableModelForAuthError(MISSING_MODEL_MESSAGE);
+  }
+  const callObserver =
+    !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
+  return { ...material, callObserver };
+}
+
+async function resolveModelKeyMaterial(
   deps: ExecutorDeps,
   userId: string,
   spaceId: string,
@@ -9836,6 +10177,7 @@ async function resolveModelKey(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
@@ -9859,11 +10201,13 @@ async function resolveModelKey(
         where: { id: credential.secretId, userId, spaceId: null },
       });
       if (!row) {
+        if (await modelCreditBillingEnabled(deps))
+          throw new Error("Connect that model provider again.");
         if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
-        cloudflareGatewayProviderEnv({ provider });
+        cloudflareProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
@@ -9921,15 +10265,8 @@ async function resolveModelKey(
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
-      // Connections saved before the owner gate may already point at private hosts,
-      // so decide for the credential's owner on every run, not only on save.
-      const allowPrivateEndpoint = baseUrl
-        ? await actorMayUsePrivateEndpoint(
-            deps.prisma,
-            userId,
-            deps.mcpAllowPrivateEndpoint === true,
-          )
-        : undefined;
+      // Recheck operator configuration for saved private connections on every run.
+      const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
       if (baseUrl) {
         try {
           // The public gate stays with the request-time fetch guard.
@@ -9952,12 +10289,13 @@ async function resolveModelKey(
             credential.defaultModel?.trim() === modelId.trim()));
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareGatewayProviderEnv({ provider, accountId, gatewayId });
+      cloudflareProviderEnv({ provider, accountId, gatewayId });
       return {
         apiKey: resolved.apiKey,
         accountId,
         gatewayId,
         baseUrl,
+        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
@@ -10012,7 +10350,7 @@ async function resolveModelKey(
     });
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
-  cloudflareGatewayProviderEnv({ provider });
+  cloudflareProviderEnv({ provider });
   return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
 }
 

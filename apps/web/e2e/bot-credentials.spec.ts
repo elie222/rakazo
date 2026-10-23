@@ -1,13 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import {
-  captureScreenshot,
-  completeOnboarding,
-  createNamedBot,
-  expandAdvancedSection,
-  rpc,
-  signup,
-} from "./helpers";
+import { captureScreenshot, completeOnboarding, createNamedBot, rpc, signup } from "./helpers";
 
 // Fake values only: this spec proves the UI and API never echo a saved credential.
 const SENTINEL = "fake-bot-credential-values-never-leak";
@@ -31,11 +24,26 @@ test("bot and command credentials add, replace and remove without leaking values
   await page.locator("main").getByRole("button", { name: botName, exact: true }).click();
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  // The Advanced section mounts the Credentials section on first open, not on render.
-  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
+  await settings.getByRole("button", { name: "Advanced", exact: true }).click();
   const credentials = settings.getByTestId("bot-credentials");
   await expect(credentials).toBeVisible();
-  await expect(credentials.getByTestId("bot-credentials-empty")).toBeVisible();
+  await expect(credentials.getByTestId("credential-add")).toBeVisible();
+
+  const add = credentials.getByRole("button", { name: "Add credential", exact: true });
+  await expect(add).toHaveText("");
+  await expect(
+    credentials.getByRole("heading", { name: "Credentials", exact: true }),
+  ).toBeVisible();
+  await expect(
+    settings.getByTestId("bot-settings-tools").getByTestId("bot-credentials"),
+  ).toHaveCount(0);
+  const card = credentials.getByTestId("bot-credentials-card");
+  await expect(card.getByText("Encrypted and never shown again", { exact: true })).toBeVisible();
+  await expect(card.getByTestId("credential-add-form")).toHaveCount(0);
+  await add.hover();
+  await expect(
+    page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Add credential" }),
+  ).toBeVisible();
 
   // Add: a password field holds the value, which is cleared once the save starts.
   await credentials.getByTestId("credential-add").click();
@@ -51,6 +59,9 @@ test("bot and command credentials add, replace and remove without leaking values
 
   const row = credentials.getByTestId("bot-credential-row");
   await expect(row).toHaveCount(1);
+  await expect(row).toHaveCSS("border-top-width", "0px");
+  await expect(row).toHaveCSS("padding-left", "0px");
+  expect((await row.boundingBox())!.x).toBe((await card.boundingBox())!.x + 16);
   await expect(row).toContainText(CREDENTIAL_NAME);
   await expect(row).toContainText("https://api.example.test");
   await expect(row).toContainText("Bearer token");
@@ -91,7 +102,7 @@ test("bot and command credentials add, replace and remove without leaking values
   await credentials.getByTestId(`credential-remove-confirm-${CREDENTIAL_NAME}`).click();
   await removed;
   await expect(row).toHaveCount(0);
-  await expect(credentials.getByTestId("bot-credentials-empty")).toBeVisible();
+  await expect(credentials.getByTestId("credential-add")).toBeVisible();
   expect(await rpc<unknown[]>(page, "botSecrets/list", { botId })).toHaveLength(0);
   await captureScreenshot(page, testInfo, "bot-credentials-removed");
 
@@ -154,7 +165,7 @@ test("bot and command credentials add, replace and remove without leaking values
   await credentials.getByTestId(`credential-remove-confirm-${COMMAND_CREDENTIAL_NAME}`).click();
   await commandRemoved;
   await expect(row).toHaveCount(0);
-  await expect(credentials.getByTestId("bot-credentials-empty")).toBeVisible();
+  await expect(credentials.getByTestId("credential-add")).toBeVisible();
   expect(await rpc<unknown[]>(page, "botSecrets/list", { botId })).toHaveLength(0);
   await captureScreenshot(page, testInfo, "command-credentials-removed");
 });

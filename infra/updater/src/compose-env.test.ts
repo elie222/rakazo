@@ -51,6 +51,7 @@ const NOT_PASSED: Record<string, string> = {
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
+  RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
 };
 
@@ -90,7 +91,6 @@ const INDIRECT = {
   api: [
     // core/secrets-guard.ts resolves these by name.
     "SCREEN_PROXY_SECRET",
-    "RAKAZO_UPDATER_TOKEN",
   ],
   worker: [],
 } as const;
@@ -225,6 +225,7 @@ describe("api and worker environment allowlists", () => {
       ]) {
         expect(worker).not.toHaveProperty(key);
       }
+      expect(stackEnvironment(files, "api")).not.toHaveProperty("RAKAZO_UPDATER_TOKEN");
       // The database password reaches both processes only inside DATABASE_URL.
       expect(stackEnvironment(files, "api")).not.toHaveProperty("POSTGRES_PASSWORD");
     },

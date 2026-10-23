@@ -1,3 +1,5 @@
+// Import just the classifier: monitoring loads before the app, ahead of the full core barrel.
+import { isAbandonedRequest, isConnectionFailure } from "@rakazo/core/user-error";
 import type { ClientOperation, MonitoringConfig } from "@rakazo/logging/monitoring";
 import {
   createClientErrorReporter,
@@ -20,6 +22,8 @@ export function reportMobileError(
   operation: ClientOperation,
   tags?: Record<string, string>,
 ): void {
+  // A request that lost its connection, timed out or was cancelled is the network, not a bug.
+  if (operation === "rpc.transport" && isConnectionFailure(error)) return;
   errors.capture(error, operation, tags);
 }
 
@@ -71,6 +75,7 @@ export function configureMobileMonitoring(
     }
     try {
       const Sentry = await import("@sentry/react-native");
+      const { Platform } = await import("react-native");
       if (current !== generation) return;
       const userId = isMonitoringUserId(config.userId) ? config.userId : undefined;
       Sentry.init({
@@ -102,12 +107,18 @@ export function configureMobileMonitoring(
             ].includes(integration.name),
           ),
         beforeBreadcrumb: () => null,
-        beforeSend: (event) =>
-          current === generation ? sanitizeMonitoringEvent(event, userId) : null,
+        beforeSend: (event, hint) => {
+          if (current !== generation || isAbandonedRequest(hint?.originalException)) return null;
+          if (Platform.OS === "ios" || Platform.OS === "android")
+            event.tags = { ...event.tags, "mobile.platform": Platform.OS };
+          return sanitizeMonitoringEvent(event, userId);
+        },
       });
       sdk = Sentry;
       configured = true;
       Sentry.setTag("surface", "mobile");
+      if (Platform.OS === "ios" || Platform.OS === "android")
+        Sentry.setTag("mobile.platform", Platform.OS);
       Sentry.setUser(userId ? { id: userId, ip_address: null } : null);
       errors.install({
         capture: (error, operation, tags) => {

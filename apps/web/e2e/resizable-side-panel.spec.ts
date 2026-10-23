@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, expandAdvancedSection, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("computer rail resizes its preview and remembers width", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
@@ -73,7 +73,7 @@ test("phone composer menu and settings panel stay tappable", async ({ page }, te
     .click({ position: { x: 4, y: 8 }, timeout: 5_000 });
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
-  await expandAdvancedSection(settings.getByTestId("bot-settings-advanced"));
+  await settings.getByRole("button", { name: "Advanced", exact: true }).click();
   // Trial clicks fail when another element, like the composer, would receive the tap.
   for (const name of ["Export", "Clear conversation"]) {
     await settings

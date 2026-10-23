@@ -60,6 +60,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer,
   showToolActivity,
   onReply,
+  onMarkUnread,
   onReact,
 }: {
   artifactTarget: ArtifactTarget;
@@ -91,6 +92,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer: (botId?: string) => void;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
+  onMarkUnread: (message: ThreadMessage) => void;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
@@ -149,6 +151,7 @@ export const MessageView = memo(function MessageView({
       message={message}
       side={message.role === "user" ? "start" : "end"}
       onReply={onReply}
+      onMarkUnread={onMarkUnread}
       onReact={onReact}
     />
   );

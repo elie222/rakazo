@@ -20,17 +20,17 @@ import {
   rememberSerenity,
   type SerenityConnectionConfig,
   type SerenityNetworkDependencies,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 export const SERENITY_PROVIDER_ID = "serenity";
 
-/** Thrown when prepare would probe a private endpoint without deployment-owner authorization. */
-export class MemoryProviderDeploymentOwnerRequiredError extends Error {
-  readonly code = "DEPLOYMENT_OWNER_REQUIRED" as const;
-  constructor(message = "This memory provider endpoint requires deployment-owner authorization.") {
+/** Thrown when prepare would probe a private endpoint without operator authorization. */
+export class MemoryProviderPrivateEndpointRequiredError extends Error {
+  readonly code = "PRIVATE_ENDPOINT_REQUIRED" as const;
+  constructor(message = "This memory provider endpoint requires operator authorization.") {
     super(message);
-    this.name = "MemoryProviderDeploymentOwnerRequiredError";
+    this.name = "MemoryProviderPrivateEndpointRequiredError";
   }
 }
 
@@ -68,19 +68,19 @@ function parseSerenityConnection(
   };
 }
 
-export function serenityRequiresDeploymentOwner(settings: Record<string, string>): boolean {
+export function serenityRequiresPrivateEndpoint(settings: Record<string, string>): boolean {
   if (settings.endpointTrust === "private") return true;
   const endpoint = settings.endpoint?.trim();
   if (!endpoint) return false;
   try {
-    return serenityEndpointRequiresDeploymentOwner(normalizeSerenityEndpoint(endpoint));
+    return serenityEndpointRequiresPrivateEndpoint(normalizeSerenityEndpoint(endpoint));
   } catch {
     return false;
   }
 }
 
 /**
- * DNS/trust classification without probing. Callers must enforce deployment-owner
+ * DNS/trust classification without probing. Callers must enforce operator
  * authorization on the result before any credentialed Serenity request.
  */
 export async function classifySerenityConnectionSettings(
@@ -108,7 +108,7 @@ export async function prepareSerenityConnection(
   if (classifiedSettings.endpointTrust === "private" && options?.allowPrivateEndpoint === false) {
     throw egressRefused(
       URL.parse(classifiedSettings.endpoint ?? "")?.hostname ?? "",
-      new MemoryProviderDeploymentOwnerRequiredError(),
+      new MemoryProviderPrivateEndpointRequiredError(),
     );
   }
   const connection = parseSerenityConnection(classifiedSettings, credentials);

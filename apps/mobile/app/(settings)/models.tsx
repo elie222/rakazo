@@ -1,16 +1,28 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { ModelBackupChoice, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ModelBackupChoice,
+  ModelHeaderRow,
+  ModelOAuthBegin,
+  ThinkingLevel,
+} from "@rakazo/contracts";
+
 import {
   backupChoiceKey,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareGatewayRouting,
+  cloudflareModelRouting,
+  compatibleConnectionName,
   connectedBackupOptions,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isCloudflareModelProvider,
+  isOllamaCloudBaseUrl,
   MAX_MODEL_BACKUPS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
   moveBackupChoice,
+  OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
@@ -18,6 +30,7 @@ import {
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
   sameBackupChoices,
+  savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
@@ -138,6 +151,7 @@ export default function Models() {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
@@ -268,6 +282,7 @@ export default function Models() {
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
+      setHeaderRows(null);
       setReasoning(nextCredential?.reasoning ?? false);
       setThinkingLevel(
         clampCatalogThinkingLevel(
@@ -428,7 +443,10 @@ export default function Models() {
     addableBackupOptions.length > 0;
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const selectedProviderLabel = selected?.providerName ?? selected?.provider;
+  const selectedProviderLabel = compatibleConnectionName(
+    baseUrl,
+    selected?.providerName ?? selected?.provider ?? "",
+  );
   const selectedSection = selected
     ? groupModelChoices(
         [
@@ -445,8 +463,9 @@ export default function Models() {
   const selectedChoice = selectedSection?.data[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
-    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
+    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -491,17 +510,24 @@ export default function Models() {
   const busy = pending !== null || oauthPending;
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
+    apiKey:
+      apiKey ||
+      (credential?.hasKey && savedCompatibleEndpointMatches(effectiveBaseUrl, credential.baseUrl)
+        ? "stored"
+        : ""),
     baseUrl: effectiveBaseUrl,
-    modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const limitsDirty = maxTokens !== connectionMaxTokensField(provider, credential?.maxTokens);
   const gatewayDirty =
     accountId.trim() !== (credential?.accountId ?? "") ||
     gatewayId.trim() !== (credential?.gatewayId ?? "");
-  const gatewayOnlySave = isCloudflareGateway && Boolean(credential) && !apiKey.trim();
+  const gatewayOnlySave = isCloudflare && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
@@ -514,9 +540,12 @@ export default function Models() {
     clearFeedback();
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, presetBaseUrl?: string) {
     cancelOAuth();
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const nextCredential = credentials.find(
+      (entry) =>
+        entry.provider === nextProvider && (!presetBaseUrl || entry.baseUrl === presetBaseUrl),
+    );
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -544,9 +573,12 @@ export default function Models() {
     setModelId(nextModelId);
     setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     setBaseUrl(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
+      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
+        : "",
     );
     setApiKey("");
+    setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
     setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
@@ -560,7 +592,12 @@ export default function Models() {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
+      request: (input) =>
+        rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
@@ -723,6 +760,7 @@ export default function Models() {
           ? {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
+              headers: modelHeadersInput(headerRows),
               modelId: modelId.trim(),
               // The server adds the default itself.
               enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
@@ -738,9 +776,7 @@ export default function Models() {
           : {
               provider: selected.provider,
               ...(!savingLimitOnly ? { apiKey: apiKey.trim() } : {}),
-              ...(provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID
-                ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
-                : {}),
+              ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
               modelId: selected.id,
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
@@ -908,6 +944,19 @@ export default function Models() {
     );
   }
 
+  const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
+  const visibleHeaderRows =
+    headerRows ??
+    (savedHeaderEndpointMatches ? (credential?.headerNames ?? []) : []).map((name) => ({
+      name,
+      value: "",
+    }));
+  function changeHeaderRows(rows: ModelHeaderRow[]) {
+    setHeaderRows(rows);
+    resetOpenAiCompatibleProbe();
+    clearFeedback();
+  }
+
   const compatConfig = isOpenAiCompatible ? (
     <>
       <Text style={styles.sectionTitle}>{t("Server URL")}</Text>
@@ -922,17 +971,6 @@ export default function Models() {
         style={styles.keyInput}
         value={baseUrl}
       />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: showEndpointHelp }}
-        onPress={() => setShowEndpointHelp((visible) => !visible)}
-        style={({ pressed }) => [pressed && styles.pressed]}
-      >
-        <Text style={styles.textAction}>{t("Setup help")}</Text>
-      </Pressable>
-      {showEndpointHelp ? (
-        <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
-      ) : null}
       <NativeActionButton
         disabled={busy || probing || !effectiveBaseUrl}
         fill
@@ -941,6 +979,16 @@ export default function Models() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
+      {!isOllamaCloudBaseUrl(baseUrl) ? (
+        <>
+          {disclosureRow(t("Setup help"), showEndpointHelp, () =>
+            setShowEndpointHelp((visible) => !visible),
+          )}
+          {showEndpointHelp ? (
+            <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
+          ) : null}
+        </>
+      ) : null}
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
       {/* The switches stay visible while the default is "Other model…" or a typed id. */}
@@ -1072,6 +1120,67 @@ export default function Models() {
               />
             </View>
           </View>
+          <Text style={styles.sectionTitle}>{t("Headers")}</Text>
+          {visibleHeaderRows.map((row, index) => (
+            <View key={index} style={styles.keySection}>
+              <TextInput
+                accessibilityLabel={t("Header name")}
+                placeholder={t("Header name")}
+                placeholderTextColor={native.tertiaryLabel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                editable={!busy}
+                maxLength={256}
+                style={styles.keyInput}
+                value={row.name}
+                onChangeText={(name) =>
+                  changeHeaderRows(
+                    visibleHeaderRows.map((entry, i) => (i === index ? { ...entry, name } : entry)),
+                  )
+                }
+              />
+              <TextInput
+                accessibilityLabel={t("Header value")}
+                placeholder={
+                  savedHeaderEndpointMatches && credential?.headerNames?.includes(row.name)
+                    ? "••••••••"
+                    : t("Header value")
+                }
+                placeholderTextColor={native.tertiaryLabel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
+                textContentType="none"
+                secureTextEntry
+                editable={!busy}
+                maxLength={1024}
+                style={styles.keyInput}
+                value={row.value}
+                onChangeText={(value) =>
+                  changeHeaderRows(
+                    visibleHeaderRows.map((entry, i) =>
+                      i === index ? { ...entry, value } : entry,
+                    ),
+                  )
+                }
+              />
+              <NativeActionButton
+                accessibilityLabel={t("Remove header")}
+                icon={{ ios: "xmark", android: "close" }}
+                prominence="plain"
+                disabled={busy}
+                onPress={() => changeHeaderRows(visibleHeaderRows.filter((_, i) => i !== index))}
+              />
+            </View>
+          ))}
+          <NativeActionButton
+            label={t("Add header")}
+            prominence="secondary"
+            disabled={busy || visibleHeaderRows.length >= 8}
+            onPress={() => changeHeaderRows([...visibleHeaderRows, { name: "", value: "" }])}
+          />
           {limitField(t("Context limit"), contextWindow, setContextWindow, 7)}
           {limitField(
             t("Maximum output tokens"),
@@ -1107,8 +1216,12 @@ export default function Models() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))}
-        {showApiKey ? (
+        {isOllamaCloudBaseUrl(baseUrl) ? (
+          <Text style={styles.sectionTitle}>{t("API key")}</Text>
+        ) : (
+          disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
+        )}
+        {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
           <TextInput
             accessibilityLabel={t("API key")}
             autoCapitalize="none"
@@ -1117,7 +1230,13 @@ export default function Models() {
             editable={!busy}
             importantForAutofill="no"
             onChangeText={updateApiKey}
-            placeholder={credential?.hasKey ? t("Paste a replacement key") : t("Optional")}
+            placeholder={
+              isOllamaCloudBaseUrl(baseUrl)
+                ? t("Ollama API key")
+                : credential?.hasKey
+                  ? t("Paste a replacement key")
+                  : t("Optional")
+            }
             placeholderTextColor={native.tertiaryLabel}
             secureTextEntry
             style={styles.keyInput}
@@ -1163,18 +1282,41 @@ export default function Models() {
               .filter((group) => credentialByProvider.has(group.id) === connected)
               .map((group) => {
                 const savedModelId = credentialByProvider.get(group.id)?.modelId;
-                return {
+                const row = {
                   key: group.id,
-                  label: group.name,
+                  label: compatibleConnectionName(
+                    credentialByProvider.get(group.id)?.baseUrl,
+                    group.name,
+                  ),
                   providerLabel: connected ? t("Connected") : t("All providers"),
                   detail: connected
                     ? (group.entries.find((entry) => entry.id === savedModelId)?.label ??
                       savedModelId)
                     : undefined,
                 };
-              }),
+                return row;
+              })
+              .concat(
+                !connected &&
+                  groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
+                  !isOllamaCloudBaseUrl(
+                    credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl,
+                  )
+                  ? [
+                      {
+                        key: "ollama-preset",
+                        label: t("Ollama Cloud"),
+                        providerLabel: t("All providers"),
+                        detail: undefined,
+                      },
+                    ]
+                  : [],
+              ),
           ),
-          onSelect: (choice) => chooseProvider(choice.key),
+          onSelect: (choice) =>
+            choice.key === "ollama-preset"
+              ? chooseProvider(OPENAI_COMPATIBLE_PROVIDER_ID, OLLAMA_CLOUD_BASE_URL)
+              : chooseProvider(choice.key),
         })
       }
     />
@@ -1376,9 +1518,9 @@ export default function Models() {
             />
           )
         ) : null}
-        {acceptsKey || isCloudflareGateway ? (
+        {acceptsKey || isCloudflare ? (
           <View style={styles.keySection}>
-            {isCloudflareGateway ? (
+            {isCloudflare ? (
               <>
                 <Text style={styles.sectionTitle}>{t("Account ID")}</Text>
                 <TextInput
@@ -1394,20 +1536,24 @@ export default function Models() {
                   style={styles.keyInput}
                   value={accountId}
                 />
-                <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
-                <TextInput
-                  accessibilityLabel={t("Gateway ID")}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  editable={!busy}
-                  onChangeText={(value) => {
-                    setGatewayId(value);
-                    clearFeedback();
-                  }}
-                  style={styles.keyInput}
-                  value={gatewayId}
-                />
+                {isCloudflareGateway ? (
+                  <>
+                    <Text style={styles.sectionTitle}>{t("Gateway ID")}</Text>
+                    <TextInput
+                      accessibilityLabel={t("Gateway ID")}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      editable={!busy}
+                      onChangeText={(value) => {
+                        setGatewayId(value);
+                        clearFeedback();
+                      }}
+                      style={styles.keyInput}
+                      value={gatewayId}
+                    />
+                  </>
+                ) : null}
               </>
             ) : null}
             {acceptsKey ? (

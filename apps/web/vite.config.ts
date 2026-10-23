@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import http from "node:http";
 import https from "node:https";
@@ -25,6 +26,7 @@ import type { PreviewServer, ProxyOptions, ViteDevServer } from "vite";
 import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
+import { ASSET_ARCHIVE_DIR, archiveAssets } from "./src/asset-archive.js";
 import { appendForwardedFor } from "./src/forwarded-for.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
 import {
@@ -36,6 +38,7 @@ import {
   rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
 } from "./src/novnc-html.js";
+import { rakazoPwa } from "./src/pwa/plugin.js";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -469,6 +472,7 @@ export default defineConfig(({ command, mode }) => {
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),
       tailwindcss(),
+      rakazoPwa(buildId),
       {
         // Production only: the dev server injects inline scripts for React Refresh.
         name: "rakazo-content-security-policy",
@@ -486,11 +490,21 @@ export default defineConfig(({ command, mode }) => {
       {
         name: "rakazo-missing-asset-404",
         configurePreviewServer({ config, middlewares }) {
+          const outDir = path.resolve(config.root, config.build.outDir);
+          const assetsDir = path.join(outDir, config.build.assetsDir);
+          let archive: string | null = null;
+          try {
+            archive = archiveAssets({
+              assetsDir,
+              archiveDir: path.resolve(config.root, ASSET_ARCHIVE_DIR),
+              buildId: readFileSync(path.join(outDir, "build-id"), "utf8").trim(),
+              now: Date.now(),
+            });
+          } catch (error) {
+            screenLog.warn("web.asset_archive_failed", { "error.code": socketErrorCode(error) });
+          }
           middlewares.use(
-            missingAssetMiddleware(
-              path.resolve(config.root, config.build.outDir, config.build.assetsDir),
-              `${config.base}${config.build.assetsDir}/`,
-            ),
+            missingAssetMiddleware(assetsDir, `${config.base}${config.build.assetsDir}/`, archive),
           );
         },
       },

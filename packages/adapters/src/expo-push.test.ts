@@ -316,6 +316,24 @@ describe("expo push", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("sets the app icon badge when the sender knows the unread count", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
+    dirs.push(dataDir);
+    await savePushToken(dataDir, "user-1", "ExponentPushToken[test]");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse({ data: { status: "ok", id: "ticket" } })),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await new ExpoPushProvider(dataDir).send(
+      { kind: "completion", title: "Done", body: "", botId: "bot-1", threadId: "th-1", badge: 4 },
+      notifyContext,
+    );
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({ badge: 4 });
+  });
+
   it("posts to Expo when a token is registered", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-push-"));
     dirs.push(dataDir);
@@ -353,6 +371,7 @@ describe("expo push", () => {
       deliveryId: expect.any(String),
     });
     expect(body.data.deliveryId.length).toBeGreaterThan(0);
+    expect(body).not.toHaveProperty("badge");
 
     await push.send(
       { kind: "takeover", title: "Need you", body: "on screen", botId: "bot-1", threadId: "th-1" },

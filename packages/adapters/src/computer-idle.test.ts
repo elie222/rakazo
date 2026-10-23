@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { boatError, FakeBoatApi, fakeBoatProvider } from "./boat-sandbox.test-support.js";
 import {
   BACKGROUND_WORK_LAUNCH,
   BACKGROUND_WORK_PROBE,
@@ -28,6 +30,7 @@ describe("sandbox idle", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   });
 
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
@@ -49,7 +52,6 @@ describe("sandbox idle", () => {
     expect(harness.computer.state).toBe("running");
     expect(harness.prisma.computer.findUnique).not.toHaveBeenCalled();
     expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
-    expect(harness.prisma.computer.update).not.toHaveBeenCalled();
     expect(harness.home.commit).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
@@ -176,7 +178,6 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.exportWorkspace).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
-    expect(harness.prisma.computer.update).not.toHaveBeenCalled();
   });
 
   it("rechecks background work after checkpointing before it suspends", async () => {
@@ -212,7 +213,7 @@ describe("sandbox idle", () => {
       harness.sandbox.exportWorkspace.mock.invocationCallOrder[0]!,
     );
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
-    expect(harness.prisma.computer.update).toHaveBeenCalledWith({
+    expect(harness.prisma.computer.updateMany).toHaveBeenLastCalledWith({
       where: {
         id: harness.computer.id,
         state: "suspending",
@@ -243,7 +244,41 @@ describe("sandbox idle", () => {
     );
 
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
-    expect(harness.prisma.computer.update).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+  });
+
+  it("defers sleep with a warning when the sandbox does not answer in time", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const command = vi
+      .spyOn(FakeBoatApi.prototype, "command")
+      .mockRejectedValue(boatError(502, "sandbox_direct_failed", "Request timeout after 74997ms"));
+    const boat = fakeBoatProvider();
+    const boatComputer = await boat.provision(
+      { botId: "bot", homePath: "/unused" },
+      {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    );
+    const harness = idleHarness();
+    harness.deps.sandbox.exportWorkspace = (_computer, context) =>
+      boat.exportWorkspace(boatComputer, context);
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(command).toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "computer.sleep_deferred" }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
   it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {
@@ -277,7 +312,11 @@ describe("sandbox idle", () => {
 
   it("retains the saved revision when the database transition after stopping fails", async () => {
     const harness = idleHarness();
-    harness.prisma.computer.update.mockRejectedValueOnce(new Error("database unavailable"));
+    const updateMany = harness.prisma.computer.updateMany.getMockImplementation()!;
+    harness.prisma.computer.updateMany.mockImplementation(async (args) => {
+      if (args.data.state === "suspended") throw new Error("database unavailable");
+      return updateMany(args);
+    });
     harness.sandbox.stop.mockImplementationOnce(async () => {
       expect(harness.computer.homeRevision).toBe("rev-checkpoint");
     });
@@ -333,7 +372,10 @@ describe("sandbox idle", () => {
         });
       }
 
-      await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).rejects.toThrow();
+      const sleep = sleepComputerIfIdle(harness.deps, harness.computer.id);
+      // Losing the claim after a clean stop is the new owner's business, not a job failure.
+      if (stage === "stop success") await sleep;
+      else await expect(sleep).rejects.toThrow();
 
       expect(harness.computer.state).toBe("suspending");
       expect(harness.events.append).not.toHaveBeenCalled();
@@ -788,18 +830,8 @@ function idleHarness(
       updateMany: vi.fn(async (args) => {
         if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
           return { count: 0 };
-        if (args.data.updatedAt) computer.updatedAt = args.data.updatedAt;
-        if (args.data.state) computer.state = args.data.state;
-        if (args.data.homeRevision) computer.homeRevision = args.data.homeRevision;
-        if ("providerRef" in args.data)
-          Object.assign(computer, { providerRef: args.data.providerRef });
-        return { count: 1 };
-      }),
-      update: vi.fn(async (args) => {
-        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
-          throw new Error("stale computer lifecycle");
         Object.assign(computer, args.data);
-        return computer;
+        return { count: 1 };
       }),
     },
     run: { findFirst: vi.fn().mockResolvedValue(null) },

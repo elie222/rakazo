@@ -15,6 +15,7 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { Adapter, Message, PostableMarkdown, Thread } from "chat";
 import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
 
@@ -126,13 +127,39 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       const mounted: MountedPlatform = { platform, adapterName, chat };
       this.byProvider.set(platform.provider, mounted);
       const deliver = async (thread: Thread, message: Message) => {
+        if (
+          platform.provider === "slack" &&
+          message.isMention &&
+          message.attachments.length > 0 &&
+          inboundAttachments(message).length === 0 &&
+          (message.raw as { type?: unknown }).type === "app_mention"
+        ) {
+          try {
+            const fetchMessage = platform.adapter.fetchMessage;
+            if (!fetchMessage) throw new Error("Slack adapter cannot hydrate mention attachments");
+            const fetched = await fetchMessage.call(platform.adapter, thread.id, message.id);
+            if (!fetched || inboundAttachments(fetched).length === 0) {
+              throw new Error("Slack mention attachments are not available from message history");
+            }
+            // Preserve app_mention-only routing metadata while replacing the
+            // incomplete file stubs with Slack's authenticated history objects.
+            message.attachments = fetched.attachments;
+          } catch {
+            // Missing scopes, deleted files, or unavailable history must not
+            // prevent the mention text and original file URLs from arriving.
+            getLogger().warn(
+              "Slack mention attachment hydration failed; delivering original message",
+            );
+          }
+        }
         const event = this.toInbound(mounted, thread.id, thread.isDM, message);
         if (!event) return;
         try {
           await this.sink?.(event);
         } catch (error) {
-          // processMessage hands waitUntil a swallowed promise, so track sink
-          // failures here and turn them into HTTP 5xx after the drain.
+          // processMessage hands waitUntil a swallowed promise, so track
+          // sink failures here, turn them into HTTP 5xx, and
+          // clear the SDK dedupe key so Slack's retry can process the message.
           webhookDrain.getStore()?.failedKeys.push(chatDedupeKey(platform.adapter, message.id));
           throw error;
         }

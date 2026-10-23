@@ -5,7 +5,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerSleepJob } from "@rakazo/adapter-kit";
+import { computerSleepJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -371,6 +371,16 @@ export async function sleepComputerIfIdle(
       data: { state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
+    // A sandbox too busy or stuck to answer cannot be checkpointed now; the next idle check
+    // tries again instead of reporting the same timeout every window.
+    if (error instanceof SandboxUnresponsiveError) {
+      getLogger().warn("computer.sleep_deferred", {
+        "computer.id": computerId,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+      return;
+    }
     throw error;
   }
 
@@ -413,7 +423,7 @@ export async function sleepComputerIfIdle(
     });
     throw error;
   }
-  await deps.prisma.computer.update({
+  const suspended = await deps.prisma.computer.updateMany({
     where: suspensionClaim,
     data: {
       state: "suspended",
@@ -425,6 +435,12 @@ export async function sleepComputerIfIdle(
       controlRunId: null,
     },
   });
+  if (suspended.count !== 1) {
+    // A Reset, a stale-claim recovery, or a deletion took the computer while it stopped. The
+    // new owner restarts it from the saved revision; there is nothing left for this job to do.
+    getLogger().warn("computer.suspend_superseded", { "computer.id": computerId });
+    return;
+  }
   getLogger().info("computer.suspended", {
     "computer.id": computerId,
     provider: computer.kind,

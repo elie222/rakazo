@@ -548,6 +548,7 @@ describe("inbox swipe handlers", () => {
       confirmDeleteBot: vi.fn(),
       confirmDeleteGroup: vi.fn(),
       notifyArchivedChatsChanged: vi.fn(),
+      dismissThreadNotifications: vi.fn(async () => {}),
       currentApiBase: () => "",
       loadSessionToken: async () => null,
       selectedSpaceId: () => session.space,
@@ -595,6 +596,19 @@ describe("inbox swipe handlers", () => {
     await first;
     expect(h.state.bots[0]!.unread).toBe(false);
     expect(h.state.overrides.size).toBe(0);
+  });
+
+  it("clears a chat's delivered notifications when it is marked read, not unread", async () => {
+    const h = handlers(async () => undefined);
+    await h.runRowAction("bot", { id: "b1", threadId: "thread-b1" } as never, "read");
+    await h.runRowAction("bot", { id: "b2" }, "read");
+    await h.runRowAction("group", { id: "g1" }, "read");
+    await h.runRowAction("bot", { id: "b1" }, "unread");
+    expect(h.dismissThreadNotifications.mock.calls).toEqual([
+      [{ threadId: "thread-b1" }],
+      [{ botId: "b2" }],
+      [{ groupId: "g1" }],
+    ]);
   });
 
   it("drops a change that is undone before its turn", async () => {

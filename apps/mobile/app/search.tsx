@@ -18,7 +18,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
-import { readableGutter } from "../lib/adaptive-layout";
+import { readableGutters } from "../lib/adaptive-layout";
 import { currentApiBase, selectedSpaceId, selectSpace, spaceSelectionSeq } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
@@ -45,7 +45,7 @@ export default function SearchSheet() {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const insets = useSafeAreaInsets();
-  const gutter = readableGutter(useWindowDimensions().width, Math.max(insets.left, insets.right));
+  const gutters = readableGutters(useWindowDimensions().width, insets);
   const field = useRef<TextInput>(null);
   const opening = useRef(false);
   const attempt = useRef(0);
@@ -144,7 +144,9 @@ export default function SearchSheet() {
       collapsable={false}
       style={[styles.screen, { paddingTop: Platform.OS === "ios" ? 16 : insets.top + 8 }]}
     >
-      <View style={[styles.top, { marginHorizontal: 16 + gutter }]}>
+      <View
+        style={[styles.top, { marginLeft: 16 + gutters.left, marginRight: 16 + gutters.right }]}
+      >
         <GlassIconButton
           testID="search-sheet-close"
           accessibilityLabel={t("Close")}
@@ -208,7 +210,11 @@ export default function SearchSheet() {
         automaticallyAdjustKeyboardInsets
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + 16 }}
+        contentContainerStyle={{
+          paddingLeft: gutters.left,
+          paddingRight: gutters.right,
+          paddingBottom: insets.bottom + 16,
+        }}
         ListEmptyComponent={
           <Text style={styles.empty}>{loading ? t("Searching…") : t("No results")}</Text>
         }

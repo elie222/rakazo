@@ -316,10 +316,10 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         cacheReadTokens: 40,
         outputTokens: 30,
         costUsd: 0.00012,
-        runId: null,
+        runId: deletedWhilePending.runId,
       });
       expect(retained.filter((row) => row.parentRunId === first.runId)).toHaveLength(4);
-      expect(retained.every((row) => row.runId === null)).toBe(true);
+      expect(retained.every((row) => row.runId === row.parentRunId)).toBe(true);
     } finally {
       await stop?.();
       await model.close();

@@ -15,6 +15,9 @@ export function serializeError(error: unknown, seen = new Set<unknown>()): Seria
     name: error.name || "Error",
     message: redactSensitiveText(error.message),
   };
+  // Database drivers and Node put a stable machine code (P2002, ECONNRESET) beside the message.
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && /^[\w.-]{1,40}$/.test(code)) serialized.code = code;
   if (typeof error.stack === "string" && error.stack.length > 0) {
     serialized.stack = redactSensitiveText(error.stack);
   }

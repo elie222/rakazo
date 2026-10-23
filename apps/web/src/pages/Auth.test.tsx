@@ -112,12 +112,16 @@ async function submit() {
     host.querySelector("form")!.requestSubmit();
   });
 }
-it("shows no credential form while capabilities load", async () => {
-  vi.mocked(fetchAuthCapabilities).mockReturnValue(new Promise(() => undefined));
-  await render();
-  expect(host.querySelector("input")).toBeNull();
-  expect(host.textContent).toContain("Loading…");
-});
+it.each(["in", "up", "forgot"] as const)(
+  "stays blank while capabilities load on %s",
+  async (mode) => {
+    vi.mocked(fetchAuthCapabilities).mockReturnValue(new Promise(() => undefined));
+    await render(mode);
+    expect(host.querySelector("input")).toBeNull();
+    expect(host.textContent).toBe("");
+    expect(host.querySelector("form")).toBeNull();
+  },
+);
 it.each(["in", "up"] as const)("offers SSO and hides credentials on %s", async (mode) => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
   await render(mode);

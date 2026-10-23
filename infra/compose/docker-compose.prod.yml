@@ -24,11 +24,18 @@ x-app-environment: &app-environment
   ENCRYPTION_MASTER_KEYS:
   # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
+  # Optional: keep bot homes in S3-compatible object storage (docs/self-host.md#bot-homes-in-object-storage).
+  OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_ENDPOINT:
+  OBJECT_STORAGE_REGION:
+  OBJECT_STORAGE_ACCESS_KEY_ID:
+  OBJECT_STORAGE_SECRET_ACCESS_KEY:
+  OBJECT_STORAGE_PREFIX:
+  OBJECT_STORAGE_PATH_STYLE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL:
   MAX_UPLOAD_SIZE_MB:
-  RAKAZO_IMAGE_TAG:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
@@ -236,7 +243,19 @@ x-app-environment: &app-environment
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5}
+    image: ${POSTGRES_IMAGE:-postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6}
+    # A Postgres 16 POSTGRES_IMAGE would ignore these mounts and open an empty database.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ "$$PG_MAJOR" != 18 ]; then
+          echo "POSTGRES_IMAGE must be Postgres 18, not $${PG_MAJOR:-unknown}" >&2
+          exit 1
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - postgres
+    command: ["postgres"]
     restart: unless-stopped
     logging: *logging
     security_opt:
@@ -248,7 +267,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-rakazo}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18 keeps each major version's cluster in /var/lib/postgresql/<major>/docker.
+      - postgres:/var/lib/postgresql
+      # The Postgres 16 volume from earlier releases, read-only. While it holds data and no 18
+      # cluster exists, the image refuses to start instead of creating an empty database; run
+      # upgrade-postgres.sh (docs/self-host.md#upgrading-to-postgres-18).
+      - pgdata:/var/lib/postgresql/16/docker:ro
     networks:
       - data
     healthcheck:
@@ -313,8 +337,6 @@ services:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_DESKTOP_STACK_TOKEN:
-      RAKAZO_UPDATER_URL: http://updater:7092
-      RAKAZO_UPDATER_TOKEN:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
@@ -404,6 +426,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web
     command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Recent builds' hashed assets, so tabs still running one keep loading chunks after a deploy.
+    volumes:
+      - webassets:/app/apps/web/asset-archive
     init: true
     logging: *logging
     security_opt:
@@ -540,10 +565,12 @@ services:
         condition: service_started
 
 volumes:
+  postgres:
   pgdata:
   appdata:
   caddydata:
   caddyconfig:
+  webassets:
 
 networks:
   edge:

@@ -15,6 +15,8 @@ pnpm --filter @rakazo/api db:deploy
 unset DATABASE_MIGRATION_URL
 pnpm --filter @rakazo/api exec node dist/cli/bootstrap-owner.js
 unset OWNER_PASSWORD
+# Personal template: registration is operator configuration, never an app-account permission.
+export SIGNUPS_ENABLED=false
 
 # All processes share one volume; a failed process restarts the whole service.
 trap 'kill $(jobs -pr) 2>/dev/null || true; wait || true' EXIT
@@ -37,7 +39,7 @@ pnpm --filter @rakazo/worker start &
   }
   throw new Error("API did not become ready");
 '
-  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u BETTER_AUTH_SECRET \
+  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u OBJECT_STORAGE_SECRET_ACCESS_KEY -u BETTER_AUTH_SECRET \
     pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
 ) &
 wait -n

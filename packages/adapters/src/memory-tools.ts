@@ -9,10 +9,7 @@ export function selectMemoryTools(
   semanticMemoryForgets: boolean,
 ): ConnectorTool[] {
   return semanticMemoryConfigured
-    ? tools.filter(
-        (tool) =>
-          tool.name !== "remember" && (semanticMemoryForgets || tool.name !== "forget_memory"),
-      )
+    ? tools.filter((tool) => semanticMemoryForgets || tool.name !== "forget_memory")
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
 

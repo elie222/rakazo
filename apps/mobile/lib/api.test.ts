@@ -4,7 +4,7 @@ import { isServerUnreachable, withLiveStreamingProgress } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promptAiConsent } from "./ai-consent";
-import type { MobileMessage, MobileSnapshot } from "./api.js";
+import type { MobileMessage, MobileModelCredential, MobileSnapshot } from "./api.js";
 import {
   adoptDeletedSpaceFallback,
   applyMobileThreadEvent,
@@ -43,12 +43,6 @@ import {
   subscribeSessionRejected,
   subscribeThread,
 } from "./api.js";
-import {
-  AVATAR_STYLE_KEY,
-  clearAvatarStyle,
-  getCachedAvatarStyle,
-  saveAvatarStyle,
-} from "./avatar-style.js";
 import { resumeLiveNotifications } from "./live-notifications.js";
 import { threadRefreshDelayMs } from "./refresh";
 import {
@@ -1001,6 +995,49 @@ describe("mobile API authentication", () => {
     );
   });
 
+  it("sends model headers unchanged and reads names-only credential DTOs", async () => {
+    const credential: MobileModelCredential = {
+      id: "credential",
+      provider: "openai-compatible",
+      label: "Local",
+      hasKey: false,
+      isDefault: true,
+      headerNames: ["x-session"],
+    };
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ json: credential }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "custom",
+      headers: { "x-session": "fake-session-secret" },
+    };
+    expect(await rpc<MobileModelCredential>("models/connect", input)).toEqual(credential);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ json: input });
+    fetchMock.mockResolvedValueOnce(jsonResponse({ json: [credential] }));
+    const listed = await rpc<MobileModelCredential[]>("models/credentials");
+    expect(listed[0]?.headerNames).toEqual(["x-session"]);
+    expect(JSON.stringify(listed)).not.toContain("fake-session-secret");
+    await rpc("models/connect", { ...input, headers: undefined });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)).json).not.toHaveProperty(
+      "headers",
+    );
+    await rpc("models/connect", { ...input, headers: {} });
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body)).json.headers).toEqual({});
+    await rpc("models/probeOpenAiCompatible", {
+      baseUrl: input.baseUrl,
+      headers: input.headers,
+      credentialId: credential.id,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body)).json).toEqual({
+      baseUrl: input.baseUrl,
+      headers: input.headers,
+      credentialId: credential.id,
+    });
+  });
+
   it("keeps the Space when a non-401 failure mentions unauthorized", async () => {
     const store = new Map<string, string>();
     mockSecureStore(store);
@@ -1324,36 +1361,6 @@ describe("mobile API authentication", () => {
       "session-token",
       "space-support",
     );
-  });
-
-  it("restores the avatar style when an endpoint switch rolls the session back", async () => {
-    await saveAvatarStyle("organic");
-    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
-      if (key === "rakazo.session_token") return "session-token";
-      return null;
-    });
-    await selectSpace("space-support");
-    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key) => {
-      if (key === "rakazo.api_base") throw new Error("device locked");
-    });
-
-    try {
-      await expect(saveApiBase("https://second-server.example")).resolves.toEqual({
-        ok: false,
-        error: "Could not save the server URL",
-      });
-      expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
-      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
-      expect(getCachedAvatarStyle()).toBe("organic");
-      await expect(authHeaders()).resolves.toEqual({
-        authorization: "Bearer session-token",
-        "x-rakazo-space-id": "space-support",
-      });
-    } finally {
-      vi.mocked(SecureStore.setItemAsync).mockReset();
-      vi.mocked(SecureStore.deleteItemAsync).mockReset();
-      await clearAvatarStyle();
-    }
   });
 
   it("restores credentials when the new endpoint cannot be persisted", async () => {
@@ -3550,4 +3557,46 @@ it("keeps the thread id on live messages so inline cards can act on them", () =>
     } as never,
   );
   expect(view?.messages[0]?.threadId).toBe("chat");
+});
+
+describe("stale helper projection", () => {
+  it.each([
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+  ])("settles helpers on %s without reviving them on resume", (type) => {
+    const base = {
+      id: "fixture",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
+    let next = applyMobileThreadEvent(snapshot(), {
+      ...base,
+      type: "thread.subagent",
+      payload: helper,
+    });
+    next = applyMobileThreadEvent(next, { ...base, seq: 2, type, payload: {} });
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+      result: "stopped",
+    });
+    next = applyMobileThreadEvent(next, { ...base, seq: 3, type: "run.started", payload: {} });
+    next = applyMobileThreadEvent(next, {
+      ...base,
+      seq: 4,
+      type: "thread.subagent",
+      payload: { ...helper, agentId: "resumed" },
+    });
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+    });
+    expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
+      status: "running",
+    });
+  });
 });

@@ -12,6 +12,7 @@ const symbols = {
   quote: "text.quote",
   speak: "speaker.wave.2",
   select: "character.cursor.ibeam",
+  unread: "message.badge",
 } as const satisfies Record<MessageMenuSymbol, Extract<NonNullable<MenuAction["image"]>, string>>;
 
 export function MessageContextMenu({

@@ -20,6 +20,7 @@ export function createQueuedSave<T>(
   let confirmed = initial;
   let latest = initial;
   let saving = false;
+  let revision = 0;
   let inFlight: Promise<void> | undefined;
   let failure: { error: unknown } | undefined;
 
@@ -29,9 +30,11 @@ export function createQueuedSave<T>(
     try {
       while (!equals(latest, confirmed)) {
         const next = latest;
+        const requestRevision = revision;
         try {
           await save(next);
         } catch (error) {
+          if (requestRevision !== revision) continue;
           failure = { error };
           latest = confirmed;
           onChange(confirmed);
@@ -69,6 +72,7 @@ export function createQueuedSave<T>(
       if (failure) throw failure.error;
     },
     update(value: T) {
+      revision += 1;
       latest = value;
       onChange(value);
       if (!saving) {

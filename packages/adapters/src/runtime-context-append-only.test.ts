@@ -506,9 +506,9 @@ describe("append-only run transcript boundaries", () => {
     run.act(run.send(), "d", "ok");
     run.send();
 
-    // Force a rebuild after a leaves the three-result window.
+    // Force a rebuild whose evidence budget cannot retain the oldest result.
     run.state.systemPrompt = "Changed instructions";
-    const rebuilt = run.send();
+    const rebuilt = run.send(undefined, { ...model, contextWindow: 7000, maxTokens: 1024 });
     const result = rebuilt.messages.find(
       (message) => message.role === "toolResult" && message.toolCallId === "a",
     );

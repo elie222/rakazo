@@ -41,7 +41,7 @@
     "expo-linking": "57.0.13",
     "expo-localization": "57.0.2",
     "expo-modules-core": "57.0.24",
-    "expo-notifications": "57.0.23",
+    "expo-notifications": "57.0.24",
     "expo-router": "57.0.29",
     "expo-screen-orientation": "57.0.3",
     "expo-secure-store": "57.0.4",

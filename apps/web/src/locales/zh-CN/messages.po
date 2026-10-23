@@ -185,6 +185,11 @@ msgstr "{provider}找不到请求的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider}当前负载过高。请稍后再试。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider}正在限制请求频率。请稍后重试。"
 
@@ -291,14 +296,20 @@ msgstr "{title}，{label}"
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr ""
 
-#: src/pages/shell/transcript.tsx
-msgid "{workingBotName} is working"
-msgstr "{workingBotName} 正在工作"
-
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
 msgid "@{0}"
 msgstr "@{0}"
+
+#. placeholder {0}: amount / 100
+#: src/components/ModelCredits.tsx
+msgid "${0} / month"
+msgstr ""
+
+#. placeholder {0}: amount / 100
+#: src/components/ModelCredits.tsx
+msgid "${0} in monthly model credits. No API key needed."
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
@@ -315,7 +326,6 @@ msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window
 msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
 
@@ -329,10 +339,6 @@ msgstr ""
 
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
-msgstr ""
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Access token"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -404,6 +410,10 @@ msgstr "添加要运行的命令"
 msgid "Add a file or folder to watch"
 msgstr "添加要监视的文件或文件夹"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Add a label"
+msgstr "添加标签"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "请在设置中添加模型后再使用。"
@@ -445,6 +455,10 @@ msgstr "添加备用模型"
 msgid "Add credential"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Add credits"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
 msgstr "添加 Executor"
@@ -457,6 +471,10 @@ msgstr "添加 GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "添加 GraphQL 端点"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "添加请求头"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "添加项目"
@@ -465,6 +483,10 @@ msgstr "添加项目"
 #: src/pages/PluginsOverlay.tsx
 msgid "Add MCP server"
 msgstr "添加 MCP 服务器"
+
+#: src/pages/ScratchpadSection.tsx
+msgid "Add open work"
+msgstr "添加待办事项"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add OpenAPI"
@@ -645,18 +667,18 @@ msgstr "已回答：{0}"
 msgid "Answered: {answer}"
 msgstr "已回答：{answer}"
 
+#: src/pages/Onboarding.tsx
+msgid "Anthropic API"
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr ""
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "API is back, but the update did not finish. Check the host logs."
-msgstr "API 已恢复，但更新未完成。请查看宿主日志。"
-
 #: src/components/AskCard.tsx
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
+#: src/pages/model-settings/compatible-key-field.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -744,10 +766,6 @@ msgstr "购买前询问"
 msgid "Ask before sending external email"
 msgstr "发送外部邮件前询问"
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Ask the server owner to configure this provider."
-msgstr ""
-
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -807,6 +825,10 @@ msgstr ""
 msgid "Available after the routine is saved"
 msgstr "保存例行任务后可用"
 
+#: src/components/ModelCredits.tsx
+msgid "Available credits"
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Available to this bot's shell commands as {commandVariable}"
 msgstr "此机器人的 Shell 命令可通过 {commandVariable} 使用"
@@ -814,10 +836,6 @@ msgstr "此机器人的 Shell 命令可通过 {commandVariable} 使用"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Avatar Studio"
 msgstr "头像工作室"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Avatars"
-msgstr "头像"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
@@ -903,13 +921,17 @@ msgstr "要关联的 Bot"
 msgid "Bot's model"
 msgstr "Bot 的模型"
 
+#: src/components/SignupSurvey.tsx
+msgid "Both"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr ""
 
-#: src/pages/shell/transcript.tsx
-msgid "Bots are working"
-msgstr "Bot 正在工作"
+#: src/components/ModelCredits.tsx
+msgid "Bots and browser automation"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -948,6 +970,10 @@ msgstr ""
 msgid "Calling…"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Can edit and organise bots it creates"
+msgstr "可编辑和整理它创建的机器人"
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "无法连接服务器。"
@@ -960,7 +986,6 @@ msgstr "无法读取图像"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
-#: src/components/ComputerUpdateProgress.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -1028,6 +1053,14 @@ msgstr "聊天应用"
 msgid "Chat Settings"
 msgstr "聊天设置"
 
+#: src/pages/Onboarding.tsx
+msgid "ChatGPT subscription"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "ChatGPT, Claude, or any model provider."
+msgstr ""
+
 #: src/lib/identity-display.ts
 msgid "Chats"
 msgstr "聊天"
@@ -1041,17 +1074,12 @@ msgstr ""
 msgid "Check every"
 msgstr "检查间隔"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Check failed"
-msgstr "检查失败"
-
 #. placeholder {0}: state.detail ?? ""
 #: src/pages/RoutineEditor.tsx
 msgid "Check failed: {0}"
 msgstr "检查失败：{0}"
 
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Check for updates"
 msgstr "检查更新"
 
@@ -1085,14 +1113,9 @@ msgstr "正在检查连接…"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
 msgstr "正在检查…"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Checkout has local changes. Clean it before updating."
-msgstr "工作副本有本地更改。请先清理再更新。"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1106,9 +1129,21 @@ msgstr "选择 Bot…"
 msgid "Choose a new password"
 msgstr "设置新密码"
 
+#: src/pages/Onboarding.tsx
+msgid "Choose a provider"
+msgstr ""
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "选择文件"
+
+#: src/components/ModelCredits.tsx
+msgid "Choose how to use Rakazo"
+msgstr ""
+
+#: src/pages/Onboarding.tsx
+msgid "Claude subscription"
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1131,14 +1166,6 @@ msgstr ""
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
 msgstr "正在清空…"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Client ID"
-msgstr ""
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Client secret"
-msgstr ""
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1364,6 +1391,10 @@ msgstr "连接 Executor"
 msgid "Connect MCP server “{name}”"
 msgstr "连接 MCP 服务器“{name}”"
 
+#: src/components/ModelCredits.tsx
+msgid "Connect my own"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "连接 OAuth"
@@ -1390,7 +1421,6 @@ msgstr "已连接 {0}。"
 msgid "Connected. Its tools are available from your next message."
 msgstr "已连接，下一条消息起即可使用其工具。"
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1419,6 +1449,7 @@ msgid "Context limit"
 msgstr "上下文限制"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 msgid "Continue"
@@ -1428,10 +1459,18 @@ msgstr "继续"
 msgid "Continue in Background"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
+msgid "Continue to checkout"
+msgstr ""
+
 #. placeholder {0}: reset.sso.name
 #: src/pages/Auth.tsx
 msgid "Continue with {0}"
 msgstr "通过 {0} 继续"
+
+#: src/components/ModelCredits.tsx
+msgid "Continue with credits"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Continue with email"
@@ -1657,7 +1696,6 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "无法加载集成"
@@ -1696,10 +1734,6 @@ msgstr "无法加载此对话。"
 msgid "Could not load this file."
 msgstr "无法加载此文件。"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Could not load update status"
-msgstr "无法加载更新状态"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "无法加载语音设置"
@@ -1708,13 +1742,11 @@ msgstr "无法加载语音设置"
 msgid "Could not log out. Try again."
 msgstr "无法退出登录。请重试。"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
-msgstr ""
-
-#: src/pages/LocalSettings.tsx
-msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -1875,6 +1907,10 @@ msgstr "无法更新"
 msgid "Could not update agent access"
 msgstr "无法更新 Agent 权限"
 
+#: src/components/ModelCredits.tsx
+msgid "Could not update billing"
+msgstr ""
+
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
 msgstr "无法更新电脑"
@@ -1894,10 +1930,6 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't load messaging settings"
 msgstr "无法加载消息设置"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Couldn't update avatars"
-msgstr "无法更新头像"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
@@ -1980,6 +2012,10 @@ msgstr ""
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "凭据已加密，不会发送给模型。"
 
+#: src/components/ModelCredits.tsx
+msgid "Credit amount"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Cron"
 msgstr "Cron"
@@ -2033,9 +2069,7 @@ msgstr "拒绝"
 msgid "Default"
 msgstr "默认"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2151,17 +2185,13 @@ msgstr ""
 msgid "Details"
 msgstr "详情"
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Direct MCP"
-msgstr ""
+#: src/pages/shell/bot-panel.tsx
+msgid "Disable a tool"
+msgstr "禁用工具"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Disabled"
 msgstr "已禁用"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Disabled tools"
-msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Discard recording"
@@ -2243,7 +2273,12 @@ msgstr "还没有账户？"
 msgid "Done"
 msgstr "完成"
 
+#: src/components/ModelCredits.tsx
+msgid "Downgrade at renewal"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
+#: src/pages/KnowledgeSection.tsx
 msgid "Download"
 msgstr ""
 
@@ -2255,14 +2290,6 @@ msgstr "下载 {0}"
 #: src/components/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "下载 {name}"
-
-#: src/pages/KnowledgeSection.tsx
-msgid "Download as markdown"
-msgstr "下载为 Markdown"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Download Executor"
-msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
@@ -2280,10 +2307,6 @@ msgstr "拖放或粘贴图片"
 msgid "Duplicate"
 msgstr "复制"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
-msgstr "例如 Hivenet Agent、Presales、工时表机器人"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Each name can be used once."
 msgstr "每个名称只能使用一次。"
@@ -2295,6 +2318,14 @@ msgstr "编辑"
 #: src/components/AskCard.tsx
 msgid "Edit first"
 msgstr "先编辑"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Edit label"
+msgstr "编辑标签"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Edit name"
+msgstr "编辑名称"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Edit Profile"
@@ -2311,6 +2342,15 @@ msgstr "该邮箱不允许注册"
 #: src/lib/user-error.ts
 msgid "Email verification required"
 msgstr "需要验证邮箱"
+
+#. placeholder {0}: humanizeTool(toolName)
+#: src/pages/shell/bot-panel.tsx
+msgid "Enable {0}"
+msgstr "启用 {0}"
+
+#: src/pages/shell/bot-credentials.tsx
+msgid "Encrypted and never shown again"
+msgstr "已加密，且不再显示"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2542,6 +2582,7 @@ msgstr "标记异常操作"
 msgid "Forgot password?"
 msgstr "忘记密码？"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免费"
@@ -2567,14 +2608,6 @@ msgstr "网关 ID"
 #: src/pages/SettingsOverlay.tsx
 msgid "General"
 msgstr "通用"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Get credentials"
-msgstr ""
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Get notified when this Bot finishes or needs input"
-msgstr "在此机器人完成或需要输入时收到通知"
 
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
@@ -2626,15 +2659,21 @@ msgstr "请求头"
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "请求头名称"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "请求头值"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "请求头"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -2680,13 +2719,29 @@ msgstr "小时"
 msgid "hours"
 msgstr "小时"
 
+#: src/components/SignupSurvey.tsx
+msgid "How big is your team?"
+msgstr ""
+
+#: src/components/SignupSurvey.tsx
+msgid "How did you hear about us?"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "频率"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "How other bots see it"
+msgstr "其他机器人如何了解它"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "如何检查"
+
+#: src/components/SignupSurvey.tsx
+msgid "How will you use Rakazo?"
+msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -2769,10 +2824,6 @@ msgstr "指令已更新"
 msgid "Integration domain"
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Integration options"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Integrations"
 msgstr "集成"
@@ -2830,10 +2881,6 @@ msgstr "保留记忆"
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "密钥"
-
-#: src/pages/KnowledgeSection.tsx
-msgid "Knowledge"
-msgstr "知识"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
@@ -2934,9 +2981,7 @@ msgstr "正在加载规则…"
 msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
-#: src/App.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -2957,10 +3002,7 @@ msgstr "本地访问权限允许 Bot 无需询问就执行命令。请勿在共�
 msgid "Local computer access requires the latest desktop app."
 msgstr ""
 
-#: src/pages/LocalSettings.tsx
-msgid "Local Server Settings"
-msgstr ""
-
+#: src/components/ModelCredits.tsx
 #: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
 msgid "Log out"
@@ -2981,14 +3023,11 @@ msgstr ""
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Make sure nothing is still running on this computer."
-msgstr "请确认这台电脑上没有仍在运行的任务。"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
 msgstr ""
 
+#: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Manage billing"
 msgstr ""
@@ -3016,6 +3055,10 @@ msgstr ""
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "标为已读"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "标为未读"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -3187,6 +3230,10 @@ msgstr "模型"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "模型“{modelId}”未列出。"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Model connections"
+msgstr "模型连接"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Model id"
@@ -3204,14 +3251,13 @@ msgstr "模型费用使用你的提供方密钥。"
 msgid "Model updated."
 msgstr "模型已更新。"
 
-#: src/pages/LocalSettings.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Models"
 msgstr "模型"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Models for the server owner’s default space."
+#: src/components/ModelCredits.tsx
+msgid "Models at provider cost"
 msgstr ""
 
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3230,6 +3276,14 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "Monthly"
 msgstr "每月"
+
+#: src/components/ModelCredits.tsx
+msgid "Monthly credits"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Monthly credits expire at renewal. Top-ups do not expire."
+msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
 msgid "More"
@@ -3382,10 +3436,6 @@ msgstr ""
 msgid "No chat apps linked yet."
 msgstr "还没有关联聊天应用。"
 
-#: src/pages/shell/bot-credentials.tsx
-msgid "No credentials saved for this bot."
-msgstr ""
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No group chats yet."
 msgstr "还没有群聊。"
@@ -3492,10 +3542,6 @@ msgstr "暂不"
 msgid "Not working"
 msgstr "无法正常工作"
 
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Nothing is still running"
-msgstr "没有仍在运行的任务"
-
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "暂无记忆"
@@ -3539,6 +3585,16 @@ msgstr "OAuth 连接失败"
 msgid "OAuth expired"
 msgstr "OAuth 已过期"
 
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Ollama API key"
+msgstr ""
+
+#: src/pages/model-settings/provider-list.tsx
+#: src/pages/Onboarding.tsx
+msgid "Ollama Cloud"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "按计划"
@@ -3548,12 +3604,15 @@ msgstr "按计划"
 msgid "on the 1st at {0}"
 msgstr "每月 1 日 {0}"
 
+#: src/components/ModelCredits.tsx
+msgid "One-time purchase. Credits do not expire."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Only empty spaces can be deleted. Delete its bots and groups first."
 msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
-#: src/pages/ScratchpadSection.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
@@ -3605,6 +3664,10 @@ msgstr "打开导航"
 msgid "Open work"
 msgstr "待办"
 
+#: src/pages/Onboarding.tsx
+msgid "OpenAI API"
+msgstr ""
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
@@ -3622,6 +3685,7 @@ msgstr "正在打开聊天…"
 msgid "Opening your Space…"
 msgstr "正在打开工作区…"
 
+#: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -3640,17 +3704,9 @@ msgstr "或连接 API 密钥"
 msgid "Or paste an API key"
 msgstr "或粘贴 API 密钥"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Organic"
-msgstr "自然"
-
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "组织 API 密钥"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
-msgstr "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。"
 
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
@@ -3669,10 +3725,6 @@ msgstr "所有者"
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 事件"
-
-#: src/pages/ScratchpadSection.tsx
-msgid "Park"
-msgstr "搁置"
 
 #: src/components/PasskeySettings.tsx
 msgid "Passkey"
@@ -3731,6 +3783,14 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr "已暂停"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Permissions"
+msgstr "权限"
+
+#: src/components/SignupSurvey.tsx
+msgid "Personal"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -3810,10 +3870,6 @@ msgstr "私有"
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Project ID"
-msgstr ""
-
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr ""
@@ -3838,6 +3894,10 @@ msgstr "排队中"
 
 #: src/pages/shell/quote-selection-button.tsx
 msgid "Quote"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Rakazo credits"
 msgstr ""
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -3948,9 +4008,14 @@ msgstr "重定向 URI"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
+#: src/components/ModelCredits.tsx
 #: src/pages/RoutineRunHistory.tsx
 msgid "Refresh"
 msgstr "刷新"
+
+#: src/components/ModelCredits.tsx
+msgid "Refresh credits"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refresh view"
@@ -3964,17 +4029,9 @@ msgstr ""
 msgid "Registration is closed"
 msgstr "注册已关闭"
 
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Release computer"
-msgstr ""
-
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
 msgstr "交还控制权"
-
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Release interrupted computer?"
-msgstr ""
 
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
@@ -4013,6 +4070,10 @@ msgstr "移除变化触发器"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr ""
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "移除请求头"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -4193,11 +4254,6 @@ msgstr ""
 msgid "Return to Rakazo"
 msgstr "返回 Rakazo"
 
-#. placeholder {0}: doc.revision
-#: src/pages/KnowledgeSection.tsx
-msgid "rev {0}"
-msgstr "版本 {0}"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Review provider settings and test again."
 msgstr "请检查提供方设置并重新测试。"
@@ -4205,10 +4261,6 @@ msgstr "请检查提供方设置并重新测试。"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Revoke"
 msgstr "撤销"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Robot"
-msgstr "机器人"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
@@ -4332,6 +4384,10 @@ msgstr "正在保存…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "回答是或否，或一句话说明。"
 
+#: src/components/ModelCredits.tsx
+msgid "Scheduled routines"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "范围（可选）"
@@ -4437,12 +4493,6 @@ msgstr "Sentry 告警"
 msgid "Serenity endpoint is required."
 msgstr ""
 
-#: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/LocalSettings.tsx
-msgid "Server integrations"
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Server name"
 msgstr "服务器名称"
@@ -4471,7 +4521,6 @@ msgstr "设置：通用"
 msgid "Settings: Usage"
 msgstr "设置：用量"
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "设置帮助"
@@ -4493,10 +4542,6 @@ msgstr ""
 msgid "Shared documents"
 msgstr "共享文档"
 
-#: src/pages/KnowledgeSection.tsx
-msgid "Shared skills"
-msgstr "共享技能"
-
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -4513,7 +4558,9 @@ msgstr ""
 msgid "Show list"
 msgstr ""
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "显示更多"
 
@@ -4586,7 +4633,10 @@ msgstr ""
 msgid "Skill {0}"
 msgstr "技能 {0}"
 
-#: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/KnowledgeSection.tsx
+msgid "Skills"
+msgstr "技能"
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "跳过"
@@ -4611,10 +4661,6 @@ msgstr ""
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Software update"
-msgstr "软件更新"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4734,6 +4780,7 @@ msgstr "子 Agent"
 msgid "Submit"
 msgstr "提交"
 
+#: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
 msgstr ""
@@ -4804,6 +4851,7 @@ msgstr "测试"
 msgid "Test API key"
 msgstr "测试 API 密钥"
 
+#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "测试连接"
@@ -4813,17 +4861,9 @@ msgid "Test run"
 msgstr "测试运行"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-msgid "Test sign-in"
-msgstr "测试登录"
-
-#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "正在测试…"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "The API did not come back. Refresh this page."
-msgstr "API 未恢复。请刷新此页面。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -4848,7 +4888,6 @@ msgstr ""
 
 #: src/components/call/CallCard.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
@@ -4882,6 +4921,11 @@ msgstr "此对话为只读"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "这台电脑"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。"
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
@@ -5000,7 +5044,12 @@ msgid "Tool sources"
 msgstr "工具源"
 
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/bot-panel.tsx
 msgid "Tools"
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Top up anytime"
 msgstr ""
 
 #: src/components/composer/HoldToTalk.tsx
@@ -5061,20 +5110,12 @@ msgstr "输入你的回答"
 msgid "Unassigned"
 msgstr "未分配"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Unavailable"
-msgstr "不可用"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "撤销"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
-msgstr ""
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Unknown tool"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx
@@ -5095,30 +5136,20 @@ msgid "Unsupported file type: {0}"
 msgstr "不支持的文件类型：{0}"
 
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Up to date"
 msgstr "已是最新"
 
-#: src/components/SoftwareUpdateSection.tsx
+#: src/components/ModelCredits.tsx
 msgid "Update"
 msgstr "更新"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Update available"
-msgstr "有可用更新"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Update computer"
 msgstr "更新电脑"
 
 #: src/components/ComputerUpdateProgress.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Update failed"
 msgstr "更新失败"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Update finished with errors"
-msgstr "更新完成但有错误"
 
 #: src/lib/activity-list-filters.ts
 msgid "Update from {name}"
@@ -5135,10 +5166,6 @@ msgstr "更新指令？"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Updated"
-msgstr "已更新"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
@@ -5158,9 +5185,12 @@ msgid "Updating Team Computer"
 msgstr ""
 
 #: src/components/ComputerMaintenanceActions.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Updating…"
 msgstr "正在更新…"
+
+#: src/components/ModelCredits.tsx
+msgid "Upgrade now"
+msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
@@ -5207,12 +5237,21 @@ msgstr ""
 msgid "Use email code"
 msgstr "使用邮箱验证码"
 
+#: src/components/ModelCredits.tsx
+msgid "Use my subscription or API key"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Use password"
 msgstr "使用密码"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
+msgstr ""
+
+#: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
+msgid "Use Rakazo credits"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
@@ -5240,14 +5279,14 @@ msgstr ""
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
 msgstr "使用此服务器自己的 {hostCredentialSource} 凭据访问 {selectedProviderName}。"
 
+#: src/components/ModelCredits.tsx
+msgid "Using your API key"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
 msgstr "值"
-
-#: src/pages/shell/bot-credentials.tsx
-msgid "Values are encrypted and never shown again."
-msgstr "值会加密保存，之后不再显示。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"
@@ -5275,10 +5314,6 @@ msgstr "语音"
 msgid "Wait a moment and test again."
 msgstr "请稍候并重新测试。"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Waiting for the API to come back…"
-msgstr "正在等待 API 恢复…"
-
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "排队等候…"
@@ -5286,6 +5321,10 @@ msgstr "排队等候…"
 #: src/pages/shell/message-cards.tsx
 msgid "Waiting…"
 msgstr "等待中…"
+
+#: src/components/ModelCredits.tsx
+msgid "Web, desktop and mobile"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Web, desktop and mobile apps"
@@ -5308,9 +5347,17 @@ msgstr ""
 msgid "Weekdays"
 msgstr "工作日"
 
+#: src/components/SignupSurvey.tsx
+msgid "Welcome to Rakazo"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "它的记忆怎么处理？"
+
+#: src/components/SignupSurvey.tsx
+msgid "What do you most want Rakazo to help with?"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
@@ -5340,6 +5387,10 @@ msgstr "监视内容"
 msgid "When a webhook fires"
 msgstr "当 Webhook 触发时"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "When it finishes or needs input"
+msgstr "完成任务或需要输入时"
+
 #: src/pages/RoutineEditor.tsx
 msgid "When something changes"
 msgstr "发生变化时"
@@ -5360,8 +5411,13 @@ msgstr "Bot 应在哪里运行？"
 msgid "Won't do"
 msgstr ""
 
+#: src/components/SignupSurvey.tsx
+msgid "Work"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
+#: src/pages/shell/transcript.tsx
 msgid "Working…"
 msgstr "处理中…"
 
@@ -5388,6 +5444,7 @@ msgstr "你"
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "如果没有自动跳转，可以关闭此标签页。"
 
+#: src/pages/IntegrationCallback.tsx
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "可以关闭此窗口。"
@@ -5427,6 +5484,10 @@ msgstr "你的 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your subscription or API key"
+msgstr ""
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

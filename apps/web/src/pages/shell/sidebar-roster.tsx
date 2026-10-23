@@ -316,7 +316,7 @@ export function SidebarRoster({
                     <BotAvatar
                       color={item.chat.color}
                       identity={item.chat.id}
-                      size={mini ? 32 : compact ? 28 : 38}
+                      size={mini ? 40 : compact ? 28 : 38}
                       status={item.chat.status}
                     />
                   ) : (
@@ -326,7 +326,7 @@ export function SidebarRoster({
                           ? (activeSnapshot.members ?? item.chat.members)
                           : item.chat.members
                       }
-                      size={mini ? 32 : compact ? 28 : 38}
+                      size={mini ? 40 : compact ? 28 : 38}
                     />
                   );
                 const chatTrigger = (
@@ -403,7 +403,7 @@ export function SidebarRoster({
                     onContextMenu={(event) => event.currentTarget.focus()}
                     className={`flex items-center ${
                       mini
-                        ? "mx-auto size-10 justify-center rounded-xl"
+                        ? "mx-auto size-12 justify-center rounded-xl"
                         : compact
                           ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
                           : "w-full gap-3 rounded-xl px-2.5 py-[10px]"

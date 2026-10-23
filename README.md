@@ -1,5 +1,7 @@
 # Rakazo
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
 [![Download on the App Store](https://img.shields.io/badge/App%20Store-Download%20for%20iPhone-black?labelColor=black&style=for-the-badge&logo=apple&logoColor=white)](https://apps.apple.com/app/rakazo/id6801531099)
@@ -13,27 +15,9 @@ can run on your own machine. It is available on the web, as an Electron desktop 
 and computer provider, or run the complete stack locally.
 
 It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
-OpenClaw, Hermes Agent, and Hark Pro.
+OpenClaw, and Hermes Agent.
 
 Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
-
-## How Rakazo compares
-
-Once Rakazo is running, it is just chat, like Grok Bot: you set up a bot and manage it from that
-chat. Muse, Dots, Instinct, and Hark Pro are hosted assistants. OpenClaw
-and Hermes Agent are also open source agents you can run yourself. Their docs describe installers,
-config files, and a gateway. Hermes Desktop can reach a first chat without the CLI; a messaging
-gateway is a separate process.
-
-- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
-- [Muse](https://rakazo.com/muse-alternative/)
-- [Dots](https://rakazo.com/dots-alternative/)
-- [Instinct](https://rakazo.com/instinct-alternative/), the personal assistant you text or call
-- [OpenClaw](https://rakazo.com/openclaw-alternative/)
-- [Hermes Agent](https://rakazo.com/hermes-alternative/), Nous Research's open source agent
-- [Hark Pro](https://rakazo.com/hark-alternative/), the personal agent at hark.com
-- [All comparisons](https://rakazo.com/alternatives/)
-- [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
 
 ## Features
 
@@ -49,6 +33,14 @@ gateway is a separate process.
 ## Demo
 
 https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
+
+## Thanks
+
+- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 
@@ -278,6 +270,16 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
 - [Manage the bots it creates](./docs/fleet-management.md)
+
+## How Rakazo compares
+
+- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
+- [Muse](https://rakazo.com/muse-alternative/)
+- [Dots](https://rakazo.com/dots-alternative/)
+- [Instinct](https://rakazo.com/instinct-alternative/)
+- [OpenClaw](https://rakazo.com/openclaw-alternative/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/)
+- [All comparisons](https://rakazo.com/alternatives/)
 
 ## Contributing
 

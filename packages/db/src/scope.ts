@@ -32,14 +32,11 @@ export async function requireMembership(
   if (!membership) {
     throw new IsolationError("No personal space");
   }
-  const settings = await prisma.deploymentSettings.findUnique({
-    where: { id: "default" },
-  });
   return {
     userId: membership.userId,
     spaceId: membership.spaceId,
     email: membership.member.user.email,
-    isDeploymentOwner: settings?.ownerUserId === membership.userId,
+    isDeploymentOwner: false,
   };
 }
 

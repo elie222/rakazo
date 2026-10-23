@@ -44,6 +44,10 @@ else
   done
 fi
 
+if grep -q '^RAKAZO_AUDIT_SINK_URL=.' /etc/rakazo/audit-ship.env 2>/dev/null && ! systemctl is-active --quiet rakazo-audit-ship.service; then
+  report "Audit trail shipping is not running"
+fi
+
 # Opt-in because self-hosted Compose project names are chosen by the operator.
 if [[ -n "${RAKAZO_MONITOR_COMPOSE_PROJECT:-}" ]]; then
   if ! service_health="$(/usr/local/sbin/rakazo-check-services "${RAKAZO_MONITOR_COMPOSE_PROJECT}")"; then

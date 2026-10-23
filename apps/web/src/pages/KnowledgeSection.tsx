@@ -1,19 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
-import { isDeletableMemoryDocument } from "@rakazo/contracts";
-import {
-  Badge,
-  Button,
-  Skeleton,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Textarea,
-} from "@rakazo/ui-web";
-import { Download } from "lucide-react";
+import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { Badge, Button, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
+import { Download, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { SettingsSectionHeading } from "../components/SettingsSectionHeading";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { useSpaceRpc } from "../lib/space-rpc";
 
@@ -30,36 +23,31 @@ function rowClass(open: boolean): string {
 export function KnowledgeSection({
   botId,
   onSkillsChange,
+  skillsOnly = false,
 }: {
   botId: string;
   onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
+  skillsOnly?: boolean;
 }) {
   const rpc = useSpaceRpc();
-  const { t } = useLingui();
-  return (
-    <section className="mt-6" data-testid="bot-knowledge">
-      <Tabs defaultValue="memory">
-        <TabsList aria-label={t`Knowledge`}>
-          <TabsTrigger value="memory">
-            <Trans>Memory</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="skills">
-            <Trans>Shared skills</Trans>
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="memory">
-          <MemoryDocumentList
-            key={botId}
-            load={() => rpc.memory.list({ botId, scope: "bot" })}
-            exportFilename="memory.md"
-            testId="bot-knowledge-memory"
-          />
-        </TabsContent>
-        <TabsContent value="skills">
+  if (skillsOnly)
+    return (
+      <section data-testid="bot-knowledge">
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+          <Trans>Skills</Trans>
+        </h3>
+        <div className="rounded-xl bg-muted/50 p-4">
           <AgentSkills onSkillsChange={onSkillsChange} />
-        </TabsContent>
-      </Tabs>
-    </section>
+        </div>
+      </section>
+    );
+  return (
+    <MemoryDocumentList
+      key={botId}
+      load={() => rpc.memory.list({ botId, scope: "bot" })}
+      testId="bot-knowledge-memory"
+      compact
+    />
   );
 }
 
@@ -71,13 +59,12 @@ export function SpaceMemorySection() {
       className="rounded-xl border border-border px-4 py-4"
       data-testid="space-memory-documents"
     >
-      <h3 className="text-[15px] font-medium text-foreground">
+      <SettingsSectionHeading className="mb-0">
         <Trans>Shared documents</Trans>
-      </h3>
+      </SettingsSectionHeading>
       <div className="mt-3">
         <MemoryDocumentList
           load={() => rpc.memory.list({ scope: "user" })}
-          exportFilename="space-memory.md"
           testId="space-memory-list"
         />
       </div>
@@ -87,17 +74,19 @@ export function SpaceMemorySection() {
 
 function MemoryDocumentList({
   load,
-  exportFilename,
   testId,
+  compact = false,
 }: {
   load: () => Promise<MemoryDocument[]>;
-  exportFilename: string;
   testId: string;
+  compact?: boolean;
 }) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
+  const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
+  const [memoryVisible, setMemoryVisible] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
@@ -116,6 +105,7 @@ function MemoryDocumentList({
       .then((list) => {
         if (current !== generation.current) return;
         setDocs(list);
+        setMemoryVisible((visible) => visible || list.some((doc) => !isEmptyBotMemory(doc)));
         setLoading(false);
       })
       .catch(() => {
@@ -191,18 +181,18 @@ function MemoryDocumentList({
     }
   }
 
-  async function exportMarkdown() {
+  async function downloadDocument(doc: MemoryDocument) {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      // Re-fetch through the section's own loader so the file is current,
-      // then sync the list so the export matches what is displayed.
-      const fresh = await loadRef.current();
-      generation.current += 1;
-      setDocs(fresh);
-      const markdown = fresh.map((doc) => `# ${doc.path}\n\n${doc.content}`).join("\n\n");
-      downloadArtifactBytes(exportFilename, "text/markdown", new TextEncoder().encode(markdown));
+      const latest = (await loadRef.current()).find((entry) => entry.id === doc.id);
+      if (!latest) throw new Error("Document unavailable");
+      downloadArtifactBytes(
+        latest.path.split("/").at(-1) ?? latest.path,
+        "text/markdown",
+        new TextEncoder().encode(latest.content),
+      );
     } catch {
       setError(t`Could not load`);
     } finally {
@@ -210,104 +200,120 @@ function MemoryDocumentList({
     }
   }
 
+  if (compact && !memoryVisible && !error) return null;
   return (
-    <div data-testid={testId}>
-      {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
-      {conflicted ? (
-        <div className="pb-2 text-[13px] text-destructive">
-          <Trans>Document changed. Reopen to edit the latest version.</Trans>
-        </div>
+    <section className={compact ? "mt-6" : undefined}>
+      {compact ? (
+        <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+          <Trans>Memory</Trans>
+        </h3>
       ) : null}
-      {loading ? <Skeleton className="h-10 w-full" /> : null}
-      {!loading && docs.length === 0 && !error ? (
-        <div className="py-1 text-[13px] text-muted-foreground">
-          <Trans>Nothing remembered yet</Trans>
-        </div>
-      ) : null}
-      <div>
-        {docs.map((doc) => (
-          <div key={doc.id} className="border-b border-border last:border-0">
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={busy}
-              onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
-              className="-mx-2 h-auto w-[calc(100%+1rem)] justify-start whitespace-normal px-2 py-2.5 text-start"
-            >
-              <span className="flex w-full items-baseline justify-between gap-3">
-                <span
-                  className="min-w-0 truncate text-[14px] font-normal text-foreground"
-                  dir="auto"
-                >
-                  {doc.path}
-                </span>
-                <span className="shrink-0 text-[13px] font-normal text-muted-foreground tabular-nums">
-                  <Trans>rev {doc.revision}</Trans>
-                </span>
-              </span>
-            </Button>
-            {openId === doc.id ? (
-              <div className="pb-2">
-                <Textarea
-                  aria-label={doc.path}
+      <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
+        {error ? <div className="pb-2 text-[13px] text-destructive">{error}</div> : null}
+        {conflicted ? (
+          <div className="pb-2 text-[13px] text-destructive">
+            <Trans>Document changed. Reopen to edit the latest version.</Trans>
+          </div>
+        ) : null}
+        {loading ? <Skeleton className="h-10 w-full" /> : null}
+        {!compact && !loading && docs.length === 0 && !error ? (
+          <div className="py-1 text-[13px] text-muted-foreground">
+            <Trans>Nothing remembered yet</Trans>
+          </div>
+        ) : null}
+        <div>
+          {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+            <div key={doc.id} className="border-b border-border last:border-0">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  type="button"
                   disabled={busy}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                  className={fieldClass}
-                  dir="auto"
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    disabled={busy || conflicted || draft === doc.content}
-                    onClick={() => void save(doc)}
-                    className="rounded-full"
+                  onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
+                  className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
+                >
+                  <span
+                    className="min-w-0 truncate text-[14px] font-normal text-foreground"
+                    dir="auto"
                   >
-                    <Trans>Save</Trans>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    type="button"
+                    {doc.path}
+                  </span>
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<Button variant="ghost" size="icon-sm" />}
+                    aria-label={t`Download`}
                     disabled={busy}
-                    onClick={closeDoc}
-                    size="sm"
+                    onClick={() => downloadDocument(doc)}
                   >
-                    <Trans>Cancel</Trans>
-                  </Button>
-                  {isDeletableMemoryDocument(doc.path) ? (
+                    <Download className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <Trans>Download</Trans>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              {openId === doc.id ? (
+                <div className="pb-2">
+                  <Textarea
+                    aria-label={doc.path}
+                    disabled={busy}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
+                    className={fieldClass}
+                    dir="auto"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      disabled={busy || conflicted || draft === doc.content}
+                      onClick={() => void save(doc)}
+                      className="rounded-full"
+                    >
+                      <Trans>Save</Trans>
+                    </Button>
                     <Button
                       variant="ghost"
                       type="button"
                       disabled={busy}
-                      onClick={() => void remove(doc)}
+                      onClick={closeDoc}
                       size="sm"
-                      className="ml-auto text-destructive"
                     >
-                      {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                      <Trans>Cancel</Trans>
                     </Button>
-                  ) : null}
+                    {isDeletableMemoryDocument(doc.path) ? (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void remove(doc)}
+                        size="sm"
+                        className="ml-auto text-destructive"
+                      >
+                        {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
-        ))}
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {compact && docs.length > 5 && !showAll ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground"
+            onClick={() => setShowAll(true)}
+          >
+            <Trans>Show more</Trans>
+          </Button>
+        ) : null}
       </div>
-      {docs.length ? (
-        <Button
-          variant="outline"
-          type="button"
-          disabled={busy}
-          onClick={() => void exportMarkdown()}
-          className="mt-3 rounded-full"
-        >
-          <Download data-icon="inline-start" />
-          <Trans>Download as markdown</Trans>
-        </Button>
-      ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -466,10 +472,13 @@ function AgentSkills({
               type="button"
               disabled={busy}
               onClick={() => void openSkill(entry)}
-              className={`${rowClass(false)} block`}
+              className={`${rowClass(false)} -mx-2.5 w-[calc(100%+1.25rem)] block`}
             >
               <span className="flex w-full items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
+                <span
+                  className="min-w-0 truncate text-[14px] font-normal text-foreground"
+                  dir="auto"
+                >
                   {entry.name}
                 </span>
                 <SkillSourceBadge source={entry.source} />
@@ -487,7 +496,7 @@ function AgentSkills({
         <div className="px-2.5 pb-2">
           {open ? (
             <div className="flex items-center gap-2 pb-1">
-              <div className="min-w-0 truncate text-[14px] text-foreground" dir="auto">
+              <div className="min-w-0 truncate text-[14px] font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
               <SkillSourceBadge source={open.source} />
@@ -557,9 +566,10 @@ function AgentSkills({
             setDraft(NEW_SKILL_TEMPLATE);
             setError(null);
           }}
-          className="mt-2 px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
+          className="-mx-2.5 mt-2 h-auto min-h-11 w-[calc(100%+1.25rem)] justify-between px-2.5 py-2.5 text-sm font-normal text-foreground"
         >
           <Trans>New skill</Trans>
+          <Plus aria-hidden="true" className="size-4 text-muted-foreground" />
         </Button>
       )}
     </div>

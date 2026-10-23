@@ -55,14 +55,14 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
   it("refuses a private speech server unless private endpoints are allowed", async () => {
     expect(() =>
       serializeOpenAiCompatibleVoiceSecret({ baseUrl: "http://192.168.1.20:8880" }),
-    ).toThrow("Private model endpoints are limited to the deployment owner.");
+    ).toThrow("Private model endpoints require operator authorization.");
     const fetchMock = vi.fn();
     const denied = new OpenAiCompatibleVoiceProvider({
       fetch: fetchMock as unknown as typeof fetch,
     });
     await expect(
       denied.synthesize({ text: "hi", voiceId: "af_heart", apiKey: keyed }, ctx),
-    ).rejects.toThrow("Private model endpoints are limited to the deployment owner.");
+    ).rejects.toThrow("Private model endpoints require operator authorization.");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

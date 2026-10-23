@@ -49,12 +49,11 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openai",
   "openai-codex",
   "anthropic",
-  "google",
+  "openai",
   "openrouter",
-  "vercel-ai-gateway",
+  "google",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
@@ -70,24 +69,6 @@ export function popularModelProvidersFirst<T>(
     return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
   };
   return [...items].sort((a, b) => rank(a) - rank(b));
-}
-
-/** Keep provider selection short while ensuring a deployment's current default is never hidden. */
-export function featuredModelProviders(
-  providers: readonly ModelCatalogEntry[],
-  selectedProvider: string,
-): ModelCatalogEntry[] {
-  const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
-  const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(canonicalPiProviderId(selectedProvider));
-
-  if (
-    !selected ||
-    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  )
-    return featured;
-  return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
 }
 
 /**
@@ -154,6 +135,7 @@ export type ConnectedModelChoice = {
 };
 
 type CatalogModelRef = {
+  managed?: boolean;
   provider: string;
   id: string;
   label: string;
@@ -325,13 +307,14 @@ export function connectedModelChoices(
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
           : catalogChoices(providerModels);
-    for (const choice of next) {
-      if (seen.has(choice.key)) continue;
-      seen.add(choice.key);
-      choices.push(choice);
-    }
+    choices.push(...next);
   }
-  return choices;
+  choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
+  return choices.filter((choice) => {
+    if (seen.has(choice.key)) return false;
+    seen.add(choice.key);
+    return true;
+  });
 }
 
 /** Match a model by name, id, or provider name; a blank query keeps every model. */

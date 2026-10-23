@@ -836,7 +836,7 @@ describe("MCP OAuth", () => {
         deploymentSettings: deploymentOwner("user-1"),
         $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       };
-      const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
+      const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
 
       const started = await broker.begin({
         serverId: "server-1",
@@ -1199,7 +1199,16 @@ describe("MCP OAuth", () => {
       {
         challenge = true,
         metadataReads = Number.POSITIVE_INFINITY,
-      }: { challenge?: boolean; metadataReads?: number } = {},
+        resourceScopes,
+        serverScopes,
+      }: {
+        challenge?: boolean;
+        metadataReads?: number;
+        /** `scopes_supported` the resource publishes (RFC 9728). */
+        resourceScopes?: string[];
+        /** `scopes_supported` the authorization server publishes (RFC 8414). */
+        serverScopes?: string[];
+      } = {},
     ) {
       let metadataServed = 0;
       const requested: string[] = [];
@@ -1238,6 +1247,7 @@ describe("MCP OAuth", () => {
             return Response.json({
               resource: "https://mcp.example.test/mcp",
               authorization_servers: ["https://auth.example.test"],
+              ...(resourceScopes ? { scopes_supported: resourceScopes } : {}),
             });
           }
           if (url === "https://auth.example.test/.well-known/oauth-authorization-server") {
@@ -1247,6 +1257,7 @@ describe("MCP OAuth", () => {
               token_endpoint: "https://auth.example.test/token",
               response_types_supported: ["code"],
               code_challenge_methods_supported: ["S256"],
+              ...(serverScopes ? { scopes_supported: serverScopes } : {}),
             });
           }
           if (url === "https://auth.example.test/token" && request.method === "POST") {
@@ -1717,6 +1728,104 @@ describe("MCP OAuth", () => {
       });
 
       expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read mail.send");
+    });
+
+    describe("offline_access", () => {
+      const begin = {
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      };
+
+      it("asks for it with the published scopes when the authorization server offers it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          resourceScopes: ["mail.read"],
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        const url = authorizationUrlOf(started);
+        expect(url.searchParams.get("scope")).toBe("mail.read offline_access");
+        expect(url.searchParams.has("prompt")).toBe(false);
+      });
+
+      it("asks for it at the issuer of a stdio server", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "mail.send", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial(
+          {
+            oauthClient: {
+              ...oauthClient,
+              authorization_server: AUTH_SERVER,
+              scope: "mail.read mail.send",
+            },
+          },
+          { transport: "stdio", endpoint: null },
+        );
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "mail.read mail.send offline_access",
+        );
+      });
+
+      it("asks for it with the configured scope when the authorization server offers it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "mail.send", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({
+          oauthClient: { ...oauthClient, scope: "mail.read mail.send" },
+        });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "mail.read mail.send offline_access",
+        );
+      });
+
+      it("does not repeat it when the configured scope already asks for it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({
+          oauthClient: { ...oauthClient, scope: "offline_access mail.read" },
+        });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe(
+          "offline_access mail.read",
+        );
+      });
+
+      it("leaves the published scopes alone when the authorization server does not offer it", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          resourceScopes: ["mail.read"],
+          serverScopes: ["mail.read"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read");
+      });
+
+      it("requests no scope when neither the resource nor the client names one", async () => {
+        nonRegisteringAuthServer(() => undefined, {
+          serverScopes: ["mail.read", "offline_access"],
+        });
+        const { broker } = brokerWithMaterial({ oauthClient });
+
+        const started = await broker.begin(begin);
+
+        expect(authorizationUrlOf(started).searchParams.has("scope")).toBe(false);
+      });
     });
 
     describe("for a stdio server", () => {
@@ -2441,7 +2550,7 @@ describe("MCP OAuth", () => {
       mcpOAuthSession: oauthSessionStore(),
       $transaction: vi.fn().mockResolvedValue([]),
     };
-    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK);
+    const broker = new McpOAuthBroker(prisma as never, { put } as never, TEST_NETWORK, true);
 
     await expect(
       broker.begin({
@@ -2493,10 +2602,15 @@ describe("MCP setup with an existing access token", () => {
         load: vi.fn(() => JSON.stringify({ secret: "fake-executor-token" })),
         put: vi.fn(),
       };
-      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
-        ...TEST_NETWORK,
-        fetch,
-      });
+      const broker = new McpOAuthBroker(
+        prisma as never,
+        secrets as never,
+        {
+          ...TEST_NETWORK,
+          fetch,
+        },
+        true,
+      );
       await expect(
         broker.begin({
           serverId: "server",

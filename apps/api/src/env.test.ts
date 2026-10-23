@@ -236,18 +236,6 @@ describe("loadEnv", () => {
     );
   });
 
-  it("loads optional updater sidecar wiring without requiring the token at boot", () => {
-    expect(loadEnv(base).updaterUrl).toBeUndefined();
-    expect(loadEnv(base).updaterToken).toBeUndefined();
-    const env = loadEnv({
-      ...base,
-      RAKAZO_UPDATER_URL: " http://updater:7092 ",
-      RAKAZO_UPDATER_TOKEN: " fake-review-updater-token-000000000000 ",
-    });
-    expect(env.updaterUrl).toBe("http://updater:7092");
-    expect(env.updaterToken).toBe("fake-review-updater-token-000000000000");
-  });
-
   it("loads an optional Expo access token", () => {
     expect(loadEnv(base).expoAccessToken).toBeUndefined();
     expect(loadEnv({ ...base, EXPO_ACCESS_TOKEN: " fake-expo-token " }).expoAccessToken).toBe(

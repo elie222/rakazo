@@ -1537,7 +1537,7 @@ describe("private installed connectors", () => {
     ).resolves.toMatchObject({ source: LOCAL_API, operationCount: 1 });
   });
 
-  it("checks the install owner's current standing on every call", async () => {
+  it("requires operator configuration on every call regardless of stored owner", async () => {
     const install = {
       id: "api-local",
       kind: "api",
@@ -1575,9 +1575,7 @@ describe("private installed connectors", () => {
       return events;
     };
 
-    await expect(execute("owner-1")).resolves.toEqual([
-      { type: "result", data: { status: 200, data: { items: [] } } },
-    ]);
+    await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
     await expect(execute("member-1")).resolves.toEqual([
       { type: "error", message: "Connector URL must use HTTPS" },
     ]);
@@ -1585,6 +1583,6 @@ describe("private installed connectors", () => {
     // Installed while this user owned the deployment: no longer reachable after the change.
     deployment.ownerUserId = "member-1";
     await expect(execute("owner-1")).resolves.toMatchObject([{ type: "error" }]);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

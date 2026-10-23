@@ -253,7 +253,8 @@ export function sendWaitingMessages(force = false): Promise<void> {
                 status &&
                 status >= 400 &&
                 status < 500 &&
-                ![408, 425, 429].includes(status)
+                // A 409 or 426 clears once teaching stops or the app updates, so it stays retryable.
+                ![408, 409, 425, 426, 429].includes(status)
               ? "refused"
               : "failed";
           attempt.error = config.errorText(error);

@@ -4,12 +4,21 @@ import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { CreditChoice } from "../components/ModelCredits";
 import { formatBillingPrice } from "../lib/billing";
 import { clearSpaceSelection, rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 import { AuthFrame, submitClass } from "./Auth";
 
 export function PaywallPage({ status }: { status: BillingStatus }) {
+  return status.funding !== undefined ? (
+    <CreditChoice status={status} />
+  ) : (
+    <LegacyPaywallPage status={status} />
+  );
+}
+
+function LegacyPaywallPage({ status }: { status: BillingStatus }) {
   const { t, i18n } = useLingui();
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);

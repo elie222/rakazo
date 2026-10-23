@@ -25,11 +25,18 @@ x-app-environment: &app-environment
   ENCRYPTION_MASTER_KEYS:
   # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
+  # Optional: keep bot homes in S3-compatible object storage (docs/self-host.md#bot-homes-in-object-storage).
+  OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_ENDPOINT:
+  OBJECT_STORAGE_REGION:
+  OBJECT_STORAGE_ACCESS_KEY_ID:
+  OBJECT_STORAGE_SECRET_ACCESS_KEY:
+  OBJECT_STORAGE_PREFIX:
+  OBJECT_STORAGE_PATH_STYLE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL: ${API_URL:-http://127.0.0.1:5173}
   MAX_UPLOAD_SIZE_MB:
-  RAKAZO_IMAGE_TAG:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   BOT_MESSAGE_MAX_HOPS:
@@ -378,8 +385,6 @@ services:
       SIGNUP_ALLOWLIST:
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_DESKTOP_STACK_TOKEN: ${RAKAZO_DESKTOP_STACK_TOKEN:-}
-      RAKAZO_UPDATER_URL:
-      RAKAZO_UPDATER_TOKEN:
       RAKAZO_GIT_SHA:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
@@ -464,6 +469,9 @@ services:
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web
     command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Recent builds' hashed assets, so tabs still running one keep loading chunks after a deploy.
+    volumes:
+      - webassets:/app/apps/web/asset-archive
     init: true
     security_opt:
       - no-new-privileges:true
@@ -493,6 +501,7 @@ services:
 volumes:
   pgdata:
   appdata:
+  webassets:
 
 networks:
   app:

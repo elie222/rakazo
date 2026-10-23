@@ -406,7 +406,6 @@
   "Or paste an API key": "또는 API 키 붙여넣기",
   "Organization API key": "조직 API 키",
   "Other model…": "다른 모델 직접 입력…",
-  "Park": "보류",
   "Password": "비밀번호",
   "Paste a replacement key": "새 API 키를 붙여넣으세요",
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.": "서버의 OpenAI 호환 주소를 붙여넣으세요. 필요하면 Rakazo가 /v1을 추가합니다.",

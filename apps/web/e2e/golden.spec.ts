@@ -361,7 +361,10 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   }
   await gear.click();
-  await expandAdvancedSection(page.getByTestId("bot-settings"));
+  await page
+    .getByTestId("bot-settings")
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
@@ -528,7 +531,7 @@ test("bot context menu pins, duplicates, edits, and confirms deletion", async ({
 
   await chief.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit Profile" }).click();
-  await expect(page.locator("label:has-text('Name') input")).toHaveValue("Chief");
+  await expect(page.getByRole("button", { name: "Edit name", exact: true })).toHaveText("Chief");
   await captureScreenshot(page, testInfo, "19-edit-profile");
 });
 

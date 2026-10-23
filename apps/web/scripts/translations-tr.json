@@ -404,7 +404,6 @@
   "Or paste an API key": "Veya bir API anahtarı yapıştır",
   "Organization API key": "Kuruluş API anahtarı",
   "Other model…": "Başka model…",
-  "Park": "Beklet",
   "Password": "Parola",
   "Paste a replacement key": "Yeni bir anahtar yapıştır",
   "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.": "Sunucundaki OpenAI uyumlu adresi yapıştır. Gerekirse Rakazo /v1 ekler.",

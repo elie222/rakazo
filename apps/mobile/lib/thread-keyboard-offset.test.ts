@@ -11,17 +11,20 @@ afterEach(() => {
 });
 
 describe("threadKeyboardOffset", () => {
-  it.each(["18.5", 26, "26.1"])("does not offset the floating header on iOS %s", (version) => {
-    Platform.Version = version;
-    expect(
-      threadKeyboardOffset({
-        os: Platform.OS,
-        floatingHeader: threadHeaderFloats(),
-        nativeHeaderHeight: 103,
-        measuredOffset: 0,
-      }),
-    ).toBe(0);
-  });
+  it.each(["18.5", 26, "26.1", "27.1"])(
+    "does not offset the floating header on iOS %s",
+    (version) => {
+      Platform.Version = version;
+      expect(
+        threadKeyboardOffset({
+          os: Platform.OS,
+          floatingHeader: threadHeaderFloats(),
+          nativeHeaderHeight: 103,
+          measuredOffset: 0,
+        }),
+      ).toBe(0);
+    },
+  );
 
   it("would need the native header height for an opaque iOS header", () => {
     expect(

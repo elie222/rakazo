@@ -20,6 +20,8 @@ import {
   reduceLiveMessageBlocks,
   replyMetadata,
   runFailureError,
+  settleRunSubagents,
+  stopsRunHelpers,
   subagentBlockFromPayload,
   takeLiveMessage,
   updateCloudAgentMessages,
@@ -267,6 +269,11 @@ export function reduceThreadSnapshot(
   event: ProductEvent,
 ): ThreadSnapshot | null {
   if (!prev) return prev;
+  if (stopsRunHelpers(event)) {
+    const messages = settleRunSubagents(prev.messages, event.runId);
+    if (messages !== prev.messages) prev = { ...prev, messages };
+  }
+
   if (event.type === "thread.cleared") {
     return {
       ...prev,

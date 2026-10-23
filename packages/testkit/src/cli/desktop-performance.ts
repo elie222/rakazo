@@ -52,7 +52,7 @@ const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const reportDirectory = path.join(root, ".context/performance");
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "rakazo-desktop-performance-"));
 
-const container = await new PostgreSqlContainer("postgres:16-alpine").start();
+const container = await new PostgreSqlContainer("postgres:18-alpine").start();
 let preview: ChildProcess | undefined;
 let server: ReturnType<typeof serve> | undefined;
 let handles: Awaited<ReturnType<typeof createApp>> | undefined;

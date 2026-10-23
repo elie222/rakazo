@@ -12,7 +12,7 @@ import {
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  serenityEndpointRequiresDeploymentOwner,
+  serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 
 const TOKEN = "serenity_test_token";
@@ -48,11 +48,11 @@ describe("serenity endpoint helpers", () => {
   });
 
   it("requires deployment-owner trust for loopback, private LAN, and private DNS", () => {
-    expect(serenityEndpointRequiresDeploymentOwner("http://127.0.0.1:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("http://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://192.168.1.10:8787/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.internal/mcp")).toBe(true);
-    expect(serenityEndpointRequiresDeploymentOwner("https://serenity.example.test/mcp")).toBe(
+    expect(serenityEndpointRequiresPrivateEndpoint("http://127.0.0.1:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("http://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://192.168.1.10:8787/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.internal/mcp")).toBe(true);
+    expect(serenityEndpointRequiresPrivateEndpoint("https://serenity.example.test/mcp")).toBe(
       false,
     );
   });

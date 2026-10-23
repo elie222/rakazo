@@ -6,7 +6,6 @@ import {
   createAuth,
   isBlockedAuthPath,
   passwordResetEmail,
-  resolveSignupPolicy,
   signInCodeEmail,
 } from "./index.js";
 
@@ -47,7 +46,14 @@ describe("auth policy", () => {
     const error = new Error("database unavailable");
     const log = vi.fn();
     const auth = createAuth(
-      { deploymentSettings: { findUnique: vi.fn().mockRejectedValue(error) } } as never,
+      {
+        user: {
+          findFirst: vi.fn().mockRejectedValue(error),
+          findMany: vi.fn().mockRejectedValue(error),
+          count: vi.fn().mockRejectedValue(error),
+          create: vi.fn().mockRejectedValue(error),
+        },
+      } as never,
       {
         secret: "offline-auth-secret-at-least-32-characters",
         baseURL: "https://api.example.test",
@@ -168,59 +174,6 @@ describe("signInCodeEmail", () => {
     expect(message.text).toContain("042517");
     expect(message.html).toContain("042517");
     expect(`${message.text}${message.html}`).not.toMatch(/https?:/);
-  });
-});
-
-describe("resolveSignupPolicy", () => {
-  it("uses environment defaults before deployment settings exist", async () => {
-    const prisma = {
-      deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "you@example.com,@company.test",
-      }),
-    ).resolves.toEqual({
-      enabled: false,
-      allowlist: ["you@example.com", "@company.test"],
-    });
-  });
-
-  it("keeps using the environment policy for a pre-upgrade uninitialized row", async () => {
-    const prisma = {
-      deploymentSettings: {
-        findUnique: vi.fn().mockResolvedValue({
-          signupsEnabled: true,
-          signupAllowlist: "",
-          signupPolicyInitialized: false,
-        }),
-      },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "existing-policy@example.com",
-      }),
-    ).resolves.toEqual({ enabled: false, allowlist: ["existing-policy@example.com"] });
-  });
-
-  it("uses live deployment settings as the effective policy after initial seeding", async () => {
-    const prisma = {
-      deploymentSettings: {
-        findUnique: vi.fn().mockResolvedValue({
-          signupsEnabled: false,
-          signupAllowlist: "approved@example.com",
-          signupPolicyInitialized: true,
-        }),
-      },
-    };
-    await expect(
-      resolveSignupPolicy(prisma as never, {
-        signupsEnabled: "false",
-        signupAllowlist: "environment-only@example.com",
-      }),
-    ).resolves.toEqual({ enabled: false, allowlist: ["approved@example.com"] });
   });
 });
 

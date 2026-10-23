@@ -422,6 +422,8 @@ export interface AgentSteeringMessage {
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
 export interface AgentRunModel {
+  /** Server-side spending authorization, carried with the resolved credential. */
+  callObserver?: ModelCallObserver;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -431,6 +433,7 @@ export interface AgentRunModel {
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
@@ -494,6 +497,12 @@ export interface AgentRunRequest {
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
+  /** Opaque runtime transcript, persisted only on the server. */
+  turnCheckpoint?: string;
+  /** Cheap per-call capture; serialize only when persisting that call’s human pause. */
+  onCheckpoint?: (capture: () => string, executionId: string) => Promise<void>;
+  /** Human answer or takeover outcome for the pending interaction. Never secret input. */
+  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -529,6 +538,8 @@ export interface ScriptedTurn {
  * Input excludes cache buckets. Reasoning is already included in output.
  */
 export interface AgentUsage {
+  providerRequestId?: string | null;
+  operationKind?: UsageOperationKind;
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens?: number | null;
@@ -539,6 +550,7 @@ export interface AgentUsage {
   costUsd?: number | null;
   costSource?: string | null;
   pricingVersion?: string | null;
+  pricingSnapshot?: Record<string, unknown> | null;
   usageSource?: string | null;
 }
 
@@ -546,14 +558,20 @@ export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" |
 
 export interface ModelCallObserver {
   beforeCall(call: {
+    callId?: string;
+    runId?: string;
+    operationKind?: UsageOperationKind;
     provider: string;
     modelId: string;
     inputTokensEstimate: number;
     maxOutputTokens: number;
+    /** Conservative dollar bound from the resolved model pricing; absent means unknown. */
+    maxCostUsd?: number;
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
     cacheWriteRetention?: "1h";
   }): string | Promise<string>;
   afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+  onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;
 }
 
 export type AgentRuntimeEvent =
@@ -569,11 +587,12 @@ export type AgentRuntimeEvent =
   | { type: "tool"; name: string; args: Record<string, unknown>; executionId: string }
   | {
       type: "ask";
+      executionId?: string;
       text: string;
       detail?: string;
       actions?: Array<{ id: string; label: string }>;
     }
-  | { type: "takeover"; reason: string }
+  | { type: "takeover"; reason: string; executionId?: string }
   | ({
       type: "usage";
       /** Producer-side onUsage completed; consumers must not account it again. */
@@ -690,8 +709,16 @@ export type BackgroundJob = {
   };
 }[BackgroundJobName];
 
+export interface BackgroundJobExecution {
+  /** Release the dispatch slot only after durable run ownership and heartbeat setup. */
+  onRunStarted(): void;
+}
+
 export type BackgroundJobHandlers = {
-  [Name in BackgroundJobName]: (payload: BackgroundJobPayloads[Name]) => Promise<void>;
+  [Name in BackgroundJobName]: (
+    payload: BackgroundJobPayloads[Name],
+    execution?: BackgroundJobExecution,
+  ) => Promise<void>;
 };
 
 export interface SecretRecord {
@@ -722,6 +749,8 @@ export interface NotificationMessage {
   threadId: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
+  /** Unread chats to show on the app icon, when the sender knows them. */
+  badge?: number;
 }
 
 /** A product-authored transactional email, independent of its delivery vendor. */
@@ -1101,7 +1130,24 @@ export interface BillingPrice {
 }
 
 /** Full subscription state for one billing customer, re-fetched from the provider on every sync. */
+export interface BillingCreditPurchase {
+  /** Stable provider payment identity, including any subsequent refund adjustment. */
+  id: string;
+  amountCents: number;
+  /** Subscription service-period end; absent for non-expiring top-ups. */
+  expiresAt?: string;
+}
+
+export interface BillingCreditCheckoutRequest {
+  customerId: string;
+  amountCents: number;
+  monthly: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
 export interface BillingSubscriptionSnapshot {
+  creditAmountCents?: number;
   subscriptionId: string;
   subscriptionItemId: string;
   priceId: string;
@@ -1120,4 +1166,10 @@ export interface BillingCheckoutRequest {
   trialDays?: number;
   successUrl: string;
   cancelUrl: string;
+}
+
+/** Optional provider adapter for recovering authoritative cost after an interrupted call. */
+export interface ModelUsageLookup {
+  provider: string;
+  lookupUsage(providerRequestId: string): Promise<AgentUsage | null>;
 }

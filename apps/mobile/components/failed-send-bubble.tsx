@@ -5,6 +5,8 @@ import { useI18n } from "../lib/i18n";
 import { openModelSettings } from "../lib/model-settings";
 import { useMobileTokens } from "../lib/native";
 import type { SendAttempt } from "../lib/thread-feedback";
+import type { UserBubble } from "../lib/user-bubble";
+import { withUserBubble } from "../lib/user-bubble";
 import { NativeSymbol } from "./native-symbol";
 
 export function FailedSendBubble({
@@ -12,15 +14,17 @@ export function FailedSendBubble({
   onRetry,
   onDelete,
   needsModel,
+  userBubble,
 }: {
   attempt: SendAttempt;
   onRetry: () => void;
   onDelete: () => void;
   /** Whether the account still has no model; unknown keeps the saved send error. */
   needsModel?: boolean;
+  userBubble?: UserBubble;
 }) {
   const { t } = useI18n();
-  const tokens = useMobileTokens();
+  const tokens = withUserBubble(useMobileTokens(), userBubble);
   const { payload, state } = attempt;
   const sending = state === "pending";
   const retryable = state === "failed" || state === "queued";

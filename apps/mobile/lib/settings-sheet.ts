@@ -6,6 +6,7 @@ let closeSheet: (() => void) | null = null;
 
 // The pages in app/(settings). A link to one of them opens inside the sheet.
 const settingsScreens = new Set([
+  "billing",
   "account",
   "ai-data-sharing",
   "archived-bots",
@@ -14,6 +15,7 @@ const settingsScreens = new Set([
   "integrations",
   "language",
   "models",
+  "signup-survey",
   "voice",
 ]);
 

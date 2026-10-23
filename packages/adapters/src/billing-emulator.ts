@@ -1,5 +1,7 @@
 import type {
   BillingCheckoutRequest,
+  BillingCreditCheckoutRequest,
+  BillingCreditPurchase,
   BillingPrice,
   BillingProvider,
   BillingSubscriptionSnapshot,
@@ -16,6 +18,8 @@ import {
 const WEBHOOK_SECRET = "billing-emulator-webhook-secret";
 
 export interface BillingEmulatorOptions {
+  namespace?: string;
+  modelCredits?: boolean;
   price?: BillingPrice;
   now?: () => number;
 }
@@ -25,14 +29,20 @@ type EmulatedSubscription = BillingSubscriptionSnapshot & { customerId: string; 
 /** Offline, deterministic billing provider for development and tests. */
 export class BillingEmulator implements BillingProvider {
   readonly price: BillingPrice;
+  readonly modelCredits: boolean;
+  readonly creditCheckouts = new Map<string, BillingCreditCheckoutRequest>();
+  readonly creditPurchases = new Map<string, BillingCreditPurchase[]>();
   readonly customers = new Map<string, { email: string; organizationId: string }>();
   readonly checkouts = new Map<string, BillingCheckoutRequest>();
   readonly subscriptions: EmulatedSubscription[] = [];
   private readonly now: () => number;
   private sequence = 0;
   private customerSequence = 0;
+  private readonly namespace: string;
 
   constructor(options: BillingEmulatorOptions = {}) {
+    this.modelCredits = options.modelCredits === true;
+    this.namespace = options.namespace ?? "emulated";
     this.price = options.price ?? {
       amount: 1000,
       currency: "usd",
@@ -47,7 +57,7 @@ export class BillingEmulator implements BillingProvider {
       id: "billing-emulator",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { trials: true, portal: true },
+      capabilities: { trials: true, portal: true, modelCredits: this.modelCredits },
     };
   }
 
@@ -56,7 +66,7 @@ export class BillingEmulator implements BillingProvider {
   }
 
   async createCustomer(input: { email: string; organizationId: string }) {
-    const customerId = `cus_emulated_${++this.customerSequence}`;
+    const customerId = `cus_${this.namespace}_${++this.customerSequence}`;
     this.customers.set(customerId, { ...input });
     return { customerId };
   }
@@ -69,12 +79,81 @@ export class BillingEmulator implements BillingProvider {
     return { url: `https://billing.emulator.invalid/checkout/${input.customerId}` };
   }
 
+  async createCreditCheckout(input: BillingCreditCheckoutRequest) {
+    this.requireCustomer(input.customerId);
+    if (
+      input.monthly &&
+      this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status))
+    )
+      throw new BillingCheckoutCompletedError();
+    this.creditCheckouts.set(input.customerId, input);
+    return { url: `https://billing.emulator.invalid/credits/${input.customerId}` };
+  }
+
+  async listCreditPurchases(customerId: string) {
+    this.requireCustomer(customerId);
+    this.renewCredits(customerId);
+    return [...(this.creditPurchases.get(customerId) ?? [])];
+  }
+
+  async setMonthlyCredits(customerId: string, amountCents: number) {
+    this.renewCredits(customerId);
+    const chosen = pickBillingSubscription(this.forCustomer(customerId));
+    if (!chosen?.creditAmountCents) throw new Error("No monthly credit subscription");
+    if (amountCents > chosen.creditAmountCents) {
+      this.creditPurchases.set(customerId, [
+        ...(this.creditPurchases.get(customerId) ?? []),
+        {
+          id: `upgrade_${this.namespace}_${++this.sequence}`,
+          amountCents: amountCents - chosen.creditAmountCents,
+          expiresAt: chosen.currentPeriodEndsAt?.toISOString(),
+        },
+      ]);
+    }
+    chosen.creditAmountCents = amountCents;
+  }
+
+  completeCreditCheckout(customerId: string) {
+    const checkout = this.creditCheckouts.get(customerId);
+    if (!checkout) throw new Error("No credit checkout");
+    this.creditCheckouts.delete(customerId);
+    const purchase = {
+      id: `credit_${this.namespace}_${++this.sequence}`,
+      amountCents: checkout.amountCents,
+      ...(checkout.monthly
+        ? { expiresAt: new Date(this.now() + 30 * 86400000).toISOString() }
+        : {}),
+    };
+    this.creditPurchases.set(customerId, [
+      ...(this.creditPurchases.get(customerId) ?? []),
+      purchase,
+    ]);
+    if (checkout.monthly) {
+      this.subscriptions.push({
+        customerId,
+        created: this.now() / 1000,
+        subscriptionId: `sub_credit_${this.sequence}`,
+        subscriptionItemId: `si_credit_${this.sequence}`,
+        priceId: "price_credit_emulated",
+        status: "active",
+        seats: 1,
+        creditAmountCents: checkout.amountCents,
+        trialEndsAt: null,
+        currentPeriodEndsAt: new Date(this.now() + 30 * 86400000),
+        cancelAtPeriodEnd: false,
+        endedAt: null,
+      });
+    }
+    return purchase;
+  }
+
   async createPortal(input: { customerId: string; returnUrl: string }) {
     this.requireCustomer(input.customerId);
     return { url: `https://billing.emulator.invalid/portal/${input.customerId}` };
   }
 
   async getCustomerSubscription(customerId: string) {
+    this.renewCredits(customerId);
     const chosen = pickBillingSubscription(this.forCustomer(customerId));
     if (!chosen) return null;
     const { customerId: _customer, created: _created, ...snapshot } = chosen;
@@ -148,6 +227,32 @@ export class BillingEmulator implements BillingProvider {
       if (subscription.status === "canceled") continue;
       subscription.status = "canceled";
       subscription.endedAt = new Date(this.now());
+    }
+  }
+
+  private renewCredits(customerId: string) {
+    for (const subscription of this.forCustomer(customerId)) {
+      if (!subscription.creditAmountCents || subscription.status !== "active") continue;
+      while (
+        subscription.currentPeriodEndsAt &&
+        subscription.currentPeriodEndsAt.getTime() <= this.now()
+      ) {
+        if (subscription.cancelAtPeriodEnd) {
+          subscription.status = "canceled";
+          subscription.endedAt = subscription.currentPeriodEndsAt;
+          break;
+        }
+        subscription.currentPeriodEndsAt = new Date(
+          subscription.currentPeriodEndsAt.getTime() + 30 * 86400000,
+        );
+        const purchases = this.creditPurchases.get(customerId) ?? [];
+        purchases.push({
+          id: `renewal_${this.namespace}_${++this.sequence}`,
+          amountCents: subscription.creditAmountCents,
+          expiresAt: subscription.currentPeriodEndsAt.toISOString(),
+        });
+        this.creditPurchases.set(customerId, purchases);
+      }
     }
   }
 

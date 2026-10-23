@@ -167,6 +167,37 @@ test("starting another bot's computer is not blocked by a boot still under way",
   await expect(page.getByText("Booting live desktop…").first()).toBeVisible();
 });
 
+test("opening a computer refreshes a stale booting snapshot", async ({ page }, testInfo) => {
+  await signup(page, `boot-stale-${Date.now()}@rakazo.test`, "password12", "Boot Stale");
+  await completeOnboarding(page);
+  await rpc(page, "computer/boot", { botId: activeBotId(page) });
+  await routeScreen(page);
+  let stale = true;
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json?: { computer?: { state?: string } } };
+    if (stale && body.json?.computer) body.json.computer.state = "booting";
+    await route.fulfill({ response, json: body });
+  });
+  const boots: Route[] = [];
+  await page.route("**/rpc/computer/boot", (route) => {
+    boots.push(route);
+  });
+  await page.getByRole("button", { name: "Agent computer", exact: true }).click();
+  const preview = page.getByTestId("computer-preview");
+  await expect(preview).toContainText("Booting live desktop…");
+  stale = false;
+  await preview.hover();
+  await preview.getByTestId("computer-preview-open").click();
+  await expect(
+    page.getByTestId("computer-chrome").getByRole("button", { name: "Take control", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('iframe[title="Bot screen"]')).toHaveAttribute("src", screenUrl);
+  expect(boots).toHaveLength(0);
+  await captureScreenshot(page, testInfo, "computer-open-refreshed-boot");
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("opening a computer the server reports as booting does not start a second boot", async ({
   page,
 }) => {
@@ -194,6 +225,7 @@ test("opening a computer the server reports as booting does not start a second b
   await expect(page.getByText("Booting live desktop…").first()).toBeVisible();
   expect(boots).toHaveLength(bootsBefore);
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
 });
 
 test("Retry screen clears a failed takeover on a running computer", async ({ page }) => {

@@ -24,7 +24,6 @@ function fixture({
   baseURL = "http://auth.example.test",
   webOrigin = "http://web.example.test",
   requestOrigin,
-  expireAdmissionGate,
   stalledDelivery = false,
 }: {
   allowlist?: string;
@@ -32,7 +31,6 @@ function fixture({
   baseURL?: string;
   webOrigin?: string;
   requestOrigin?: string;
-  expireAdmissionGate?: "before" | "after";
   /** The provider accepts the message but never settles, like a hung SMTP connection. */
   stalledDelivery?: boolean;
 } = {}) {
@@ -60,18 +58,8 @@ function fixture({
     authData: data,
     $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(
-      async (
-        run: ((tx: typeof prisma) => Promise<unknown>) | Promise<unknown>[],
-        options?: { timeout?: number },
-      ) => {
-        if (Array.isArray(run)) return Promise.all(run);
-        if (!expireAdmissionGate || options?.timeout === undefined) return run(prisma);
-        if (expireAdmissionGate === "before") throw new Error("admission gate timeout");
-        const pending = run(prisma);
-        void pending.catch(() => undefined);
-        for (let step = 0; step < 5; step += 1) await Promise.resolve();
-        throw new Error("admission gate timeout");
-      },
+      async (run: ((tx: typeof prisma) => Promise<unknown>) | Promise<unknown>[]) =>
+        Array.isArray(run) ? Promise.all(run) : run(prisma),
     ),
     deploymentSettings: {
       findUnique: vi.fn(async () => policy),
@@ -139,8 +127,12 @@ function fixture({
     secret,
     baseURL,
     webOrigin,
-    signupsEnabled: "true",
-    signupAllowlist: "",
+    get signupsEnabled() {
+      return String(policy.signupsEnabled);
+    },
+    get signupAllowlist() {
+      return policy.signupAllowlist;
+    },
     email: delivery
       ? {
           describe: () => ({
@@ -371,7 +363,7 @@ describe("identity trust through auth endpoints", () => {
     });
   });
 
-  it("keeps first-owner bootstrap and password signup available without email for open deployments", async () => {
+  it("permits ordinary unverified signup without granting admin or mailbox proof on open deployments", async () => {
     const f = fixture({ delivery: false });
     const response = await f.signup();
     expect(response.status).toBe(200);
@@ -387,130 +379,16 @@ describe("identity trust through auth endpoints", () => {
     expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
   });
 
-  it("admits the first allowlisted account without email delivery and still blocks everyone else", async () => {
+  it("never lets a first allowlisted account skip mailbox proof without delivery", async () => {
     const f = fixture({ allowlist: "@example.test", delivery: false });
-    const disallowed = await f.signup("outsider@other.test");
-    expect(disallowed.status).toBe(400);
-    expect(await disallowed.json()).toMatchObject({
-      code: "EMAIL_NOT_ALLOWED",
-      message: "Email is not allowed to register",
-    });
+    const results = await Promise.all([f.signup(), f.signup("second@example.test")]);
+    for (const response of results) {
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain("Registration requires email delivery");
+    }
     expect(f.data.user).toHaveLength(0);
-    const response = await f.signup();
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { token: string; user: { emailVerified: boolean } };
-    expect(body.token).toEqual(expect.any(String));
-    expect(f.data.user).toHaveLength(1);
-    expect(f.data.user![0]!.emailVerified).toBe(true);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
-    expect(
-      await f.auth.api.getSession({
-        headers: new Headers({ authorization: `Bearer ${body.token}` }),
-      }),
-    ).toMatchObject({ user: { emailVerified: true } });
-    expect((await f.signin()).status).toBe(200);
-    const second = await f.signup("second@example.test");
-    expect(second.status).toBe(400);
-    expect(await second.text()).toContain("Registration requires email delivery");
-    expect(f.data.user).toHaveLength(1);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
-    expect(f.messages).toHaveLength(0);
-  });
-
-  it("admits only one of two overlapping allowlisted signups without delivery", async () => {
-    const f = fixture({ allowlist: "@example.test", delivery: false });
-    const [first, second] = await Promise.all([
-      f.signup("one@example.test"),
-      f.signup("two@example.test"),
-    ]);
-    const admitted = [first, second].filter((response) => response.status === 200);
-    const denied = [first, second].filter((response) => response.status === 400);
-    expect(admitted).toHaveLength(1);
-    expect(denied).toHaveLength(1);
-    expect(await denied[0]!.text()).toContain("Registration requires email delivery");
-    expect(f.data.user).toHaveLength(1);
-    expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-  });
-
-  it("keeps a completed signup when the admission gate expires after admission", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => {
-      unhandled.push(reason);
-    };
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const f = fixture({
-        allowlist: "@example.test",
-        delivery: false,
-        expireAdmissionGate: "after",
-      });
-      const response = await f.signup();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(unhandled).toEqual([]);
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { token: string };
-      expect(body.token).toEqual(expect.any(String));
-      expect(f.data.user).toHaveLength(1);
-      expect(f.data.user![0]!.emailVerified).toBe(true);
-      expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-      expect((await f.signin()).status).toBe(200);
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
-  });
-
-  it("fails signup when the admission gate expires before an account exists", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => {
-      unhandled.push(reason);
-    };
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const f = fixture({
-        allowlist: "@example.test",
-        delivery: false,
-        expireAdmissionGate: "before",
-      });
-      const response = await f.signup();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(unhandled).toEqual([]);
-      expect(response.status).toBe(500);
-      expect(f.data.user).toHaveLength(0);
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
-  });
-
-  it("does not let an unverified account claim the owner seat while another human exists", async () => {
-    const f = fixture({ allowlist: "@example.test", delivery: false });
-    expect((await f.signup()).status).toBe(200);
-    f.data.user![0]!.emailVerified = false;
-    f.data.user!.push({
-      id: "human-2",
-      name: "Other",
-      email: "other@example.test",
-      emailVerified: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    expect((await f.signin()).status).toBe(403);
-    expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
-  });
-
-  it("does not treat a messaging identity as the first account", async () => {
-    const f = fixture({ allowlist: "approved@example.test", delivery: false });
-    f.data.user!.push({
-      id: "msg-1",
-      name: "Messaging",
-      email: "msg-sendblue15550001111@messaging.invalid",
-      emailVerified: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    const response = await f.signup();
-    expect(response.status).toBe(200);
-    expect(f.data.user!.filter((user) => user.email === "approved@example.test")).toHaveLength(1);
-    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
+    expect(f.policy.ownerUserId).toBeNull();
+    expect(bootstrapUserSpace).not.toHaveBeenCalled();
   });
 
   it("keeps allowlisted signup closed without delivery once a human account exists", async () => {

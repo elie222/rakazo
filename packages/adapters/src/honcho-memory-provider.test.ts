@@ -4,12 +4,12 @@ import { MAX_HONCHO_CONCLUSION_BYTES } from "./honcho-client.js";
 import {
   createHonchoProvider,
   HonchoMemoryProvider,
-  honchoRequiresDeploymentOwner,
+  honchoRequiresPrivateEndpoint,
   honchoWorkspaceId,
   prepareHonchoConnection,
 } from "./honcho-memory-provider.js";
 import type { ResolveHostname } from "./network-address.js";
-import { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
+import { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 const context: AdapterContext = {
   operationId: "op-1",
@@ -593,9 +593,9 @@ describe("prepareHonchoConnection", () => {
       const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
         if (kind === "timeout") {
-          throw new DOMException("hch-test-key" + "x".repeat(5000), "TimeoutError");
+          throw new DOMException(`hch-test-key${"x".repeat(5000)}`, "TimeoutError");
         }
-        throw new Error("hch-test-key" + "x".repeat(5000));
+        throw new Error(`hch-test-key${"x".repeat(5000)}`);
       });
       await expect(
         prepareHonchoConnection({}, { apiKey: "hch-test-key" }, { fetch }),
@@ -955,10 +955,10 @@ describe("Honcho local mode", () => {
   }
 
   it("requires the deployment owner for every mode except Honcho Cloud", () => {
-    expect(honchoRequiresDeploymentOwner({})).toBe(false);
-    expect(honchoRequiresDeploymentOwner({ mode: "cloud" })).toBe(false);
+    expect(honchoRequiresPrivateEndpoint({})).toBe(false);
+    expect(honchoRequiresPrivateEndpoint({ mode: "cloud" })).toBe(false);
     for (const mode of ["local", " local ", "LOCAL", ""]) {
-      expect(honchoRequiresDeploymentOwner({ mode, baseUrl: LOCAL_URL })).toBe(true);
+      expect(honchoRequiresPrivateEndpoint({ mode, baseUrl: LOCAL_URL })).toBe(true);
     }
   });
 
@@ -1020,7 +1020,7 @@ describe("Honcho local mode", () => {
             { apiKey: "honcho-admin-token" },
             { allowPrivateEndpoint, resolveHostname, fetch },
           ),
-        ).rejects.toBeInstanceOf(MemoryProviderDeploymentOwnerRequiredError);
+        ).rejects.toBeInstanceOf(MemoryProviderPrivateEndpointRequiredError);
       }
       expect(resolveHostname).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
+import { canMarkMessageUnread } from "@rakazo/core";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
-import { Copy, MoreHorizontal, Reply, Smile } from "lucide-react";
+import { Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../components/MessageHoverMetadata";
 import { copyableMessageText } from "../../lib/message-text";
@@ -19,11 +20,13 @@ export function MessageHoverActions({
   message,
   side,
   onReply,
+  onMarkUnread,
   onReact,
 }: {
   message: ThreadMessage;
   side: "start" | "end";
   onReply: (message: ThreadMessage) => void;
+  onMarkUnread: (message: ThreadMessage) => void;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
@@ -84,7 +87,7 @@ export function MessageHoverActions({
           <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align={side === "end" ? "start" : "end"}>
+          <DropdownMenuContent align={side === "end" ? "start" : "end"} className="w-auto">
             <DropdownMenuItem
               onClick={() => {
                 setMoreOpen(false);
@@ -94,6 +97,17 @@ export function MessageHoverActions({
               <Reply size={14} strokeWidth={1.7} />
               <Trans>Reply</Trans>
             </DropdownMenuItem>
+            {canMarkMessageUnread(message) ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  setMoreOpen(false);
+                  onMarkUnread(message);
+                }}
+              >
+                <MessageSquareDot size={14} strokeWidth={1.7} />
+                <Trans>Mark as unread</Trans>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={copyMessage}>
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>

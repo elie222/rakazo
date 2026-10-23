@@ -87,59 +87,67 @@ describe("finalizeRun", () => {
     expect(completedRunBlocks(blocks, null, new Date())).toBe(blocks);
   });
 
-  it("retries a transaction conflict without duplicating the terminal event or notification", async () => {
-    const conflict = Object.assign(new Error("serialization conflict"), { code: "P2034" });
-    const createEvent = vi.fn(async () => ({ threadId: "thread-1", seq: 0 }));
-    const tx = {
-      $queryRaw: vi.fn(async () => []),
-      run: {
-        findUnique: vi.fn(async () => ({ status: "running" })),
-        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
-        findFirst: vi.fn(async () => null),
-        updateMany: vi.fn(async () => ({ count: 1 })),
-      },
-      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
-      task: { updateMany: vi.fn(async () => ({ count: 1 })) },
-      thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
-      event: { create: createEvent, deleteMany: vi.fn(async () => ({ count: 0 })) },
-      steeringMessage: {
-        findMany: vi.fn(async () => []),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
-      message: { findFirst: vi.fn(async () => null) },
-      bot: { update: vi.fn(async () => ({})) },
-    };
-    const transaction = vi
-      .fn()
-      .mockRejectedValueOnce(conflict)
-      .mockImplementation(async (operation: (client: typeof tx) => unknown) => operation(tx));
-    const publish = vi.fn(async () => undefined);
-
-    await expect(
-      finalizeRun(
-        { $transaction: transaction } as unknown as PrismaClient,
-        {
-          spaceId: "space-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          runId: "run-1",
-          taskId: "task-1",
-          attemptId: "attempt-1",
-          leaseOwner: "worker-1",
-          leaseFence: 1,
-          outcome: "failed",
-          error: "failed",
+  it.each(["completed", "failed"] as const)(
+    "retries a transaction conflict and clears the checkpoint on %s without duplicating the terminal event or notification",
+    async (outcome) => {
+      const conflict = Object.assign(new Error("serialization conflict"), { code: "P2034" });
+      const createEvent = vi.fn(async () => ({ threadId: "thread-1", seq: 0 }));
+      const tx = {
+        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+        $queryRaw: vi.fn(async () => []),
+        run: {
+          findUnique: vi.fn(async () => ({ status: "running" })),
+          findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+          findFirst: vi.fn(async () => null),
+          updateMany: vi.fn(async () => ({ count: 1 })),
         },
-        { publish } as never,
-      ),
-    ).resolves.toEqual({ continuationRunId: null });
-    expect(transaction).toHaveBeenCalledTimes(2);
-    expect(createEvent).toHaveBeenCalledOnce();
-    expect(publish).toHaveBeenCalledOnce();
-  });
+        attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+        task: { updateMany: vi.fn(async () => ({ count: 1 })) },
+        thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
+        event: { create: createEvent, deleteMany: vi.fn(async () => ({ count: 0 })) },
+        steeringMessage: {
+          deleteMany: vi.fn(async () => ({ count: 0 })),
+          findMany: vi.fn(async () => []),
+          updateMany: vi.fn(async () => ({ count: 0 })),
+        },
+        message: { findFirst: vi.fn(async () => null) },
+        bot: { update: vi.fn(async () => ({})) },
+      };
+      const transaction = vi
+        .fn()
+        .mockRejectedValueOnce(conflict)
+        .mockImplementation(async (operation: (client: typeof tx) => unknown) => operation(tx));
+      const publish = vi.fn(async () => undefined);
+
+      await expect(
+        finalizeRun(
+          { $transaction: transaction } as unknown as PrismaClient,
+          {
+            spaceId: "space-1",
+            threadId: "thread-1",
+            botId: "bot-1",
+            runId: "run-1",
+            taskId: "task-1",
+            attemptId: "attempt-1",
+            leaseOwner: "worker-1",
+            leaseFence: 1,
+            ...(outcome === "failed" ? { outcome, error: "failed" } : { outcome, blocks: [] }),
+          },
+          { publish } as never,
+        ),
+      ).resolves.toEqual({ continuationRunId: null });
+      expect(transaction).toHaveBeenCalledTimes(2);
+      expect(tx.externalEffect.deleteMany).toHaveBeenCalledWith({
+        where: { runId: "run-1", kind: "runtime_checkpoint", status: "runtime_checkpoint" },
+      });
+      expect(createEvent).toHaveBeenCalledOnce();
+      expect(publish).toHaveBeenCalledOnce();
+    },
+  );
 
   it("resumes a held messaging inbound as a messaging run", async () => {
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -206,6 +214,7 @@ describe("finalizeRun", () => {
 
   it("pins the continuation when every waited message chose the same model", async () => {
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -284,6 +293,7 @@ describe("finalizeRun", () => {
       text: "What is the status?",
     };
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -2837,6 +2847,9 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1" }),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => {
         const result = await callback(tx);
         committed = true;
@@ -2892,7 +2905,6 @@ describe("sendUserMessage", () => {
       id: "message-1",
       seq: 4,
       createdAt,
-      sourceRuns: [{ id: "run-1", taskId: "task-1" }],
     } as never);
     await sendUserMessage(
       prisma,
@@ -3582,6 +3594,7 @@ describe("clearThread", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         update: vi
           .fn()
@@ -3643,6 +3656,7 @@ describe("clearThread", () => {
   it("scopes group clear lease cleanup to cancelled run ids", async () => {
     const fanout = new TestFanout();
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         update: vi
           .fn()
