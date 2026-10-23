@@ -280,7 +280,6 @@ export async function runAutoReviewJudge(
     signal?: AbortSignal;
   },
 ): Promise<AutoReviewJudgeResult> {
-
   const modelLabel = `${input.checker.provider}/${input.checker.model}`;
   const timeoutMs = input.timeoutMs ?? autoReviewTimeoutMs();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);

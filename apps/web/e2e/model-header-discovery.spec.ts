@@ -73,17 +73,17 @@ for (const surface of ["settings", "onboarding"] as const) {
         await held;
         await route.fulfill({ json: { json: { models: ["stale-header-model"] } } });
       });
-      const request = page.waitForRequest(probePath);
-      await page.getByRole("button", { name: "Find models", exact: true }).click();
-      await request;
-      await expect(page.getByRole("button", { name: "Finding…", exact: true })).toBeDisabled();
-      await edit(page);
-      const resetBeforeResponse = await page
-        .getByRole("button", { name: "Find models", exact: true })
-        .isEnabled()
-        .catch(() => false);
       const response = page.waitForResponse(probePath);
-      release();
+      try {
+        const request = page.waitForRequest(probePath);
+        await page.getByRole("button", { name: "Find models", exact: true }).click();
+        await request;
+        await expect(page.getByRole("button", { name: "Finding…", exact: true })).toBeDisabled();
+        await edit(page);
+        await expect(page.getByRole("button", { name: "Find models", exact: true })).toBeEnabled();
+      } finally {
+        release();
+      }
       await (await response).finished();
       // Let the RPC continuation and React's render run before checking stale state.
       await page.evaluate(
@@ -92,7 +92,6 @@ for (const surface of ["settings", "onboarding"] as const) {
             requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
           ),
       );
-      expect(resetBeforeResponse).toBe(true);
       await expect(useFound).toHaveCount(0);
       await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
       await expect(page.getByLabel("Model id", { exact: true })).toHaveValue("manual-model");
