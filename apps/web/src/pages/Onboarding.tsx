@@ -27,7 +27,6 @@ import {
 } from "@rakazo/core";
 import {
   Button,
-  Disclosure,
   Input,
   ModelThinkingOptions,
   Select,
@@ -59,6 +58,7 @@ import {
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
+import { CompatibleKeyField } from "./model-settings/compatible-key-field";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const DEFAULT_THINKING_LEVEL_OPTION = "__rakazo_default_thinking__";
@@ -984,10 +984,9 @@ export function OnboardingPage() {
             ) : null}
             {acceptsKey ? (
               isOpenAiCompatible ? (
-                <Disclosure
-                  className="mt-4 text-sm text-muted-foreground"
-                  open={isOllamaCloudBaseUrl(baseUrl) ? true : undefined}
-                  summary={<Trans>API key</Trans>}
+                <CompatibleKeyField
+                  className="mt-4 block text-sm text-muted-foreground"
+                  baseUrl={baseUrl}
                 >
                   <Input
                     aria-label={t`API key`}
@@ -999,7 +998,7 @@ export function OnboardingPage() {
                     autoComplete="new-password"
                     className="mt-2"
                   />
-                </Disclosure>
+                </CompatibleKeyField>
               ) : (
                 <label
                   htmlFor={`${fieldId}-api-key`}

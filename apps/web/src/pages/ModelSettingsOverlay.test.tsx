@@ -918,6 +918,14 @@ it("opens the Ollama preset with a required key and saves a compatible connectio
     expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
       false,
     );
+    expect(
+      [...view.container.querySelectorAll("button")].filter(
+        (row) => row.textContent === "Setup help",
+      ),
+    ).toHaveLength(0);
+    expect(
+      [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
+    ).toHaveLength(0);
     const key = view.container.querySelector(
       'input[placeholder="Ollama API key"]',
     ) as HTMLInputElement;
@@ -987,6 +995,24 @@ it("keeps the Ollama preset in All providers beside a saved local connection", a
     expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
       false,
     );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  const view = await renderSettings(false);
+  try {
+    await act(async () => buttons(view.container, "OpenAI-compatible")[0]!.click());
+    for (const name of ["Setup help", "API key"]) {
+      const row = buttons(view.container, name)[0]!;
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+      expect(row.querySelector("svg")).not.toBeNull();
+      await act(async () => row.click());
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+    }
   } finally {
     await view.unmount();
   }

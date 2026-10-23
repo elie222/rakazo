@@ -208,6 +208,11 @@ it("selects the Ollama preset through the compatible form with a visible key fie
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
   expect(field("API key")?.placeholder).toBe("Ollama API key");
   expect(field("API key")?.type).toBe("password");
+  expect(
+    [...container.querySelectorAll("button")].filter((button) =>
+      ["Setup help", "API key"].includes(button.textContent ?? ""),
+    ),
+  ).toHaveLength(0);
 });
 
 it("shows a saved Ollama connection only once in the connected section", async () => {
@@ -230,4 +235,19 @@ it("shows a saved Ollama connection only once in the connected section", async (
   expect(choices).toHaveLength(1);
   expect(choices[0]?.providerLabel).toBe("Connected");
   saved.baseUrl = savedEndpoint;
+});
+
+it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+  const row = (name: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === name)!;
+  expect(field("API key")).toBeNull();
+  expect(container.textContent).not.toContain("Rakazo adds /v1");
+  await act(async () => row("Setup help").click());
+  expect(container.textContent).toContain("Rakazo adds /v1");
+  await act(async () => row("Setup help").click());
+  expect(container.textContent).not.toContain("Rakazo adds /v1");
+  await act(async () => row("API key").click());
+  expect(field("API key")).not.toBeNull();
+  await act(async () => row("API key").click());
+  expect(field("API key")).toBeNull();
 });

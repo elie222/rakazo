@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
+import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -109,14 +110,6 @@ export function CompatibleModelFields({
           className="mt-2 h-10 text-foreground"
         />
       </label>
-      <Disclosure
-        className="mt-2 text-[13px] leading-[1.5] text-muted-foreground"
-        summary={<Trans>Setup help</Trans>}
-      >
-        <p className="mt-1">
-          {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
-        </p>
-      </Disclosure>
       <div className="mt-3 flex items-center gap-2">
         <Button
           type="button"
@@ -128,6 +121,16 @@ export function CompatibleModelFields({
           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
         </Button>
       </div>
+      {!isOllamaCloudBaseUrl(baseUrl) ? (
+        <Disclosure
+          className="mt-3 text-[13.5px] text-muted-foreground"
+          summary={<Trans>Setup help</Trans>}
+        >
+          <p className="mt-1">
+            {t`Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.`}
+          </p>
+        </Disclosure>
+      ) : null}
       {preflightTarget === "compatible" ? (
         <ModelPreflightFeedback success={null} failure={preflightFailure} />
       ) : null}

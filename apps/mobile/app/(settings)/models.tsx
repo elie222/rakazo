@@ -975,17 +975,6 @@ export default function Models() {
         style={styles.keyInput}
         value={baseUrl}
       />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: showEndpointHelp }}
-        onPress={() => setShowEndpointHelp((visible) => !visible)}
-        style={({ pressed }) => [pressed && styles.pressed]}
-      >
-        <Text style={styles.textAction}>{t("Setup help")}</Text>
-      </Pressable>
-      {showEndpointHelp ? (
-        <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
-      ) : null}
       <NativeActionButton
         disabled={busy || probing || !effectiveBaseUrl}
         fill
@@ -994,6 +983,16 @@ export default function Models() {
         prominence="secondary"
         style={{ marginTop: 12 }}
       />
+      {!isOllamaCloudBaseUrl(baseUrl) ? (
+        <>
+          {disclosureRow(t("Setup help"), showEndpointHelp, () =>
+            setShowEndpointHelp((visible) => !visible),
+          )}
+          {showEndpointHelp ? (
+            <Text style={styles.hint}>{t(OPENAI_COMPATIBLE_BASE_URL_HINT)}</Text>
+          ) : null}
+        </>
+      ) : null}
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
       {/* The switches stay visible while the default is "Other model…" or a typed id. */}
@@ -1221,7 +1220,11 @@ export default function Models() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))}
+        {isOllamaCloudBaseUrl(baseUrl) ? (
+          <Text style={styles.sectionTitle}>{t("API key")}</Text>
+        ) : (
+          disclosureRow(t("API key"), showApiKey, () => setShowApiKey((visible) => !visible))
+        )}
         {showApiKey || isOllamaCloudBaseUrl(baseUrl) ? (
           <TextInput
             accessibilityLabel={t("API key")}

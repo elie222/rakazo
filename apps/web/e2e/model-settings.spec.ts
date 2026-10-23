@@ -987,19 +987,21 @@ test("Ollama Cloud preset saves an OpenAI-compatible connection", async ({ page 
   await page.getByRole("button", { name: "Find models", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "fixture-model", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  const credentials = await rpc<Array<{ provider: string; baseUrl?: string; modelId?: string }>>(
-    page,
-    "models/credentials",
-    {},
-  );
-  expect(credentials).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        provider: "openai-compatible",
-        baseUrl: "https://ollama.com/v1",
-        modelId: "fixture-model",
-      }),
-    ]),
-  );
+  await expect
+    .poll(async () => {
+      const credentials = await rpc<
+        Array<{ provider: string; baseUrl?: string; modelId?: string }>
+      >(page, "models/credentials", {});
+      return credentials;
+    })
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "openai-compatible",
+          baseUrl: "https://ollama.com/v1",
+          modelId: "fixture-model",
+        }),
+      ]),
+    );
   await captureScreenshot(page, testInfo, "ollama-preset");
 });
