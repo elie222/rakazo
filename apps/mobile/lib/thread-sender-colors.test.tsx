@@ -142,3 +142,32 @@ it("keeps the bot name when opening a computer without a sender label", () => {
   );
   expect(opened).toEqual([["bot-a", "Sender"]]);
 });
+
+it.each(["text", "image"] as const)(
+  "shows another person's %s message as received with their name",
+  (kind) => {
+    const render = (authorName?: string) =>
+      renderToStaticMarkup(
+        <MessageBubble
+          botId="bot-a"
+          bots={[]}
+          showBotSenderName={false}
+          authorName={authorName}
+          message={{
+            id: "message",
+            role: "user",
+            blocks: [kind === "text" ? { kind, text: "Hello" } : { kind, name: "Picture" }],
+          }}
+          actionProps={{}}
+        />,
+      );
+    const theirs = render("Ana");
+    expect(theirs).toContain(">Ana</span>");
+    expect(theirs).toContain(`background-color:${darkTokens.muted}`);
+    expect(theirs).not.toContain(`background-color:${darkTokens.chatUser}`);
+
+    const mine = render();
+    expect(mine).not.toContain("Ana");
+    expect(mine).toContain(`background-color:${darkTokens.chatUser}`);
+  },
+);

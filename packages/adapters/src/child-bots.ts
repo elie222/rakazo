@@ -225,21 +225,17 @@ type LifecycleBot = {
   webhookSecretId?: string | null;
 };
 
-/** Management stays within the current user's space, regardless of who created the bot. */
-export function managedBotsWhere(caller: {
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { userId: caller.userId, spaceId: caller.spaceId };
+/** Management stays within the current space, whichever member created the bot. */
+export function managedBotsWhere(caller: { spaceId: string }): Prisma.BotWhereInput {
+  return { spaceId: caller.spaceId };
 }
 
-/** Creation provenance for the roster metadata; this does not grant management permissions. */
-export function createdByWhere(caller: {
-  botId: string;
-  userId: string;
-  spaceId: string;
-}): Prisma.BotWhereInput {
-  return { parentBotId: caller.botId, userId: caller.userId, spaceId: caller.spaceId };
+/**
+ * Creation provenance for the roster metadata, whichever member's run spawned the bot; this
+ * does not grant management permissions.
+ */
+export function createdByWhere(caller: { botId: string; spaceId: string }): Prisma.BotWhereInput {
+  return { parentBotId: caller.botId, spaceId: caller.spaceId };
 }
 
 export async function archiveSpawnedBot(

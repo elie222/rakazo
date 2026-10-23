@@ -34,6 +34,55 @@ describe("signed-out responses", () => {
   });
 });
 
+describe("an unavailable selected space", () => {
+  function stubBrowser(selected: string | null) {
+    const state = { selected };
+    const assign = vi.fn();
+    vi.stubGlobal("window", {
+      location: { origin: "https://example.test", pathname: "/app", assign },
+      localStorage: {
+        getItem: () => state.selected,
+        setItem: vi.fn(),
+        removeItem: () => {
+          state.selected = null;
+        },
+      },
+    });
+    return { state, assign };
+  }
+
+  it("drops the selection and reopens the app when the session works without it", async () => {
+    const { state, assign } = stubBrowser("space-gone");
+    const fetch = vi.fn(async (input: Request | URL, _init?: RequestInit) =>
+      input instanceof Request
+        ? Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 })
+        : Response.json({ json: {} }),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(rpc.me()).rejects.toMatchObject({ status: 401 });
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/app"));
+    expect(state.selected).toBeNull();
+    const probe = fetch.mock.calls[1]?.[1];
+    expect(new Headers(probe?.headers).get("x-rakazo-space-id")).toBeNull();
+  });
+
+  it("keeps the selection when the session itself is gone", async () => {
+    const { state, assign } = stubBrowser("space-a");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ json: { code: "UNAUTHORIZED", status: 401 } }, { status: 401 }),
+      ),
+    );
+
+    await expect(rpc.me()).rejects.toMatchObject({ status: 401 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(assign).not.toHaveBeenCalled();
+    expect(state.selected).toBe("space-a");
+  });
+});
+
 describe("space selection storage", () => {
   it("reports localStorage write failures without throwing", () => {
     const localStorage = {

@@ -161,6 +161,10 @@ msgstr ""
 msgid "{hours}h ago"
 msgstr "hace {hours} h"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
+
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "hace {minutes} min"
@@ -329,6 +333,10 @@ msgstr ""
 msgid "A bit of everything"
 msgstr ""
 
+#: src/components/SharedSpaceRules.tsx
+msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "La salida de un comando"
@@ -387,6 +395,10 @@ msgstr "Menú de cuenta de {name}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "Acciones para {0}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Actions for space"
@@ -1010,6 +1022,7 @@ msgstr "No puede leer imágenes"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1514,6 +1527,10 @@ msgstr "Copiar"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "No se pudo agregar"
@@ -1603,6 +1620,10 @@ msgstr "No se pudo crear el bot"
 msgid "Could not create group"
 msgstr "No se pudo crear el grupo"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "No se pudo crear la sección"
@@ -1684,6 +1705,10 @@ msgstr "No se pudo descargar {name}. Inténtalo de nuevo."
 msgid "Could not install connector"
 msgstr "No se pudo instalar el conector"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1726,6 +1751,10 @@ msgstr "No se pudieron cargar las integraciones"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "No se pudieron cargar los servidores MCP"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -1796,6 +1825,10 @@ msgstr "No se pudo quitar"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "No se pudo quitar el conector"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -2463,6 +2496,10 @@ msgstr "Cada mes"
 msgid "Every week"
 msgstr "Cada semana"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone in this space sees all its chats, bots and memory."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Token de Executor"
@@ -2870,6 +2907,18 @@ msgstr "Unidad del intervalo"
 msgid "Invalid code"
 msgstr "Código no válido"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
@@ -2886,6 +2935,14 @@ msgstr "Sus bots y grupos se conservan y salen de la sección."
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Su conversación, archivos y rutinas se eliminarán de forma permanente. Los bots que creó permanecerán en tu lista."
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -2925,9 +2982,19 @@ msgstr "Última comprobación {0}: sin cambios"
 msgid "Later"
 msgstr ""
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Salir"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3006,8 +3073,10 @@ msgstr "Cargando reglas…"
 msgid "Loading voice providers…"
 msgstr "Cargando proveedores de voz…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3136,6 +3205,12 @@ msgstr ""
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "Miembro"
+
+#: src/components/SpaceMembersSettings.tsx
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3685,6 +3760,10 @@ msgstr "Abrir en ventana completa"
 msgid "Open navigation"
 msgstr "Abrir navegación"
 
+#: src/pages/Invite.tsx
+msgid "Open Rakazo"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Trabajo abierto"
@@ -3739,6 +3818,7 @@ msgstr "Mensaje original no disponible"
 msgid "Other model…"
 msgstr "Otro modelo…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4060,6 +4140,7 @@ msgid "Reload"
 msgstr "Recargar"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4080,6 +4161,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
 msgstr "Quitar {full}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
@@ -4252,6 +4337,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4967,6 +5053,10 @@ msgstr ""
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "esta Mac"
@@ -5519,6 +5609,10 @@ msgstr "Tu OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Tu OpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private."
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"

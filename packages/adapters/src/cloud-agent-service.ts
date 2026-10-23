@@ -41,7 +41,7 @@ export async function executeCloudAgentTool(
     const result = await deps.prisma.$transaction(async (tx) => {
       // Serialize with clearThread before creating either the intent or its card.
       await tx.thread.update({
-        where: { id: run.threadId, userId: context.userId, spaceId: context.spaceId },
+        where: { id: run.threadId, spaceId: context.spaceId },
         data: { unread: false },
       });
       const existing = await tx.cloudAgent.findUnique({

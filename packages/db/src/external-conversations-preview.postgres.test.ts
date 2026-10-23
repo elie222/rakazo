@@ -462,7 +462,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
       "listForSpaces",
       () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createExternalConversationRepos(prisma).listForSpaces(actorA, [spaceA, spaceB]),
+          createExternalConversationRepos(prisma).listForSpaces([spaceA, spaceB]),
         ),
     );
     const perConversation = new Map<string, number>();
@@ -506,7 +506,7 @@ describePostgres("team-chat conversation previews (PostgreSQL)", () => {
     const { result, messageRowCount, messageStatements, externalRowCount, external } =
       await measured("listForSpaces empty", () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createExternalConversationRepos(prisma).listForSpaces(actorA, []),
+          createExternalConversationRepos(prisma).listForSpaces([]),
         ),
       );
     expect(result).toEqual([]);

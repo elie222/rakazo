@@ -136,7 +136,7 @@ it("updates an accessible group thread and emits its normal update event", async
   await markAppConnected(deps, actor, "bot", "slack", "pipedream", "group-thread");
   expect(deps.prisma.chatGroup.findFirst).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: { id: "group", spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+      where: { id: "group", spaceId: actor.spaceId, archivedAt: null },
     }),
   );
   expect(tx.message.findMany).toHaveBeenCalledWith(
@@ -157,7 +157,7 @@ it("updates an accessible group thread and emits its normal update event", async
   expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
 });
 
-it("rejects another user's group even in the same space", async () => {
+it("rejects a group the space does not have", async () => {
   const { deps, actor, tx } = fixture([
     { connectorId: "pipedream", slug: "slack", connected: true },
   ]);
@@ -170,7 +170,7 @@ it("rejects another user's group even in the same space", async () => {
   ).rejects.toThrow();
   expect(tx.message.update).not.toHaveBeenCalled();
   expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith(
-    expect.objectContaining({ where: { id: "bot", spaceId: actor.spaceId, userId: actor.userId } }),
+    expect.objectContaining({ where: { id: "bot", spaceId: actor.spaceId } }),
   );
 });
 

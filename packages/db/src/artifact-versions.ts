@@ -5,7 +5,6 @@ export async function resolveNextArtifactVersion(
   prisma: Pick<PrismaClient, "artifact">,
   params: {
     spaceId: string;
-    userId: string;
     botId: string;
     groupId?: string | null;
     name: string;
@@ -14,7 +13,6 @@ export async function resolveNextArtifactVersion(
   const previous = await prisma.artifact.findFirst({
     where: {
       spaceId: params.spaceId,
-      userId: params.userId,
       botId: params.botId,
       groupId: params.groupId ?? null,
       name: { equals: params.name, mode: "insensitive" },
@@ -36,12 +34,12 @@ type ArtifactVersionWrite = {
   version: number;
 };
 
+// A family is the space's: any member's same-name publish is its next version.
 // Advisory lock queues same-name publishes; retry a unique family-version clash.
 export async function withResolvedArtifactVersion<T>(
   prisma: Pick<PrismaClient, "$transaction">,
   params: {
     spaceId: string;
-    userId: string;
     botId: string;
     groupId?: string | null;
     name: string;
@@ -69,18 +67,13 @@ export async function withResolvedArtifactVersion<T>(
 // Same identity as the name lookup, so those publishes share one lock.
 function artifactVersionLockKey(params: {
   spaceId: string;
-  userId: string;
   botId: string;
   groupId?: string | null;
   name: string;
 }): string {
-  return [
-    params.spaceId,
-    params.userId,
-    params.botId,
-    params.groupId ?? "",
-    params.name.toLowerCase(),
-  ].join("\u001f");
+  return [params.spaceId, params.botId, params.groupId ?? "", params.name.toLowerCase()].join(
+    "\u001f",
+  );
 }
 
 function isArtifactVersionConflict(error: unknown): boolean {

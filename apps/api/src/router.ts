@@ -198,15 +198,19 @@ import type {
   Board as BoardRow,
   McpServer as McpServerRow,
   PrismaClient,
+  RunTeardownTarget,
+  SpaceDeparture,
   ThreadEvents,
 } from "@rakazo/db";
 import {
+  acceptSpaceInvite,
   appendEventInTransaction,
   BotSectionNameConflictError,
   botProfileLabelsChanged,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
+  CannotRemoveSpaceOwnerError,
   CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
@@ -216,12 +220,14 @@ import {
   createGroupRepos,
   createRepos,
   createSpaceForMember,
+  createSpaceInvite,
   createThreadMessageInTransaction,
   crossSpaceCommunicationAllowed,
   defaultModelCredentialCandidates,
   deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
   ensureBoard,
+  fallbackSpaceForMember,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -231,30 +237,41 @@ import {
   InstructionConflictError,
   InvalidSpaceNameError,
   IsolationError,
+  isOwnerRole,
   issueMessagingLinkCode,
+  leaveSpace,
   listBoards,
   listSpaceBackupModels,
+  listSpaceMembers,
   listTicketComments,
-  lockOwnedGroup,
+  loadMessageAuthor,
+  lockSpaceGroup,
   modelCredentialProviderFilter,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
   parseComputerMode,
+  previewSpaceInvite,
   pushSessionExpiresAt,
   recordSecurityEvent,
   releaseSpaceDeletionClaim,
+  removeSpaceMember,
   renameSpaceForMember,
   renewSpaceDeletionClaim,
   replaceSpaceBackupModels,
+  requireSpaceOwner,
   restoreBotUnderComputerQuota,
   runAsSystem,
   runAsTenant,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
+  SpaceInviteNotFoundError,
   SpaceLimitError,
+  SpaceMemberNotFoundError,
   SpaceNotEmptyError,
   SpaceNotFoundError,
+  SpaceOwnerCannotLeaveError,
+  SpaceOwnerRequiredError,
   selectSpaceModelPreference,
   selectSpaceVoicePreference,
   toBoardDto,
@@ -746,6 +763,99 @@ const HANG_UP_PROMPT =
 function spaceTeardownTimeoutMs(): number {
   const override = Number(process.env.SPACE_TEARDOWN_TIMEOUT_MS ?? "");
   return Number.isFinite(override) && override > 0 ? override : SPACE_TEARDOWN_TIMEOUT_MS;
+}
+
+function mapSpaceMemberError(error: unknown): never {
+  if (
+    error instanceof SpaceInviteNotFoundError ||
+    error instanceof SpaceMemberNotFoundError ||
+    error instanceof SpaceNotFoundError
+  ) {
+    throw new ORPCError("NOT_FOUND", { message: error.message });
+  }
+  if (error instanceof SpaceOwnerRequiredError) {
+    throw new ORPCError("FORBIDDEN", { message: error.message });
+  }
+  if (error instanceof CannotRemoveSpaceOwnerError || error instanceof SpaceOwnerCannotLeaveError) {
+    throw new ORPCError("BAD_REQUEST", { message: error.message });
+  }
+  if (error instanceof SpaceDeletionInProgressError) {
+    throw new ORPCError("CONFLICT", { message: error.message });
+  }
+  throw error;
+}
+
+/** Seat counts follow membership; a provider hiccup must not undo the change. */
+/**
+ * After a transaction cancelled runs: drop their jobs and stop their screen work, then expire
+ * their leases. Only after teardown: while they were live, no other run could claim the screens.
+ */
+async function stopCancelledRunWork(
+  deps: RouterDeps,
+  groupRepos: ReturnType<typeof createGroupRepos>,
+  actor: { spaceId: string; userId: string },
+  stopped: { cancelledRunIds: string[]; computers: RunTeardownTarget[] },
+): Promise<void> {
+  await Promise.all(
+    stopped.cancelledRunIds.map((runId) =>
+      deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
+    ),
+  );
+  await Promise.all(
+    stopped.computers.map(async (computer) => {
+      if (!computer.providerRef) return;
+      const adapterContext = {
+        operationId: "stop",
+        traceId: "stop",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: computer.botId,
+        runId: computer.runId,
+        screenLeaseId: screenLeaseIdForRun(
+          { runId: computer.runId, fence: computer.fence },
+          computer.runId,
+        ),
+        cancelRunWork: true,
+        signal: new AbortController().signal,
+      };
+      const ref = toComputerRef(computer);
+      await cancelComputerRunWork(deps.sandbox, ref, computer.id, computer.runId, adapterContext);
+      await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
+    }),
+  );
+  await groupRepos.releaseArchivedRunLeases(stopped.cancelledRunIds);
+}
+
+/** Remove and leave share this: stop the departed person's runs and tell clients. */
+async function afterSpaceDeparture(
+  deps: RouterDeps,
+  groupRepos: ReturnType<typeof createGroupRepos>,
+  actor: { spaceId: string; userId: string },
+  departure: SpaceDeparture,
+): Promise<void> {
+  await Promise.all(
+    departure.events.map(({ threadId, seq }) =>
+      deps.events.notify(threadId, seq).catch((error) => {
+        getLogger().error("space departure realtime notification", error);
+      }),
+    ),
+  );
+  await stopCancelledRunWork(deps, groupRepos, actor, departure);
+  // The job reconciler retries a failed enqueue: the runs are already queued.
+  await Promise.all(
+    departure.continuationRunIds.map((runId) =>
+      deps.jobs.enqueue(runContinueJob(runId)).catch((error) => {
+        getLogger().error("steering continuation enqueue", error);
+      }),
+    ),
+  );
+  syncSeatsLater(deps, departure.organizationId);
+}
+
+function syncSeatsLater(deps: RouterDeps, organizationId: string): void {
+  void deps.billing?.syncSeats(organizationId).catch((error) => {
+    getLogger().error("billing seat sync failed", error);
+  });
 }
 
 /** Surface a Space deletion race as a retryable conflict instead of a generic failure. */
@@ -1348,6 +1458,104 @@ export function createRouter(deps: RouterDeps) {
           }
         }),
       ),
+      members: {
+        list: authed.spaces.members.list.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, () =>
+            listSpaceMembers(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+            }).catch(mapSpaceMemberError),
+          ),
+        ),
+        remove: authed.spaces.members.remove.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const departure = await removeSpaceMember(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+              memberUserId: input.userId,
+            }).catch(mapSpaceMemberError);
+            await recordSecurityEvent({
+              type: "space.member.removed",
+              userId: context.actor.userId,
+              spaceId: input.spaceId,
+              metadata: { memberUserId: input.userId },
+            });
+            await afterSpaceDeparture(
+              deps,
+              groupRepos,
+              { spaceId: input.spaceId, userId: context.actor.userId },
+              departure,
+            );
+            return { ok: true as const };
+          }),
+        ),
+        leave: authed.spaces.members.leave.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const departure = await leaveSpace(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+            }).catch(mapSpaceMemberError);
+            await recordSecurityEvent({
+              type: "space.member.left",
+              userId: context.actor.userId,
+              spaceId: input.spaceId,
+            });
+            await afterSpaceDeparture(
+              deps,
+              groupRepos,
+              { spaceId: input.spaceId, userId: context.actor.userId },
+              departure,
+            );
+            const activeSpaceId =
+              input.spaceId === context.actor.spaceId
+                ? await fallbackSpaceForMember(deps.prisma, context.actor.userId)
+                : context.actor.spaceId;
+            if (!activeSpaceId) throw new ORPCError("NOT_FOUND");
+            return { ok: true as const, activeSpaceId };
+          }),
+        ),
+      },
+      invites: {
+        create: authed.spaces.invites.create.handler(({ context, input }) =>
+          asMemberOf(deps.prisma, context.actor, input.spaceId, async () => {
+            const invite = await createSpaceInvite(deps.prisma, {
+              spaceId: input.spaceId,
+              userId: context.actor.userId,
+            }).catch(mapSpaceMemberError);
+            await recordSecurityEvent({
+              type: "space.invite.created",
+              userId: context.actor.userId,
+              spaceId: input.spaceId,
+            });
+            return {
+              url: new URL(`/invite/${invite.token}`, deps.env.webOrigin).toString(),
+              expiresAt: invite.expiresAt.toISOString(),
+            };
+          }),
+        ),
+        // The invitee is not a member yet, so these look the Space up by the link alone.
+        preview: authed.spaces.invites.preview.handler(({ context, input }) =>
+          previewSpaceInvite(deps.prisma, {
+            token: input.token,
+            userId: context.actor.userId,
+          }).catch(mapSpaceMemberError),
+        ),
+        accept: authed.spaces.invites.accept.handler(async ({ context, input }) => {
+          const accepted = await acceptSpaceInvite(deps.prisma, {
+            token: input.token,
+            userId: context.actor.userId,
+          }).catch(mapSpaceMemberError);
+          if (accepted.joined) {
+            await recordSecurityEvent({
+              type: "space.member.joined",
+              userId: context.actor.userId,
+              spaceId: accepted.spaceId,
+            });
+            syncSeatsLater(deps, accepted.organizationId);
+          }
+          return { spaceId: accepted.spaceId };
+        }),
+      },
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
@@ -2019,7 +2227,6 @@ export function createRouter(deps: RouterDeps) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -2208,7 +2415,7 @@ export function createRouter(deps: RouterDeps) {
         try {
           if (bot.computer) {
             await restoreBotUnderComputerQuota(deps.prisma, {
-              userId: context.actor.userId,
+              userId: bot.userId,
               botId: bot.id,
               computerId: bot.computer.id,
             });
@@ -2222,6 +2429,10 @@ export function createRouter(deps: RouterDeps) {
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
+        // Any member can archive; only the bot's creator or the space owner deletes for good.
+        if (bot.userId !== context.actor.userId) {
+          await requireSpaceOwner(deps.prisma, context.actor).catch(mapSpaceMemberError);
+        }
         await destroyBot(
           {
             prisma: deps.prisma,
@@ -2246,6 +2457,8 @@ export function createRouter(deps: RouterDeps) {
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        // Webhook runs act as the bot's creator, so only the creator can issue its secret.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
         const plaintext = randomBytes(32).toString("base64url");
         const stored = await deps.secrets.put(plaintext, {
           operationId: "bots.rotateWebhookSecret",
@@ -2330,7 +2543,6 @@ export function createRouter(deps: RouterDeps) {
             where: {
               id: input.sectionId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -2346,42 +2558,7 @@ export function createRouter(deps: RouterDeps) {
       }),
       archive: authed.groups.archive.handler(async ({ context, input }) => {
         const archived = await groupRepos.archiveGroup(context.actor, input.groupId);
-        await Promise.all(
-          archived.cancelledRunIds.map((runId) =>
-            deps.jobs.cancel(runJobKey(runId)).catch(() => undefined),
-          ),
-        );
-        await Promise.all(
-          archived.computers.map(async (computer) => {
-            if (!computer.providerRef) return;
-            const adapterContext = {
-              operationId: "stop",
-              traceId: "stop",
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
-              botId: computer.botId,
-              runId: computer.runId,
-              screenLeaseId: screenLeaseIdForRun(
-                { runId: computer.runId, fence: computer.fence },
-                computer.runId,
-              ),
-              cancelRunWork: true,
-              signal: new AbortController().signal,
-            };
-            const ref = toComputerRef(computer);
-            await cancelComputerRunWork(
-              deps.sandbox,
-              ref,
-              computer.id,
-              computer.runId,
-              adapterContext,
-            );
-            await deps.sandbox.releaseScreen?.(ref, adapterContext).catch(() => undefined);
-          }),
-        );
-        // Expire the leases only after teardown: while they were live, no other run could claim
-        // these screens.
-        await groupRepos.releaseArchivedRunLeases(archived.cancelledRunIds);
+        await stopCancelledRunWork(deps, groupRepos, context.actor, archived);
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
@@ -2414,7 +2591,9 @@ export function createRouter(deps: RouterDeps) {
         repos.listBotSections(context.actor),
       ),
       create: authed.botSections.create.handler(async ({ context, input }) =>
-        repos.createBotSection(context.actor, input),
+        repos.createBotSection(context.actor, input).catch((error: unknown) => {
+          throw mapSpaceLifecycleError(error);
+        }),
       ),
       update: authed.botSections.update.handler(async ({ context, input }) => {
         try {
@@ -2621,6 +2800,7 @@ export function createRouter(deps: RouterDeps) {
             threadId: target.threadId,
             botId: target.botId,
             userId: context.actor.userId,
+            authorUserId: context.actor.userId,
             blocks: [{ kind: "text", text: input.text }],
             prompt: input.text,
             trigger: "follow_up",
@@ -2642,7 +2822,7 @@ export function createRouter(deps: RouterDeps) {
             });
             if (existing) return null;
           }
-          await lockOwnedGroup(tx, context.actor, target.groupId);
+          await lockSpaceGroup(tx, context.actor, target.groupId);
           const group = await tx.chatGroup.findFirst({
             where: {
               id: target.groupId,
@@ -2657,16 +2837,18 @@ export function createRouter(deps: RouterDeps) {
           const message = await createThreadMessageInTransaction(tx, {
             threadId: target.threadId,
             role: "user",
+            authorUserId: context.actor.userId,
             blocks,
             clientNonce: input.clientNonce,
           });
+          const author = await loadMessageAuthor(tx, context.actor.userId);
           const active = await tx.run.findFirst({
             where: {
               threadId: target.threadId,
               botId,
               status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
             },
-            select: { id: true },
+            select: { id: true, userId: true },
           });
           let run: { id: string } | null = null;
           if (!active) {
@@ -2700,7 +2882,8 @@ export function createRouter(deps: RouterDeps) {
                 messageId: message.id,
                 botId,
                 userId: context.actor.userId,
-                runId: active.id,
+                // Another person's message waits for a run that acts with their accounts.
+                runId: active.userId === context.actor.userId ? active.id : null,
               },
             });
             await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
@@ -2711,7 +2894,7 @@ export function createRouter(deps: RouterDeps) {
             botId,
             type: "thread.message.created",
             runId: run?.id ?? active?.id,
-            payload: { messageId: message.id, role: "user", blocks },
+            payload: { messageId: message.id, role: "user", blocks, author },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
           return { runId: run?.id, eventSeq: event.seq };
@@ -3068,14 +3251,14 @@ export function createRouter(deps: RouterDeps) {
             status: { in: ["queued", "running", "interrupted", "failed"] },
             computer: {
               spaceId: context.actor.spaceId,
-              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              bots: { some: { archivedAt: null } },
             },
           },
           include: {
             computer: {
               include: {
                 bots: {
-                  where: { userId: context.actor.userId, archivedAt: null },
+                  where: { archivedAt: null },
                   select: { id: true, name: true },
                 },
               },
@@ -3095,7 +3278,7 @@ export function createRouter(deps: RouterDeps) {
             status: "failed",
             computer: {
               spaceId: context.actor.spaceId,
-              bots: { some: { userId: context.actor.userId, archivedAt: null } },
+              bots: { some: { archivedAt: null } },
             },
           },
           data: { status: "dismissed" },
@@ -3597,7 +3780,6 @@ export function createRouter(deps: RouterDeps) {
         const docs = await deps.prisma.memoryDocument.findMany({
           where: {
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             ...(input.botId ? { botId: input.botId } : {}),
             ...(input.scope ? { scope: input.scope } : {}),
           },
@@ -3617,7 +3799,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.documentId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!doc) throw new IsolationError();
@@ -3659,7 +3840,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.documentId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!doc) throw new IsolationError();
@@ -3689,7 +3869,6 @@ export function createRouter(deps: RouterDeps) {
         const docs = await deps.prisma.memoryDocument.findMany({
           where: {
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             ...(input.botId ? { botId: input.botId } : {}),
           },
         });
@@ -3793,7 +3972,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
             bot: { archivedAt: null },
           },
         });
@@ -3939,6 +4117,8 @@ export function createRouter(deps: RouterDeps) {
                 : {}),
             },
             data: {
+              // A routine runs with its owner's accounts, so whoever edits it takes it over.
+              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
@@ -3949,13 +4129,14 @@ export function createRouter(deps: RouterDeps) {
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline.
+              // A changed watch starts from a fresh baseline, and so does one that now reads
+              // a different person's accounts.
               ...(input.watch === undefined
                 ? {}
-                : {
-                    watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
-                    ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
-                  }),
+                : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
+              ...(watchChanged || existing.userId !== context.actor.userId
+                ? { watchState: Prisma.DbNull }
+                : {}),
               nextRunAt,
             },
           })
@@ -3967,7 +4148,6 @@ export function createRouter(deps: RouterDeps) {
                   where: {
                     id: existing.id,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                     bot: { archivedAt: null },
                   },
                   select: { id: true },
@@ -4017,7 +4197,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.routineId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!routine) throw new IsolationError();
@@ -4126,7 +4305,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.itemId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!existing) throw new IsolationError();
@@ -4148,7 +4326,6 @@ export function createRouter(deps: RouterDeps) {
           where: {
             id: input.itemId,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         if (!existing) throw new IsolationError();
@@ -4877,6 +5054,7 @@ export function createRouter(deps: RouterDeps) {
           return { ok: true as const };
         }),
       },
+      // Any bot in the space can use the member's own servers; servers and assignments stay personal.
       assignments: {
         all: authed.mcp.assignments.all.handler(async ({ context }) => {
           const rows = await deps.prisma.botMcpServer.findMany({
@@ -4894,7 +5072,6 @@ export function createRouter(deps: RouterDeps) {
             where: {
               id: input.botId,
               spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
             },
             select: { id: true },
           });
@@ -4926,7 +5103,6 @@ export function createRouter(deps: RouterDeps) {
                   where: {
                     id: input.botId,
                     spaceId: context.actor.spaceId,
-                    userId: context.actor.userId,
                   },
                   select: { id: true },
                 }),
@@ -4976,7 +5152,6 @@ export function createRouter(deps: RouterDeps) {
               where: {
                 id: input.botId,
                 spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
               },
               select: { id: true },
             });
@@ -6500,7 +6675,6 @@ export function createRouter(deps: RouterDeps) {
             botId: input.botId,
             groupId: null,
             spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
           },
         });
         return rows.map((row) => ({
@@ -6843,17 +7017,20 @@ async function memberSpaceNavigation(
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
 ): Promise<SpaceNavigation> {
-  const currentSpace = await deps.prisma.space.findUnique({
-    where: { id: actor.spaceId },
-    select: { organizationId: true },
-  });
-  if (!currentSpace) throw new IsolationError();
+  // Every organization: a Space shared with the member lives in its owner's organization.
   const memberships = await deps.prisma.spaceMember.findMany({
-    where: { userId: actor.userId, organizationId: currentSpace.organizationId },
+    where: { userId: actor.userId },
     select: {
       spaceId: true,
       role: true,
-      space: { select: { name: true, isDefault: true, deletingAt: true } },
+      space: {
+        select: {
+          name: true,
+          isDefault: true,
+          deletingAt: true,
+          _count: { select: { memberships: true } },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -6871,10 +7048,10 @@ async function memberSpaceNavigation(
   ] = await Promise.all([
     repos.listBots(actor),
     groupRepos.listGroups(actor),
-    repos.listSpaceBotsForSpaces(actor, inactiveSpaceIds),
-    groupRepos.listSpaceGroupsForSpaces(actor, inactiveSpaceIds),
-    repos.listBotSectionsForSpaces(actor, spaceIds),
-    createExternalConversationRepos(deps.prisma).listForSpaces(actor, spaceIds),
+    repos.listSpaceBotsForSpaces(inactiveSpaceIds),
+    groupRepos.listSpaceGroupsForSpaces(inactiveSpaceIds),
+    repos.listBotSectionsForSpaces(spaceIds),
+    createExternalConversationRepos(deps.prisma).listForSpaces(spaceIds),
     // Active-only navigation lists miss archived content in other spaces; count any
     // bot/group in the actor's spaces (including another member's) so a shared
     // non-empty space cannot look empty for onboarding redirects.
@@ -6917,14 +7094,17 @@ async function memberSpaceNavigation(
     spaces: memberships.map((membership) => {
       const spaceBots = botsFor(membership.spaceId);
       const spaceGroups = groupsFor(membership.spaceId);
+      const owner = isOwnerRole(membership.role);
       return {
         id: membership.spaceId,
         name: membership.space.name,
-        isDefault: membership.space.isDefault,
+        // Another person's default Space is not this member's default.
+        isDefault: membership.space.isDefault && owner,
         hasContent: spacesWithContent.has(membership.spaceId),
-        canRename: membership.role === "owner" && membership.space.deletingAt === null,
+        shared: membership.space._count.memberships > 1,
+        canRename: owner && membership.space.deletingAt === null,
         canDelete:
-          membership.role === "owner" &&
+          owner &&
           !membership.space.isDefault &&
           memberships.length > 1 &&
           !spacesWithContent.has(membership.spaceId) &&

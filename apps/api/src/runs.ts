@@ -62,7 +62,6 @@ export async function listSpaceRuns(
   const rows = await prisma.run.findMany({
     where: {
       spaceId: actor.spaceId,
-      userId: actor.userId,
       bot: { archivedAt: null },
       // Background ticket work belongs on the board, not in the activity list.
       trigger: { notIn: [...BACKGROUND_RUN_TRIGGERS] },

@@ -212,6 +212,7 @@ function fixture({
   let outsideSteering = false;
   let offeredTools: string[] = [];
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findFirst: vi.fn(async () =>

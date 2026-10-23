@@ -34,7 +34,6 @@ describe("routine history", () => {
       where: {
         id: "routine-1",
         spaceId: actor.spaceId,
-        userId: actor.userId,
         bot: { archivedAt: null },
       },
       select: { botId: true },
@@ -73,7 +72,6 @@ describe("routine history", () => {
           routineId: "routine-1",
           botId: "bot-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         take: 21,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -82,15 +80,7 @@ describe("routine history", () => {
     const sql = messages.mock.calls[0]?.[0];
     expect(sql.sql).toContain('DISTINCT ON (m."runId")');
     expect(sql.sql).toContain('r."threadId" = m."threadId"');
-    expect(sql.values).toEqual([
-      "run-0",
-      "run-1",
-      "run-2",
-      actor.spaceId,
-      actor.userId,
-      actor.spaceId,
-      actor.userId,
-    ]);
+    expect(sql.values).toEqual(["run-0", "run-1", "run-2", actor.spaceId, actor.spaceId]);
   });
   it("bounds stored errors like thread failures", async () => {
     const { prisma, runs } = fixture();
@@ -156,7 +146,6 @@ describe("routine history", () => {
           routineId: "routine-1",
           botId: "bot-1",
           spaceId: actor.spaceId,
-          userId: actor.userId,
           OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: "run-11" } }],
         },
       }),

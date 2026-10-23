@@ -3,7 +3,7 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { persistPreparedSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma, withTransactionRetry } from "@rakazo/db";
+import { Prisma, requireSpaceOwner, withTransactionRetry } from "@rakazo/db";
 
 type AgentSecretDeps = {
   prisma: PrismaClient;
@@ -17,15 +17,6 @@ function agentSecretDto(row: { id: string; name: string; createdAt: Date; update
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-async function requireSpaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
-  const membership = await prisma.spaceMember.findUnique({
-    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
-    select: { role: true },
-  });
-  const roles = membership?.role.split(",").map((role) => role.trim());
-  if (!roles?.includes("owner")) throw new ORPCError("FORBIDDEN");
 }
 
 export async function listAgentSecrets(deps: AgentSecretDeps, actor: Actor) {

@@ -19,6 +19,7 @@ import {
   Monitor,
   Settings,
   ShieldCheck,
+  Users,
   Volume2,
   XIcon,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { SpaceMembersSettings } from "../components/SpaceMembersSettings";
 import { desktopBridge } from "../lib/desktop";
 import { rpcForSpace } from "../lib/rpc";
 import { SpaceRpcProvider } from "../lib/space-rpc";
@@ -48,6 +50,7 @@ const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
   "memory",
   "voice",
   "confirmations",
+  "members",
 ]);
 
 type NavItem = {
@@ -78,6 +81,7 @@ export function SettingsOverlay({
   onMemoryConfigChange,
   onClose,
   onVoiceStatusMaybeChanged,
+  onLeftSpace,
 }: {
   /** The space the per-space sections act on; it need not be the selected space. */
   space?: { id: string; name: string } | null;
@@ -107,10 +111,13 @@ export function SettingsOverlay({
   onMemoryConfigChange: (config: SpaceMemoryConfig | null) => void;
   onClose: () => void;
   onVoiceStatusMaybeChanged?: () => void | Promise<void>;
+  /** After leaving a space, with the space the server moved this person to. */
+  onLeftSpace?: (spaceId: string, activeSpaceId: string) => void;
 }) {
   const { t, i18n } = useLingui();
   const panelRef = useRef<HTMLDivElement>(null);
-  const navRef = useRef<HTMLElement>(null);
+  // State, not a ref: the overflow watcher must follow the nav when it remounts.
+  const [nav, setNav] = useState<HTMLElement | null>(null);
   const [navOverflow, setNavOverflow] = useState({ previous: false, next: false });
   const usageRef = useRef<HTMLDivElement>(null);
   const [memoryBusy, setMemoryBusy] = useState(false);
@@ -195,6 +202,7 @@ export function SettingsOverlay({
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
     { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
+    { id: "members", label: t`Members`, icon: Users },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(billingEnabled ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
@@ -202,7 +210,6 @@ export function SettingsOverlay({
   ];
 
   useEffect(() => {
-    const nav = navRef.current;
     if (!nav) return;
     const measure = () => {
       const offset = Math.abs(nav.scrollLeft);
@@ -229,10 +236,9 @@ export function SettingsOverlay({
       nav.removeEventListener("scroll", measure);
       observer?.disconnect();
     };
-  }, [section, showComputer, billingEnabled, showUpdates, i18n.locale]);
+  }, [nav, section, showComputer, billingEnabled, showUpdates, i18n.locale]);
 
   function scrollSections(direction: number) {
-    const nav = navRef.current;
     if (!nav) return;
     const rtl = getComputedStyle(nav).direction === "rtl";
     nav.scrollBy({ left: nav.clientWidth * 0.75 * direction * (rtl ? -1 : 1), behavior: "smooth" });
@@ -302,7 +308,7 @@ export function SettingsOverlay({
               <ChevronLeft className="rtl:rotate-180" />
             </Button>
             <nav
-              ref={navRef}
+              ref={setNav}
               data-testid="settings-nav"
               aria-label={t`Settings`}
               className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-3 md:w-[200px] md:shrink-0 md:flex-none md:flex-col md:overflow-y-auto md:border-e md:border-border md:px-3 md:py-4"
@@ -401,6 +407,12 @@ export function SettingsOverlay({
                   />
                 ) : null}
                 {section === "confirmations" ? <ApprovalRulesSettings /> : null}
+                {section === "members" && space ? (
+                  <SpaceMembersSettings
+                    space={space}
+                    onLeft={(activeSpaceId) => onLeftSpace?.(space.id, activeSpaceId)}
+                  />
+                ) : null}
                 {section === "usage" ? (
                   <UsageSettingsPanel usage={usage} panelRef={usageRef} />
                 ) : null}

@@ -46,7 +46,7 @@ describe("artifact search batching", () => {
     expect(group.text).toContain('t."groupId" = candidate."targetId"');
     for (const query of [direct, group]) {
       expect(query.values).toContain(actor.spaceId);
-      expect(query.values).toContain(actor.userId);
+      expect(query.values).not.toContain(actor.userId);
       expect(query.text).toContain('ORDER BY m."createdAt" DESC');
     }
   });

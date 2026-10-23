@@ -330,9 +330,9 @@ async function createWatchFromTool(
     return { error: parsed.error.issues.map((issue) => issue.message).join("; ") };
   }
   try {
-    // Match routine editing's owner/space boundary before creating unattended work.
+    // Match routine editing's space boundary before creating unattended work.
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: input.spaceId, userId: input.userId, archivedAt: null },
+      where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
       include: { computer: true },
     });
     if (!bot) return { error: "Bot not found." };
@@ -385,16 +385,15 @@ async function createWatchFromTool(
   };
 }
 
-/** List bot routines, optionally restricted to the current group thread. */
+/** List bot routines (every member's), optionally restricted to the current group thread. */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; userId: string; threadId?: string },
+  input: { spaceId: string; botId: string; threadId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
     where: {
       spaceId: input.spaceId,
       botId: input.botId,
-      userId: input.userId,
       ...(input.threadId ? { threadId: input.threadId } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -419,7 +418,6 @@ export async function cancelScheduleFromTool(
   input: {
     spaceId: string;
     botId: string;
-    userId: string;
     threadId?: string;
     routineId?: string;
     name?: string;
@@ -434,7 +432,6 @@ export async function cancelScheduleFromTool(
   const scope = {
     spaceId: input.spaceId,
     botId: input.botId,
-    userId: input.userId,
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
   const existing = await deps.prisma.routine.findFirst({

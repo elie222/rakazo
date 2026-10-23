@@ -5,7 +5,7 @@ import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
-  lockOwnedGroup,
+  lockSpaceGroup,
   type PrismaClient,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -27,7 +27,7 @@ export async function handoffToGroupBot(
   const deliveryKey = `group-handoff:${run.id}`;
   const committed = await deps.prisma.$transaction(async (tx) => {
     try {
-      await lockOwnedGroup(tx, run, groupId);
+      await lockSpaceGroup(tx, run, groupId);
     } catch (error) {
       if (error instanceof IsolationError)
         return { error: "group is no longer available" } as const;

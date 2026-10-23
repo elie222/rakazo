@@ -1,5 +1,5 @@
-import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import { ReplyPreviewSchema } from "@rakazo/contracts";
+import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contracts";
+import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 
 type ReplyMetadata = {
   replyToMessageId?: string;
@@ -21,6 +21,24 @@ export function replyMetadata(
     replyQuote: typeof payload.replyQuote === "string" ? payload.replyQuote : previous?.replyQuote,
     replyPreview: preview.success ? preview.data : previous?.replyPreview,
   };
+}
+
+/** The author a live message event carries; updates omit it, so keep the known one. */
+export function payloadAuthor(
+  payload: Record<string, unknown>,
+  previous?: { author?: MessageAuthor },
+): { author?: MessageAuthor } {
+  const parsed = MessageAuthorSchema.safeParse(payload.author);
+  const author = parsed.success ? parsed.data : previous?.author;
+  return author ? { author } : {};
+}
+
+/** Someone else in a shared space; my own messages and unknown senders stay unnamed. */
+export function otherAuthor(
+  author: MessageAuthor | undefined,
+  meId: string | undefined,
+): MessageAuthor | undefined {
+  return author && meId && author.id !== meId ? author : undefined;
 }
 
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {

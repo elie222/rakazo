@@ -37,6 +37,7 @@ import {
   assertRunCanWriteHistory,
   assertRunIsCancelled,
   createThreadMessageInTransaction,
+  loadMessageAuthor,
   RunHistoryWriteError,
 } from "./messages.js";
 import { isRunResponse, readRunTimingFields } from "./run-timing.js";
@@ -117,6 +118,7 @@ export interface ClaimedSteeringMessage {
   messageId: string;
   text: string;
   blocks: MessageBlock[];
+  authorUserId?: string | null;
 }
 
 export interface FinalizeRunResult {
@@ -241,6 +243,8 @@ export interface SendUserMessageInput {
   threadId: string;
   botId: string;
   userId: string;
+  /** The person who wrote the message; omitted when the sender is not a known user. */
+  authorUserId?: string;
   blocks: MessageBlock[];
   prompt: string;
   trigger: "user" | "follow_up" | "webhook" | "messaging";
@@ -443,6 +447,7 @@ export async function sendUserMessage(
         threadId: input.threadId,
         role: "user",
         blocks: input.blocks,
+        authorUserId: input.authorUserId,
         clientNonce: input.clientNonce,
       });
       if (
@@ -451,6 +456,7 @@ export async function sendUserMessage(
       ) {
         throw new CrossSpaceCommunicationBlockedError();
       }
+      const author = await loadMessageAuthor(tx, input.authorUserId);
       const createRun = input.createRun !== false;
       // Include the creation intro. It has no tools, so it must not absorb the message, and a
       // second run would overlap it on a dedicated computer. Pending steering waits for the
@@ -465,12 +471,15 @@ export async function sendUserMessage(
                   in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
-              select: { id: true, taskId: true, trigger: true },
+              select: { id: true, taskId: true, trigger: true, userId: true },
             })
           : [];
       // Steer a conversational run when there is one; a routine, webhook, or intro turn only holds the queue.
       const busy =
-        activeRuns.find((run) => isConversationalRun(run.trigger)) ?? activeRuns[0] ?? null;
+        activeRuns.find((run) => isConversationalRun(run.trigger) && run.userId === input.userId) ??
+        activeRuns.find((run) => isConversationalRun(run.trigger)) ??
+        activeRuns[0] ??
+        null;
       let task = null;
       let run = null;
       if (createRun && !busy) {
@@ -509,7 +518,12 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
+        // A run acts with its sender's accounts, so another person's message waits for a run
+        // of their own.
+        const held =
+          input.trigger === "webhook" ||
+          !isConversationalRun(busy.trigger) ||
+          busy.userId !== input.userId;
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
@@ -541,6 +555,7 @@ export async function sendUserMessage(
           messageId: message.id,
           role: "user",
           blocks: input.blocks,
+          author,
           // Carries the call id on the live event so a spoken turn groups into the
           // call card immediately, instead of after a refetch reads the nonce.
           callId: callIdFromClientNonce(message.clientNonce),
@@ -590,6 +605,7 @@ export async function claimSteering(
         id: true,
         spaceId: true,
         trigger: true,
+        userId: true,
         sourceMessage: { select: { blocks: true } },
       },
     });
@@ -608,6 +624,8 @@ export async function claimSteering(
     const steering = await tx.steeringMessage.findMany({
       where: {
         botId: input.botId,
+        // Only the run's own person's messages; anyone else's wait for a run of their own.
+        userId: run.userId,
         id: input.seenIds.length ? { notIn: input.seenIds } : undefined,
         // A routine or webhook turn only takes steering addressed to it; pending user messages
         // wait for the conversational continuation that starts once it finishes.
@@ -624,7 +642,7 @@ export async function claimSteering(
               : {}),
         },
       },
-      include: { message: { select: { blocks: true, seq: true } } },
+      include: { message: { select: { blocks: true, seq: true, authorUserId: true } } },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
     });
     if (steering.length === 0) return [];
@@ -651,6 +669,7 @@ export async function claimSteering(
       messageId: item.messageId,
       text: blocksToAgentHistoryText(item.message.blocks as MessageBlock[]),
       blocks: item.message.blocks as MessageBlock[],
+      authorUserId: item.message.authorUserId,
     }));
   });
 }
@@ -743,6 +762,9 @@ async function commitAnswerRunInput(
     return null;
   if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
+  // An answer resumes the run with its user's credentials and rules, so in a shared space only
+  // that user answers its cards; anyone else's message starts a run of their own.
+  if (run.userId !== input.answeredByUserId) return null;
   const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   // A username belongs only to a login card, which cannot be saved without one.
   if (loginAsk !== Boolean(input.username?.trim())) return null;
@@ -823,16 +845,18 @@ async function commitAnswerRunInput(
       role: "user",
       blocks,
       botId: run.botId,
+      authorUserId: input.answeredByUserId,
       runId: input.runId,
       clientNonce: input.clientNonce,
     });
+    const author = await loadMessageAuthor(tx, input.answeredByUserId);
     await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: input.threadId,
       botId: run.botId,
       type: "thread.message.created",
       runId: input.runId,
-      payload: { messageId: utterance.id, role: "user", blocks, callId },
+      payload: { messageId: utterance.id, role: "user", blocks, callId, author },
     });
   }
 
@@ -1756,9 +1780,11 @@ export async function createPendingSteeringRun(
   });
   if (pending.length === 0) return null;
   // One origin per continuation so a group channel and the owner's private chat are not answered
-  // together. The app and the owner's direct line are one private conversation.
+  // together. The app and the owner's direct line are one private conversation. One sender too:
+  // the run acts with that person's accounts, and the rest get their own continuation next.
   const origin = steeringOrigin(pending[0]!);
-  const batch = pending.filter((item) => steeringOrigin(item) === origin);
+  const userId = pending[0]!.userId;
+  const batch = pending.filter((item) => steeringOrigin(item) === origin && item.userId === userId);
   const source = batch.at(-1)!;
   const modelPin = continuationModelPin(batch);
   const task = await tx.task.create({
@@ -1766,7 +1792,7 @@ export async function createPendingSteeringRun(
       spaceId: input.spaceId,
       botId: input.botId,
       threadId: input.threadId,
-      userId: batch[0]!.userId,
+      userId,
       prompt:
         origin === "webhook"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
@@ -1780,7 +1806,7 @@ export async function createPendingSteeringRun(
       botId: input.botId,
       threadId: input.threadId,
       taskId: task.id,
-      userId: batch[0]!.userId,
+      userId,
       status: "queued",
       // A private continuation is a follow-up the owner wrote only when every message in it came
       // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.

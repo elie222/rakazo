@@ -556,6 +556,21 @@ export default function Account() {
               onPress={() => router.push("/billing")}
             />
           ) : null}
+          {me ? (
+            <SettingsRow
+              accessibilityRole="button"
+              chevron="right"
+              disabled={pending}
+              // The space header holds Members too, but a single space has no header.
+              onPress={() =>
+                openFromSettingsSheet(router, {
+                  pathname: "/space-members",
+                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
+                })
+              }
+              title={t("Members")}
+            />
+          ) : null}
           {(
             [
               { title: t("Artifacts"), href: "/artifacts" },

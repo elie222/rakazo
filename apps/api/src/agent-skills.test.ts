@@ -49,9 +49,18 @@ function setup(rows: ReturnType<typeof savedSkill>[] = []) {
       return { count: 1 };
     }),
   };
+  const prisma = {
+    agentSkill,
+    // The space lock and its membership check, for creates and renames.
+    $queryRaw: vi.fn(async () => []),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    spaceMember: {
+      findUnique: vi.fn(async () => ({ organizationId: "org-1", space: { deletingAt: null } })),
+    },
+  };
   return {
     agentSkill,
-    service: createAgentSkillsService({ agentSkill } as unknown as PrismaClient),
+    service: createAgentSkillsService(prisma as unknown as PrismaClient),
   };
 }
 
@@ -97,20 +106,31 @@ describe("built-in skill precedence in the API", () => {
     expect(agentSkill.deleteMany).not.toHaveBeenCalled();
   });
 
-  it.each([{ spaceId: "other-space" }, { userId: "other-user" }])(
-    "does not let foreign skills shadow the builtin: %j",
-    async (foreignOwner) => {
-      const { service } = setup([{ ...savedSkill(" Interrogate "), ...foreignOwner }]);
-      await expect(service.get(actor, { name: "interrogate" })).resolves.toMatchObject({
-        id: "builtin:Interrogate",
-        readOnly: true,
-      });
-      await expect(service.list(actor)).resolves.toEqual([
-        expect.objectContaining({ id: "builtin:Interrogate" }),
-      ]);
-      await expect(service.get(actor, { skillId: "saved-1" })).rejects.toThrow();
-    },
-  );
+  it("does not let another space's skills shadow the builtin", async () => {
+    const { service } = setup([{ ...savedSkill(" Interrogate "), spaceId: "other-space" }]);
+    await expect(service.get(actor, { name: "interrogate" })).resolves.toMatchObject({
+      id: "builtin:Interrogate",
+      readOnly: true,
+    });
+    await expect(service.list(actor)).resolves.toEqual([
+      expect.objectContaining({ id: "builtin:Interrogate" }),
+    ]);
+    await expect(service.get(actor, { skillId: "saved-1" })).rejects.toThrow();
+  });
+
+  it("shares a skill another member of the space saved", async () => {
+    const { service } = setup([{ ...savedSkill("Weekly report"), userId: "other-user" }]);
+    await expect(service.get(actor, { skillId: "saved-1" })).resolves.toMatchObject({
+      name: "Weekly report",
+    });
+  });
+
+  it("makes the member who edits a skill its owner", async () => {
+    const rows = [{ ...savedSkill("Weekly report"), userId: "other-user" }];
+    const { service } = setup(rows);
+    await service.update(actor, { skillId: "saved-1", body: "New steps" });
+    expect(rows[0]).toMatchObject({ userId: actor.userId });
+  });
 });
 
 describe("imported skill content in the API", () => {

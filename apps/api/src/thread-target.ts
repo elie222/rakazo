@@ -33,7 +33,8 @@ import {
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   IsolationError,
-  lockOwnedGroup,
+  loadMessageAuthor,
+  lockSpaceGroup,
   primaryActiveRun,
   retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
@@ -72,6 +73,14 @@ const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
 /** Background work holds pending steering; paused cards never hold the queue. */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
+}
+
+/** A run acts with its sender's accounts, so only that person's messages may steer it. */
+function steersMessageFrom(
+  run: { status: string; trigger?: string | null; userId: string },
+  actor: Actor,
+) {
+  return steersUserMessage(run) && run.userId === actor.userId;
 }
 
 type MentionTargetInput = string | { kind: "bot" | "group" | "routine" | "connector"; id: string };
@@ -261,12 +270,11 @@ async function lockAndLoadGroupMembers(
   actor: Actor,
   target: Extract<ThreadTarget, { kind: "group" }>,
 ) {
-  await lockOwnedGroup(tx, actor, target.groupId);
+  await lockSpaceGroup(tx, actor, target.groupId);
   const group = await tx.chatGroup.findFirst({
     where: {
       id: target.groupId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       archivedAt: null,
       thread: { id: target.threadId },
     },
@@ -658,13 +666,14 @@ export async function sendThreadMessage(
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
+      const author = await loadMessageAuthor(tx, actor.userId);
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true, blocks: true, role: true, botId: true },
+          select: { id: true, blocks: true, role: true, botId: true, authorUserId: true },
         });
         // A missing target must not lose the send or retain an unverified id.
         // The empty server-owned quote preserves the unavailable state after reload.
@@ -680,6 +689,7 @@ export async function sendThreadMessage(
               parsed.data,
               reply.role as ReplyPreview["role"],
               reply.botId ?? undefined,
+              await loadMessageAuthor(tx, reply.authorUserId),
             );
             // Attachment labels stay in the preview; only selected text is persisted as a quote.
             if (!requestedReplyQuote && !replyPreview.attachment) {
@@ -721,6 +731,7 @@ export async function sendThreadMessage(
         const message = await createThreadMessageInTransaction(tx, {
           threadId: target.threadId,
           role: "user",
+          authorUserId: actor.userId,
           blocks,
           replyToMessageId,
           replyQuote,
@@ -732,10 +743,13 @@ export async function sendThreadMessage(
             botId: target.botId,
             status: { in: [...ACTIVE_RUN_STATUSES] },
           },
-          select: { id: true, taskId: true, status: true, trigger: true },
+          select: { id: true, taskId: true, status: true, trigger: true, userId: true },
         });
         const answered: typeof activeRuns = [];
-        for (const run of activeRuns.filter((run) => run.status === "waiting_input")) {
+        // Someone else's question stays on its card; this message starts the sender's own run.
+        for (const run of activeRuns.filter(
+          (run) => run.status === "waiting_input" && run.userId === actor.userId,
+        )) {
           if (
             await answerWaitingRunWithTextInTransaction(tx, {
               spaceId: actor.spaceId,
@@ -771,6 +785,7 @@ export async function sendThreadMessage(
               seq: message.seq,
               role: "user",
               blocks,
+              author,
               callId,
               runIds: answered.map((run) => run.id),
               replyToMessageId,
@@ -783,14 +798,17 @@ export async function sendThreadMessage(
         const holdingRuns = activeRuns.filter((run) =>
           QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
         );
-        const active = holdingRuns.find(steersUserMessage) ?? holdingRuns[0];
+        const active =
+          holdingRuns.find((run) => steersMessageFrom(run, actor)) ??
+          holdingRuns.find(steersUserMessage) ??
+          holdingRuns[0];
         if (active) {
           await tx.steeringMessage.create({
             data: {
               messageId: message.id,
               botId: target.botId,
               userId: actor.userId,
-              runId: steersUserMessage(active) ? active.id : null,
+              runId: steersMessageFrom(active, actor) ? active.id : null,
             },
           });
           await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
@@ -805,6 +823,7 @@ export async function sendThreadMessage(
               seq: message.seq,
               role: "user",
               blocks,
+              author,
               callId,
               replyToMessageId,
               replyQuote,
@@ -853,6 +872,7 @@ export async function sendThreadMessage(
             seq: message.seq,
             role: "user",
             blocks,
+            author,
             callId,
             runIds: [run.id],
             replyToMessageId,
@@ -887,6 +907,7 @@ export async function sendThreadMessage(
       const message = await createThreadMessageInTransaction(tx, {
         threadId: target.threadId,
         role: "user",
+        authorUserId: actor.userId,
         blocks,
         replyToMessageId,
         replyQuote,
@@ -898,12 +919,14 @@ export async function sendThreadMessage(
           botId: { in: targetBotIds },
           status: { in: [...ACTIVE_RUN_STATUSES] },
         },
-        select: { id: true, taskId: true, botId: true, status: true, trigger: true },
+        select: { id: true, taskId: true, botId: true, status: true, trigger: true, userId: true },
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
+          // Someone else's question stays on its card; this message starts the sender's own run.
+          if (run.userId !== actor.userId) continue;
           const answered = await answerWaitingRunWithTextInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
@@ -929,11 +952,18 @@ export async function sendThreadMessage(
         }
         if (!STEERABLE_RUN_STATUSES.has(run.status)) continue;
         const current = activeByBotId.get(run.botId);
-        if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
-          activeByBotId.set(run.botId, run);
-        }
+        const rank = (candidate: typeof run) =>
+          steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
+        if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }
-      const runs: Array<{ id: string; taskId: string; botId: string; status: string }> = [];
+      const runs: Array<{
+        id: string;
+        taskId: string;
+        botId: string;
+        status: string;
+        userId: string;
+        trigger?: string | null;
+      }> = [];
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
@@ -947,7 +977,7 @@ export async function sendThreadMessage(
               messageId: message.id,
               botId,
               userId: actor.userId,
-              runId: steersUserMessage(active) ? active.id : null,
+              runId: steersMessageFrom(active, actor) ? active.id : null,
             },
           });
           runs.push(active);
@@ -1006,6 +1036,7 @@ export async function sendThreadMessage(
           seq: message.seq,
           role: "user",
           blocks,
+          author,
           callId,
           runIds: runs.map((run) => run.id),
           replyToMessageId,
@@ -1033,7 +1064,7 @@ export async function sendThreadMessage(
   });
   if (releaseTakeover) {
     for (const run of committed.runs) {
-      if (steersUserMessage(run)) await releaseTakeover(run.id);
+      if (steersMessageFrom(run, actor)) await releaseTakeover(run.id);
     }
   }
   await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
@@ -1099,9 +1130,11 @@ export async function reactToThreadMessage(
       (currentTarget.kind === "bot" ? currentTarget.botId : currentTarget.memberBotIds[0]);
     if (!botId) throw new IsolationError();
     const blocks: MessageBlock[] = [{ kind: "text", text: input.reaction }];
+    const author = await loadMessageAuthor(tx, actor.userId);
     const message = await createThreadMessageInTransaction(tx, {
       threadId: target.threadId,
       role: "user",
+      authorUserId: actor.userId,
       blocks,
       replyToMessageId: parent.id,
       clientNonce: input.clientNonce,
@@ -1123,6 +1156,7 @@ export async function reactToThreadMessage(
         messageId: message.id,
         role: "user",
         blocks,
+        author,
         replyToMessageId: parent.id,
         ...(runs.length ? { runIds: runs.map((run) => run.id) } : {}),
       },
@@ -1176,7 +1210,7 @@ async function startReactionTurn(
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
-    select: { id: true, taskId: true, status: true },
+    select: { id: true, taskId: true, status: true, userId: true },
   });
   const holdingRuns = activeRuns.filter((run) =>
     QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
@@ -1192,7 +1226,8 @@ async function startReactionTurn(
       input.reaction === "👍" &&
       !others.length &&
       active.status === "waiting_takeover" &&
-      active.id === parent.runId
+      active.id === parent.runId &&
+      active.userId === actor.userId
     ) {
       await tx.steeringMessage.create({
         data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },
@@ -1434,7 +1469,7 @@ export async function markThreadRead(
   actor: Actor,
   target: ThreadTarget,
 ): Promise<number | null> {
-  const where = { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId };
+  const where = { id: target.threadId, spaceId: actor.spaceId };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const thread = await prisma.thread.findFirst({
       where,
@@ -1490,7 +1525,7 @@ export async function markThreadUnreadFrom(
   });
   if (!message) throw new ORPCError("NOT_FOUND");
   const result = await prisma.thread.updateMany({
-    where: { id: target.threadId, spaceId: actor.spaceId, userId: actor.userId },
+    where: { id: target.threadId, spaceId: actor.spaceId },
     data: { unread: true, lastReadSeq: message.seq - 1 },
   });
   if (result.count > 1) throw new IsolationError();
@@ -1506,7 +1541,6 @@ export async function setThreadUnreadState(
     where: {
       id: target.threadId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       unread: { not: unread },
     },
     data: { unread },

@@ -101,6 +101,7 @@ async function runTurn(
   const savedEvents: AppendEventInput[] = [];
   let failMessage = options.failMessageOnce;
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),

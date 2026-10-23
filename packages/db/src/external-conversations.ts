@@ -18,12 +18,11 @@ interface ExternalBotSenderRow {
 
 export function createExternalConversationRepos(prisma: PrismaClient) {
   return {
-    async listForSpaces(actor: Actor, spaceIds: string[]): Promise<ExternalConversation[]> {
+    async listForSpaces(spaceIds: string[]): Promise<ExternalConversation[]> {
       if (spaceIds.length === 0) return [];
       const rows = await prisma.externalConversation.findMany({
         where: {
           spaceId: { in: spaceIds },
-          userId: actor.userId,
           bot: { archivedAt: null },
           thread: { isNot: null },
         },
@@ -115,6 +114,8 @@ export function createExternalConversationRepos(prisma: PrismaClient) {
       externalConversationId: string,
       policy: ExternalConversationPolicy,
     ): Promise<ExternalConversationPolicy> {
+      // Visible to the whole space, but the policy decides when the bot acts with the
+      // linking member's chat connection, so only that member changes it.
       const result = await prisma.externalConversation.updateMany({
         where: {
           id: externalConversationId,

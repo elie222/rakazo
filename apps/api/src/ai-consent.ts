@@ -57,9 +57,9 @@ export async function aiConsentStatus(
       : [],
     modelsEnabled ? findDefaultModelCredential(deps.prisma, actor) : null,
     modelsEnabled
-      ? deps.prisma.bot.findMany({
+      ? // Any bot in the space runs on this member's credentials when they message it.
+        deps.prisma.bot.findMany({
           where: {
-            userId: actor.userId,
             spaceId: actor.spaceId,
             archivedAt: null,
             ...(botIds ? { id: { in: botIds } } : {}),

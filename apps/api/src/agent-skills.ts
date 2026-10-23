@@ -9,7 +9,8 @@ import {
   parseSkillMd,
   type SkillSource,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { IsolationError, lockSpaceForContentCreation } from "@rakazo/db";
 
 type AgentSkillRow = {
   id: string;
@@ -118,13 +119,13 @@ export function resolveSkillContent(input: {
   };
 }
 
+/** Skills are the space's: every member's bots see and edit the same set. */
 export function createAgentSkillsService(prisma: PrismaClient) {
   async function owned(actor: Actor, skillId: string) {
     const row = await prisma.agentSkill.findFirst({
       where: {
         id: skillId,
         spaceId: actor.spaceId,
-        userId: actor.userId,
       },
     });
     if (!row) throw new IsolationError();
@@ -134,7 +135,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
   return {
     async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
       const rows = await prisma.agentSkill.findMany({
-        where: { spaceId: actor.spaceId, userId: actor.userId },
+        where: { spaceId: actor.spaceId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(
@@ -144,7 +145,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {
       const rows = await prisma.agentSkill.findMany({
-        where: { spaceId: actor.spaceId, userId: actor.userId },
+        where: { spaceId: actor.spaceId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));
@@ -163,7 +164,6 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       const rows = await prisma.agentSkill.findMany({
         where: {
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
@@ -179,40 +179,25 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       input: { content?: string; name?: string; description?: string; body?: string },
     ): Promise<AgentSkill> {
       const resolved = resolveSkillContent(input);
-      const clash = await prisma.agentSkill.findFirst({
-        where: {
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          name: { equals: resolved.name, mode: "insensitive" },
-        },
-      });
-      if (
-        clash ||
-        builtinCatalog().some((s) => s.name.toLowerCase() === resolved.name.toLowerCase())
-      ) {
-        throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
-      }
       try {
-        const row = await prisma.agentSkill.create({
-          data: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            name: resolved.name,
-            description: resolved.description,
-            content: resolved.content,
-            source: "user",
-          },
+        // Names are unique per space: the lock makes the check and the write one step.
+        const row = await prisma.$transaction(async (tx) => {
+          await lockSpaceForContentCreation(tx, actor);
+          await assertSkillNameFree(tx, actor, resolved.name);
+          return tx.agentSkill.create({
+            data: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              name: resolved.name,
+              description: resolved.description,
+              content: resolved.content,
+              source: "user",
+            },
+          });
         });
         return mapAgentSkill(row);
       } catch (error) {
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code?: string }).code === "P2002"
-        ) {
-          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
-        }
-        throw error;
+        throw skillNameConflict(error);
       }
     },
 
@@ -231,54 +216,32 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         throw new ORPCError("BAD_REQUEST", { message: "Builtin and plugin skills are read-only." });
       }
       const resolved = resolveSkillContent({ ...input, prior: existing });
-      if (!findSkillByName([existing], resolved.name)) {
-        const clash = await prisma.agentSkill.findFirst({
-          where: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            name: { equals: resolved.name, mode: "insensitive" },
-            NOT: { id: existing.id },
-          },
-        });
-        if (
-          clash ||
-          builtinCatalog().some((s) => s.name.toLowerCase() === resolved.name.toLowerCase())
-        ) {
-          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
-        }
-      }
-      // Mutate only owner-scoped user rows (never builtin/plugin), even if source was tampered.
       try {
-        const updated = await prisma.agentSkill.updateMany({
-          where: {
-            id: existing.id,
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            source: "user",
-          },
-          data: {
-            name: resolved.name,
-            description: resolved.description,
-            content: resolved.content,
-          },
+        await prisma.$transaction(async (tx) => {
+          await lockSpaceForContentCreation(tx, actor);
+          if (!findSkillByName([existing], resolved.name)) {
+            await assertSkillNameFree(tx, actor, resolved.name, existing.id);
+          }
+          // Mutate only the space's user rows (never builtin/plugin), even if source was tampered.
+          const updated = await tx.agentSkill.updateMany({
+            where: { id: existing.id, spaceId: actor.spaceId, source: "user" },
+            // The editor owns what it now says, so routines run it only on the editor's accounts.
+            data: {
+              userId: actor.userId,
+              name: resolved.name,
+              description: resolved.description,
+              content: resolved.content,
+            },
+          });
+          if (updated.count !== 1) throw new IsolationError();
         });
-        if (updated.count !== 1) throw new IsolationError();
       } catch (error) {
-        if (error instanceof IsolationError) throw error;
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code?: string }).code === "P2002"
-        ) {
-          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
-        }
-        throw error;
+        throw skillNameConflict(error);
       }
       const row = await prisma.agentSkill.findFirst({
         where: {
           id: existing.id,
           spaceId: actor.spaceId,
-          userId: actor.userId,
         },
       });
       if (!row) throw new IsolationError();
@@ -294,7 +257,6 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         where: {
           id: existing.id,
           spaceId: actor.spaceId,
-          userId: actor.userId,
           source: "user",
         },
       });
@@ -305,3 +267,30 @@ export function createAgentSkillsService(prisma: PrismaClient) {
 }
 
 export type AgentSkillsService = ReturnType<typeof createAgentSkillsService>;
+
+const SKILL_NAME_TAKEN = "A skill with that name already exists.";
+
+async function assertSkillNameFree(
+  tx: Pick<PrismaClient, "agentSkill">,
+  actor: Actor,
+  name: string,
+  exceptId?: string,
+): Promise<void> {
+  const clash = await tx.agentSkill.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      name: { equals: name, mode: "insensitive" },
+      ...(exceptId ? { NOT: { id: exceptId } } : {}),
+    },
+  });
+  if (clash || builtinCatalog().some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+    throw new ORPCError("CONFLICT", { message: SKILL_NAME_TAKEN });
+  }
+}
+
+function skillNameConflict(error: unknown): unknown {
+  if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
+    return new ORPCError("CONFLICT", { message: SKILL_NAME_TAKEN });
+  }
+  return error;
+}

@@ -411,6 +411,15 @@ function LayoutContent() {
                         headerBackVisible: false,
                       }}
                     />
+                    <Stack.Screen
+                      name="space-members"
+                      options={{
+                        title: t("Members"),
+                        presentation: "modal",
+                        gestureEnabled: true,
+                        headerBackVisible: false,
+                      }}
+                    />
                     <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                     <Stack.Screen

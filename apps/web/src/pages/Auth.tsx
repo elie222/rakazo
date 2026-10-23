@@ -13,6 +13,7 @@ import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
+import { signInNext } from "../lib/sign-in-next";
 import { runSsoFlow } from "../lib/sso-flow";
 import { authErrorText, credentialIssueText } from "../lib/user-error";
 
@@ -26,6 +27,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const next = signInNext(searchParams.get("next"));
+  // Switching between sign-in and sign-up keeps where the person was going.
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -179,13 +183,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
 
   function enterApp() {
     clearSpaceSelection();
-    navigate(
-      mode === "up"
-        ? "/onboarding"
-        : searchParams.get("next") === "/integrations/setup"
-          ? "/integrations/setup"
-          : "/app",
-    );
+    navigate(next ?? (mode === "up" ? "/onboarding" : "/app"));
   }
 
   function chooseMethod(next: "code" | "password") {
@@ -203,13 +201,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           authClient.signIn.social({
             disableRedirect,
             provider: "oidc",
-            newUserCallbackURL: callbackURL("/onboarding"),
-            callbackURL: callbackURL(
-              searchParams.get("next") === "/integrations/setup" ? "/integrations/setup" : "/app",
-            ),
+            newUserCallbackURL: callbackURL(next ?? "/onboarding"),
+            callbackURL: callbackURL(next ?? "/app"),
             errorCallbackURL: callbackURL("/sign-in"),
           }),
-        ["/app", "/onboarding", "/integrations/setup", "/sign-in"],
+        ["/app", "/onboarding", "/integrations/setup", "/sign-in", ...(next ? [next] : [])],
       );
       if (result.error) setError(authErrorText(result.error, t`Could not continue`));
     } catch {
@@ -413,14 +409,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
-                      <Link to="/sign-up" className="font-medium text-foreground">
+                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
                         <Trans>Sign up</Trans>
                       </Link>
                     </>
                   ) : mode === "up" ? (
                     <>
                       <Trans>Already have an account?</Trans>{" "}
-                      <Link to="/sign-in" className="font-medium text-foreground">
+                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
                         <Trans>Sign in</Trans>
                       </Link>
                     </>

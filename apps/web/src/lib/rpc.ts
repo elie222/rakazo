@@ -93,6 +93,9 @@ const link = new RPCLink<RpcClientContext>({
     }
     // Server exceptions are reported by the API; do not report every HTTP failure twice.
     recheckSessionOnUnauthorized(response.status);
+    if (response.status === 401 && spaceId && spaceId === selectedSpaceId()) {
+      void leaveUnavailableSpace(request.url, spaceId);
+    }
     for (const listener of responseListeners) listener(response);
     return response;
   },
@@ -105,6 +108,32 @@ const link = new RPCLink<RpcClientContext>({
  */
 export function recheckSessionOnUnauthorized(status: number): void {
   if (status === 401) authClient.$store.notify("$sessionSignal");
+}
+
+let leavingSpace: Promise<void> | null = null;
+
+/**
+ * A 401 for the selected space may mean only that space is gone (deleted, or the
+ * person was removed from it). If the session still works without it, drop the
+ * selection and reopen the app in a space the person still belongs to.
+ */
+function leaveUnavailableSpace(rpcUrl: string, spaceId: string): Promise<void> {
+  leavingSpace ??= fetch(new URL("/rpc/me", rpcUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ json: null }),
+    credentials: "include",
+  })
+    .then((probe) => {
+      if (!probe.ok || selectedSpaceId() !== spaceId) return;
+      clearSpaceSelection();
+      window.location.assign("/app");
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      leavingSpace = null;
+    });
+  return leavingSpace;
 }
 
 export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;

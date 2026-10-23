@@ -161,6 +161,10 @@ msgstr ""
 msgid "{hours}h ago"
 msgstr "{hours} 小时前"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr "{inviterName} 邀请了你"
+
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "{minutes} 分钟前"
@@ -329,6 +333,10 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "什么都做一点"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
+msgstr "机器人会使用给它发消息的人的账户，这里的每个人都能看到它的回复。"
+
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr "命令的输出"
@@ -387,6 +395,10 @@ msgstr "{name} 的账户菜单"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Actions for space"
@@ -1010,6 +1022,7 @@ msgstr "无法读取图像"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1383,7 +1396,7 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Confirmations"
-msgstr ""
+msgstr "确认"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1514,6 +1527,10 @@ msgstr "复制"
 msgid "Copy .env example"
 msgstr ""
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "无法添加"
@@ -1603,6 +1620,10 @@ msgstr "无法创建 Bot"
 msgid "Could not create group"
 msgstr "无法创建群组"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "无法创建分组"
@@ -1684,6 +1705,10 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not install connector"
 msgstr "无法安装连接器"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1726,6 +1751,10 @@ msgstr "无法加载集成"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "无法加载 MCP 服务器"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -1796,6 +1825,10 @@ msgstr "无法移除"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "无法移除连接器"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -2463,6 +2496,10 @@ msgstr "每月"
 msgid "Every week"
 msgstr "每周"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone in this space sees all its chats, bots and memory."
+msgstr "此空间中的每个人都能看到其中所有的聊天、机器人和记忆。"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "Executor 令牌"
@@ -2870,6 +2907,18 @@ msgstr "间隔单位"
 msgid "Invalid code"
 msgstr "验证码无效"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr "邀请"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr "邀请链接已复制"
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
@@ -2886,6 +2935,14 @@ msgstr "其中的 Bot 和群组会保留，并移出该分组。"
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "它的对话、文件和例行任务将被永久删除。它创建的 Bot 仍留在列表中。"
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr "加入"
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr "加入 {spaceName}"
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -2925,9 +2982,19 @@ msgstr "上次检查 {0}：无变化"
 msgid "Later"
 msgstr ""
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "退出"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr "退出空间"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3006,8 +3073,10 @@ msgstr "正在加载规则…"
 msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3135,6 +3204,12 @@ msgstr ""
 
 #: src/lib/identity-display.ts
 msgid "Member"
+msgstr "成员"
+
+#: src/components/SpaceMembersSettings.tsx
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Members"
 msgstr "成员"
 
 #. placeholder {0}: selected.length
@@ -3685,6 +3760,10 @@ msgstr "在完整窗口中打开"
 msgid "Open navigation"
 msgstr "打开导航"
 
+#: src/pages/Invite.tsx
+msgid "Open Rakazo"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "待办"
@@ -3739,6 +3818,7 @@ msgstr "原消息不可用"
 msgid "Other model…"
 msgstr "其他模型…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4060,6 +4140,7 @@ msgid "Reload"
 msgstr "重新加载"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4080,6 +4161,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
 msgstr "移除 {full}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
@@ -4252,6 +4337,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4967,6 +5053,10 @@ msgstr ""
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "这台 Mac"
@@ -5519,6 +5609,10 @@ msgstr "你的 OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "你的 OpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private."
+msgstr "你的其他空间仍保持私密。"
 
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"

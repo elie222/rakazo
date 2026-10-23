@@ -80,7 +80,6 @@ export async function attachWorkspaceFileToThread(
     deps.prisma,
     {
       spaceId: input.spaceId,
-      userId: input.userId,
       botId: input.botId,
       groupId: input.groupId,
       name,
@@ -131,7 +130,6 @@ async function attachedArtifacts(
     where: {
       id: { in: blocks.map((block) => block.artifactId) },
       spaceId: context.spaceId,
-      userId: context.userId,
     },
   });
   return new Map(rows.map((row) => [row.id, row]));

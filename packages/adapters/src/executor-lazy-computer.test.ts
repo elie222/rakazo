@@ -91,6 +91,7 @@ async function runRoutine(
     yield { type: "done" as const, text: "Inbox is clear." };
   });
   const prisma = {
+    spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),

@@ -187,7 +187,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
   it("bounds cross-space rows and never includes another user's bots", async () => {
     const start = reads.length;
     const bots = await runAsSystem("cross-space roster", () =>
-      createRepos(prisma).listSpaceBotsForSpaces(actorFor(owner.spaceId), [otherSpace]),
+      createRepos(prisma).listSpaceBotsForSpaces([otherSpace]),
     );
     expect(bots.map(({ name, status }) => ({ name, status }))).toEqual(
       expected.map(({ name, status }) => ({ name, status })),
@@ -198,17 +198,7 @@ describePostgres("bounded latest bot roster runs (PostgreSQL)", () => {
     ).toBe(true);
     expect(reads.slice(start).reduce((a, b) => a + b, 0)).toBe(4);
     await expect(
-      runAsSystem("cross-space roster", () =>
-        createRepos(prisma).listSpaceBotsForSpaces(
-          { ...actorFor(owner.spaceId), userId: "unrelated-user" },
-          [owner.spaceId, otherSpace],
-        ),
-      ),
-    ).resolves.toEqual([]);
-    await expect(
-      runAsTenant(owner, () =>
-        createRepos(prisma).listSpaceBotsForSpaces(actorFor(owner.spaceId), [otherSpace]),
-      ),
+      runAsTenant(owner, () => createRepos(prisma).listSpaceBotsForSpaces([otherSpace])),
     ).resolves.toEqual([]);
   });
 });

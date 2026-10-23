@@ -147,7 +147,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       (
         await searchHistory(
           prisma,
-          { ...historicalScope, userId: "foreign-user" },
+          { ...historicalScope, spaceId: "foreign-space" },
           broad.nextSearch!,
         )
       ).messages,
@@ -316,7 +316,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       (
         await readHistory(
           prisma,
-          { ...groupScope, userId: "outsider-user" },
+          { ...groupScope, spaceId: "outsider-space" },
           { messageId: "group-source" },
         )
       ).messages,
@@ -473,7 +473,7 @@ postgres("history retrieval (PostgreSQL)", () => {
     expect(read.runs.map((run) => run.id)).toEqual(["run-a"]);
     expect(read.runs[0]!.outcomes[0]!.text).toBe("exports completed");
     expect(
-      (await searchHistory(prisma, { ...scope, userId: "outsider" }, { query: "exports" }))
+      (await searchHistory(prisma, { ...scope, spaceId: "outsider-space" }, { query: "exports" }))
         .messages,
     ).toEqual([]);
     expect(

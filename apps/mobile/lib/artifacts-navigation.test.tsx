@@ -144,7 +144,11 @@ it.each([false, true])(
     );
     const events: string[] = [];
     const unregister = registerSettingsSheet(() => events.push("close"));
-    const router = { push: vi.fn((href: string) => events.push(href)) };
+    const router = {
+      push: vi.fn((href: string | { pathname: string }) =>
+        events.push(typeof href === "string" ? href : href.pathname),
+      ),
+    };
     const container = document.createElement("div");
     const root = createRoot(container);
     const render = (pending: boolean) =>
@@ -154,7 +158,8 @@ it.each([false, true])(
         SettingsRow: Button,
         t,
         pending,
-        me: { isDeploymentOwner },
+        me: { isDeploymentOwner, spaceId: "space-1" },
+        selectedSpaceId: () => null,
         router,
         isSettingsLink,
         openFromSettingsSheet,
@@ -163,6 +168,7 @@ it.each([false, true])(
       act(() => root.render(render(false)));
       const rows = Array.from(container.querySelectorAll("button"));
       expect(rows.map((row) => row.textContent)).toEqual([
+        "Members",
         "Artifacts",
         "Models",
         "Voice",
@@ -172,9 +178,16 @@ it.each([false, true])(
       expect(rows[0]!.getAttribute("role")).toBe("button");
       expect(rows[0]!.dataset.chevron).toBe("right");
       act(() => rows[0]!.click());
-      expect(events).toEqual(["close", "/artifacts"]);
+      expect(events).toEqual(["close", "/space-members"]);
+      expect(router.push).toHaveBeenLastCalledWith({
+        pathname: "/space-members",
+        params: { spaceId: "space-1" },
+      });
       events.length = 0;
       act(() => rows[1]!.click());
+      expect(events).toEqual(["close", "/artifacts"]);
+      events.length = 0;
+      act(() => rows[2]!.click());
       expect(events).toEqual(["/models"]);
       act(() => root.render(render(true)));
       expect(container.querySelector("button")!.disabled).toBe(true);

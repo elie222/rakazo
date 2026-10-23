@@ -14,7 +14,15 @@ import {
   ContextMenuTrigger,
   GroupAvatar,
 } from "@rakazo/ui-web";
-import { ChevronDown, CircleAlert, Lock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  CircleAlert,
+  Lock,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Users,
+} from "lucide-react";
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { Suspense } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
@@ -185,7 +193,11 @@ export function SidebarRoster({
                     >
                       <span className="flex min-w-0 items-center gap-1.5 truncate">
                         {group.showLock ? (
-                          <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                          group.shared ? (
+                            <Users size={11} strokeWidth={2} aria-hidden="true" />
+                          ) : (
+                            <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                          )
                         ) : null}
                         <span className="truncate">{group.title}</span>
                       </span>

@@ -241,7 +241,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
   it("previews the newest message of each bot in another space and reads at most one message row per thread", async () => {
     const { result: listed, rowCount } = await messageRowsDuring("listSpaceBotsForSpaces", () =>
       runAsSystem("space navigation across the member's Spaces", () =>
-        createRepos(prisma).listSpaceBotsForSpaces(actor, [spaceB]),
+        createRepos(prisma).listSpaceBotsForSpaces([spaceB]),
       ),
     );
     expect(
@@ -262,7 +262,7 @@ describePostgres("cross-space bot sidebar previews (PostgreSQL)", () => {
       "listSpaceBotsForSpaces empty",
       () =>
         runAsSystem("space navigation across the member's Spaces", () =>
-          createRepos(prisma).listSpaceBotsForSpaces(actor, []),
+          createRepos(prisma).listSpaceBotsForSpaces([]),
         ),
     );
     expect(result).toEqual([]);

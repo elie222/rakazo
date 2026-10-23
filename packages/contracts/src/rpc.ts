@@ -85,6 +85,9 @@ import {
   ServerUpdateStatusSchema,
   SignupSurveySchema,
   SkillPlaybookSchema,
+  SpaceInviteLinkSchema,
+  SpaceInvitePreviewSchema,
+  SpaceMembersSchema,
   SpaceMemoryConfigSchema,
   SpaceNavigationSchema,
   SpaceSchema,
@@ -234,6 +237,27 @@ export const appContract = {
     remove: oc
       .input(z.object({ spaceId: Id }))
       .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    members: {
+      list: oc.input(z.object({ spaceId: Id })).output(SpaceMembersSchema),
+      /** Owner only. The removed person's bots, chats and routines stay with the space. */
+      remove: oc
+        .input(z.object({ spaceId: Id, userId: Id }))
+        .output(z.object({ ok: z.literal(true) })),
+      /** Members only; an owner deletes the space instead. */
+      leave: oc
+        .input(z.object({ spaceId: Id }))
+        .output(z.object({ ok: z.literal(true), activeSpaceId: Id })),
+    },
+    invites: {
+      /** Owner only. A new single-use link each call. */
+      create: oc.input(z.object({ spaceId: Id })).output(SpaceInviteLinkSchema),
+      preview: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(SpaceInvitePreviewSchema),
+      accept: oc
+        .input(z.object({ token: z.string().min(1).max(200) }))
+        .output(z.object({ spaceId: Id })),
+    },
   },
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
   deployment: {

@@ -1,6 +1,7 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
+import { payloadAuthor } from "./message-replies.js";
 
 export function projectMessages(
   events: Array<{
@@ -80,6 +81,7 @@ export function projectMessages(
         role,
         blocks,
         botId: event.botId ?? undefined,
+        ...payloadAuthor(payload),
         runId: event.runId ?? undefined,
         createdAt,
       });

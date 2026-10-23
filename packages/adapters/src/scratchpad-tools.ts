@@ -105,11 +105,9 @@ export async function addScratchpadItemFromTool(
   return { item: mapScratchpadItem(row) };
 }
 
-function scratchpadItemScope(
-  input: { spaceId: string; botId: string; userId: string },
-  id: string,
-) {
-  return { id, spaceId: input.spaceId, botId: input.botId, userId: input.userId };
+/** Items are the bot's, shared by every member of its space. */
+function scratchpadItemScope(input: { spaceId: string; botId: string }, id: string) {
+  return { id, spaceId: input.spaceId, botId: input.botId };
 }
 
 export async function updateScratchpadItemFromTool(

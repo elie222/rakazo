@@ -339,12 +339,49 @@ export const SpaceSchema = z.object({
   canRename: z.boolean().optional(),
   /** True only when the current member may delete this non-default space. */
   canDelete: z.boolean().optional(),
+  /** True when more than one person belongs to the space. */
+  shared: z.boolean().optional(),
   bots: z.array(SpaceBotSchema),
   groups: z.array(SpaceGroupSchema),
   externalConversations: z.array(ExternalConversationSchema),
   botSections: z.array(BotSectionSchema),
 });
 export type Space = z.infer<typeof SpaceSchema>;
+
+export const SpaceRoleSchema = z.enum(["owner", "member"]);
+export type SpaceRole = z.infer<typeof SpaceRoleSchema>;
+
+export const SpaceMemberSchema = z.object({
+  userId: Id,
+  name: z.string(),
+  email: z.string(),
+  image: z.string().nullable(),
+  role: SpaceRoleSchema,
+});
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMembersSchema = z.object({
+  spaceName: z.string(),
+  members: z.array(SpaceMemberSchema),
+  /** True when the current member owns the space and may invite or remove people. */
+  canManage: z.boolean(),
+});
+export type SpaceMembers = z.infer<typeof SpaceMembersSchema>;
+
+export const SpaceInviteLinkSchema = z.object({
+  url: z.string().url(),
+  expiresAt: z.string(),
+});
+export type SpaceInviteLink = z.infer<typeof SpaceInviteLinkSchema>;
+
+export const SpaceInvitePreviewSchema = z.object({
+  spaceId: Id,
+  spaceName: z.string(),
+  inviterName: z.string(),
+  /** True when the signed-in person already belongs to the space. */
+  alreadyMember: z.boolean(),
+});
+export type SpaceInvitePreview = z.infer<typeof SpaceInvitePreviewSchema>;
 
 export const SpaceNavigationSchema = z.object({
   current: z.object({

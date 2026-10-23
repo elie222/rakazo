@@ -98,12 +98,14 @@ import {
   describeRowSecurity,
   IsolationError,
   installSecurityEventStore,
+  isOwnerRole,
   parsePositiveInteger,
   provisionMessagingIdentity,
   pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  SpaceOwnerRequiredError,
   securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
@@ -484,8 +486,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     beforeDeleteUser: async (userId) => {
       // First, so a provider failure aborts deletion before anything is destroyed.
       await billing?.cancelForDeletedUser(userId);
-      const bots = await prisma.bot.findMany({
+      // Every bot in the organizations the account owns goes with them, whoever
+      // made it; bots they made in someone else's shared Space pass to its owner.
+      const owned = await prisma.member.findMany({
         where: { userId },
+        select: { organizationId: true, role: true },
+      });
+      const bots = await prisma.bot.findMany({
+        where: {
+          space: {
+            organizationId: {
+              in: owned.filter(({ role }) => isOwnerRole(role)).map((m) => m.organizationId),
+            },
+          },
+        },
         select: { id: true, userId: true, spaceId: true, name: true, archivedAt: true },
       });
       await Promise.all(
@@ -497,7 +511,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
               operationId: `account-delete:${userId}`,
               traceId: `account-delete:${userId}`,
               spaceId: bot.spaceId,
-              userId,
+              userId: bot.userId,
               botId: bot.id,
               signal: new AbortController().signal,
             },
@@ -1247,6 +1261,9 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
   if (error instanceof IsolationError) {
     getLogger().warn(`rpc ${path.join("/")} not found`, { "error.stack": error.stack });
     throw new ORPCError("NOT_FOUND", { message: error.message, cause: error });
+  }
+  if (error instanceof SpaceOwnerRequiredError) {
+    throw new ORPCError("FORBIDDEN", { message: error.message, cause: error });
   }
   // The user's own voice account is out of credit or rejected the key: theirs to fix.
   if (error instanceof VoiceAccountError) {

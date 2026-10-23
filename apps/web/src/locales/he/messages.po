@@ -161,6 +161,10 @@ msgstr "{hidden, plural, one {+# שלב קודם} other {+# שלבים קודמ�
 msgid "{hours}h ago"
 msgstr "לפני {hours} שע׳"
 
+#: src/pages/Invite.tsx
+msgid "{inviterName} invited you"
+msgstr ""
+
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
 msgstr "לפני {minutes} דק׳"
@@ -329,6 +333,10 @@ msgstr ""
 msgid "A bit of everything"
 msgstr "קצת מהכול"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "A bot uses the accounts of whoever messages it, and anyone here can read its reply."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "A command's output"
 msgstr ""
@@ -387,6 +395,10 @@ msgstr "תפריט החשבון של {name}"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Actions for {0}"
 msgstr "פעולות עבור {0}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Actions for {name}"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Actions for space"
@@ -1010,6 +1022,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1514,6 +1527,10 @@ msgstr "העתקה"
 msgid "Copy .env example"
 msgstr "העתקת דוגמת .env"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Copy invite link"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
 msgstr "לא ניתן להוסיף"
@@ -1603,6 +1620,10 @@ msgstr "לא ניתן ליצור את הבוט"
 msgid "Could not create group"
 msgstr "לא ניתן ליצור את הקבוצה"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not create invite link"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "לא ניתן ליצור את המקטע"
@@ -1684,6 +1705,10 @@ msgstr "לא ניתן להוריד את {name}. אפשר לנסות שוב."
 msgid "Could not install connector"
 msgstr "לא ניתן להתקין את החיבור"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not leave space"
+msgstr ""
+
 #: src/components/ErrorBoundary.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1726,6 +1751,10 @@ msgstr "לא ניתן לטעון את האינטגרציות"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "לא ניתן לטעון את שרתי ה-MCP"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not load members"
+msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
@@ -1796,6 +1825,10 @@ msgstr "לא ניתן להסיר"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "לא ניתן להסיר את החיבור"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Could not remove member"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -2463,6 +2496,10 @@ msgstr "כל חודש"
 msgid "Every week"
 msgstr "כל שבוע"
 
+#: src/components/SharedSpaceRules.tsx
+msgid "Everyone in this space sees all its chats, bots and memory."
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
 msgstr "טוקן Executor"
@@ -2870,6 +2907,18 @@ msgstr "יחידת המרווח"
 msgid "Invalid code"
 msgstr "קוד לא תקין"
 
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Invite link copied"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Isolated"
@@ -2886,6 +2935,14 @@ msgstr "הבוטים והקבוצות שבו יישמרו ויוצאו מהמק�
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "השיחה, הקבצים והרוטינות שלו יימחקו לצמיתות. בוטים שהוא יצר יישארו ברשימה."
+
+#: src/pages/Invite.tsx
+msgid "Join"
+msgstr ""
+
+#: src/pages/Invite.tsx
+msgid "Join {spaceName}"
+msgstr ""
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -2925,9 +2982,19 @@ msgstr ""
 msgid "Later"
 msgstr "מאוחר יותר"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "יציאה"
+
+#. placeholder {0}: space.name
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave {0}?"
+msgstr ""
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Leave space"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3006,8 +3073,10 @@ msgstr "טוען כללים…"
 msgid "Loading voice providers…"
 msgstr "טוען ספקי קול…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/Invite.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3136,6 +3205,12 @@ msgstr "בינוני"
 #: src/lib/identity-display.ts
 msgid "Member"
 msgstr "חבר"
+
+#: src/components/SpaceMembersSettings.tsx
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Members"
+msgstr ""
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3685,6 +3760,10 @@ msgstr "פתיחה בחלון מלא"
 msgid "Open navigation"
 msgstr "פתיחת הניווט"
 
+#: src/pages/Invite.tsx
+msgid "Open Rakazo"
+msgstr ""
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "עבודה פתוחה"
@@ -3739,6 +3818,7 @@ msgstr "ההודעה המקורית אינה זמינה"
 msgid "Other model…"
 msgstr "מודל אחר…"
 
+#: src/components/SpaceMembersSettings.tsx
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
@@ -4060,6 +4140,7 @@ msgid "Reload"
 msgstr "טעינה מחדש"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/components/SpaceMembersSettings.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -4080,6 +4161,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
 msgstr "הסרת {full}"
+
+#: src/components/SpaceMembersSettings.tsx
+msgid "Remove {memberName}?"
+msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
@@ -4252,6 +4337,7 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
+#: src/pages/Invite.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4967,6 +5053,10 @@ msgstr "פעולה זו מוחקת את כל {0} הגרסאות של התוצר.
 msgid "This file is not valid UTF-8 text."
 msgstr "הקובץ אינו טקסט UTF-8 תקין."
 
+#: src/pages/Invite.tsx
+msgid "This invite link is no longer valid."
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ה-Mac הזה"
@@ -5519,6 +5609,10 @@ msgstr "OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "OpenRouter"
+
+#: src/components/SharedSpaceRules.tsx
+msgid "Your other spaces stay private."
+msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"

@@ -67,6 +67,8 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       where: {
         botId: target.bot.id,
         spaceId: target.bot.spaceId,
+        // The delivery runs as the bot's creator, so only their own routines may ride on it.
+        userId: target.bot.userId,
         active: true,
         webhookEnabled: true,
       },

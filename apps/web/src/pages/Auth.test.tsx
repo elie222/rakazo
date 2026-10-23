@@ -85,14 +85,15 @@ afterEach(async () => {
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
 });
-async function render(mode: "in" | "up" | "forgot" = "in") {
+async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
   await act(async () =>
     root.render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/" element={<AuthPage mode={mode} />} />
           <Route path="/app" element={<p>App</p>} />
           <Route path="/onboarding" element={<p>Onboarding</p>} />
+          <Route path="/invite/:token" element={<p>Invite</p>} />
         </Routes>
       </MemoryRouter>,
     ),
@@ -237,6 +238,23 @@ it("signs in with an emailed code by default", async () => {
     name: undefined,
   });
   expect(host.textContent).toBe("App");
+});
+
+it("returns a new account to the invite it came from", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  vi.mocked(authClient.emailOtp.sendVerificationOtp).mockResolvedValue({
+    data: { success: true },
+    error: null,
+  } as never);
+  vi.mocked(authClient.signIn.emailOtp).mockResolvedValue({ data: {}, error: null } as never);
+  await render("up", `/?next=${encodeURIComponent("/invite/token-1")}`);
+  expect(host.querySelector('a[href^="/sign-in"]')?.getAttribute("href")).toBe(
+    "/sign-in?next=%2Finvite%2Ftoken-1",
+  );
+  await enter(host.querySelector('input[name="email"]'), "person@example.com");
+  await submit();
+  await enter(host.querySelector('input[aria-label="Code"]'), "123456");
+  expect(host.textContent).toBe("Invite");
 });
 
 it("names a new account and keeps the email when going back from the code", async () => {

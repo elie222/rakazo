@@ -248,7 +248,9 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
 
   it("never dispatches a launch whose card transaction fails", async () => {
     const h = await setup();
-    await expect(h.tool("launch", { prompt: "Task" }, { userId: "wrong-owner" })).rejects.toThrow();
+    // A chat that is gone by the time the card is written fails the card transaction.
+    h.run.threadId = "missing-thread";
+    await expect(h.tool("launch", { prompt: "Task" })).rejects.toThrow();
     expect(await prisma.cloudAgent.count({ where: { userId: h.id } })).toBe(0);
     expect(h.wire.requests).toHaveLength(0);
   });

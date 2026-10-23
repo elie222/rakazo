@@ -3,6 +3,7 @@ import {
   AttachmentValidationError,
   attachmentExtensionForMimeType,
   attachmentsForBot,
+  authorLabelledText,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
@@ -187,6 +188,22 @@ describe("peer message history", () => {
         { kind: "bot_message_sent", toBotId: "b_2", toBotName: "Analyst", text: "chart it" },
       ]),
     ).toBe("[to Analyst] chart it");
+  });
+
+  it("keeps a group-chat line's sender", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "channel_message",
+          provider: "imessage",
+          channelId: "channel-1",
+          fromAddress: "+15550100",
+          fromLabel: "Ana",
+          text: "dinner at 8?",
+        },
+      ]),
+    ).toBe("[from Ana] dinner at 8?");
+    expect(authorLabelledText("Bea", "book it")).toBe("[from Bea] book it");
   });
 });
 

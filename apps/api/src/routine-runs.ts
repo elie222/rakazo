@@ -14,7 +14,6 @@ export async function listRoutineRuns(
     where: {
       id: routineId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       bot: { archivedAt: null },
     },
     select: { botId: true },
@@ -26,7 +25,6 @@ export async function listRoutineRuns(
       routineId,
       botId: routine.botId,
       spaceId: actor.spaceId,
-      userId: actor.userId,
       ...(before
         ? {
             OR: [
@@ -62,8 +60,8 @@ export async function listRoutineRuns(
         INNER JOIN runs r ON r.id = m."runId" AND r."threadId" = m."threadId"
         INNER JOIN threads t ON t.id = m."threadId"
         WHERE r.id IN (${Prisma.join(runs.map((run) => run.id))})
-          AND r."spaceId" = ${actor.spaceId} AND r."userId" = ${actor.userId}
-          AND t."spaceId" = ${actor.spaceId} AND t."userId" = ${actor.userId}
+          AND r."spaceId" = ${actor.spaceId}
+          AND t."spaceId" = ${actor.spaceId}
           AND m.role = 'bot'
         ORDER BY m."runId", m."createdAt" DESC, m.id DESC
       `)

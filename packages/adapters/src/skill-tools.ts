@@ -8,6 +8,7 @@ import {
   type SkillSource,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { lockSpaceForContentCreation } from "@rakazo/db";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";
 
 export const SKILL_TOOL_NAMES = new Set([
@@ -29,6 +30,7 @@ type SkillOwner = {
 
 type AgentSkillRow = {
   id: string;
+  userId: string;
   name: string;
   description: string;
   content: string;
@@ -40,10 +42,13 @@ function asSource(value: string): SkillSource {
   return "user";
 }
 
-function toRecord(row: AgentSkillRow): SkillRecord & { id: string } {
+type SpaceSkillRecord = SkillRecord & { id: string; userId?: string };
+
+function toRecord(row: AgentSkillRow): SpaceSkillRecord {
   const source = asSource(row.source);
   return {
     id: row.id,
+    userId: row.userId,
     name: row.name,
     description: row.description,
     content: row.content,
@@ -82,22 +87,52 @@ function rejectInvalidSkillFields(name: string, description: string): string | u
   return undefined;
 }
 
+/** Skills are the space's: every member's runs see the same set. */
 export async function listAgentSkillRecords(
   prisma: PrismaClient,
-  owner: SkillOwner,
-): Promise<Array<SkillRecord & { id: string }>> {
+  space: Pick<SkillOwner, "spaceId">,
+): Promise<SpaceSkillRecord[]> {
   const rows = await prisma.agentSkill.findMany({
-    where: { spaceId: owner.spaceId, userId: owner.userId },
+    where: { spaceId: space.spaceId },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
   return mergeBuiltinSkills(builtinRecords(), rows.map(toRecord));
 }
 
+/**
+ * The skills a run nobody is watching may expand: builtins and the ones `userId` last wrote.
+ * Its instructions then always come from the person whose accounts it uses.
+ */
+export function skillsRunnableBy<T extends { userId?: string }>(
+  skills: readonly T[],
+  userId: string,
+): T[] {
+  return skills.filter((skill) => skill.userId === undefined || skill.userId === userId);
+}
+
+/** A user skill in the space with this name, ignoring case; read under the space lock. */
+async function spaceSkillNamed(
+  tx: Pick<PrismaClient, "agentSkill">,
+  spaceId: string,
+  name: string,
+  exceptId?: string,
+): Promise<boolean> {
+  const clash = await tx.agentSkill.findFirst({
+    where: {
+      spaceId,
+      name: { equals: name, mode: "insensitive" },
+      ...(exceptId ? { NOT: { id: exceptId } } : {}),
+    },
+    select: { id: true },
+  });
+  return clash !== null;
+}
+
 async function findOwnedSkill(
   prisma: PrismaClient,
-  owner: SkillOwner,
+  owner: Pick<SkillOwner, "spaceId">,
   input: { skillId?: string; name?: string },
-): Promise<(SkillRecord & { id: string }) | null> {
+): Promise<SpaceSkillRecord | null> {
   const skills = await listAgentSkillRecords(prisma, owner);
   if (input.skillId) {
     return skills.find((skill) => skill.id === input.skillId) ?? null;
@@ -157,16 +192,22 @@ export async function skillCreateFromTool(
   if (existing) return { error: `A skill named "${existing.name}" already exists.` };
 
   try {
-    const row = await prisma.agentSkill.create({
-      data: {
-        spaceId: owner.spaceId,
-        userId: owner.userId,
-        name,
-        description,
-        content,
-        source: "user",
-      },
+    // Names are unique per space: the lock makes the check and the write one step.
+    const row = await prisma.$transaction(async (tx) => {
+      await lockSpaceForContentCreation(tx, owner);
+      if (await spaceSkillNamed(tx, owner.spaceId, name)) return null;
+      return tx.agentSkill.create({
+        data: {
+          spaceId: owner.spaceId,
+          userId: owner.userId,
+          name,
+          description,
+          content,
+          source: "user",
+        },
+      });
     });
+    if (!row) return { error: `A skill named "${name}" already exists.` };
     return {
       ok: true,
       id: row.id,
@@ -241,20 +282,31 @@ export async function skillUpdateFromTool(
   }
 
   try {
-    // Re-scope mutate to owner + user source so a stale id cannot cross tenants.
-    const updated = await prisma.agentSkill.updateMany({
-      where: {
-        id: existing.id,
-        spaceId: owner.spaceId,
-        userId: owner.userId,
-        source: "user",
-      },
-      data: {
-        name: nextName,
-        description: nextDescription,
-        content: nextContent,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockSpaceForContentCreation(tx, owner);
+      if (
+        nextName.toLowerCase() !== existing.name.toLowerCase() &&
+        (await spaceSkillNamed(tx, owner.spaceId, nextName, existing.id))
+      ) {
+        return null;
+      }
+      // Re-scope mutate to the space + user source so a stale id cannot cross tenants.
+      return tx.agentSkill.updateMany({
+        where: {
+          id: existing.id,
+          spaceId: owner.spaceId,
+          source: "user",
+        },
+        // The editor owns what it now says, so routines run it only on the editor's accounts.
+        data: {
+          userId: owner.userId,
+          name: nextName,
+          description: nextDescription,
+          content: nextContent,
+        },
+      });
     });
+    if (!updated) return { error: `A skill named "${nextName}" already exists.` };
     if (updated.count !== 1) return { error: "Could not update skill." };
     return { ok: true, id: existing.id, name: nextName, description: nextDescription };
   } catch {
@@ -276,7 +328,6 @@ export async function skillDeleteFromTool(
     where: {
       id: existing.id,
       spaceId: owner.spaceId,
-      userId: owner.userId,
       source: "user",
     },
   });

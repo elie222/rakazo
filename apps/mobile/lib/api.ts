@@ -6,6 +6,7 @@ import type {
   ComputerMode,
   Group,
   Me,
+  MessageAuthor,
   MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
@@ -37,6 +38,7 @@ import {
   mergeThreadHistory,
   messagingProviderLabel,
   parseRetryAfter,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -1031,6 +1033,7 @@ export type MobileMessage = {
   /** Set when the message was sent from a live voice call; groups one call's transcript. */
   callId?: string;
   botId?: string;
+  author?: MessageAuthor;
   replyToMessageId?: string;
   replyQuote?: string;
   replyPreview?: ReplyPreview | null;
@@ -1539,6 +1542,7 @@ export function applyMobileThreadEvent(
       callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
+      ...payloadAuthor(event.payload ?? {}, known),
       ...replyMetadata(event.payload ?? {}, known),
     };
     return {

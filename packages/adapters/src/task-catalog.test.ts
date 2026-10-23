@@ -52,7 +52,6 @@ describe("task catalog", () => {
       {
         spaceId: "space-1",
         botId: "bot-1",
-        userId: "user-1",
         tools: [
           { name: "task_catalog", description: "Catalog", readOnly: true },
           { name: "task_catalog", description: "Duplicate", readOnly: true },

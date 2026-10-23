@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { displayName } from "@rakazo/core";
+import { isOwnerRole } from "./billing.js";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { IsolationError } from "./scope.js";
@@ -186,7 +187,7 @@ function normalizeSpaceName(name: string): string {
   return trimmed;
 }
 
-/** Create a sibling privacy boundary for a member of the active organization. */
+/** Create a sibling privacy boundary in the member's own organization, never a shared one. */
 export async function createSpaceForMember(
   prisma: PrismaClient,
   input: {
@@ -213,17 +214,15 @@ export async function createSpaceForMember(
           select: { organizationId: true },
         });
         if (!currentMembership) throw new IsolationError();
+        const organizationId = await ownedOrganizationId(tx, input.userId);
         const count = await tx.spaceMember.count({
-          where: {
-            userId: input.userId,
-            organizationId: currentMembership.organizationId,
-          },
+          where: { userId: input.userId, organizationId },
         });
         if (count >= MAX_SPACES_PER_MEMBER) throw new SpaceLimitError();
         await createSpace(tx, {
           spaceId,
           spaceMembershipId,
-          organizationId: currentMembership.organizationId,
+          organizationId,
           userId: input.userId,
           name,
           createdAt,
@@ -245,6 +244,40 @@ export async function createSpaceForMember(
   );
 
   return { id: spaceId, name };
+}
+
+/** The organization the user owns: their personal one, where their own Spaces live. */
+async function ownedOrganizationId(
+  db: Pick<PrismaClient, "member">,
+  userId: string,
+): Promise<string> {
+  const memberships = await db.member.findMany({
+    where: { userId },
+    select: { organizationId: true, role: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const owned = memberships.find((membership) => isOwnerRole(membership.role));
+  if (!owned) throw new IsolationError();
+  return owned.organizationId;
+}
+
+/**
+ * The Space a member lands in after leaving or deleting one: their own default
+ * Space first, then the oldest they own, then the oldest they belong to.
+ */
+export async function fallbackSpaceForMember(
+  db: Pick<PrismaClient, "spaceMember">,
+  userId: string,
+): Promise<string | null> {
+  const memberships = await db.spaceMember.findMany({
+    where: { userId },
+    select: { spaceId: true, role: true, space: { select: { isDefault: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const owned = memberships.filter((membership) => isOwnerRole(membership.role));
+  const fallback =
+    owned.find((membership) => membership.space.isDefault) ?? owned[0] ?? memberships[0];
+  return fallback?.spaceId ?? null;
 }
 
 type SpaceMemberTargetInput = {
@@ -273,7 +306,10 @@ export async function lockSpaceForContentCreation(
   return { organizationId: membership.organizationId };
 }
 
-async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
+export async function lockSpaceDeletion(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<void> {
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))::text AS "lock"
   `);
@@ -310,11 +346,9 @@ async function loadActorSpace(
       space: { select: { isDefault: true, deletingAt: true } },
     },
   });
-  if (!targetMembership || targetMembership.organizationId !== currentMembership.organizationId) {
-    throw new SpaceNotFoundError();
-  }
+  if (!targetMembership) throw new SpaceNotFoundError();
   return {
-    organizationId: currentMembership.organizationId,
+    organizationId: targetMembership.organizationId,
     role: targetMembership.role,
     isDefault: targetMembership.space.isDefault,
     deletingAt: targetMembership.space.deletingAt,
@@ -326,29 +360,15 @@ async function assertEmptySpaceDeletable(
   input: SpaceMemberTargetInput,
 ): Promise<{
   organizationId: string;
-  memberships: Array<{
-    spaceId: string;
-    createdAt: Date;
-    space: { isDefault: boolean };
-  }>;
   computers: Array<{ homeKey: string; kind: string; providerRef: string }>;
 }> {
   const owned = await loadActorSpace(db, input);
   if (owned.role !== "owner") throw new CannotDeleteSpaceAsNonOwnerError();
   if (owned.isDefault) throw new CannotDeleteDefaultSpaceError();
-  const memberships = await db.spaceMember.findMany({
-    where: {
-      userId: input.userId,
-      organizationId: owned.organizationId,
-    },
-    select: {
-      spaceId: true,
-      createdAt: true,
-      space: { select: { isDefault: true } },
-    },
-    orderBy: { createdAt: "asc" },
+  const otherSpaces = await db.spaceMember.count({
+    where: { userId: input.userId, spaceId: { not: input.spaceId } },
   });
-  if (memberships.length <= 1) throw new CannotDeleteLastSpaceError();
+  if (otherSpaces === 0) throw new CannotDeleteLastSpaceError();
   const [botCount, groupCount, computers] = await Promise.all([
     db.bot.count({ where: { spaceId: input.spaceId } }),
     db.chatGroup.count({ where: { spaceId: input.spaceId } }),
@@ -360,7 +380,6 @@ async function assertEmptySpaceDeletable(
   if (botCount > 0 || groupCount > 0) throw new SpaceNotEmptyError();
   return {
     organizationId: owned.organizationId,
-    memberships,
     computers: computers.flatMap((computer) =>
       computer.providerRef
         ? [{ homeKey: computer.homeKey, kind: computer.kind, providerRef: computer.providerRef }]
@@ -476,15 +495,16 @@ export async function deleteEmptySpaceForMember(
         if (!claim) throw new SpaceDeletionInProgressError();
         const planned = await assertEmptySpaceDeletable(tx, input);
         await tx.space.delete({ where: { id: input.spaceId } });
+        // People who only belonged to this Space leave its organization with it.
+        await tx.member.deleteMany({
+          where: { organizationId: planned.organizationId, spaceMemberships: { none: {} } },
+        });
         if (input.spaceId !== input.currentSpaceId) {
           return { id: input.currentSpaceId };
         }
-        const remaining = planned.memberships.filter(
-          (membership) => membership.spaceId !== input.spaceId,
-        );
-        const fallback = remaining.find((membership) => membership.space.isDefault) ?? remaining[0];
+        const fallback = await fallbackSpaceForMember(tx, input.userId);
         if (!fallback) throw new CannotDeleteLastSpaceError();
-        return { id: fallback.spaceId };
+        return { id: fallback };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

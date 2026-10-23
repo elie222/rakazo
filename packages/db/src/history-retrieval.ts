@@ -8,10 +8,9 @@ import { historyMessageText } from "./history-text.js";
 
 export { historyMessageText };
 
-/** Only the executor supplies scope; tool arguments cannot widen it. */
+/** Only the executor supplies scope; tool arguments cannot widen it. Threads are the space's. */
 export interface HistoryScope {
   spaceId: string;
-  userId: string;
   threadId: string;
   botId: string;
   channelId?: string;
@@ -64,14 +63,13 @@ function visible(scope: HistoryScope): Prisma.Sql {
   const channel = scope.channelId;
   return Prisma.sql`
     t.id = ${scope.threadId} AND t."spaceId" = ${scope.spaceId}
-    AND t."userId" = ${scope.userId}
     AND (t."botId" = ${scope.botId} OR (t."botId" IS NULL AND EXISTS (
       SELECT 1 FROM chat_groups g JOIN chat_group_members member ON member."groupId" = g.id
-      WHERE g.id = t."groupId" AND g."spaceId" = ${scope.spaceId} AND g."userId" = ${scope.userId}
+      WHERE g.id = t."groupId" AND g."spaceId" = ${scope.spaceId}
         AND g."archivedAt" IS NULL AND member."botId" = ${scope.botId}
     )))
     AND EXISTS (SELECT 1 FROM bots b WHERE b.id = ${scope.botId}
-      AND b."spaceId" = ${scope.spaceId} AND b."userId" = ${scope.userId}
+      AND b."spaceId" = ${scope.spaceId}
       AND b."archivedAt" IS NULL)
     ${
       channel
@@ -80,7 +78,7 @@ function visible(scope: HistoryScope): Prisma.Sql {
       OR (m.role = 'bot' AND EXISTS (
         SELECT 1 FROM runs r JOIN messages source ON source.id = r."sourceMessageId"
         WHERE r.id = m."runId" AND r."threadId" = t.id
-          AND r."spaceId" = ${scope.spaceId} AND r."userId" = ${scope.userId}
+          AND r."spaceId" = ${scope.spaceId}
           AND r."botId" = ${scope.botId} AND source."threadId" = t.id
           AND source.blocks @> ${JSON.stringify([{ kind: "channel_message", channelId: channel }])}::jsonb
       )))`
@@ -295,7 +293,6 @@ export async function readHistory(
   const runRows = await prisma.run.findMany({
     where: {
       spaceId: scope.spaceId,
-      userId: scope.userId,
       threadId: scope.threadId,
       ...(anchor.groupId ? {} : { botId: scope.botId }),
       ...(input.linkedRunId
@@ -352,7 +349,6 @@ export async function readHistory(
       ? prisma.artifact.findMany({
           where: {
             spaceId: scope.spaceId,
-            userId: scope.userId,
             ...(anchor.groupId
               ? { groupId: anchor.groupId }
               : { botId: scope.botId, groupId: null }),

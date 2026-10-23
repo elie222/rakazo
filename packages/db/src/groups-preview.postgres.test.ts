@@ -277,7 +277,7 @@ describePostgres("group sidebar previews (PostgreSQL)", () => {
     const groups = createGroupRepos(prisma);
     const { result: listed, rowCount } = await messageRowsDuring("listSpaceGroupsForSpaces", () =>
       runAsSystem("cross-space group previews", () =>
-        groups.listSpaceGroupsForSpaces(actor, [otherSpaceId]),
+        groups.listSpaceGroupsForSpaces([otherSpaceId]),
       ),
     );
     expect(

@@ -12,7 +12,6 @@ describe("unread inbox chat query", () => {
         reason: "count unread inbox chats across the member's Spaces",
       });
       expect(parameters).toContain(tenant.userId);
-      expect(parameters).toContain(tenant.spaceId);
       return [{ count: 4 }];
     });
     const prisma = { $queryRaw: query } as unknown as PrismaClient;

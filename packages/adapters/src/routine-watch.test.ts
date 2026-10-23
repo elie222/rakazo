@@ -205,6 +205,20 @@ describe("tickRoutineWatch", () => {
     expect(messages).toHaveLength(0);
   });
 
+  it("saves a check only for the owner it started with", async () => {
+    const { deps, routine, updateMany } = setup({ data: { changes: [] } });
+    // Someone else taking the routine over mid-check makes this write miss.
+    updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(tickRoutineWatch(deps, routine, target, scheduledAt)).resolves.toEqual({
+      run: false,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: routine.id, userId: "user-1", active: true, nextRunAt: scheduledAt },
+      }),
+    );
+  });
+
   it("posts 'no changes' when loud", async () => {
     const { deps, routine, updateMany, messages } = setup(
       { data: { changes: [] } },

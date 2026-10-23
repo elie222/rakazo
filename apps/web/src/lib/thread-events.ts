@@ -14,6 +14,7 @@ import {
   isBackgroundRunTrigger,
   isRunTerminalEvent,
   mergeThreadHistory,
+  payloadAuthor,
   prependThreadHistoryPage,
   progressMessageId,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -536,6 +537,7 @@ export function reduceThreadSnapshot(
       botId: event.botId,
       runId: event.runId,
       callId: typeof event.payload.callId === "string" ? event.payload.callId : known?.callId,
+      ...payloadAuthor(event.payload, known),
       ...replyMetadata(event.payload, known),
       createdAt: known?.createdAt ?? event.createdAt,
     };

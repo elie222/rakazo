@@ -159,7 +159,8 @@ export async function ownedBillingAccounts(
   );
 }
 
-function isOwnerRole(role: string): boolean {
+/** Better Auth stores roles as a comma-separated list. */
+export function isOwnerRole(role: string): boolean {
   return role
     .split(",")
     .map((value) => value.trim())

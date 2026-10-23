@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ComputerMode } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
@@ -193,7 +193,7 @@ export async function expireComputerExecutionLeases(
   });
 }
 
-function upsertComputerRecord(
+async function upsertComputerRecord(
   prisma: ComputerDb,
   input: {
     mode: ComputerMode;
@@ -211,11 +211,35 @@ function upsertComputerRecord(
       userId: input.userId,
       scope: input.mode,
       scopeKey,
-      homeKey: computerHomeKey(input),
+      homeKey: await availableHomeKey(prisma, input, scopeKey),
       kind: input.kind,
     },
     update: {},
   });
+}
+
+/**
+ * The usual home key, unless another computer already holds it: a team computer handed to a
+ * space's owner when this person left keeps its home, and with it the files. Coming back,
+ * the person gets a new home of the same length.
+ */
+async function availableHomeKey(
+  prisma: ComputerDb,
+  input: ComputerKeyInput,
+  scopeKey: string,
+): Promise<string> {
+  const homeKey = computerHomeKey(input);
+  if (input.mode !== "team") return homeKey;
+  const holder = await prisma.computer.findUnique({
+    where: { homeKey },
+    select: { scopeKey: true },
+  });
+  if (!holder || holder.scopeKey === scopeKey) return homeKey;
+  const digest = createHash("sha256")
+    .update(`${input.spaceId}:${input.userId}:${randomUUID()}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `team-${digest}`;
 }
 
 async function ensureComputerRecordWithQuota(

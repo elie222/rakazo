@@ -213,7 +213,7 @@ export async function resolveVoiceTarget(
   let botVoiceId: string | null = null;
   if (input.botId) {
     const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: actor.spaceId, userId: actor.userId },
+      where: { id: input.botId, spaceId: actor.spaceId },
       select: { voiceId: true },
     });
     if (!bot) throw new IsolationError();

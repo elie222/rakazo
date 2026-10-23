@@ -76,6 +76,17 @@ describePostgres("content encryption (PostgreSQL)", () => {
   );
 
   afterAll(async () => {
+    // Rotation and re-wrapping reach every space in the shared database. Hand all keys back to
+    // the derived master key, or other suites and the next run cannot unwrap them once this
+    // run's random master keys are gone.
+    await runAsSystem("test cleanup", async () => {
+      const restore = createDb(databaseUrl!, {
+        keyProvider: new LocalKeyProvider([...masterKeysFromEnv(), masterB, masterA]),
+        encryptContent: true,
+      });
+      clients.push(restore);
+      await rewrapSpaceKeys(restore.prisma, contentEncryptionOf(restore.prisma)!.ring);
+    });
     await prisma?.organization.deleteMany({ where: { id: organizationId } });
     await prisma?.user.deleteMany({ where: { id: userId } });
     for (const db of clients) {
