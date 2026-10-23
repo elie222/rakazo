@@ -300,7 +300,8 @@ export function useModelSettings(onClose: () => void) {
   const busy = pending !== null || oauthPending;
   let savedHeaderEndpointMatches = false;
   try {
-    savedHeaderEndpointMatches = Boolean(credential?.baseUrl) &&
+    savedHeaderEndpointMatches =
+      Boolean(credential?.baseUrl) &&
       normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
   } catch {
     // An incomplete URL cannot inherit saved header placeholders.
@@ -308,7 +309,8 @@ export function useModelSettings(onClose: () => void) {
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
-    modelId: headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
@@ -418,9 +420,12 @@ export function useModelSettings(onClose: () => void) {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) => rpc.models.probeOpenAiCompatible({
-        ...input, headers: modelHeadersInput(headerRows), credentialId: credential?.id,
-      }),
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
@@ -679,6 +684,7 @@ export function useModelSettings(onClose: () => void) {
   }
 
   return {
+    resetOpenAiCompatibleProbe,
     headerRows,
     setHeaderRows,
     savedHeaderEndpointMatches,

@@ -718,6 +718,7 @@ export function OnboardingPage() {
                       rows={headerRows}
                       onChange={(rows) => {
                         setHeaderRows(rows);
+                        resetOpenAiCompatibleProbe();
                         invalidatePreflight();
                       }}
                     />

@@ -17,6 +17,7 @@ import { ModelPreflightFeedback } from "../../components/ModelConnectionPrefligh
 import type { ModelSettingsState } from "./use-model-settings";
 
 export function CompatibleModelFields({
+  resetOpenAiCompatibleProbe,
   headerRows,
   setHeaderRows,
   savedHeaderEndpointMatches,
@@ -55,6 +56,7 @@ export function CompatibleModelFields({
   updateBaseUrl,
 }: Pick<
   ModelSettingsState,
+  | "resetOpenAiCompatibleProbe"
   | "headerRows"
   | "setHeaderRows"
   | "savedHeaderEndpointMatches"
@@ -266,6 +268,7 @@ export function CompatibleModelFields({
           disabled={busy}
           onChange={(rows) => {
             setHeaderRows(rows);
+            resetOpenAiCompatibleProbe();
             invalidatePreflight();
             setNotice(null);
           }}
