@@ -54,6 +54,41 @@ async function waitFor(assertion: () => void, timeoutMs = 10_000): Promise<void>
 }
 
 describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
+  it("starts a fifth agent while four agents wait on model work", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const host = new GraphileJobWorkerHost(testPool(), { concurrency: 4, pollInterval: 25 });
+    const release = deferred();
+    const entered: string[] = [];
+    const target = handlers({
+      "run.continue": async ({ runId }, execution) => {
+        entered.push(runId);
+        execution!.onRunStarted();
+        await release.promise;
+      },
+    });
+    try {
+      await host.start(target);
+      for (let i = 0; i < 4; i++)
+        await publisher.enqueue({ name: "run.continue", payload: { runId: `waiting-agent-${i}` } });
+      await waitFor(() => expect(entered).toHaveLength(4));
+      await publisher.enqueue({ name: "run.continue", payload: { runId: "fifth-agent" } });
+      await waitFor(() => expect(entered).toContain("fifth-agent"));
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      release.resolve();
+      await stopping;
+      expect(stopped).toBe(true);
+    } finally {
+      release.resolve();
+      await host.stop();
+      await publisher.close();
+    }
+  });
+
   it("starts chat while routine and maintenance capacity are occupied", async () => {
     const prisma = {
       run: {

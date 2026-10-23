@@ -1,8 +1,8 @@
 import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 
-/** Hung completions must fail before the typical 5-minute run lease. */
+/** Per-attempt wait for response headers; this does not cap active streaming duration. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
-/** Allow slow DNS/TLS handshakes without consuming the entire model request budget. */
+/** Bound connection establishment independently of response streaming. */
 export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * `timeoutMs` bounds only time-to-headers; the SSE body that follows is

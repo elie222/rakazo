@@ -1,13 +1,15 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter, splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
+import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
-import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
 import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { LazyLarkAdapter } from "./lark/lazy-adapter.js";
+import { Domain } from "./lark/thread-id.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
 /**
@@ -126,6 +128,8 @@ export function messagingPlatformsFromEnv(
     pollInboundMessages?: boolean;
     /** Test seam: point the Sendblue SDK at an emulator. */
     sendblueTransport?: Pick<SendblueClientOptions, "baseURL" | "fetch">;
+    /** Test seam: replace only the official Lark SDK HTTP boundary. */
+    larkTransport?: HttpInstance;
   } = {},
 ): MessagingPlatform[] {
   const platforms: MessagingPlatform[] = [];
@@ -287,11 +291,11 @@ export function messagingPlatformsFromEnv(
       capabilities: { direct: true, groups: false, receipt: null },
       // Webhook-only: ws/long-connection incoming would consume events so
       // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
-      adapter: createLarkAdapter({
+      adapter: new LazyLarkAdapter({
+        ...(options.larkTransport ? { httpInstance: options.larkTransport } : {}),
         appId: env.larkAppId,
         appSecret: env.larkAppSecret,
         verificationToken: env.larkVerificationToken,
-        incoming: { events: "webhook", callbacks: "webhook" },
         // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
         encryptKey: env.larkEncryptKey ?? "",
         domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,

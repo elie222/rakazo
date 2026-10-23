@@ -39,6 +39,8 @@ async function runRoutine(
     parallel?: boolean;
     priorSetupFailures?: number;
     exportError?: Error;
+    setupError?: Error;
+    onRunStarted?: () => void;
   } = {},
 ) {
   const attachment: Extract<MessageBlock, { kind: "file" | "image" }> = {
@@ -225,7 +227,12 @@ async function runRoutine(
     sandbox,
     home: { commit: vi.fn(async () => "fixture-revision") },
     memory: { read: async () => ({ documents: [] }) },
-    memoryProviders: { resolve: async () => null },
+    memoryProviders: {
+      resolve: async () => {
+        if (options.setupError) throw options.setupError;
+        return null;
+      },
+    },
     artifacts: { get: vi.fn(async () => new Uint8Array([1, 2, 3, 4])) },
     events: {
       append: vi.fn(async () => undefined),
@@ -240,7 +247,16 @@ async function runRoutine(
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
-  await executor.continueRun(run.id, "worker-1");
+  await executor.continueRun(
+    run.id,
+    "worker-1",
+    options.onRunStarted
+      ? () => {
+          expect(run.status).toBe("running");
+          options.onRunStarted!();
+        }
+      : undefined,
+  );
   const sleepJobs = enqueue.mock.calls
     .map((call) => (call as unknown[])[0] as { name: string })
     .filter((job) => job.name === "computer.sleep");
@@ -253,6 +269,7 @@ async function runRoutine(
     runtimeRun,
     steeringInputs,
     prisma,
+    run,
   };
 }
 
@@ -269,6 +286,41 @@ afterEach(() => {
 });
 
 describe("run computer provisioning", () => {
+  it("retries handed-off setup failures with durable attempt accounting and backoff", async () => {
+    const onRunStarted = vi.fn();
+    const { run, enqueue, runtimeRun, prisma } = await runRoutine([], {
+      setupError: new Error("fixture setup outage"),
+      onRunStarted,
+    });
+    expect(onRunStarted).toHaveBeenCalledExactlyOnceWith();
+    expect(runtimeRun).not.toHaveBeenCalled();
+    expect(run.status).toBe("queued");
+    expect(prisma.attempt.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "setup_failed" }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        name: "run.continue",
+        payload: { runId: run.id },
+        availableAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it("retains the setup-failure limit after handing off a run", async () => {
+    const onRunStarted = vi.fn();
+    const { enqueue, finalizeRun } = await runRoutine([], {
+      setupError: new Error("fixture setup outage"),
+      onRunStarted,
+      priorSetupFailures: 7,
+    });
+    expect(onRunStarted).toHaveBeenCalledExactlyOnceWith();
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it("never starts the computer for a run that does not use it", async () => {
     const { finalizeRun, sandbox, sleepJobs } = await runRoutine([]);
 

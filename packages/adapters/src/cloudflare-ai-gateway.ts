@@ -1,35 +1,35 @@
 import type { ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import {
-  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
-  cloudflareGatewayRouting,
-  isCloudflareAiGatewayProvider,
+  cloudflareModelConfigMessage,
+  cloudflareModelRouting,
+  isCloudflareModelProvider,
 } from "@rakazo/contracts";
 
 const CLOUDFLARE_ACCOUNT_ID_ENV = "CLOUDFLARE_ACCOUNT_ID";
 const CLOUDFLARE_GATEWAY_ID_ENV = "CLOUDFLARE_GATEWAY_ID";
 
 /**
- * Pi reports this provider as unconfigured when a request carries only an API
- * key. The account and gateway ids are what fill the gateway base URL.
+ * Cloudflare requires tenant routing alongside the key. Workers AI needs an
+ * account; AI Gateway additionally needs a gateway. Saved routing wins over host env.
  */
-export function cloudflareGatewayProviderEnv(
+export function cloudflareProviderEnv(
   model: Pick<AgentRunModel, "provider" | "accountId" | "gatewayId">,
 ): Record<string, string> | undefined {
-  if (!isCloudflareAiGatewayProvider(model.provider)) return undefined;
-  const routing = cloudflareGatewayRouting(model);
-  if (!routing) throw new Error(CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE);
+  if (!isCloudflareModelProvider(model.provider)) return undefined;
+  const routing = cloudflareModelRouting(model);
+  if (!routing) throw new Error(cloudflareModelConfigMessage(model.provider));
   return {
     [CLOUDFLARE_ACCOUNT_ID_ENV]: routing.accountId,
-    [CLOUDFLARE_GATEWAY_ID_ENV]: routing.gatewayId,
+    ...(routing.gatewayId ? { [CLOUDFLARE_GATEWAY_ID_ENV]: routing.gatewayId } : {}),
   };
 }
 
-export function withCloudflareGatewayAuth(
+export function withCloudflareAuth(
   model: Pick<AgentRunModel, "provider" | "accountId" | "gatewayId">,
   options: ModelsSimpleStreamOptions | undefined,
 ): ModelsSimpleStreamOptions | undefined {
-  const env = cloudflareGatewayProviderEnv(model);
+  const env = cloudflareProviderEnv(model);
   if (!env) return options;
   return { ...options, env: { ...options?.env, ...env } };
 }

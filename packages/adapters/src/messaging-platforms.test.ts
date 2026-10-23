@@ -1,9 +1,9 @@
 import { WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
+import { Domain } from "./lark/thread-id.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
@@ -195,10 +195,9 @@ describe("messagingPlatformsFromEnv", () => {
     })[0]!;
     const incoming = lark.adapter as unknown as {
       incomingConfig: { events: string; callbacks: string };
-      shouldStartWsClient: () => boolean;
     };
     expect(incoming.incomingConfig).toEqual({ events: "webhook", callbacks: "webhook" });
-    expect(incoming.shouldStartWsClient()).toBe(false);
+    expect("shouldStartWsClient" in incoming).toBe(false);
   });
 
   it("maps LARK_* process env and accepts the international domain switch", () => {

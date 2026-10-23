@@ -39,6 +39,26 @@ Missing supervisor token is a **setup failure**: do not treat `sandbox: "none"` 
 
 Signup and local Docker computers work **without** an E2B (or other remote) account.
 
+### Bot browser
+
+The published computer image uses Chromium. To use Brave instead, build the image with
+`BROWSER=brave` and point Compose at it:
+
+```bash
+docker build --build-arg BROWSER=brave -t rakazo-computer-brave infra/sandboxes/computer
+```
+
+```env
+RAKAZO_COMPUTER_IMAGE=rakazo-computer-brave
+RAKAZO_COMPUTER_IMAGE_TAG=latest
+```
+
+The image holds one browser, and `rakazo-browser` launches whichever is installed. A locally built
+image is not on a registry, so start the stack with `bash install-images.sh --pull-never` after
+pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
+policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
+matters more.
+
 ## `none`
 
 Runs API/web without provisioning bot computers.

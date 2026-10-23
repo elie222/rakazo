@@ -1,3 +1,4 @@
+import { getHeapStatistics } from "node:v8";
 import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
 import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
@@ -9,9 +10,17 @@ import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@ra
 import type { Runner } from "graphile-worker";
 import { makeWorkerUtils } from "graphile-worker";
 import type { Pool } from "pg";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const run = vi.hoisted(() => vi.fn());
+
+vi.mock("node:v8", () => ({
+  getHeapStatistics: vi.fn(() => ({
+    used_heap_size: 0,
+    external_memory: 0,
+    heap_size_limit: 1024 ** 3,
+  })),
+}));
 
 vi.mock("graphile-worker", () => ({
   run: (...args: unknown[]) => run(...args),
@@ -338,7 +347,10 @@ describe("reserved Graphile workloads", () => {
         await host.stop();
       }
       expect(target["run.continue"]).toHaveBeenCalledTimes(2);
-      expect(target["run.continue"]).toHaveBeenLastCalledWith({ runId: "legacy-chat" });
+      expect(target["run.continue"]).toHaveBeenLastCalledWith(
+        { runId: "legacy-chat" },
+        { onRunStarted: expect.any(Function) },
+      );
     } finally {
       await host.stop();
     }
@@ -346,8 +358,173 @@ describe("reserved Graphile workloads", () => {
 });
 
 describe("GraphileJobWorkerHost runner lifecycle", () => {
+  beforeEach(() => {
+    vi.spyOn(process, "availableMemory").mockReturnValue(8 * 1024 ** 3);
+  });
   afterEach(() => {
     run.mockReset();
+    vi.mocked(process.availableMemory).mockRestore();
+    vi.useRealTimers();
+    vi.mocked(getHeapStatistics).mockReturnValue({
+      used_heap_size: 0,
+      external_memory: 0,
+      heap_size_limit: 1024 ** 3,
+    } as ReturnType<typeof getHeapStatistics>);
+  });
+
+  it("releases dispatch slots after durable handoff and drains executions at shutdown", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 4 });
+    const release = deferred();
+    const target = handlers();
+    let started = 0;
+    target["run.continue"] = async (_payload, execution) => {
+      started++;
+      execution!.onRunStarted();
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
+      await Promise.all(
+        Array.from({ length: 5 }, (_, index) => dispatch({ runId: `run-${index}` })),
+      );
+      expect(started).toBe(5);
+      let stopped = false;
+      const stopping = host.stop().then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      release.resolve();
+      await stopping;
+      expect(stopped).toBe(true);
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("waits for memory headroom without imposing a resident run count", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1 });
+    const releases = [deferred(), deferred(), deferred()];
+    const entered: string[] = [];
+    const target = handlers();
+    target["run.continue"] = async ({ runId }, execution) => {
+      entered.push(runId);
+      execution!.onRunStarted();
+      await releases[Number(runId)]!.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
+      await dispatch({ runId: "0" });
+      await dispatch({ runId: "1" });
+      vi.mocked(getHeapStatistics).mockReturnValue({
+        used_heap_size: 0,
+        external_memory: 0.8 * 1024 ** 3,
+        heap_size_limit: 1024 ** 3,
+      } as ReturnType<typeof getHeapStatistics>);
+      const third = dispatch({ runId: "2" });
+      expect(entered).toEqual(["0", "1"]);
+      vi.mocked(getHeapStatistics).mockReturnValue({
+        used_heap_size: 0.2 * 1024 ** 3,
+        external_memory: 0,
+        heap_size_limit: 1024 ** 3,
+      } as ReturnType<typeof getHeapStatistics>);
+      releases[0]!.resolve();
+      await third;
+      expect(entered).toEqual(["0", "1", "2"]);
+    } finally {
+      for (const release of releases) release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("rejects setup failures through the original queue delivery", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool);
+    const error = new Error("fixture setup failure");
+    const target = handlers();
+    target["run.continue"] = async () => {
+      throw error;
+    };
+    try {
+      await host.start(target);
+      await expect(
+        run.mock.calls[0]![0].taskList["run.continue"]({ runId: "setup-failure" }),
+      ).rejects.toBe(error);
+    } finally {
+      await host.stop();
+    }
+  });
+
+  it("rechecks memory freed by GC while resident agents remain active", async () => {
+    vi.useFakeTimers();
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool, { concurrency: 1 });
+    const release = deferred();
+    let entered = 0;
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      entered++;
+      execution!.onRunStarted();
+      await release.promise;
+    };
+    try {
+      await host.start(target);
+      const dispatch = run.mock.calls[0]![0].taskList["run.continue"];
+      await dispatch({ runId: "first" });
+      vi.mocked(getHeapStatistics).mockReturnValue({
+        used_heap_size: 0,
+        external_memory: 0.8 * 1024 ** 3,
+        heap_size_limit: 1024 ** 3,
+      } as ReturnType<typeof getHeapStatistics>);
+      const second = dispatch({ runId: "second" });
+      expect(entered).toBe(1);
+      vi.mocked(getHeapStatistics).mockReturnValue({
+        used_heap_size: 0.2 * 1024 ** 3,
+        external_memory: 0,
+        heap_size_limit: 1024 ** 3,
+      } as ReturnType<typeof getHeapStatistics>);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await second;
+      expect(entered).toBe(2);
+    } finally {
+      release.resolve();
+      await host.stop();
+    }
+  });
+
+  it("observes a failure after handoff, reports it once and drains tracking", async () => {
+    run.mockResolvedValueOnce(mockRunner().runner);
+    const host = new GraphileJobWorkerHost({} as Pool);
+    const lateFailure = deferred();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const target = handlers();
+    target["run.continue"] = async (_payload, execution) => {
+      execution!.onRunStarted();
+      await lateFailure.promise;
+    };
+    try {
+      await host.start(target);
+      await run.mock.calls[0]![0].taskList["run.continue"]({ runId: "late-failure" });
+      lateFailure.reject(new Error("fixture execution failure"));
+      await host.stop();
+      expect(sink.events.filter((event) => event.level === "error")).toEqual([
+        expect.objectContaining({
+          message: "job.completed",
+          "run.id": "late-failure",
+          "job.outcome": "error",
+        }),
+      ]);
+    } finally {
+      lateFailure.resolve();
+      await host.stop();
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
   });
 
   it("backs off then restarts when runner.promise rejects with 53300", async () => {
