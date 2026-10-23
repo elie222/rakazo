@@ -11,8 +11,8 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
-import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
 import { ModelPreflightFeedback } from "../../components/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
 
 import type { ModelSettingsState } from "./use-model-settings";
 

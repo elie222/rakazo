@@ -7,8 +7,10 @@ const probePath = "**/rpc/models/probeOpenAiCompatible";
 const edits = {
   add: (page: Page) => page.getByRole("button", { name: "Add header", exact: true }).click(),
   name: (page: Page) => page.getByLabel("Header name", { exact: true }).first().fill("x-updated"),
-  value: (page: Page) => page.getByLabel("Header value", { exact: true }).first().fill("updated-fixture"),
-  remove: (page: Page) => page.getByRole("button", { name: "Remove header", exact: true }).first().click(),
+  value: (page: Page) =>
+    page.getByLabel("Header value", { exact: true }).first().fill("updated-fixture"),
+  remove: (page: Page) =>
+    page.getByRole("button", { name: "Remove header", exact: true }).first().click(),
 };
 
 for (const surface of ["settings", "onboarding"] as const) {
@@ -23,7 +25,12 @@ for (const surface of ["settings", "onboarding"] as const) {
           await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
         });
       }
-      await signup(page, `header-${surface}-${action}-${Date.now()}@rakazo.test`, "password12", "Header discovery");
+      await signup(
+        page,
+        `header-${surface}-${action}-${Date.now()}@rakazo.test`,
+        "password12",
+        "Header discovery",
+      );
       if (surface === "settings") {
         await completeOnboarding(page);
         await openUserSettings(page, "models");
@@ -46,7 +53,9 @@ for (const surface of ["settings", "onboarding"] as const) {
         await page.getByLabel("Header value", { exact: true }).fill("fixture-value");
       }
       await prepareHeader();
-      await page.route(probePath, (route) => route.fulfill({ json: { json: { models: ["old-header-model"] } } }));
+      await page.route(probePath, (route) =>
+        route.fulfill({ json: { json: { models: ["old-header-model"] } } }),
+      );
       await page.getByRole("button", { name: "Find models", exact: true }).click();
       const useFound = page.getByRole("button", { name: "Use a found model", exact: true });
       await expect(useFound).toBeVisible();
@@ -57,7 +66,9 @@ for (const surface of ["settings", "onboarding"] as const) {
       await prepareHeader();
       await page.unroute(probePath);
       let release = () => {};
-      const held = new Promise<void>((resolve) => { release = resolve; });
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       await page.route(probePath, async (route) => {
         await held;
         await route.fulfill({ json: { json: { models: ["stale-header-model"] } } });
@@ -67,18 +78,27 @@ for (const surface of ["settings", "onboarding"] as const) {
       await request;
       await expect(page.getByRole("button", { name: "Finding…", exact: true })).toBeDisabled();
       await edit(page);
-      const resetBeforeResponse = await page.getByRole("button", { name: "Find models", exact: true }).isEnabled().catch(() => false);
+      const resetBeforeResponse = await page
+        .getByRole("button", { name: "Find models", exact: true })
+        .isEnabled()
+        .catch(() => false);
       const response = page.waitForResponse(probePath);
       release();
       await (await response).finished();
       // Let the RPC continuation and React's render run before checking stale state.
-      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
       expect(resetBeforeResponse).toBe(true);
       await expect(useFound).toHaveCount(0);
       await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
       await expect(page.getByLabel("Model id", { exact: true })).toHaveValue("manual-model");
       await expect(page.getByRole("button", { name: "Find models", exact: true })).toBeEnabled();
-      if (action === "remove") await captureScreenshot(page, testInfo, `${surface}-header-discovery-reset`);
+      if (action === "remove")
+        await captureScreenshot(page, testInfo, `${surface}-header-discovery-reset`);
     });
   }
 }
