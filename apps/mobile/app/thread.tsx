@@ -1855,13 +1855,21 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   // Import only once settings are available, and keep mixed text/files together.
   const importingShare = useRef(false);
   const [shareImporting, setShareImporting] = useState(false);
-  // Bumped when an import ends, so a share handed back to the queue by a pass
-  // that settings cancelled is claimed again with the settled settings.
+  // The share a settings refresh interrupted. It is retried on its own, so a
+  // share that arrived in the meantime is left for the picker, not taken here.
+  const interruptedShare = useRef<{ generation: number } | null>(null);
   const [shareImportTick, setShareImportTick] = useState(0);
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    const interrupted = interruptedShare.current;
+    interruptedShare.current = null;
     const share = takeIncomingShare();
     if (!share) return;
+    if (interrupted && share.generation !== interrupted.generation) {
+      // The interrupted share is gone; this newer one belongs to the picker.
+      retryIncomingShare(share);
+      return;
+    }
     let active = true;
     importingShare.current = true;
     setShareImporting(true);
@@ -1893,7 +1901,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       } finally {
         importingShare.current = false;
         setShareImporting(false);
-        setShareImportTick((tick) => tick + 1);
+        // Only a pass that settings cancelled is tried again; a file the reader
+        // rejected is reported once instead of looping until the share expires.
+        if (!active && isIncomingShareCurrent(share)) {
+          interruptedShare.current = share;
+          retryIncomingShare(share);
+          setShareImportTick((tick) => tick + 1);
+        }
       }
     })();
     return () => {
