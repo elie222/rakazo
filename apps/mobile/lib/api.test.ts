@@ -3236,7 +3236,12 @@ describe("mobile thread event reduction", () => {
     const next = applyMobileThreadEvent(initial, event);
     const replayed = applyMobileThreadEvent(next, event);
 
-    expect(next?.run).toEqual({ id: "resumed-run", botId: "bot-2", status: "running", error: null });
+    expect(next?.run).toEqual({
+      id: "resumed-run",
+      botId: "bot-2",
+      status: "running",
+      error: null,
+    });
     expect(next?.activeRuns).toEqual([
       ...retained,
       { id: "resumed-run", botId: "bot-2", status: "running", error: null },
