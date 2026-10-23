@@ -209,6 +209,7 @@ import {
   applyLocalChoiceDismissals,
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
+  messageHasInlineControls,
   messagePresentationSegments,
   quotableMessageSegments,
   truncateQuoteExcerpt,
@@ -3630,7 +3631,7 @@ const MessageRow = memo(function MessageRow({
             colorScheme={colorScheme}
             onAction={onMenuAction}
             onLongPress={actionProps.onLongPress}
-            onDoubleTap={likeMessage}
+            onDoubleTap={messageHasInlineControls(message.blocks) ? undefined : likeMessage}
           >
             <ThreadReadOnlyContext.Provider value={readOnly}>
               <MessageBubble
