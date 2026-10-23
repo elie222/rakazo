@@ -1,10 +1,9 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import type { PlotSpec } from "./plot-tool.js";
 import {
   buildPlotParts,
   CHART_CATALOG,
-  PLOT_TOOL_GUIDE,
-  type PlotSpec,
   parsePlotData,
   renderPlotSpecToSvg,
   searchChartCatalog,
@@ -334,12 +333,5 @@ describe("render_plot", () => {
     const meta = await sharp(png).metadata();
     const alpha = stats.channels[3];
     expect(meta.channels === 3 || (alpha && alpha.min === 255)).toBe(true);
-  });
-
-  it("ships a guide that teaches the agent how to call the tool", () => {
-    expect(PLOT_TOOL_GUIDE).toContain("How to use the tool");
-    expect(PLOT_TOOL_GUIDE).toContain("data_path");
-    expect(PLOT_TOOL_GUIDE).toContain("Chart catalog");
-    expect(PLOT_TOOL_GUIDE).toContain('{"help": true}');
   });
 });

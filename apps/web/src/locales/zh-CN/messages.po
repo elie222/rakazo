@@ -185,6 +185,11 @@ msgstr "{provider}找不到请求的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider}当前负载过高。请稍后再试。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider}正在限制请求频率。请稍后重试。"
 
@@ -321,7 +326,6 @@ msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window
 msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "订阅凭据已安全存储。"
 
@@ -917,6 +921,10 @@ msgstr "要关联的 Bot"
 msgid "Bot's model"
 msgstr "Bot 的模型"
 
+#: src/components/SignupSurvey.tsx
+msgid "Both"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr ""
@@ -1437,6 +1445,7 @@ msgid "Context limit"
 msgstr "上下文限制"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 msgid "Continue"
@@ -2705,6 +2714,14 @@ msgstr "小时"
 msgid "hours"
 msgstr "小时"
 
+#: src/components/SignupSurvey.tsx
+msgid "How big is your team?"
+msgstr ""
+
+#: src/components/SignupSurvey.tsx
+msgid "How did you hear about us?"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "频率"
@@ -2716,6 +2733,10 @@ msgstr "其他机器人如何了解它"
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "如何检查"
+
+#: src/components/SignupSurvey.tsx
+msgid "How will you use Rakazo?"
+msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -3659,6 +3680,7 @@ msgstr "正在打开聊天…"
 msgid "Opening your Space…"
 msgstr "正在打开工作区…"
 
+#: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -3760,6 +3782,10 @@ msgstr "已暂停"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "权限"
+
+#: src/components/SignupSurvey.tsx
+msgid "Personal"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -4820,6 +4846,7 @@ msgstr "测试"
 msgid "Test API key"
 msgstr "测试 API 密钥"
 
+#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "测试连接"
@@ -4827,10 +4854,6 @@ msgstr "测试连接"
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "测试运行"
-
-#: src/components/ModelConnectionPreflightNotice.tsx
-msgid "Test sign-in"
-msgstr "测试登录"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4893,6 +4916,11 @@ msgstr "此对话为只读"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "这台电脑"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。"
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
@@ -5314,9 +5342,17 @@ msgstr ""
 msgid "Weekdays"
 msgstr "工作日"
 
+#: src/components/SignupSurvey.tsx
+msgid "Welcome to Rakazo"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "它的记忆怎么处理？"
+
+#: src/components/SignupSurvey.tsx
+msgid "What do you most want Rakazo to help with?"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
@@ -5370,6 +5406,10 @@ msgstr "Bot 应在哪里运行？"
 msgid "Won't do"
 msgstr ""
 
+#: src/components/SignupSurvey.tsx
+msgid "Work"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5399,6 +5439,7 @@ msgstr "你"
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "如果没有自动跳转，可以关闭此标签页。"
 
+#: src/pages/IntegrationCallback.tsx
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "可以关闭此窗口。"

@@ -1,11 +1,14 @@
+import { getHeapStatistics } from "node:v8";
 import type {
   BackgroundJob,
+  BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobName,
   JobPublisher,
   JobWorkerHost,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
+import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { isTooManyDatabaseConnections, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
@@ -144,9 +147,14 @@ export class GraphileJobPublisher implements JobPublisher {
  * keep its tenant); each handler then narrows to the tenant of the row it acts for
  * (see createBackgroundJobHandlers).
  */
-function dispatchJob(handlers: BackgroundJobHandlers, name: string, payload: unknown) {
+function dispatchJob(
+  handlers: BackgroundJobHandlers,
+  name: string,
+  payload: unknown,
+  execution?: BackgroundJobExecution,
+) {
   return runAsSystem(`background job ${name}`, () =>
-    dispatchBackgroundJob(handlers, name, payload),
+    dispatchBackgroundJob(handlers, name, payload, execution),
   );
 }
 
@@ -174,6 +182,8 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
   private wakeSleep: (() => void) | undefined;
+  private readonly activeRuns = new Set<Promise<void>>();
+  private readonly capacityWaiters = new Set<() => void>();
 
   constructor(
     private readonly pgPool: Pool,
@@ -202,9 +212,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   async stop(): Promise<void> {
     this.stopping = true;
     this.wakeSleep?.();
+    for (const notify of this.capacityWaiters) notify();
     try {
       await this.runner?.stop();
     } finally {
+      // The queue has stopped accepting deliveries. Handed-off runs still own
+      // leases and must finish before their database and providers are closed.
+      await Promise.allSettled(this.activeRuns);
       await this.superviseTask?.catch(() => undefined);
       this.runner = undefined;
       this.superviseTask = undefined;
@@ -226,12 +240,15 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
           this.options.workload === "interactive" ? INTERACTIVE_RUN_TASK : name,
           async (payload: unknown) => {
             const unpacked = unwrapJobPayload(payload);
-            await runCorrelatedJob({
-              name,
-              payload: unpacked.payload,
-              correlation: unpacked.correlation,
-              run: () => dispatchJob(handlers, name, unpacked.payload),
-            });
+            const execute = (execution?: BackgroundJobExecution) =>
+              runCorrelatedJob({
+                name,
+                payload: unpacked.payload,
+                correlation: unpacked.correlation,
+                run: () => dispatchJob(handlers, name, unpacked.payload, execution),
+              });
+            if (name === "run.continue") await this.executeRun(execute);
+            else await execute();
           },
         ]),
     );
@@ -251,6 +268,55 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       return;
     }
     this.runner = runner;
+  }
+
+  private async executeRun(
+    execute: (execution: BackgroundJobExecution) => Promise<void>,
+  ): Promise<void> {
+    // A waiting network request consumes no dispatch capacity. Admit independent
+    // runs while the process has memory headroom, rather than limiting their count.
+    // Under real pressure, wait for a resident run to finish before loading more
+    // histories. With no resident runs, allow work to resume instead of deadlocking
+    // behind a heap that has not been collected yet.
+    while (this.activeRuns.size > 0) {
+      if (this.stopping) throw new Error("Worker is stopping");
+      const heap = getHeapStatistics();
+      // Image bytes and their base64/JSON copies live outside the JS heap.
+      // Reserve four attachment budgets per resident run, including one that
+      // has not loaded its history yet; also respect the OS/container headroom.
+      const reserve = ATTACHMENT_MAX_BYTES * 4 * (this.activeRuns.size + 1);
+      if (
+        heap.used_heap_size + heap.external_memory + reserve < heap.heap_size_limit * 0.75 &&
+        process.availableMemory() > reserve
+      )
+        break;
+      await new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          this.capacityWaiters.delete(finish);
+          resolve();
+        };
+        const timer = setTimeout(finish, 1_000);
+        timer.unref?.();
+        this.capacityWaiters.add(finish);
+      });
+    }
+    if (this.stopping) throw new Error("Worker is stopping");
+    let onRunStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      onRunStarted = resolve;
+    });
+    const executing = execute({ onRunStarted });
+    const finish = () => {
+      this.activeRuns.delete(tracked);
+      for (const notify of this.capacityWaiters) notify();
+    };
+    // runCorrelatedJob reports failures in their original context. Observe the
+    // rejection after handoff without reporting it again. Before handoff, the
+    // original rejecting promise below still reaches Graphile's retry handling.
+    const tracked = executing.then(finish, finish);
+    this.activeRuns.add(tracked);
+    await Promise.race([started, executing]);
   }
 
   private delay(ms: number): Promise<void> {

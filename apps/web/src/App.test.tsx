@@ -62,6 +62,40 @@ vi.mock("./pages/McpOAuthCallback", () => ({ McpOAuthCallbackPage: () => null })
 
 import { App } from "./App";
 
+it.each([
+  signedIn,
+  { isPending: true, data: null, error: null },
+  { isPending: false, data: null, error: null },
+])(
+  "closes the integration callback without loading the app or requiring a web session (%j)",
+  async (session) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const close = vi.spyOn(window, "close").mockImplementation(() => {});
+    window.history.replaceState(null, "", "/integrations/callback?status=success");
+    capability.session = session;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <MemoryRouter>
+            <App />
+          </MemoryRouter>,
+        ),
+      );
+      expect(close).toHaveBeenCalledOnce();
+      expect(container.textContent).toBe("You can close this window.");
+      expect(container.querySelector("[data-rakazo-app-state]")).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      close.mockRestore();
+      capability.session = null;
+      window.history.replaceState(null, "", "/");
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("loads the board chunk only after bootstrap enables the route", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

@@ -2,9 +2,10 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
-  cloudflareGatewayRouting,
+  cloudflareModelRouting,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  isCloudflareModelProvider,
   isOllamaCloudBaseUrl,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -47,12 +48,12 @@ import {
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
+import { SignupSurvey } from "../components/SignupSurvey";
 import { useCopyText } from "../lib/copy-text";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import type { ModelPreflightFailure } from "../lib/model-connection-preflight";
 import {
   classifyModelConnectionFailure,
-  loadStoredModelAuth,
   modelPreflightSuccessMessage,
   runModelConnectionPreflight,
   unavailableSelectedModel,
@@ -143,8 +144,9 @@ export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
   const fieldId = useId();
-  const [step, setStep] = useState<"loading" | "model" | "bot">("loading");
+  const [step, setStep] = useState<"loading" | "survey" | "model" | "bot">("loading");
   const [billingEnabled, setBillingEnabled] = useState(false);
+  const afterSurveyRef = useRef<"model" | "bot">("bot");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [provider, setProvider] = useState("");
   const [providerAuth, setProviderAuth] = useState<ProviderAuth | undefined>();
@@ -171,9 +173,7 @@ export function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<
-    "api-key" | "sign-in" | "compatible" | null
-  >(null);
+  const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
   const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
   const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
   const preflightRevisionRef = useRef(0);
@@ -203,7 +203,9 @@ export function OnboardingPage() {
         setCatalog(models);
         // No provider is preselected; the deployment default only seeds the model once one is chosen.
         deploymentDefaultModelRef.current = me.defaultModel;
-        setStep(me.needsModel ? "model" : "bot");
+        const next = me.needsModel ? "model" : "bot";
+        afterSurveyRef.current = next;
+        setStep(me.needsSignupSurvey ? "survey" : next);
       })
       .catch(() => setStep("bot"));
     return () => {
@@ -227,8 +229,9 @@ export function OnboardingPage() {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+  const isCloudflare = isCloudflareModelProvider(provider);
   const cloudflareRoutingReady =
-    !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
+    !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
@@ -420,35 +423,6 @@ export function OnboardingPage() {
     setPreflightFailure(result.failure);
   }
 
-  async function testOAuthConnection() {
-    if (!selected) return;
-    const revision = preflightRevisionRef.current;
-    setPreflightTarget("sign-in");
-    setPreflightTesting(true);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setError(null);
-    setNotice(null);
-    const stored = await loadStoredModelAuth(
-      selected.provider,
-      () => rpc.models.credentials(),
-      selected.id,
-    );
-    if (!preflightStillCurrent(revision)) return;
-    const result = await runModelConnectionPreflight({
-      authKind: "oauth",
-      provider: selected.provider,
-      ...stored,
-    });
-    if (!preflightStillCurrent(revision)) return;
-    setPreflightTesting(false);
-    if (result.ok) {
-      setPreflightSuccess(t`A subscription credential is stored securely.`);
-      return;
-    }
-    setPreflightFailure(result.failure);
-  }
-
   function stagedThinkingLevel(): ThinkingLevel | null {
     return clampCatalogThinkingLevel(
       thinkingLevel,
@@ -504,9 +478,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(isCloudflareGateway
-            ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
-            : {}),
+          ...(isCloudflare ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
           modelId,
           label: selected?.providerName ?? provider,
         });
@@ -561,6 +533,7 @@ export function OnboardingPage() {
             <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null}
+        {step === "survey" ? <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} /> : null}
         {step === "model" ? (
           <div>
             <h1 className="text-[32px] font-medium text-foreground">
@@ -918,27 +891,9 @@ export function OnboardingPage() {
                         {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-3"
-                      disabled={oauthPending || preflightTesting}
-                      onClick={() => void testOAuthConnection()}
-                    >
-                      {modelPreflightTestingLabel(
-                        preflightTesting && preflightTarget === "sign-in",
-                        "sign-in",
-                      )}
-                    </Button>
-                    {preflightTarget === "sign-in" ? (
-                      <ModelPreflightFeedback
-                        success={preflightSuccess}
-                        failure={preflightFailure}
-                      />
-                    ) : null}
                   </div>
                 ) : null}
-                {isCloudflareGateway && acceptsKey ? (
+                {isCloudflare && acceptsKey ? (
                   <div className="mt-4 grid gap-4">
                     <label
                       htmlFor={`${fieldId}-account-id`}
@@ -954,20 +909,22 @@ export function OnboardingPage() {
                         className="mt-2"
                       />
                     </label>
-                    <label
-                      htmlFor={`${fieldId}-gateway-id`}
-                      className="block text-sm font-medium text-foreground"
-                    >
-                      <Trans>Gateway ID</Trans>
-                      <Input
-                        id={`${fieldId}-gateway-id`}
-                        value={gatewayId}
-                        onChange={(event) => setGatewayId(event.target.value)}
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="mt-2"
-                      />
-                    </label>
+                    {isCloudflareGateway ? (
+                      <label
+                        htmlFor={`${fieldId}-gateway-id`}
+                        className="block text-sm font-medium text-foreground"
+                      >
+                        <Trans>Gateway ID</Trans>
+                        <Input
+                          id={`${fieldId}-gateway-id`}
+                          value={gatewayId}
+                          onChange={(event) => setGatewayId(event.target.value)}
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="mt-2"
+                        />
+                      </label>
+                    ) : null}
                   </div>
                 ) : null}
                 {acceptsKey ? (

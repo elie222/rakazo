@@ -62,7 +62,7 @@ export function normalizeRunError(
   kind?: "key" | "credit" | "spending" | "rate" | "auth" | "model";
   period?: "none" | "daily" | "weekly" | "monthly";
 } {
-  const prefix = details.trim().match(/^(\d{3})\s*:\s*/);
+  const prefix = details.trim().match(/^(\d{3})(?:\s*:\s*|\s+)/);
   const body = details.trim().slice(prefix?.[0].length ?? 0);
   let parsed: unknown;
   try {
@@ -145,6 +145,15 @@ export function normalizeRunError(
         });
       }
     }
+  } else if (
+    status === 413 ||
+    /context[_ -](?:length|window)|maximum context|exceeds the model context|prompt is too long|too many tokens|request too large/i.test(
+      signals,
+    )
+  ) {
+    summary = translate(
+      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
+    );
   } else if (status === 429) {
     recovery = "connection";
     kind = "rate";
@@ -169,9 +178,18 @@ export function normalizeRunError(
     kind = "model";
     summary = translate("{provider} could not find the requested model.", { provider });
   } else if (
+    status === 502 ||
+    status === 503 ||
+    status === 529 ||
+    /overload|over capacity|temporarily unavailable|service unavailable/i.test(signals)
+  ) {
+    summary = translate("{provider} is overloaded right now. Try again in a moment.", { provider });
+  } else if (
     status === 408 ||
     status === 504 ||
-    /timed?[_ -]?out|timeout|ETIMEDOUT/i.test(signals)
+    /timed?[_ -]?out|timeout|ETIMEDOUT|stream ended|\bterminated\b|socket hang up|ECONNRESET|connection reset|fetch failed|network error/i.test(
+      signals,
+    )
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
   }

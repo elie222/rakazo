@@ -185,6 +185,11 @@ msgstr "{provider} não encontrou o modelo solicitado."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} está sobrecarregado no momento. Tente novamente em instantes."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} está limitando as solicitações. Tente novamente em instantes."
 
@@ -321,7 +326,6 @@ msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window
 msgstr ""
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "Uma credencial de assinatura está armazenada com segurança."
 
@@ -917,6 +921,10 @@ msgstr ""
 msgid "Bot's model"
 msgstr "Modelo do bot"
 
+#: src/components/SignupSurvey.tsx
+msgid "Both"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr ""
@@ -1437,6 +1445,7 @@ msgid "Context limit"
 msgstr "Limite de contexto"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 msgid "Continue"
@@ -2705,6 +2714,14 @@ msgstr "hora"
 msgid "hours"
 msgstr "horas"
 
+#: src/components/SignupSurvey.tsx
+msgid "How big is your team?"
+msgstr ""
+
+#: src/components/SignupSurvey.tsx
+msgid "How did you hear about us?"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Com que frequência"
@@ -2716,6 +2733,10 @@ msgstr "Como outros bots o veem"
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "Como verificar"
+
+#: src/components/SignupSurvey.tsx
+msgid "How will you use Rakazo?"
+msgstr ""
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -3659,6 +3680,7 @@ msgstr "Abrindo o chat…"
 msgid "Opening your Space…"
 msgstr "Abrindo seu espaço de trabalho..."
 
+#: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -3760,6 +3782,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "Permissões"
+
+#: src/components/SignupSurvey.tsx
+msgid "Personal"
+msgstr ""
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -4820,6 +4846,7 @@ msgstr "Teste"
 msgid "Test API key"
 msgstr "Testar chave de API"
 
+#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "Testar conexão"
@@ -4827,10 +4854,6 @@ msgstr "Testar conexão"
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr ""
-
-#: src/components/ModelConnectionPreflightNotice.tsx
-msgid "Test sign-in"
-msgstr "Testar login"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -4893,6 +4916,11 @@ msgstr "Este chat é somente leitura"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "Este computador"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "Esta conversa é longa demais para o modelo. Tentar novamente não vai ajudar. Inicie uma nova conversa ou encurte sua mensagem."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
@@ -5314,9 +5342,17 @@ msgstr ""
 msgid "Weekdays"
 msgstr "Dias da semana"
 
+#: src/components/SignupSurvey.tsx
+msgid "Welcome to Rakazo"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "E suas memórias?"
+
+#: src/components/SignupSurvey.tsx
+msgid "What do you most want Rakazo to help with?"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
@@ -5370,6 +5406,10 @@ msgstr "Onde os bots devem ser executados?"
 msgid "Won't do"
 msgstr ""
 
+#: src/components/SignupSurvey.tsx
+msgid "Work"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5399,6 +5439,7 @@ msgstr "Você"
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "Você pode fechar esta guia se ela não for redirecionada automaticamente."
 
+#: src/pages/IntegrationCallback.tsx
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "Você pode fechar esta janela."
