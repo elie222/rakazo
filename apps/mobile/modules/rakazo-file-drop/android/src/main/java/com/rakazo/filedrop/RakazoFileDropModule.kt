@@ -69,15 +69,12 @@ class RakazoFileDropModule : Module() {
         for (uri in uris) {
           // A drop is bounded work: the thread keeps a handful of attachments, so
           // copying more than that only fills the cache with files nobody reads.
-          // The files left behind are named instead, so the chat can say so.
-          val full = files.size >= MAX_DROP_FILES
-          if (full || copiedBytes >= MAX_DROP_BYTES) {
+          // The files left behind are named instead, so the chat can say the batch
+          // held more than one message can carry.
+          val taken = files.size >= MAX_DROP_FILES || copiedBytes >= MAX_DROP_BYTES
+          if (taken) {
             if (notCopied.size < MAX_REPORTED_SKIPS) {
-              val name = displayName(activity, uri)
-              if (name != null) {
-                if (full) notCopied.add(name)
-                else tooLarge.add(mapOf("name" to name, "limit" to MAX_DROP_BYTES))
-              }
+              displayName(activity, uri)?.let { notCopied.add(it) }
             }
             continue
           }
