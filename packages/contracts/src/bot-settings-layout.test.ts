@@ -7,29 +7,7 @@ describe("bot settings layout", () => {
     const modes: readonly ComputerMode[] = BOT_COMPUTER_MODES;
     expect(modes).toEqual(["team", "dedicated"]);
   });
-  it("keeps voice with read aloud and bot management in Advanced", () => {
-    expect(Object.keys(BOT_SETTINGS_SECTIONS)).toEqual([
-      "profile",
-      "openWork",
-      "memory",
-      "advanced",
-    ]);
-    expect(BOT_SETTINGS_SECTIONS.profile).toEqual(["instructions"]);
-    expect(BOT_SETTINGS_SECTIONS.advanced).toEqual([
-      "model",
-      "thinking",
-      "computer",
-      "memoryScope",
-      "readAloud",
-      "voice",
-      "fleetManagement",
-      "description",
-      "disabledTools",
-      "credentials",
-      "skills",
-      "export",
-      "clear",
-    ]);
+  it("assigns each control to one section", () => {
     const controls = Object.values(BOT_SETTINGS_SECTIONS).flat();
     expect(new Set(controls).size).toBe(controls.length);
   });

@@ -168,9 +168,13 @@ describe("createBackgroundJobHandlers", () => {
       select: { spaceId: true, userId: true },
     });
 
+    const onRunStarted = vi.fn();
+    await handlers["run.continue"]({ runId: "run-1" }, { onRunStarted });
+    expect(continueRun).toHaveBeenLastCalledWith("run-1", "worker-1", onRunStarted);
+
     lookups.findUnique.mockResolvedValueOnce(null as never);
     await handlers["run.continue"]({ runId: "run-gone" });
-    expect(continueRun).toHaveBeenCalledTimes(1);
+    expect(continueRun).toHaveBeenCalledTimes(2);
   });
 
   it("resolves the deployment model when no user credential is configured", async () => {

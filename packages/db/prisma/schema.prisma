@@ -50,9 +50,23 @@ model User {
   agentSecrets               AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
+  signupSurvey                SignupSurvey?
 
   @@unique([email])
   @@map("user")
+}
+
+/// A row with no answers means the user skipped the survey.
+model SignupSurvey {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String?
+  use       String?
+  teamSize  String?
+  source    String?
+  createdAt DateTime @default(now())
+
+  @@map("signup_surveys")
 }
 
 model Session {

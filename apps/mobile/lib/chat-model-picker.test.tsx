@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   catalogEmpty: false,
   extraProviders: false,
   gateway: false,
+  workers: false,
   savedMaxTokens: undefined as number | undefined,
   savedAccountId: "account-fixture",
   savedGatewayId: "gateway-fixture",
@@ -78,6 +79,11 @@ vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({}),
   selectedSpaceId: () => "space-fixture",
   rpc: async (procedure: string, input?: unknown, options?: { signal?: AbortSignal }) => {
+    const cloudflare = mocks.gateway
+      ? { provider: "cloudflare-ai-gateway", providerName: "Cloudflare AI Gateway" }
+      : mocks.workers
+        ? { provider: "cloudflare-workers-ai", providerName: "Cloudflare Workers AI" }
+        : undefined;
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
       await result;
@@ -105,7 +111,7 @@ vi.mock("./api", () => ({
       return {
         userId: "user-fixture",
         spaceId: "space-fixture",
-        defaultProvider: mocks.gateway ? "cloudflare-ai-gateway" : "openrouter",
+        defaultProvider: cloudflare?.provider ?? "openrouter",
         defaultModel: "vendor/model-1",
         hostCredentialProvider: mocks.serverCredentials ? "openrouter" : undefined,
       };
@@ -127,8 +133,8 @@ vi.mock("./api", () => ({
             : [
                 ...catalog.map((entry) => ({
                   ...entry,
-                  provider: mocks.gateway ? "cloudflare-ai-gateway" : entry.provider,
-                  providerName: mocks.gateway ? "Cloudflare AI Gateway" : entry.providerName,
+                  provider: cloudflare?.provider ?? entry.provider,
+                  providerName: cloudflare?.providerName ?? entry.providerName,
                 })),
                 ...(mocks.extraProviders
                   ? ["Anthropic", "Google", "OpenAI", "Other", "Last"].map((name) => ({
@@ -142,12 +148,14 @@ vi.mock("./api", () => ({
       return mocks.connected
         ? [
             {
-              provider: mocks.gateway ? "cloudflare-ai-gateway" : "openrouter",
-              label: mocks.gateway ? "Cloudflare AI Gateway" : "OpenRouter",
+              provider: cloudflare?.provider ?? "openrouter",
+              label: cloudflare?.providerName ?? "OpenRouter",
               maxTokens: mocks.savedMaxTokens,
               ...(mocks.gateway
                 ? { accountId: mocks.savedAccountId, gatewayId: mocks.savedGatewayId }
-                : {}),
+                : mocks.workers
+                  ? { accountId: mocks.savedAccountId }
+                  : {}),
               modelId: "vendor/model-1",
               thinkingLevel: "high",
             },
@@ -493,6 +501,7 @@ beforeEach(() => {
   mocks.catalogEmpty = false;
   mocks.extraProviders = false;
   mocks.gateway = false;
+  mocks.workers = false;
   mocks.savedMaxTokens = undefined;
   mocks.savedAccountId = "account-fixture";
   mocks.savedGatewayId = "gateway-fixture";
@@ -895,6 +904,23 @@ describe("connection settings limit saves", () => {
     expect(buttonWithText("Save")?.nextElementSibling?.textContent).toContain(
       "Enter a whole number",
     );
+  });
+
+  it("edits a Workers AI account without a gateway or replacement key", async () => {
+    mocks.workers = true;
+    await renderModels();
+    expect(container.querySelector('input[aria-label="Account ID"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Gateway ID"]')).toBeNull();
+    editField("Account ID", "account-updated");
+    expect(buttonWithText("Save")?.disabled).toBe(false);
+    await act(async () => buttonWithText("Save")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({ provider: "cloudflare-workers-ai", accountId: "account-updated" }),
+    );
+    expect(
+      mocks.rpc.mock.calls.find(([procedure]) => procedure === "models/connect")?.[1].apiKey,
+    ).toBeUndefined();
   });
 
   it("enables the connected gateway Save only for changed routing and keeps feedback at that button", async () => {

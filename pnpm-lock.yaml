@@ -619,6 +619,9 @@ importers:
       '@earendil-works/pi-telemetry':
         specifier: 1.3.0
         version: 1.3.0
+      '@larksuiteoapi/node-sdk':
+        specifier: 1.73.1
+        version: 1.73.1
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.6.7)
@@ -658,9 +661,6 @@ importers:
       chat:
         specifier: 4.43.0
         version: 4.43.0(zod@4.6.7)
-      chat-adapter-lark:
-        specifier: 0.3.1
-        version: 0.3.1(chat@4.43.0(zod@4.6.7))(zod@4.6.7)
       chat-adapter-sendblue:
         specifier: 0.2.0
         version: 0.2.0(chat@4.43.0(zod@4.6.7))
@@ -1946,10 +1946,6 @@ packages:
 
   '@chat-adapter/catalog@4.43.0':
     resolution: {integrity: sha512-JRH40HwYIXdIiwSc/gNw65q5T/gaf691n4//2YOhjRE4YO9KzSFJ/N+RrTD3M8iGz2jI4Jg92wb6OAqfYsAkTQ==}
-    engines: {node: '>=20'}
-
-  '@chat-adapter/shared@4.39.0':
-    resolution: {integrity: sha512-zc5mB5rYqbp4ts+Z3tG/YwkCypPYphriYpG95ZMRNGiEYx3cYZJZFmAFFM4YLfdz3VIQ99Fd0HFDYVNyAMV7cg==}
     engines: {node: '>=20'}
 
   '@chat-adapter/shared@4.43.0':
@@ -5711,30 +5707,10 @@ packages:
   character-reference-invalid@2.0.1:
     resolution: {integrity: sha512-iBZ4F4wRbyORVsu0jPV7gXkOsGYjGHPmAyv+HiHG8gi5PtC9KI2j1+v8/tlibRvjoWX027ypmG/n0HtO5t7unw==}
 
-  chat-adapter-lark@0.3.1:
-    resolution: {integrity: sha512-b3l1BZ/HCFakaXBumbsTepy/mSftMonNtGhCnNUGZ/OIKO3SIlzTFmY13GXP6mRNfEQ2EH7Tq5NQJslZa1RorA==}
-    peerDependencies:
-      chat: ^4.0.0
-
   chat-adapter-sendblue@0.2.0:
     resolution: {integrity: sha512-JKqRa5KyoBsndRrq2LuGhob1uCdO1goWAbqaSLCld3KE9q288CnEo999GdWuDVWa9yqt1uf5F9/Oe3iFkSrW2w==}
     peerDependencies:
       chat: '>=4.0.0'
-
-  chat@4.39.0:
-    resolution: {integrity: sha512-o7D+oAbQAYFVoc9+OH8wya11609ybRThNTF3s/5C1LAABGGi6IrxoQQEN/aIe+4h5pmKYzUjXeqTcuOZcpIAZA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      ai: ^6.0.182 || ^7.0.0
-      workflow: ^5.0.0-beta.35
-      zod: ^3.0.0 || ^4.0.0
-    peerDependenciesMeta:
-      ai:
-        optional: true
-      workflow:
-        optional: true
-      zod:
-        optional: true
 
   chat@4.43.0:
     resolution: {integrity: sha512-9ICxMewK1+4J0pEbR7eMBTh3JCL3NkyDHAgGrU/gblyyw/+QUcwFHCXIoQMt0Xlyup1c5smS0/gYytTt8NVc6w==}
@@ -11916,15 +11892,6 @@ snapshots:
 
   '@chat-adapter/catalog@4.43.0': {}
 
-  '@chat-adapter/shared@4.39.0(zod@4.6.7)':
-    dependencies:
-      chat: 4.39.0(zod@4.6.7)
-    transitivePeerDependencies:
-      - ai
-      - supports-color
-      - workflow
-      - zod
-
   '@chat-adapter/shared@4.43.0(zod@4.6.7)':
     dependencies:
       chat: 4.43.0(zod@4.6.7)
@@ -16504,38 +16471,10 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
-  chat-adapter-lark@0.3.1(chat@4.43.0(zod@4.6.7))(zod@4.6.7):
-    dependencies:
-      '@chat-adapter/shared': 4.39.0(zod@4.6.7)
-      '@larksuiteoapi/node-sdk': 1.73.1
-      chat: 4.43.0(zod@4.6.7)
-    transitivePeerDependencies:
-      - ai
-      - bufferutil
-      - debug
-      - supports-color
-      - utf-8-validate
-      - workflow
-      - zod
-
   chat-adapter-sendblue@0.2.0(chat@4.43.0(zod@4.6.7)):
     dependencies:
       chat: 4.43.0(zod@4.6.7)
       sendblue: 3.20.1
-
-  chat@4.39.0(zod@4.6.7):
-    dependencies:
-      '@workflow/serde': 4.1.0-beta.2
-      mdast-util-to-string: 4.0.0
-      remark-gfm: 4.0.1
-      remark-parse: 11.0.0
-      remark-stringify: 11.0.0
-      remend: 1.3.1
-      unified: 11.0.5
-    optionalDependencies:
-      zod: 4.6.7
-    transitivePeerDependencies:
-      - supports-color
 
   chat@4.43.0(zod@4.6.7):
     dependencies:
