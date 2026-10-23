@@ -11,6 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 # $1 work dir, $2 uname, $3 docker OperatingSystem, $4 install iptables stub (1/0),
 # $5 egress script exit code, $6 extra .env line.
+# $7 omit the local egress script (1/0).
 run_case() {
   local work="$tmp/$1"
   mkdir -p "$work/bin" "$work/cwd"
@@ -35,26 +36,27 @@ EOF
 exit 0
 STUB
   if [[ "$4" == 1 ]]; then printf '#!/usr/bin/env bash\nexit 0\n' >"$work/bin/iptables"; fi
-  printf '#!/usr/bin/env bash\necho ran >>"%s/script.log"\nexit %s\n' "$work" "$5" \
-    >"$work/cwd/restrict-computer-egress.sh"
+  if [[ "${7:-0}" != 1 ]]; then
+    printf '#!/usr/bin/env bash\necho ran >>"%s/script.log"\nexit %s\n' "$work" "$5" \
+      >"$work/cwd/restrict-computer-egress.sh"
+  else
+    printf '#!/usr/bin/env bash\necho called >>"%s/curl.log"\nexit 1\n' "$work" \
+      >"$work/bin/curl"
+  fi
   chmod +x "$work/bin/"*
   : >"$work/cwd/docker-compose.images.yml"
   : >"$work/cwd/.env.images.example"
   printf 'POSTGRES_PASSWORD=p\nPOSTGRES_APP_PASSWORD=a\n%s\n' "$6" >"$work/cwd/.env"
-  # Without the stub, drop PATH entries holding a real iptables (CI runners have one).
-  local search="$PATH"
-  if [[ "$4" != 1 ]]; then
-    search=""
-    local dir
-    IFS=: read -ra dirs <<<"$PATH"
-    for dir in "${dirs[@]}"; do
-      [[ -x "$dir/iptables" ]] || search="${search:+$search:}$dir"
-    done
-  fi
+  # Keep installer dependencies without exposing the host's iptables or curl.
+  local command_name command_path
+  for command_name in bash env cat grep awk sed sort openssl mktemp mv rm tail; do
+    command_path="$(command -v "$command_name")" || fail "fixture requires $command_name"
+    ln -s "$command_path" "$work/bin/$command_name"
+  done
   (
     cd "$work/cwd"
     unset SANDBOX_COMPUTER_EGRESS
-    PATH="$work/bin:$search" bash "$src" --offline
+    PATH="$work/bin" "$work/bin/bash" "$src" --offline
   ) >"$work/out.log" 2>&1 || fail "$1: installer exited non-zero: $(cat "$work/out.log")"
 }
 
@@ -80,6 +82,17 @@ script_ran desktop-linux && fail "Docker Desktop must not run the egress script"
 
 run_case no-iptables Linux "Debian GNU/Linux 12" 0 0 ""
 [[ "$(egress_of no-iptables)" == open ]] || fail "missing iptables should record open"
+
+script_ran no-iptables && fail "missing iptables must not run the egress script"
+grep -q 'iptables is not installed' "$tmp/no-iptables/out.log" ||
+  fail "missing iptables must reach the unsupported-host fallback"
+
+run_case missing-script Linux "Ubuntu 24.04 LTS" 1 0 "" 1
+[[ "$(egress_of missing-script)" == open ]] || fail "missing offline script should record open"
+script_ran missing-script && fail "missing offline script must not run"
+[[ ! -s "$tmp/missing-script/curl.log" ]] || fail "--offline must not download the optional egress script"
+grep -q 'restrict-computer-egress.sh' "$tmp/missing-script/out.log" ||
+  fail "missing offline script must explain the fallback"
 
 run_case operator-set Linux "Ubuntu 24.04 LTS" 1 0 "SANDBOX_COMPUTER_EGRESS=open"
 [[ "$(grep -c '^SANDBOX_COMPUTER_EGRESS=' "$tmp/operator-set/cwd/.env")" == 1 ]] ||

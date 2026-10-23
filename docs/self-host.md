@@ -1053,9 +1053,11 @@ The export is plaintext: store it like the database itself. Files are not includ
 ./scripts/backup.sh
 ```
 
-This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. A missing
-`data/` produces an empty archive; database or archive errors fail the backup. Discard the
-output directory of any failed run.
+This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. Backup
+directories have mode `0700`, and both artifacts have mode `0600`, including on reused paths.
+A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that restore treats
+as omitted homes. Database or archive errors fail the backup. Discard the output directory of
+any failed run.
 
 ## Public single-VM deployment
 
@@ -1231,20 +1233,72 @@ checksums and decrypts each file into `pg_restore --list` and `tar -t` without w
 bash infra/compose/backup-drill.sh ./<stamp> rakazo-backup.key
 ```
 
-To restore, stop the application services, then stream each file to the server:
+**Never extract appdata over the active volume.** Files created after the snapshot would survive
+and mix with the restored database. Extract into a clean sibling directory, then preserve the
+old tree before replacing it. Pause automatic deploys and the updater during recovery. Stop
+any other processes that write to this database or volume. Keep the application stopped if
+any step fails.
+
+Run these commands in one Bash session on the machine with the identity file. Replace the
+snapshot and volume names first. `VOLUME` must name the volume the API currently mounts at
+`/data`, which can differ when the stack uses another project name.
 
 ```bash
+set -euo pipefail
+umask 077
 COMPOSE="sudo docker compose --env-file .env -f infra/compose/docker-compose.prod.yml"
+VOLUME=rakazo-prod_appdata
+
 ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE stop api worker web"
-age -d -i rakazo-backup.key <stamp>/rakazo.dump.age | ssh deploy@app.example.com \
-  "cd /srv/rakazo && $COMPOSE exec -T postgres sh -c 'pg_restore --clean --if-exists --no-owner -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"'"
+ROLLBACK_DUMP="$(mktemp "$PWD/before-restore.dump.XXXXXX")"
+if ! ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE exec -T postgres sh -c 'pg_dump -Fc -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\"'" \
+  > "$ROLLBACK_DUMP"; then
+  printf 'Pre-restore dump failed. Do not use the partial file at %s. Keep the application stopped.\n' "$ROLLBACK_DUMP" >&2
+  exit 1
+fi
+
+APPDATA="$(ssh deploy@app.example.com "sudo docker volume inspect -f '{{.Mountpoint}}' '$VOLUME'")"
+RESTORE="$(ssh deploy@app.example.com "sudo mktemp -d '${APPDATA%/*}/rakazo-restore.XXXXXX'")"
+ssh deploy@app.example.com "sudo mkdir '$RESTORE/staged'"
+printf 'Record this rollback pair:\nDatabase dump: %s\nData tree on deploy@app.example.com: %s/previous\n' \
+  "$ROLLBACK_DUMP" "$RESTORE"
 age -d -i rakazo-backup.key <stamp>/appdata.tgz.age | ssh deploy@app.example.com \
-  "sudo tar -xzf - --numeric-owner -C \"\$(sudo docker volume inspect -f '{{.Mountpoint}}' rakazo-prod_appdata)\""
-ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait --pull never"
+  "sudo tar -xzf - --numeric-owner -C '$RESTORE/staged'"
+
+age -d -i rakazo-backup.key <stamp>/rakazo.dump.age | ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE exec -T postgres sh -c 'pg_restore --clean --if-exists --no-owner --exit-on-error --single-transaction -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"'"
+
+ssh deploy@app.example.com \
+  "sudo mv -- '$APPDATA' '$RESTORE/previous' && sudo mv -- '$RESTORE/staged' '$APPDATA'"
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE up -d --force-recreate --wait --pull never api worker web"
 ```
 
-Replace `rakazo-prod_appdata` with the volume the api container mounts at `/data` if the stack uses another
-project name. Plaintext snapshots restore the same way with `cat` in place of `age -d`.
+The archive must extract successfully before the SQL import starts. The clean staging directory
+and the rollback tree sit beside the volume's active data directory, on the same filesystem.
+Recreating the application containers makes them mount the replacement directory.
+`--single-transaction` rolls back SQL errors, but it cannot include the directory switch.
+After the import commits, a failed switch or startup can leave the database and active tree
+out of sync. If startup fails, stop `api worker web` again, including containers that did start.
+
+`$ROLLBACK_DUMP` names a private, plaintext rollback dump. `mktemp` creates a new mode-`0600`
+file for each attempt without overwriting `before-restore.dump`, earlier rollback dumps, or
+existing symlink targets. If the dump fails, the commands stop with the application still
+stopped. The printed partial file is not usable rollback data. Preserve earlier rollback pairs
+and fix the dump failure before starting another recovery attempt.
+
+Record the printed database dump path together with its matching remote `$RESTORE/previous`
+tree path. Keep that pair until you have checked the restored application. Do not remove the
+Docker volume while you need the rollback tree. For rollback after SQL commits, keep the
+application stopped and restore the recorded `$ROLLBACK_DUMP` into a freshly created empty
+database. Move the failed active tree to a separate path for diagnosis, then move that attempt's
+recorded `$RESTORE/previous` tree back to `$APPDATA` and recreate the application containers.
+If the first directory move failed, the old tree is still at `$APPDATA`. Inspect both paths
+before moving anything. Switching the tree alone does not roll back the database.
+
+Plaintext snapshots use `cat` in place of `age -d` and the filenames `rakazo.dump` and
+`appdata.tgz`. Use the same clean-directory procedure.
 
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
@@ -1413,10 +1467,30 @@ docker compose --env-file .env \
 ## Restore
 
 For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
-Compose stack, with application services stopped. The SQL import runs in one transaction and
-stops on the first error, including conflicts with existing tables. Files are restored and
-application services started only after the import succeeds. This script does not consume the
-production snapshot's custom-format `rakazo.dump` or `appdata.tgz`.
+Compose stack. The script validates and extracts the homes archive in a clean sibling directory
+before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
+path that is a symlink or a non-directory. Stop bot computers and any other processes that
+write to this database or tree before running the script.
+
+The SQL import runs in one transaction and stops on the first error, including conflicts with
+existing tables. An invalid archive or failed import leaves the current data tree unchanged.
+After SQL succeeds, the script moves the current tree to `data.rollback.<random>/data`,
+prints that path, and replaces `data/` with the saved tree. Files absent from the snapshot
+do not remain in the active tree. A missing homes archive or an empty archive from omitted homes
+leaves `data/` unchanged. An archive containing an empty `data/` directory replaces it with an
+empty tree.
+
+Application services start only after the import and tree replacement succeed. Once writer
+shutdown starts, a later failure or interruption makes the script attempt to stop the API,
+worker, and supervisor again. This includes services that started before final startup failed.
+The script preserves the original failure status even if cleanup fails. If Docker cannot stop
+the services, stop them before recovery.
+
+A failure after the SQL commit cannot roll back the database automatically. Leave the
+application stopped, preserve both trees, and recover a matching database before moving the
+rollback tree back to `data/`. Keep a separate database backup from before recovery if you
+need that rollback. This script does not consume the production snapshot's custom-format
+`rakazo.dump` or `appdata.tgz`.
 
 ```bash
 ./scripts/restore.sh backups/<stamp>

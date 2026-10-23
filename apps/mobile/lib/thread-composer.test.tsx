@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { buildComposerMentionOptions } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { act, createElement, createRef } from "react";
@@ -9,12 +10,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { settleComposer } from "./thread-feedback";
+import { useThreadMentionCatalog } from "./thread-mention-catalog";
 
 const dimensions = vi.hoisted(() => ({ fontScale: 1 }));
 
 const input = vi.hoisted(() => ({
   change: (_value: string) => {},
   key: (_event: { nativeEvent: { key: string } }) => {},
+}));
+const mentionApi = vi.hoisted(() => ({ rpc: vi.fn(), capture: vi.fn(), generation: 1 }));
+vi.mock("./api", () => ({
+  rpc: mentionApi.rpc,
+  captureApiRequestContext: mentionApi.capture,
+  currentApiBase: () => "https://api.test",
+  selectedSpaceId: () => "space-a",
+}));
+vi.mock("./session", () => ({
+  currentSessionGeneration: () => mentionApi.generation,
+  subscribeSessionGeneration: () => () => {},
 }));
 vi.mock("react-native", () => {
   const Surface = ({
@@ -144,6 +157,25 @@ describe("thread composer isolation", () => {
     threadRenders += 1;
     return <ThreadComposer key={threadKey} ref={composer} {...props} {...changes} />;
   }
+  const catalogBots = [{ id: "bot-1", name: "Bot" }];
+  function MentionThreadHarness({ owner = "thread-a" }: { owner?: string }) {
+    const catalog = useThreadMentionCatalog(owner, catalogBots);
+    return (
+      <ThreadComposer
+        key={owner}
+        ref={composer}
+        {...props}
+        onMentionRequested={catalog.onMentionRequested}
+        composerMentionTargets={buildComposerMentionOptions({
+          query: "",
+          bots: [],
+          groups: [],
+          routines: catalog.routines,
+          connectors: catalog.connectors,
+        })}
+      />
+    );
+  }
   function render(changes: Partial<typeof props> & { threadKey?: string } = {}) {
     act(() => root.render(<ThreadHarness {...changes} />));
   }
@@ -160,6 +192,13 @@ describe("thread composer isolation", () => {
     vi.clearAllMocks();
     dimensions.fontScale = 1;
     threadRenders = 0;
+    mentionApi.generation = 1;
+    mentionApi.rpc.mockReset().mockResolvedValue([]);
+    mentionApi.capture.mockReset().mockImplementation(async () => ({
+      apiBase: "https://api.test",
+      sessionGeneration: mentionApi.generation,
+      headers: { authorization: "Bearer account-a", "x-rakazo-space-id": "space-a" },
+    }));
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -180,6 +219,94 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().promptText).toBe(text);
     press("Send");
     expect(props.send).toHaveBeenCalledOnce();
+  });
+
+  it("loads mention-only catalogs only after typing mention syntax and lets the user select loaded targets", async () => {
+    mentionApi.rpc.mockImplementation(async (proc: string) =>
+      proc === "routines/list"
+        ? [{ id: "routine-1", botId: "bot-1", name: "Morning", crons: [] }]
+        : [],
+    );
+    await act(async () => root.render(<MentionThreadHarness />));
+    type("Ordinary text");
+    type("mail@example.test");
+    expect(mentionApi.rpc).not.toHaveBeenCalled();
+    expect(mentionApi.capture).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    await act(async () => input.change("Hello @"));
+    expect(mentionApi.rpc.mock.calls.map(([proc]) => proc)).toEqual([
+      "routines/list",
+      "connections/list",
+      "connections/catalog",
+    ]);
+    expect(container.querySelector('[data-testid="mention-picker"]')!.textContent).toContain(
+      "Morning",
+    );
+    type("Hello @Mor");
+    press("@{name}");
+    expect(composer.current!.snapshot().mentions).toMatchObject([
+      { kind: "routine", id: "routine-1", name: "Morning" },
+    ]);
+    expect(container.querySelector("input")!.value).toBe("Hello ");
+    await act(async () => input.change("Again @"));
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it("continues an existing mention draft after the session is replaced", async () => {
+    mentionApi.rpc.mockImplementation(async (proc: string) =>
+      proc === "routines/list"
+        ? [{ id: `routine-${mentionApi.generation}`, botId: "bot-1", name: "Morning", crons: [] }]
+        : [],
+    );
+    await act(async () => root.render(<MentionThreadHarness />));
+    await act(async () => input.change("@Mor"));
+    mentionApi.generation = 2;
+    await act(async () => root.render(<MentionThreadHarness />));
+    expect(container.querySelector("input")!.value).toBe("@Mor");
+    await act(async () => input.change("@Morn"));
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(6);
+    press("@{name}");
+    expect(composer.current!.snapshot().mentions).toMatchObject([{ id: "routine-2" }]);
+  });
+
+  it("preserves selected chips and the mention draft across a same-target session replacement", async () => {
+    mentionApi.rpc.mockImplementation(async (proc: string) =>
+      proc === "routines/list"
+        ? [{ id: `routine-${mentionApi.generation}`, botId: "bot-1", name: "Morning", crons: [] }]
+        : [],
+    );
+    await act(async () => root.render(<MentionThreadHarness />));
+    await act(async () => input.change("@Mor"));
+    press("@{name}");
+    await act(async () => input.change("Keep @Mor"));
+    mentionApi.generation = 2;
+    await act(async () => root.render(<MentionThreadHarness />));
+
+    expect(container.querySelector("input")!.value).toBe("Keep @Mor");
+    expect(composer.current!.snapshot().mentions).toMatchObject([{ id: "routine-1" }]);
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
+
+    await act(async () => input.change("Keep @Morn"));
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(6);
+    press("@{name}");
+    expect(composer.current!.snapshot().mentions).toMatchObject([
+      { id: "routine-1" },
+      { id: "routine-2" },
+    ]);
+    expect(container.querySelector("input")!.value).toBe("Keep ");
+  });
+
+  it("requires another mention edit after switching the composer target", async () => {
+    await act(async () => root.render(<MentionThreadHarness />));
+    await act(async () => input.change("@"));
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
+    mentionApi.rpc.mockClear();
+    await act(async () => root.render(<MentionThreadHarness owner="thread-b" />));
+    type("New thread");
+    expect(mentionApi.rpc).not.toHaveBeenCalled();
+    await act(async () => input.change("@"));
+    expect(mentionApi.rpc).toHaveBeenCalledTimes(3);
   });
 
   it("preserves draft across reply, attachment, and sending updates and resets on thread switch", () => {

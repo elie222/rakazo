@@ -25,6 +25,7 @@ readonly EGRESS_SCRIPT="restrict-computer-egress.sh"
 prepare_only=false
 skip_existing=false
 pull_never=false
+offline=false
 if [[ "${RAKAZO_DOWNLOAD_SKIP_EXISTING:-}" == "1" ]]; then
   skip_existing=true
 fi
@@ -47,6 +48,7 @@ for arg in "$@"; do
       # Air-gap bootstrap: keep local Compose/env files and do not pull images.
       skip_existing=true
       pull_never=true
+      offline=true
       ;;
     *)
       echo "Usage: bash install-images.sh [--prepare-only] [--local] [--pull-never] [--offline]" >&2
@@ -68,10 +70,18 @@ fail() {
   exit 1
 }
 
-for command_name in curl docker openssl; do
+required_files=("$COMPOSE_FILE" "$ENV_EXAMPLE")
+if [[ "$offline" == true ]]; then
+  for filename in "${required_files[@]}"; do
+    [[ -f "$filename" ]] || fail "--offline requires local ${filename}; copy it into the working directory first."
+  done
+else
+  command -v curl >/dev/null 2>&1 || fail "'curl' is required."
+fi
+
+for command_name in docker openssl; do
   command -v "$command_name" >/dev/null 2>&1 || fail "'$command_name' is required."
 done
-
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
 # Optional proxy knobs from an existing .env (operators often set them there for
@@ -203,6 +213,9 @@ download() {
   if [[ "$skip_existing" == true && -e "$filename" ]]; then
     echo "Using local ${filename}"
     return 0
+  fi
+  if [[ "$offline" == true ]]; then
+    fail "--offline cannot download missing ${filename}; copy it into the working directory first."
   fi
 
   temporary_file=$(mktemp "./${filename}.tmp.XXXXXX")
@@ -357,8 +370,9 @@ configure_computer_egress() {
   echo "See Restricted computer egress in docs/self-host.md." >&2
 }
 
-download "$COMPOSE_FILE"
-download "$ENV_EXAMPLE"
+for filename in "${required_files[@]}"; do
+  download "$filename"
+done
 
 compose_files=(-f "$COMPOSE_FILE")
 override_present=""
