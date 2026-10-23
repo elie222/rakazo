@@ -1267,6 +1267,10 @@ msgstr ""
 msgid "Complete"
 msgstr "पूर्ण"
 
+#: src/components/SubagentCard.tsx
+msgid "Completed"
+msgstr "पूर्ण"
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2442,6 +2446,7 @@ msgstr ""
 msgid "failed"
 msgstr "असफल"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "विफल"
@@ -4244,6 +4249,7 @@ msgid "running"
 msgstr "चल रहा है"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "चल रहा है"
@@ -4719,7 +4725,6 @@ msgstr "एन्क्रिप्टेड रूप में संग्र
 msgid "Stream replies"
 msgstr "जवाब स्ट्रीम करें"
 
-#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
 msgid "subagent"
 msgstr "सबएजेंट"

@@ -13,7 +13,7 @@ test("a completed subagent card folds, opens from its header, and fills its widt
 
   const card = page.getByTestId("subagent-card");
   await expect(card).toBeVisible({ timeout: 30_000 });
-  await expect(card).toContainText("completed", { timeout: 30_000 });
+  await expect(card).toContainText("Completed", { timeout: 30_000 });
   const header = card.getByRole("button");
   const body = card.getByTestId("subagent-body");
   await expect(header).toHaveAttribute("aria-expanded", "false");

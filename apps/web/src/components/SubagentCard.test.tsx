@@ -43,18 +43,35 @@ const finished = {
 };
 
 describe("SubagentCard", () => {
+  it.each(["running", "completed", "failed"] as const)(
+    "labels %s helpers and respects reduced motion",
+    (status) => {
+      const card = mountCard({ ...finished, agentId: `label-${status}`, status });
+      const label =
+        status === "running" ? "Running" : status === "completed" ? "Completed" : "Failed";
+      expect(card.toggle()?.textContent).toContain(label);
+      const pill = [...(card.toggle()?.querySelectorAll("span") ?? [])].find(
+        (span) => span.textContent === label,
+      );
+      expect(pill?.getAttribute("style")).toBeNull();
+      if (status === "running") expect(pill?.className).toContain("motion-safe:animate-");
+      card.unmount();
+    },
+  );
   it("starts folded to one line of the task, without the result", () => {
     const card = mountCard({ ...finished, agentId: "agent-folded" });
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("false");
     expect(card.get("subagent-task")?.textContent).toBe("A long brief");
     expect(card.get("subagent-task")?.className).toContain("truncate");
     expect(card.get("subagent-body")).toBeNull();
+    expect(card.get("subagent-chevron")?.getAttribute("class")).not.toContain("rotate-180");
     card.unmount();
   });
 
   it("opens to the full task and result, and folds again", async () => {
     const card = mountCard({ ...finished, agentId: "agent-toggle" });
-    card.click();
+    flushSync(() => (card.get("subagent-task") as HTMLElement).click());
+    expect(card.get("subagent-chevron")?.getAttribute("class")).toContain("rotate-180");
     expect(card.toggle()?.getAttribute("aria-expanded")).toBe("true");
     expect(card.get("subagent-task")?.className).not.toContain("truncate");
     expect(card.get("subagent-body")?.textContent).toBe("A long report");
@@ -74,7 +91,7 @@ describe("SubagentCard", () => {
       result: undefined,
       progress: "Reading files",
     });
-    expect(card.get("subagent-card")?.textContent).toContain("subagent");
+    expect(card.get("subagent-card")?.textContent).toContain("Running");
     expect(card.get("subagent-body")).toBeNull();
     card.click();
     expect(card.get("subagent-body")?.textContent).toBe("Reading files");

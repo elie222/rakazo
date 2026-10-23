@@ -109,6 +109,7 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
@@ -186,6 +187,7 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
+import { helperHeaderOffset, helperOpenTarget } from "../lib/helper-header-offset";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
@@ -504,6 +506,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const onCall = Boolean(botId) && call?.botId === botId;
   const voiceCallStarting = useRef(false);
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
+  const helperViewport = useRef<View>(null);
+  const helperScrollOffset = useRef(0);
+  const helperResize = useRef<(() => void) | null>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
@@ -2254,6 +2259,52 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
 
   // Event actions read the latest committed screen state without invalidating settled rows.
   const currentRowActions: MessageRowActions = {
+    helperToggle: (measure, toggle, opening) => {
+      if (Platform.OS !== "ios") {
+        toggle();
+        return;
+      }
+      measure((before) => {
+        const correct = () => {
+          requestAnimationFrame(() =>
+            measure((after, cardBottom) => {
+              helperViewport.current?.measureInWindow((_x, y, _width, height) => {
+                const target = opening
+                  ? helperOpenTarget({
+                      headerY: before,
+                      cardBottom: cardBottom + before - after,
+                      topLimit: headerHeight + 24,
+                      visibleBottom: y + height - (readOnly ? insets.bottom : 0),
+                    })
+                  : before;
+                if (showPinnedPage) {
+                  pinnedScroll.current?.scrollTo({
+                    y: helperHeaderOffset(pinnedScrollMetrics.current.offset, after, target),
+                    animated: false,
+                  });
+                } else {
+                  scroll.current?.scrollToOffset({
+                    offset: helperHeaderOffset(helperScrollOffset.current, target, after),
+                    animated: false,
+                  });
+                }
+              });
+            }),
+          );
+        };
+        helperResize.current = correct;
+        toggle();
+        // A helper without a body may not change the list's content size.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (helperResize.current === correct) {
+              helperResize.current = null;
+              correct();
+            }
+          }),
+        );
+      });
+    },
     reply: (message) => {
       setReplyTarget(message);
       setReplyQuote(null);
@@ -2311,6 +2362,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   });
   const rowActions = useMemo<MessageRowActions>(
     () => ({
+      helperToggle: (measure, toggle, opening) =>
+        rowActionsRef.current.helperToggle(measure, toggle, opening),
       reply: (message) => rowActionsRef.current.reply(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
@@ -2574,7 +2627,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         }}
       >
         {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
-        <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
+        <View
+          ref={helperViewport}
+          collapsable={false}
+          style={{ flex: 1, minHeight: headerHeight, position: "relative" }}
+        >
           {showPinnedPage ? (
             <ThreadScrollSurface
               key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
@@ -2598,6 +2655,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 onContentSizeChange={(_, height) => {
                   pinnedScrollMetrics.current.content = height;
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    correctHelper();
+                    return;
+                  }
                   const jumpOffset = jumpAnchor.current.align(headerHeight + 24);
                   if (jumpOffset != null) scrollPinnedTo(jumpOffset);
                   const armedAt = joinPinnedAfterLayout.current;
@@ -2683,6 +2746,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   liveScrollBack.current.onDragStart(event.nativeEvent);
                 }}
                 onScroll={(event) => {
+                  helperScrollOffset.current = event.nativeEvent.contentOffset.y;
                   if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
                     KeyboardController.dismiss();
                   }
@@ -2711,6 +2775,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   publishThreadScrollState(scrollBehavior.current.state());
                 }}
                 onContentSizeChange={(_, height) => {
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
+                    correctHelper();
+                    return;
+                  }
                   publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
                   if (loadingOlderContent.current) {
                     loadingOlderContent.current = false;
@@ -3140,6 +3211,11 @@ function threadItemKey(item: ThreadItem<MobileMessage>) {
 }
 
 type MessageRowActions = {
+  helperToggle: (
+    measure: (done: (y: number, cardBottom: number) => void) => void,
+    toggle: () => void,
+    opening: boolean,
+  ) => void;
   reply: (message: MobileMessage) => void;
   quote: (message: MobileMessage) => void;
   select: (text: string) => void;
@@ -3502,6 +3578,7 @@ const MessageRow = memo(function MessageRow({
                 peerReplies={peerReplies}
                 onTogglePeerReplies={actions.togglePeerReplies}
                 actionProps={actionProps}
+                onHelperToggle={actions.helperToggle}
               />
             </ThreadReadOnlyContext.Provider>
           </MessageContextMenu>
@@ -3562,7 +3639,9 @@ const MessageBubble = memo(function MessageBubble({
   peerReplies,
   onTogglePeerReplies,
   actionProps,
+  onHelperToggle,
 }: {
+  onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
   botName?: string;
   showBotSenderName: boolean;
@@ -3591,9 +3670,23 @@ const MessageBubble = memo(function MessageBubble({
   const tokens = mobileTokens();
   const { t } = useI18n();
   const [peerExpanded, setPeerExpanded] = useState(false);
+  const helperHeader = useRef<View>(null);
+  const helperCard = useRef<View>(null);
+  const helperReducedMotion = useReducedMotion();
   const [subagentOpen, setSubagentOpen] = useState(() =>
     message.blocks.some((block) => block.kind === "subagent" && openHelpers.has(block.agentId)),
   );
+  const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
+  useEffect(() => {
+    helperRotation.value = helperReducedMotion
+      ? subagentOpen
+        ? 180
+        : 0
+      : withTiming(subagentOpen ? 180 : 0, { duration: 150 });
+  }, [subagentOpen, helperReducedMotion, helperRotation]);
+  const helperChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${helperRotation.value}deg` }],
+  }));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -3759,56 +3852,93 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <Pressable
         {...actionProps}
-        onPress={() => {
-          if (subagentOpen) openHelpers.delete(special.agentId);
-          else openHelpers.add(special.agentId);
-          setSubagentOpen(!subagentOpen);
-        }}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: subagentOpen }}
+        ref={helperCard}
+        collapsable={false}
         style={{
           width: "90%",
           borderRadius: 18,
           backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
+        <Pressable
+          {...actionProps}
+          onPress={() => {
+            const toggle = () => {
+              if (subagentOpen) openHelpers.delete(special.agentId);
+              else openHelpers.add(special.agentId);
+              setSubagentOpen(!subagentOpen);
+            };
+            if (onHelperToggle) {
+              onHelperToggle(
+                (done) =>
+                  helperHeader.current?.measureInWindow((_x, y) => {
+                    helperCard.current?.measureInWindow((_cardX, cardY, _width, height) =>
+                      done(y, cardY + height),
+                    );
+                  }),
+                toggle,
+                !subagentOpen,
+              );
+            } else toggle();
           }}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: subagentOpen }}
+          style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
         >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {safeDisplayName(special.name, t("subagent"))}
-          </Text>
-          <Text
-            style={{
-              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              ...typeScale.caption,
-            }}
-          >
-            {running
-              ? t("Running")
-              : special.status === "failed"
-                ? t("Failed")
-                : special.status === "completed"
-                  ? t("Completed")
-                  : special.status}
-          </Text>
-        </View>
-        {special.task ? (
-          <Text
-            numberOfLines={subagentOpen ? undefined : 1}
-            style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
-          >
-            {special.task}
-          </Text>
-        ) : null}
+          <View ref={helperHeader} collapsable={false}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <Text
+                style={{
+                  flexShrink: 1,
+                  flexGrow: 1,
+                  color: tokens.foreground,
+                  ...typeScale.cardTitle,
+                }}
+              >
+                {safeDisplayName(special.name, t("subagent"))}
+              </Text>
+              <Text
+                style={{
+                  color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+                  ...typeScale.caption,
+                }}
+              >
+                {running
+                  ? t("Running")
+                  : special.status === "failed"
+                    ? t("Failed")
+                    : special.status === "completed"
+                      ? t("Completed")
+                      : special.status}
+              </Text>
+              <Animated.View style={helperChevronStyle}>
+                <NativeSymbol
+                  ios="chevron.down"
+                  android="chevron-down"
+                  size={12}
+                  color={tokens.mutedForeground}
+                />
+              </Animated.View>
+            </View>
+            {special.task ? (
+              <Text
+                numberOfLines={subagentOpen ? undefined : 1}
+                style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
+              >
+                {special.task}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
         {subagentOpen && (special.result || special.progress) ? (
-          <View style={{ marginTop: 8 }}>
+          <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
             <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
               {special.result || special.progress || ""}
             </ChatMarkdown>

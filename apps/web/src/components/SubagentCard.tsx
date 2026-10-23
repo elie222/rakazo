@@ -6,7 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@rakazo/ui-web/components/ui/collapsible";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 type SubagentBlock = Extract<ThreadMessage["blocks"][number], { kind: "subagent" }>;
@@ -38,33 +38,37 @@ export function SubagentCard({ block }: { block: SubagentBlock }) {
     >
       <CollapsibleTrigger className="block w-full min-w-0 cursor-pointer rounded-md text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-muted">
         <span className="flex items-center justify-between gap-3">
-          <span className="flex min-w-0 items-center gap-1 text-[15px] font-medium text-foreground">
-            <ChevronRight
-              aria-hidden
-              size={14}
-              strokeWidth={1.8}
-              className={`shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${
-                open ? "rotate-90" : ""
-              }`}
-            />
+          <span className="flex min-w-0 flex-1 items-center text-[15px] font-medium text-foreground">
             <span className="truncate" dir="auto">
               {block.name}
             </span>
           </span>
           <span
-            className={`shrink-0 rounded-full px-[11px] py-1 text-[13px] ${
+            className={`${running ? "motion-safe:animate-[rkPulse_1.2s_ease-in-out_infinite]" : ""} shrink-0 rounded-full px-[11px] py-1 text-[13px] ${
               failed
                 ? "bg-destructive/15 text-destructive"
                 : running
                   ? "bg-warning/15 text-warning"
                   : "bg-success/15 text-success"
             }`}
-            style={{
-              animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-            }}
           >
-            {running ? <Trans>subagent</Trans> : block.status}
+            {running ? (
+              <Trans>Running</Trans>
+            ) : failed ? (
+              <Trans>Failed</Trans>
+            ) : (
+              <Trans>Completed</Trans>
+            )}
           </span>
+          <ChevronDown
+            data-testid="subagent-chevron"
+            aria-hidden
+            size={14}
+            strokeWidth={1.8}
+            className={`shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${
+              open ? "rotate-180" : ""
+            }`}
+          />
         </span>
         <span
           data-testid="subagent-task"

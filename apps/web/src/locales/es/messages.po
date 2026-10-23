@@ -1267,6 +1267,10 @@ msgstr ""
 msgid "Complete"
 msgstr "Completado"
 
+#: src/components/SubagentCard.tsx
+msgid "Completed"
+msgstr "Completado"
+
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/message-view.tsx
@@ -2442,6 +2446,7 @@ msgstr ""
 msgid "failed"
 msgstr "fallido"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Falló"
@@ -4244,6 +4249,7 @@ msgid "running"
 msgstr "en ejecución"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "En ejecución"
@@ -4719,7 +4725,6 @@ msgstr "Almacenado cifrado"
 msgid "Stream replies"
 msgstr "Transmitir respuestas"
 
-#: src/components/SubagentCard.tsx
 #: src/lib/identity-display.ts
 msgid "subagent"
 msgstr "subagente"
