@@ -84,6 +84,10 @@ export const DE_MESSAGES: Record<string, string> = {
     "{provider} konnte das angeforderte Modell nicht finden.",
   "{provider} took too long to respond. Try again.":
     "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} ist gerade überlastet. Versuche es gleich noch einmal.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Diese Unterhaltung ist zu lang für das Modell. Ein erneuter Versuch hilft nicht. Starte einen neuen Chat oder kürze deine Nachricht.",
   "{provider} key hit its limit.": "{provider}: Schlüssellimit erreicht.",
   "{provider} key hit its daily limit.": "{provider}: tägliches Schlüssellimit erreicht.",
   "{provider} key hit its weekly limit.": "{provider}: wöchentliches Schlüssellimit erreicht.",

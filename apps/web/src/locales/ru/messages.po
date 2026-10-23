@@ -185,6 +185,11 @@ msgstr "{provider} не смог найти запрошенную модель.
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} сейчас перегружен. Повторите попытку чуть позже."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} ограничивает частоту запросов. Повторите попытку чуть позже."
 
@@ -4893,6 +4898,11 @@ msgstr "Этот чат доступен только для просмотра"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "этот компьютер"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "Этот разговор слишком длинный для модели. Повторная попытка не поможет. Начните новый чат или сократите сообщение."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx

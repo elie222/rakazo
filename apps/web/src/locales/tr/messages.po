@@ -185,6 +185,11 @@ msgstr "{provider} istenen modeli bulamadı."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} şu anda aşırı yüklü. Kısa bir süre sonra tekrar deneyin."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} istek hızını sınırlıyor. Kısa bir süre sonra tekrar deneyin."
 
@@ -4893,6 +4898,11 @@ msgstr "Bu sohbet yalnızca görüntülenebilir"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "bu bilgisayar"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "Bu sohbet model için çok uzun. Tekrar denemek işe yaramaz. Yeni bir sohbet başlatın veya mesajınızı kısaltın."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx

@@ -185,6 +185,11 @@ msgstr "{provider} could not find the requested model."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} is overloaded right now. Try again in a moment."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} is rate limiting requests. Try again shortly."
 
@@ -4893,6 +4898,11 @@ msgstr "This chat is view-only"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "this computer"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx

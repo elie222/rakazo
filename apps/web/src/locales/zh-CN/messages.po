@@ -185,6 +185,11 @@ msgstr "{provider}找不到请求的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider}当前负载过高。请稍后再试。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider}正在限制请求频率。请稍后重试。"
 
@@ -4893,6 +4898,11 @@ msgstr "此对话为只读"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "这台电脑"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。"
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx

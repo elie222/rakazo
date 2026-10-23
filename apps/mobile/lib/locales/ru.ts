@@ -80,6 +80,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} сейчас перегружен. Повторите попытку чуть позже.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Этот разговор слишком длинный для модели. Повторная попытка не поможет. Начните новый чат или сократите сообщение.",
   "{provider} key hit its limit.": "{provider}: достигнут лимит ключа.",
   "{provider} key hit its daily limit.": "{provider}: достигнут дневной лимит ключа.",
   "{provider} key hit its weekly limit.": "{provider}: достигнут недельный лимит ключа.",

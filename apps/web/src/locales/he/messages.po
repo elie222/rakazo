@@ -185,6 +185,11 @@ msgstr "{provider} לא מצא את המודל המבוקש."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} עמוס כרגע. אפשר לנסות שוב בעוד רגע."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} מגביל את קצב הבקשות. אפשר לנסות שוב בעוד רגע."
 
@@ -4893,6 +4898,11 @@ msgstr "הצ׳אט הזה לקריאה בלבד"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "המחשב הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "השיחה הזו ארוכה מדי בשביל המודל. ניסיון חוזר לא יעזור. אפשר להתחיל צ׳אט חדש או לקצר את ההודעה."
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx

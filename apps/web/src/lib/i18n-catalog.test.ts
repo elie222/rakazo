@@ -35,6 +35,8 @@ describe("lingui catalogs", () => {
       "{provider} rejected the API key. Check your connection settings.",
       "{provider} could not find the requested model.",
       "{provider} took too long to respond. Try again.",
+      "{provider} is overloaded right now. Try again in a moment.",
+      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
       "Details",
     ];
     for (const locale of ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {

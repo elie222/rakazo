@@ -185,6 +185,11 @@ msgstr "{provider} को अनुरोधित मॉडल नहीं म
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} पर अभी बहुत ज़्यादा लोड है। थोड़ी देर में फिर कोशिश करें।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{provider} is rate limiting requests. Try again shortly."
 msgstr "{provider} अनुरोधों की दर सीमित कर रहा है। थोड़ी देर में फिर कोशिश करें।"
 
@@ -4893,6 +4898,11 @@ msgstr "यह चैट केवल देखने के लिए है"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this computer"
 msgstr "यह कंप्यूटर"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "यह बातचीत मॉडल के लिए बहुत लंबी है। फिर कोशिश करने से मदद नहीं मिलेगी। नई चैट शुरू करें या अपना संदेश छोटा करें।"
 
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
