@@ -3004,6 +3004,10 @@ msgstr "指示の履歴"
 msgid "Instructions"
 msgstr "指示"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions {position}"
+msgstr "指示 {position}"
+
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
@@ -3349,6 +3353,10 @@ msgstr "メンバー（{0}）"
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "メモリ"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory {position}"
+msgstr "メモリ {position}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Memory for {title}"
@@ -4951,6 +4959,10 @@ msgstr "サイト"
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
 msgstr "スキル{0}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Skill {position}"
+msgstr "スキル {position}"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx

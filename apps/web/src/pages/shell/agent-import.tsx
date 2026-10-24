@@ -24,6 +24,7 @@ import {
   chooseAgentImportFiles,
   combineImportedInstructions,
   hasAgentImportSecrets,
+  looksLikeCredential,
   openAgentImportArchive,
 } from "@rakazo/core";
 import {
@@ -482,6 +483,16 @@ export function AgentImportForm({
   const defaultNote = plan?.source === "hermes" ? t`Default from Hermes` : t`Default from OpenClaw`;
   // Never the matched text: the expanded item shows the user's own text, unchanged.
   const keyNote = t`Looks like it contains a key`;
+  /**
+   * A flagged item's label, unless the label itself looks like a key (a heading or a skill
+   * name that is one): then its kind and position, so the value is never shown as a title.
+   */
+  const safeLabel = (label: string, containsKey: boolean | undefined, fallback: string) =>
+    containsKey && looksLikeCredential(label) ? fallback : label;
+  const skillLabel = (index: number) => {
+    const position = index + 1;
+    return t`Skill ${position}`;
+  };
   const skipReason = (reason: AgentImportSkipReason) =>
     ({
       runtime: t`Not used by Rakazo`,
@@ -639,11 +650,12 @@ export function AgentImportForm({
                 <Trans>Instructions</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.instructions.map((entry) => {
+                {plan.instructions.map((entry, index) => {
                   const mentions = entry.mentions.join(", ");
+                  const position = index + 1;
                   return item(
                     entry.id,
-                    entry.title,
+                    safeLabel(entry.title, entry.containsKey, t`Instructions ${position}`),
                     entry.content,
                     // What the file is for, then why it may need a look.
                     note(
@@ -672,13 +684,20 @@ export function AgentImportForm({
                 <Trans>Memory</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.memory.map((entry) => {
-                  const { title, spacePath: savedAs } = entry;
+                {plan.memory.map((entry, index) => {
+                  const { spacePath: savedAs } = entry;
+                  const position = index + 1;
+                  const fallback = t`Memory ${position}`;
+                  const title = safeLabel(entry.title, entry.containsKey, fallback);
                   const destination = destinations[entry.id] ?? "bot";
                   const renamed = destination === "space" && savedAs !== entry.path;
                   return item(
                     entry.id,
-                    renamed ? t`${title}, saved as ${savedAs}` : title,
+                    safeLabel(
+                      renamed ? t`${title}, saved as ${savedAs}` : title,
+                      entry.containsKey,
+                      fallback,
+                    ),
                     entry.content,
                     <>
                       <NativeSelect
@@ -719,19 +738,26 @@ export function AgentImportForm({
               </p>
               <ul className="mt-2">
                 {plan.skills.map(
-                  ({
-                    id,
-                    title,
-                    name: savedAs,
-                    content,
-                    description,
-                    warnings,
-                    status,
-                    containsKey,
-                  }) =>
+                  (
+                    {
+                      id,
+                      title,
+                      name: savedAs,
+                      content,
+                      description,
+                      warnings,
+                      status,
+                      containsKey,
+                    },
+                    index,
+                  ) =>
                     item(
                       id,
-                      savedAs === title ? title : t`${title}, saved as ${savedAs}`,
+                      safeLabel(
+                        savedAs === title ? title : t`${title}, saved as ${savedAs}`,
+                        containsKey,
+                        skillLabel(index),
+                      ),
                       content,
                       <>
                         {containsKey ? note(keyNote) : null}

@@ -3004,6 +3004,10 @@ msgstr "지침 기록"
 msgid "Instructions"
 msgstr "지침"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions {position}"
+msgstr "지침 {position}"
+
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
@@ -3349,6 +3353,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "기억"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory {position}"
+msgstr "기억 {position}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Memory for {title}"
@@ -4951,6 +4959,10 @@ msgstr ""
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
 msgstr "작업 기술 {0}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Skill {position}"
+msgstr "스킬 {position}"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx

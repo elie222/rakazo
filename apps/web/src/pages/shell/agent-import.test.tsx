@@ -122,4 +122,63 @@ describe("an item whose text looks like it contains a key", () => {
     await act(async () => box("notes").click());
     expect(box("notes").getAttribute("aria-checked")).toBe("true");
   });
+
+  it("never shows a key as a title: a key-looking heading or skill name gets a plain label", async () => {
+    // Synthetic, built from parts so no scanner mistakes it for a leak.
+    const key = ["sk", "-proj-", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zA12345678"].join("");
+    importPreview.mockResolvedValue({
+      ...plan,
+      memory: [{ ...plan.memory[0]!, title: key, content: `## ${key}\nNotes.` }],
+      skills: [
+        {
+          id: "skill:deploy",
+          title: key,
+          name: key,
+          description: `Uses ${key}`,
+          content: `---\nname: ${key}\n---\nShip it.\n`,
+          warnings: [],
+          status: { kind: "ready" },
+          containsKey: true,
+        },
+      ],
+    } satisfies AgentImportPlan);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <AgentImportForm
+          onBack={() => undefined}
+          onCancel={() => undefined}
+          onCreated={() => undefined}
+        />,
+      );
+    });
+    const reply = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Paste the reply"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "# Instructions\nBe brief.\n",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      [...container!.querySelectorAll("button")]
+        .find((button) => button.textContent === "Continue")!
+        .click(),
+    );
+    const labels = [...container.querySelectorAll("[aria-label]")].map((element) =>
+      element.getAttribute("aria-label"),
+    );
+    expect(labels).toEqual(expect.arrayContaining(["Memory 1", "Skill 1", "Memory for Memory 1"]));
+    const memory = container.querySelector('[data-testid="agent-import-memory"]')!;
+    const skills = container.querySelector('[data-testid="agent-import-skills"]')!;
+    for (const section of [memory, skills]) {
+      const summary = section.querySelector("ul > li > div > div")!;
+      expect(summary.textContent).not.toContain(key);
+    }
+    expect(labels.join("\n")).not.toContain(key);
+  });
 });

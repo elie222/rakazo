@@ -3004,6 +3004,10 @@ msgstr "Instructiegeschiedenis"
 msgid "Instructions"
 msgstr "Instructies"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions {position}"
+msgstr "Instructies {position}"
+
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
@@ -3349,6 +3353,10 @@ msgstr "Leden ({0})"
 #: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Geheugen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory {position}"
+msgstr "Geheugen {position}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Memory for {title}"
@@ -4951,6 +4959,10 @@ msgstr "Site"
 #: src/pages/shell/composer.tsx
 msgid "Skill {0}"
 msgstr "Skill {0}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Skill {position}"
+msgstr "Skill {position}"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/agent-import.tsx

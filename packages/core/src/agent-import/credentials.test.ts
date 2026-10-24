@@ -17,7 +17,8 @@ describe("credential shapes", () => {
     ["GitHub server", join("gh", "s_", body(36))],
     ["GitHub fine-grained", join("github", "_pat_", body(40))],
     ["Slack", join("xo", "xb-", "1234567890-", body(20))],
-    ["AWS", join("AK", "IA", "ABCDEFGH23456789".toUpperCase())],
+    ["AWS", join("AK", "IA", "ABCDEFGH23456789")],
+    ["AWS temporary", join("AS", "IA", "ABCDEFGH23456789")],
     ["Google", join("AI", "za", body(35))],
     ["GitLab", join("gl", "pat-", body(20))],
     ["Hugging Face", join("h", "f_", body(34))],
@@ -25,6 +26,14 @@ describe("credential shapes", () => {
     ["Stripe restricted", join("rk", "_live_", body(24))],
     ["private key", join("-----BEGIN ", "OPENSSH PRIVATE", " KEY-----\nAAAA\n")],
     ["bearer", join("Authorization: Bearer ", body(40))],
+    ["lowercase bearer", join("authorization: bearer ", body(40))],
+    ["uppercase bearer", join("AUTHORIZATION: BEARER ", body(40))],
+    // Fixed-prefix shapes need no digit: these tokens can be all letters.
+    ["all-letter GitHub", join("gh", "p_", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ")],
+    ["all-letter GitLab", join("gl", "pat-", "abcdefghijKLMNOPQRSTuv")],
+    ["all-letter Hugging Face", join("h", "f_", "abcdefghijklmnopqrstuvwxyzABCDEF")],
+    // Accepted: a long hyphenated word with a digit looks like a key. It only unticks an item.
+    ["hyphenated word with a digit", "sk-learn-compatible-estimator-v2-docs"],
   ])("finds a %s key inside Markdown", (_, value) => {
     expect(looksLikeCredential(`Use this:\n\n\`${value}\`\n`)).toBe(true);
   });
@@ -80,5 +89,18 @@ describe("imported items with key-looking text", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.source).toBe("document");
     expect(result.instructions.map((item) => item.containsKey)).toEqual([true]);
+  });
+});
+
+describe("a key only in a title", () => {
+  const key = join("sk", "-proj-", body(40));
+
+  it("flags a document memory whose heading is the key", async () => {
+    const { parseAgentImport } = await import("./index.js");
+    const result = parseAgentImport([
+      { path: "agent.md", content: `# Instructions\nBe brief.\n\n# Memory\n## ${key}\nNotes.\n` },
+    ]);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.memory.map((item) => item.containsKey)).toEqual([true]);
   });
 });

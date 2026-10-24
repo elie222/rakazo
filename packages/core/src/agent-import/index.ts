@@ -346,8 +346,11 @@ function isKnownAgentFile(path: string): boolean {
 
 function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportPlan {
   // Every source, the any-assistant document too: key-looking text is flagged, never changed.
-  const flag = <T extends { content: string }>(item: T) =>
-    looksLikeCredential(item.content) ? { ...item, containsKey: true } : item;
+  // Its title (a heading, a skill's name) and a skill's description count as its text too.
+  const flag = <T extends { content: string; title: string; description?: string }>(item: T) =>
+    [item.content, item.title, item.description ?? ""].some(looksLikeCredential)
+      ? { ...item, containsKey: true }
+      : item;
   return resolveAgentImportNames(
     {
       source,
