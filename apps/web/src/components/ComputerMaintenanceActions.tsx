@@ -27,7 +27,9 @@ export function ComputerMaintenanceActions({
   botId,
   computer,
   onChanged,
+  visibleRecover = false,
 }: {
+  visibleRecover?: boolean;
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
@@ -126,6 +128,21 @@ export function ComputerMaintenanceActions({
       </AlertDialogContent>
     </AlertDialog>
   );
+
+  if (visibleRecover)
+    return (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || pending !== null}
+          onClick={() => openConfirm("recover")}
+        >
+          <Trans>Recover computer</Trans>
+        </Button>
+        {confirmationDialog}
+      </>
+    );
 
   return (
     <>

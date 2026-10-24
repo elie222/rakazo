@@ -1354,6 +1354,7 @@ msgstr "Computer"
 msgid "Computer failed to boot"
 msgstr "Computer failed to boot"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "Computer is asleep"
@@ -1362,6 +1363,7 @@ msgstr "Computer is asleep"
 msgid "Computer is asleep. Open it to wake."
 msgstr "Computer is asleep. Open it to wake."
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Computer is stopped"
@@ -4351,6 +4353,7 @@ msgstr "running"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "Running"
 
@@ -4440,6 +4443,10 @@ msgstr "Scheduled routines"
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "Scopes (optional)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "Screen not connected"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

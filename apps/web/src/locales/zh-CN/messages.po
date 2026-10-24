@@ -1354,6 +1354,7 @@ msgstr "电脑"
 msgid "Computer failed to boot"
 msgstr "电脑启动失败"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "电脑已休眠"
@@ -1362,6 +1363,7 @@ msgstr "电脑已休眠"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "电脑已停止"
@@ -4351,6 +4353,7 @@ msgstr "运行中"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "运行中"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "范围（可选）"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "屏幕未连接"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

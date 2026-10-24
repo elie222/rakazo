@@ -1354,6 +1354,7 @@ msgstr "Computadora"
 msgid "Computer failed to boot"
 msgstr "La computadora no pudo iniciarse"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "La computadora está en reposo"
@@ -1362,6 +1363,7 @@ msgstr "La computadora está en reposo"
 msgid "Computer is asleep. Open it to wake."
 msgstr "La computadora está en reposo. Ábrela para despertarla."
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "La computadora está detenida"
@@ -4351,6 +4353,7 @@ msgstr "en ejecución"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "En ejecución"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "Ámbitos (opcional)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "Pantalla no conectada"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

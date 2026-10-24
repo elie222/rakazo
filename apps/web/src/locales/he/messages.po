@@ -1354,6 +1354,7 @@ msgstr "מחשב"
 msgid "Computer failed to boot"
 msgstr "הפעלת המחשב נכשלה"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "המחשב במצב שינה"
@@ -1362,6 +1363,7 @@ msgstr "המחשב במצב שינה"
 msgid "Computer is asleep. Open it to wake."
 msgstr "המחשב במצב שינה. יש לפתוח אותו כדי להעיר אותו."
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "המחשב כבוי"
@@ -4351,6 +4353,7 @@ msgstr "פועל"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "פועל"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "המסך אינו מחובר"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

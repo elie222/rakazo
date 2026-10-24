@@ -1354,6 +1354,7 @@ msgstr "कंप्यूटर"
 msgid "Computer failed to boot"
 msgstr "कंप्यूटर शुरू नहीं हो सका"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "कंप्यूटर निष्क्रिय है"
@@ -1362,6 +1363,7 @@ msgstr "कंप्यूटर निष्क्रिय है"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "कंप्यूटर रुका हुआ है"
@@ -4351,6 +4353,7 @@ msgstr "चल रहा है"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "चल रहा है"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "स्कोप (वैकल्पिक)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "स्क्रीन कनेक्ट नहीं है"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

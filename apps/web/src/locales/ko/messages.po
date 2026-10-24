@@ -1354,6 +1354,7 @@ msgstr "컴퓨터"
 msgid "Computer failed to boot"
 msgstr "컴퓨터를 시작하지 못했습니다"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "컴퓨터가 절전 상태입니다"
@@ -1362,6 +1363,7 @@ msgstr "컴퓨터가 절전 상태입니다"
 msgid "Computer is asleep. Open it to wake."
 msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "컴퓨터가 중지됨"
@@ -4351,6 +4353,7 @@ msgstr "실행 중"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "실행 중"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "범위 (선택 사항)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "화면이 연결되지 않음"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

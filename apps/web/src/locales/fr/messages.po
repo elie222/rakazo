@@ -1354,6 +1354,7 @@ msgstr "Ordinateur"
 msgid "Computer failed to boot"
 msgstr "Échec du démarrage de l'ordinateur"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "L'ordinateur est en veille"
@@ -1362,6 +1363,7 @@ msgstr "L'ordinateur est en veille"
 msgid "Computer is asleep. Open it to wake."
 msgstr "L'ordinateur est en veille. Ouvrez-le pour le réveiller."
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "L'ordinateur est arrêté"
@@ -4351,6 +4353,7 @@ msgstr "en cours"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "En cours"
 
@@ -4440,6 +4443,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "Portées (facultatif)"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "Écran non connecté"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

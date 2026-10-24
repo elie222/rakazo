@@ -1354,6 +1354,7 @@ msgstr "コンピューター"
 msgid "Computer failed to boot"
 msgstr "コンピューターの起動に失敗しました"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "コンピューターはスリープ中です"
@@ -1362,6 +1363,7 @@ msgstr "コンピューターはスリープ中です"
 msgid "Computer is asleep. Open it to wake."
 msgstr "コンピューターはスリープ中です。開くと起動します。"
 
+#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "コンピューターは停止しています"
@@ -4351,6 +4353,7 @@ msgstr "実行中"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "実行中"
 
@@ -4440,6 +4443,10 @@ msgstr "スケジュール済みのルーティン"
 #: src/pages/McpServersOverlay.tsx
 msgid "Scopes (optional)"
 msgstr "スコープ（任意）"
+
+#: src/pages/Shell.tsx
+msgid "Screen not connected"
+msgstr "画面が接続されていません"
 
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/PluginsOverlay.tsx

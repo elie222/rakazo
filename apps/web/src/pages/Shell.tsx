@@ -183,6 +183,8 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  screenMissing,
+  screenReadLoaded,
   threadRunError,
   userHoldsComputerControl,
 } from "../lib/thread-events";
@@ -637,6 +639,7 @@ function SpaceShell() {
   }, [panel, releaseComputerRecovery]);
   useEffect(() => () => window.clearTimeout(recoveryHoldTimer.current), []);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
+  const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
   const computerOpenRef = useRef(false);
@@ -1139,6 +1142,7 @@ function SpaceShell() {
   async function refreshComputerScreen(id: string) {
     if (!computerVisible.current) return null;
     const request = ++screenRequest.current;
+    const issuedState = computerRef.current?.botId === id ? computerRef.current.state : undefined;
     return loadComputerScreen({
       load: () => rpc.computer.screenUrl({ botId: id }),
       isCurrent: () =>
@@ -1146,6 +1150,12 @@ function SpaceShell() {
         (activeBotId.current === id || computerBotIdRef.current === id) &&
         computerVisible.current,
       commit: (screen) => {
+        setScreenUrlLoadedBotId(
+          computerRef.current?.botId === id &&
+            screenReadLoaded(issuedState, computerRef.current.state)
+            ? id
+            : null,
+        );
         setScreenUrl(screen.url);
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
         if (screen.error || computerErrorFromScreenRef.current) {
@@ -1398,6 +1408,7 @@ function SpaceShell() {
       pinnedAroundRef.current = null;
     }
     screenRequest.current += 1;
+    setScreenUrlLoadedBotId(null);
     setComputerError(null);
     setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(active.id);
@@ -1485,6 +1496,7 @@ function SpaceShell() {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void refreshThread(active.id).catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
+          setScreenUrlLoadedBotId(null);
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
       },
@@ -2642,6 +2654,7 @@ function SpaceShell() {
     showProgress: boolean;
     force?: boolean;
   }) {
+    setScreenUrlLoadedBotId(null);
     const epoch = ++computerBootEpoch.current;
     const stillThisBoot = () => computerBootEpoch.current === epoch;
     const stillThisBot = () =>
@@ -2863,6 +2876,7 @@ function SpaceShell() {
     const targetComputer = computer?.botId === id ? computer : (cached?.computer ?? null);
     const targetScreen = computer?.botId === id ? screenUrl : (cached?.screenUrl ?? null);
     if (computer?.botId !== id) {
+      setScreenUrlLoadedBotId(null);
       commitComputer(targetComputer);
       setScreenUrl(targetScreen);
     }
@@ -2927,16 +2941,32 @@ function SpaceShell() {
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
+  const screenFailure =
+    Boolean(screenLoadError) ||
+    Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
+    screenMissing({
+      state: computer?.state,
+      kind: computer?.kind,
+      booting,
+      screenUrlLoaded: Boolean(computerBot?.id && screenUrlLoadedBotId === computerBot.id),
+      embeddedUrl: embeddedScreenUrl,
+    });
   const computerFailure =
     computerError && !hideScreenLoadError
       ? computerError
-      : screenLoadError
-        ? screenLoadError
-        : !booting && computer?.state === "error"
-          ? t`Computer failed to boot`
-          : null;
+      : (screenLoadError ??
+        (screenFailure
+          ? t`Could not connect to the computer screen`
+          : !booting && computer?.state === "error"
+            ? t`Computer failed to boot`
+            : null));
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+      {screenFailure ? (
+        <p>
+          <Trans>Screen not connected</Trans>
+        </p>
+      ) : null}
       <p className="text-destructive">{computerFailure}</p>
       <Button
         variant="outline"
@@ -2944,6 +2974,7 @@ function SpaceShell() {
         onClick={() => {
           if (!computerBot) return;
           setScreenLoadError(null);
+          setScreenUrlLoadedBotId(null);
           if (computer?.state === "running") {
             // An explicit retry clears any error; background screen reads clear only their own.
             setComputerError(null);
@@ -2960,6 +2991,16 @@ function SpaceShell() {
       >
         <Trans>Retry screen</Trans>
       </Button>
+      {screenFailure && computer?.state === "running" && computerBot ? (
+        <ComputerMaintenanceActions
+          visibleRecover
+          botId={computerBot.id}
+          computer={computer}
+          onChanged={async () => {
+            await refreshComputerFor(computerBot.id);
+          }}
+        />
+      ) : null}
     </div>
   ) : null;
   // Booting shows inline with the screen's own Close; leaving it lets the boot finish.
@@ -3629,7 +3670,19 @@ function SpaceShell() {
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
                   {panel === "settings" ? null : active ? (
-                    (computer?.state ?? active.status)
+                    computer?.state === "running" ? (
+                      t`Running`
+                    ) : computer?.state === "booting" ? (
+                      t`Booting live desktop…`
+                    ) : computer?.state === "error" ? (
+                      t`Computer failed to boot`
+                    ) : computer?.state === "suspended" ? (
+                      t`Computer is asleep`
+                    ) : computer?.state === "stopped" ? (
+                      t`Computer is stopped`
+                    ) : (
+                      active.status
+                    )
                   ) : (
                     <Trans>Group</Trans>
                   )}
