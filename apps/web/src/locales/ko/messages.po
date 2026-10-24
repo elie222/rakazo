@@ -2322,6 +2322,7 @@ msgstr "계정이 없나요?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "완료"
@@ -3654,6 +3655,10 @@ msgstr "일정에 따라"
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "매월 1일 {0}에"
+
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "시작 단계"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -5160,6 +5165,10 @@ msgstr "다시 시도"
 msgid "Try the test again."
 msgstr "테스트를 다시 시도하세요."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "에이전트 사용해 보기"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr ""
@@ -5419,8 +5428,9 @@ msgid "Weekdays"
 msgstr "주중"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Rakazo에 오신 것을 환영합니다"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"

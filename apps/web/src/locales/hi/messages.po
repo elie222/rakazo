@@ -2322,6 +2322,7 @@ msgstr "खाता नहीं है?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "पूर्ण"
@@ -3654,6 +3655,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "1 तारीख को {0} बजे"
+
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "ऑनबोर्डिंग चरण"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -5160,6 +5165,10 @@ msgstr "फिर से कोशिश करें"
 msgid "Try the test again."
 msgstr "परीक्षण फिर से आज़माएँ।"
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "अपने एजेंट को आज़माएँ"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr ""
@@ -5419,8 +5428,9 @@ msgid "Weekdays"
 msgstr "कार्यदिवस"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Rakazo में आपका स्वागत है"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"

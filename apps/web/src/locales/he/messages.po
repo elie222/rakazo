@@ -2322,6 +2322,7 @@ msgstr "אין חשבון?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "הושלם"
@@ -3654,6 +3655,10 @@ msgstr "לפי תזמון"
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
+
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "שלבי ההתחלה"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -5160,6 +5165,10 @@ msgstr "לנסות שוב"
 msgid "Try the test again."
 msgstr "אפשר לנסות את הבדיקה שוב."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "התנסות בסוכן"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr "סוג"
@@ -5419,8 +5428,9 @@ msgid "Weekdays"
 msgstr "שני עד שישי"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "ברוכים הבאים ל-Rakazo"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"

@@ -2322,6 +2322,7 @@ msgstr "Hesabın yok mu?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "Bitti"
@@ -3654,6 +3655,10 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "her ayın 1'inde saat {0}"
+
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "Başlangıç adımları"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -5160,6 +5165,10 @@ msgstr "Tekrar dene"
 msgid "Try the test again."
 msgstr "Testi yeniden dene."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "Ajanını dene"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr ""
@@ -5419,8 +5428,9 @@ msgid "Weekdays"
 msgstr "Hafta içi"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Rakazo'ya hoş geldiniz"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"

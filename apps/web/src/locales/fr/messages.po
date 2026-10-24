@@ -2322,6 +2322,7 @@ msgstr "Vous n'avez pas de compte ?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "Terminé"
@@ -3654,6 +3655,10 @@ msgstr "Sur planification"
 #: src/pages/RoutineSchedule.tsx
 msgid "on the 1st at {0}"
 msgstr "le 1er à {0}"
+
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "Étapes de prise en main"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -5160,6 +5165,10 @@ msgstr "Réessayer"
 msgid "Try the test again."
 msgstr "Relancez le test."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "Essayez votre agent"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr ""
@@ -5419,8 +5428,9 @@ msgid "Weekdays"
 msgstr "Jours ouvrés"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Bienvenue sur Rakazo"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"

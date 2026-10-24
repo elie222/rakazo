@@ -25,6 +25,7 @@ function Stepper({
   steps,
   onSelect,
   completeLabel,
+  tone = "primary",
   className,
   ...props
 }: Omit<React.ComponentProps<"ol">, "onSelect"> & {
@@ -32,8 +33,11 @@ function Stepper({
   onSelect?: (id: string) => void;
   /** Read out after a completed step's title, in the app's language; the kit is not translated. */
   completeLabel: string;
+  /** The colour of done and current steps: ink, or the link blue where a page uses it as its accent. */
+  tone?: "primary" | "link";
 }) {
   const baseId = React.useId();
+  const fill = tone === "link" ? "bg-link" : "bg-primary";
   return (
     <ol data-slot="stepper" className={cn("flex flex-col", className)} {...props}>
       {steps.map((step, index) => {
@@ -57,7 +61,8 @@ function Stepper({
               >
                 <span
                   className={cn(
-                    "absolute inset-0 origin-top bg-primary transition-transform duration-300 ease-out motion-reduce:transition-none",
+                    "absolute inset-0 origin-top transition-transform duration-300 ease-out motion-reduce:transition-none",
+                    fill,
                     complete ? "scale-y-100 delay-300" : "scale-y-0",
                   )}
                 />
@@ -72,13 +77,17 @@ function Stepper({
                   "relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-sm font-medium",
                   step.status === "upcoming"
                     ? "border border-border text-muted-foreground"
-                    : "border-2 border-primary text-foreground",
+                    : cn(
+                        "border-2 text-foreground",
+                        tone === "link" ? "border-link" : "border-primary",
+                      ),
                 )}
               >
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "absolute inset-0 bg-primary transition-[clip-path] duration-300 ease-in-out motion-reduce:transition-none",
+                    "absolute inset-0 transition-[clip-path] duration-300 ease-in-out motion-reduce:transition-none",
+                    fill,
                     complete ? "[clip-path:inset(0)]" : "[clip-path:inset(0_0_100%_0)] delay-300",
                   )}
                 />
