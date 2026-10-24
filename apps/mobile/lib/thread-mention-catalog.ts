@@ -78,6 +78,15 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
           : current,
       );
     }
+    let failed = false;
+    const allowRetry = () => {
+      if (!isCurrent()) return;
+      setState((current) =>
+        current.scope === scope && current.activation === activation
+          ? { ...current, activation: null }
+          : current,
+      );
+    };
     async function load() {
       if (!isCurrent()) return;
       const requestContext = await captureApiRequestContext();
@@ -102,6 +111,7 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
             if (!isCurrent()) return;
             lists[index] = rows.map((routine) => ({ ...routine, botName: bot.name }));
           } catch {
+            failed = true;
             lists[index] = [];
           }
         }
@@ -110,10 +120,14 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
         Array.from({ length: Math.min(ROUTINE_REQUEST_CONCURRENCY, bots.length) }, loadRoutines),
       ).then(() => update({ routines: lists.flat() }));
       const connectors = Promise.all([
-        rpc<Connection[]>("connections/list", {}, options).catch(() => [] as Connection[]),
-        rpc<ConnectionCatalogItem[]>("connections/catalog", {}, options).catch(
-          () => [] as ConnectionCatalogItem[],
-        ),
+        rpc<Connection[]>("connections/list", {}, options).catch(() => {
+          failed = true;
+          return [] as Connection[];
+        }),
+        rpc<ConnectionCatalogItem[]>("connections/catalog", {}, options).catch(() => {
+          failed = true;
+          return [] as ConnectionCatalogItem[];
+        }),
       ]).then(([connections, catalog]) => {
         if (!isCurrent()) return;
         const connected = connections.filter((row) => row.status === "connected");
@@ -142,8 +156,9 @@ export function useThreadMentionCatalog(owner: string, bots: readonly MentionBot
         update({ connectors });
       });
       await Promise.all([routines, connectors]);
+      if (failed) allowRetry();
     }
-    void load().catch(() => update(EMPTY_CATALOG));
+    void load().catch(allowRetry);
     return () => abort.abort();
   }, [activation, apiBase, bots, generation, scope, spaceId]);
 

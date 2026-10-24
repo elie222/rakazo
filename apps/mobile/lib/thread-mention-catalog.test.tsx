@@ -288,6 +288,50 @@ describe("screen-owned mention catalog", () => {
     },
   );
 
+  it.each(["routines/list", "connections/list", "connections/catalog", "context"])(
+    "retries after %s fails on a later mention edit while retaining published results",
+    async (failed) => {
+      const roster = bots.slice(0, 2);
+      let unavailable = true;
+      state.capture.mockImplementation(async () => {
+        if (failed === "context" && unavailable) throw new Error("Unavailable");
+        return {
+          apiBase: state.apiBase,
+          sessionGeneration: state.generation,
+          headers: { "x-rakazo-space-id": state.spaceId },
+        };
+      });
+      state.rpc.mockImplementation(async (proc: string, body: { botId?: string }) => {
+        if (proc === failed && unavailable && body.botId !== "bot-1")
+          throw new Error("Unavailable");
+        if (proc === "routines/list") return [routine(body.botId!)];
+        if (proc === "connections/list") return [connection];
+        return [catalogItem];
+      });
+      await render("thread-a", roster);
+      await activate();
+      const cached = visible();
+      expect(state.capture).toHaveBeenCalledOnce();
+      const capture = deferred<ApiRequestContext>();
+      state.capture.mockReturnValueOnce(capture.promise);
+      unavailable = false;
+      await activate();
+      expect(visible()).toEqual(cached);
+      await act(async () =>
+        capture.resolve({
+          apiBase: state.apiBase,
+          sessionGeneration: state.generation,
+          headers: { "x-rakazo-space-id": state.spaceId },
+        }),
+      );
+      expect(visible().routines).toHaveLength(2);
+      expect(visible().connectors).toHaveLength(2);
+      const calls = state.rpc.mock.calls.length;
+      await activate();
+      expect(state.rpc).toHaveBeenCalledTimes(calls);
+    },
+  );
+
   it("aborts invalidated loads, ignores their late responses and stops launching queued bots", async () => {
     const old = deferred<RoutineFixture[]>();
     state.rpc.mockReturnValue(old.promise);
