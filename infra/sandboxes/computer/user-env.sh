@@ -14,4 +14,8 @@ gid=$(id -g) || exit 1
   if ! awk -F: -v gid="$gid" '$3 == gid { found = 1 } END { exit !found }' /etc/group; then
     printf 'rakazo-runtime:x:%s:\n' "$gid" >> "$NSS_WRAPPER_GROUP" || exit 1
   fi
-) || exit 1
+) || {
+  echo "Failed to create nss_wrapper passwd/group files" >&2
+  exit 1
+}
+export LD_PRELOAD=/usr/local/lib/libnss_wrapper.so

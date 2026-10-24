@@ -1,6 +1,7 @@
-"""Offline regressions for the focus-or-launch wrapper and its control argv."""
+"""Offline regressions for computer startup, focus-or-launch and control argv."""
 import importlib.machinery
 import importlib.util
+import json
 import os
 from pathlib import Path
 import stat
@@ -357,6 +358,59 @@ class ScriptTest(unittest.TestCase):
                 for proc in (other, mine):
                     proc.kill()
                     proc.wait()
+
+
+class ComputerUserEnvTest(unittest.TestCase):
+    def run_user_env(self, root, before=""):
+        computer = Path(__file__).parent
+        dockerfile = (computer / "Dockerfile").read_text()
+        command = json.loads(next(
+            line.removeprefix("CMD ") for line in dockerfile.splitlines()
+            if line.startswith("CMD ")
+        ))
+        self.assertEqual(command[-1], "/usr/local/bin/rakazo-computer")
+        # Exercise the image's startup environment without starting the desktop.
+        script = '''
+set -uo pipefail
+id() {
+    [[ -z "${LD_PRELOAD+x}" ]] || return 1
+    case "$1" in
+        -u) echo 42424 ;;
+        -g) echo 42425 ;;
+    esac
+}
+''' + before + '\nsource "$1"\n[[ "$LD_PRELOAD" == /usr/local/lib/libnss_wrapper.so ]]'
+        return subprocess.run(
+            command[:-1] + ["bash", "-c", script, "bash", str(computer / "user-env.sh")],
+            env={**os.environ, "LD_PRELOAD": "",
+                 "NSS_WRAPPER_PASSWD": str(root / "passwd"),
+                 "NSS_WRAPPER_GROUP": str(root / "group")},
+            text=True, capture_output=True, timeout=5,
+        )
+
+    def test_creates_private_identity_files_before_enabling_preload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "nss"
+            result = self.run_user_env(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertIn("rakazo-runtime:x:42424:42425:", (root / "passwd").read_text())
+            self.assertIn("rakazo-runtime:x:42425:", (root / "group").read_text())
+            for name in ("passwd", "group"):
+                self.assertEqual(stat.S_IMODE((root / name).stat().st_mode), 0o600)
+
+    def test_reports_directory_copy_and_append_failures(self):
+        failures = (
+            "mkdir() { return 1; }",
+            'cp() { [[ "$1" != /etc/passwd ]] && command cp "$@"; }',
+            'cp() { [[ "$1" != /etc/group ]] && command cp "$@"; }',
+            "printf() { return 1; }",
+        )
+        for failure in failures:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                result = self.run_user_env(Path(temp) / "nss", failure)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Failed to create nss_wrapper passwd/group files", result.stderr)
 
 
 if __name__ == "__main__":
