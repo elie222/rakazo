@@ -173,6 +173,8 @@ export function OnboardingPage() {
   // An imported agent replaces Chief as the first bot.
   const [importing, setImporting] = useState(false);
   const importedBotRef = useRef<{ id: string } | null>(null);
+  // The import found a first bot already made (another tab or device): nothing was imported.
+  const [notImported, setNotImported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -524,7 +526,7 @@ export function OnboardingPage() {
   }
 
   useEffect(() => {
-    if (step !== "bot") return;
+    if (step !== "bot" || notImported) return;
     void createFirstBot();
   }, [step]);
 
@@ -545,9 +547,14 @@ export function OnboardingPage() {
               spawnKey: FIRST_BOT_SPAWN_KEY,
             }}
             onBack={() => setImporting(false)}
-            onDone={(bot) => {
-              importedBotRef.current = bot;
+            onDone={(bot, imported) => {
               setImporting(false);
+              if (!imported) {
+                // Said plainly; the user continues into that bot, which keeps its own intro.
+                setNotImported(true);
+                return;
+              }
+              importedBotRef.current = bot;
               // The model step is done when the import brought a usable connection,
               // decided exactly as on load.
               void rpc
@@ -559,7 +566,29 @@ export function OnboardingPage() {
             }}
           />
         ) : null}
-        {step === "model" && !importing ? (
+        {notImported ? (
+          <div className="mb-8" data-testid="onboarding-not-imported">
+            <p role="alert" className="text-sm text-destructive">
+              <Trans>Your first bot already existed, so the agent was not imported.</Trans>
+            </p>
+            <Button
+              className="mt-4"
+              onClick={() => {
+                setNotImported(false);
+                // On to that bot once a model is connected; otherwise the model step stays.
+                void rpc
+                  .me()
+                  .then((me) => {
+                    if (!me.needsModel) setStep("bot");
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              <Trans>Continue</Trans>
+            </Button>
+          </div>
+        ) : null}
+        {step === "model" && !importing && !notImported ? (
           <div>
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Connect a model</Trans>

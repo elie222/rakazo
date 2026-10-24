@@ -245,7 +245,14 @@ describeIntegration("agent import", () => {
     expect(blocks.filter((block) => block.kind === "import_setup")).toEqual([
       {
         kind: "import_setup",
-        items: [{ kind: "model", title: plan.model!.title, provider: plan.model!.provider }],
+        items: [
+          {
+            kind: "model",
+            title: plan.model!.title,
+            provider: plan.model!.provider,
+            providerName: "OpenRouter",
+          },
+        ],
       },
     ]);
   });
@@ -348,6 +355,7 @@ describeIntegration("agent import", () => {
       id: "model",
       title: "openrouter/anthropic/claude-sonnet-4.6",
       provider: "openrouter",
+      providerName: "OpenRouter",
       modelId: "anthropic/claude-sonnet-4.6",
       status: "needs_key",
     });
@@ -1011,6 +1019,21 @@ describeIntegration("agent import", () => {
       botMemory: [],
       routines: [],
     });
+    // The renamed server has one name: in MCP settings, on its approval card and in its record.
+    const renamed = await db.mcpServer.findFirstOrThrow({
+      where: { ...owner, slug: "docs-2" },
+      select: { id: true, name: true },
+    });
+    expect(renamed.name).toBe("docs-2");
+    const secondCards = (
+      await db.message.findMany({
+        where: { thread: { botId: second.id } },
+        select: { blocks: true },
+      })
+    ).flatMap((row) => row.blocks as { kind: string; name?: string; serverId?: string }[]);
+    expect(
+      secondCards.filter((block) => block.kind === "mcp_approval").map((block) => block.name),
+    ).toEqual(["docs-2"]);
     await rpc(app, cookie, "bots/importUndo", { botId: second.id });
     expect(
       (await db.mcpServer.findMany({ where: owner, select: { slug: true } })).map(
@@ -1248,6 +1271,51 @@ describeIntegration("agent import", () => {
         "Edited after.",
       );
       expect(await db.bot.count({ where: { id: chief.id } })).toBe(1);
+    });
+
+    it("puts back the model it set, unless it changed since", async () => {
+      for (const changed of [false, true]) {
+        const { cookie, chief } = await setUp(changed ? "model-changed" : "model");
+        const before = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+        const opted = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+          files: settingsHome,
+          includeSecrets: true,
+        });
+        await rpc(app, cookie, "bots/importCreate", {
+          files: settingsHome,
+          includeSecrets: true,
+          destination: { kind: "existing", botId: chief.id },
+          selection: {
+            instructions: [],
+            memory: [],
+            skills: [],
+            model: true,
+            apiKeys: opted.apiKeys.map((item) => item.id),
+          },
+        });
+        const imported = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+        expect([imported.modelProvider, imported.modelId]).toEqual([
+          "openrouter",
+          "anthropic/claude-sonnet-4.6",
+        ]);
+        if (changed) {
+          await db.bot.update({ where: { id: chief.id }, data: { modelId: "openai/gpt-example" } });
+        }
+        const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
+          botId: chief.id,
+        });
+        const after = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+        if (changed) {
+          expect(undone.model).toBe("keep");
+          expect(after.modelId).toBe("openai/gpt-example");
+        } else {
+          expect(undone.model).toBe("restore");
+          expect([after.modelProvider, after.modelId]).toEqual([
+            before.modelProvider,
+            before.modelId,
+          ]);
+        }
+      }
     });
 
     it("refuses another user's bot as the target", async () => {

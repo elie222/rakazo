@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "与 {0} 的连接仍在等待。可以关闭此窗口稍后再看。"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "包含可运行的代码"
 
@@ -2984,6 +2985,14 @@ msgstr "导入后指令已被修改，因此保持不变。"
 msgid "Its instructions go back to before the import."
 msgstr "指令将恢复到导入之前。"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "导入后模型已被修改，因此保持不变。"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "模型将恢复到导入之前。"
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "跳到最新"
@@ -3495,10 +3504,6 @@ msgstr ""
 msgid "Needs input"
 msgstr "需要输入"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "需要 Rakazo 可能没有的设置"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "需要接管"
@@ -3982,6 +3987,10 @@ msgstr "已暂停"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "权限"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "人设"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "使用未导入的文件"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "使用你电脑上的路径"
@@ -5681,6 +5689,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "工作指令"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "你的 Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "你的邮箱"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "你的第一个机器人已经存在，因此未导入该智能体。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

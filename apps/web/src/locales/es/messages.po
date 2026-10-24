@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "La conexión con {0} sigue pendiente. Puedes cerrar esto y volver a comprobar."
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "Contiene código ejecutable"
 
@@ -2984,6 +2985,14 @@ msgstr "Sus instrucciones cambiaron desde la importación, así que se mantienen
 msgid "Its instructions go back to before the import."
 msgstr "Sus instrucciones vuelven a como estaban antes de la importación."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "Su modelo cambió desde la importación, así que se mantiene."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "Su modelo vuelve al que tenía antes de la importación."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "Ir al más reciente"
@@ -3495,10 +3504,6 @@ msgstr ""
 msgid "Needs input"
 msgstr "Necesita entrada"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "Necesita una configuración que Rakazo quizá no tenga"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "Necesita toma de control"
@@ -3982,6 +3987,10 @@ msgstr "En pausa"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "Permisos"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "Personalidad"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "Usa archivos que no se importan"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "Usa rutas de tu ordenador"
@@ -5681,6 +5689,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "Instrucciones de trabajo"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "Tu Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Tu dirección de correo"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "Tu primer bot ya existía, así que el agente no se importó."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

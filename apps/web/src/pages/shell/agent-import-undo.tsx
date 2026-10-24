@@ -94,6 +94,18 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                   )}
                 </p>
               ) : null}
+              {info.model ? (
+                <p
+                  className="text-[13.5px] text-muted-foreground"
+                  data-testid="agent-import-undo-model"
+                >
+                  {info.model === "restore" ? (
+                    <Trans>Its model goes back to before the import.</Trans>
+                  ) : (
+                    <Trans>Its model changed since the import, so it stays.</Trans>
+                  )}
+                </p>
+              ) : null}
             </AlertDialogHeader>
             {removed.length ? (
               <section aria-label={t`Removed`}>

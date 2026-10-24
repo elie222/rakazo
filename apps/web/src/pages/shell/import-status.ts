@@ -7,6 +7,7 @@ export function useImportStatusText() {
   const need = (item: AgentImportNeed): string => {
     switch (item.kind) {
       case "api_key": {
+        // The provider's display name when the caller has it (e.g. "DeepSeek").
         const provider = item.provider;
         return t`API key for ${provider}`;
       }
@@ -30,6 +31,8 @@ export function useImportStatusText() {
       }
       case "turn_on":
         return t`Paused`;
+      case "bundled_files":
+        return t`Uses files that are not imported`;
     }
   };
   const status = (value: AgentImportStatus): string => {
@@ -38,6 +41,8 @@ export function useImportStatusText() {
         return t`Ready`;
       case "needs_setup":
         return value.needs.map(need).join(" · ");
+      case "needs_review":
+        return t`Contains code to run`;
       case "unsupported":
         return value.reason === "not_in_catalog"
           ? t`Not in Rakazo's catalog`

@@ -182,3 +182,33 @@ describe("recognising a dropped agent by its file names", () => {
     expect(isAgentHome(["photos/beach.jpg"])).toBe(false);
   });
 });
+
+describe("one status per skill", () => {
+  const status = (body: string, siblings: string[] = []) =>
+    parseAgentImport(
+      [
+        {
+          path: "workspace/skills/notes/SKILL.md",
+          content: `---\nname: notes\ndescription: Take notes\n---\n\n${body}`,
+        },
+      ],
+      { "skills/notes/SKILL.md": siblings },
+    );
+  const of = (result: ReturnType<typeof status>) =>
+    "error" in result ? null : result.skills[0]!.status;
+
+  it("needs setup when it uses files that are not imported, never Ready", () => {
+    expect(of(status("Run `scripts/save.sh`.\n", ["scripts/save.sh"]))).toEqual({
+      kind: "needs_setup",
+      needs: [{ kind: "bundled_files" }],
+    });
+  });
+
+  it("needs review when it contains code to run, never Ready", () => {
+    expect(of(status("```bash\nrm -rf build\n```\n"))).toEqual({
+      kind: "needs_review",
+      reason: "runs_code",
+    });
+    expect(of(status("Steps.\n"))).toEqual({ kind: "ready" });
+  });
+});

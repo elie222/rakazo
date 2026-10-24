@@ -47,4 +47,22 @@ describe("importing an agent as the first bot", () => {
     expect(importCreate).not.toHaveBeenCalled();
     expect(bots).toEqual([{ id: "chief" }]);
   });
+
+  it("reports not imported when another device made the first bot meanwhile", async () => {
+    let made: { id: string } | undefined;
+    const importCreate = vi.fn(async () => {
+      made = { id: "chief" };
+      throw Object.assign(new Error("Your first bot already exists."), { code: "CONFLICT" });
+    });
+    const result = await importAsFirstBot(
+      {
+        lock: serialLock(),
+        existing: async () => made,
+        spawnKey: "onboarding:first",
+        importCreate,
+      },
+      { name: "Pebble" },
+    );
+    expect(result).toEqual({ bot: { id: "chief" }, imported: false });
+  });
 });

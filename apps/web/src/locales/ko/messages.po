@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다."
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "실행할 코드 포함"
 
@@ -2984,6 +2985,14 @@ msgstr "가져온 뒤 지침이 바뀌었으므로 그대로 유지됩니다."
 msgid "Its instructions go back to before the import."
 msgstr "지침이 가져오기 전 상태로 돌아갑니다."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "가져온 뒤 모델이 바뀌었으므로 그대로 유지됩니다."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "모델이 가져오기 전 상태로 돌아갑니다."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "최신 메시지로 이동"
@@ -3495,10 +3504,6 @@ msgstr ""
 msgid "Needs input"
 msgstr "입력 필요"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "Rakazo에 없을 수 있는 설정이 필요합니다"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "인수 필요"
@@ -3982,6 +3987,10 @@ msgstr "일시 중지됨"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "권한"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "페르소나"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "가져오지 않는 파일을 사용합니다"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "내 컴퓨터의 경로를 사용합니다"
@@ -5681,6 +5689,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "작업 지침"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "사용 중인 Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "이메일 주소"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "첫 번째 봇이 이미 있어서 에이전트를 가져오지 않았습니다."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

@@ -36,7 +36,7 @@ export function ImportSetupCard({
           const name = item.kind === "model" ? item.title : item.name;
           const detail =
             item.kind === "model"
-              ? text.need({ kind: "api_key", provider: item.provider })
+              ? text.need({ kind: "api_key", provider: item.providerName ?? item.provider })
               : item.kind === "routine"
                 ? text.need({ kind: "turn_on" })
                 : item.needs.map(text.need).join(" · ");

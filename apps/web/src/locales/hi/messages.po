@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} से कनेक्शन अभी लंबित है। आप इसे बंद करके बाद में जांच सकते हैं।"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "चलाने योग्य कोड है"
 
@@ -2984,6 +2985,14 @@ msgstr "इंपोर्ट के बाद इसके निर्दे�
 msgid "Its instructions go back to before the import."
 msgstr "इसके निर्देश इंपोर्ट से पहले जैसे हो जाएँगे।"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "इंपोर्ट के बाद इसका मॉडल बदला गया है, इसलिए वह बना रहेगा।"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "इसका मॉडल इंपोर्ट से पहले जैसा हो जाएगा।"
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "नवीनतम संदेश पर जाएँ"
@@ -3495,10 +3504,6 @@ msgstr ""
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "ऐसा सेटअप चाहिए जो Rakazo में शायद न हो"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "नियंत्रण लेना ज़रूरी"
@@ -3982,6 +3987,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "अनुमतियाँ"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "व्यक्तित्व"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "ऐसी फ़ाइलें इस्तेमाल करता है जो इंपोर्ट नहीं होतीं"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "आपके कंप्यूटर के पाथ इस्तेमाल करता है"
@@ -5681,6 +5689,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "काम के निर्देश"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "आपका Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "आपका ईमेल पता"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "आपका पहला बॉट पहले से मौजूद था, इसलिए एजेंट इंपोर्ट नहीं हुआ।"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

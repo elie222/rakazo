@@ -2,6 +2,7 @@ import type {
   AgentImportFile,
   AgentImportInstruction,
   AgentImportMemory,
+  AgentImportNeed,
   AgentImportPlan,
   AgentImportSkill,
 } from "@rakazo/contracts";
@@ -101,8 +102,7 @@ export function skillItem(
     name: parsed.name,
     description: parsed.description,
     content: markdown,
-    warnings: skillWarnings(view, parsed.body, siblings),
-    status: skillStatus(skillRequirements(frontmatter(view))),
+    ...skillAssessment(view, parsed.body, siblings),
   };
 }
 
@@ -180,14 +180,29 @@ function frontmatter(content: string): Record<string, unknown> {
   }
 }
 
-function skillStatus(requirements: {
-  names: string[];
-  otherPlatform: boolean;
-}): AgentImportSkill["status"] {
-  if (requirements.otherPlatform) return { kind: "unsupported", reason: "other_platform" };
-  return requirements.names.length
-    ? { kind: "needs_setup", needs: [{ kind: "requires", names: requirements.names }] }
-    : { kind: "ready" };
+/**
+ * A skill's one status: not supported (another platform), needs setup (what it declares,
+ * or files next to its SKILL.md that are not imported), needs review (code to run), or ready.
+ * The warnings keep the same facts for the server's checks.
+ */
+function skillAssessment(
+  content: string,
+  body: string,
+  siblings: readonly string[],
+): Pick<AgentImportSkill, "warnings" | "status"> {
+  const warnings = skillWarnings(content, body, siblings);
+  const requirements = skillRequirements(frontmatter(content));
+  const needs: AgentImportNeed[] = [];
+  if (requirements.names.length) needs.push({ kind: "requires", names: requirements.names });
+  if (warnings.includes("bundled_files")) needs.push({ kind: "bundled_files" });
+  const status: AgentImportSkill["status"] = requirements.otherPlatform
+    ? { kind: "unsupported", reason: "other_platform" }
+    : needs.length
+      ? { kind: "needs_setup", needs }
+      : warnings.includes("runs_code")
+        ? { kind: "needs_review", reason: "runs_code" }
+        : { kind: "ready" };
+  return { warnings, status };
 }
 
 /**

@@ -162,8 +162,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   const skills = homePreview.getByTestId("agent-import-skills");
   await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
-  // Each item says whether it works here: Ready, what it needs, or not supported.
-  await expect(skills.getByText("Ready · Contains code to run", { exact: true })).toBeVisible();
+  // Each item has one status: Ready, what it needs, to review first, or not supported.
+  await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
   const mcp = homePreview.getByTestId("agent-import-mcp");
   await expect(mcp.getByRole("checkbox", { name: "docs" })).not.toBeChecked();
   await expect(mcp.getByText("Credentials: Authorization", { exact: true })).toBeVisible();
@@ -187,7 +187,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     name: "deepseek/deepseek-flash",
   });
   await expect(modelBox).toBeDisabled();
-  await expect(model.getByText("API key for deepseek", { exact: true })).toBeVisible();
+  await expect(model.getByText("API key for DeepSeek", { exact: true })).toBeVisible();
   const keys = homePreview.getByTestId("agent-import-keys");
   const optIn = keys.getByRole("checkbox", { name: "Include API keys" });
   await expect(optIn).not.toBeChecked();
@@ -586,9 +586,13 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   await panel.getByTestId("agent-import-folder").setInputFiles(home);
   const instructions = panel.getByTestId("agent-import-instructions");
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
-  await expect(instructions.getByText("Default from OpenClaw", { exact: true })).toBeVisible();
+  await expect(
+    instructions.getByText("Persona · Default from OpenClaw", { exact: true }),
+  ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
-  await expect(instructions.getByText("Mentions OpenClaw features", { exact: true })).toBeVisible();
+  await expect(
+    instructions.getByText("Working instructions · Mentions OpenClaw features", { exact: true }),
+  ).toBeVisible();
   await instructions.getByRole("button", { name: "AGENTS.md", exact: true }).click();
   await expect(instructions.getByText("Mentions: Session Startup, BOOTSTRAP.md")).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-defaults-openclaw");
@@ -605,7 +609,9 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   );
   await panel.getByTestId("agent-import-archive").setInputFiles(hermes);
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
-  await expect(instructions.getByText("Default from Hermes", { exact: true })).toBeVisible();
+  await expect(
+    instructions.getByText("Persona · Default from Hermes", { exact: true }),
+  ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await captureScreenshot(page, testInfo, "agent-import-defaults-hermes");
 });

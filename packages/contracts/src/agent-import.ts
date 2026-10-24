@@ -117,6 +117,8 @@ export const AgentImportModelSchema = z.object({
   /** The model as the source names it, e.g. `openrouter/anthropic/claude-sonnet-4.6`. */
   title: z.string(),
   provider: z.string(),
+  /** The provider as model settings name it, e.g. "DeepSeek". */
+  providerName: z.string().optional(),
   modelId: z.string(),
   /** `ready`: a connection exists; `needs_key`: only with this provider's key; `unknown`: not offered. */
   status: z.enum(["ready", "needs_key", "unknown"]),
@@ -291,5 +293,7 @@ export const AgentImportInfoSchema = z.object({
    * back (`restore`) or keeps the current ones because they changed since (`keep`).
    */
   instructions: z.enum(["restore", "keep"]).nullable().default(null),
+  /** Likewise for a model the import set on an existing bot. */
+  model: z.enum(["restore", "keep"]).nullable().default(null),
 });
 export type AgentImportInfo = z.infer<typeof AgentImportInfoSchema>;

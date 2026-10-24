@@ -201,11 +201,13 @@ describe("OpenClaw settings", () => {
     expect(openclaw(false).model).toEqual({
       title: "openrouter/anthropic/claude-sonnet-4.6",
       provider: "openrouter",
+      providerName: "OpenRouter",
       modelId: "anthropic/claude-sonnet-4.6",
       known: true,
     });
     expect(openclaw(false, "workspace-research").model).toMatchObject({
       provider: "xai",
+      providerName: "xAI",
       modelId: "grok-4",
     });
   });

@@ -20,7 +20,17 @@ export async function importAsFirstBot<Request extends ImportCreateRequest>(
   return deps.lock(async () => {
     const first = await deps.existing();
     if (first) return { bot: first, imported: false };
-    const bot = await deps.importCreate({ ...input, spawnKey: deps.spawnKey });
-    return { bot: { id: bot.id }, imported: true };
+    try {
+      const bot = await deps.importCreate({ ...input, spawnKey: deps.spawnKey });
+      return { bot: { id: bot.id }, imported: true };
+    } catch (error) {
+      // Another device made the first bot meanwhile: the server keeps it and imports nothing.
+      const made =
+        (error as { code?: string } | null)?.code === "CONFLICT"
+          ? await deps.existing()
+          : undefined;
+      if (!made) throw error;
+      return { bot: made, imported: false };
+    }
   });
 }

@@ -10,6 +10,7 @@ import type {
   ComputerMode,
 } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -55,6 +56,7 @@ const STATUS_WARNINGS: ReadonlySet<AgentImportWarning> = new Set([
   "needs_setup",
   "unsupported_command",
   "local_path",
+  "bundled_files",
 ]);
 
 const panelStyle = { section: "mt-6", heading: "text-sm text-foreground" };
@@ -319,6 +321,12 @@ export function AgentImportForm({
   async function pickDocument(list: FileList | null) {
     const file = list?.[0];
     if (!file) return;
+    // Checked before reading: a document is one uploaded file, at most this many characters
+    // (up to four UTF-8 bytes each), so anything bigger is refused without reading it.
+    if (file.size > AGENT_IMPORT_MAX_FILE_LENGTH * 4) {
+      setError(t`These files are too large to import.`);
+      return;
+    }
     try {
       await previewDocument(await file.text());
     } catch (err) {
@@ -475,24 +483,28 @@ export function AgentImportForm({
       invalid_file: t`Could not read these files`,
       default: defaultNote,
     })[reason];
+  /** Extra detail next to a status; the status already says what it needs. */
   const warningText = (warning: AgentImportWarning) =>
-    ({
-      needs_setup: t`Needs setup Rakazo may not have`,
-      bundled_files: t`Uses files that are not imported`,
-      runs_code: t`Contains code to run`,
-      unsupported_command: t`Not supported in Rakazo`,
-      local_path: t`Uses paths on your computer`,
-      dropped_settings: t`Some settings are not imported`,
-      changed_schedule: t`Timing may differ`,
-    })[warning];
+    warning === "runs_code"
+      ? t`Contains code to run`
+      : warning === "dropped_settings"
+        ? t`Some settings are not imported`
+        : warning === "changed_schedule"
+          ? t`Timing may differ`
+          : null;
   /**
    * Next to each skill, MCP server and routine: whether it works here (Ready, what it needs,
    * or not supported), then anything else worth reading first.
    */
   const statusNote = (status: AgentImportStatus, warnings: AgentImportWarning[]) => {
-    const others = warnings.filter((warning) => !STATUS_WARNINGS.has(warning));
+    // One status per item; extra detail only when it says something the status does not.
+    const others = warnings.filter(
+      (warning) =>
+        !STATUS_WARNINGS.has(warning) &&
+        !(warning === "runs_code" && status.kind === "needs_review"),
+    );
     return note(
-      [statusText.status(status), ...others.map((warning) => warningText(warning))].join(" · "),
+      [statusText.status(status), ...others.map(warningText)].filter(Boolean).join(" · "),
     );
   };
   const note = (text: string) => (
@@ -616,11 +628,15 @@ export function AgentImportForm({
                     entry.id,
                     entry.title,
                     entry.content,
-                    entry.stock
-                      ? note(defaultNote)
-                      : mentions
-                        ? note(t`Mentions OpenClaw features`)
-                        : undefined,
+                    // What the file is for, then why it may need a look.
+                    note(
+                      [
+                        entry.role === "persona" ? t`Persona` : t`Working instructions`,
+                        entry.stock ? defaultNote : mentions ? t`Mentions OpenClaw features` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                    ),
                     mentions ? t`Mentions: ${mentions}` : undefined,
                   );
                 })}
@@ -710,7 +726,12 @@ export function AgentImportForm({
                           ? { kind: "unsupported", reason: "not_in_catalog" }
                           : {
                               kind: "needs_setup",
-                              needs: [{ kind: "api_key", provider: plan.model.provider }],
+                              needs: [
+                                {
+                                  kind: "api_key",
+                                  provider: plan.model.providerName ?? plan.model.provider,
+                                },
+                              ],
                             },
                     ),
                   ),

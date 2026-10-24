@@ -148,6 +148,11 @@ type ImportRecord = {
   existingBot?: boolean;
   /** When the import replaced that bot's instructions: the history entry with the old ones. */
   instructions?: { versionId: string; imported: string };
+  /** When the import set that bot's model: the one it had before, and the one set. */
+  model?: {
+    previous: { provider: string | null; modelId: string | null };
+    imported: { provider: string; modelId: string };
+  };
 };
 
 /** Warnings that mean the item cannot work at all here. */
@@ -207,12 +212,12 @@ async function buildPlan(
 
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
-    const { title, provider, modelId, known } = settings.model;
+    const { title, provider, providerName, modelId, known } = settings.model;
     // Usable means what `bots.update` would accept for this actor now: a connection for
     // that provider (or the deployment's hosted credits) and a model it can call.
     const usable = (await services.validateBotModel(actor, provider, modelId)) === null;
     const status = usable ? "ready" : known ? "needs_key" : "unknown";
-    model = { id: "model", title, provider, modelId, status };
+    model = { id: "model", title, provider, providerName, modelId, status };
   }
 
   const skipped = [...plan.skipped, ...settings.skipped];
@@ -423,7 +428,13 @@ export async function createImportedBot<PreparedKey>(
   }
   const preparedServers: { id: string; config: McpServerConfigInput; stored: Stored }[] = [];
   for (const server of servers) {
-    const config = { ...server.config, slug: server.slug };
+    // A server renamed to avoid a clash keeps one name everywhere: its name is the new slug.
+    const renamed = server.slug !== server.config.slug;
+    const config = {
+      ...server.config,
+      slug: server.slug,
+      ...(renamed ? { name: server.slug } : {}),
+    };
     preparedServers.push({
       id: server.id,
       config,
@@ -459,6 +470,7 @@ export async function createImportedBot<PreparedKey>(
       list.length = 0;
     }
     record.instructions = undefined;
+    record.model = undefined;
     routineRows.length = 0;
     setup.length = 0;
     if (target) {
@@ -475,10 +487,18 @@ export async function createImportedBot<PreparedKey>(
         if (versionId) record.instructions = { versionId, imported: instructions };
       }
       if (model) {
+        const before = await tx.bot.findUniqueOrThrow({
+          where: { id: botId },
+          select: { modelProvider: true, modelId: true },
+        });
         await tx.bot.update({
           where: { id: botId },
           data: { modelProvider: model.provider, modelId: model.modelId },
         });
+        record.model = {
+          previous: { provider: before.modelProvider, modelId: before.modelId },
+          imported: { provider: model.provider, modelId: model.modelId },
+        };
       }
     }
     for (const prepared of preparedKeys) {
@@ -571,7 +591,12 @@ export async function createImportedBot<PreparedKey>(
       ),
     );
     for (const prepared of preparedServers) {
-      const config = { ...prepared.config, slug: freeSlug(prepared.config.slug, slugs) };
+      const slug = freeSlug(prepared.config.slug, slugs);
+      const config = {
+        ...prepared.config,
+        slug,
+        ...(slug !== prepared.config.slug ? { name: slug } : {}),
+      };
       const row = await services
         .insertMcpServer(tx, actor, config, prepared.stored)
         .catch(conflict("An MCP server with that name was just added. Try again."));
@@ -607,7 +632,12 @@ export async function createImportedBot<PreparedKey>(
     }
     // A model this import could not apply (its provider has no key here) is set up later.
     if (plan.model?.status === "needs_key" && !model) {
-      setup.push({ kind: "model", title: plan.model.title, provider: plan.model.provider });
+      setup.push({
+        kind: "model",
+        title: plan.model.title,
+        provider: plan.model.provider,
+        providerName: plan.model.providerName,
+      });
     }
     // One checklist of what is left to set up, in the same transaction; none if nothing is.
     if (setup.length) {
@@ -739,7 +769,10 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
     existingBot
       ? db.routine.findMany({ where: { botId, id: { in: ids(record.routines) } } })
       : Promise.resolve([]),
-    db.bot.findFirst({ where: { ...owner, id: botId }, select: { instructions: true } }),
+    db.bot.findFirst({
+      where: { ...owner, id: botId },
+      select: { instructions: true, modelProvider: true, modelId: true },
+    }),
   ]);
   const hashes = new Map(record.skills.map((item) => [item.id, item.hash]));
   const revisions = new Map(
@@ -779,6 +812,13 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
     botMemoryChanged:
       !existingBot && botMemory.some((row) => row.revision !== revisions.get(row.id)),
     botMemory: existingBot ? [] : botMemory,
+    // A model set by the import goes back only while it is still the imported one.
+    model: record.model
+      ? bot?.modelProvider === record.model.imported.provider &&
+        bot?.modelId === record.model.imported.modelId
+        ? ("restore" as const)
+        : ("keep" as const)
+      : null,
     // Replaced instructions go back only while they are still the imported ones.
     instructions: record.instructions
       ? bot?.instructions === record.instructions.imported
@@ -795,6 +835,7 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       routines: string[];
     },
     instructions = plan.instructions,
+    model = plan.model,
   ) => {
     const left = <T extends { id: string }>(rows: T[], gone: string[], label: (row: T) => string) =>
       rows.filter((row) => !gone.includes(row.id)).map(label);
@@ -806,6 +847,7 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       createdAt: found.createdAt.toISOString(),
       existingBot,
       instructions,
+      model,
       remove: {
         skills: gone(skills, removed.skills, (row) => row.name),
         spaceMemory: gone(documents, removed.spaceMemory, (row) => row.path),
@@ -947,6 +989,14 @@ export async function undoAgentImport(
           if (!(error instanceof InstructionConflictError)) throw error;
           instructions = "keep";
         }
+      }
+      const model = plan.model;
+      if (model === "restore" && plan.record.model) {
+        const { previous } = plan.record.model;
+        await tx.bot.update({
+          where: { id: botId },
+          data: { modelProvider: previous.provider, modelId: previous.modelId },
+        });
       }
       await tx.agentImport.delete({ where: { id: plan.found.id } });
       result = current.infoFor(removed, instructions);

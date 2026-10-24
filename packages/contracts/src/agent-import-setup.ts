@@ -13,6 +13,8 @@ export const AgentImportNeedSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("requires"), names: z.array(z.string()) }),
   /** Imported routines start paused. */
   z.object({ kind: z.literal("turn_on") }),
+  /** A skill refers to files next to its SKILL.md, which are not imported. */
+  z.object({ kind: z.literal("bundled_files") }),
 ]);
 export type AgentImportNeed = z.infer<typeof AgentImportNeedSchema>;
 
@@ -20,6 +22,8 @@ export type AgentImportNeed = z.infer<typeof AgentImportNeedSchema>;
 export const AgentImportStatusSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ready") }),
   z.object({ kind: z.literal("needs_setup"), needs: z.array(AgentImportNeedSchema).min(1) }),
+  /** Works here, but the user should read it first (a skill with code to run). */
+  z.object({ kind: z.literal("needs_review"), reason: z.literal("runs_code") }),
   z.object({
     kind: z.literal("unsupported"),
     reason: z.enum(["unsupported_command", "not_in_catalog", "other_platform"]),
@@ -29,7 +33,13 @@ export type AgentImportStatus = z.infer<typeof AgentImportStatusSchema>;
 
 /** One line of the setup checklist an import posts in the bot's chat. */
 export const AgentImportSetupItemSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("model"), title: z.string(), provider: z.string() }),
+  z.object({
+    kind: z.literal("model"),
+    title: z.string(),
+    provider: z.string(),
+    /** The provider as model settings name it, e.g. "DeepSeek". */
+    providerName: z.string().optional(),
+  }),
   z.object({
     kind: z.literal("mcp"),
     serverId: z.string(),

@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} bağlantısı hâlâ beklemede. Bunu kapatıp daha sonra tekrar kontrol edebilirsin."
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "Çalıştırılacak kod içeriyor"
 
@@ -2984,6 +2985,14 @@ msgstr "Talimatları içe aktarmadan sonra değişti, bu yüzden kalıyor."
 msgid "Its instructions go back to before the import."
 msgstr "Talimatları içe aktarmadan önceki haline döner."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "Modeli içe aktarmadan sonra değişti, bu yüzden kalıyor."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "Modeli içe aktarmadan önceki haline döner."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "En son mesaja git"
@@ -3495,10 +3504,6 @@ msgstr ""
 msgid "Needs input"
 msgstr "Girdi bekliyor"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "Rakazo'da olmayabilecek bir kurulum gerektirir"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "Devralma bekliyor"
@@ -3982,6 +3987,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "İzinler"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "Kişilik"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "İçe aktarılmayan dosyaları kullanır"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "Bilgisayarınızdaki yolları kullanır"
@@ -5681,6 +5689,10 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "Çalışma talimatları"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "Anthropic sağlayıcınız"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "E-posta adresin"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "İlk botun zaten vardı, bu yüzden ajan içe aktarılmadı."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

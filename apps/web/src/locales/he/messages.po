@@ -1495,6 +1495,7 @@ msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "החיבור ל-{0} עדיין ממתין. אפשר לסגור את החלון ולבדוק שוב."
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Contains code to run"
 msgstr "מכיל קוד להרצה"
 
@@ -2984,6 +2985,14 @@ msgstr "ההוראות שלו השתנו מאז הייבוא, ולכן הן נש
 msgid "Its instructions go back to before the import."
 msgstr "ההוראות שלו יחזרו למצב שלפני הייבוא."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "המודל שלו השתנה מאז הייבוא, ולכן הוא נשאר."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "המודל שלו יחזור לזה שלפני הייבוא."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "מעבר לאחרונות"
@@ -3495,10 +3504,6 @@ msgstr "ממתין לתשובה"
 msgid "Needs input"
 msgstr "ממתין לקלט"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs setup Rakazo may not have"
-msgstr "דורש הגדרה ש-Rakazo אולי לא כוללת"
-
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
@@ -3982,6 +3987,10 @@ msgstr "מושהה"
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "הרשאות"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "פרסונה"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -5524,11 +5533,10 @@ msgstr ""
 msgid "Username"
 msgstr "שם משתמש"
 
-#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
 msgstr "משתמש בקבצים שלא מיובאים"
 
-#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "משתמש בנתיבים במחשב שלך"
@@ -5681,6 +5689,10 @@ msgstr "לא יבוצע"
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "הוראות עבודה"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5731,6 +5743,10 @@ msgstr "Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "כתובת האימייל"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "הבוט הראשון שלך כבר היה קיים, ולכן הסוכן לא יובא."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

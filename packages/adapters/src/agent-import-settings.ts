@@ -27,7 +27,14 @@ type Skipped = {
   reason: "builtin" | "unsupported" | "invalid_file";
 };
 
-export type ImportedModel = { title: string; provider: string; modelId: string; known: boolean };
+export type ImportedModel = {
+  title: string;
+  provider: string;
+  /** The provider as model settings name it. */
+  providerName: string;
+  modelId: string;
+  known: boolean;
+};
 export type ImportedMcpServer = {
   id: string;
   title: string;
@@ -205,8 +212,10 @@ function openClawEnv(config: Json): Record<string, unknown> {
 
 function catalogModel(title: string, provider: string, modelId: string): ImportedModel {
   const id = normalizeImportProvider(provider);
-  const known = listPiCatalog().some((entry) => entry.provider === id && entry.id === modelId);
-  return { title, provider: id, modelId, known };
+  const catalog = listPiCatalog();
+  const known = catalog.some((entry) => entry.provider === id && entry.id === modelId);
+  const providerName = catalog.find((entry) => entry.provider === id)?.providerName ?? id;
+  return { title, provider: id, providerName, modelId, known };
 }
 
 /** The chosen agent's model: its own entry overrides `agents.defaults.model`. */
