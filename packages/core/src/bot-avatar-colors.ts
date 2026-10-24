@@ -1,3 +1,5 @@
+import { parseBotAvatarValue } from "@rakazo/contracts";
+
 export interface BotColorDef {
   id: string;
   name: string;
@@ -147,6 +149,44 @@ export function resolvePersonaColorDef(
   const seed = (shippedHash(identity) ^ Math.imul(1, 2654435769)) >>> 0;
   const index = Math.floor(shippedRandom((seed ^ 2654435769) >>> 0)() * BOT_COLOR_LIST.length);
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
+}
+
+/** WCAG AA contrast for body text. */
+const BUBBLE_TEXT_CONTRAST = 4.5;
+const LIGHT_TEXT = "#FFFFFF";
+
+/**
+ * Your messages in a bot's chat wear that bot's color, deepened as needed for
+ * white body text to meet AA contrast. Photo and white avatars keep the neutral bubble.
+ */
+export function chatUserBubbleColors(
+  avatarValue: string,
+  identity: string,
+): { background: string; foreground: string } | undefined {
+  const parsed = parseBotAvatarValue(avatarValue);
+  if (parsed.kind === "image") return undefined;
+  const def = resolvePersonaColorDef(identity, parsed.kind === "other" ? undefined : parsed.color);
+  if (def.id === "white") return undefined;
+  let background = `#${expandHex(def.hex)}`.toUpperCase();
+  while (contrastRatio(background, LIGHT_TEXT) < BUBBLE_TEXT_CONTRAST) {
+    background = darkenHex(background, 5).toUpperCase();
+  }
+  return { background, foreground: LIGHT_TEXT };
+}
+
+/** WCAG contrast ratio between two hex colors. */
+export function contrastRatio(a: string, b: string): number {
+  const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+}
+
+function relativeLuminance(hex: string): number {
+  const c = expandHex(hex);
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = (Number.parseInt(c.substring(offset, offset + 2), 16) || 0) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
 function expandHex(hex: string): string {

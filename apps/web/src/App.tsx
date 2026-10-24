@@ -1,7 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
-import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import {
@@ -32,8 +31,8 @@ import {
   showSessionUnavailable,
 } from "./lib/session-gate";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
+import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
-import { LocalSettingsPage } from "./pages/LocalSettings";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
@@ -76,8 +75,8 @@ export function App() {
         <ErrorBoundary fallback={<AppFailed />}>
           {window.location.pathname === SSO_CALLBACK_PATH ? (
             <SsoCallbackPage />
-          ) : window.location.pathname === LOCAL_SETTINGS_PAGE ? (
-            <LocalSettingsPage />
+          ) : window.location.pathname === "/integrations/callback" ? (
+            <IntegrationCallbackPage />
           ) : (
             <SessionApp />
           )}
@@ -140,12 +139,7 @@ function SessionApp() {
     return window.location.pathname.startsWith("/app") ? (
       <ShellSkeleton />
     ) : (
-      <div
-        className="grid h-full place-items-center text-muted-foreground/80"
-        data-rakazo-app-state="session-pending"
-      >
-        <Trans>Loading…</Trans>
-      </div>
+      <div className="h-full bg-background" data-rakazo-app-state="session-pending" />
     );
   }
 
@@ -197,7 +191,7 @@ function SessionApp() {
               )
             }
           >
-            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/onboarding/:step?" element={<OnboardingPage />} />
             <Route path="/app" element={<ShellPage />} />
             <Route path="/app/g/:groupId" element={<ShellPage />} />
             <Route path="/app/artifacts" element={<ArtifactsPage />} />

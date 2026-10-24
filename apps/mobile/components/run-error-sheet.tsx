@@ -65,7 +65,7 @@ export function RunErrorSheet({
   const [technical, setTechnical] = useState(false);
   useEffect(() => setTechnical(false), [details]);
   if (!error) return null;
-  const diagnostic = parseRunDiagnostic(details ?? "", locale);
+  const diagnostic = parseRunDiagnostic(error.details, locale);
   const explanation = runErrorExplanation(
     t,
     error.recovery === "connection",

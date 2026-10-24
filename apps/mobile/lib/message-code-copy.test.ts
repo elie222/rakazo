@@ -5,10 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // Exercise MessageRow's actual menu without loading the screen's native dependencies.
 const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
 const start = source.indexOf("    const messageText = selectableMobileMessageText(message);");
-const end = source.indexOf(
-  "  }, [message, actions, readOnly, onCall, colorScheme, t, locale]);",
-  start,
-);
+const end = source.indexOf("\n  }, [", start);
 const menuSource = ts.transpileModule(source.slice(start, end), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -29,6 +26,9 @@ function messageMenu(role: "bot" | "user", blocks: string[]) {
     blockText: () => text,
     quotableMessageSegments: () => [],
     canReactToThreadMessage: () => false,
+    canDoubleTapReact: () => false,
+    waitingForUser: false,
+    canMarkMessageUnread: () => false,
     markdownCodeBlocks,
     Clipboard: { setStringAsync },
     MESSAGE_REACTIONS: [],

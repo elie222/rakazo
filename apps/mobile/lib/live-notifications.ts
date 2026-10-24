@@ -41,7 +41,7 @@ const nativeNotifications =
     ? requireNativeModule<NativeNotifications>("RakazoNotifications")
     : null;
 
-export type NotificationThreadTarget = { botId?: string; threadId?: string };
+export type NotificationThreadTarget = { botId?: string; threadId?: string; groupId?: string };
 
 let openThread: NotificationThreadTarget | null = null;
 let lastConfirmed: NotificationThreadTarget | null = null;
@@ -57,8 +57,13 @@ export function notificationTargetsThread(
   if (!data || !target) return false;
   const dataThreadId = data.threadId ?? data["rakazo.threadId"];
   if (target.threadId && dataThreadId) return dataThreadId === target.threadId;
+  const dataGroupId = data.groupId ?? data["rakazo.groupId"];
+  if (target.groupId) return dataGroupId === target.groupId;
+  // A bot's own chat, not a group it posted in.
   return Boolean(
-    target.botId && (data.botId === target.botId || data["rakazo.botId"] === target.botId),
+    target.botId &&
+      !dataGroupId &&
+      (data.botId === target.botId || data["rakazo.botId"] === target.botId),
   );
 }
 
@@ -67,7 +72,10 @@ export function configureForegroundNotifications(): void {
   foregroundHandlerConfigured = true;
   Notifications.setNotificationHandler({
     handleNotification: async ({ request }) => {
-      const show = !notificationTargetsThread(request.content.data, openThread);
+      // Finished work is already on screen while the app is open; only questions and failures alert.
+      const show =
+        request.content.data?.kind !== "completion" &&
+        !notificationTargetsThread(request.content.data, openThread);
       return {
         shouldShowBanner: show,
         shouldShowList: show,
@@ -149,11 +157,8 @@ export async function setOpenNotificationThread(
   }
 }
 
-export async function dismissThreadNotifications(target: {
-  botId?: string;
-  threadId?: string;
-}): Promise<void> {
-  if (!target.botId && !target.threadId) return;
+export async function dismissThreadNotifications(target: NotificationThreadTarget): Promise<void> {
+  if (!target.botId && !target.threadId && !target.groupId) return;
   const presented = await Notifications.getPresentedNotificationsAsync();
   await Promise.all(
     presented

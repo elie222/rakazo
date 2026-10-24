@@ -2,12 +2,13 @@ import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
 import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import { desktopBridge } from "../../lib/desktop";
 import type { Panel } from "../../lib/right-panel-state";
 import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
+import { isCreateMenuHotkey } from "./command-palette-hotkey";
 
 export function SidebarHeader({
   mini = false,
@@ -19,6 +20,7 @@ export function SidebarHeader({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  setCreateBotOpen,
   setPickerInfoTopic,
 }: {
   mini?: boolean;
@@ -30,11 +32,21 @@ export function SidebarHeader({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  setCreateBotOpen: (open: boolean) => void;
   setPickerInfoTopic: (topic: "group" | "space") => void;
 }) {
   const { t } = useLingui();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const hasWindowChrome = Boolean(desktopBridge());
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isCreateMenuHotkey(event)) return;
+      event.preventDefault();
+      setCreateMenuOpen(true);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   return (
     <div
@@ -101,7 +113,7 @@ export function SidebarHeader({
                 onCreateBot={() => {
                   setCreateMenuOpen(false);
                   setMobileSidebarOpen(false);
-                  setPanel("create");
+                  setCreateBotOpen(true);
                 }}
                 onOpenBot={(id) => {
                   setCreateMenuOpen(false);

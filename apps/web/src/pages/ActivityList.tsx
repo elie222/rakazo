@@ -10,6 +10,7 @@ import {
   Label,
   NativeSelect,
   NativeSelectOption,
+  Spinner,
 } from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
@@ -137,8 +138,8 @@ export function ActivityList({
       ) : null}
 
       {loading && !hasAnyRuns ? (
-        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">
-          <Trans>Loading activity…</Trans>
+        <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80">
+          <Spinner aria-label={t`Loading activity…`} />
         </p>
       ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
         <p className="px-2.5 py-2 text-[13px] text-muted-foreground/80" role="status">

@@ -1,6 +1,7 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
 import { preserveIdentitySource } from "./identity-source.js";
+import { modelFallbackFailure, parseModelFallbackFailure } from "./run-error.js";
 
 export function projectMessages(
   events: Array<{
@@ -13,6 +14,7 @@ export function projectMessages(
     threadId: string;
     botId?: string | null;
   }>,
+  runs?: readonly { id: string; status: string }[],
 ): ThreadMessage[] {
   const messages: ThreadMessage[] = [];
   type LiveProjection = {
@@ -52,6 +54,13 @@ export function projectMessages(
     else liveById.clear();
   };
   for (const event of events) {
+    if (stopsRunHelpers(event)) {
+      const settled = settleRunSubagents([...liveSubagents.values()], event.runId);
+      for (const message of settled) {
+        const block = message.blocks[0];
+        if (block?.kind === "subagent") liveSubagents.set(block.agentId, message);
+      }
+    }
     const payload = asRecord(event.payload);
     const createdAt =
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
@@ -142,7 +151,14 @@ export function projectMessages(
       clearLive(event);
     }
   }
-  for (const live of liveSubagents.values()) messages.push(live);
+  let helpers = [...liveSubagents.values()];
+  if (runs) {
+    const running = new Set(runs.filter((run) => run.status === "running").map((run) => run.id));
+    for (const runId of new Set(helpers.map((message) => message.runId))) {
+      if (runId && !running.has(runId)) helpers = settleRunSubagents(helpers, runId);
+    }
+  }
+  for (const live of helpers) messages.push(live);
   for (const live of liveById.values()) {
     if (live.blocks.length > 0) {
       messages.push({
@@ -158,6 +174,37 @@ export function projectMessages(
     }
   }
   return messages;
+}
+
+/** A pause ends the current helper execution, even when the run later resumes. */
+export function stopsRunHelpers(event: { type: string }): boolean {
+  return (
+    isRunTerminalEvent(event) ||
+    event.type === "run.waiting_input" ||
+    event.type === "computer.takeover.requested"
+  );
+}
+
+export function settleRunSubagents<T extends { runId?: string; blocks: readonly unknown[] }>(
+  messages: T[],
+  runId: string | null | undefined,
+): T[] {
+  if (!runId) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.runId !== runId) return message;
+    let settled = false;
+    const blocks = message.blocks.map((value) => {
+      const block = asRecord(value);
+      if (block.kind !== "subagent" || block.status !== "running") return value;
+      settled = true;
+      return { ...block, status: "failed", result: "stopped" };
+    });
+    if (!settled) return message;
+    changed = true;
+    return { ...message, blocks };
+  });
+  return changed ? next : messages;
 }
 
 export function progressMessageId(event: { runId?: string | null; id?: string }): string {
@@ -230,8 +277,20 @@ export function runFailureError(event: {
   const error = event.payload?.error;
   if (typeof error !== "string" || !error.trim()) return null;
   const message = error.trim();
-  // A provider can fail with a stack or a whole response body; the run record keeps the full
-  // text while the UI shows a bounded first line.
+  // Clamp each model's diagnostic so a fallback summary stays parseable for display.
+  const fallback = parseModelFallbackFailure(message);
+  if (fallback) {
+    return modelFallbackFailure(
+      clampRunFailure(fallback.primaryError),
+      fallback.backups.map((item) => ({ ...item, reason: clampRunFailure(item.reason) })),
+    );
+  }
+  return clampRunFailure(message);
+}
+
+// A provider can fail with a stack or a whole response body; the run record keeps the full
+// text while the UI shows a bounded first line.
+function clampRunFailure(message: string): string {
   return message.length > RUN_FAILURE_ERROR_MAX
     ? `${message.slice(0, RUN_FAILURE_ERROR_MAX)}…`
     : message;
@@ -287,6 +346,29 @@ function liveMessageText(blocks: readonly MessageBlock[]): string {
     .filter((block) => block.kind === "text" || block.kind === "progress")
     .map((block) => block.text)
     .join("");
+}
+
+/**
+ * Whether a live message is writing reply text right now: its newest block is the bot's
+ * own narration, with no tool waiting to run. Tool status lines don't count.
+ */
+export function liveMessageComposing(blocks: readonly MessageBlock[]): boolean {
+  const tail = blocks.at(-1);
+  return (
+    tail?.kind === "progress" &&
+    !tail.activity &&
+    !tail.pendingToolNames?.length &&
+    tail.text.trim().length > 0
+  );
+}
+
+/** The tool status line the newest live message is showing ("Searching the web: …"), if any. */
+export function liveActivityLine(
+  messages: readonly { id: string; blocks: readonly MessageBlock[] }[],
+): string | undefined {
+  const live = messages.findLast((message) => message.id.startsWith("progress:"));
+  const tail = live?.blocks.at(-1);
+  return (tail?.kind === "progress" && tail.activity && tail.text.trim()) || undefined;
 }
 
 export type ToolStep = { label: string; count: number };
@@ -442,25 +524,11 @@ function endsWithHighSurrogate(value: string): boolean {
  * in json and text columns (command output and binary-ish tool results carry both).
  */
 export function sanitizeUtf16ForJson(value: string): string {
-  let result = "";
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (isHighSurrogate(code)) {
-      const next = i + 1 < value.length ? value.charCodeAt(i + 1) : -1;
-      if (isLowSurrogate(next)) {
-        result += value[i]! + value[i + 1]!;
-        i += 1;
-      } else {
-        result += "\uFFFD";
-      }
-    } else if (isLowSurrogate(code) || code === 0) {
-      result += "\uFFFD";
-    } else {
-      result += value[i]!;
-    }
-  }
-  return result;
+  return value.replace(UNSAFE_UTF16, "\uFFFD");
 }
+
+/** NUL, a high surrogate with no low after it, or a low surrogate with no high before it. */
+const UNSAFE_UTF16 = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 /** Deep-sanitize string leaves and keys so event payloads always persist in Postgres. */
 export function sanitizeJsonValue<T>(value: T): T {
@@ -475,7 +543,13 @@ export function sanitizeJsonValue<T>(value: T): T {
       used.set(safeKey, seen + 1);
       // Deterministic collision handling when sanitizing collapses distinct keys.
       if (seen > 0) safeKey = `${safeKey}#${seen + 1}`;
-      out[safeKey] = sanitizeJsonValue(nested);
+      // An own property, so a parsed "__proto__" key stays data instead of setting the prototype.
+      Object.defineProperty(out, safeKey, {
+        value: sanitizeJsonValue(nested),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return out as T;
   }

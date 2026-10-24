@@ -6,6 +6,28 @@ export class TransientModelError extends Error {
   }
 }
 
+/**
+ * The user's model provider rejected the key, hit a credit or usage limit, or no longer serves
+ * the model. The user fixes it in their provider account or connection settings; not a server fault.
+ */
+export class ModelAccountError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelAccountError";
+  }
+}
+
+/**
+ * The model returned nothing usable: an empty reply, a malformed tool call, or output cut off
+ * by its limit. The provider and the runtime worked; another try or another model fixes it.
+ */
+export class ModelOutputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelOutputError";
+  }
+}
+
 function errorFacts(value: unknown) {
   const text: string[] = [];
   const statuses = new Set<number>();
@@ -76,14 +98,20 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   ) {
     return false;
   }
+  // Some providers label payment failures with a generic invalid_request_error code.
+  // Their explicit balance error still means a configured backup can serve the call.
+  const insufficientBalance = statuses.has(402) && /\binsufficient_balance_error\b/.test(text);
   if (
-    /context[ _-](?:length|window)|too many tokens|maximum context|token limit|request too large|invalid_api_key|authentication_error|permission_error|bad_request|invalid_request/.test(
+    /context[ _-](?:length|window)|too many tokens|maximum context|token limit|request too large|invalid_api_key|authentication_error|permission_error|bad_request/.test(
       text,
-    )
+    ) ||
+    (!insufficientBalance && /invalid_request/.test(text))
   )
     return false;
   if (statuses.has(402)) {
-    return /quota|billing|credit|payment limit|insufficient funds/.test(text);
+    return /quota|billing|credit|payment limit|insufficient (?:funds|balance)|insufficient_balance_error/.test(
+      text,
+    );
   }
   if (
     [408, 429].some((status) => statuses.has(status)) ||
@@ -91,7 +119,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network error|max retries exceeded|stream ended without finish_reason|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network error|max retries exceeded|stream ended without finish_reason|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -102,7 +130,9 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
  * structured status fields.
  */
 export function isTransientModelError(error: unknown): boolean {
-  const { text } = errorFacts(error);
+  const { text, statuses } = errorFacts(error);
+  // Payment required never clears during a retry.
+  if (statuses.has(402)) return false;
   // Short rate windows can reset during a retry; subscription and billing limits cannot.
   const shortWindow =
     /\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|retry[- ]after[: ]+\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b/.test(

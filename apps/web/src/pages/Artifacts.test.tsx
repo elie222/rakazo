@@ -35,6 +35,7 @@ vi.mock("@rakazo/ui-web", () => {
     AlertDialogHeader: Container,
     AlertDialogTitle: Container,
     BotAvatar: () => <span />,
+    Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
@@ -175,7 +176,7 @@ it("still offers Load more when filters match nothing on the loaded page", async
     });
     await act(async () => {
       await vi.waitFor(() => {
-        expect(page.container.textContent).toMatch(/Load more|Loading…/);
+        expect(page.container.querySelector('button[aria-label="Load more"]')).not.toBeNull();
       });
     });
     expect(page.container.textContent).not.toContain("Beta report");

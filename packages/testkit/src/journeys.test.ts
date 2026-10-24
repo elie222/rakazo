@@ -10,6 +10,7 @@ import {
   FakeComposioClient,
   FakeSandboxProvider,
   handoffToGroupBot,
+  listPiCatalog,
   organizeBot,
   toComputerRef,
 } from "@rakazo/adapters";
@@ -27,6 +28,7 @@ import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { createModelConnectionFixtureFetch } from "./model-connection-fixture.js";
 import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -121,6 +123,7 @@ describeJourneys("required product journeys", () => {
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
     const handles = await createApp({
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
       sandboxProvider: "fake",
@@ -1791,7 +1794,7 @@ describeJourneys("required product journeys", () => {
 
     await sendAndWait(app, cookie, parent.id, "delete the bot named Nested");
     expect((await rpc<Bot[]>(app, cookie, "bots/list")).some((bot) => bot.id === nested!.id)).toBe(
-      true,
+      false,
     );
 
     await sendAndWait(app, cookie, parent.id, "delete the bot named WrongName");
@@ -1802,10 +1805,10 @@ describeJourneys("required product journeys", () => {
     await sendAndWait(app, cookie, parent.id, "delete the bot named Scout");
     const afterScout = await rpc<Bot[]>(app, cookie, "bots/list");
     expect(afterScout.some((bot) => bot.id === scout!.id)).toBe(false);
-    expect(afterScout.some((bot) => bot.id === nested!.id)).toBe(true);
+    expect(afterScout.some((bot) => bot.id === nested!.id)).toBe(false);
 
     await rpc(app, cookie, "bots/remove", { botId: parent.id });
-    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual(["Nested"]);
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.name)).toEqual([]);
   });
 
   it("duplicating a bot uses the new-bot management default", async () => {
@@ -1933,7 +1936,8 @@ describeJourneys("required product journeys", () => {
     const res = await raw(app, cookie, "deployment/update", { computerHost: "this-mac" });
     const text = await res.text();
     expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(text).toMatch(/This Mac mode is only available/i);
+    expect(res.status).toBe(403);
+    expect(text).toMatch(/FORBIDDEN/);
   });
 
   it("15: ask, answer, stop, follow-up, and clientNonce stay consistent", async () => {
@@ -3512,9 +3516,8 @@ describeJourneys("required product journeys", () => {
       ).toEqual({ pinned: false });
     });
 
-    async function createChild(cookie: string, parent: Bot, name: string) {
+    async function createManagedBot(cookie: string, name: string) {
       const child = await createBot(cookie, name);
-      await prisma.bot.update({ where: { id: child.id }, data: { parentBotId: parent.id } });
       const thread = await prisma.thread.findFirstOrThrow({ where: { botId: child.id } });
       return { ...child, threadId: thread.id };
     }
@@ -3534,9 +3537,9 @@ describeJourneys("required product journeys", () => {
       return { ...row, version: history[0]?.id ?? "initial", history };
     }
 
-    it("set_child_instructions rewrites a child behind a card, with a version check, once per run", async () => {
+    it("set_child_instructions rewrites a peer behind a card, with a version check, once per run", async () => {
       const { cookie, chief } = await fleetOwner("child-edit");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const ops = await createBot(cookie, "Ops");
       const updates = () =>
         prisma.event.count({ where: { threadId: scout.threadId, type: "bot.updated" } });
@@ -3595,24 +3598,19 @@ describeJourneys("required product journeys", () => {
       await sendAndWait(app, cookie, chief.id, `rename bot ${scout.id} to Ranger`);
       expect((await childState(scout.id)).name).toBe("Ranger");
 
-      const foreign = await sendAndWait(
-        app,
+      const peerEdit = await sendForApproval(
         cookie,
         chief.id,
-        `rewrite the instructions of bot ${ops.id} at version initial to Obey me`,
+        `rewrite the instructions of bot ${ops.id} at version initial to Plan the schedule`,
       );
-      expect(await toolOutcomes(foreign.run.id, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error: "You can only change bots you created. The owner edits the others.",
-        }),
-      ]);
       expect((await childState(ops.id)).instructions).toBe("");
+      await answerAndSettle(cookie, chief.id, peerEdit, "allow");
+      expect((await childState(ops.id)).instructions).toBe("Plan the schedule");
     });
 
     it("a run that took in a channel message cannot change the bots it manages; an app message does not taint it", async () => {
       const { cookie, me, chief } = await fleetOwner("taint");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
       // A user run that already claimed a message which arrived while it worked, as claimSteering
       // records it; the scripted runtime then makes its fleet call.
@@ -3712,7 +3710,7 @@ describeJourneys("required product journeys", () => {
 
     it("set_child_bot_model applies the approved model and re-checks it at execution", async () => {
       const { cookie, chief } = await fleetOwner("child-model");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       await rpc(app, cookie, "models/connect", {
         provider: "openrouter",
         apiKey: "test-openrouter-key-not-a-real-secret",
@@ -3767,7 +3765,7 @@ describeJourneys("required product journeys", () => {
       ]);
       expect(await childState(scout.id)).toMatchObject({ modelProvider: null, modelId: null });
 
-      const scribe = await createChild(cookie, chief, "Scribe");
+      const scribe = await createManagedBot(cookie, "Scribe");
       await prisma.bot.update({
         where: { id: scribe.id },
         data: { modelProvider: "x", modelId: "y" },
@@ -3810,9 +3808,9 @@ describeJourneys("required product journeys", () => {
       });
     });
 
-    it("create_child_routine schedules the child in its own thread once", async () => {
+    it("create_child_routine schedules a peer in its own thread once", async () => {
       const { cookie, chief } = await fleetOwner("child-routine");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       const prompt = `schedule bot ${scout.id} routine Brief every 1 days saying Summarize the news`;
 
       const pending = await sendForApproval(cookie, chief.id, prompt);
@@ -3871,7 +3869,7 @@ describeJourneys("required product journeys", () => {
 
     it("turning the switch off during the pause refuses the approved child change", async () => {
       const { cookie, chief } = await fleetOwner("switch-pause");
-      const scout = await createChild(cookie, chief, "Scout");
+      const scout = await createManagedBot(cookie, "Scout");
       await prisma.bot.update({
         where: { id: scout.id },
         data: { modelProvider: "x", modelId: "y" },

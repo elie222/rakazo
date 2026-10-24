@@ -75,6 +75,27 @@ describe("remote MCP URL policy", () => {
     },
   );
 
+  it.each([
+    "http://[::ffff:a9fe:aa02]/credentials",
+    "https://[::ffff:169.254.170.2]/credentials",
+    "http://[::ffff:a9fe:1234]/mcp",
+    "https://[fe80::1234]/mcp",
+  ])("blocks link-local literals with private endpoints enabled: %s", async (endpoint) => {
+    const resolve = vi.fn(publicResolver);
+    const fetch = vi.fn();
+    const safeFetch = createSafeRemoteFetch(fetch, resolve, { allowPrivateEndpoint: true });
+    try {
+      await expect(
+        assertSafeRemoteUrl(endpoint, resolve, { allowPrivateEndpoint: true }),
+      ).rejects.toThrow(/private/);
+      await expect(safeFetch(endpoint)).rejects.toThrow(/private/);
+      expect(resolve).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await safeFetch.close();
+    }
+  });
+
   it("rejects a private-suffix hostname that resolves to link-local metadata", async () => {
     await expect(
       assertSafeRemoteUrl(

@@ -46,8 +46,7 @@ Auto Review uses that LLM checker by default. To use TypeSafe Jev instead, set
 The example defaults to `edge` (main builds). Every publish is multi-arch (`amd64` + `arm64`), so
 arm64 hosts need no special tag. Do not assume `latest` is present until a stable release exists.
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The first registered user becomes the
-deployment owner. Put TLS in front of `:5173` for a public host and set the three public origins to
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Signup never grants server-administration permissions. Put TLS in front of `:5173` for a public host and set the three public origins to
 that HTTPS URL.
 
 Images Compose binds web to loopback (`127.0.0.1:5173`). Terminate TLS on the host and proxy
@@ -159,7 +158,7 @@ so the mode does not apply there.
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
-5. Open the web origin (`http://127.0.0.1:5173` by default). The first registered user becomes the deployment owner.
+5. Open the web origin (`http://127.0.0.1:5173` by default). Signup never grants server-administration permissions.
 
 On Windows, if an older clone with `core.autocrlf=true` leaves the computer pane hung on boot (`bash\r` in sandbox logs): from a clean worktree, set `git config core.autocrlf false`, run `git add --renormalize . && git checkout -- .`, then rebuild with `pnpm sandbox:build`.
 
@@ -169,7 +168,7 @@ Postgres stays on the Compose network only (not published on the host), matching
 compose. Credentials come from `.env` (`POSTGRES_PASSWORD` is required). Prefer a URI-safe value
 (`openssl rand -hex 16`); characters such as `@ : / ? # %` break the interpolated `DATABASE_URL`
 inside Compose. Official Postgres images set user, password, and database only on first volume
-init, so an existing `pgdata` volume keeps its original identity: keep those values in `.env`, or
+init, so an existing database volume keeps its original identity: keep those values in `.env`, or
 change them in place with `ALTER ROLE` / rename. Recreate the volume only after a backup (or when
 the data is disposable); `docker compose down -v` deletes all Postgres state. For host-side clients
 (`pnpm db:migrate`, GUI tools),
@@ -230,10 +229,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 ```
 
-Cookies and CORS follow those origins. `SIGNUPS_ENABLED` seeds whether registration is open
-when the API starts for the first time and is not reapplied on restart. A non-empty
-`SIGNUP_ALLOWLIST` is applied on every API start, replacing the allowlist stored for the deployment.
-Leave it empty to keep that stored list.
+Cookies and CORS follow those origins. `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` come from the operator's environment on every start. An empty allowlist clears any old stored list; signup order never grants privileges.
 
 With a nonempty signup allowlist and SMTP configured, users—including existing accounts—must
 verify their email to sign in. Without an allowlist, verification never blocks: a password signup
@@ -245,11 +241,26 @@ rules as password signup. Signing in with a code to an existing unverified accou
 account's password, SSO links and sessions, since nothing proved they belonged to the mailbox
 owner. This is what stops someone who registered another person's address from keeping access.
 
-On a fresh instance with no SMTP, the first allowlisted account can register without verification.
-That signup does not prove mailbox ownership, so create the account before exposing the service.
-Further accounts still need SMTP.
+Allowlisted signup requires mailbox verification and email delivery, including the first account.
+Without email delivery, use the server-side account bootstrap described below; public signup never marks an address verified or assigns server permissions.
 
-For a public deployment, configure SMTP and an allowlist before the API's first start.
+Server configuration belongs in the operator's environment. App accounts cannot change signup policy,
+server integration credentials, or deployment updates, and cannot read deployment security logs.
+`SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` are authoritative on every start; an empty allowlist clears any old stored policy.
+There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
+
+For an installation without email, first set `SIGNUPS_ENABLED=false` in `.env` and start the stack.
+Create the intended account privately (the password stays in the shell environment):
+
+```bash
+read -r -p "Account email: " OWNER_EMAIL
+read -r -s -p "Account password (at least 16 characters): " OWNER_PASSWORD
+export OWNER_EMAIL OWNER_PASSWORD
+docker compose --env-file .env -f docker-compose.images.yml exec -e OWNER_EMAIL -e OWNER_PASSWORD api node dist/cli/bootstrap-owner.js
+unset OWNER_EMAIL OWNER_PASSWORD
+```
+
+For a source checkout, use `-f infra/compose/docker-compose.yml` instead. This creates an ordinary verified account and a personal workspace, with no server privileges. For an existing unverified account, its password must match before it can be verified; an existing verified account is left unchanged.
 Keep an installation without email on a trusted local network.
 
 ### Optional OpenID Connect SSO
@@ -311,8 +322,7 @@ emailed deletion codes remain available. Submit deletion codes through the accou
 or the CSRF-protected `POST /api/auth/delete-user` endpoint; the GET deletion callback is disabled.
 
 SSO signup follows closed registration and the deployment allowlist before creating an account.
-Allowlisted provider emails must be verified; the password signup's first-account exemption
-never upgrades an OIDC email. `OIDC_ALLOW_SIGNUP_BYPASS=true` explicitly admits IdP identities
+Allowlisted provider emails must be verified; signup never bypasses mailbox proof. `OIDC_ALLOW_SIGNUP_BYPASS=true` explicitly admits IdP identities
 without applying the allowlist or its email-verification admission requirement. Enable it only
 when the IdP controls who may join this deployment. It does **not** reopen closed registration,
 and does not change email verification claims or linking rules. Existing admitted accounts can
@@ -625,9 +635,15 @@ way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
+### Ollama Cloud
+
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration. `ollama.com` is the only public host allowed without `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`.
+
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Add optional request headers under **Advanced**; values are stored encrypted, and only their names
+are shown afterwards.
 Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
 Literal private IP, loopback, and `host.docker.internal` targets do not, but only the deployment
 owner can use them, checked on save, on model discovery, and on every run. Set
@@ -640,8 +656,7 @@ need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and 
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you
-control: like other private endpoints, allowlisted hosts are limited to the deployment owner
-unless `MCP_ALLOW_PRIVATE_ENDPOINT=true`.
+control. Private endpoints require `MCP_ALLOW_PRIVATE_ENDPOINT=true` for the deployment; no app account bypasses that policy.
 If that endpoint's model
 accepts images, enable **Supports images** under **Advanced** when connecting so attachments and
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
@@ -722,8 +737,7 @@ Each event has the user, space, client address, user agent, time, and a few iden
 never include message content, secrets, or tokens. Rows older than `SECURITY_EVENT_RETENTION_DAYS`
 (default 90) are deleted, and Postgres rejects updates to the rows that remain.
 
-The deployment owner can read recent events through the `security.events` RPC, filtered by `type`,
-`ip`, or `userId`, and paged with `cursor`. You can also query Postgres:
+Operators read recent events through server-side database/log tooling. For example, query Postgres:
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml exec postgres \
@@ -838,7 +852,7 @@ the default work as described for Parallel.
 ### Self-hosted memory
 
 Supermemory and Honcho can run on your own network. In **Settings → Memory**, choose **Local**
-and enter the instance's base URL. Only the deployment owner can save a local endpoint. It must
+and enter the instance's base URL. The operator must set `MCP_ALLOW_PRIVATE_ENDPOINT=true`; workspace owners can then save a local endpoint. It must
 be loopback or resolve to private addresses (a Compose service name, an RFC1918 or unique-local
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
 address for every request. Space members use the saved connection without seeing its key.
@@ -919,7 +933,7 @@ support. Existing token limits still apply; effort is not a separate reasoning-t
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
-Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
+Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
 
 ### Settings with names you choose
 
@@ -943,7 +957,7 @@ commands, add `-f docker-compose.override.yml` after the base file.
 
 ## Choosing a computer provider
 
-The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the deployment owner can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` is a separate, development-only configuration for backends running directly on the intended host.
+The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the local operator can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` is a separate, development-only configuration for backends running directly on the intended host.
 
 Native file reads and workspace exports are limited to 8 MiB per file. A larger workspace file fails the checkpoint and preserves the previous saved workspace; local files remain on the computer. Writes are bounded by the 12 MiB encoded request limit.
 
@@ -1038,6 +1052,79 @@ docker compose -f docker-compose.images.yml exec -T api \
 
 The export is plaintext: store it like the database itself. Files are not included; use
 `content-encryption decrypt` to make them readable on disk.
+
+## Bot homes in object storage
+
+Each bot computer has a home: its files, logged-in browser profiles and CLI tokens. By default
+homes live under `DATA_DIR/homes` on the server. Set `OBJECT_STORAGE_BUCKET` to keep them in any
+S3-compatible bucket instead, so `DATA_DIR` is only a cache and API and worker hosts no longer need
+a shared disk for homes. Leave it unset to keep homes on local disk, as before.
+The same connection also stores new artifacts; see [shared storage migration](#shared-storage-migration)
+for migrating existing files and push registrations.
+
+```env
+OBJECT_STORAGE_BUCKET=rakazo-homes
+OBJECT_STORAGE_ENDPOINT=https://storage.example.com
+OBJECT_STORAGE_REGION=us-east-1
+OBJECT_STORAGE_ACCESS_KEY_ID=replace-me
+OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
+# Optional: a key prefix, when the bucket holds anything else.
+OBJECT_STORAGE_PREFIX=
+# Optional: true for services that address buckets in the path rather than the host name.
+OBJECT_STORAGE_PATH_STYLE=false
+```
+
+Only the API and worker read these settings. Bot computers never receive the credentials or
+links to stored objects; files still reach them through the server, as before. The settings
+apply to every provider, including Docker computers, which keep mounting their cached home.
+
+**Encryption.** Homes are encrypted on the server before upload, whatever `CONTENT_ENCRYPTION`
+says; the bucket only ever holds ciphertext. Each home has its own random data key, kept on the
+computer's database row and wrapped by its space's content key (see
+[content encryption](./content-encryption.md)). Each stored revision is one object, sealed in
+authenticated segments bound to that home and revision, so a modified, truncated or swapped
+object fails to restore instead of restoring the wrong files. Object keys are random ids
+(`homes/<id>/<revision>`) that name no bot, user or space. Back up the database and the
+encryption keys as before: the bucket cannot be read without them.
+
+**The bucket.** Use a private bucket, or a prefix of one, for this deployment alone: the worker
+deletes objects under `homes/` that no home in this database owns. Block public access. The
+credentials need to read, write, list and delete objects in it, and nothing else. Turn on bucket
+versioning, with a lifecycle rule that expires noncurrent versions after your backup window, so
+a mistaken deletion can be undone. `scripts/backup.sh` does not copy the bucket; versioning, or the
+service's own replication, is its backup.
+
+**What is stored.** Each save uploads the whole home as one object (in parts of up to 16 MiB for
+large homes) and then deletes the previous one, so a home costs about one object however many
+files it has. Homes are saved when a run finishes or fails, before a computer stops, and before
+it sleeps, as before.
+
+**Deleting.** Deleting a bot with its own computer, or a space (including the personal spaces
+removed with an account), deletes each home's key with its computer's row, so the stored objects
+become unreadable at once. The worker deletes those
+objects within the hour, along with any revision an interrupted save left behind.
+
+**The cache.** `DATA_DIR/homes` holds a copy of homes in use. A copy whose revision matches the
+bucket is downloaded again whenever it is missing, so you can remove it. Docker computers work
+directly in their copy until their next save, so only remove the copy of a Docker computer that
+is stopped. Remote computers' copies always match the bucket once saved.
+
+### Moving existing homes
+
+After setting the bucket, restart the API and worker. Each home is uploaded the next time it is
+saved; until then its local copy is used. To upload the rest at once, run this where `DATA_DIR`
+is mounted. It skips homes already stored, so it can be stopped and run again. Each upload is
+downloaded and checked before the home counts as moved. It never deletes local files.
+
+```bash
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api home-storage migrate --dry-run
+docker compose -f docker-compose.images.yml exec api pnpm --filter @rakazo/api home-storage migrate
+```
+
+Homes listed as having no computer belong to bots that no longer exist; they are left alone.
+Once a run reports no failures and nothing left to upload, remove the local copies: stop Docker
+computers, stop the API and worker, move `DATA_DIR/homes` and `DATA_DIR/home-revisions` aside,
+start them again and check a few bots' files, then delete the moved directories.
 
 ## Backup
 
@@ -1143,7 +1230,9 @@ Once a release has been published you can switch this host to prebuilt images by
 See [Published images and tags](#published-images-and-tags) for the tag contract.
 
 The root `.env` is excluded from both Git and the Docker build context. The database, application data,
-and Caddy certificates live in named Docker volumes.
+and Caddy certificates live in named Docker volumes. The `webassets` volume keeps the hashed web assets
+of recent builds (up to 20, each for a week after it is replaced), so open tabs keep loading after an
+update; it needs no setup and can be deleted at any time.
 
 The production Compose file pins Postgres and Caddy to multi-architecture manifest digests, and the
 published application/updater builds pin their base-image digests. Refresh those pins deliberately
@@ -1219,7 +1308,8 @@ local snapshot but fails the service, so the backup alert fires.
 Run these where the identity file lives, never leaving it on the server. Fetch a snapshot with
 `rclone copy offsite:rakazo-backups/<stamp> ./<stamp>` or `scp`, then run the drill, which checks the
 checksums and decrypts each file into `pg_restore --list` and `tar -t` without writing plaintext
-(it needs `age`, `pg_restore` of the server's major version or newer, and `tar`):
+(it needs `age`, `pg_restore` of the server's major version or newer, which is 18 for the
+production Compose file, and `tar`):
 
 ```bash
 bash infra/compose/backup-drill.sh ./<stamp> rakazo-backup.key
@@ -1363,6 +1453,48 @@ settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. 
 a change to the launcher itself needs
 `sudo install -m 0755 infra/compose/deploy-launcher.sh /usr/local/sbin/rakazo-deploy-main`.
 
+#### Host audit trail
+
+`harden-host.sh` installs audit rules for writes to SSH keys, sudoers, accounts, `/etc/rakazo`, the
+deployment's `.env`, `/usr/local/sbin`, systemd units, cron, and the Docker daemon config. A rule
+whose directory does not exist yet, such as the `.env` before the first clone, is skipped with a
+notice; rerun the script once it exists. Anyone with root can wipe local logs, so the record only
+helps once it has left the host.
+
+To ship it, create a root-only `/etc/rakazo/audit-ship.env` and put the sink's token in
+`/etc/rakazo/audit-ship.token`, then rerun `harden-host.sh`. Only then does it install `audit-ship.py`
+as `/usr/local/sbin/rakazo-audit-ship` and enable `rakazo-audit-ship.service`. The sink is any HTTPS
+endpoint that accepts a JSON array of events with a bearer token, for example Axiom's
+`https://api.axiom.co/v1/datasets/<dataset>/ingest`.
+
+```env
+RAKAZO_AUDIT_SINK_URL=https://ingest.example.com/v1/events
+# Optional: name the SSH keys you expect (fingerprints from `ssh-keygen -lf key.pub`).
+RAKAZO_AUDIT_KNOWN_KEYS=SHA256:replace-with-fingerprint=laptop SHA256:replace-with-fingerprint=ci
+# Optional: RAKAZO_AUDIT_TOKEN_FILE (default /etc/rakazo/audit-ship.token), RAKAZO_AUDIT_HOST
+# (default: the hostname), and RAKAZO_AUDIT_HEARTBEAT_SECONDS (default 10800, three hours).
+```
+
+Use a token that can only write to that one destination, so a compromised host cannot read or delete
+what it already sent. The shipper follows `/var/log/auth.log` and the audit log and sends `ssh.login`
+(with `key_name`, `unknown` for keys not listed), `ssh.failed`, `sudo.command`, `su`,
+`identity.change`, and `file.change` (with the rule's `watch` key and the changed `paths`), plus a
+`shipper.heartbeat` on start and every `RAKAZO_AUDIT_HEARTBEAT_SECONDS`. Every
+event carries `event`, `host`, `source`, `message`, and `_time`. Offsets advance only after the sink
+accepts a batch, and failures retry with backoff, so events arrive at least once. On first start it
+ships the current auth log and starts the audit log at its end. With monitoring installed, the host
+check alerts when a sink is configured but the shipper is not running.
+
+Alert in the destination, not on the host. Starting points, written as Axiom APL here but plain
+filters in any log store:
+
+| Alert | Query |
+| --- | --- |
+| Login with an unnamed key | `where event == "ssh.login" and key_name == "unknown"` |
+| Watched file changed | `where event == "file.change"` outside your own deploys and maintenance |
+| Root use outside the deploy account | `where (event == "sudo.command" and user != "deploy") or event == "su" or event == "identity.change"` |
+| Shipping stopped | no `shipper.heartbeat` from a `host` for more than two heartbeat intervals |
+
 ### Docker computers on the production stack
 
 Layer `infra/compose/docker-compose.prod.docker.yml` after the base file in every Compose
@@ -1502,6 +1634,47 @@ the extra variable and connects as the owner, but releases from the same day als
 at rest: run `content-encryption decrypt` before rolling back past them
 ([content encryption](./content-encryption.md#rollout)), or older releases show ciphertext.
 
+### Upgrading to Postgres 18
+
+The production and source-checkout Compose files run Postgres 18. Installs created before that
+keep their data in a Postgres 16 volume (`pgdata`), which Postgres 18 cannot open. Until the data
+is copied to the new `postgres` volume, the database container exits and logs that it found
+PostgreSQL data in `/var/lib/postgresql/16/docker`, and production deploys stop before replacing
+anything. Nothing is deleted or started empty. New installs need nothing. The published-images
+file (`docker-compose.images.yml`, also used by the desktop app) stays on Postgres 16.
+
+Take a backup and run the drill on it first ([encrypted backups](#encrypted-and-off-site-backups)).
+Then update the checkout and run the upgrade as root:
+
+```bash
+cd /srv/rakazo
+git pull --ff-only
+sudo infra/compose/upgrade-postgres.sh
+```
+
+When the stack uses other Compose files, such as the Docker computers overlay or the
+source-checkout stack, pass all of them:
+`sudo RAKAZO_DEPLOY_DIR="$PWD" infra/compose/upgrade-postgres.sh infra/compose/docker-compose.yml`.
+Set `COMPOSE_PROJECT_NAME` if the stack runs under a custom `-p`, and on restricted networks set
+`RAKAZO_POSTGRES_16_IMAGE` to your mirror of the previous Postgres 16 image (`POSTGRES_IMAGE` must
+now name a Postgres 18 image).
+
+The script stops the stack, copies every role (with its password) and database from Postgres 16
+with `pg_dumpall`, and compares roles, memberships, ownership, grants, row-level security
+policies, sequences and the row count of every table. It also checks that `rakazo_app` signs in
+with `POSTGRES_APP_PASSWORD` and does not bypass row-level security. Only then does it switch
+Postgres 18 over and restart the services that were running. The site is down for the whole copy,
+which takes about as long as dumping and restoring the database: a few minutes for a small one. It needs free disk for one more copy of the
+database plus 1 GiB. Running it again after it succeeded does nothing. If any step fails, it stops
+with the stack down and the Postgres 16 data unchanged; fix the error and run it again. On the
+production host, then rerun the deploy that stopped.
+
+The Postgres 16 volume stays as it was, mounted read-only. To roll back, check out the previous
+release and start the stack: it runs Postgres 16 on the original data. Anything written after the
+upgrade exists only on Postgres 18, so roll back right away or not at all, and pause CI deploys
+until you upgrade again. Once you no longer need the rollback, stop `postgres`, remove the
+`<project>_pgdata` volume and start it again; Compose recreates that volume empty.
+
 ### Space privacy-boundary migration
 
 Before upgrading across migration `20260830200000_space_scope_names_and_user_credentials`, check
@@ -1604,7 +1777,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
 
 It exposes `/health`, `/state`, `/plan`, `/apply`, and `/rollback` at `http://updater:7092` with
 `RAKAZO_UPDATER_TOKEN`. Operator CLI upgrades above do not need it; the sidecar is for automated
-apply/rollback over that private HTTP API.
+apply/rollback over that private HTTP API. Only deployment tooling calls it; app accounts have no update endpoint, and the application API does not receive the updater token.
 
 The API cannot update itself — its image has no `.git`, and nothing inside the container would
 restart it — so the work happens in a separate `updater` container that outlives the recreate:
@@ -1710,14 +1883,13 @@ rather not grant the capability.
 ## Other deployment layouts
 
 API and worker need always-on processes; serverless request handlers are not sufficient. Use a
-Node.js version supported by the root `package.json`, Postgres 16 and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
-backups. The current home store uses a local filesystem, so deployments on separate hosts need a
-shared filesystem; an object-storage adapter is not available yet.
+Node.js version supported by the root `package.json`, Postgres 16 or newer and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
+backups. Homes stay on that volume unless they are kept in
+[object storage](#bot-homes-in-object-storage); other `DATA_DIR` files still need it shared.
 
 Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
 proxy routes. Choose a [computer provider](#choosing-a-computer-provider) appropriate to the
-service's trust boundary. `SIGNUPS_ENABLED` applies on the API's first start. A non-empty
-`SIGNUP_ALLOWLIST` applies on every API start.
+service's trust boundary. `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` apply from the environment on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
 
 ## Image and video generation
@@ -1765,6 +1937,8 @@ native file flow on mobile. No new mobile player or settings screen is required.
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
 
+Plain `http://` is accepted only for a private IP, `localhost`, or a `.local` name. A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
+
 ### Passkeys
 
 Passkeys are on whenever `WEB_ORIGIN` is an HTTPS domain (or `localhost` in development); the
@@ -1796,3 +1970,57 @@ in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive int
 Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
 limit advertised by the server. If a reverse proxy limits request bodies, allow
 room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
+
+## Shared storage migration
+
+Push notification registrations now live in Postgres, encrypted with `ENCRYPTION_KEY`.
+The same key must be configured on every API and worker replica. Registrations remain
+bound to their authenticated session; deleting an account also deletes its registration.
+
+With `OBJECT_STORAGE_BUCKET` configured, new artifact contents use the existing
+S3-compatible connection alongside computer homes. Artifact contents are always encrypted
+before upload using the space's content key and authenticated segments bound to the
+artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
+checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor
+public object URLs. Without object storage, artifacts continue using the local volume.
+
+Existing artifact rows continue reading their local files until migrated. Before spreading
+API or worker replicas across machines, migrate files from every original application
+volume. Back up the database and volume first. Deploy the schema migration and the new
+application version, then stop **all API and worker processes**, including old releases,
+while running the following commands from a maintenance container with the original volume,
+`DATABASE_URL`, `ENCRYPTION_KEY`, content master keys, and object storage configuration:
+
+```sh
+# Published image (run from /app/apps/api):
+node dist/cli/shared-storage.js artifacts --dry-run
+node dist/cli/shared-storage.js artifacts
+node dist/cli/shared-storage.js push-tokens --dry-run
+node dist/cli/shared-storage.js push-tokens
+
+# Source checkout equivalents:
+pnpm --filter @rakazo/api shared-storage artifacts
+pnpm --filter @rakazo/api shared-storage push-tokens
+```
+
+The artifact migration uploads and decrypts each file to verify it before conditionally
+updating its database storage key. It keeps the original local files and skips rows already
+migrated, so interrupted runs can resume. A database failure after upload can leave an
+unreferenced object; do not delete objects blindly after a failed migration. Keep local
+originals until the migration is complete and verified. Files absent from the mounted volume
+are counted as pending while migration continues for files present on that volume. Run the
+command on each original volume, then run `artifacts --dry-run` again and require `pending: 0`
+before starting independent replicas. Object-backed artifacts require
+object storage to remain configured; old application versions cannot read their new keys.
+The local content-encryption CLI operates on local artifacts only; object artifacts stay
+encrypted and retain access through the key versions referenced in their headers.
+
+The push import preserves registrations with a live session, skips missing/expired or
+sessionless registrations, accounts already registered in Postgres, and devices owned by any
+existing database registration. Import never hands a device back to an older account. It archives processed
+files with a `.migrated` suffix. Those archives are never used as a runtime fallback, so they
+cannot restore a registration after logout. Clients skipped during migration register again
+when they next open the app. Remove the archived token files after verifying the import.
+Restart API and worker processes after both commands finish. A schema-only rollback remains
+compatible with the previous release, but the old code does not read database registrations
+or object-backed artifacts.

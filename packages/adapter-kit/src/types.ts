@@ -433,6 +433,7 @@ export interface AgentRunModel {
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
@@ -708,8 +709,16 @@ export type BackgroundJob = {
   };
 }[BackgroundJobName];
 
+export interface BackgroundJobExecution {
+  /** Release the dispatch slot only after durable run ownership and heartbeat setup. */
+  onRunStarted(): void;
+}
+
 export type BackgroundJobHandlers = {
-  [Name in BackgroundJobName]: (payload: BackgroundJobPayloads[Name]) => Promise<void>;
+  [Name in BackgroundJobName]: (
+    payload: BackgroundJobPayloads[Name],
+    execution?: BackgroundJobExecution,
+  ) => Promise<void>;
 };
 
 export interface SecretRecord {
@@ -740,6 +749,8 @@ export interface NotificationMessage {
   threadId: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
+  /** Unread chats to show on the app icon, when the sender knows them. */
+  badge?: number;
 }
 
 /** A product-authored transactional email, independent of its delivery vendor. */

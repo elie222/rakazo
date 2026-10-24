@@ -1,6 +1,10 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { BillingStatus } from "@rakazo/contracts";
-import { MODEL_CREDIT_AMOUNTS, ModelCreditAmountSchema } from "@rakazo/contracts";
+import {
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  MODEL_CREDIT_AMOUNTS,
+  ModelCreditAmountSchema,
+} from "@rakazo/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, AppState, Linking, ScrollView } from "react-native";
@@ -13,12 +17,14 @@ export default function BillingScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [amount, setAmount] = useState<Amount>(1000);
+  const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
   const refresh = useCallback(async () => {
     const next = await rpc<BillingStatus>("billing/status");
     setStatus(next);
-    setAmount(ModelCreditAmountSchema.catch(1000).parse(next.monthlyAmountCents));
+    setAmount(
+      ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(next.monthlyAmountCents),
+    );
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -28,7 +34,11 @@ export default function BillingScreen() {
           .then((next) => {
             if (active) {
               setStatus(next);
-              setAmount(ModelCreditAmountSchema.catch(1000).parse(next.monthlyAmountCents));
+              setAmount(
+                ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(
+                  next.monthlyAmountCents,
+                ),
+              );
             }
           })
           .catch(() => {
@@ -170,11 +180,11 @@ export default function BillingScreen() {
           ) : null}
           {!recurring || status.cancelAtPeriodEnd ? (
             <SettingsGroup
-              label={t("Your API key")}
-              footer={t("Free. Pay your model provider directly.")}
+              label={t("Your subscription or API key")}
+              footer={t("Free. ChatGPT, Claude, or any model provider.")}
             >
               <SettingsRow
-                title={t("Use my API key")}
+                title={t("Use my subscription or API key")}
                 disabled={pending}
                 onPress={() =>
                   void action(async () => {

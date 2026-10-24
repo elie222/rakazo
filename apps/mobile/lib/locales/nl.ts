@@ -1,4 +1,16 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Use 80 characters or fewer": "Gebruik maximaal 80 tekens",
+  "Could not update name": "Naam kon niet worden bijgewerkt",
+  "{summary} Your backup models also failed.": "{summary} Je reservemodellen zijn ook mislukt.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Er was geen reservemodel bruikbaar voor dit verzoek.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Reservemodellen zijn mislukt of waren niet beschikbaar voor dit verzoek.",
+
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "Ollama API-sleutel",
+  "Show password": "Wachtwoord tonen",
+  "Hide password": "Wachtwoord verbergen",
   Export: "Exporteren",
   "Edit avatar": "Avatar bewerken",
   "Add open work": "Open taak toevoegen",
@@ -25,9 +37,16 @@ export const NL_MESSAGES: Record<string, string> = {
   "Search bots": "Bots zoeken",
   "About {label}": "Over {label}",
   "Manage the bots it creates": "De bots beheren die deze bot maakt",
+  "Allow cross-space bot communication":
+    "Communicatie tussen bots in verschillende ruimtes toestaan",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring.",
 
+  Headers: "Headers",
+  "Add header": "Header toevoegen",
+  "Remove header": "Header verwijderen",
+  "Header name": "Headernaam",
+  "Header value": "Headerwaarde",
   Resets: "Resetdatum",
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
@@ -70,8 +89,19 @@ export const NL_MESSAGES: Record<string, string> = {
     "{provider} heeft de API-sleutel geweigerd. Controleer je verbindingsinstellingen.",
   "{provider} could not find the requested model.":
     "{provider} kon het gevraagde model niet vinden.",
+  "{provider} denied access to this model.": "{provider} heeft toegang tot dit model geweigerd.",
+  "The model returned an unusable response. Try again.":
+    "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw.",
+  "This model's context window is too small. Choose another model.":
+    "Het contextvenster van dit model is te klein. Kies een ander model.",
   "{provider} took too long to respond. Try again.":
     "{provider} deed er te lang over om te antwoorden. Probeer het opnieuw.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} is op dit moment overbelast. Probeer het zo nog eens.",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider} is niet bereikbaar. Controleer of hij draait.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Dit gesprek is te lang voor het model. Opnieuw proberen helpt niet. Begin een nieuwe chat of maak je bericht korter.",
   "{provider} key hit its limit.": "De sleutel van {provider} heeft de limiet bereikt.",
   "{provider} key hit its daily limit.": "De sleutel van {provider} heeft de daglimiet bereikt.",
   "{provider} key hit its weekly limit.": "De sleutel van {provider} heeft de weeklimiet bereikt.",
@@ -174,6 +204,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Expand {name}": "{name} uitklappen",
   "Mark as Read": "Markeren als gelezen",
   "Mark as Unread": "Markeren als ongelezen",
+  "Mark as unread": "Markeren als ongelezen",
   "Long press to pin or move to a section":
     "Lang indrukken om vast te zetten of naar een sectie te verplaatsen",
   "Long press to pin, move, or silence notifications":
@@ -289,6 +320,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Artifacts: "Artefacten",
   "Could not delete this artifact": "Dit artefact verwijderen mislukt",
   "Could not load artifacts.": "Artefacten laden mislukt.",
+  "Could not load this chat.": "Deze chat kon niet worden geladen.",
   "Could not load this artifact.": "Dit artefact laden mislukt.",
   "Could not share this artifact": "Dit artefact delen mislukt",
   "Long press to delete": "Lang indrukken om te verwijderen",
@@ -333,7 +365,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not load model settings": "Modelinstellingen laden mislukt",
   "Could not save bot": "Bot opslaan mislukt",
   "Default (medium)": "Standaard (gemiddeld)",
-  "Describe what this bot does": "Beschrijf wat deze bot doet",
   Description: "Beschrijving",
   "Extra high": "Extra hoog",
   High: "Hoog",
@@ -343,7 +374,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Minimal: "Minimaal",
   Model: "Model",
   Name: "Naam",
-  "Name this bot": "Geef deze bot een naam",
   "Read replies aloud": "Antwoorden hardop voorlezen",
   Save: "Opslaan",
   "Saving…": "Bezig met opslaan…",
@@ -563,6 +593,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not save that voice": "Die stem opslaan mislukt",
   "Disconnect {name}?": "{name} loskoppelen?",
   Disconnect: "Loskoppelen",
+  "Disconnect Self-hosted": "Zelfgehoste verbinding loskoppelen",
   "This removes the connection from every space.":
     "Hiermee wordt de verbinding uit elke space verwijderd.",
   "Disconnecting…": "Bezig met loskoppelen…",
@@ -584,8 +615,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Agent messages": "Agentberichten",
   Appearance: "Weergave",
   Archived: "Gearchiveerd",
-  "Avatar style": "Avatarstijl",
-  Avatars: "Avatars",
   Cancel: "Annuleren",
   Close: "Sluiten",
   "Could not change language": "Taal wijzigen mislukt",
@@ -594,7 +623,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Could not restore bot": "Bot herstellen mislukt",
   "Could not sign out": "Uitloggen mislukt",
   "Could not update notifications": "Meldingen bijwerken mislukt",
-  "Couldn't update avatars": "Avatars bijwerken mislukt",
   "Current password": "Huidig wachtwoord",
   Dark: "Donker",
   Delete: "Verwijderen",
@@ -611,11 +639,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "Get notified when this Bot finishes or needs input":
     "Ontvang een melding wanneer deze bot klaar is of invoer nodig heeft",
   Notifications: "Meldingen",
-  Organic: "Organisch",
   "Questions, approvals, takeover": "Vragen, goedkeuringen, overname",
   "Replies and completed work": "Antwoorden en afgerond werk",
   Restore: "Herstellen",
-  Robot: "Robot",
   "Scheduled tasks": "Geplande taken",
   "Sign out": "Uitloggen",
   "Stream replies": "Antwoorden streamen",
@@ -627,7 +653,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Usage: "Gebruik",
   "Your account": "Je account",
   "{runs} runs · {tokens} tokens": "{runs} uitvoeringen · {tokens} tokens",
-  "{style} avatars": "{style}-avatars",
   "Confirm password": "Wachtwoord bevestigen",
   "Could not change password": "Wachtwoord wijzigen mislukt",
   "New password": "Nieuw wachtwoord",
@@ -935,10 +960,23 @@ export const NL_MESSAGES: Record<string, string> = {
   "Continue with credits": "Doorgaan met tegoed",
   "Add credits": "Tegoed toevoegen",
   "Manage billing": "Facturering beheren",
-  "Your API key": "Je API-sleutel",
-  "Free. Pay your model provider directly.": "Gratis. Betaal je modelaanbieder rechtstreeks.",
-  "Use my API key": "Mijn API-sleutel gebruiken",
+  "Your subscription or API key": "Je abonnement of API-sleutel",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Gratis. ChatGPT, Claude of elke modelaanbieder.",
+  "Use my subscription or API key": "Mijn abonnement of API-sleutel gebruiken",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Maandelijks tegoed vervalt bij verlenging. Los gekocht tegoed verloopt niet.",
   "Use Rakazo credits": "Rakazo-tegoed gebruiken",
+  "1 unread": "1 ongelezen",
+  "{count} unread": "{count} ongelezen",
+  "{count} need attention": "{count} vragen aandacht",
+  "{label}, above": "{label}, boven",
+  "{label}, below": "{label}, onder",
+  Work: "Werk",
+  Both: "Allebei",
+  "How will you use Rakazo?": "Hoe ga je Rakazo gebruiken?",
+  "What do you most want Rakazo to help with?": "Waarmee wil je vooral hulp van Rakazo?",
+  "How big is your team?": "Hoe groot is je team?",
+  "How did you hear about us?": "Hoe heb je over ons gehoord?",
+  "Welcome to Rakazo": "Welkom bij Rakazo",
 };

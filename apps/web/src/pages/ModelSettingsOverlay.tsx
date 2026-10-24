@@ -12,10 +12,10 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   Disclosure,
+  Spinner,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { ModelBackupsSettings } from "./ModelBackupsSettings";
@@ -28,17 +28,16 @@ import {
   SaveModelButton,
 } from "./model-settings/connection-controls";
 import { ProviderList } from "./model-settings/provider-list";
+import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
 
 export function ModelSettingsOverlay({
   onClose,
   embedded = false,
-  localOwner = false,
 }: {
   onClose: () => void;
   /** Render panel body only for the shared Settings shell. */
   embedded?: boolean;
-  localOwner?: boolean;
 }) {
   const { t } = useLingui();
   const model = useModelSettings(onClose);
@@ -54,6 +53,7 @@ export function ModelSettingsOverlay({
     disconnectCredential,
     disconnectName,
     error,
+    groups,
     handleClose,
     isOpenAiCompatible,
     loading,
@@ -75,10 +75,6 @@ export function ModelSettingsOverlay({
       </Trans>
     </p>
   );
-  const description = localOwner ? (
-    <Trans>Models for the server owner’s default space.</Trans>
-  ) : null;
-
   const body = (
     <>
       {!embedded ? (
@@ -87,11 +83,6 @@ export function ModelSettingsOverlay({
             <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Models</Trans>
             </DialogTitle>
-            {description ? (
-              <DialogDescription className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">
-                {description}
-              </DialogDescription>
-            ) : null}
           </div>
           <DialogClose
             render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
@@ -99,10 +90,6 @@ export function ModelSettingsOverlay({
             <X />
           </DialogClose>
         </DialogHeader>
-      ) : description ? (
-        <p className="px-6 pt-1 text-[13px] leading-[1.5] text-muted-foreground sm:px-8">
-          {description}
-        </p>
       ) : null}
 
       {me?.needsModel ? null : (
@@ -116,9 +103,8 @@ export function ModelSettingsOverlay({
                 {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
               </span>
               <span className="truncate text-[13px] leading-[1.5] text-muted-foreground">
-                {currentEntry?.providerName ?? me?.defaultProvider ?? (
-                  <Trans>Configured by deployment</Trans>
-                )}
+                {groups.find((group) => group.id === currentEntry?.provider)?.name ??
+                  me?.defaultProvider ?? <Trans>Configured by deployment</Trans>}
                 {activeThinkingLabel ? (
                   <>
                     {" · "}
@@ -213,13 +199,18 @@ export function ModelSettingsOverlay({
             </>
           ) : loading ? (
             <p className="text-[13px] leading-[1.5] text-muted-foreground">
-              <Trans>Loading model catalog…</Trans>
+              <Spinner aria-label={t`Loading model catalog…`} />
             </p>
           ) : (
             <p className="text-[13px] leading-[1.5] text-muted-foreground">
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
+          {me && !me.needsModel ? (
+            <SpaceBotsModelNotice
+              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+            />
+          ) : null}
           {me ? (
             <ModelBackupsSettings
               userId={me.userId}

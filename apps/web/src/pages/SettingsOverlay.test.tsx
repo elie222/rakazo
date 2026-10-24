@@ -106,13 +106,13 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
         <SettingsOverlay
           name="Jamie"
           onUsageOpen={() => undefined}
-          avatarStyle="robot"
-          onAvatarStyleChange={async () => undefined}
           timezone={null}
           onTimezoneChange={async () => undefined}
           memoryConfig={null}
           onMemoryConfigChange={() => undefined}
           onClose={() => undefined}
+          section="general"
+          onSectionChange={() => undefined}
           {...next}
         />,
       );
@@ -136,7 +136,7 @@ it("names the space a space-scoped section acts on and switches it in place", as
     space: acme,
     spaces,
     onSpaceChange,
-    initialSection: "models",
+    section: "models",
   });
   try {
     const trigger = container.querySelector<HTMLButtonElement>('[data-testid="settings-space"]');
@@ -155,12 +155,41 @@ it("names the space a space-scoped section acts on and switches it in place", as
   }
 });
 
+it("reports a section picked in the nav so the shell can keep it in the URL", async () => {
+  const onSectionChange = vi.fn();
+  const { container, cleanup } = await render({ onSectionChange });
+  try {
+    const usage = container.querySelector<HTMLButtonElement>('[data-testid="settings-nav-usage"]');
+    if (!usage) throw new Error("Missing Usage nav item");
+    await act(async () => usage.click());
+    expect(onSectionChange).toHaveBeenCalledWith("usage");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("opens a linked billing section once billing turns out to be on", async () => {
+  const { container, rerender, cleanup } = await render({
+    section: "billing",
+    billingEnabled: false,
+  });
+  const shown = () =>
+    container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section");
+  try {
+    expect(shown()).toBe("general");
+    await rerender({ section: "billing", billingEnabled: true });
+    expect(shown()).toBe("billing");
+  } finally {
+    await cleanup();
+  }
+});
+
 it("shows the space name without a switcher when there is only one space", async () => {
   const { container, cleanup } = await render({
     space: acme,
     spaces: [acme],
     onSpaceChange: vi.fn(),
-    initialSection: "models",
+    section: "models",
   });
   try {
     const label = container.querySelector('[data-testid="settings-space"]');
@@ -176,7 +205,7 @@ it("shows no space picker on sections that are not per space", async () => {
     space: acme,
     spaces,
     onSpaceChange: vi.fn(),
-    initialSection: "general",
+    section: "general",
   });
   try {
     expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
@@ -194,7 +223,7 @@ it("never hands one space's memory config to another space's panel", async () =>
     spaces: [...spaces, gamma],
     currentSpaceId: "space-a",
     onSpaceChange: vi.fn(),
-    initialSection: "memory" as const,
+    section: "memory" as const,
   };
   const { rerender, cleanup } = await render(props);
   try {
@@ -224,7 +253,7 @@ it("withholds memory connection controls after a failed load and retries the edi
   const { container, cleanup } = await render({
     space: spaces[1],
     currentSpaceId: "space-a",
-    initialSection: "memory",
+    section: "memory",
     onMemoryConfigChange,
   });
   try {
@@ -253,21 +282,11 @@ it("withholds memory connection controls after a failed load and retries the edi
 const updatesNav = (container: HTMLElement) =>
   container.querySelector('[data-testid="settings-nav-updates"]');
 
-it("hides Updates when neither the desktop app nor the server can update", async () => {
-  const { container, cleanup } = await render({ isDeploymentOwner: true });
+it("hides server updates and never requests server authority", async () => {
+  const { container, cleanup } = await render({});
   try {
-    await vi.waitFor(() => expect(updaterStatus).toHaveBeenCalled());
     expect(updatesNav(container)).toBeNull();
-  } finally {
-    await cleanup();
-  }
-});
-
-it("shows Updates to the owner of a server that can update itself", async () => {
-  updaterStatus.mockResolvedValueOnce({ installKind: "sidecar" });
-  const { container, cleanup } = await render({ isDeploymentOwner: true });
-  try {
-    await vi.waitFor(() => expect(updatesNav(container)).not.toBeNull());
+    expect(updaterStatus).not.toHaveBeenCalled();
   } finally {
     await cleanup();
   }
@@ -278,29 +297,6 @@ it("shows Updates in the desktop app", async () => {
   const { container, cleanup } = await render({});
   try {
     expect(updatesNav(container)).not.toBeNull();
-  } finally {
-    await cleanup();
-  }
-});
-
-it("leaves Updates for General once the status shows nothing to update", async () => {
-  let resolveStatus: (status: unknown) => void = () => undefined;
-  updaterStatus.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        resolveStatus = resolve;
-      }),
-  );
-  const { container, cleanup } = await render({
-    isDeploymentOwner: true,
-    initialSection: "updates",
-  });
-  const selected = () =>
-    container.querySelector('[data-testid="user-settings"]')?.getAttribute("data-settings-section");
-  try {
-    expect(selected()).toBe("updates");
-    await act(async () => resolveStatus({ installKind: "compose" }));
-    expect(selected()).toBe("general");
   } finally {
     await cleanup();
   }

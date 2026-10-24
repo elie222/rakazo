@@ -1,5 +1,5 @@
 import type { AuthCapabilities } from "@rakazo/contracts";
-import { passkeyOfferDismissedKey, shouldOfferPasskey } from "@rakazo/core";
+import { hostMatchesPasskeyRpId, passkeyOfferDismissedKey, shouldOfferPasskey } from "@rakazo/core";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Alert, Platform } from "react-native";
@@ -40,6 +40,13 @@ function associatedRpIds(): string[] {
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
 }
 
+/** Native association alone does not bind a server-supplied challenge to the API host. */
+function serverMatchesRp(apiBase: string, rpId: string | undefined | null): boolean {
+  if (!rpId || !associatedRpIds().includes(rpId.toLowerCase())) return false;
+  const server = new URL(apiBase);
+  return server.protocol === "https:" && hostMatchesPasskeyRpId(server.hostname, rpId);
+}
+
 /**
  * Passkeys work only on a device that supports them, for a server this binary is associated
  * with, whose domain also vouches for this platform's app. Older servers omit that, so: hidden.
@@ -48,9 +55,9 @@ export async function passkeysAvailable(
   capabilities: Pick<AuthCapabilities, "passkeyRpId" | "nativePasskeys"> | null | undefined,
 ): Promise<boolean> {
   const rpId = capabilities?.passkeyRpId;
-  if (!rpId || !associatedRpIds().includes(rpId.toLowerCase())) return false;
+  if (!serverMatchesRp(currentApiBase(), rpId)) return false;
   const platform = Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : null;
-  if (!platform || capabilities.nativePasskeys?.[platform] !== true) return false;
+  if (!platform || capabilities?.nativePasskeys?.[platform] !== true) return false;
   return (await loadNative()) !== null;
 }
 
@@ -124,6 +131,7 @@ export function signInWithPasskey(): Promise<boolean> {
     );
     if (!options.response.ok || options.invalidJson)
       throw new Error(passkeyErrorText(options.response.status, options.body, options.invalidJson));
+    if (!serverMatchesRp(flow.apiBase, options.body.rpId)) throw new Error(t("Could not continue"));
     const cookie = challengeCookie(options.response);
     let credential: Awaited<ReturnType<typeof passkeys.get>>;
     try {
@@ -174,6 +182,8 @@ export function addPasskey(): Promise<boolean> {
     );
     if (!options.response.ok || options.invalidJson)
       throw new Error(passkeyErrorText(options.response.status, options.body, options.invalidJson));
+    if (!serverMatchesRp(flow.apiBase, options.body.rp?.id))
+      throw new Error(t("Could not continue"));
     const cookie = challengeCookie(options.response);
     let credential: Awaited<ReturnType<typeof passkeys.create>>;
     try {

@@ -99,7 +99,7 @@ function hostnameOf(url: URL): string {
 }
 
 /** Loopback, RFC1918/ULA literals, or HTTP need deployment-owner authorization. */
-export function serenityEndpointRequiresDeploymentOwner(endpoint: string): boolean {
+export function serenityEndpointRequiresPrivateEndpoint(endpoint: string): boolean {
   const url = parseSerenityEndpoint(endpoint);
   const host = hostnameOf(url);
   if (isLocalMcpHost(host) || isBlockedHostname(host)) return true;
@@ -117,7 +117,7 @@ export async function classifySerenityEndpointTrust(
   resolveHostname?: ResolveHostname,
 ): Promise<"private" | "public"> {
   const url = parseSerenityEndpoint(endpoint);
-  if (serenityEndpointRequiresDeploymentOwner(url.href)) return "private";
+  if (serenityEndpointRequiresPrivateEndpoint(url.href)) return "private";
   const host = hostnameOf(url);
   const resolve =
     resolveHostname ??
@@ -223,7 +223,7 @@ function serenityFetchPath(
   config: SerenityConnectionConfig,
   url: URL,
 ): "private-literal" | "private-dns" | "public" {
-  if (config.endpointTrust === "private" || serenityEndpointRequiresDeploymentOwner(url.href)) {
+  if (config.endpointTrust === "private" || serenityEndpointRequiresPrivateEndpoint(url.href)) {
     return isIP(hostnameOf(url)) !== 0 ? "private-literal" : "private-dns";
   }
   return "public";

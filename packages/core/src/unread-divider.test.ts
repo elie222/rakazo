@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canMarkMessageUnread,
   createChatQueues,
   createSerialQueue,
   settleReadBoundary,
@@ -128,5 +129,57 @@ describe("createChatQueues", () => {
     releaseA();
     await Promise.all([openingA, liveA]);
     expect(answered).toEqual(["b1", "a1", "a2"]);
+  });
+});
+
+describe("canMarkMessageUnread", () => {
+  it("offers any sent message, the user's own included, but not live rows", () => {
+    expect(canMarkMessageUnread({ id: "message-1" })).toBe(true);
+    expect(canMarkMessageUnread({ id: "progress:run-1" })).toBe(false);
+    expect(canMarkMessageUnread({ id: "subagent:agent-1" })).toBe(false);
+    // The divider then starts at the first reply after the user's own message.
+    expect(
+      unreadDividerMessageId(
+        [
+          { id: "m1", role: "user", seq: 1 },
+          { id: "m2", role: "bot", seq: 2 },
+        ],
+        0,
+        null,
+      ),
+    ).toBe("m2");
+  });
+});
+
+describe("marking unread through a chat's read queue", () => {
+  it("lands after a read already in flight, and a read still queued skips while held", async () => {
+    const inOrder = createChatQueues();
+    let unread = false;
+    let held = false;
+    let finishRead!: () => void;
+    // An automatic read is already on its way when the user marks a message unread.
+    const inFlight = inOrder(
+      "bot:a",
+      () =>
+        new Promise<void>((resolve) => {
+          finishRead = () => {
+            unread = false;
+            resolve();
+          };
+        }),
+    );
+    // Another automatic read was queued; it checks the hold when its turn comes.
+    const queued = inOrder("bot:a", async () => {
+      if (!held) unread = false;
+    });
+    held = true;
+    const mark = inOrder("bot:a", async () => {
+      unread = true;
+    });
+    // The queue starts the read on the next tick; finish it once it has started.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishRead();
+    await Promise.all([inFlight, queued, mark]);
+    expect(unread).toBe(true);
   });
 });

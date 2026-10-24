@@ -833,6 +833,7 @@ describe("mobile call speech locales", () => {
     ["en", "en-US"],
     ["de", "de-DE"],
     ["nl", "nl-NL"],
+    ["ja", "ja-JP"],
     ["ru", "ru-RU"],
     ["zh-CN", "zh-CN"],
   ] as const)(

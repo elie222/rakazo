@@ -7,7 +7,6 @@ type SidebarChat = {
   preview?: string | null;
   pinned: boolean;
   sectionId: string | null;
-  parentBotId?: string | null;
 };
 
 type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
@@ -60,7 +59,6 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ].map((item) => ({
         ...item,
         id: item.chat.id,
-        parentBotId: item.kind === "bot" ? (item.chat.parentBotId ?? null) : null,
         pinned: item.chat.pinned,
         sectionId: item.chat.sectionId,
       })),

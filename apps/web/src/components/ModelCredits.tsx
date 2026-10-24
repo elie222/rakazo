@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
-import { MODEL_CREDIT_AMOUNTS, ModelCreditAmountSchema } from "@rakazo/contracts";
+import {
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  MODEL_CREDIT_AMOUNTS,
+  ModelCreditAmountSchema,
+} from "@rakazo/contracts";
 import {
   Button,
   Card,
@@ -14,6 +18,7 @@ import {
   DialogTitle,
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -50,17 +55,18 @@ export function CreditAmountSelect({
     >
       <SelectTrigger
         aria-label={monthly ? t`Monthly credits` : t`Credit amount`}
-        className="w-full"
-        size="xl"
+        className="w-full rounded-xl pr-3 pl-4 text-base data-[size=default]:h-12"
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false} align="start" className="p-1">
-        {items.map((item) => (
-          <SelectItem key={item.value} value={item.value} className="py-2 text-base">
-            {item.label}
-          </SelectItem>
-        ))}
+      <SelectContent alignItemWithTrigger={false} align="start">
+        <SelectGroup>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value} className="py-2 text-base">
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
@@ -73,7 +79,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
     t`Scheduled routines`,
     t`Web, desktop and mobile`,
   ];
-  const [amount, setAmount] = useState<CreditAmount>(1000);
+  const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const { logOut, signingOut } = useSignOut(
@@ -119,7 +125,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">
-              <Trans>Your API key</Trans>
+              <Trans>Your subscription or API key</Trans>
             </h2>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
@@ -127,7 +133,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               <Trans>Free</Trans>
             </p>
             <p className="text-sm text-muted-foreground">
-              <Trans>Pay your model provider directly.</Trans>
+              <Trans>ChatGPT, Claude, or any model provider.</Trans>
             </p>
             <ul className="space-y-3 text-sm">
               {features.map((feature) => (
@@ -145,7 +151,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               disabled={pending || !status.canManage}
               onClick={() => void choose(true)}
             >
-              <Trans>Use my API key</Trans>
+              <Trans>Connect my own</Trans>
             </Button>
           </CardFooter>
         </Card>
@@ -207,7 +213,7 @@ export function ModelCreditsSettings({
 }) {
   const { t, i18n } = useLingui();
   const [amount, setAmount] = useState<CreditAmount>(
-    ModelCreditAmountSchema.catch(1000).parse(status.monthlyAmountCents),
+    ModelCreditAmountSchema.catch(DEFAULT_MONTHLY_CREDIT_AMOUNT).parse(status.monthlyAmountCents),
   );
   const [topupAmount, setTopupAmount] = useState<CreditAmount>(1000);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -352,7 +358,7 @@ export function ModelCreditsSettings({
             })
           }
         >
-          <Trans>Use my API key</Trans>
+          <Trans>Use my subscription or API key</Trans>
         </Button>
       ) : null}
       {error ? (

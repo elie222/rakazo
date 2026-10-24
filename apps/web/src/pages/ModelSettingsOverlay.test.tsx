@@ -28,12 +28,14 @@ vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => "space-1",
   rpc: {
     models,
+    bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
   },
 }));
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
+  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -124,16 +126,20 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     Checkbox,
     Label,
     ModelThinkingOptions: (props: {
+      children?: ReactNode;
       maxTokens?: string;
       maxTokensLabel?: string;
       onMaxTokensChange?: (value: string) => void;
     }) =>
       props.onMaxTokensChange ? (
-        <input
-          aria-label={props.maxTokensLabel}
-          value={props.maxTokens ?? ""}
-          onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
-        />
+        <>
+          <input
+            aria-label={props.maxTokensLabel}
+            value={props.maxTokens ?? ""}
+            onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+          />
+          {props.children}
+        </>
       ) : null,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
@@ -179,7 +185,7 @@ function account(provider: string, modelId: string) {
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",
-    avatarStyle: "robot" as const,
+    avatarStyle: "organic" as const,
     billingEnabled: false,
     ticketBoardEnabled: false,
     phoneCallsEnabled: false,
@@ -216,19 +222,13 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
-async function renderSettings(embedded = true, localOwner = false) {
+async function renderSettings(embedded = true) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(
-      <ModelSettingsOverlay
-        embedded={embedded}
-        localOwner={localOwner}
-        onClose={() => undefined}
-      />,
-    );
+    root.render(<ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />);
   });
   await act(async () => {
     await Promise.resolve();
@@ -506,17 +506,6 @@ it("omits the redundant description and connection prompt", async () => {
   }
 });
 
-it("keeps the server owner's description when relevant", async () => {
-  const view = await renderSettings(false, true);
-  try {
-    expect(view.container.querySelector('[data-testid="model-description"]')?.textContent).toBe(
-      "Models for the server owner’s default space.",
-    );
-  } finally {
-    await view.unmount();
-  }
-});
-
 /**
  * Accessible name per accname: aria-labelledby wins, and a labelling element's
  * text includes the control's own aria-label when the control sits inside it.
@@ -781,6 +770,350 @@ it("drops the saved ticks and rows when the server URL changes, and restores the
     );
     await typeInto(field, compatibleCredential.baseUrl);
     expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("probes with the editing credential id without sending saved header values", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith({
+      baseUrl: compatibleCredential.baseUrl,
+      apiKey: undefined,
+      headers: undefined,
+      credentialId: compatibleCredential.id,
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows saved header names only, preserves untouched headers and explicitly clears removed headers", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([{ ...compatibleCredential, headerNames: ["x-session"] }]);
+  const view = await renderSettings();
+  try {
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    expect(name.value).toBe("x-session");
+    expect(value.type).toBe("password");
+    expect(value.placeholder).toBe("••••••••");
+    expect(value.value).toBe("");
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ headers: undefined }),
+    );
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>('button[aria-label="Remove header"]')
+        ?.click();
+    });
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenLastCalledWith(expect.objectContaining({ headers: {} }));
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each([" http://127.0.0.1:8000/v1 ", "http://127.0.0.1:8000/v1/", "http://127.0.0.1:8000"])(
+  "preserves saved header rows at the equivalent endpoint %s",
+  async (endpoint) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+    models.list.mockResolvedValue([compatibleEntry]);
+    models.credentials.mockResolvedValue([
+      { ...compatibleCredential, headerNames: ["x-session", "x-route"] },
+    ]);
+    const view = await renderSettings();
+    try {
+      await typeInto(baseUrlField(view.container), endpoint);
+      const names = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header name"]',
+      );
+      const values = view.container.querySelectorAll<HTMLInputElement>(
+        'input[aria-label="Header value"]',
+      );
+      expect([...names].map((input) => input.value)).toEqual(["x-session", "x-route"]);
+      expect([...values].map((input) => input.placeholder)).toEqual(["••••••••", "••••••••"]);
+      expect([...values].map((input) => input.value)).toEqual(["", ""]);
+      await typeInto(values[0]!, "fake-session-secret");
+      // Editing one saved header must retain the other row and require its value too.
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+      await typeInto(values[1]!, "fake-routing-secret");
+      await act(async () => buttons(view.container, "Save")[0]?.click());
+      expect(models.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          headers: { "x-session": "fake-session-secret", "x-route": "fake-routing-secret" },
+        }),
+      );
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("does not inherit saved header rows or placeholders at another origin", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([{ ...compatibleCredential, headerNames: ["x-session"] }]);
+  const view = await renderSettings();
+  try {
+    await typeInto(baseUrlField(view.container), "http://other.test/v1");
+    expect(view.container.querySelector('input[aria-label="Header name"]')).toBeNull();
+    await act(async () => buttons(view.container, "Add header")[0]?.click());
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>('input[aria-label="Header name"]')!,
+      "x-session",
+    );
+    const value = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Header value"]',
+    )!;
+    expect(value.placeholder).toBe("");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("disables Save for invalid custom header names", async () => {
+  const view = await renderCompatibleWithProbe(["model-a"]);
+  try {
+    await act(async () => {
+      buttons(view.container, "Add header")[0]?.click();
+    });
+    const name = view.container.querySelector(
+      'input[aria-label="Header name"]',
+    ) as HTMLInputElement;
+    const value = view.container.querySelector(
+      'input[aria-label="Header value"]',
+    ) as HTMLInputElement;
+    await typeInto(name, "Authorization");
+    await typeInto(value, "long-session-secret");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(name, "bad name");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("opens the Ollama preset with a required key and saves a compatible connection", async () => {
+  HTMLElement.prototype.scrollTo = vi.fn();
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["fixture-model"] });
+  const view = await renderSettings(false);
+  try {
+    await act(async () => buttons(view.container, "Ollama Cloud")[0]!.click());
+    expect((view.container.querySelector("#model-base-url") as HTMLInputElement).value).toBe(
+      "https://ollama.com/v1",
+    );
+    expect(buttons(view.container, "Ollama Cloud")[0]?.getAttribute("aria-current")).toBe("true");
+    expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
+      false,
+    );
+    expect(
+      [...view.container.querySelectorAll("button")].filter(
+        (row) => row.textContent === "Setup help",
+      ),
+    ).toHaveLength(0);
+    expect(
+      [...view.container.querySelectorAll("button")].filter((row) => row.textContent === "API key"),
+    ).toHaveLength(0);
+    const key = view.container.querySelector(
+      'input[placeholder="Ollama API key"]',
+    ) as HTMLInputElement;
+    expect(key.required).toBe(true);
+    await typeInto(key, "fake-fixture-key");
+    await act(async () => buttons(view.container, "Find models")[0]!.click());
+    expect(models.probeOpenAiCompatible).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: "https://ollama.com/v1", apiKey: "fake-fixture-key" }),
+    );
+    await act(async () => buttons(view.container, "Save")[0]!.click());
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        baseUrl: "https://ollama.com/v1",
+        apiKey: "fake-fixture-key",
+        modelId: "fixture-model",
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows a saved Ollama connection only once", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "https://ollama.com/",
+      hasKey: true,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    expect(buttons(view.container, "Ollama Cloud")).toHaveLength(1);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the Ollama preset in All providers beside a saved local connection", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "openai-compatible",
+      modelId: "fixture-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      hasKey: false,
+    },
+  ]);
+  const view = await renderSettings(false);
+  try {
+    const preset = buttons(view.container, "Ollama Cloud");
+    expect(preset).toHaveLength(1);
+    const heading = [...view.container.querySelectorAll("p")].find(
+      (element) => element.textContent === "All providers",
+    );
+    expect(heading).toBeDefined();
+    expect(
+      heading!.compareDocumentPosition(preset[0]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await act(async () => preset[0]!.click());
+    expect(preset[0]?.getAttribute("aria-current")).toBe("true");
+    expect(buttons(view.container, "OpenAI-compatible")[0]?.hasAttribute("aria-current")).toBe(
+      false,
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  const view = await renderSettings(false);
+  try {
+    await act(async () => buttons(view.container, "OpenAI-compatible")[0]!.click());
+    for (const name of ["Setup help", "API key"]) {
+      const row = buttons(view.container, name)[0]!;
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+      expect(row.querySelector("svg")).not.toBeNull();
+      await act(async () => row.click());
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+    }
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each(["https://ollama.com", "https://ollama.com/v1/"])(
+  "keeps Save enabled with a saved Ollama key at %s",
+  async (baseUrl) => {
+    models.list.mockResolvedValue([compatibleEntry]);
+    models.credentials.mockResolvedValue([
+      {
+        id: "fixture",
+        provider: "openai-compatible",
+        modelId: "fixture-model",
+        baseUrl: "https://ollama.com/v1",
+        hasKey: true,
+      },
+    ]);
+    const view = await renderSettings(false);
+    try {
+      await act(async () => buttons(view.container, "Ollama Cloud")[0]!.click());
+      await typeInto(view.container.querySelector("#model-base-url") as HTMLInputElement, baseUrl);
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+      await typeInto(
+        view.container.querySelector("#model-base-url") as HTMLInputElement,
+        "https://other.test/v1",
+      );
+      await typeInto(
+        view.container.querySelector("#model-base-url") as HTMLInputElement,
+        "https://ollama.com/v1/",
+      );
+      expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it.each([undefined, "api_key", "oauth"])(
+  "only enables subscription connection checks for saved OAuth credentials (%s)",
+  async (authKind) => {
+    vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
+    models.list.mockResolvedValue([
+      {
+        provider: "openai-codex",
+        providerName: "ChatGPT",
+        id: "fixture-model",
+        label: "Fixture model",
+        billing: "Subscription",
+        auth: "oauth",
+        signIn: "device-code",
+        oauthLabel: "Sign in with ChatGPT Plus/Pro",
+      },
+    ]);
+    models.credentials.mockResolvedValue(
+      authKind
+        ? [{ id: "fixture", provider: "openai-codex", modelId: "fixture-model", authKind }]
+        : [],
+    );
+    const view = await renderSettings();
+    try {
+      expect(buttons(view.container, "Test connection")[0]?.disabled).toBe(authKind !== "oauth");
+      expect(view.container.textContent).not.toContain("Test sign-in");
+    } finally {
+      await view.unmount();
+    }
+  },
+);
+
+it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
+  models.list.mockResolvedValue([
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "claude-fixture",
+      label: "Claude fixture",
+      billing: "",
+      signIn: "auth-url",
+    },
+  ]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "fixture",
+      provider: "anthropic",
+      modelId: "claude-fixture",
+      hasKey: false,
+      authKind: "oauth",
+    },
+  ]);
+  const view = await renderSettings();
+  try {
+    expect(view.container.querySelector("#model-api-key")).toBeNull();
+    await act(async () => {
+      buttons(view.container, "Or paste an API key")[0]?.click();
+    });
+    expect(keyField(view.container)).toBeTruthy();
+    expect(buttons(view.container, "Connect API key")).toHaveLength(1);
+    expect(view.container.textContent).not.toContain("Replace API key");
   } finally {
     await view.unmount();
   }

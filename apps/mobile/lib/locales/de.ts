@@ -1,4 +1,17 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Use 80 characters or fewer": "Höchstens 80 Zeichen verwenden",
+  "Could not update name": "Name konnte nicht aktualisiert werden",
+  "{summary} Your backup models also failed.":
+    "{summary} Auch deine Ersatzmodelle sind fehlgeschlagen.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Für diese Anfrage war kein Ersatzmodell nutzbar.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Ersatzmodelle sind fehlgeschlagen oder waren für diese Anfrage nicht verfügbar.",
+
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "Ollama API-Schlüssel",
+  "Show password": "Passwort anzeigen",
+  "Hide password": "Passwort verbergen",
   Export: "Exportieren",
   "Edit avatar": "Avatar bearbeiten",
   "Add open work": "Offene Aufgabe hinzufügen",
@@ -25,9 +38,16 @@ export const DE_MESSAGES: Record<string, string> = {
   "Search bots": "Bots suchen",
   "About {label}": "Über {label}",
   "Manage the bots it creates": "Die von ihm erstellten Bots verwalten",
+  "Allow cross-space bot communication":
+    "Kommunikation zwischen Bots in verschiedenen Spaces erlauben",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Ordne die Seitenleiste und bearbeite Bots. Änderungen an Gruppen, Anweisungen, Modellen und Routinen brauchen deine Zustimmung.",
 
+  Headers: "Header",
+  "Add header": "Header hinzufügen",
+  "Remove header": "Header entfernen",
+  "Header name": "Header-Name",
+  "Header value": "Header-Wert",
   Resets: "Zurückgesetzt",
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
@@ -73,8 +93,20 @@ export const DE_MESSAGES: Record<string, string> = {
     "{provider} hat den API-Schlüssel abgelehnt. Prüfe deine Verbindungseinstellungen.",
   "{provider} could not find the requested model.":
     "{provider} konnte das angeforderte Modell nicht finden.",
+  "{provider} denied access to this model.":
+    "{provider} hat den Zugriff auf dieses Modell verweigert.",
+  "The model returned an unusable response. Try again.":
+    "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut.",
+  "This model's context window is too small. Choose another model.":
+    "Das Kontextfenster dieses Modells ist zu klein. Wähle ein anderes Modell.",
   "{provider} took too long to respond. Try again.":
     "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} ist gerade überlastet. Versuche es gleich noch einmal.",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider} ist nicht erreichbar. Prüfe, ob er läuft.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Diese Unterhaltung ist zu lang für das Modell. Ein erneuter Versuch hilft nicht. Starte einen neuen Chat oder kürze deine Nachricht.",
   "{provider} key hit its limit.": "{provider}: Schlüssellimit erreicht.",
   "{provider} key hit its daily limit.": "{provider}: tägliches Schlüssellimit erreicht.",
   "{provider} key hit its weekly limit.": "{provider}: wöchentliches Schlüssellimit erreicht.",
@@ -179,6 +211,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Expand {name}": "{name} ausklappen",
   "Mark as Read": "Als gelesen markieren",
   "Mark as Unread": "Als ungelesen markieren",
+  "Mark as unread": "Als ungelesen markieren",
   "Long press to pin or move to a section":
     "Lange drücken, um anzuheften oder in einen Abschnitt zu verschieben",
   "Long press to pin, move, or silence notifications":
@@ -295,6 +328,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Artifacts: "Artefakte",
   "Could not delete this artifact": "Dieses Artefakt konnte nicht gelöscht werden",
   "Could not load artifacts.": "Artefakte konnten nicht geladen werden.",
+  "Could not load this chat.": "Dieser Chat konnte nicht geladen werden.",
   "Could not load this artifact.": "Dieses Artefakt konnte nicht geladen werden.",
   "Could not share this artifact": "Dieses Artefakt konnte nicht geteilt werden",
   "Long press to delete": "Zum Löschen gedrückt halten",
@@ -340,7 +374,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load model settings": "Modelleinstellungen konnten nicht geladen werden",
   "Could not save bot": "Bot konnte nicht gespeichert werden",
   "Default (medium)": "Standard (mittel)",
-  "Describe what this bot does": "Beschreibe, was dieser Bot macht",
   Description: "Beschreibung",
   "Extra high": "Sehr hoch",
   High: "Hoch",
@@ -350,7 +383,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Minimal: "Minimal",
   Model: "Modell",
   Name: "Name",
-  "Name this bot": "Bot benennen",
   "Read replies aloud": "Antworten vorlesen",
   Save: "Speichern",
   "Saving…": "Wird gespeichert…",
@@ -583,6 +615,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not save that voice": "Stimme konnte nicht gespeichert werden",
   "Disconnect {name}?": "{name} trennen?",
   Disconnect: "Trennen",
+  "Disconnect Self-hosted": "Selbst gehostete Verbindung trennen",
   "This removes the connection from every space.": "Die Verbindung wird in jedem Space entfernt.",
   "Disconnecting…": "Verbindung wird getrennt…",
   "Hear a sample": "Beispiel anhören",
@@ -604,8 +637,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Agent messages": "Agent-Nachrichten",
   Appearance: "Erscheinungsbild",
   Archived: "Archiviert",
-  "Avatar style": "Avatar-Stil",
-  Avatars: "Avatare",
   Cancel: "Abbrechen",
   "Could not change language": "Sprache konnte nicht geändert werden",
   "Could not delete account": "Konto konnte nicht gelöscht werden",
@@ -613,7 +644,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not restore bot": "Bot konnte nicht wiederhergestellt werden",
   "Could not sign out": "Abmeldung fehlgeschlagen",
   "Could not update notifications": "Benachrichtigungen konnten nicht aktualisiert werden",
-  "Couldn't update avatars": "Avatare konnten nicht aktualisiert werden",
   "Current password": "Aktuelles Passwort",
   Dark: "Dunkel",
   Delete: "Löschen",
@@ -627,11 +657,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Needs attention": "Aufmerksamkeit erforderlich",
   "Notification settings": "Benachrichtigungseinstellungen",
   Notifications: "Benachrichtigungen",
-  Organic: "Organisch",
   "Questions, approvals, takeover": "Fragen, Freigaben, Übernahme",
   "Replies and completed work": "Antworten und erledigte Arbeit",
   Restore: "Wiederherstellen",
-  Robot: "Roboter",
   "Scheduled tasks": "Geplante Aufgaben",
   "Sign out": "Abmelden",
   "Stream replies": "Antworten streamen",
@@ -643,7 +671,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Usage: "Nutzung",
   "Your account": "Dein Konto",
   "{runs} runs · {tokens} tokens": "{runs} Ausführungen · {tokens} Token",
-  "{style} avatars": "Avatare: {style}",
   // app/(settings)/change-password.tsx
   "Confirm password": "Passwort bestätigen",
   "Could not change password": "Passwort konnte nicht geändert werden",
@@ -979,10 +1006,23 @@ export const DE_MESSAGES: Record<string, string> = {
   "Continue with credits": "Mit Guthaben fortfahren",
   "Add credits": "Guthaben hinzufügen",
   "Manage billing": "Abrechnung verwalten",
-  "Your API key": "Dein API-Schlüssel",
-  "Free. Pay your model provider directly.": "Kostenlos. Bezahle deinen Modellanbieter direkt.",
-  "Use my API key": "Meinen API-Schlüssel verwenden",
+  "Your subscription or API key": "Dein Abo oder API-Schlüssel",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Kostenlos. ChatGPT, Claude oder ein beliebiger Modellanbieter.",
+  "Use my subscription or API key": "Mein Abo oder meinen API-Schlüssel verwenden",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Monatliches Guthaben verfällt bei Verlängerung. Einmalige Aufladungen verfallen nicht.",
   "Use Rakazo credits": "Rakazo-Guthaben verwenden",
+  "1 unread": "1 ungelesen",
+  "{count} unread": "{count} ungelesen",
+  "{count} need attention": "{count} brauchen Aufmerksamkeit",
+  "{label}, above": "{label}, oben",
+  "{label}, below": "{label}, unten",
+  Work: "Arbeit",
+  Both: "Beides",
+  "How will you use Rakazo?": "Wie wirst du Rakazo nutzen?",
+  "What do you most want Rakazo to help with?": "Wobei soll dir Rakazo am meisten helfen?",
+  "How big is your team?": "Wie groß ist dein Team?",
+  "How did you hear about us?": "Wie hast du von uns erfahren?",
+  "Welcome to Rakazo": "Willkommen bei Rakazo",
 };

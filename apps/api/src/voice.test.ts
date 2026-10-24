@@ -732,6 +732,7 @@ describe("persistVoiceCredential", () => {
         },
       };
       const deps = {
+        env: { mcpAllowPrivateEndpoint: true },
         prisma: {
           deploymentSettings: {
             findUnique: vi.fn().mockResolvedValue({ ownerUserId: actor.userId }),

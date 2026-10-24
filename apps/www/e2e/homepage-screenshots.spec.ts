@@ -50,6 +50,9 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await openHomepage(page, "/zh/");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-zh");
 
+  await openHomepage(page, "/ja/");
+  await captureScreenshot(page, testInfo, "03-marketing-homepage-ja");
+
   await openHomepage(page);
   await page
     .locator('.product-demo[data-product-demo-ready="true"]')

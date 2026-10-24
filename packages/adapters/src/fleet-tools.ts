@@ -33,7 +33,7 @@ import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-ask.js";
 import { resolveUpdateBotAvatar } from "./bot-avatar.js";
-import { createdByWhere } from "./child-bots.js";
+import { createdByWhere, managedBotsWhere } from "./child-bots.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
@@ -42,6 +42,7 @@ import {
   compactScheduleInput,
   createScheduleFromTool,
   resolveScheduleTiming,
+  userTimeZone,
 } from "./schedule-tools.js";
 import type { UpdateBotPatch } from "./update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "./update-bot-patch.js";
@@ -90,7 +91,6 @@ type Member = { id: string; name: string };
 type Refusal = { ok: false; error: string };
 
 const GROUP_SIZE_ERROR = `A group needs ${GROUP_MEMBER_MIN} to ${GROUP_MEMBER_MAX} bots.`;
-const NOT_CREATED_BY_CALLER = "You can only change bots you created. The owner edits the others.";
 
 /**
  * Resolve everything the model could vary before the effect is recorded. The canonical request
@@ -262,7 +262,7 @@ async function prepareChildModel(
     return refuse(`Thinking level must be one of: ${ThinkingLevelSchema.options.join(", ")}`);
   }
 
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   const previous = {
     provider: child.modelProvider,
@@ -328,7 +328,7 @@ async function prepareChildRoutine(
   if (hidden) return refuse(hidden);
   const namedRoutine = CreateRoutineInput.shape.name.safeParse(name);
   if (!namedRoutine.success) return refuse(`name: ${issueMessage(namedRoutine.error)}`);
-  const timezone = text(args.timezone) ?? "UTC";
+  const timezone = text(args.timezone) ?? (await userTimeZone(deps.prisma, run.userId));
   if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }
@@ -345,7 +345,7 @@ async function prepareChildRoutine(
   );
   if (!resolved.ok) return refuse(resolved.error);
 
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse("That bot has no thread.");
 
@@ -393,7 +393,7 @@ async function prepareChildInstructions(
   if (credential) return refuse(credential);
   const hidden = invisibleField({ instructions });
   if (hidden) return refuse(hidden);
-  const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
+  const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse(NOT_FOUND);
   // Checked before the card too, so a second edit never asks the owner for nothing.
@@ -474,7 +474,7 @@ export async function listFleet(
   const { prisma } = deps;
   let detail: FleetListing["bot"];
   if (text(args.bot_id)) {
-    const child = await resolveBot(prisma, run, { bot_id: args.bot_id }, { createdByCaller: true });
+    const child = await resolveBot(prisma, run, { bot_id: args.bot_id });
     if ("error" in child) return { error: child.error };
     const row = await prisma.bot.findUniqueOrThrow({
       where: { id: child.id },
@@ -638,7 +638,7 @@ export async function organizeBot(
   const actor = actorOf(run);
   try {
     if (bot) {
-      const target = await resolveBot(deps.prisma, run, args, { createdByCaller: false });
+      const target = await resolveBot(deps.prisma, run, args);
       if ("error" in target) return { error: target.error };
       if (!target.thread) return { error: NOT_FOUND };
       // A named section is always the user's own: found or created by name in their scope.
@@ -806,12 +806,7 @@ export async function updateChildBot(
   );
   if (credential) return { error: credential };
 
-  const child = await resolveBot(
-    deps.prisma,
-    run,
-    { bot_id: args.bot_id },
-    { createdByCaller: true },
-  );
+  const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
   if ("error" in child) {
     return { error: child.error };
   }
@@ -859,12 +854,7 @@ export async function setChildInstructions(
     typeof canonical.instructions === "string" ? canonical.instructions : undefined;
   const expectedVersion = text(canonical.expectedVersion);
   if (!instructions || !expectedVersion) return { error: "The approved change is incomplete." };
-  const child = await resolveBot(
-    deps.prisma,
-    run,
-    { bot_id: canonical.botId },
-    { createdByCaller: true },
-  );
+  const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
   if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
@@ -928,12 +918,7 @@ export async function setChildBotModel(
     }
   | { error: string }
 > {
-  const child = await resolveBot(
-    deps.prisma,
-    run,
-    { bot_id: canonical.botId },
-    { createdByCaller: true },
-  );
+  const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
   const previous = record(canonical.previous);
@@ -1002,12 +987,7 @@ export async function createChildRoutine(
   const timezone = text(canonical.timezone) ?? "UTC";
   const schedule = record(canonical.schedule);
   if (!name || !prompt || !schedule) return { error: "The approved routine is incomplete." };
-  const child = await resolveBot(
-    deps.prisma,
-    run,
-    { bot_id: canonical.botId },
-    { createdByCaller: true },
-  );
+  const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread || child.thread.id !== canonical.threadId) return { error: NOT_FOUND };
 
@@ -1102,7 +1082,7 @@ const botSelect = {
 } satisfies Prisma.BotSelect;
 
 function activeBotsWhere(run: FleetRun): Prisma.BotWhereInput {
-  return { spaceId: run.spaceId, userId: run.userId, archivedAt: null };
+  return { ...managedBotsWhere(run), archivedAt: null };
 }
 
 /** Exact ids or exact names, in the order given; every one must match exactly one active bot. */
@@ -1139,43 +1119,22 @@ async function resolveBots(
   return members;
 }
 
-/** One active bot of the user, or only one the caller created, by `bot_id` or exact `bot_name`. */
-async function resolveBot(
-  prisma: PrismaClient,
-  run: FleetRun,
-  args: Record<string, unknown>,
-  options: { createdByCaller: boolean },
-) {
+/** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
+async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
   if (!id && !name) return refuse("Pass bot_id or bot_name.");
   const target = id ? { id } : { name };
-  const scope = options.createdByCaller
-    ? {
-        ...createdByWhere({ botId: run.botId, userId: run.userId, spaceId: run.spaceId }),
-        archivedAt: null,
-      }
-    : activeBotsWhere(run);
   const bots = await prisma.bot.findMany({
-    where: { ...scope, ...target },
+    where: { ...activeBotsWhere(run), ...target },
     select: botSelect,
     take: 2,
   });
   if (bots.length > 1) {
-    return refuse(
-      `More than one bot ${options.createdByCaller ? "you created " : ""}is named "${name}". Pass bot_id instead.`,
-    );
+    return refuse(`More than one bot is named "${name}". Pass bot_id instead.`);
   }
   if (bots[0]) return bots[0];
-  if (options.createdByCaller) {
-    const other = await prisma.bot.findMany({
-      where: { ...activeBotsWhere(run), ...target },
-      select: { id: true },
-      take: 1,
-    });
-    if (other.length) return refuse(NOT_CREATED_BY_CALLER);
-  }
   return refuse(
     id
       ? `No bot with id "${id}". Call list_fleet for ids.`

@@ -6,10 +6,224 @@ import {
   listPiCatalog,
   probeCatalogProviderModels,
   scriptedCatalogEntry,
+  verifyCatalogProviderApiKey,
 } from "./pi-models.js";
 import { probeOpenAiCompatibleModels } from "./pi-openai-compatible-provider.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
+
+describe("catalog provider authentication", () => {
+  it("checks authentication before listing a public OpenRouter catalog", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({ data: [{ id: "fixture-model" }] }),
+    );
+    await expect(
+      probeCatalogProviderModels({ provider: "openrouter", apiKey: " fixture-key " }, fetchImpl),
+    ).resolves.toEqual(["fixture-model"]);
+    expect(fetchImpl.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://openrouter.ai/api/v1/key",
+      "https://openrouter.ai/api/v1/models",
+    ]);
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer fixture-key" },
+      redirect: "error",
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it.each([401, 403])(
+    "refuses rejected credentials (%i) before reading the catalog",
+    async (status) => {
+      const fetchImpl = vi.fn<typeof fetch>(
+        async () => new Response("private upstream details", { status }),
+      );
+      await expect(
+        probeCatalogProviderModels({ provider: "openrouter", apiKey: "fixture-key" }, fetchImpl),
+      ).rejects.toThrow("API key was rejected by the provider.");
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([302, 429, 503])(
+    "keeps upstream failures (%i) distinct from invalid keys",
+    async (status) => {
+      await expect(
+        verifyCatalogProviderApiKey(
+          { provider: "openrouter", apiKey: "fixture-key" },
+          async () => new Response("private upstream details", { status }),
+        ),
+      ).rejects.toThrow("Could not verify the API key. Try again.");
+    },
+  );
+
+  it.each([
+    ["deepseek", "https://api.deepseek.com/models", { Authorization: "Bearer fixture-key" }],
+    [
+      "google",
+      "https://generativelanguage.googleapis.com/v1beta/models",
+      { "x-goog-api-key": "fixture-key" },
+    ],
+  ])(
+    "checks %s without calling a model or putting the key in the URL",
+    async (provider, url, headers) => {
+      const fetchImpl = vi.fn<typeof fetch>(async () => Response.json({}));
+      await verifyCatalogProviderApiKey({ provider, apiKey: " fixture-key " }, fetchImpl);
+      expect(fetchImpl).toHaveBeenCalledWith(
+        url,
+        expect.objectContaining({ headers, redirect: "error" }),
+      );
+    },
+  );
+
+  it.each(["google", "deepseek"])("rejects unauthorized %s keys", async (provider) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider, apiKey: "fixture-key" },
+        async () => new Response("private upstream details", { status: 401 }),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it("recognizes Google's structured invalid-key response without exposing the body", async () => {
+    await expect(
+      verifyCatalogProviderApiKey({ provider: "google", apiKey: "fixture-key" }, async () =>
+        Response.json(
+          { error: { message: "private details", details: [{ reason: "API_KEY_INVALID" }] } },
+          { status: 400 },
+        ),
+      ),
+    ).rejects.toThrow("API key was rejected by the provider.");
+  });
+
+  it.each([
+    "invalid JSON",
+    JSON.stringify({ error: { details: [{ reason: "OTHER_REASON" }] } }),
+    "x".repeat(4097),
+  ])("does not label an unknown Google error as an invalid key", async (body) => {
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => new Response(body, { status: 400 }),
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+  });
+
+  it("finishes a Google check safely when cancellation interrupts a partial error body", async () => {
+    const controller = new AbortController();
+    let waitingForBody: (() => void) | undefined;
+    const bodyStarted = new Promise<void>((resolve) => {
+      waitingForBody = resolve;
+    });
+    const result = verifyCatalogProviderApiKey(
+      { provider: "google", apiKey: "fixture-key" },
+      async (_url, init) =>
+        new Response(
+          new ReadableStream({
+            start(body) {
+              body.enqueue(new TextEncoder().encode('{"error":'));
+              init?.signal?.addEventListener(
+                "abort",
+                () => body.error(new Error("private fixture-key details")),
+                { once: true },
+              );
+              waitingForBody?.();
+            },
+          }),
+          { status: 400 },
+        ),
+      controller.signal,
+    );
+    const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+    await bodyStarted;
+    controller.abort();
+    await assertion;
+  });
+
+  it("cancels an oversized Google error without waiting for the stream to finish", async () => {
+    const cancel = vi.fn();
+    const response = new Response(
+      new ReadableStream({
+        start(body) {
+          body.enqueue(new Uint8Array(4097));
+        },
+        cancel,
+      }),
+      { status: 400 },
+    );
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "google", apiKey: "fixture-key" },
+        async () => response,
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
+  it("bounds a stalled check and hides transport error details", async () => {
+    const deadline = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    try {
+      const result = verifyCatalogProviderApiKey(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("fixture-key")));
+          }),
+      );
+      const assertion = expect(result).rejects.toThrow("Could not verify the API key. Try again.");
+      expect(timeout).toHaveBeenCalledWith(MODEL_CONNECT_TIMEOUT_MS);
+      deadline.abort();
+      await assertion;
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("honors caller cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      verifyCatalogProviderApiKey(
+        { provider: "openrouter", apiKey: "fixture-key" },
+        async (_url, init) => {
+          init?.signal?.throwIfAborted();
+          throw new Error("must already be aborted");
+        },
+        controller.signal,
+      ),
+    ).rejects.toThrow("Could not verify the API key. Try again.");
+  });
+
+  it("adds no network requirement to other providers or local endpoints", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    for (const provider of ["openai-compatible", "local", "anthropic", "fixture-provider"]) {
+      await verifyCatalogProviderApiKey({ provider, apiKey: "fixture-key" }, fetchImpl);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
 
 describe("Pi model catalog", () => {
+  it("recommends one Luna or Haiku model per supported provider", () => {
+    expect(
+      listPiCatalog()
+        .filter((entry) => entry.recommended)
+        .map(({ provider, id }) => ({ provider, id })),
+    ).toEqual(
+      expect.arrayContaining([
+        { provider: "openai-codex", id: "gpt-6-luna" },
+        { provider: "openai", id: "gpt-6-luna" },
+        { provider: "openrouter", id: "openai/gpt-6-luna" },
+        { provider: "anthropic", id: "claude-haiku-5-5" },
+      ]),
+    );
+    for (const provider of ["openai-codex", "openai", "openrouter", "anthropic"]) {
+      expect(
+        listPiCatalog().filter((entry) => entry.provider === provider && entry.recommended),
+      ).toHaveLength(1);
+    }
+  });
+
   it("preserves provider names and sign-in options from before pi 1.3", () => {
     const catalog = listPiCatalog();
     const codex = catalog.filter((entry) => entry.provider === "openai-codex");

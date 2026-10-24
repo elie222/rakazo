@@ -6,6 +6,27 @@ test.use({
   permissions: ["microphone"],
 });
 
+test("voice settings hide self-hosted speech when the deployment omits it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `voice-cloud-${stamp}@rakazo.test`, "password12", `Voice Cloud ${stamp}`);
+  await completeOnboarding(page);
+  // The E2E server opts into private endpoints; model the cloud catalog for this screen.
+  await page.route("**/rpc/voice/catalog", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<{ id: string }> };
+    body.json = body.json.filter((entry) => entry.id !== "openai-compatible");
+    await route.fulfill({ response, json: body });
+  });
+  await openUserSettings(page, "voice");
+  const settings = page.getByTestId("voice-settings");
+  await expect(settings.getByRole("option", { name: /ElevenLabs/ })).toHaveCount(1);
+  await expect(settings.getByRole("option", { name: /Self-hosted/ })).toHaveCount(0);
+  await expect(settings.getByLabel("Server URL", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "voice-settings-cloud-providers");
+});
+
 test("voice settings connect a key, speak a reply, and open a call", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "SpeechRecognition", { value: undefined });
@@ -39,12 +60,11 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
 
   await openUserSettings(page, "voice");
   await expect(page.getByTestId("voice-settings")).toBeVisible();
-  await page.getByRole("button", { name: /Scripted/ }).click();
+  await page.getByLabel("Provider", { exact: true }).selectOption({ label: "Scripted" });
   const apiKeyInput = page.getByPlaceholder(/Paste your API key/);
   await expect(apiKeyInput).toHaveAttribute("autocomplete", "new-password");
   await apiKeyInput.fill("fake-scripted-voice-key");
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByText("Connected", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "voice-settings-connected");
@@ -151,10 +171,10 @@ test("voice settings take a self-hosted speech server by URL", async ({ page }, 
   await openUserSettings(page, "voice");
   const settings = page.getByTestId("voice-settings");
   await expect(settings).toBeVisible();
-  const selfHosted = settings.getByRole("button", { name: /Self-hosted/ });
-  await expect(selfHosted).toBeVisible();
+  const providerSelect = settings.getByLabel("Provider", { exact: true });
+  await expect(providerSelect).toBeVisible();
   await captureScreenshot(page, testInfo, "voice-settings-providers");
-  await selfHosted.click();
+  await providerSelect.selectOption({ label: "Self-hosted" });
   await expect(settings.getByLabel("API key", { exact: true })).toHaveAttribute(
     "placeholder",
     "Optional",

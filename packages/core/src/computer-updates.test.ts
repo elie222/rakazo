@@ -26,7 +26,6 @@ describe("computer update presentation", () => {
       list,
       start: async () => update,
       dismiss: async () => {},
-      releaseInterrupted: async () => {},
     });
     const stop = store.watch();
     await store.start("bot-1");
@@ -49,7 +48,6 @@ describe("computer update presentation", () => {
       list: async () => [update],
       start: async () => update,
       dismiss: async () => {},
-      releaseInterrupted: async () => {},
     });
     let stop = store.watch();
     await Promise.resolve();
@@ -69,7 +67,6 @@ describe("computer update presentation", () => {
       list,
       start: async () => update,
       dismiss: async () => {},
-      releaseInterrupted: async () => {},
     });
     let stop = store.watch();
     await vi.advanceTimersByTimeAsync(60_000);
@@ -90,7 +87,6 @@ describe("computer update presentation", () => {
       list,
       start: async () => update,
       dismiss: async () => {},
-      releaseInterrupted: async () => {},
     }).watch();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(list).toHaveBeenCalledTimes(1);
@@ -105,7 +101,6 @@ describe("computer update presentation", () => {
       list,
       start: async () => update,
       dismiss: async () => {},
-      releaseInterrupted: async () => {},
     }).watch();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(list).toHaveBeenCalledTimes(3);

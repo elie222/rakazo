@@ -6,5 +6,6 @@ describe("speechLocaleTag", () => {
     expect(speechLocaleTag("es")).toBe("es-ES");
     expect(speechLocaleTag("pt-BR")).toBe("pt-BR");
     expect(speechLocaleTag("nl")).toBe("nl-NL");
+    expect(speechLocaleTag("ja")).toBe("ja-JP");
   });
 });

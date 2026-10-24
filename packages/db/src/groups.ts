@@ -13,7 +13,12 @@ import { expireComputerExecutionLeases, restoreBotUnderComputerQuota } from "./c
 import { withNewestThreadMessages } from "./preview-messages.js";
 import { IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
-import { activeRunSelection, activeRunStatuses, previewFromBlocks } from "./thread-listing.js";
+import {
+  activeRunSelection,
+  activeRunStatuses,
+  previewFromBlocks,
+  primaryActiveRun,
+} from "./thread-listing.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type GroupRecord = {
@@ -56,7 +61,7 @@ function mapGroupMembers(members: GroupRecord["members"]): GroupMember[] {
     botId: member.bot.id,
     name: member.bot.name,
     color: member.bot.color,
-    status: member.bot.runs[0]?.status ?? "idle",
+    status: primaryActiveRun(member.bot.runs)?.status ?? "idle",
   }));
 }
 

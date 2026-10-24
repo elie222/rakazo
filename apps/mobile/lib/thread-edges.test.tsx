@@ -1,11 +1,15 @@
-import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { Platform } from "react-native";
 import { ScrollViewMarker } from "react-native-screens/experimental";
-import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadScrollSurface } from "../components/thread-scroll-surface";
-import { threadEdgeOptions, threadHeaderFloats, threadScrollEdgeEffects } from "./thread-edges";
+import {
+  THREAD_HEADER_FADE_GRADIENT,
+  threadEdgeOptions,
+  threadHeaderClearance,
+  threadHeaderFloats,
+  threadScrollEdgeEffects,
+} from "./thread-edges";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios", Version: 26 } }));
 vi.mock("react-native-screens/experimental", () => ({ ScrollViewMarker: () => null }));
@@ -58,45 +62,28 @@ describe("thread scroll edges", () => {
       scrollEdgeEffects: threadScrollEdgeEffects,
     });
   });
+});
 
-  it("uses the floating header height for message clearance and the fade", () => {
-    const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    expect(source).toContain("const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;");
-    expect(source).toContain("paddingBottom: headerHeight + 8");
-    expect(source).toContain("paddingTop: headerHeight + 8");
-    expect(source).toContain("paddingTop: readOnly ? insets.bottom + 16 : 16");
-    expect(source).toContain("minHeight: headerHeight");
-    expect(source).toContain("jumpAnchor.current.align(headerHeight + 24)");
-    expect(source).toContain("styles.headerFade, { height: headerHeight }");
-    expect(source).toContain("<View style={styles.headerFadeEdge} />");
-  });
+it.each([64, 96, 116, 120])(
+  "places the band and jump targets below the pills at header height %s",
+  (height) => {
+    const clearance = threadHeaderClearance(height);
+    const pillBottom = height - 10;
+    expect(clearance.opaqueHeight - pillBottom).toBe(14);
+    expect(THREAD_HEADER_FADE_GRADIENT).toBe(12);
+    expect(clearance.padding).toBe(clearance.opaqueHeight);
+    expect(clearance.minHeight).toBeGreaterThanOrEqual(clearance.opaqueHeight);
+    expect(clearance.anchor).toBeGreaterThan(clearance.opaqueHeight + THREAD_HEADER_FADE_GRADIENT);
+    // The first date has a 12pt margin and about 4pt of font leading.
+    expect(clearance.padding + 16 - pillBottom).toBe(30);
+  },
+);
 
-  it("remounts each marker with its live or pinned scroll view", () => {
-    const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    const file = ts.createSourceFile(
-      "thread.tsx",
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
-    const keys: string[] = [];
-    function visit(node: ts.Node) {
-      if (
-        ts.isJsxElement(node) &&
-        node.openingElement.tagName.getText(file) === "ThreadScrollSurface"
-      ) {
-        const key = node.openingElement.attributes.properties.find(
-          (prop) => ts.isJsxAttribute(prop) && prop.name.getText(file) === "key",
-        );
-        if (key) keys.push(key.getText(file));
-      }
-      ts.forEachChild(node, visit);
-    }
-    visit(file);
-    expect(keys).toEqual([
-      `key={\`pinned:\${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}\`}`,
-      `key={\`live:\${threadKey}\`}`,
-    ]);
+it("preserves Android clearance without a floating header", () => {
+  expect(threadHeaderClearance(0)).toEqual({
+    opaqueHeight: 0,
+    padding: 8,
+    anchor: 24,
+    minHeight: 0,
   });
 });

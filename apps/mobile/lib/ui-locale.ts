@@ -1,4 +1,4 @@
-export const UI_LOCALES = ["en", "zh-CN", "ru", "de", "nl"] as const;
+export const UI_LOCALES = ["en", "zh-CN", "ru", "de", "nl", "ja"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
@@ -10,6 +10,7 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ru: "Русский",
   de: "Deutsch",
   nl: "Nederlands",
+  ja: "日本語",
 };
 
 /** Convert an internal locale identifier to the document language tag. */
@@ -19,7 +20,14 @@ export function htmlLangForLocale(locale: string): string {
 
 /** Return whether a value is one of the supported mobile UI locales. */
 export function isUiLocale(value: string | null | undefined): value is UiLocale {
-  return value === "en" || value === "zh-CN" || value === "ru" || value === "de" || value === "nl";
+  return (
+    value === "en" ||
+    value === "zh-CN" ||
+    value === "ru" ||
+    value === "de" ||
+    value === "nl" ||
+    value === "ja"
+  );
 }
 
 /** Normalize BCP-47 tags to a mobile UI locale, else `en`. */

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   authErrorMessage,
   credentialIssue,
+  isAbandonedRequest,
+  isConnectionFailure,
   isNetworkFailure,
   isServerUnreachable,
   isTechnicalErrorMessage,
@@ -161,5 +163,39 @@ describe("authErrorMessage", () => {
     ).toBe("Invalid email or password");
     expect(authErrorMessage({ message: '{"detail":"x"}' }, authCopy)).toBe(authCopy.fallback);
     expect(authErrorMessage(undefined, authCopy)).toBe(authCopy.fallback);
+  });
+});
+
+describe("isConnectionFailure", () => {
+  it("counts lost connections, DNS failures, client timeouts and cancellations", () => {
+    for (const message of [
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+      "fetch failed: UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+      "fetch failed: UnexpectedException: The Internet connection appears to be offline. (at ExpoModulesCore/Promise.swift:56)",
+      "fetch failed: UnexpectedException: cancelled (at ExpoModulesCore/Promise.swift:56)",
+      'fetch failed: java.net.UnknownHostException: Unable to resolve host "app.example.com": No address associated with hostname',
+    ]) {
+      expect(isConnectionFailure(new Error(message))).toBe(true);
+    }
+    const timeout = Object.assign(new Error("signal timed out"), { name: "TimeoutError" });
+    expect(isConnectionFailure(timeout)).toBe(true);
+    expect(isAbandonedRequest(new Error("Request failed", { cause: timeout }))).toBe(true);
+    expect(isAbandonedRequest({ name: "AbortError", message: "The user aborted a request." })).toBe(
+      true,
+    );
+  });
+
+  it("leaves code errors and server answers alone", () => {
+    expect(isConnectionFailure(new TypeError("Cannot read properties of undefined"))).toBe(false);
+    expect(
+      isConnectionFailure(new TypeError("Failed to execute 'fetch' on 'Window': Invalid name")),
+    ).toBe(false);
+    expect(isConnectionFailure(Object.assign(new Error("Unavailable"), { status: 503 }))).toBe(
+      false,
+    );
+    expect(isAbandonedRequest(new Error("boom"))).toBe(false);
+    expect(isAbandonedRequest(null)).toBe(false);
   });
 });

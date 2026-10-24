@@ -17,10 +17,20 @@ msgstr ""
 msgid " (unread)"
 msgstr " (unread)"
 
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+
 #. placeholder {0}: health.toolCount
 #: src/components/McpServerHealthLine.tsx
 msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {Running · # tool} other {Running · # tools}}"
+
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
+msgstr "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -155,6 +165,10 @@ msgstr "{hours}h ago"
 msgid "{minutes}m ago"
 msgstr "{minutes}m ago"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "{name} asked"
@@ -182,6 +196,21 @@ msgstr "{name} stopped"
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
 msgstr "{provider} could not find the requested model."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider} couldn't be reached. Check that it's running."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} denied access to this model."
+msgstr "{provider} denied access to this model."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} is overloaded right now. Try again in a moment."
+msgstr "{provider} is overloaded right now. Try again in a moment."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -280,8 +309,23 @@ msgstr "{stepCount, plural, one {Working… · # tool} other {Working… · # to
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Backup models failed or were unavailable for this request."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} No backup model was usable for this request."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Resets {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Your backup models also failed."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -290,10 +334,6 @@ msgstr "{title}, {label}"
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# tool} other {# tools}}"
-
-#: src/pages/shell/transcript.tsx
-msgid "{workingBotName} is working"
-msgstr "{workingBotName} is working"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -325,7 +365,6 @@ msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window
 msgstr "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window keeps waiting:"
 
 #: src/pages/model-settings/use-model-settings.ts
-#: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
 msgstr "A subscription credential is stored securely."
 
@@ -340,10 +379,6 @@ msgstr "About groups"
 #: src/pages/shell/bot-picker.tsx
 msgid "About spaces"
 msgstr "About spaces"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Access token"
-msgstr "Access token"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
@@ -475,6 +510,10 @@ msgstr "Add GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "Add GraphQL endpoint"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Add header"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Add item"
@@ -589,6 +628,10 @@ msgstr "Allow {0} connector without asking"
 msgid "Allow {0} without asking"
 msgstr "Allow {0} without asking"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Allow cross-space bot communication"
+msgstr "Allow cross-space bot communication"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Allow email actions without asking"
 msgstr "Allow email actions without asking"
@@ -667,18 +710,18 @@ msgstr "Answered: {0}"
 msgid "Answered: {answer}"
 msgstr "Answered: {answer}"
 
+#: src/pages/Onboarding.tsx
+msgid "Anthropic API"
+msgstr "Anthropic API"
+
 #: src/pages/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "Any model, with your own key"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "API is back, but the update did not finish. Check the host logs."
-msgstr "API is back, but the update did not finish. Check the host logs."
-
 #: src/components/AskCard.tsx
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/lib/localized-provider-hint.ts
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
+#: src/pages/model-settings/compatible-key-field.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -766,10 +809,6 @@ msgstr "Ask before purchases"
 msgid "Ask before sending external email"
 msgstr "Ask before sending external email"
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Ask the server owner to configure this provider."
-msgstr "Ask the server owner to configure this provider."
-
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
 msgid "at {0}"
@@ -841,10 +880,6 @@ msgstr "Available to this bot's shell commands as {commandVariable}"
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Avatars"
-msgstr "Avatars"
-
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -913,6 +948,10 @@ msgstr "Bot"
 msgid "Bot"
 msgstr "Bot"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bot models"
+msgstr "Bot models"
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "Bot screen"
@@ -929,6 +968,10 @@ msgstr "Bot to link"
 msgid "Bot's model"
 msgstr "Bot's model"
 
+#: src/components/SignupSurvey.tsx
+msgid "Both"
+msgstr "Both"
+
 #: src/pages/Artifacts.tsx
 msgid "Bots"
 msgstr "Bots"
@@ -936,10 +979,6 @@ msgstr "Bots"
 #: src/components/ModelCredits.tsx
 msgid "Bots and browser automation"
 msgstr "Bots and browser automation"
-
-#: src/pages/shell/transcript.tsx
-msgid "Bots are working"
-msgstr "Bots are working"
 
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
@@ -994,24 +1033,22 @@ msgstr "Can't read images"
 
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
-#: src/components/ComputerUpdateProgress.tsx
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "Cancel"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Cancel new bot"
-msgstr "Cancel new bot"
 
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
@@ -1062,6 +1099,14 @@ msgstr "Chat apps"
 msgid "Chat Settings"
 msgstr "Chat Settings"
 
+#: src/lib/localized-provider-hint.ts
+msgid "ChatGPT subscription"
+msgstr "ChatGPT subscription"
+
+#: src/components/ModelCredits.tsx
+msgid "ChatGPT, Claude, or any model provider."
+msgstr "ChatGPT, Claude, or any model provider."
+
 #: src/lib/identity-display.ts
 msgid "Chats"
 msgstr "Chats"
@@ -1075,17 +1120,12 @@ msgstr "Check again"
 msgid "Check every"
 msgstr "Check every"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Check failed"
-msgstr "Check failed"
-
 #. placeholder {0}: state.detail ?? ""
 #: src/pages/RoutineEditor.tsx
 msgid "Check failed: {0}"
 msgstr "Check failed: {0}"
 
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Check for updates"
 msgstr "Check for updates"
 
@@ -1119,14 +1159,9 @@ msgstr "Checking connection…"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
 msgstr "Checking…"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Checkout has local changes. Clean it before updating."
-msgstr "Checkout has local changes. Clean it before updating."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1140,6 +1175,10 @@ msgstr "Choose a bot…"
 msgid "Choose a new password"
 msgstr "Choose a new password"
 
+#: src/pages/Onboarding.tsx
+msgid "Choose a provider"
+msgstr "Choose a provider"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Choose file"
@@ -1147,6 +1186,10 @@ msgstr "Choose file"
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
 msgstr "Choose how to use Rakazo"
+
+#: src/lib/localized-provider-hint.ts
+msgid "Claude subscription"
+msgstr "Claude subscription"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1169,14 +1212,6 @@ msgstr "Clear filter {label}"
 #: src/pages/shell/dialogs.tsx
 msgid "Clearing…"
 msgstr "Clearing…"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Client ID"
-msgstr "Client ID"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Client secret"
-msgstr "Client secret"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1258,7 +1293,6 @@ msgid "Code"
 msgstr "Code"
 
 #. placeholder {0}: group.title
-#. placeholder {0}: item.chat.name
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr "Collapse {0}"
@@ -1304,6 +1338,10 @@ msgstr "Compact"
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
 msgstr "Complete"
+
+#: src/components/SubagentCard.tsx
+msgid "Completed"
+msgstr "Completed"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1398,6 +1436,10 @@ msgstr "Connect Executor"
 msgid "Connect MCP server “{name}”"
 msgstr "Connect MCP server “{name}”"
 
+#: src/components/ModelCredits.tsx
+msgid "Connect my own"
+msgstr "Connect my own"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "Connect OAuth"
@@ -1424,7 +1466,6 @@ msgstr "Connected {0}."
 msgid "Connected. Its tools are available from your next message."
 msgstr "Connected. Its tools are available from your next message."
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1453,6 +1494,7 @@ msgid "Context limit"
 msgstr "Context limit"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
 msgid "Continue"
@@ -1576,7 +1618,7 @@ msgstr "Could not connect to the computer screen"
 msgid "Could not continue"
 msgstr "Could not continue"
 
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "Could not create bot"
 
@@ -1699,7 +1741,6 @@ msgstr "Could not load bots. Reload to try again."
 msgid "Could not load credentials."
 msgstr "Could not load credentials."
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "Could not load integrations"
@@ -1738,10 +1779,6 @@ msgstr "Could not load this chat."
 msgid "Could not load this file."
 msgstr "Could not load this file."
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Could not load update status"
-msgstr "Could not load update status"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "Could not load voice settings"
@@ -1756,10 +1793,6 @@ msgstr "Could not log out. Try again."
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
 msgstr "Could not open billing"
-
-#: src/pages/LocalSettings.tsx
-msgid "Could not open local settings. Start the local server and create its owner account, then try again."
-msgstr "Could not open local settings. Start the local server and create its owner account, then try again."
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1903,6 +1936,10 @@ msgstr "Could not start teaching"
 msgid "Could not submit this answer"
 msgstr "Could not submit this answer"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Could not switch {failedNames}. Try again."
+msgstr "Could not switch {failedNames}. Try again."
+
 #: src/pages/Shell.tsx
 msgid "Could not take control"
 msgstr "Could not take control"
@@ -1927,6 +1964,10 @@ msgstr "Could not update billing"
 msgid "Could not update computer"
 msgstr "Could not update computer"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Could not update name"
+msgstr "Could not update name"
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "Could not update reaction"
@@ -1943,10 +1984,6 @@ msgstr "Could not verify computer setup ({failureMessage}). Fix the connection, 
 msgid "Couldn't load messaging settings"
 msgstr "Couldn't load messaging settings"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Couldn't update avatars"
-msgstr "Couldn't update avatars"
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
@@ -1956,7 +1993,7 @@ msgid "Couldn't update your timezone"
 msgstr "Couldn't update your timezone"
 
 #: src/pages/Board.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Create"
@@ -1977,6 +2014,7 @@ msgstr "Create group"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Create new Bot"
 msgstr "Create new Bot"
 
@@ -2006,7 +2044,6 @@ msgid "Created"
 msgstr "Created"
 
 #: src/pages/GroupPanel.tsx
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "Creating…"
@@ -2085,9 +2122,7 @@ msgstr "Decline"
 msgid "Default"
 msgstr "Default"
 
-#. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
@@ -2181,10 +2216,6 @@ msgstr "Deny"
 msgid "Deployment default"
 msgstr "Deployment default"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Describe what this bot does"
-msgstr "Describe what this bot does"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2202,10 +2233,6 @@ msgstr "Desktop update"
 #: src/pages/shell/composer-error.tsx
 msgid "Details"
 msgstr "Details"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Direct MCP"
-msgstr "Direct MCP"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disable a tool"
@@ -2229,6 +2256,10 @@ msgstr "Disconnect"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
 msgstr "Disconnect {disconnectName}?"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Disconnect Self-hosted"
+msgstr "Disconnect Self-hosted"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
@@ -2313,10 +2344,6 @@ msgstr "Download {0}"
 msgid "Download {name}"
 msgstr "Download {name}"
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Download Executor"
-msgstr "Download Executor"
-
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr "Downloading…"
@@ -2338,6 +2365,7 @@ msgid "Each name can be used once."
 msgstr "Each name can be used once."
 
 #: src/components/AskCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Edit"
 msgstr "Edit"
 
@@ -2472,7 +2500,6 @@ msgid "Expand"
 msgstr "Expand"
 
 #. placeholder {0}: group.title
-#. placeholder {0}: item.chat.name
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr "Expand {0}"
@@ -2512,6 +2539,7 @@ msgstr "Extra high"
 msgid "failed"
 msgstr "failed"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Failed"
@@ -2634,10 +2662,6 @@ msgstr "Gateway ID"
 msgid "General"
 msgstr "General"
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Get credentials"
-msgstr "Get credentials"
-
 #: src/components/SidebarFooter.tsx
 msgid "Get the mobile app"
 msgstr "Get the mobile app"
@@ -2688,15 +2712,21 @@ msgstr "header"
 msgid "Header \"{header}\""
 msgstr "Header \"{header}\""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Header name"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Header value"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Headers"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -2742,6 +2772,14 @@ msgstr "hour"
 msgid "hours"
 msgstr "hours"
 
+#: src/components/SignupSurvey.tsx
+msgid "How big is your team?"
+msgstr "How big is your team?"
+
+#: src/components/SignupSurvey.tsx
+msgid "How did you hear about us?"
+msgstr "How did you hear about us?"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "How often"
@@ -2753,6 +2791,10 @@ msgstr "How other bots see it"
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
 msgstr "How to check"
+
+#: src/components/SignupSurvey.tsx
+msgid "How will you use Rakazo?"
+msgstr "How will you use Rakazo?"
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "I’m done"
@@ -2834,10 +2876,6 @@ msgstr "Instructions updated"
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr "Integration domain"
-
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Integration options"
-msgstr "Integration options"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Integrations"
@@ -2996,9 +3034,7 @@ msgstr "Loading rules…"
 msgid "Loading voice providers…"
 msgstr "Loading voice providers…"
 
-#: src/App.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3018,10 +3054,6 @@ msgstr "Local access lets bots run commands without asking. Avoid it on shared o
 #: src/pages/HostComputerPrompt.tsx
 msgid "Local computer access requires the latest desktop app."
 msgstr "Local computer access requires the latest desktop app."
-
-#: src/pages/LocalSettings.tsx
-msgid "Local Server Settings"
-msgstr "Local Server Settings"
 
 #: src/components/ModelCredits.tsx
 #: src/components/SidebarFooter.tsx
@@ -3043,10 +3075,6 @@ msgstr "Low"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
-
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Make sure nothing is still running on this computer."
-msgstr "Make sure nothing is still running on this computer."
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
@@ -3080,6 +3108,10 @@ msgstr "Manual setup required"
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Read"
 msgstr "Mark as Read"
+
+#: src/pages/shell/message-hover-actions.tsx
+msgid "Mark as unread"
+msgstr "Mark as unread"
 
 #: src/pages/BotContextMenu.tsx
 msgid "Mark as Unread"
@@ -3272,7 +3304,6 @@ msgstr "Model spend uses your provider keys."
 msgid "Model updated."
 msgstr "Model updated."
 
-#: src/pages/LocalSettings.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Models"
@@ -3281,10 +3312,6 @@ msgstr "Models"
 #: src/components/ModelCredits.tsx
 msgid "Models at provider cost"
 msgstr "Models at provider cost"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Models for the server owner’s default space."
-msgstr "Models for the server owner’s default space."
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -3344,19 +3371,17 @@ msgid "Muted"
 msgstr "Muted"
 
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "Name"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "Name this bot"
-msgstr "Name this bot"
 
 #: src/pages/GroupPanel.tsx
 msgid "Name this group"
@@ -3365,6 +3390,10 @@ msgstr "Name this group"
 #: src/pages/RoutineEditor.tsx
 msgid "Name this routine"
 msgstr "Name this routine"
+
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Name your Bot"
+msgstr "Name your Bot"
 
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
@@ -3386,10 +3415,6 @@ msgstr "Needs you"
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "New"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "New bot"
-msgstr "New bot"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -3568,10 +3593,6 @@ msgstr "Not now"
 msgid "Not working"
 msgstr "Not working"
 
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Nothing is still running"
-msgstr "Nothing is still running"
-
 #: src/pages/KnowledgeSection.tsx
 msgid "Nothing remembered yet"
 msgstr "Nothing remembered yet"
@@ -3614,6 +3635,16 @@ msgstr "OAuth connection failed"
 #: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "OAuth expired"
+
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Ollama API key"
+msgstr "Ollama API key"
+
+#: src/pages/model-settings/provider-list.tsx
+#: src/pages/Onboarding.tsx
+msgid "Ollama Cloud"
+msgstr "Ollama Cloud"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -3684,6 +3715,10 @@ msgstr "Open navigation"
 msgid "Open work"
 msgstr "Open work"
 
+#: src/pages/Onboarding.tsx
+msgid "OpenAI API"
+msgstr "OpenAI API"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
@@ -3701,6 +3736,7 @@ msgstr "Opening chat…"
 msgid "Opening your Space…"
 msgstr "Opening your Space…"
 
+#: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -3712,16 +3748,9 @@ msgid "Optional header value"
 msgstr "Optional header value"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "Or connect an API key"
-msgstr "Or connect an API key"
-
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "Or paste an API key"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Organic"
-msgstr "Organic"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
@@ -3803,13 +3832,13 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
-#: src/components/ModelCredits.tsx
-msgid "Pay your model provider directly."
-msgstr "Pay your model provider directly."
-
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "Permissions"
+
+#: src/components/SignupSurvey.tsx
+msgid "Personal"
+msgstr "Personal"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Phone call"
@@ -3889,21 +3918,17 @@ msgstr "Private"
 msgid "Private workspace with its own bots and groups."
 msgstr "Private workspace with its own bots and groups."
 
-#: src/components/integrations/IntegrationSetup.tsx
-msgid "Project ID"
-msgstr "Project ID"
-
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "Protected input"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "Provider"
 
 #: src/pages/model-settings/provider-list.tsx
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "Providers"
 
@@ -4052,17 +4077,9 @@ msgstr "Refreshing…"
 msgid "Registration is closed"
 msgstr "Registration is closed"
 
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Release computer"
-msgstr "Release computer"
-
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Release control"
 msgstr "Release control"
-
-#: src/components/ComputerUpdateProgress.tsx
-msgid "Release interrupted computer?"
-msgstr "Release interrupted computer?"
 
 #: src/components/InstructionSettings.tsx
 msgid "Reload"
@@ -4101,6 +4118,10 @@ msgstr "Remove change trigger"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Remove Git event"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Remove header"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -4289,10 +4310,6 @@ msgstr "Review provider settings and test again."
 msgid "Revoke"
 msgstr "Revoke"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Robot"
-msgstr "Robot"
-
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Room guidance"
 msgstr "Room guidance"
@@ -4332,6 +4349,7 @@ msgid "running"
 msgstr "running"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "Running"
@@ -4351,6 +4369,7 @@ msgstr "Runs when this bot receives a verified message from this provider."
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
@@ -4523,12 +4542,6 @@ msgstr "Sentry alert"
 msgid "Serenity endpoint is required."
 msgstr "Serenity endpoint is required."
 
-#: src/components/integrations/IntegrationSetup.tsx
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/LocalSettings.tsx
-msgid "Server integrations"
-msgstr "Server integrations"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Server name"
 msgstr "Server name"
@@ -4557,7 +4570,6 @@ msgstr "Settings: General"
 msgid "Settings: Usage"
 msgstr "Settings: Usage"
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Setup help"
@@ -4565,6 +4577,11 @@ msgstr "Setup help"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Shape"
 msgstr "Shape"
+
+#. placeholder {0}: index + 1
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Shape {0}"
+msgstr "Shape {0}"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4674,7 +4691,6 @@ msgstr "Skill {0}"
 msgid "Skills"
 msgstr "Skills"
 
-#: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "Skip"
@@ -4699,10 +4715,6 @@ msgstr "Slack not enabled"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "Slide up to lock"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Software update"
-msgstr "Software update"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4733,10 +4745,6 @@ msgstr "Spaces"
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
 msgstr "Speak"
-
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak + transcribe"
-msgstr "Speak + transcribe"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak only"
@@ -4814,7 +4822,6 @@ msgid "Stream replies"
 msgstr "Stream replies"
 
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "subagent"
 
@@ -4842,11 +4849,16 @@ msgstr "Supports images"
 msgid "Supports thinking"
 msgstr "Supports thinking"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Switch"
+msgstr "Switch"
+
 #: src/pages/shell/command-palette.tsx
 msgid "Switch bot"
 msgstr "Switch bot"
 
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Switching…"
 
@@ -4894,6 +4906,7 @@ msgstr "Test"
 msgid "Test API key"
 msgstr "Test API key"
 
+#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "Test connection"
@@ -4903,17 +4916,9 @@ msgid "Test run"
 msgstr "Test run"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
-msgid "Test sign-in"
-msgstr "Test sign-in"
-
-#: src/components/ModelConnectionPreflightNotice.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Testing…"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "The API did not come back. Refresh this page."
-msgstr "The API did not come back. Refresh this page."
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -4924,6 +4929,11 @@ msgstr "The connection timed out."
 msgid "The model provider returned an error."
 msgstr "The model provider returned an error."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model returned an unusable response. Try again."
+msgstr "The model returned an unusable response. Try again."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "The provider is rate-limiting requests."
@@ -4932,13 +4942,16 @@ msgstr "The provider is rate-limiting requests."
 msgid "The selected memory provider is not available in this build."
 msgstr "The selected memory provider is not available in this build."
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Their own model is cleared. You can pick one again in each bot."
+msgstr "Their own model is cleared. You can pick one again in each bot."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "These saved settings can't be read. Remove it and add it again."
 
 #: src/components/call/CallCard.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
@@ -4973,6 +4986,11 @@ msgstr "This chat is view-only"
 msgid "this computer"
 msgstr "this computer"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+msgstr "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message."
+
 #. placeholder {0}: pendingDelete.versionCount
 #: src/pages/Artifacts.tsx
 msgid "This deletes all {0} versions of this artifact. This can't be undone."
@@ -4985,6 +5003,11 @@ msgstr "This file is not valid UTF-8 text."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "this Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model's context window is too small. Choose another model."
+msgstr "This model's context window is too small. Choose another model."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"
@@ -5156,10 +5179,6 @@ msgstr "Type your answer"
 msgid "Unassigned"
 msgstr "Unassigned"
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Unavailable"
-msgstr "Unavailable"
-
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "Undo"
@@ -5186,31 +5205,20 @@ msgid "Unsupported file type: {0}"
 msgstr "Unsupported file type: {0}"
 
 #: src/components/DesktopUpdates.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Up to date"
 msgstr "Up to date"
 
 #: src/components/ModelCredits.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Update"
 msgstr "Update"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Update available"
-msgstr "Update available"
 
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Update computer"
 msgstr "Update computer"
 
 #: src/components/ComputerUpdateProgress.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Update failed"
 msgstr "Update failed"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Update finished with errors"
-msgstr "Update finished with errors"
 
 #: src/lib/activity-list-filters.ts
 msgid "Update from {name}"
@@ -5227,10 +5235,6 @@ msgstr "Update instructions?"
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr "Update progress"
-
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Updated"
-msgstr "Updated"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Updated {updated}"
@@ -5250,7 +5254,6 @@ msgid "Updating Team Computer"
 msgstr "Updating Team Computer"
 
 #: src/components/ComputerMaintenanceActions.tsx
-#: src/components/SoftwareUpdateSection.tsx
 msgid "Updating…"
 msgstr "Updating…"
 
@@ -5304,8 +5307,8 @@ msgid "Use email code"
 msgstr "Use email code"
 
 #: src/components/ModelCredits.tsx
-msgid "Use my API key"
-msgstr "Use my API key"
+msgid "Use my subscription or API key"
+msgstr "Use my subscription or API key"
 
 #: src/pages/Auth.tsx
 msgid "Use password"
@@ -5319,6 +5322,10 @@ msgstr "Use Protected input for passwords."
 #: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr "Use Rakazo credits"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use space default"
+msgstr "Use space default"
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Use this model"
@@ -5380,10 +5387,6 @@ msgstr "Voice"
 msgid "Wait a moment and test again."
 msgstr "Wait a moment and test again."
 
-#: src/components/SoftwareUpdateSection.tsx
-msgid "Waiting for the API to come back…"
-msgstr "Waiting for the API to come back…"
-
 #: src/lib/roster-status.ts
 msgid "Waiting in line…"
 msgstr "Waiting in line…"
@@ -5417,9 +5420,17 @@ msgstr "week"
 msgid "Weekdays"
 msgstr "Weekdays"
 
+#: src/components/SignupSurvey.tsx
+msgid "Welcome to Rakazo"
+msgstr "Welcome to Rakazo"
+
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
 msgstr "What about its memories?"
+
+#: src/components/SignupSurvey.tsx
+msgid "What do you most want Rakazo to help with?"
+msgstr "What do you most want Rakazo to help with?"
 
 #: src/pages/shell/message-cards.tsx
 msgid "What do you want me on first?"
@@ -5473,8 +5484,13 @@ msgstr "Where should bots run?"
 msgid "Won't do"
 msgstr "Won't do"
 
+#: src/components/SignupSurvey.tsx
+msgid "Work"
+msgstr "Work"
+
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
+#: src/pages/shell/transcript.tsx
 msgid "Working…"
 msgstr "Working…"
 
@@ -5501,6 +5517,7 @@ msgstr "You"
 msgid "You can close this tab if it does not redirect automatically."
 msgstr "You can close this tab if it does not redirect automatically."
 
+#: src/pages/IntegrationCallback.tsx
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "You can close this window."
@@ -5517,10 +5534,6 @@ msgstr "You have control"
 #: src/lib/run-error.ts
 msgid "Your Anthropic"
 msgstr "Your Anthropic"
-
-#: src/components/ModelCredits.tsx
-msgid "Your API key"
-msgstr "Your API key"
 
 #: src/pages/Auth.tsx
 msgid "Your email address"
@@ -5544,6 +5557,10 @@ msgstr "Your OpenAI"
 #: src/lib/run-error.ts
 msgid "Your OpenRouter"
 msgstr "Your OpenRouter"
+
+#: src/components/ModelCredits.tsx
+msgid "Your subscription or API key"
+msgstr "Your subscription or API key"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

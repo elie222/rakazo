@@ -23,12 +23,14 @@ import type {
 } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { createRepos, PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveBot,
   archiveSpawnedBot,
   confirmSpawnedBotName,
   destroyBot,
+  managedBotsWhere,
   spawnBot,
 } from "./child-bots.js";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
@@ -184,6 +186,40 @@ describe("spawned bot creation", () => {
   });
 });
 describe("spawned bot archival", () => {
+  it("scopes management by account and space without requiring a creator", () => {
+    expect(managedBotsWhere({ userId: "user-1", spaceId: "space-1" })).toEqual({
+      userId: "user-1",
+      spaceId: "space-1",
+    });
+  });
+
+  it("refuses an out-of-scope bot before stopping work", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { bot: { findMany } } as unknown as PrismaClient;
+    expect(
+      await archiveSpawnedBot(
+        {
+          prisma,
+          sandbox: {} as SandboxProvider,
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+        },
+        {
+          spawnedByBotId: "caller",
+          userId: "user-1",
+          spaceId: "space-1",
+          botId: "outside",
+          confirmName: "Outside",
+        },
+        context,
+      ),
+    ).toHaveProperty("error");
+    expect(findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: "space-1", id: "outside" },
+      take: 2,
+    });
+  });
+
   it("refuses when confirm_name does not match exactly", () => {
     expect(confirmSpawnedBotName("scout", "Scout")).toMatchObject({ ok: false });
     expect(confirmSpawnedBotName("Scout ", "Scout")).toMatchObject({ ok: false });
@@ -193,7 +229,7 @@ describe("spawned bot archival", () => {
     expect(confirmSpawnedBotName("Scout", "Scout")).toEqual({ ok: true });
   });
 
-  it("reconciles a retry when the child is already archived", async () => {
+  it("reconciles a retry when the peer is already archived", async () => {
     const archivedAt = new Date("2026-08-16T12:00:00.000Z");
     const prisma = {
       bot: {
@@ -202,7 +238,7 @@ describe("spawned bot archival", () => {
             id: "child-1",
             spaceId: "workspace-1",
             userId: "user-1",
-            parentBotId: "parent-1",
+            parentBotId: null,
             name: "Scout",
             archivedAt,
           },
@@ -242,6 +278,10 @@ describe("spawned bot archival", () => {
         context,
       ),
     ).resolves.toMatchObject({ ok: true, botId: "child-1", name: "Scout" });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: "workspace-1", id: "child-1" },
+      take: 2,
+    });
   });
 });
 
@@ -1220,6 +1260,82 @@ describe("destroyBot", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("when Chromium still holds the profile open", () => {
+    const busy = "rm: cannot remove '.browser-profiles/x/Default/Cookies': Device or resource busy";
+    const team = {
+      id: "team-computer",
+      homeKey: "team-workspace-1",
+      kind: "docker",
+      providerRef: "container-1",
+      scope: "team",
+      state: "running",
+    };
+
+    async function deleteWithBusyProfile(busyAttempts: number) {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let profileAttempts = 0;
+      const execute = vi.fn(async function* (_computer: unknown, request: CommandRequest) {
+        if (request.argv.includes(".browser-profiles")) {
+          profileAttempts += 1;
+          if (profileAttempts <= busyAttempts) {
+            yield { type: "stderr" as const, data: busy };
+            yield { type: "exit" as const, code: 1 };
+            return;
+          }
+        }
+        yield { type: "exit" as const, code: 0 };
+      });
+      try {
+        const deleting = destroyBot(
+          {
+            prisma: deletionPrisma(team),
+            sandbox: {
+              releaseScreen: vi.fn().mockResolvedValue(undefined),
+              execute,
+            } as unknown as SandboxProvider,
+            home: new LocalAgentHomeStore(path.join(tmpdir(), "rakazo-unused-home")),
+            jobs: { cancel: vi.fn() } as unknown as JobPublisher,
+          },
+          {
+            id: "bot-1",
+            spaceId: "workspace-1",
+            userId: "user-1",
+            name: "Researcher",
+            archivedAt: null,
+            computerId: team.id,
+          },
+          context,
+          { deleteMemories: true },
+        );
+        await vi.advanceTimersByTimeAsync(5_000);
+        await expect(deleting).resolves.toBeUndefined();
+        return { profileAttempts, events: sink.events };
+      } finally {
+        vi.useRealTimers();
+        installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+      }
+    }
+
+    it("retries removal once the browser lets go", async () => {
+      const { profileAttempts, events } = await deleteWithBusyProfile(1);
+
+      expect(profileAttempts).toBe(2);
+      expect(events.filter((event) => event.level === "error")).toEqual([]);
+    });
+
+    it("leaves a profile that stays open for the next boot without reporting an error", async () => {
+      const { profileAttempts, events } = await deleteWithBusyProfile(Number.POSITIVE_INFINITY);
+
+      expect(profileAttempts).toBe(3);
+      expect(events.filter((event) => event.level === "error")).toEqual([]);
+      expect(events.map((event) => event.message)).toContain(
+        "team browser profile still open; removed on next boot",
+      );
+    });
   });
 
   it("reports deletion success when the Team Computer lookup fails after the bot is deleted", async () => {

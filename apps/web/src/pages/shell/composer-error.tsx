@@ -59,6 +59,9 @@ export function ComposerError({
       document.removeEventListener("visibilitychange", recordIfPresented);
     };
   }, [onRunErrorPresented, runError, runErrorId]);
+  const normalizedRunError = runError
+    ? normalizeRunError(runError, translateRunError, i18n.locale || "en")
+    : null;
 
   return sendError || runError ? (
     <div
@@ -78,15 +81,14 @@ export function ComposerError({
             {sendError}
           </button>
         ) : (
-          (sendError ??
-          (runError
-            ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
-            : null))
+          (sendError ?? normalizedRunError?.summary ?? null)
         )}
         {!sendError && runError ? (
           <details key={runError} className="mt-1">
             <summary className="w-fit cursor-pointer">{t`Details`}</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{runError}</pre>
+            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+              {normalizedRunError?.details}
+            </pre>
           </details>
         ) : null}
       </div>

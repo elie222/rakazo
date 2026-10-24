@@ -213,57 +213,41 @@ export function createBillingService(deps: {
     },
 
     async status(actor) {
-      if (modelCredits && !actor.isDeploymentOwner) {
+      if (modelCredits) {
         const { organizationId, isOwner } = await organization(actor);
         await expireModelCredits(prisma, organizationId);
         const [credits, account] = await Promise.all([
           creditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
         ]);
-        if (!(account && account.creditAmountCents == null && hasBillingAccess(account.status)))
-          return {
-            access: credits.mode !== null || credits.balanceMicros > 0n,
-            funding:
-              credits.mode === "byok"
-                ? "byok"
-                : credits.balanceMicros > 0n || credits.mode === "credits"
-                  ? "credits"
-                  : null,
-            balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
-            monthlyAmountCents: account?.creditAmountCents ?? null,
-            creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
-            canManage: isOwner,
-            trialAvailable: false,
-            trialDays: 0,
-            state: (account?.status ?? "none") as BillingStatus["state"],
-            price: account?.creditAmountCents
-              ? {
-                  amount: account.creditAmountCents,
-                  currency: "usd",
-                  interval: "month" as const,
-                  intervalCount: 1,
-                }
-              : null,
-            seats: 1,
-            trialEndsAt: null,
-            currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
-            cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
-            hasCustomer: Boolean(account),
-          };
-      }
-      if (actor.isDeploymentOwner) {
         return {
-          access: true,
-          canManage: false,
+          access: credits.mode !== null || credits.balanceMicros > 0n,
+          funding:
+            credits.mode === "byok"
+              ? "byok"
+              : credits.balanceMicros > 0n || credits.mode === "credits"
+                ? "credits"
+                : null,
+          balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
+          monthlyAmountCents: account?.creditAmountCents ?? null,
+          creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
+          canManage: isOwner,
           trialAvailable: false,
-          trialDays: TRIAL_DAYS,
-          state: "none",
-          price: null,
-          seats: 0,
+          trialDays: 0,
+          state: (account?.status ?? "none") as BillingStatus["state"],
+          price: account?.creditAmountCents
+            ? {
+                amount: account.creditAmountCents,
+                currency: "usd",
+                interval: "month" as const,
+                intervalCount: 1,
+              }
+            : null,
+          seats: 1,
           trialEndsAt: null,
-          currentPeriodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          hasCustomer: false,
+          currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
+          cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
+          hasCustomer: Boolean(account),
         };
       }
       const { organizationId, isOwner } = await organization(actor);

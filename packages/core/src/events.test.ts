@@ -8,6 +8,7 @@ import {
   endsSentence,
   humanizeToolName,
   isRunTerminalEvent,
+  liveActivityLine,
   normalizeResponseStreamingPreference,
   projectMessages,
   reduceLiveMessageBlocks,
@@ -20,6 +21,7 @@ import {
   trackToolNameStreak,
   withLiveStreamingProgress,
 } from "./events.js";
+import { modelFallbackFailure, normalizeRunError } from "./run-error.js";
 
 describe("containsSecret", () => {
   it("detects secrets that JSON escaping changes", () => {
@@ -161,6 +163,25 @@ describe("runFailureError", () => {
     const long = runFailureError({ type: "run.failed", payload: { error: "x".repeat(400) } });
     expect(long).toHaveLength(301);
     expect(long?.endsWith("…")).toBe(true);
+  });
+
+  it("clamps each model's diagnostic so an exhausted backup chain stays readable", () => {
+    const error = modelFallbackFailure("Request timed out.", [
+      {
+        provider: "fake-provider",
+        modelId: "fake-model",
+        status: "failed",
+        reason: "x".repeat(400),
+      },
+      { provider: "fake-provider", modelId: "fake-other", status: "failed", reason: "Timeout" },
+    ]);
+    const shown = runFailureError({ type: "run.failed", payload: { error } });
+    expect(normalizeRunError(shown!).summary).toBe(
+      "Your model provider took too long to respond. Try again. Your backup models also failed.",
+    );
+    expect(normalizeRunError(shown!).details).toBe(
+      `Request timed out.\nfake-provider fake-model: ${"x".repeat(300)}…\nfake-provider fake-other: Timeout`,
+    );
   });
 });
 
@@ -820,5 +841,62 @@ describe("sanitizeUtf16ForJson", () => {
         "meta\uFFFD#2": "also",
       },
     });
+  });
+});
+
+describe("stale helper projection", () => {
+  it.each([
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+  ])("settles helpers on %s without reviving them on resume", (type) => {
+    const base = {
+      id: "fixture",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
+    const next = projectMessages([
+      { ...base, type: "thread.subagent", payload: helper },
+      { ...base, seq: 2, type, payload: {} },
+      { ...base, seq: 3, type: "run.started", payload: {} },
+      { ...base, seq: 4, type: "thread.subagent", payload: { ...helper, agentId: "resumed" } },
+    ]);
+    expect(next.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+      result: "stopped",
+    });
+    expect(next.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
+      status: "running",
+    });
+  });
+});
+
+describe("liveActivityLine", () => {
+  it("reads the tool status the live message is showing", () => {
+    expect(
+      liveActivityLine([
+        { id: "m1", blocks: [{ kind: "text", text: "Hi" }] },
+        {
+          id: "progress:run-1",
+          blocks: [{ kind: "progress", text: "Searching the web: injury news", activity: true }],
+        },
+      ]),
+    ).toBe("Searching the web: injury news");
+  });
+
+  it("is empty while the bot writes text or has no live message", () => {
+    expect(
+      liveActivityLine([
+        { id: "progress:run-1", blocks: [{ kind: "progress", text: "Checking that first." }] },
+      ]),
+    ).toBeUndefined();
+    expect(
+      liveActivityLine([{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
+    ).toBeUndefined();
   });
 });

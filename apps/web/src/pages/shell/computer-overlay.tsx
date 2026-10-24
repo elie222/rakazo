@@ -72,7 +72,7 @@ export function ComputerOverlay({
     <div className="fixed inset-0 z-30 bg-background">
       <div
         data-testid="computer-viewport"
-        className="fixed inset-x-0 top-0 flex flex-col bg-background"
+        className="fixed inset-x-0 top-0 flex flex-col bg-background pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
         style={{
           height: computerViewport ? `${computerViewport.height}px` : "100dvh",
           top: computerViewport ? `${computerViewport.offsetTop}px` : undefined,

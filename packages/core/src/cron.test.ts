@@ -12,6 +12,8 @@ import {
   nextCronDate,
   nextCronDateAcross,
   nextCronDateAcrossStrict,
+  nextRoutineRunDate,
+  nextRoutineRunDateAcross,
   ONCE_ROUTINE_CRON,
   presetFromCron,
   resolveRoutineNextRunAt,
@@ -380,4 +382,193 @@ describe("cronIntervalAmounts", () => {
       expect(cronIntervalAmounts(unit, n + 1)).not.toContain(n + 1);
     }
   });
+});
+
+describe("anchored routine intervals", () => {
+  it.each([
+    [
+      "*/45 * * * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-01-01T00:45:00Z", "2026-01-01T01:30:00Z", "2026-01-01T02:15:00Z"],
+    ],
+    [
+      "0 */15 * * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-01-01T15:00:00Z", "2026-01-02T06:00:00Z", "2026-01-02T21:00:00Z"],
+    ],
+    [
+      "0 0 */30 * *",
+      "2026-01-01T00:00:00Z",
+      [
+        "2026-01-31T00:00:00Z",
+        "2026-03-02T00:00:00Z",
+        "2026-04-01T00:00:00Z",
+        "2026-05-01T00:00:00Z",
+      ],
+    ],
+    [
+      "0 0 */31 * *",
+      "2026-01-01T00:00:00Z",
+      ["2026-02-01T00:00:00Z", "2026-03-04T00:00:00Z", "2026-04-04T00:00:00Z"],
+    ],
+    ["0 0 */2 * *", "2026-01-31T00:00:00Z", ["2026-02-02T00:00:00Z", "2026-02-04T00:00:00Z"]],
+  ])("keeps consecutive %s fires at a fixed gap", (cron, start, expected) => {
+    let anchor = new Date(start);
+    for (const iso of expected) {
+      anchor = nextRoutineRunDate(cron, anchor, anchor, "UTC");
+      expect(anchor).toEqual(new Date(iso));
+    }
+  });
+
+  it("keeps day intervals at the same local time across spring and fall DST", () => {
+    for (const [start, expected] of [
+      ["2026-03-07T05:00:00Z", "2026-03-09T04:00:00Z"],
+      ["2026-10-31T04:00:00Z", "2026-11-02T05:00:00Z"],
+      ["2026-03-07T12:30:15.123Z", "2026-03-09T11:30:15.123Z"],
+    ] as const) {
+      const anchor = new Date(start);
+      expect(nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "America/New_York")).toEqual(
+        new Date(expected),
+      );
+    }
+  });
+
+  it.each([
+    ["*/45 * * * *", "2026-01-03T00:00:00Z", "2026-01-03T00:45:00Z"],
+    ["0 */15 * * *", "2026-01-03T00:00:00Z", "2026-01-03T12:00:00Z"],
+    ["0 0 */30 * *", "2026-04-01T00:00:00Z", "2026-05-01T00:00:00Z"],
+  ])("skips missed %s fires without losing phase", (cron, now, expected) => {
+    expect(nextRoutineRunDate(cron, new Date("2026-01-01T00:00:00Z"), new Date(now))).toEqual(
+      new Date(expected),
+    );
+  });
+
+  it.each([
+    ["*/45 * * * *", "2026-03-08T06:45:00Z", "2026-03-08T07:30:00Z"],
+    ["0 */15 * * *", "2026-03-08T05:00:00Z", "2026-03-08T20:00:00Z"],
+    ["*/45 * * * *", "2026-11-01T05:45:00Z", "2026-11-01T06:30:00Z"],
+    ["0 */15 * * *", "2026-11-01T04:00:00Z", "2026-11-01T19:00:00Z"],
+  ])("measures %s as elapsed time across DST", (cron, start, expected) => {
+    const anchor = new Date(start);
+    expect(nextRoutineRunDate(cron, anchor, anchor, "America/New_York")).toEqual(
+      new Date(expected),
+    );
+  });
+
+  it.each([
+    [
+      "2026-03-08T05:00:00Z",
+      [
+        "2026-03-08T10:00:00Z",
+        "2026-03-08T16:00:00Z",
+        "2026-03-08T22:00:00Z",
+        "2026-03-09T04:00:00Z",
+      ],
+    ],
+    [
+      "2026-11-01T04:00:00Z",
+      [
+        "2026-11-01T11:00:00Z",
+        "2026-11-01T17:00:00Z",
+        "2026-11-01T23:00:00Z",
+        "2026-11-02T05:00:00Z",
+      ],
+    ],
+  ])("keeps six-hour cron fires at local 00/06/12/18 across DST from %s", (start, expected) => {
+    let anchor = new Date(start);
+    for (const iso of expected) {
+      anchor = nextRoutineRunDate("0 */6 * * *", anchor, anchor, "America/New_York");
+      expect(anchor).toEqual(new Date(iso));
+    }
+  });
+
+  it.each([
+    ...[1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30].map((n) => `*/${n} * * * *`),
+    ...[1, 2, 3, 4, 6, 8, 12].map((n) => `0 */${n} * * *`),
+    "0 0 */1 * *",
+  ])("keeps already-even %s on cron positions with an off-slot anchor", (cron) => {
+    const anchor = new Date("2026-03-08T05:07:13Z");
+    const now = new Date("2026-03-08T06:11:17Z");
+    expect(nextRoutineRunDate(cron, anchor, now, "America/New_York")).toEqual(
+      nextCronDate(cron, now, "America/New_York"),
+    );
+  });
+
+  it("leaves the first run on its existing cron match", () => {
+    const from = new Date("2026-01-01T00:00:00Z");
+    expect(nextCronDate("0 0 */30 * *", from)).toEqual(new Date("2026-01-31T00:00:00Z"));
+  });
+
+  it("falls back to UTC for day intervals with an unknown timezone", () => {
+    const anchor = new Date("2026-01-31T00:00:00Z");
+    expect(nextRoutineRunDate("0 0 */2 * *", anchor, anchor, "Mars/Olympus")).toEqual(
+      new Date("2026-02-02T00:00:00Z"),
+    );
+  });
+
+  it("keeps calendar-day catch-up in phase across DST", () => {
+    expect(
+      nextRoutineRunDate(
+        "0 0 */2 * *",
+        new Date("2026-03-05T05:00:00Z"),
+        new Date("2026-03-10T12:00:00Z"),
+        "America/New_York",
+      ),
+    ).toEqual(new Date("2026-03-11T04:00:00Z"));
+  });
+
+  it.each([
+    "0 9 * * *",
+    "0 9 * * 1",
+    "0 9 1 * *",
+    "0 9 * * 1-5",
+    "15 * * * *",
+    "0 9 15 * *",
+    "0 9 * 3 *",
+    "0 * * * *",
+    "*/15 * * * *",
+    "0 */6 * * *",
+  ])("preserves calendar scheduling for %s", (cron) => {
+    const anchor = nextCronDate(cron, new Date("2026-01-01T00:00:00Z"));
+    const now = new Date(anchor.getTime() + 120_000);
+    expect(nextRoutineRunDate(cron, anchor, now)).toEqual(nextCronDate(cron, now));
+  });
+
+  it("anchors the only recurring schedule while skipping one-shot and invalid entries", () => {
+    const anchor = new Date("2026-01-31T00:00:00Z");
+    expect(
+      nextRoutineRunDateAcross(
+        ["@once", "invalid", "*/0 * * * *", "*/99 * * * *", "0 0 */30 * *"],
+        anchor,
+        anchor,
+      ),
+    ).toEqual(new Date("2026-03-02T00:00:00Z"));
+    expect(nextRoutineRunDateAcross(["@once", "invalid"], anchor, anchor)).toBeNull();
+  });
+
+  it("keeps a 30-day cron firing on its own matches alongside a weekly schedule", () => {
+    const crons = ["0 0 */30 * *", "0 9 * * 1"];
+    let anchor = new Date("2026-01-26T09:00:00Z");
+    for (const iso of ["2026-01-31T00:00:00Z", "2026-02-01T00:00:00Z", "2026-02-02T09:00:00Z"]) {
+      const next = nextRoutineRunDateAcross(crons, anchor, anchor);
+      expect(next).toEqual(new Date(iso));
+      anchor = new Date(iso);
+    }
+  });
+
+  it.each([
+    ["2026-01-26T09:00:00Z", "2026-01-30T12:00:00Z"],
+    ["2026-01-30T12:00:00Z", "2026-01-26T09:00:00Z"],
+  ])(
+    "uses cron after the later of now and the shared anchor for multiple schedules (%s, %s)",
+    (start, now) => {
+      expect(
+        nextRoutineRunDateAcross(
+          ["@once", "invalid", "0 0 */30 * *", "0 9 * * 1"],
+          new Date(start),
+          new Date(now),
+        ),
+      ).toEqual(new Date("2026-01-31T00:00:00Z"));
+    },
+  );
 });

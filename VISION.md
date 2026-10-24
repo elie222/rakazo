@@ -55,6 +55,8 @@ Important effects are verified independently, recovery preserves known-good user
 
 ## Current decisions
 
+App accounts never administer the server. Signup order, email address, and workspace ownership do not grant deployment privileges or billing exemptions; there is no app-admin role or `ADMINS` list. Operators configure the server through environment variables and manage updates, logs, and shared credentials through deployment tooling. Desktop host access is a separate local capability that requires native confirmation, is restricted to the app-managed local instance, and can be revoked locally.
+
 This file records current product truth rather than an append-only decision log, and Git history preserves decisions that are later replaced.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.

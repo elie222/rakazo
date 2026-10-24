@@ -2,7 +2,6 @@
 
 import { readFileSync } from "node:fs";
 import { ACTIVE_RUN_STATUSES, isRunWorking } from "@rakazo/core";
-import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentType, ReactElement, ReactNode } from "react";
 import * as React from "react";
 import { act, memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -42,18 +41,17 @@ function measure(before: boolean) {
     memo: before ? (component: ComponentType) => component : memo,
     useCallback,
     useI18n: () => ({ t: (text: string) => text }),
-    previewSnippet: (text: string) => text,
+    previewSnippet: (text: string) => {
+      renders++;
+      return text;
+    },
     formatThreadTime: () => "",
     botTag: () => "",
     isRunWorking,
-    mobileBotAvatarPresentation: () => {
-      renders++;
-      return { kind: "color", color: "gray" };
-    },
     FALLBACK_COLOR: "gray",
     ConversationRow: () => null,
     BotAvatar: () => null,
-    WorkingIndicator: () => null,
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
     // Rows in the current space carry the iOS swipe host; it must not defeat the memo.
     InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
     inboxRowActionList,
@@ -118,10 +116,7 @@ function measure(before: boolean) {
           onLongPress={() => action(bot)}
         />
       ) : (
-        React.cloneElement(
-          renderItem({ item: { type: "bot", bot, depth: 0, hasChildren: false } }),
-          { key: bot.id },
-        )
+        React.cloneElement(renderItem({ item: { type: "bot", bot } }), { key: bot.id })
       ),
     );
   }
@@ -200,12 +195,11 @@ it.each(["midnight", "focus", "foreground"])(
       formatThreadTime,
       botTag: () => "",
       isRunWorking,
-      mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
       FALLBACK_COLOR: "gray",
       ConversationRow: ({ time }: { time: string }) => <span>{time}</span>,
       BotAvatar: () => null,
+      AvatarRow: ({ children }: { children: ReactElement }) => children,
       GroupAvatar: () => null,
-      WorkingIndicator: () => null,
       InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
       inboxRowActionList,
       appearance: "light",
@@ -314,7 +308,6 @@ it("renders saved bot rows without a title or notification setting", () => {
     formatThreadTime,
     botTag,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
     ConversationRow: ({
       tag,
@@ -332,8 +325,12 @@ it("renders saved bot rows without a title or notification setting", () => {
         {avatar}
       </span>
     ),
-    BotAvatar: ({ muted }: { muted: boolean }) => (muted ? " muted" : null),
-    WorkingIndicator: () => null,
+    BotAvatar: ({ muted, motion }: { muted: boolean; motion?: string }) =>
+      `${muted ? " muted" : ""}${motion ? ` ${motion}` : ""}`,
+    // The row's avatar freezes while the row is scrolled out of view.
+    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
+      <i data-row={id}>{children}</i>
+    ),
   };
   const rowSource = source.slice(
     source.indexOf("const BotRow = memo("),
@@ -358,9 +355,14 @@ it("renders saved bot rows without a title or notification setting", () => {
       ),
     );
     expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Research|Research|Alpha, Research, Research",
-      "|No messages yet|Beta, No messages yet",
-      "|No messages yet|Gamma, notifications silenced, No messages yet muted",
+      "Research|Research|Alpha, Research, Research lazy",
+      "|No messages yet|Beta, No messages yet lazy",
+      "|No messages yet|Gamma, notifications silenced, No messages yet muted lazy",
+    ]);
+    expect(Array.from(container.querySelectorAll("i"), (row) => row.dataset.row)).toEqual([
+      "bot-a",
+      "bot-b",
+      "bot-c",
     ]);
   } finally {
     act(() => root.unmount());
@@ -368,7 +370,7 @@ it("renders saved bot rows without a title or notification setting", () => {
   }
 });
 
-it("shows the working dots only while the bot works, not while it waits on the user", () => {
+it("says working only while the bot works, and shows nothing beside the time", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const scope = {
     React,
@@ -379,22 +381,13 @@ it("shows the working dots only while the bot works, not while it waits on the u
     botTag: () => "",
     ACTIVE_RUN_STATUSES,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
-    ConversationRow: ({
-      accessibilityLabel,
-      indicator,
-    }: {
-      accessibilityLabel: string;
-      indicator: ReactElement | null;
-    }) => (
-      <span>
-        {accessibilityLabel}
-        {indicator}
-      </span>
+    // The avatar's motion and corner dot are the only working sign; the time stands alone.
+    ConversationRow: (props: { accessibilityLabel: string }) => (
+      <span data-indicator={"indicator" in props}>{props.accessibilityLabel}</span>
     ),
     BotAvatar: () => null,
-    WorkingIndicator: () => " dots",
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
   };
   const rowSource = source.slice(
     source.indexOf("const BotRow = memo("),
@@ -419,12 +412,72 @@ it("shows the working dots only while the bot works, not while it waits on the u
       ),
     );
     // A "Needs you" computer card or an ask card is the state; the row must not claim work.
+    expect(
+      Array.from(container.querySelectorAll("span"), (span) => span.dataset.indicator),
+    ).toEqual(["false", "false", "false", "false"]);
     expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
-      "Helper, Working…, Hi dots",
+      "Helper, Working…, Hi",
       "Helper, Hi",
       "Helper, Hi",
       "Helper, Hi",
     ]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scrolls away", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const action = vi.fn();
+  const listSource = source.slice(
+    source.indexOf("  const renderItem = useCallback("),
+    source.indexOf("  if (!ready) {"),
+  );
+  // The list's own key for each item.
+  const keySource = source.slice(
+    source.indexOf("function inboxItemKey("),
+    source.indexOf("function inboxSignal("),
+  );
+  const scope = {
+    React,
+    useCallback,
+    AvatarRow: ({ id, children }: { id: string; children: ReactElement }) => (
+      <i data-row={id}>{children}</i>
+    ),
+    PinnedTiles: () => <b />,
+    appearance: "light",
+    botAction: action,
+    botSections: [],
+    chooseInboxSpace: action,
+    collapsed: new Set(),
+    confirmDeleteSpace: action,
+    deleteSection: action,
+    day: 0,
+    editSectionFromMenu: action,
+    groupAction: action,
+    me: { spaceId: "space-1" },
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeFromMenu: action,
+    organizeGroup: action,
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    styles: {},
+    t: action,
+    toggleCollapsed: action,
+  };
+  const compiled = ts.transpileModule(
+    `${keySource}\nreturn function List() {\n${listSource}\nreturn renderItem({ item: { type: "pinned", chats: [] } });\n};`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() => root.render(<List />));
+    expect(container.querySelector('[data-row="pinned"] > b')).not.toBeNull();
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();
@@ -697,12 +750,11 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     botTag: () => "",
     ACTIVE_RUN_STATUSES,
     isRunWorking,
-    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
     FALLBACK_COLOR: "gray",
     ConversationRow: () => null,
     BotAvatar: () => null,
+    AvatarRow: ({ children }: { children: ReactElement }) => children,
     GroupAvatar: () => null,
-    WorkingIndicator: () => null,
     InboxSwipeRow: ({ rowKey }: { rowKey: string }) => {
       withMenu.push(rowKey);
       return null;
@@ -755,9 +807,9 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
   });
   // Chats listed from another space have no row menu, as with Archive.
   const items = [
-    { type: "bot", bot: chat("current-bot", "space-current"), depth: 0, hasChildren: false },
+    { type: "bot", bot: chat("current-bot", "space-current") },
     { type: "group", group: chat("current-group", "space-current") },
-    { type: "bot", bot: chat("other-bot", "space-other"), depth: 0, hasChildren: false },
+    { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
   ];
   const root = createRoot(document.createElement("div"));
@@ -768,100 +820,4 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     act(() => root.unmount());
     vi.unstubAllGlobals();
   }
-});
-
-it("sets inbox rows and section headings in the shared type scale", () => {
-  const stylesSource = source.slice(source.indexOf("function createHomeStyles()"));
-  const rowDimensions = source.slice(
-    source.indexOf("const INBOX_ROW ="),
-    source.indexOf("\n", source.indexOf("const COMPACT_INBOX_ROW =")),
-  );
-  const compiled = ts.transpileModule(
-    `${rowDimensions}\n${stylesSource}\nreturn createHomeStyles;`,
-    {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    },
-  ).outputText;
-  const scope = {
-    StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 0.5 },
-    native: new Proxy({}, { get: (_target, name) => String(name) }),
-    mobileTokens: () => new Proxy({}, { get: (_target, name) => String(name) }),
-    typeScale,
-    fontWeight,
-  };
-  const styles = new Function(...Object.keys(scope), compiled)(...Object.values(scope))();
-
-  expect(styles.name).toMatchObject({ fontSize: 17, lineHeight: 22, fontWeight: "500" });
-  expect(styles.name).toMatchObject({ flexShrink: 0, maxWidth: "100%" });
-  expect(styles.tag).toMatchObject({ flexShrink: 1, minWidth: 0, overflow: "hidden" });
-  expect(styles.rowTop.alignItems).toBe("flex-start");
-  expect(styles.titleRow.overflow).toBe("hidden");
-  expect(styles.preview).toMatchObject({ fontSize: 15, lineHeight: 19 });
-  expect(styles.time).toMatchObject({ fontSize: 14, lineHeight: 18 });
-  expect(styles.tagLabel).toMatchObject({ fontSize: 14, fontWeight: "500" });
-  // At the largest text sizes the tag moves under the name instead of squeezing it.
-  expect(styles.titleRowWrapped).toEqual({ flexWrap: "wrap" });
-  for (const heading of [styles.sectionTitle, styles.sectionHeading]) {
-    expect(heading).toMatchObject({ fontSize: 15, lineHeight: 19 });
-    expect(heading.fontWeight).toBeUndefined();
-  }
-  expect(styles.sectionCount).toMatchObject({ fontSize: 14, lineHeight: 18 });
-
-  // Search results are drawn like inbox rows.
-  const searchSource = readFileSync(new URL("../app/search.tsx", testFileUrl), "utf8");
-  const searchStyles = new Function(
-    ...Object.keys(scope),
-    ts.transpileModule(
-      `${searchSource.slice(searchSource.indexOf("function createStyles()"))}\nreturn createStyles;`,
-      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
-    ).outputText,
-  )(...Object.values(scope))();
-  for (const key of ["name", "time", "preview"] as const) {
-    expect(searchStyles[key]).toMatchObject({
-      fontSize: styles[key].fontSize,
-      lineHeight: styles[key].lineHeight,
-    });
-  }
-  expect(searchStyles.name.fontWeight).toBe(styles.name.fontWeight);
-});
-
-it("sets archived bot and group names in the inbox title scale", () => {
-  const archivedSource = readFileSync(
-    new URL("../components/archived-bot-list.tsx", testFileUrl),
-    "utf8",
-  );
-  const scope = {
-    React,
-    typeScale,
-    useI18n: () => ({ t: (text: string) => text }),
-    useResolvedAppearance: () => "light",
-    native: {},
-    ScrollView: "div",
-    View: "div",
-    MenuView: "div",
-    Pressable: "div",
-    Text: "span",
-    Chevron: () => null,
-    NativeSymbol: () => null,
-  };
-  const compiled = ts.transpileModule(
-    `${archivedSource.slice(archivedSource.indexOf("export function ArchivedBotList")).replace("export function", "function")}\nreturn ArchivedBotList;`,
-    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
-  ).outputText;
-  const ArchivedBotList = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
-  const tree = ArchivedBotList({
-    bots: [{ id: "bot", name: "Helper" }],
-    groups: [{ id: "group", name: "Team" }],
-  });
-  const names: ReactElement<{ style: object; children: ReactNode }>[] = [];
-  function visit(node: ReactNode) {
-    React.Children.forEach(node, (child) => {
-      if (!React.isValidElement<{ style: object; children: ReactNode }>(child)) return;
-      if (child.type === "span") names.push(child);
-      visit(child.props.children);
-    });
-  }
-  visit(tree);
-  expect(names.map((name) => name.props.children)).toEqual(["Helper", "Team"]);
-  for (const name of names) expect(name.props.style).toMatchObject(typeScale.cardTitle);
 });

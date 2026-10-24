@@ -86,6 +86,15 @@ describe("mobile i18n", () => {
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout verwijderen?");
 
+    resetI18nForTests("ja");
+    expect(t("Account")).toBe("アカウント");
+    expect(t("Sign in to Rakazo")).toBe("Rakazoにログイン");
+    expect(t("New bot")).toBe("新しいボット");
+    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3回の実行 · 12トークン",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scoutを削除しますか？");
+
     resetI18nForTests("de");
     expect(t("Account")).toBe("Konto");
     expect(t("Sign in to Rakazo")).toBe("Bei Rakazo anmelden");
@@ -101,7 +110,8 @@ describe("mobile i18n", () => {
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
+    const { JA_MESSAGES } = await import("./locales/ja");
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES, JA_MESSAGES]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
         const tokens = (message: string) =>
@@ -118,6 +128,7 @@ describe("mobile i18n", () => {
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
     const { NL_MESSAGES } = await import("./locales/nl");
+    const { JA_MESSAGES } = await import("./locales/ja");
     const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
       "@rakazo/core"
     );
@@ -128,6 +139,9 @@ describe("mobile i18n", () => {
     const ids = new Set<string>([
       ...Object.values(AI_DATA_DISCLOSURES),
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "{summary} Your backup models also failed.",
+      "{summary} No backup model was usable for this request.",
+      "{summary} Backup models failed or were unavailable for this request.",
       "Your OpenRouter",
       "Your OpenAI",
       "Your Anthropic",
@@ -137,7 +151,13 @@ describe("mobile i18n", () => {
       "{summary} Resets {date}.",
       "{provider} rejected the API key. Check your connection settings.",
       "{provider} could not find the requested model.",
+      "{provider} denied access to this model.",
+      "The model returned an unusable response. Try again.",
+      "This model's context window is too small. Choose another model.",
       "{provider} took too long to respond. Try again.",
+      "{provider} is overloaded right now. Try again in a moment.",
+      "{provider} couldn't be reached. Check that it's running.",
+      "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.",
 
       EMPTY_PLUGIN_CATALOG_MESSAGE,
       OPENAI_COMPATIBLE_BASE_URL_HINT,
@@ -158,7 +178,7 @@ describe("mobile i18n", () => {
       const source = readFileSync(file, "utf8");
       for (const id of translationIds(source)) ids.add(id);
     }
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES, JA_MESSAGES]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
@@ -175,6 +195,7 @@ describe("mobile i18n", () => {
   it.each([
     ["de", "Dein Modellanbieter hat zu lange zum Antworten gebraucht. Versuche es erneut."],
     ["nl", "Jouw modelaanbieder deed er te lang over om te antwoorden. Probeer het opnieuw."],
+    ["ja", "お使いのモデルプロバイダーの応答に時間がかかりすぎました。もう一度お試しください。"],
     ["ru", "Ваш поставщик моделей не ответил вовремя. Повторите попытку."],
     ["zh-CN", "你的模型提供商响应超时。请重试。"],
   ] as const)("renders provider errors in %s", async (locale, expected) => {

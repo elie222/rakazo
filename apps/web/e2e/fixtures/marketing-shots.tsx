@@ -11,8 +11,9 @@ import { bootstrapI18n, i18n } from "../../src/lib/i18n";
 import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
-import { BotSettings, CreateBotForm } from "../../src/pages/shell/bot-panel";
+import { BotSettings } from "../../src/pages/shell/bot-panel";
 import { TimeSeparator } from "../../src/pages/shell/chat-context";
+import { CreateBotDialog } from "../../src/pages/shell/create-bot-dialog";
 import "../../src/styles.css";
 
 const demoRpc: Record<string, unknown> = {
@@ -100,33 +101,31 @@ function inboxBot(): Bot {
 function CreateShot() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    const name = document.querySelector<HTMLInputElement>('input[placeholder="Name this bot"]');
-    const title = document.querySelector<HTMLInputElement>(
-      'input[placeholder="Describe what this bot does"]',
-    );
-    const description = document.querySelector<HTMLTextAreaElement>("textarea");
-    fill(name, "Inbox");
-    fill(title, "Sorts the demo inbox");
-    fill(description, "Files routine mail for ada@example.test and leaves the rest for review.");
-    setReady(true);
+    let frame = 0;
+    // The dialog renders in a portal, so wait for it before filling it in.
+    const fillWhenOpen = () => {
+      const name = document.querySelector<HTMLInputElement>('input[placeholder="Name your Bot"]');
+      if (!name) {
+        frame = requestAnimationFrame(fillWhenOpen);
+        return;
+      }
+      fill(name, "Inbox");
+      document.querySelector<HTMLButtonElement>('button[aria-label="Shape 1"]')?.click();
+      document.querySelector<HTMLButtonElement>('button[aria-label="Color #8B5CF6"]')?.click();
+      setReady(true);
+    };
+    fillWhenOpen();
+    return () => cancelAnimationFrame(frame);
   }, []);
   return (
-    <main
-      data-ready={ready ? "true" : "false"}
-      className="mx-auto max-w-[640px] bg-background p-8 text-foreground"
-    >
-      <CreateBotForm onCreate={async () => undefined} onCancel={() => undefined} />
+    <main data-ready={ready ? "true" : "false"} className="min-h-screen bg-background">
+      <CreateBotDialog onCreate={async () => undefined} onCancel={() => undefined} />
     </main>
   );
 }
 
-function fill(element: HTMLInputElement | HTMLTextAreaElement | null, value: string) {
-  if (!element) return;
-  const prototype =
-    element instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(element, value);
+function fill(element: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(element, value);
   element.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
@@ -233,7 +232,7 @@ const subscriptionMe: Me = {
   computerHost: "docker",
   canChooseHostComputer: true,
   sandboxProvider: "docker",
-  avatarStyle: "robot",
+  avatarStyle: "organic",
   billingEnabled: false,
 };
 
@@ -490,9 +489,8 @@ function SubscriptionShot() {
       <SettingsOverlay
         email="ada@example.test"
         name="Ada"
-        initialSection="models"
-        avatarStyle="robot"
-        onAvatarStyleChange={async () => undefined}
+        section="models"
+        onSectionChange={() => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
         onUsageOpen={() => undefined}

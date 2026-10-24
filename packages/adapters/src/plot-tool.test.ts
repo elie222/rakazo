@@ -1,10 +1,9 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
+import type { PlotSpec } from "./plot-tool.js";
 import {
   buildPlotParts,
   CHART_CATALOG,
-  PLOT_TOOL_GUIDE,
-  type PlotSpec,
   parsePlotData,
   renderPlotSpecToSvg,
   searchChartCatalog,
@@ -22,6 +21,42 @@ const penguinish = [
 ];
 
 describe("render_plot", () => {
+  it.each(["axisX", "axisY", "gridX", "gridY"])(
+    "rejects excessive generated ticks in a %s mark without input rows",
+    (type) => {
+      expect(() =>
+        renderPlotSpecToSvg(
+          {
+            x: { domain: [0, 1] },
+            y: { domain: [0, 1] },
+            marks: [{ type, options: { ticks: 10_000 } }],
+          },
+          undefined,
+          dom(),
+        ),
+      ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+    },
+  );
+
+  it.each(["x", "y", "fx", "fy"])("rejects excessive ticks in the %s scale", (scale) => {
+    expect(() =>
+      renderPlotSpecToSvg(
+        { [scale]: { domain: [0, 1], ticks: 10_000 }, marks: [{ type: "frame" }] },
+        undefined,
+        dom(),
+      ),
+    ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+  });
+
+  it("renders a bounded custom tick count", () => {
+    const { plotted } = buildPlotParts(
+      { x: { domain: [0, 10] }, marks: [{ type: "axisX", options: { ticks: 10 } }] },
+      undefined,
+      dom(),
+    );
+    expect(plotted.querySelectorAll("text")).toHaveLength(11);
+  });
+
   it("renders a titled scatterplot with a categorical legend into standalone SVG", () => {
     const svg = renderPlotSpecToSvg(
       {
@@ -334,12 +369,5 @@ describe("render_plot", () => {
     const meta = await sharp(png).metadata();
     const alpha = stats.channels[3];
     expect(meta.channels === 3 || (alpha && alpha.min === 255)).toBe(true);
-  });
-
-  it("ships a guide that teaches the agent how to call the tool", () => {
-    expect(PLOT_TOOL_GUIDE).toContain("How to use the tool");
-    expect(PLOT_TOOL_GUIDE).toContain("data_path");
-    expect(PLOT_TOOL_GUIDE).toContain("Chart catalog");
-    expect(PLOT_TOOL_GUIDE).toContain('{"help": true}');
   });
 });

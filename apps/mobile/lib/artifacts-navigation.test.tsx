@@ -131,7 +131,7 @@ it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (plat
 });
 
 it.each([false, true])(
-  "opens Artifacts on the root stack from the first account navigation row (owner: %s)",
+  "keeps account navigation free of server controls (stored owner: %s)",
   (isDeploymentOwner) => {
     const start = account.lastIndexOf(
       "        <SettingsGroup>",
@@ -168,7 +168,6 @@ it.each([false, true])(
         "Voice",
         "Integrations",
         "AI data sharing",
-        ...(isDeploymentOwner ? ["Server integrations"] : []),
       ]);
       expect(rows[0]!.getAttribute("role")).toBe("button");
       expect(rows[0]!.dataset.chevron).toBe("right");

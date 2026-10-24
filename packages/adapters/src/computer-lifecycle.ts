@@ -31,6 +31,7 @@ import {
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
+import { ObjectAgentHomeStore } from "./home-object-store.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 type ComputerUpdateProgress = (
@@ -327,6 +328,9 @@ export async function provisionComputer(
   if (claimed.count !== 1) throw new ComputerBusyError();
   let provisioned: ComputerRef | undefined;
   try {
+    // Docker mounts the cached directory, so it must hold the stored revision before boot.
+    if (!reconnecting && deps.home instanceof ObjectAgentHomeStore)
+      await deps.home.hydrate(existing.homeKey);
     await onProgress?.("recreating");
     const ref = await getLogger().withContext(
       { "computer.id": computerId, "run.id": context.runId, previousState: existing.state },
@@ -337,6 +341,11 @@ export async function provisionComputer(
             homePath,
             providerRef: existing.providerRef ?? undefined,
             providerKind: existing.kind as ComputerRef["kind"],
+            // A save from an older release has no time; the provider keeps its own state then.
+            savedAt:
+              existing.homeRevision === "empty"
+                ? undefined
+                : (existing.homeRevisionAt ?? undefined),
           },
           context,
         ),
@@ -955,6 +964,7 @@ export async function replaceComputer(
     if (oldRef && (mode === "update" || (existing.state === "running" && mode === "recover"))) {
       try {
         await onProgress?.("saving");
+        const checkpointedAt = new Date();
         const revision = await checkpointComputerWorkspace(
           deps.home,
           deps.sandbox,
@@ -964,7 +974,7 @@ export async function replaceComputer(
         );
         const recorded = await deps.prisma.computer.updateMany({
           where: { id: computerId, state: "suspending", updatedAt: claimStamp },
-          data: { homeRevision: revision, updatedAt: claimStamp },
+          data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: claimStamp },
         });
         if (recorded.count !== 1) throw new ComputerBusyError();
       } catch (error) {

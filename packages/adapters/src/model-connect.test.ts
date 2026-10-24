@@ -237,6 +237,30 @@ describe("openai-codex API key guard", () => {
     ).toBe("sk-test-key-123");
   });
 
+  it("stores Workers AI account routing and preserves it without a replacement key", () => {
+    const provider = "cloudflare-workers-ai";
+    const plaintext = connectAsOwner({
+      provider,
+      apiKey: "cf-test-key-value",
+      accountId: "account-fixture",
+    });
+    const saved = { kind: "api_key", key: "cf-test-key-value", accountId: "account-fixture" };
+    expect(parseModelSecret(plaintext)).toEqual(saved);
+    expect(parseModelSecret(connectAsOwner({ provider, maxTokens: 2048 }, plaintext))).toEqual({
+      ...saved,
+      maxTokens: 2048,
+    });
+    expect(
+      parseModelSecret(connectAsOwner({ provider, accountId: "account-updated" }, plaintext)),
+    ).toEqual({ ...saved, accountId: "account-updated" });
+    expect(() => connectAsOwner({ provider, apiKey: "cf-test-key-value" })).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
+    expect(() => connectAsOwner({ provider, accountId: "../account" }, plaintext)).toThrow(
+      "Cloudflare Workers AI needs an account ID.",
+    );
+  });
+
   it("stores Cloudflare AI Gateway routing with the key and keeps it on a limit update", () => {
     const input = {
       provider: CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
@@ -807,4 +831,70 @@ describe("compatible model selection limit", () => {
       ).toBe(true);
     }
   });
+});
+
+describe("compatible connection header secrets", () => {
+  const input = {
+    provider: "openai-compatible",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "test",
+  };
+  it("stores headers without returning their values and preserves only at the same endpoint", () => {
+    const plaintext = connectAsOwner({ ...input, headers: { "x-session": "private-value" } });
+    expect(parseModelSecret(plaintext)).toHaveProperty("headers", { "x-session": "private-value" });
+    const dto = modelCredentialDto(
+      { id: "credential", provider: input.provider, label: "Test", isDefault: false },
+      plaintext,
+    );
+    expect(dto).toHaveProperty("headerNames", ["x-session"]);
+    expect(JSON.stringify(dto)).not.toContain("private-value");
+    expect(parseModelSecret(connectAsOwner(input, plaintext))).toHaveProperty("headers", {
+      "x-session": "private-value",
+    });
+    expect(parseModelSecret(connectAsOwner({ ...input, headers: {} }, plaintext))).toHaveProperty(
+      "headers",
+      {},
+    );
+    expect(
+      parseModelSecret(
+        connectAsOwner({ ...input, baseUrl: "http://127.0.0.2:8000/v1" }, plaintext),
+      ),
+    ).not.toHaveProperty("headers");
+  });
+});
+
+it("returns only header names in a compatible credential DTO", () => {
+  const plaintext = JSON.stringify({
+    kind: "openai_compatible",
+    baseUrl: "http://127.0.0.1:8000/v1",
+    headers: { "x-session": "fake-session-secret" },
+  });
+  const dto = modelCredentialDto(
+    { id: "credential", provider: "openai-compatible", label: "Test", isDefault: false },
+    plaintext,
+  );
+  expect(dto).toHaveProperty("headerNames", ["x-session"]);
+  expect(JSON.stringify(dto)).not.toContain("fake-session-secret");
+});
+
+it("requires HTTPS when saving new or inherited headers on public HTTP", () => {
+  vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+  try {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://models.example/v1",
+      modelId: "test",
+    };
+    const headers = { "x-session": "long-session-secret" };
+    expect(() => buildModelConnectPlaintext({ ...input, headers })).toThrow(
+      /API key or custom headers must use HTTPS/,
+    );
+    const previous = JSON.stringify({ kind: "openai_compatible", baseUrl: input.baseUrl, headers });
+    expect(() => buildModelConnectPlaintext(input, previous)).toThrow(
+      /API key or custom headers must use HTTPS/,
+    );
+    expect(() => buildModelConnectPlaintext({ ...input, headers: {} }, previous)).not.toThrow();
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

@@ -248,7 +248,8 @@ function browserActionCommand(
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".
-const CHROME_WM_CLASSES = "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome";
+const CHROME_WM_CLASSES =
+  "chromium|chromium-browser|google-chrome|google-chrome-stable|chrome|brave-browser";
 
 // Launch maps every BROWSER_APPLICATIONS name, including firefox, onto the
 // Chromium launcher. Focus must use that same set or it cannot raise the window launch opened.
@@ -341,15 +342,36 @@ function focusOrLaunchActionCommand(
 }
 
 /** Install the same X11 tools in minimal Ubuntu sandboxes, only if their image lacks them. */
-export const PREPARE_LINUX_DESKTOP = [
-  "set -eu",
+const FIND_MISSING_DESKTOP_TOOLS = [
   'missing=""',
   // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
   'for pair in python3:python3 flock:util-linux Xvfb:xvfb xdpyinfo:x11-utils x11vnc:x11vnc fluxbox:fluxbox xdotool:xdotool wmctrl:wmctrl scrot:scrot xterm:xterm; do command -v "${pair%%:*}" >/dev/null 2>&1 || missing="$missing ${pair#*:}"; done',
   'if ! command -v websockify >/dev/null 2>&1 && [ ! -x /opt/noVNC/utils/websockify/run ]; then missing="$missing websockify"; fi',
   'if [ ! -d /usr/share/novnc ] && [ ! -d /opt/noVNC ]; then missing="$missing novnc"; fi',
+];
+
+export const PREPARE_LINUX_DESKTOP = [
+  "set -eu",
+  ...FIND_MISSING_DESKTOP_TOOLS,
   'if [ -n "$missing" ]; then',
   '  if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
   "  $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $missing",
   "fi",
+].join("\n");
+
+/** Fails unless every desktop tool is installed and a virtual display answers. */
+export const VERIFY_LINUX_DESKTOP = [
+  "set -eu",
+  ...FIND_MISSING_DESKTOP_TOOLS,
+  'if [ -n "$missing" ]; then echo "missing desktop tools:$missing" >&2; exit 1; fi',
+  "Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/dev/null 2>&1 &",
+  "xvfb=$!",
+  "ready=0",
+  "for _ in $(seq 50); do",
+  "  if xdpyinfo -display :99 >/dev/null 2>&1; then ready=1; break; fi",
+  "  sleep 0.1",
+  "done",
+  'kill "$xvfb" 2>/dev/null || true',
+  'wait "$xvfb" 2>/dev/null || true',
+  'if [ "$ready" -ne 1 ]; then echo "Xvfb did not start" >&2; exit 1; fi',
 ].join("\n");

@@ -12,6 +12,7 @@ directory, so a copied database dump, backup or disk does not reveal it.
 | Compacted history summaries | `threads.historyCompactionSummary` |
 | Memory documents and their revisions | `memory_documents.content`, `memory_revisions.content` |
 | Uploaded and generated files | `DATA_DIR/artifacts/<space>/<file>` |
+| Bot computer homes kept in [object storage](./self-host.md#bot-homes-in-object-storage) (always, whatever `CONTENT_ENCRYPTION` says) | `homes/<id>/<revision>` in the bucket |
 | Credentials (unchanged scheme) | `secrets`, `bot_secrets`, `integration_provider_configs` |
 
 Not yet encrypted, planned next: external conversation messages, outbound

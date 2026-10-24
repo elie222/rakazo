@@ -26,6 +26,7 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: ({
       variant: _variant,
       size: _size,
@@ -74,6 +75,42 @@ function speechModelInput(container: HTMLElement): HTMLInputElement | undefined 
   });
 }
 
+it("selects an available provider when the saved self-hosted provider is hidden", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  voice.catalog.mockResolvedValue([
+    { id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true },
+  ]);
+  voice.credentials
+    .mockResolvedValueOnce([{ ...fish, provider: "openai-compatible" }])
+    .mockResolvedValue([]);
+  voice.disconnect.mockClear().mockResolvedValue(undefined);
+  voice.status.mockResolvedValue({ ready: true, provider: "openai-compatible" });
+  voice.voices.mockClear();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(<VoiceSettingsOverlay embedded onClose={() => undefined} />);
+    });
+    expect(container.textContent).toContain("ElevenLabs");
+    expect(container.textContent).not.toContain("Server URL");
+    expect(container.querySelector('input[placeholder="Paste your API key"]')).not.toBeNull();
+    expect(voice.voices).not.toHaveBeenCalled();
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Disconnect Self-hosted",
+    );
+    expect(disconnect).toBeTruthy();
+    await act(async () => disconnect!.click());
+    expect(voice.disconnect).toHaveBeenCalledWith({ provider: "openai-compatible" });
+    expect(container.textContent).not.toContain("Self-hosted");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("saves a Fish speech model on the existing provider pane", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.catalog.mockResolvedValue([
@@ -101,12 +138,11 @@ it("saves a Fish speech model on the existing provider pane", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const button = (text: string) => {
-    const found = [...container.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes(text),
-    );
-    if (!found) throw new Error(`Missing button: ${text}`);
-    return found;
+  const chooseProvider = (value: string) => {
+    const select = container.querySelector("select");
+    if (!select) throw new Error("Missing provider select");
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
   };
   try {
     await act(async () => {
@@ -121,7 +157,7 @@ it("saves a Fish speech model on the existing provider pane", async () => {
     expect(input?.placeholder).toBe("Optional");
 
     await act(async () => {
-      button("ElevenLabs").click();
+      chooseProvider("elevenlabs");
     });
     await act(async () => {
       await Promise.resolve();
@@ -129,7 +165,7 @@ it("saves a Fish speech model on the existing provider pane", async () => {
     expect(speechModelInput(container)).toBeUndefined();
 
     await act(async () => {
-      button("Fish Audio").click();
+      chooseProvider("fish-audio");
     });
     await act(async () => {
       await Promise.resolve();

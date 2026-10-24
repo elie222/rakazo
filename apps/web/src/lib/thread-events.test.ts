@@ -1833,3 +1833,47 @@ function event(overrides: Partial<ProductEvent>): ProductEvent {
     ...overrides,
   };
 }
+
+describe("stale helper projection", () => {
+  it.each([
+    "run.waiting_input",
+    "computer.takeover.requested",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+  ] as const)("settles helpers on %s without reviving them on resume", (type) => {
+    const base = {
+      id: "fixture",
+      threadId: "thread-1",
+      runId: "run-1",
+      seq: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const helper = { agentId: "helper", name: "Helper", task: "Check", status: "running" };
+    let next = reduceThreadSnapshot(
+      snapshot([]),
+      event({ ...base, type: "thread.subagent", payload: helper }),
+    );
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 2, type, payload: {} }));
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+      result: "stopped",
+    });
+    next = reduceThreadSnapshot(next, event({ ...base, seq: 3, type: "run.started", payload: {} }));
+    next = reduceThreadSnapshot(
+      next,
+      event({
+        ...base,
+        seq: 4,
+        type: "thread.subagent",
+        payload: { ...helper, agentId: "resumed" },
+      }),
+    );
+    expect(next?.messages.find((m) => m.id === "subagent:helper")?.blocks[0]).toMatchObject({
+      status: "failed",
+    });
+    expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
+      status: "running",
+    });
+  });
+});

@@ -1,4 +1,17 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Use 80 characters or fewer": "Не более 80 символов",
+  "Could not update name": "Не удалось обновить имя",
+  "{summary} Your backup models also failed.":
+    "{summary} Резервные модели тоже завершились с ошибкой.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Ни одна резервная модель не подошла для этого запроса.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
+
+  "Ollama Cloud": "Ollama Cloud",
+  "Ollama API key": "API-ключ Ollama",
+  "Show password": "Показать пароль",
+  "Hide password": "Скрыть пароль",
   Export: "Экспорт",
   "Edit avatar": "Изменить аватар",
   "Add open work": "Добавить задачу",
@@ -25,9 +38,15 @@ export const RU_MESSAGES: Record<string, string> = {
   "Search bots": "Поиск ботов",
   "About {label}": "О настройке «{label}»",
   "Manage the bots it creates": "Управлять созданными им ботами",
+  "Allow cross-space bot communication": "Разрешить общение ботов из разных пространств",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
 
+  Headers: "Заголовки",
+  "Add header": "Добавить заголовок",
+  "Remove header": "Удалить заголовок",
+  "Header name": "Название заголовка",
+  "Header value": "Значение заголовка",
   Resets: "Сброс",
   Limit: "Лимит",
   "Provider message": "Сообщение провайдера",
@@ -69,8 +88,19 @@ export const RU_MESSAGES: Record<string, string> = {
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} отклонил API-ключ. Проверьте настройки подключения.",
   "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
+  "{provider} denied access to this model.": "{provider} отказал в доступе к этой модели.",
+  "The model returned an unusable response. Try again.":
+    "Модель вернула непригодный ответ. Попробуйте ещё раз.",
+  "This model's context window is too small. Choose another model.":
+    "Контекстное окно этой модели слишком мало. Выберите другую модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
+  "{provider} is overloaded right now. Try again in a moment.":
+    "{provider} сейчас перегружен. Повторите попытку чуть позже.",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider} недоступен. Проверьте, что он запущен.",
+  "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
+    "Этот разговор слишком длинный для модели. Повторная попытка не поможет. Начните новый чат или сократите сообщение.",
   "{provider} key hit its limit.": "{provider}: достигнут лимит ключа.",
   "{provider} key hit its daily limit.": "{provider}: достигнут дневной лимит ключа.",
   "{provider} key hit its weekly limit.": "{provider}: достигнут недельный лимит ключа.",
@@ -182,7 +212,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "{name} is working": "{name} работает",
   "{name}’s computer": "Компьютер {name}",
   "{runs} runs · {tokens} tokens": "Запусков: {runs} · токенов: {tokens}",
-  "{style} avatars": "Аватары: {style}",
   "@{name}": "@{name}",
   "API key": "API-ключ",
   "Account ID": "ID аккаунта",
@@ -235,8 +264,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Authorization timed out. Please try again.":
     "Время авторизации истекло. Пожалуйста, попробуйте еще раз.",
   "Authorize {name}": "Авторизовать {name}",
-  Avatars: "Аватары",
-  "Avatar style": "Стиль аватара",
   "Bearer token": "Bearer-токен",
   "Back to sign in": "Вернуться ко входу",
   Back: "Назад",
@@ -384,7 +411,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not update computer": "Не удалось обновить компьютер",
   "Could not update notifications": "Не удалось обновить уведомления.",
   "Could not update reaction": "Не удалось обновить реакцию",
-  "Couldn't update avatars": "Не удалось обновить аватары",
   Create: "Создать",
   "Create section": "Создать раздел",
   "Create space": "Создать пространство",
@@ -407,11 +433,11 @@ export const RU_MESSAGES: Record<string, string> = {
   Deny: "Запретить",
   "Deployment default": "Развертывание по умолчанию",
   Description: "Описание",
-  "Describe what this bot does": "Опишите, что делает этот бот",
   "Don’t have an account?": "Нет аккаунта?",
   Done: "Готово",
   "Disconnect {name}?": "Отключить {name}?",
   Disconnect: "Отключить",
+  "Disconnect Self-hosted": "Отключить собственный сервер",
   "This removes the connection from every space.":
     "Подключение будет удалено во всех пространствах.",
   "Disconnecting…": "Отключение…",
@@ -476,6 +502,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Loading…": "Загрузка…",
   "Mark as Read": "Отметить как прочитанное",
   "Mark as Unread": "Отметить как непрочитанное",
+  "Mark as unread": "Отметить как непрочитанное",
   "Long press to pin or move to a section":
     "Нажмите и удерживайте, чтобы закрепить или переместить в раздел",
   "Long press to pin, move, or silence notifications":
@@ -492,7 +519,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Models: "Модели",
   "Move to": "Переместить в",
   Name: "Имя",
-  "Name this bot": "Назовите этого бота",
   "Needs attention": "Требует внимания",
   "Needs input": "Требуется ввод данных",
   "Needs takeover": "Ожидает передачи управления",
@@ -529,7 +555,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "OpenAI-compatible server URL": "URL-адрес сервера, совместимого с OpenAI",
   Optional: "Необязательно",
   "Or connect an API key": "Или подключите API-ключ",
-  Organic: "Органичный",
   "Other model…": "Другая модель…",
   Password: "Пароль",
   "Password recovery is not configured for this server":
@@ -580,7 +605,6 @@ export const RU_MESSAGES: Record<string, string> = {
     "Восстановить последнее сохранённое рабочее пространство. Несохранённые данные на компьютере будут потеряны.",
   "Resume notifications": "Возобновить уведомления",
   "Return to inbox": "Вернуться во входящие",
-  Robot: "Робот",
   Routine: "Задача",
   "Routine link is incomplete": "Ссылка на задачу неполная",
   Routines: "Задачи",
@@ -831,6 +855,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "No matching artifacts": "Нет подходящих артефактов",
   "Long press to delete": "Нажмите и удерживайте, чтобы удалить",
   "Could not load artifacts.": "Не удалось загрузить артефакты.",
+  "Could not load this chat.": "Не удалось загрузить этот чат.",
   "Could not load this artifact.": "Не удалось загрузить этот артефакт.",
   "Could not delete this artifact": "Не удалось удалить этот артефакт",
   "Could not share this artifact": "Не удалось поделиться этим артефактом",
@@ -975,10 +1000,24 @@ export const RU_MESSAGES: Record<string, string> = {
   "Continue with credits": "Продолжить с кредитами",
   "Add credits": "Пополнить кредиты",
   "Manage billing": "Управление оплатой",
-  "Your API key": "Ваш API-ключ",
-  "Free. Pay your model provider directly.": "Бесплатно. Оплачивайте модель напрямую провайдеру.",
-  "Use my API key": "Использовать свой API-ключ",
+  "Your subscription or API key": "Ваша подписка или API-ключ",
+  "Free. ChatGPT, Claude, or any model provider.":
+    "Бесплатно. ChatGPT, Claude или любой провайдер моделей.",
+  "Use my subscription or API key": "Использовать свою подписку или API-ключ",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Ежемесячные кредиты истекают при продлении. Разовые пополнения не сгорают.",
   "Use Rakazo credits": "Использовать кредиты Rakazo",
+  "1 unread": "1 непрочитанный",
+  "{count} unread": "Непрочитанных: {count}",
+  "{count} need attention": "Требуют внимания: {count}",
+  "{label}, above": "{label}, выше",
+  "{label}, below": "{label}, ниже",
+  Work: "Работа",
+  Both: "И то, и другое",
+  "How will you use Rakazo?": "Как вы будете использовать Rakazo?",
+  "What do you most want Rakazo to help with?":
+    "С чем Rakazo должен помогать вам в первую очередь?",
+  "How big is your team?": "Сколько человек в вашей команде?",
+  "How did you hear about us?": "Как вы о нас узнали?",
+  "Welcome to Rakazo": "Добро пожаловать в Rakazo",
 };

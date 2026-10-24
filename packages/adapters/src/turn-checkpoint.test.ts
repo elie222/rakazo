@@ -72,7 +72,7 @@ describe("turn checkpoint", () => {
             role: "toolResult",
             toolCallId: `page-${index}`,
             toolName: "connectors_execute_tool",
-            content: [{ type: "text", text: `Page ${index} ${"e".repeat(9500)}` }],
+            content: [{ type: "text", text: `Page ${index} ${"0".repeat(9500)}` }],
             timestamp: index,
             isError: false,
           },

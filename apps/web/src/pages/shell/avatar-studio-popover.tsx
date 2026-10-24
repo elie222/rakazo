@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { SHIPPED_BOT_AVATAR_SHAPE_KEYS } from "@rakazo/core";
 import {
   BOT_AVATAR_COLORS,
   BotAvatar,
@@ -23,6 +24,114 @@ import { Check, Pencil, Upload, X } from "lucide-react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { useRef, useState } from "react";
 
+/**
+ * The shape grid and color row for a bot's look. With `organicIdentities`, the grid also offers
+ * the organic body each identity draws (for a bot that has no id yet); without them, "Default"
+ * restores the bot's own organic body.
+ */
+export function BotLookPicker({
+  value,
+  identity,
+  organicIdentities,
+  onChange,
+}: {
+  value: string;
+  identity?: string;
+  organicIdentities?: readonly string[];
+  onChange: (value: string, identity?: string) => void;
+}) {
+  const parsed = parseBotAvatar(value);
+  const currentColor = parsed.color || DEFAULT_BOT_AVATAR_COLOR;
+  const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
+
+  function selectColor(color: string) {
+    onChange(parsed.shapeIndex === undefined ? color : `${color}::shape_${parsed.shapeIndex}`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        {organicIdentities ? null : (
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+              <Trans>Shape</Trans>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              data-testid="avatar-studio-default"
+              aria-pressed={isDefaultLook}
+              onClick={() => {
+                const next = defaultBotAvatarValue(value);
+                if (next !== value) onChange(next);
+              }}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                isDefaultLook
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Trans>Default</Trans>
+            </Button>
+          </div>
+        )}
+        <div
+          className={`grid place-items-center gap-2 ${organicIdentities ? "grid-cols-4 sm:grid-cols-8 sm:gap-1" : "grid-cols-4"}`}
+        >
+          {organicIdentities?.map((organicIdentity, index) => (
+            <BotShapePreview
+              key={organicIdentity}
+              identity={organicIdentity}
+              label={t`Shape ${index + 1}`}
+              color={currentColor}
+              selected={isDefaultLook && identity === organicIdentity}
+              onClick={() => onChange(currentColor, organicIdentity)}
+            />
+          ))}
+          {SHIPPED_BOT_AVATAR_SHAPE_KEYS.map((key, shapeIndex) => (
+            <BotShapePreview
+              key={key}
+              shapeIndex={shapeIndex}
+              color={currentColor}
+              selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
+              onClick={() => onChange(`${currentColor}::shape_${shapeIndex}`)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-2">
+        {organicIdentities ? null : (
+          <div className="mb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+            <Trans>Color</Trans>
+          </div>
+        )}
+        <div className="grid grid-cols-6 place-items-center gap-2">
+          {BOT_AVATAR_COLORS.map((color) => {
+            const selected = currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
+            return (
+              <button
+                key={color}
+                type="button"
+                onClick={() => selectColor(color)}
+                aria-label={t`Color ${color}`}
+                aria-pressed={selected}
+                className={`size-6 rounded-full border transition-transform hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring ${
+                  selected
+                    ? "scale-105 border-transparent ring-2 ring-foreground ring-offset-2 ring-offset-popover"
+                    : "border-border"
+                }`}
+                style={{ backgroundColor: color }}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface AvatarStudioPopoverProps {
   value: string;
   identity?: string;
@@ -44,22 +153,6 @@ export function AvatarStudioPopover({
   const [activeTab, setActiveTab] = useState<"bot" | "upload">("bot");
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const parsed = parseBotAvatar(value, identity);
-  const currentColor = parsed.color || DEFAULT_BOT_AVATAR_COLOR;
-  const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
-
-  function selectShape(shapeIndex: number) {
-    onChange(`${currentColor}::shape_${shapeIndex}`);
-  }
-
-  function selectColor(color: string) {
-    if (parsed.shapeIndex === undefined) {
-      onChange(color);
-      return;
-    }
-    onChange(`${color}::shape_${parsed.shapeIndex}`);
-  }
 
   function restoreDefaultAvatar() {
     const next = defaultBotAvatarValue(value);
@@ -190,67 +283,8 @@ export function AvatarStudioPopover({
               </Button>
             </div>
 
-            <TabsContent value="bot" className="space-y-4 pt-1" data-testid="avatar-studio-bot-tab">
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                    <Trans>Shape</Trans>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    data-testid="avatar-studio-default"
-                    aria-pressed={isDefaultLook}
-                    onClick={restoreDefaultAvatar}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      isDefaultLook
-                        ? "bg-secondary text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Trans>Default</Trans>
-                  </Button>
-                </div>
-                <div className="grid grid-cols-4 place-items-center gap-2">
-                  {[0, 1, 2, 3, 4, 5, 6, 7].map((shapeIndex) => (
-                    <BotShapePreview
-                      key={shapeIndex}
-                      shapeIndex={shapeIndex}
-                      color={currentColor}
-                      selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
-                      onClick={() => selectShape(shapeIndex)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-t border-border pt-2">
-                <div className="mb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                  <Trans>Color</Trans>
-                </div>
-                <div className="grid grid-cols-6 place-items-center gap-2">
-                  {BOT_AVATAR_COLORS.map((color) => {
-                    const selected =
-                      currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
-                    return (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => selectColor(color)}
-                        aria-label={t`Color ${color}`}
-                        aria-pressed={selected}
-                        className={`size-6 rounded-full border transition-transform hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring ${
-                          selected
-                            ? "scale-105 border-transparent ring-2 ring-foreground ring-offset-2 ring-offset-popover"
-                            : "border-border"
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
+            <TabsContent value="bot" className="pt-1" data-testid="avatar-studio-bot-tab">
+              <BotLookPicker value={value} onChange={onChange} />
             </TabsContent>
             <TabsContent value="upload">
               <button

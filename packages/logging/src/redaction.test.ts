@@ -1,7 +1,35 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { redactBindings, redactSensitiveText } from "./redaction.js";
 
 describe("redaction", () => {
+  it("handles a full-envelope-sized failed email candidate without blocking", () => {
+    const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
+    // A child deadline also catches synchronous regex stalls that block the test runner's timers.
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { redactSensitiveText } from ${JSON.stringify(moduleUrl)};
+         const text = "a.".repeat(512 * 1024);
+         process.stdout.write(String(redactSensitiveText(text) === text));`,
+      ],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+    expect(output).toBe("true");
+  });
+
+  it("keeps non-email candidates and redacts adjacent and punctuated email addresses", () => {
+    expect(
+      redactSensitiveText(
+        "a.b.c a-b-c (first.last+tag@example.com), next@example.net+other@example.org",
+      ),
+    ).toBe("a.b.c a-b-c ([Redacted]), [Redacted][Redacted]");
+  });
+
   it("redacts secrets, credentials, and message bodies", () => {
     const redacted = redactBindings({
       "user.id": "user-1",

@@ -60,6 +60,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Wrap Japanese at phrase boundaries instead of mid-word. */
+:lang(ja) {
+  word-break: auto-phrase;
+}
+
 .skip-link {
   position: absolute;
   left: 16px;

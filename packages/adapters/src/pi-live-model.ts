@@ -1,4 +1,5 @@
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { DEFAULT_MODEL_CONTEXT_WINDOW } from "@rakazo/contracts";
 
 /** Models endpoints often mix chat models with tools and media endpoints. */
 export function isChatModelId(id: string): boolean {
@@ -44,5 +45,7 @@ export function liveModelSibling(
     name: id,
     reasoning: sameFamily && sibling.reasoning,
     input: sameFamily ? [...sibling.input] : ["text"],
+    // An unrelated sibling's window says nothing about this model's.
+    contextWindow: sameFamily ? sibling.contextWindow : DEFAULT_MODEL_CONTEXT_WINDOW,
   };
 }

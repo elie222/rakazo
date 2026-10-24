@@ -46,13 +46,17 @@ test("launches with a narrow preload bridge and an isolated renderer", async () 
     expect(renderer.bridgeKeys).toEqual([
       "badge",
       "computer",
-      "localSettings",
       "oauth",
       "platform",
       "update",
       "window",
     ]);
-    expect(renderer.computerKeys).toEqual(["onConfigure", "requestAccess", "revokeAccess"]);
+    expect(renderer.computerKeys).toEqual([
+      "managesHostChoice",
+      "onConfigure",
+      "requestAccess",
+      "revokeAccess",
+    ]);
     expect(renderer.windowKeys).toEqual(["close", "minimize", "state", "toggleMaximize"]);
     expect(renderer.updateKeys).toEqual(["check", "download", "install", "state"]);
     expect(renderer.badgeKeys).toEqual(["set"]);

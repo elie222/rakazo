@@ -30,11 +30,13 @@ describe.skipIf(!enabled)("persisted source-verified history followups", () => {
       const followup = (request: ModelEmulatorRequest, index: number) => {
         const serialized = JSON.stringify(request.messages);
         expect(serialized).toContain(questions[index]);
+        // Consecutive history turns arrive merged into one user message.
         expect(
-          request.messages.filter((row) =>
-            String(row.content).includes(`Assistant: ${verifiedReply}`),
-          ),
-        ).toHaveLength(index);
+          request.messages
+            .map((row) => String(row.content))
+            .join("\n")
+            .split(`Assistant: ${verifiedReply}`).length - 1,
+        ).toBe(index);
         expect(serialized).toContain("do not repeat retrieval solely because the user asks again");
       };
       const key = "synthetic-history-followup-key";

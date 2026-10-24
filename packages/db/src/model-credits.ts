@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentUsage, BillingCreditPurchase } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "./client.js";
-import type { Prisma } from "./generated/prisma/client.js";
+import { Prisma } from "./generated/prisma/client.js";
 import type { CreditAllocation } from "./model-credit-lots.js";
 import {
   allocateCreditLots,
@@ -15,12 +15,19 @@ import {
 
 export const MICROS_PER_DOLLAR = 1_000_000;
 
-export function creditAccount(prisma: PrismaClient, organizationId: string) {
-  return prisma.modelCreditAccount.upsert({
-    where: { organizationId },
-    create: { organizationId },
-    update: {},
-  });
+export async function creditAccount(prisma: PrismaClient, organizationId: string) {
+  try {
+    return await prisma.modelCreditAccount.upsert({
+      where: { organizationId },
+      create: { organizationId },
+      update: {},
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"))
+      throw error;
+    // Empty-update upserts can race; the organization primary key is the only unique constraint.
+    return prisma.modelCreditAccount.findUniqueOrThrow({ where: { organizationId } });
+  }
 }
 
 /** Payment replay and refunds reconcile one durable grant; refunds can never be re-credited. */

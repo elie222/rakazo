@@ -50,9 +50,24 @@ model User {
   agentSecrets               AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
+  pushToken                   PushToken?
+  signupSurvey                SignupSurvey?
 
   @@unique([email])
   @@map("user")
+}
+
+/// A row with no answers means the user skipped the survey.
+model SignupSurvey {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String?
+  use       String?
+  teamSize  String?
+  source    String?
+  createdAt DateTime @default(now())
+
+  @@map("signup_surveys")
 }
 
 model Session {
@@ -70,6 +85,19 @@ model Session {
   @@unique([token])
   @@index([userId])
   @@map("session")
+}
+
+/// One current device registration per account, matching the notification API contract.
+/// No session FK: password changes delete a session before the replacement is created.
+model PushToken {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ciphertext String
+  tokenDigest String @unique
+  sessionId String
+  updatedAt DateTime @updatedAt
+
+  @@map("push_tokens")
 }
 
 model Account {
@@ -330,6 +358,7 @@ model Invitation {
 model DeploymentSettings {
   modelCreditsEnabled             Boolean  @default(false)
   id                              String   @id @default("default")
+  /// Deprecated: retained for rolling-release compatibility; never authorizes app users.
   ownerUserId                     String?
   signupsEnabled                  Boolean  @default(true)
   signupAllowlist                 String   @default("")
@@ -490,6 +519,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
+  crossSpaceCommunication Boolean @default(false)
   fleetManagement        Boolean @default(true)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
@@ -712,6 +742,10 @@ model Run {
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
   // The failed routine run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
+  // Durable retry schedule; null means runnable immediately when queued.
+  wakeAt               DateTime?
+  // Server-side first visible output, preserved across attempts and resumes.
+  firstResponseAt      DateTime?
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
@@ -725,6 +759,7 @@ model Run {
   externalMessage      ExternalMessage?
 
   @@unique([spaceId, clientNonce])
+  @@index([status, wakeAt])
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
   @@index([botOutcomeReturnedAt, status])
@@ -1059,6 +1094,13 @@ model Computer {
   scopeKey                String                   @unique
   homeKey                 String                   @unique
   homeRevision            String                   @default("empty")
+  /// When the sandbox was read for `homeRevision`; null when an older release saved it.
+  homeRevisionAt          DateTime?
+  /// Object storage only: random id naming the home's objects, its data key (wrapped by the
+  /// space key) and the revision stored there. Deleting the computer deletes the key.
+  homeStorageId           String?                  @unique
+  homeStorageKey          String?
+  homeStorageRevision     String?
   kind                    String
   providerRef             String?
   state                   String                   @default("stopped")
@@ -1384,6 +1426,7 @@ model MessagingOutbound {
 }
 
 model AgentConnection {
+  requestVersion Int      @default(1)
   id             String   @id @default(cuid())
   requesterBotId String
   targetBotId    String
@@ -1472,6 +1515,7 @@ model ExternalMessage {
 
   @@unique([externalConversationId, providerEventId])
   @@index([status, nextAttemptAt])
+  @@index([externalConversationId, senderIsBot, createdAt])
   @@map("external_messages")
 }
 

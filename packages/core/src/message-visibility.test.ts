@@ -1,7 +1,12 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { projectMessageReactions } from "./message-reactions.js";
-import { expandPeerReplies, foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
+import {
+  expandPeerReplies,
+  foldPeerReplies,
+  jumpTargetId,
+  userVisibleMessages,
+} from "./message-visibility.js";
 
 function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return {
@@ -85,6 +90,82 @@ describe("user-visible messages", () => {
       "reply",
       "fallback",
     ]);
+  });
+
+  it("keeps replies about delegated work inline while their peer activity stays hidden", () => {
+    const resultFor = (intent: "result" | "status" | "question" | "request" | "fyi") => [
+      message("user", "run-user", [{ kind: "text", text: "Please ask Coder." }]),
+      message("sent", "run-user", [
+        { kind: "bot_message_sent", toBotId: "coder", toBotName: "Coder", text: "Check this." },
+      ]),
+      {
+        ...message("received", "run-peer", [
+          {
+            kind: "bot_message_received",
+            fromBotId: "coder",
+            fromBotName: "Coder",
+            text: "The endpoint returns 200.",
+            intent,
+          },
+        ]),
+        replyToMessageId: "sent",
+      },
+      message("activity", "run-peer", [
+        { kind: "steps", steps: [{ label: "Message bot", count: 1 }] },
+      ]),
+      message("relay", "run-peer", [{ kind: "text", text: "Coder confirmed it returns 200." }]),
+    ];
+
+    // Results, statuses, and the helper asking back about the delegated work all wake the bot to
+    // speak to the user. An FYI never threads back, but it is not new work either.
+    const unthreaded = (intent: "fyi" | "request" | "question") =>
+      resultFor(intent).map((item) => ({ ...item, replyToMessageId: undefined }));
+    for (const messages of [
+      resultFor("result"),
+      resultFor("status"),
+      resultFor("question"),
+      resultFor("request"),
+      unthreaded("fyi"),
+    ]) {
+      const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+      // Threaded back to "Messaged Coder", the marker merges into that receipt; an FYI keeps it.
+      expect(transcript.messages.map((item) => item.id)).toEqual(
+        messages[2]?.replyToMessageId
+          ? ["user", "sent", "relay"]
+          : ["user", "sent", "received", "relay"],
+      );
+      expect(transcript.folded.size).toBe(0);
+    }
+    // With the receipt outside the loaded page, the marker stays so the exchange is still reachable.
+    expect(
+      foldPeerReplies(
+        resultFor("result").filter((item) => item.id !== "sent"),
+        { includePeerReceipts: true },
+      ).messages.map((item) => item.id),
+    ).toEqual(["user", "received", "relay"]);
+    // A jump to the dropped marker (a search hit on its text) lands on the receipt it merged into.
+    const merged = foldPeerReplies(resultFor("result"), { includePeerReceipts: true });
+    expect(jumpTargetId(merged, "received")).toBe("sent");
+    expect(jumpTargetId(merged, "relay")).toBe("relay");
+    // New work from another bot: the reply goes back to that bot, so it folds.
+    for (const intent of ["request", "question"] as const) {
+      expect(
+        foldPeerReplies(unthreaded(intent), { includePeerReceipts: true })
+          .folded.get("received")
+          ?.map((item) => item.id),
+      ).toEqual(["relay"]);
+    }
+    // Sidebar previews show the relay, the bot's own reply, but never another bot's new work.
+    expect(
+      userVisibleMessages(resultFor("result"), { includeDelegatedReplyText: false }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["user", "relay"]);
+    expect(
+      userVisibleMessages(unthreaded("request"), { includeDelegatedReplyText: false }).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["user"]);
   });
 
   it("folds peer-run file replies under their received marker", () => {

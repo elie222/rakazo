@@ -49,12 +49,11 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openai",
   "openai-codex",
   "anthropic",
-  "google",
+  "openai",
   "openrouter",
-  "vercel-ai-gateway",
+  "google",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
@@ -72,28 +71,10 @@ export function popularModelProvidersFirst<T>(
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
-/** Keep provider selection short while ensuring a deployment's current default is never hidden. */
-export function featuredModelProviders(
-  providers: readonly ModelCatalogEntry[],
-  selectedProvider: string,
-): ModelCatalogEntry[] {
-  const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
-  const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(canonicalPiProviderId(selectedProvider));
-
-  if (
-    !selected ||
-    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  )
-    return featured;
-  return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
-}
-
 /**
- * Model to preselect when a provider row is opened: the preferred id (usually the
- * space or deployment default) when that provider carries it, otherwise the
- * provider's first catalog entry.
+ * Model to preselect when a provider row is opened: the saved/preferred id
+ * when that provider carries it, otherwise its recommended model, then its
+ * first catalog entry.
  *
  * Aggregator providers prefix ids with the upstream vendor ("openai/gpt-6-luna"
  * on OpenRouter) while first-party providers expose the same model unprefixed
@@ -101,7 +82,7 @@ export function featuredModelProviders(
  * the exact id. This is only a preselection — the user still confirms the pick.
  */
 export function pickCatalogModelId(
-  catalog: readonly { provider: string; id: string }[],
+  catalog: readonly { provider: string; id: string; recommended?: boolean }[],
   provider: string,
   preferredId?: string | null,
 ): string {
@@ -116,7 +97,7 @@ export function pickCatalogModelId(
       if (shared) return shared.id;
     }
   }
-  return entries[0]?.id ?? "";
+  return entries.find((entry) => entry.recommended)?.id ?? entries[0]?.id ?? "";
 }
 
 /** Return the active choice separately when it is not one of the search results. */

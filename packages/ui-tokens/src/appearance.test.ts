@@ -52,7 +52,8 @@ describe("appearance preference", () => {
         key === "destructiveForeground" ||
         key === "destructiveFill" ||
         key === "faviconPlate" ||
-        key === "unread"
+        key === "unread" ||
+        key === "workingDot"
       )
         continue;
       expect(darkTokens[key], key).not.toBe(lightTokens[key]);
@@ -60,6 +61,11 @@ describe("appearance preference", () => {
     // Link icons keep a white plate in both themes; the light user bubble is near-black.
     expect(lightTokens.faviconPlate).toBe("#FFFFFF");
     expect(darkTokens.faviconPlate).toBe("#FFFFFF");
+  });
+
+  it("keeps the working dot the same green in both themes", () => {
+    expect(lightTokens.workingDot).toBe("#3FA266");
+    expect(darkTokens.workingDot).toBe(lightTokens.workingDot);
   });
 
   it("keeps working-state blue in its own semantic token across themes", () => {
@@ -182,6 +188,7 @@ describe.each([
     ["popoverForeground", "popover"],
     ["foreground", "muted"],
     ["chatUserForeground", "chatUser"],
+    ["chatUserForeground", "unread"],
     ["primaryForeground", "primary"],
     ["sidebarForeground", "sidebar"],
     ["sidebarAccentForeground", "sidebarAccent"],

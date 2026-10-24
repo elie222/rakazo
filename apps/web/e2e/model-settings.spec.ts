@@ -23,7 +23,7 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await signup(page, `model-cleanup-${stamp}@rakazo.test`, "password12", "Model Preview");
   await completeOnboarding(page);
 
-  // Keep the account and persistence real; the scripted test runtime accepts fake keys.
+  // Keep account persistence real; the harness supplies offline provider verification.
   // Hide the deployment default so the first frame exercises the empty-provider state.
   let providerConnected = false;
   await page.route("**/rpc/me", async (route) => {
@@ -38,6 +38,15 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   const backups = page.getByTestId("model-backups");
   await expect(page.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
+
+  await page.getByLabel("API key").fill("rejected-fixture-key");
+  await page.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(
+    page.getByText("API key was rejected by the provider.", { exact: true }),
+  ).toBeVisible();
+  const rejected = await rpc<Array<{ provider: string }>>(page, "models/credentials", {});
+  expect(rejected.some((credential) => credential.provider === "openrouter")).toBe(false);
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-1a-rejected-key");
 
   await page.getByLabel("API key").fill("fake-cleanup-api-key");
   providerConnected = true;
@@ -325,6 +334,7 @@ async function fulfillWithoutModelStep(route: Route) {
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
   const completionBodies: Array<Record<string, unknown>> = [];
+  const completionHeaders: Array<string | string[] | undefined> = [];
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
@@ -336,6 +346,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
       try {
         completionBodies.push(await readJsonBody(request));
+        completionHeaders.push(request.headers["x-session"]);
       } catch (error) {
         response.writeHead(400, { "content-type": "text/plain" });
         response.end(String(error));
@@ -432,6 +443,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("checkbox", { name: LOCAL_MODEL_ID })).toBeChecked();
     await page.getByRole("checkbox", { name: SECOND_MODEL_ID }).check();
     await page.getByText("Advanced", { exact: true }).click();
+    await page.getByRole("button", { name: "Add header", exact: true }).click();
+    await page.getByRole("textbox", { name: "Header name", exact: true }).fill("x-session");
+    await page.getByLabel("Header value", { exact: true }).fill("fake-session-secret");
+    await captureScreenshot(page, testInfo, "openai-compatible-header-edit");
     await page.getByRole("checkbox", { name: "Supports thinking" }).check();
     // Room for the bot's required context, so a pi run reaches the fake endpoint.
     await page.getByLabel("Context limit").fill("200000");
@@ -444,6 +459,18 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("checkbox", { name: SECOND_MODEL_ID })).toBeChecked();
     await captureScreenshot(page, testInfo, "openai-compatible-connected");
     await captureScreenshot(page, testInfo, "openai-compatible-multi-model");
+    await page.getByRole("button", { name: "Close model settings" }).click();
+    await openUserSettings(page, "models");
+    await page.getByPlaceholder("Search providers").fill("openai-compatible");
+    await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
+    await page.getByText("Advanced", { exact: true }).click();
+    await expect(page.getByRole("group").getByText("Headers", { exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Header name", exact: true })).toHaveValue(
+      "x-session",
+    );
+    await expect(page.getByLabel("Header value", { exact: true })).toHaveValue("");
+    await page.getByRole("group", { name: "Headers", exact: true }).scrollIntoViewIfNeeded();
+    await captureScreenshot(page, testInfo, "openai-compatible-header-saved");
     const savedCredentials = await rpc<Array<{ modelId?: string; enabledModelIds?: string[] }>>(
       page,
       "models/credentials",
@@ -499,6 +526,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       });
       await captureScreenshot(page, testInfo, "openai-compatible-response");
       expect(completionBodies.length).toBeGreaterThan(0);
+      expect(completionHeaders.at(-1)).toBe("fake-session-secret");
       expect(completionBodies.at(-1)).toMatchObject({
         model: SECOND_MODEL_ID,
         reasoning_effort: "high",
@@ -885,7 +913,7 @@ test("chat settings search a long model list", async ({ page }, testInfo) => {
   );
   expect(openRouter.length).toBeGreaterThan(10);
   const target = openRouter.find((entry) => entry.id.startsWith("anthropic/")) ?? openRouter[0]!;
-  // A fake key lists the whole OpenRouter catalogue without calling OpenRouter.
+  // The harness verifies this fake key offline before the catalog becomes available.
   await rpc(page, "models/connect", {
     provider: "openrouter",
     apiKey: "fake-openrouter-key",
@@ -939,4 +967,128 @@ test("chat settings search a long model list", async ({ page }, testInfo) => {
     modelProvider: "openrouter",
     modelId: target.id,
   });
+});
+
+test("Ollama Cloud preset saves an OpenAI-compatible connection", async ({ page }, testInfo) => {
+  await signup(page, `ollama-preset-${Date.now()}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  await page.getByPlaceholder("Search providers").fill("OpenAI-compatible");
+  await page.getByRole("button", { name: "Ollama Cloud", exact: true }).click();
+  await expect(page.getByLabel("OpenAI-compatible server URL", { exact: true })).toHaveValue(
+    "https://ollama.com/v1",
+  );
+  await page.getByPlaceholder("Ollama API key").fill("rejected-fixture-key");
+  await page.getByRole("button", { name: "Find models", exact: true }).click();
+  await expect(
+    page.getByText("API key was rejected by the provider.", { exact: true }),
+  ).toBeVisible();
+  await page.getByPlaceholder("Ollama API key").fill("fake-fixture-key");
+  await page.getByRole("button", { name: "Find models", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "fixture-model", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect
+    .poll(async () => {
+      const credentials = await rpc<
+        Array<{ provider: string; baseUrl?: string; modelId?: string }>
+      >(page, "models/credentials", {});
+      return credentials;
+    })
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          provider: "openai-compatible",
+          baseUrl: "https://ollama.com/v1",
+          modelId: "fixture-model",
+        }),
+      ]),
+    );
+  await captureScreenshot(page, testInfo, "ollama-preset");
+});
+
+test("a Claude subscription folds the key form and bots move to the space default", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const stamp = Date.now();
+  await signup(page, `subscription-${stamp}@rakazo.test`, "password12", "Subscription Preview");
+  await completeOnboarding(page);
+  const catalog = await rpc<Array<{ provider: string; id: string; placeholder?: boolean }>>(
+    page,
+    "models/list",
+    {},
+  );
+  const claude = catalog.find((entry) => entry.provider === "anthropic" && !entry.placeholder);
+  if (!claude) throw new Error("catalog has no Anthropic model");
+  const pinned = new Map<string, string>();
+  for (const name of ["Archie", "Inbox"]) {
+    const bot = await rpc<{ id: string }>(page, "bots/create", {
+      name,
+      title: "",
+      description: "",
+      notifyOnFinish: true,
+    });
+    pinned.set(bot.id, name);
+  }
+  // A signed-in subscription and bots with their own model, without a live provider.
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    Object.assign(body.json, {
+      needsModel: false,
+      defaultProvider: "anthropic",
+      defaultModel: claude.id,
+    });
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/models/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-claude",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: false,
+            isDefault: true,
+            modelId: claude.id,
+            authKind: "oauth",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<{ id: string }> };
+    body.json = body.json.map((bot) =>
+      pinned.has(bot.id) ? { ...bot, modelProvider: "anthropic", modelId: claude.id } : bot,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/bots/update", async (route) => {
+    pinned.delete((route.request().postDataJSON() as { json: { botId: string } }).json.botId);
+    await route.continue();
+  });
+
+  await openUserSettings(page, "models");
+  await page.getByRole("button", { name: /^Claude subscription/ }).click();
+  await expect(page.locator("#model-api-key")).toHaveCount(0);
+  const bots = page.getByTestId("space-bots-model");
+  await expect(bots).toContainText("2 bots have their own model: Archie, Inbox");
+  await captureScreenshot(page, testInfo, "subscription-key-folded-and-bot-models");
+
+  await page.getByRole("button", { name: "Or paste an API key" }).click();
+  await expect(page.getByLabel("Or paste an API key")).toBeFocused();
+  await expect(page.getByRole("button", { name: "Connect API key" })).toBeVisible();
+
+  await bots.getByRole("button", { name: "Use space default" }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(
+    confirm.getByRole("heading", { name: "Switch 2 bots to the space default?" }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "bot-models-confirm");
+  await confirm.getByRole("button", { name: "Switch", exact: true }).click();
+  await expect(bots).toContainText("2 bots now use the space default.");
+  await expect(bots.getByRole("button", { name: "Use space default" })).toHaveCount(0);
 });

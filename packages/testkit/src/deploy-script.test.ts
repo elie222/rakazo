@@ -101,6 +101,9 @@ if [[ "$1" == inspect && "$*" == *"{{.Image}}"* ]]; then
   exit 0
 fi
 if [[ "$*" == *" ps --quiet api" && -z "\${FRESH:-}" ]]; then echo api-old; fi
+if [[ "$*" == *" run --rm --no-deps -T --entrypoint sh postgres "* && -n "\${POSTGRES_16:-}" ]]; then
+  echo upgrade
+fi
 if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
@@ -288,6 +291,18 @@ describe("production deploy script", () => {
     expect(result.stderr).toContain("Only 2GB free");
     expect(deploy.head()).toBe(deploy.first);
     expect(deploy.commands().some((line) => line.includes(" build"))).toBe(false);
+  });
+
+  it("replaces nothing while the database still needs its upgrade to Postgres 18", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({ POSTGRES_16: "1" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("one-time upgrade to 18");
+    expect(deploy.head()).toBe(deploy.first);
+    expect(rollout(deploy.commands()).filter((line) => / (build|up) /.test(`${line} `))).toEqual(
+      [],
+    );
   });
 
   it("rolls back to the image the previous containers ran when the build fails", () => {
