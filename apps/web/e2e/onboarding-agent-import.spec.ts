@@ -113,9 +113,10 @@ test("a new user who ignores import still starts with Chief", async ({ page }, t
     timeout: 20_000,
   });
   await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toBeVisible();
-  // Connecting a model elsewhere, then continuing, makes Chief exactly as before.
+  // Connecting a model elsewhere, then opening onboarding again, makes Chief exactly as
+  // before. (A linked /onboarding/model stays on the model step on purpose.)
   model.needsModel = false;
-  await page.reload();
+  await page.goto("/onboarding");
   await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
     timeout: 20_000,
   });
@@ -235,7 +236,9 @@ async function noOnboardingSteps(page: Page) {
   });
 }
 
-test("with no onboarding steps, Chief's first-run card offers import into a new bot", async ({
+// Chief's fixed focus card is posted only when Chief has no intro run (the scripted test
+// runtime, or no model when Chief was made); otherwise Chief's intro asks what it is for.
+test("with no onboarding steps and no intro run, Chief's focus card offers import into a new bot", async ({
   page,
 }, testInfo) => {
   await noOnboardingSteps(page);
@@ -276,7 +279,7 @@ test("with no onboarding steps, Chief's first-run card offers import into a new 
   expect(after.instructions).toBe(before.instructions);
 });
 
-test("with no onboarding steps, ignoring import changes nothing and the offer ends with first run", async ({
+test("with no onboarding steps and no intro run, ignoring import changes nothing and the offer ends with first run", async ({
   page,
 }) => {
   await noOnboardingSteps(page);

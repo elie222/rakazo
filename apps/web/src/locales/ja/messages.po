@@ -333,7 +333,7 @@ msgstr "{title}、{label}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "{title}, saved as {savedAs}"
-msgstr ""
+msgstr "{title}（{savedAs} として保存）"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
@@ -555,7 +555,7 @@ msgstr "サーバーURLを追加"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Add to an existing bot"
-msgstr ""
+msgstr "既存のボットに追加"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
@@ -664,7 +664,7 @@ msgstr "今回のみ許可しました"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Already connected"
-msgstr ""
+msgstr "接続済み"
 
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
@@ -696,11 +696,11 @@ msgstr "読み取り元となる既存のHonchoピアです。Rakazoが書き込
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be checked. Try again."
-msgstr ""
+msgstr "インポートしたAPIキーを確認できませんでした。もう一度お試しください。"
 
 #: src/lib/agent-import-errors.ts
 msgid "An imported API key could not be used. Untick it and try again."
-msgstr ""
+msgstr "インポートしたAPIキーを使用できませんでした。チェックを外してもう一度お試しください。"
 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
@@ -712,7 +712,7 @@ msgstr "別のエージェント"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Another assistant"
-msgstr ""
+msgstr "他のアシスタント"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -756,7 +756,7 @@ msgstr "APIキー"
 
 #: src/pages/shell/import-status.ts
 msgid "API key for {provider}"
-msgstr ""
+msgstr "{provider}のAPIキー"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
@@ -764,11 +764,11 @@ msgstr "APIキーのヘッダー"
 
 #: src/pages/shell/agent-import.tsx
 msgid "API keys"
-msgstr ""
+msgstr "APIキー"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "API keys stay connected."
-msgstr ""
+msgstr "APIキーは接続されたままです。"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -858,7 +858,7 @@ msgstr "{timeSelect}に"
 
 #: src/pages/shell/composer.tsx
 msgid "Attach"
-msgstr ""
+msgstr "添付"
 
 #: src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -1098,7 +1098,7 @@ msgstr "キャンセル"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Cancel new bot"
-msgstr ""
+msgstr "新しいボットをキャンセル"
 
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
@@ -1193,7 +1193,7 @@ msgstr "サーバーのURLとネットワークを確認してから、もう一
 
 #: src/pages/shell/import-setup-card.tsx
 msgid "Check this yourself"
-msgstr ""
+msgstr "ご自身で確認してください"
 
 #: src/pages/Auth.tsx
 msgid "Check your email"
@@ -1219,7 +1219,7 @@ msgstr "確認中…"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Choose a bot"
-msgstr ""
+msgstr "ボットを選択"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -1239,7 +1239,7 @@ msgstr "プロバイダーを選択"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Choose backup"
-msgstr ""
+msgstr "バックアップを選択"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1248,7 +1248,7 @@ msgstr "ファイルを選択"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Choose folder"
-msgstr ""
+msgstr "フォルダを選択"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1513,7 +1513,7 @@ msgstr "OAuthを接続"
 
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
-msgstr ""
+msgstr "先にこのモデルのプロバイダーを接続してください。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
@@ -1562,7 +1562,7 @@ msgstr "{0}への接続はまだ保留中です。閉じてから後で再確認
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Contains code to run"
-msgstr ""
+msgstr "実行するコードを含みます"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1617,7 +1617,7 @@ msgstr ".env の例をコピー"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
-msgstr ""
+msgstr "プロンプトをコピー"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -1896,7 +1896,7 @@ msgstr "サーバーに接続できませんでした"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Could not read these files"
-msgstr ""
+msgstr "これらのファイルを読み込めませんでした"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -2037,7 +2037,7 @@ msgstr "MCPサーバーをテストできませんでした"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Could not undo the import"
-msgstr ""
+msgstr "インポートを元に戻せませんでした"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2160,7 +2160,7 @@ msgstr "認証情報は暗号化され、モデルに送信されることはあ
 
 #: src/pages/shell/import-status.ts
 msgid "Credentials: {names}"
-msgstr ""
+msgstr "認証情報: {names}"
 
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
@@ -2233,11 +2233,11 @@ msgstr "デフォルト（{0}）"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
-msgstr ""
+msgstr "Hermesの初期設定"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from OpenClaw"
-msgstr ""
+msgstr "OpenClawの初期設定"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
@@ -2558,7 +2558,7 @@ msgstr "環境変数"
 
 #: src/pages/shell/import-status.ts
 msgid "Environment variables: {names}"
-msgstr ""
+msgstr "環境変数: {names}"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
@@ -2717,7 +2717,7 @@ msgstr "検索中…"
 
 #: src/pages/shell/import-setup-card.tsx
 msgid "Finish setting up"
-msgstr ""
+msgstr "セットアップを完了"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -2930,13 +2930,13 @@ msgstr "画像アップロードエリア"
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Import"
-msgstr ""
+msgstr "インポート"
 
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
-msgstr ""
+msgstr "エージェントをインポート"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
@@ -2944,7 +2944,7 @@ msgstr "OpenAPI JSONをインポート"
 
 #: src/pages/shell/composer.tsx
 msgid "Import this agent as a bot?"
-msgstr ""
+msgstr "このエージェントをボットとしてインポートしますか？"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
@@ -2964,7 +2964,7 @@ msgstr "受信トレイとメール"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Include API keys"
-msgstr ""
+msgstr "APIキーを含める"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -3007,7 +3007,7 @@ msgstr "指示"
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
-msgstr ""
+msgstr "指示が長すぎます。いくつかのファイルのチェックを外してください。"
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -3057,23 +3057,23 @@ msgstr "会話、ファイル、ルーティンは完全に削除されます。
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions changed since the import, so they stay."
-msgstr ""
+msgstr "インポート後に指示が変更されたため、そのまま残ります。"
 
 #: src/lib/agent-import-errors.ts
 msgid "Its instructions changed. Review them, then try again."
-msgstr ""
+msgstr "指示が変更されました。確認してからもう一度お試しください。"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions go back to before the import."
-msgstr ""
+msgstr "指示はインポート前の状態に戻ります。"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its model changed since the import, so it stays."
-msgstr ""
+msgstr "インポート後にモデルが変更されたため、そのまま残ります。"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its model goes back to before the import."
-msgstr ""
+msgstr "モデルはインポート前の状態に戻ります。"
 
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
@@ -3089,7 +3089,7 @@ msgstr "たった今"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Keep its instructions"
-msgstr ""
+msgstr "既存の指示を残す"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -3097,7 +3097,7 @@ msgstr "メモリを保持"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Kept"
-msgstr ""
+msgstr "保持"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
@@ -3348,7 +3348,7 @@ msgstr "メモリ"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Memory for {title}"
-msgstr ""
+msgstr "{title}のメモリ"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3364,11 +3364,11 @@ msgstr "メンションのみ"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Mentions OpenClaw features"
-msgstr ""
+msgstr "OpenClawの機能に言及しています"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Mentions: {mentions}"
-msgstr ""
+msgstr "言及: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
@@ -3570,7 +3570,7 @@ msgstr "名前"
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Name this bot"
-msgstr ""
+msgstr "このボットに名前を付ける"
 
 #: src/pages/GroupPanel.tsx
 msgid "Name this group"
@@ -3603,7 +3603,7 @@ msgstr "対応が必要"
 
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
-msgstr ""
+msgstr "必要: {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3611,7 +3611,7 @@ msgstr "新規"
 
 #: src/pages/shell/agent-import.tsx
 msgid "New bot"
-msgstr ""
+msgstr "新しいボット"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -3731,7 +3731,7 @@ msgstr "モデルが一覧にありません。"
 
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
-msgstr ""
+msgstr "OpenClaw、Hermes、またはエージェントのドキュメントが見つかりません。"
 
 #: src/pages/model-settings/provider-list.tsx
 msgid "No providers found."
@@ -3776,7 +3776,7 @@ msgstr "通常"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Not a valid skill"
-msgstr ""
+msgstr "有効なスキルではありません"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
@@ -3788,11 +3788,11 @@ msgstr "未接続"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
-msgstr ""
+msgstr "インポートされていません"
 
 #: src/pages/shell/import-status.ts
 msgid "Not in Rakazo's catalog"
-msgstr ""
+msgstr "Rakazoのカタログにありません"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3805,11 +3805,11 @@ msgstr "今はしない"
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
-msgstr ""
+msgstr "Rakazoでは未対応です"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Not used by Rakazo"
-msgstr ""
+msgstr "Rakazoでは使用しません"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3899,7 +3899,7 @@ msgstr "{0}を開く"
 
 #: src/pages/shell/import-setup-card.tsx
 msgid "Open {name}"
-msgstr ""
+msgstr "{name}を開く"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3953,7 +3953,7 @@ msgstr "OpenAI互換サーバーのURL"
 
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
-msgstr ""
+msgstr "OpenClawまたはHermes"
 
 #: src/pages/shell/message-view.tsx
 msgid "Opened its thread."
@@ -4053,7 +4053,7 @@ msgstr "サーバーのOpenAI互換アドレスを貼り付けてください。
 
 #: src/pages/shell/agent-import.tsx
 msgid "Paste the reply"
-msgstr ""
+msgstr "返信を貼り付け"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
@@ -4074,7 +4074,7 @@ msgstr "権限"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Persona"
-msgstr ""
+msgstr "ペルソナ"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -4160,7 +4160,7 @@ msgstr "専用のボットとグループを持つ非公開のワークスペー
 
 #: src/pages/shell/import-status.ts
 msgid "Program: {name}"
-msgstr ""
+msgstr "プログラム: {name}"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -4210,7 +4210,7 @@ msgstr "返信を読み上げる"
 
 #: src/pages/shell/import-status.ts
 msgid "Ready"
-msgstr ""
+msgstr "準備完了"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -4395,7 +4395,7 @@ msgstr "Webhookを削除"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Removed"
-msgstr ""
+msgstr "削除済み"
 
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
@@ -4438,7 +4438,7 @@ msgstr "APIキーを置き換え"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Replace its instructions"
-msgstr ""
+msgstr "既存の指示を置き換える"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
@@ -4829,7 +4829,7 @@ msgstr "設定: 使用量"
 
 #: src/pages/shell/import-setup-card.tsx
 msgid "Setup complete"
-msgstr ""
+msgstr "セットアップ完了"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
@@ -4955,7 +4955,7 @@ msgstr "スキル"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Skills join the library all your bots share."
-msgstr ""
+msgstr "スキルはすべてのボットで共有するライブラリに追加されます。"
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
@@ -4984,7 +4984,7 @@ msgstr "上にスライドしてロック"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Some settings are not imported"
-msgstr ""
+msgstr "一部の設定はインポートされません"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4993,11 +4993,11 @@ msgstr "問題が発生しました。もう一度お試しください。"
 
 #: src/lib/agent-import-errors.ts
 msgid "Something with the same name was just added. Try again."
-msgstr ""
+msgstr "同じ名前のものが追加されたところです。もう一度お試しください。"
 
 #: src/lib/agent-import-errors.ts
 msgid "Something you chose cannot work here. Untick it and try again."
-msgstr ""
+msgstr "選択した項目の一部はここでは使えません。チェックを外してもう一度お試しください。"
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -5200,7 +5200,7 @@ msgstr "テスト中…"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "The bot and what its import added will be removed."
-msgstr ""
+msgstr "ボットと、そのインポートで追加されたものが削除されます。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -5230,11 +5230,11 @@ msgstr "個別のモデル設定は解除されました。各ボットで再度
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
-msgstr ""
+msgstr "これらのファイルは大きすぎてインポートできません。"
 
 #: src/lib/agent-import-errors.ts
 msgid "These files or choices no longer match. Choose the files again."
-msgstr ""
+msgstr "ファイルまたは選択内容が一致しなくなりました。もう一度ファイルを選択してください。"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
@@ -5253,11 +5253,11 @@ msgstr "思考: {activeThinkingLabel}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "This backup could not be read."
-msgstr ""
+msgstr "このバックアップを読み込めませんでした。"
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
-msgstr ""
+msgstr "このボット"
 
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -5265,7 +5265,7 @@ msgstr "このボットはLinuxデスクトップではなく、このコンピ�
 
 #: src/lib/agent-import-errors.ts
 msgid "This bot was not imported."
-msgstr ""
+msgstr "このボットはインポートされませんでした。"
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5304,11 +5304,11 @@ msgstr "このファイルは有効なUTF-8テキストではありません。"
 
 #: src/lib/agent-import-errors.ts
 msgid "This import changed. Try again."
-msgstr ""
+msgstr "このインポートは変更されました。もう一度お試しください。"
 
 #: src/lib/agent-import-errors.ts
 msgid "This import was already used. Choose the files again."
-msgstr ""
+msgstr "このインポートはすでに使用されています。もう一度ファイルを選択してください。"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5377,7 +5377,7 @@ msgstr "タイムゾーン"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Timing may differ"
-msgstr ""
+msgstr "実行タイミングが異なる場合があります"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5499,11 +5499,11 @@ msgstr "元に戻す"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Undo import"
-msgstr ""
+msgstr "インポートを元に戻す"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Undo import?"
-msgstr ""
+msgstr "インポートを元に戻しますか？"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
@@ -5672,11 +5672,11 @@ msgstr "ユーザー名"
 
 #: src/pages/shell/import-status.ts
 msgid "Uses files that are not imported"
-msgstr ""
+msgstr "インポートされないファイルを使用しています"
 
 #: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
-msgstr ""
+msgstr "お使いのコンピューター上のパスを使用しています"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
@@ -5776,7 +5776,7 @@ msgstr "このルーティンは実行のたびに何をしますか？"
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "What the import added will be removed. The bot stays."
-msgstr ""
+msgstr "インポートで追加されたものが削除されます。ボットは残ります。"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
@@ -5816,7 +5816,7 @@ msgstr "ボットをどこで実行しますか？"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Where to import"
-msgstr ""
+msgstr "インポート先"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
@@ -5828,7 +5828,7 @@ msgstr "仕事"
 
 #: src/pages/shell/agent-import.tsx
 msgid "Working instructions"
-msgstr ""
+msgstr "作業の指示"
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
@@ -5883,11 +5883,11 @@ msgstr "メールアドレス"
 
 #: src/pages/Onboarding.tsx
 msgid "Your first bot already existed, so the agent was not imported."
-msgstr ""
+msgstr "最初のボットがすでに存在していたため、エージェントはインポートされませんでした。"
 
 #: src/lib/agent-import-errors.ts
 msgid "Your first bot already exists."
-msgstr ""
+msgstr "最初のボットはすでに存在します。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

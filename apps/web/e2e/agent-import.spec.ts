@@ -112,6 +112,19 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
+  // Import in the New bot dialog swaps the dialog for the import panel; Back swaps it back.
+  await openNewBot(page);
+  const dialog = page.getByTestId("create-bot-dialog");
+  await dialog.getByTestId("create-bot-import").click();
+  const importPanel = page.getByTestId("agent-import");
+  await expect(importPanel.getByTestId("agent-import-choose")).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await importPanel.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(importPanel).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
   const panel = await openImport(page);
   const choose = panel.getByTestId("agent-import-choose");
   await expect(choose.getByRole("heading")).toHaveText(["OpenClaw or Hermes", "Another assistant"]);

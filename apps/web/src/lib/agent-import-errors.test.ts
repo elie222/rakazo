@@ -4,6 +4,7 @@ import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { agentImportErrorText } from "./agent-import-errors";
+import { UI_LOCALES } from "./ui-locale";
 
 beforeEach(() => {
   i18n.load("en", {});
@@ -43,7 +44,7 @@ describe("an import the server refused", () => {
   });
 
   it("is translated in every language", () => {
-    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of UI_LOCALES.filter((item) => item !== "en")) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
