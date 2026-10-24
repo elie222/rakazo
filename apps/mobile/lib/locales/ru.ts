@@ -1,4 +1,7 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Could not connect to the computer screen": "Не удалось подключиться к экрану компьютера",
+  "Retry screen": "Повторить подключение экрана",
+  "The screen connection closed.": "Соединение с экраном закрыто.",
   "Use 80 characters or fewer": "Не более 80 символов",
   "Could not update name": "Не удалось обновить имя",
   "{summary} Your backup models also failed.":

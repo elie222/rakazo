@@ -1,4 +1,7 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Could not connect to the computer screen": "Kan geen verbinding maken met het computerscherm",
+  "Retry screen": "Scherm opnieuw verbinden",
+  "The screen connection closed.": "De schermverbinding is gesloten.",
   "Use 80 characters or fewer": "Gebruik maximaal 80 tekens",
   "Could not update name": "Naam kon niet worden bijgewerkt",
   "{summary} Your backup models also failed.": "{summary} Je reservemodellen zijn ook mislukt.",

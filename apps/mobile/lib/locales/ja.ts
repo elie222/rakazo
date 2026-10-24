@@ -1,4 +1,7 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Could not connect to the computer screen": "コンピューター画面に接続できませんでした",
+  "Retry screen": "画面を再接続",
+  "The screen connection closed.": "画面の接続が閉じられました。",
   "The model returned an unusable response. Try again.":
     "モデルが利用できない応答を返しました。もう一度お試しください。",
   "This model's context window is too small. Choose another model.":

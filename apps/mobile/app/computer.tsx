@@ -67,6 +67,7 @@ export default function Computer() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [screenOriginError, setScreenOriginError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readyBotId, setReadyBotId] = useState<string | null>(null);
   const [bootingCount, setBootingCount] = useState(0);
@@ -312,7 +313,10 @@ export default function Computer() {
       setComputerOpen(false);
       await action.refresh().catch(() => undefined);
     } catch {
-      if (action.isActive()) setScreenError(t("Could not continue"));
+      if (action.isActive()) {
+        setScreenOriginError(false);
+        setScreenError(t("Could not continue"));
+      }
     } finally {
       action.finish();
     }
@@ -351,6 +355,26 @@ export default function Computer() {
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
+  const screenRetry = computer?.state === "running" && screenOriginError && Boolean(screenError);
+  const retryScreenAction = screenRetry ? (
+    <NativeActionButton
+      style={{ marginBottom: 16 }}
+      label={t("Retry screen")}
+      prominence="primary"
+      size="default"
+      onPress={() => void reloadScreen()}
+    />
+  ) : null;
+  const onScreenState = (state: string) => {
+    setScreenOriginError(state === "failed" || state === "disconnected");
+    setScreenError(
+      state === "failed"
+        ? t("Could not connect to the computer screen")
+        : state === "disconnected"
+          ? t("The screen connection closed.")
+          : null,
+    );
+  };
 
   return (
     <ScrollView
@@ -375,6 +399,7 @@ export default function Computer() {
           {error ?? t("Something went wrong while it was starting. Try again in a moment.")}
         </Text>
       ) : null}
+      {retryScreenAction}
       {canRetry ? (
         <NativeActionButton
           label={t("Try again")}
@@ -405,10 +430,12 @@ export default function Computer() {
           <ScreenWebView
             key={screenReload}
             url={embeddedScreenUrl}
+            onScreenState={onScreenState}
             interactive={false}
             onRendererLost={() => void reloadScreen()}
             onError={() => {
               refreshController.invalidateScreen();
+              setScreenOriginError(true);
               setScreenError(
                 t("Could not load the desktop. This device cannot reach the screen URL."),
               );
@@ -576,10 +603,11 @@ export default function Computer() {
               </View>
             </SafeAreaView>
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
-              {foreground && loadedScreenUrl ? (
+              {foreground && loadedScreenUrl && !screenError ? (
                 <ScreenWebView
                   key={screenReload}
                   url={loadedScreenUrl}
+                  onScreenState={onScreenState}
                   interactive={hasControl}
                   nativeKeyboard={hasControl}
                   keyboardSession={keyboardSession}
@@ -604,6 +632,7 @@ export default function Computer() {
                   <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
                     {placeholder}
                   </Text>
+                  {retryScreenAction}
                 </View>
               )}
             </View>
@@ -652,6 +681,21 @@ function ComputerReleaseActions({
   );
 }
 
+const SCREEN_REPORT_STATES = [
+  "loading",
+  "connecting",
+  "connected",
+  "failed",
+  "disconnected",
+] as const;
+const SCREEN_REPORT_BRIDGE = `window.addEventListener("message", function(event) {
+  if (event.source !== window) return;
+  var data = event.data;
+  if (data && ${JSON.stringify(SCREEN_REPORT_STATES)}.indexOf(data.rakazoScreen) !== -1) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({rakazoScreen: data.rakazoScreen}));
+  }
+}); true;`;
+
 function ScreenWebView({
   url,
   interactive,
@@ -659,6 +703,7 @@ function ScreenWebView({
   keyboardSession,
   webViewRef,
   onKeyboardMessage,
+  onScreenState,
   onRendererLost,
   onError,
 }: {
@@ -668,12 +713,26 @@ function ScreenWebView({
   keyboardSession?: string;
   webViewRef?: RefObject<WebView | null>;
   onKeyboardMessage?: (data: string) => void;
+  onScreenState: (state: string) => void;
   onRendererLost?: () => void;
   onError: () => void;
 }) {
   const tokens = useMobileTokens();
   const sourceUrl = useRef(url);
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
+  const loadedSource = sourceUrl.current;
+  const reportStarted = useRef(false);
+  const reportCallback = useRef(onScreenState);
+  reportCallback.current = onScreenState;
+  useEffect(() => {
+    reportStarted.current = false;
+    // Only proxy pages carry the screen-state shim.
+    if (!new URL(loadedSource).pathname.startsWith("/novnc/")) return;
+    const timer = setTimeout(() => {
+      if (!reportStarted.current) reportCallback.current("failed");
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [loadedSource, nativeKeyboard]);
   return (
     <WebView
       ref={webViewRef}
@@ -682,18 +741,26 @@ function ScreenWebView({
       key={`${nativeKeyboard ? "keys" : "view"}:${sourceUrl.current}`}
       source={{ uri: sourceUrl.current }}
       injectedJavaScriptBeforeContentLoaded={
-        nativeKeyboard ? NATIVE_COMPUTER_KEYBOARD_BOOT : undefined
+        SCREEN_REPORT_BRIDGE + (nativeKeyboard ? NATIVE_COMPUTER_KEYBOARD_BOOT : "")
       }
       injectedJavaScript={
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
       }
-      onMessage={
-        nativeKeyboard
-          ? (event) => {
-              onKeyboardMessage?.(event.nativeEvent.data);
-            }
-          : undefined
-      }
+      onMessage={(event) => {
+        let state: unknown;
+        try {
+          state = JSON.parse(event.nativeEvent.data)?.rakazoScreen;
+        } catch {
+          /* Other bridge messages are handled below. */
+        }
+        if (
+          typeof state === "string" &&
+          SCREEN_REPORT_STATES.some((allowed) => allowed === state)
+        ) {
+          if (state !== "loading") reportStarted.current = true;
+          onScreenState(state);
+        } else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
+      }}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       // A view-only screen is a picture: keep its page, including the hidden keyboard field,
