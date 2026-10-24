@@ -1263,15 +1263,23 @@ export function createRouter(deps: RouterDeps) {
       ),
     hasModelConnection: async (actor, provider) =>
       Boolean(await findModelCredential(deps.prisma, actor, provider)),
-    mcpCredentialValues: async (actor, secretId) => {
+    mcpCredentialValues: async (actor, server) => {
       const secret = await deps.prisma.secret.findFirst({
-        where: { id: secretId, spaceId: actor.spaceId, userId: actor.userId },
+        where: { id: server.secretId, spaceId: actor.spaceId, userId: actor.userId },
       });
       if (!secret) return null;
-      const material: McpSecretMaterial = JSON.parse(
-        await deps.secrets.load(secret.ciphertext, { recordId: secret.id }),
-      );
-      return { headers: material.headers ?? {}, env: material.env ?? {} };
+      // Decrypted material stays inside this function: a failure to decrypt or parse (whose
+      // error can quote the input) is neither rethrown nor logged, only noted by server id.
+      try {
+        return mcpCredentialRecords(
+          JSON.parse(await deps.secrets.load(secret.ciphertext, { recordId: secret.id })),
+        );
+      } catch {
+        getLogger().warn("imported mcp server credential could not be read", {
+          "mcp.server.id": server.id,
+        });
+        return null;
+      }
     },
     connectedProviders: async (actor, providers) => {
       const rows = await deps.prisma.userModelCredential.findMany({
@@ -7558,6 +7566,24 @@ async function prepareModelCredential(
     signal: input.signal ?? new AbortController().signal,
   });
   return { stored, defaultModel, allowedThinking };
+}
+
+/** The `headers` and `env` of decoded MCP credential material, if both are string records. */
+function mcpCredentialRecords(
+  material: unknown,
+): { headers: Record<string, string>; env: Record<string, string> } | null {
+  const record = (value: unknown): Record<string, string> | null => {
+    if (value === undefined) return {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const entries = Object.entries(value);
+    return entries.every(([, item]) => typeof item === "string")
+      ? (Object.fromEntries(entries) as Record<string, string>)
+      : null;
+  };
+  if (!material || typeof material !== "object" || Array.isArray(material)) return null;
+  const { headers, env } = material as { headers?: unknown; env?: unknown };
+  const parsed = { headers: record(headers), env: record(env) };
+  return parsed.headers && parsed.env ? { headers: parsed.headers, env: parsed.env } : null;
 }
 
 /**

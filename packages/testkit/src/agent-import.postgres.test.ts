@@ -1,10 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { EncryptedSecretStore } from "@rakazo/adapters";
 import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
+import { resolveEncryptionKey } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+// The app's own logger module (the API resolves `@rakazo/logging` to this file).
+import { createLogger, createTestSink, installLogger } from "../../logging/src/index.js";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
 
@@ -1113,6 +1117,53 @@ describeIntegration("agent import", () => {
     expect(await withHeaders({ Authorization: "Bearer placeholder-set", "X-Team": "ops" })).toBe(
       true,
     );
+
+    // Material that cannot be read leaves only this server not done, and none of it
+    // reaches the reply or the logs.
+    const secret = await db.secret.findFirstOrThrow({
+      where: { id: (await db.mcpServer.findUniqueOrThrow({ where: { id: server.id } })).secretId! },
+    });
+    const store = new EncryptedSecretStore(resolveEncryptionKey());
+    const putContext = { signal: new AbortController().signal } as never;
+    // Short enough that a JSON parse error quotes it whole, so a leaked error would show it.
+    const canary = "ph7f3e9";
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    try {
+      for (const ciphertext of [
+        (await store.put(`${canary} is not JSON`, putContext, { recordId: secret.id })).ciphertext,
+        (
+          await store.put(
+            JSON.stringify({ headers: { Authorization: 7 }, env: { NOTE: canary } }),
+            putContext,
+            { recordId: secret.id },
+          )
+        ).ciphertext,
+        `unreadable-${canary}`,
+      ]) {
+        await db.secret.update({ where: { id: secret.id }, data: { ciphertext } });
+        const response = await raw(app, cookie, "bots/importSetupState", {
+          botId: bot.id,
+          providers: ["openrouter"],
+          serverIds: [server.id],
+          routineIds: ["missing-routine"],
+        });
+        const text = await response.text();
+        expect(response.status).toBe(200);
+        expect(text).not.toContain(canary);
+        expect(JSON.parse(text).json).toEqual({
+          providers: { openrouter: false },
+          serverIds: { [server.id]: false },
+          routineIds: { "missing-routine": false },
+        });
+      }
+      expect(JSON.stringify(sink.events)).not.toContain(canary);
+      expect(sink.events.map((event) => event.message)).toContain(
+        "imported mcp server credential could not be read",
+      );
+    } finally {
+      installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+    }
 
     // A record without the requirements it was shown (older data) counts as not done.
     const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });

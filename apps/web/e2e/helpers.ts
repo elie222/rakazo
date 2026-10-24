@@ -275,5 +275,6 @@ export async function clickAndWaitForRpc(page: Page, button: Locator, path: stri
   ]);
   expect(reply.status()).toBe(200);
   // The whole reply has arrived, not just its headers.
-  await reply.finished();
+  const failure = await reply.finished();
+  if (failure) throw new Error(`/rpc/${path} reply did not finish: ${failure.message}`);
 }

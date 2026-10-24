@@ -78,7 +78,7 @@ export type AgentImportServices<PreparedKey = unknown> = {
    */
   mcpCredentialValues: (
     actor: Actor,
-    secretId: string,
+    server: { id: string; secretId: string },
   ) => Promise<{ headers: Record<string, string>; env: Record<string, string> } | null>;
   /** Which of these providers the actor has a connection for, read once. */
   connectedProviders: (actor: Actor, providers: string[]) => Promise<Set<string>>;
@@ -921,8 +921,9 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
 
 /**
  * Whether each item on an import's setup checklist is done now: a model connected for the
- * provider, an MCP server with credentials or given to this bot, a routine turned on. Only
- * the actor's own rows are read; unknown ids are simply not done.
+ * provider; an MCP server given to this bot AND holding a non-blank value for every header
+ * and setting it was shown to need (or `unverifiable` when it needs a program or local
+ * paths); a routine turned on. Only the actor's own rows are read; unknown ids are not done.
  */
 export async function agentImportSetupState(
   services: AgentImportServices,
@@ -968,15 +969,20 @@ export async function agentImportSetupState(
     if (need.unverifiable) return "unverifiable";
     if (!given.has(id)) return false;
     if (need.credentials.length === 0 && need.env.length === 0) return true;
-    const values = row.secretId ? await services.mcpCredentialValues(actor, row.secretId) : null;
+    // Unreadable material (null) leaves the server not done; nothing about it is returned.
+    const values = row.secretId
+      ? await services.mcpCredentialValues(actor, { id: row.id, secretId: row.secretId })
+      : null;
     if (!values) return false;
     return (
       need.credentials.every((name) => set(values.headers[name])) &&
       need.env.every((name) => set(values.env[name]))
     );
   };
+  // Each server once: a repeated id is decrypted a single time.
+  const serverIds = [...new Set(input.serverIds)];
   const serverStates = Object.fromEntries(
-    await Promise.all(input.serverIds.map(async (id) => [id, await serverState(id)] as const)),
+    await Promise.all(serverIds.map(async (id) => [id, await serverState(id)] as const)),
   );
   // Each provider once, with one read of the actor's connections.
   const providers = [...new Set(input.providers)];

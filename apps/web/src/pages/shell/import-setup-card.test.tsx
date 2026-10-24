@@ -212,5 +212,7 @@ describe("an empty checklist", () => {
       );
     });
     expect(container.textContent).not.toContain("Setup complete");
+    // Nothing at all, rather than an empty "Finish setting up" card.
+    expect(container.innerHTML).toBe("");
   });
 });

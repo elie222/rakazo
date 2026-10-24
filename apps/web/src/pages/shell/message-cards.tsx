@@ -128,7 +128,7 @@ const FOCUS_QUESTION = "What do you want me on first?";
 
 /** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
 function OnboardingFocusQuestion({ question }: { question: string }) {
-  if (question === "What do you want me on first?") {
+  if (question === FOCUS_QUESTION) {
     return <Trans>What do you want me on first?</Trans>;
   }
   return question;
@@ -143,7 +143,7 @@ function OnboardingFocusOptionLabel({
   label: string;
   question: string;
 }) {
-  if (question !== "What do you want me on first?") return label;
+  if (question !== FOCUS_QUESTION) return label;
   switch (id) {
     case "day":
       return <Trans>Day-to-day work</Trans>;

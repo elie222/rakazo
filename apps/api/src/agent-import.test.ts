@@ -245,3 +245,28 @@ describe("an imported stdio server's setup state", () => {
     expect(state.serverIds).toEqual({ files: "unverifiable", docs: true });
   });
 });
+
+describe("an imported server asked for twice", () => {
+  it("is decrypted once", async () => {
+    const created = {
+      mcpServers: [{ id: "docs", revision: 1, credentials: ["Authorization"], env: [] }],
+    };
+    const prisma = {
+      mcpServer: { findMany: async () => [{ id: "docs", secretId: "secret-docs" }] },
+      botMcpServer: { findMany: async () => [{ serverId: "docs" }] },
+      routine: { findMany: async () => [] },
+      agentImport: { findMany: async () => [{ created }] },
+    };
+    const mcpCredentialValues = vi.fn(async () => ({
+      headers: { Authorization: "Bearer placeholder" },
+      env: {},
+    }));
+    const state = await agentImportSetupState(
+      services({ prisma: prisma as never, mcpCredentialValues }),
+      actor,
+      { botId: "bot-1", providers: [], serverIds: ["docs", "docs", "docs"], routineIds: [] },
+    );
+    expect(state.serverIds).toEqual({ docs: true });
+    expect(mcpCredentialValues).toHaveBeenCalledTimes(1);
+  });
+});

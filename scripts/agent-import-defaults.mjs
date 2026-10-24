@@ -8,7 +8,8 @@
  *   IDENTITY}.md. The checkout needs its full history (`git clone` without `--depth`); a
  *   shallow one is refused, as it would silently miss versions.
  * - Hermes Agent: the texts `hermes_cli/default_soul.py` treats as untouched defaults
- *   (`DEFAULT_SOUL_MD` and `_LEGACY_TEMPLATE_SOULS`), read with python3 at the checkout's HEAD.
+ *   (`DEFAULT_SOUL_MD` and `_LEGACY_TEMPLATE_SOULS`), from the file as committed at HEAD
+ *   (`git show`, never the working copy), evaluated with python3.
  *
  * Offline: only local files, git and python3. Output is sorted, with full commit hashes,
  * and any failure to read a version stops the script. The fingerprint matches
@@ -76,20 +77,21 @@ for (const name of ["SOUL", "AGENTS", "USER", "IDENTITY"]) {
 }
 
 const head = git(hermes, "rev-parse", "HEAD").trim();
+// The committed file at HEAD, not the working copy, so the recorded commit is what was hashed.
+const source = git(hermes, "show", `${head}:hermes_cli/default_soul.py`);
 const texts = JSON.parse(
   execFileSync(
     "python3",
     [
       "-c",
       [
-        "import importlib.util, json, sys",
-        "spec = importlib.util.spec_from_file_location('d', sys.argv[1])",
-        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
-        "print(json.dumps([m.DEFAULT_SOUL_MD, *m._LEGACY_TEMPLATE_SOULS]))",
+        "import json, sys",
+        "namespace = {}",
+        "exec(compile(sys.stdin.read(), 'default_soul.py', 'exec'), namespace)",
+        "print(json.dumps([namespace['DEFAULT_SOUL_MD'], *namespace['_LEGACY_TEMPLATE_SOULS']]))",
       ].join("\n"),
-      `${hermes}/hermes_cli/default_soul.py`,
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", input: source },
   ),
 );
 lines.push(`// Hermes Agent hermes_cli/default_soul.py at ${head}`);

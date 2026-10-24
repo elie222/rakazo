@@ -76,12 +76,10 @@ export function ImportSetupCard({
     };
   }, [botId, block]);
 
+  // Nothing to set up: no card at all.
+  if (block.items.length === 0) return null;
   // Shrinks only when every row is verifiably done; anything unchecked keeps the full list.
-  if (
-    state &&
-    block.items.length > 0 &&
-    block.items.every((item) => isDone(item, state) === true)
-  ) {
+  if (state && block.items.every((item) => isDone(item, state) === true)) {
     return (
       <div
         data-testid="import-setup-card"
