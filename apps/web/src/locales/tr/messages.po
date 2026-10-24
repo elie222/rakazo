@@ -2135,6 +2135,14 @@ msgstr "Varsayılan ({0})"
 msgid "Default ({0})"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "Hermes varsayılanı"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "OpenClaw varsayılanı"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
 msgstr "Varsayılan kapsam"
@@ -2222,6 +2230,7 @@ msgid "Describe what this bot does"
 msgstr "Bu botun ne yaptığını açıkla"
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Açıklama"
@@ -3214,6 +3223,14 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "OpenClaw özelliklerinden bahsediyor"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "Bahsedilenler: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx

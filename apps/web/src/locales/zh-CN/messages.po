@@ -2135,6 +2135,14 @@ msgstr "默认（{0}）"
 msgid "Default ({0})"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "Hermes 默认内容"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "OpenClaw 默认内容"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
 msgstr "默认范围"
@@ -2222,6 +2230,7 @@ msgid "Describe what this bot does"
 msgstr "描述这个 Bot 做什么"
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "描述"
@@ -3214,6 +3223,14 @@ msgstr "提及"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "提到了 OpenClaw 功能"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "提到：{mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx

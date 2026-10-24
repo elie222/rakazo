@@ -32,7 +32,10 @@ describe("OpenClaw workspace", () => {
   const workspace: AgentImportFile[] = [
     { path: "workspace/AGENTS.md", content: "Keep replies short.\n" },
     { path: "workspace/SOUL.md", content: "# Soul\n\nCalm and direct.\n" },
-    { path: "workspace/IDENTITY.md", content: "- **Name:** Pebble\n- **Emoji:** 🪨\n" },
+    {
+      path: "workspace/IDENTITY.md",
+      content: "- **Name:** Pebble\n- **Vibe:** calm\n- **Creature:** owl\n- **Emoji:** 🪨\n",
+    },
     { path: "workspace/USER.md", content: "Prefers metric units.\n" },
     { path: "workspace/MEMORY.md", content: "Project Alpha ships in May.\n" },
     { path: "workspace/memory/2026-01-03.md", content: "Talked about the garden.\n" },
@@ -56,10 +59,11 @@ describe("OpenClaw workspace", () => {
     const result = plan(workspace);
     expect(result.source).toBe("openclaw");
     expect(result.suggestedName).toBe("Pebble");
-    expect(result.instructions.map((item) => item.title)).toEqual([
-      "SOUL.md",
-      "AGENTS.md",
-      "IDENTITY.md",
+    // OpenClaw prefers Theme, then Creature, then Vibe.
+    expect(result.suggestedDescription).toBe("owl");
+    expect(result.instructions.map((item) => [item.title, item.role])).toEqual([
+      ["SOUL.md", "persona"],
+      ["AGENTS.md", "working"],
     ]);
     expect(result.memory.map((item) => [item.title, item.path])).toEqual([
       ["MEMORY.md", "MEMORY.md"],
@@ -76,6 +80,7 @@ describe("OpenClaw workspace", () => {
     });
     expect(result.skipped).toEqual([
       { path: "HEARTBEAT.md", reason: "runtime" },
+      { path: "IDENTITY.md: Emoji", reason: "runtime" },
       { path: "TOOLS.md", reason: "runtime" },
       { path: "skills/broken/SKILL.md", reason: "invalid_skill" },
     ]);
@@ -188,6 +193,9 @@ describe("any other agent document", () => {
         id: "instructions:Instructions",
         title: "Instructions",
         content: "Be concise.\n\n```bash\n# Skills\necho inside a code block\n```\n",
+        role: "working",
+        stock: false,
+        mentions: [],
       },
     ]);
     expect(result.memory.map((item) => [item.title, item.path, item.content])).toEqual([
@@ -239,14 +247,24 @@ describe("detection", () => {
 });
 
 describe("instructions", () => {
-  it("joins several files under headings and keeps one file as written", () => {
-    expect(combineImportedInstructions([{ title: "SOUL.md", content: "Calm.\n" }])).toBe("Calm.");
+  it("puts the persona first and the working instructions second, each under its purpose", () => {
+    const soul = { title: "SOUL.md", content: "# SOUL.md - Who You Are\n\nCalm.\n", role: "persona" } as const;
+    const agents = { title: "AGENTS.md", content: "Short replies.\n", role: "working" } as const;
+    expect(combineImportedInstructions([soul])).toBe("Calm.");
+    expect(combineImportedInstructions([agents])).toBe("Short replies.");
+    expect(combineImportedInstructions([agents, soul])).toBe(
+      "# Persona\n\nCalm.\n\n# Working instructions\n\nShort replies.",
+    );
+    // Hermes can have several working files; they share one section.
     expect(
       combineImportedInstructions([
-        { title: "SOUL.md", content: "Calm.\n" },
-        { title: "AGENTS.md", content: "Short.\n" },
+        soul,
+        agents,
+        { title: "HERMES.md", content: "Answer in English.\n", role: "working" },
       ]),
-    ).toBe("# SOUL.md\n\nCalm.\n\n# AGENTS.md\n\nShort.");
+    ).toBe(
+      "# Persona\n\nCalm.\n\n# Working instructions\n\nShort replies.\n\nAnswer in English.",
+    );
   });
 
   it("reports the combined length so an oversized import can be refused", () => {
@@ -475,12 +493,15 @@ describe("real OpenClaw home tree", () => {
       "- **Creature:**",
       "  _(AI? robot? familiar? ghost in the machine? something weirder?)_",
     ].join("\n");
-    expect(plan([{ path: "workspace/IDENTITY.md", content: template }]).suggestedName).toBe(
-      "OpenClaw",
-    );
+    const soul = { path: "workspace/SOUL.md", content: "Calm.\n" };
+    const blank = plan([soul, { path: "workspace/IDENTITY.md", content: template }]);
+    expect([blank.suggestedName, blank.suggestedDescription]).toEqual(["OpenClaw", ""]);
+    expect(blank.skipped).toContainEqual({ path: "IDENTITY.md", reason: "default" });
     expect(
-      plan([{ path: "workspace/IDENTITY.md", content: "- **Name:** _(pick something you like)_" }])
-        .suggestedName,
+      plan([
+        soul,
+        { path: "workspace/IDENTITY.md", content: "- **Name:** _(pick something you like)_" },
+      ]).suggestedName,
     ).toBe("OpenClaw");
   });
 });

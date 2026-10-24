@@ -2135,6 +2135,14 @@ msgstr "Predeterminado ({0})"
 msgid "Default ({0})"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "Predeterminado de Hermes"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "Predeterminado de OpenClaw"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
 msgstr "Alcance predeterminado"
@@ -2222,6 +2230,7 @@ msgid "Describe what this bot does"
 msgstr "Describe qué hace este bot"
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Descripción"
@@ -3214,6 +3223,14 @@ msgstr "Menciones"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "Menciona funciones de OpenClaw"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "Menciona: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx

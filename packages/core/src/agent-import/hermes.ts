@@ -1,8 +1,15 @@
 import type { AgentImportFile } from "@rakazo/contracts";
 import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { byPath, fileMap, instructionItems, memoryItem, skillItems } from "./shared.js";
+import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./shared.js";
+import { isHermesDefault } from "./stock.js";
 
-export const HERMES_INSTRUCTION_FILES = ["SOUL.md", "AGENTS.md", "HERMES.md", ".hermes.md"];
+/** SOUL.md is the persona; the others are working instructions, as Hermes reads them. */
+export const HERMES_INSTRUCTION_FILES = [
+  ["SOUL.md", "persona"],
+  ["AGENTS.md", "working"],
+  ["HERMES.md", "working"],
+  [".hermes.md", "working"],
+] as const;
 /** Hermes keeps memory under `memories/`; Rakazo keeps the same names at the root. */
 export const HERMES_MEMORY_FILES = [
   ["memories/MEMORY.md", "MEMORY.md"],
@@ -41,7 +48,13 @@ export function parseHermes(
   };
   return {
     suggestedName: "Hermes",
-    instructions: instructionItems(byName, HERMES_INSTRUCTION_FILES),
+    suggestedDescription: "",
+    instructions: HERMES_INSTRUCTION_FILES.flatMap(([path, role]) => {
+      const content = byName.get(path);
+      if (!content?.trim()) return [];
+      const stock = role === "persona" && isHermesDefault(content);
+      return [instructionItem(path, content, { role, stock })];
+    }),
     memory: HERMES_MEMORY_FILES.flatMap(([source, path]) => {
       const content = hermesEntries(byName.get(source) ?? "");
       return content ? [memoryItem(source, source, path, content)] : [];

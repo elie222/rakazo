@@ -19,7 +19,7 @@ const skill = (name: string, description: string) =>
 const workspace = [
   { path: "workspace/SOUL.md", content: "Calm and direct.\n" },
   { path: "workspace/AGENTS.md", content: "Keep replies short.\n" },
-  { path: "workspace/IDENTITY.md", content: "- **Name:** Pebble\n" },
+  { path: "workspace/IDENTITY.md", content: "- **Name:** Pebble\n- **Vibe:** calm\n" },
   { path: "workspace/MEMORY.md", content: "Project Alpha ships in May.\n" },
   { path: "workspace/USER.md", content: "Prefers metric units.\n" },
   { path: "workspace/memory/2026-01-02.md", content: "Planned the week.\n" },
@@ -165,6 +165,7 @@ describeIntegration("agent import", () => {
     const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
       files: workspace,
       name: "Pebble",
+      description: plan.suggestedDescription,
       computerMode: "team",
       selection: {
         instructions: [id("AGENTS.md"), id("SOUL.md")],
@@ -175,9 +176,11 @@ describeIntegration("agent import", () => {
         skills: [id("weekly-review")],
       },
     });
-    expect(bot.name).toBe("Pebble");
+    // Each file keeps its purpose: the persona first, then how the bot works. IDENTITY.md
+    // gives the name and description, not instructions.
+    expect([bot.name, bot.description]).toEqual(["Pebble", "calm"]);
     expect(bot.instructions).toBe(
-      "# SOUL.md\n\nCalm and direct.\n\n# AGENTS.md\n\nKeep replies short.",
+      "# Persona\n\nCalm and direct.\n\n# Working instructions\n\nKeep replies short.",
     );
 
     const botMemory = await db.memoryDocument.findMany({
@@ -210,6 +213,31 @@ describeIntegration("agent import", () => {
     expect(
       await db.memoryDocument.count({ where: { ...owner, path: "memory/2026-01-02.md" } }),
     ).toBe(0);
+  });
+
+  it("creates nothing that runs or acts unless each one is selected", async () => {
+    const cookie = await signup(app, `import-consent-${stamp}@rakazo.test`, "Consent User");
+    const files = [
+      ...settingsHome,
+      { path: ".openclaw/skills/notes/SKILL.md", content: skill("notes", "Take notes") },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+    expect([plan.skills.length, plan.mcpServers.length, plan.routines.length]).toEqual([1, 2, 2]);
+    // What an untouched Create sends: instructions only.
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      name: "Untouched",
+      selection: { instructions: plan.instructions.map((item) => item.id), memory: [], skills: [] },
+    });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: { spaceId: true, userId: true },
+    });
+    expect({
+      skills: await db.agentSkill.count({ where: owner }),
+      servers: await db.mcpServer.count({ where: owner }),
+      routines: await db.routine.count({ where: owner }),
+    }).toEqual({ skills: 0, servers: 0, routines: 0 });
   });
 
   it("refuses unknown selections and oversized instructions without creating a bot", async () => {

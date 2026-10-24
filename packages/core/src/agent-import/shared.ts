@@ -40,18 +40,31 @@ export function fileMap(files: AgentImportFile[]): Map<string, string> {
   return new Map(files.filter((file) => !isPrivatePath(file.path)).map((f) => [f.path, f.content]));
 }
 
-export function instructionItems(
-  files: Map<string, string>,
-  paths: readonly string[],
-): AgentImportInstruction[] {
-  return paths.flatMap((path) => {
-    const content = files.get(path);
-    return content?.trim() ? [{ id: `instructions:${path}`, title: path, content }] : [];
-  });
+export function instructionItem(
+  path: string,
+  content: string,
+  meaning: Pick<AgentImportInstruction, "role"> &
+    Partial<Pick<AgentImportInstruction, "stock" | "mentions">>,
+): AgentImportInstruction {
+  return {
+    id: `instructions:${path}`,
+    title: path,
+    content,
+    stock: false,
+    mentions: [],
+    ...meaning,
+  };
 }
 
 export function memoryItem(id: string, title: string, path: string, content: string) {
-  return { id: `memory:${id}`, title, path, spacePath: path, content } satisfies AgentImportMemory;
+  return {
+    id: `memory:${id}`,
+    title,
+    path,
+    spacePath: path,
+    content,
+    stock: false,
+  } satisfies AgentImportMemory;
 }
 
 /** Skill items from SKILL.md files; invalid ones are reported, not imported. */

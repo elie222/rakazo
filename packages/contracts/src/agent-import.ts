@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
+import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
 export const AGENT_IMPORT_MAX_FILE_LENGTH = 100_000;
@@ -65,10 +65,21 @@ export const AgentImportWarningSchema = z.enum([
 export type AgentImportWarning = z.infer<typeof AgentImportWarningSchema>;
 const warnings = z.array(AgentImportWarningSchema).default([]);
 
+/** What an instruction file is for: who the agent is, or how it works. */
+export const AgentImportInstructionRoleSchema = z.enum(["persona", "working"]);
+export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRoleSchema>;
+
+/** Unchanged from the default the source writes when an agent is created: starts unticked. */
+const stock = z.boolean().default(false);
+
 export const AgentImportInstructionSchema = z.object({
   id: z.string(),
   title: z.string(),
   content: z.string(),
+  role: AgentImportInstructionRoleSchema.default("working"),
+  stock,
+  /** Sections and files of the source's own runtime the text refers to, e.g. `BOOTSTRAP.md`. */
+  mentions: z.array(z.string()).default([]),
 });
 export type AgentImportInstruction = z.infer<typeof AgentImportInstructionSchema>;
 
@@ -80,6 +91,7 @@ export const AgentImportMemorySchema = z.object({
   path: z.string(),
   /** Path in space memory; differs from `path` when that name is already taken. */
   spacePath: z.string(),
+  stock,
 });
 export type AgentImportMemory = z.infer<typeof AgentImportMemorySchema>;
 
@@ -143,12 +155,16 @@ export const AgentImportSkipReasonSchema = z.enum([
   "unsupported",
   "connected",
   "invalid_file",
+  /** An unchanged default the source wrote when the agent was created. */
+  "default",
 ]);
 export type AgentImportSkipReason = z.infer<typeof AgentImportSkipReasonSchema>;
 
 export const AgentImportPlanSchema = z.object({
   source: AgentImportSourceSchema,
   suggestedName: z.string(),
+  /** The bot description the source gives the agent, if any. */
+  suggestedDescription: z.string().default(""),
   instructions: z.array(AgentImportInstructionSchema),
   memory: z.array(AgentImportMemorySchema),
   skills: z.array(AgentImportSkillSchema),
@@ -221,6 +237,7 @@ export const AgentImportCreateInput = z.strictObject({
   includeSecrets,
   skillFiles,
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
+  description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   computerMode: ComputerModeSchema.default("team"),
   selection: AgentImportSelectionSchema,
 });

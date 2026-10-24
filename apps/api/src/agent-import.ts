@@ -405,7 +405,7 @@ export async function createImportedBot<PreparedKey>(
   const created = services.createBot(actor, {
     name: input.name,
     title: "",
-    description: "",
+    description: input.description,
     instructions,
     notifyOnFinish: true,
     computerMode: input.computerMode,

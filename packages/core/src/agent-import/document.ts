@@ -53,6 +53,7 @@ export function parseAgentDocument(text: string): AgentImportParse {
   const skills = sections.skills ? skillDocuments(sections.skills) : { skills: [], skipped: [] };
   return {
     suggestedName: name.slice(0, BOT_NAME_MAX_LENGTH),
+    suggestedDescription: "",
     instructions:
       instructions && instructionText
         ? [
@@ -60,6 +61,9 @@ export function parseAgentDocument(text: string): AgentImportParse {
               id: `instructions:${instructions.heading}`,
               title: instructions.heading,
               content: instructionText,
+              role: "working",
+              stock: false,
+              mentions: [],
             },
           ]
         : [],

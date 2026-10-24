@@ -2135,6 +2135,14 @@ msgstr "ברירת מחדל ({0})"
 msgid "Default ({0})"
 msgstr "ברירת מחדל ({0})"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "ברירת מחדל של Hermes"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "ברירת מחדל של OpenClaw"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
 msgstr "היקף ברירת מחדל"
@@ -2222,6 +2230,7 @@ msgid "Describe what this bot does"
 msgstr "תיאור של מה שהבוט עושה"
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "תיאור"
@@ -3214,6 +3223,14 @@ msgstr "אזכורים"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr "אזכורים בלבד"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "מזכיר תכונות של OpenClaw"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "מזכיר: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx

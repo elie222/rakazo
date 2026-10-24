@@ -8,7 +8,11 @@ import type {
   Bot,
   ComputerMode,
 } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  BOT_NAME_MAX_LENGTH,
+} from "@rakazo/contracts";
 import {
   AGENT_IMPORT_ARCHIVE_LIMITS,
   AGENT_IMPORT_NOT_FOUND,
@@ -99,6 +103,7 @@ export function AgentImportForm({
     {},
   );
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [reply, setReply] = useState("");
   const [copied, setCopied] = useState(false);
@@ -134,10 +139,15 @@ export function AgentImportForm({
       });
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Items that may not work here start unticked; the user reads them and decides.
-      const flagged = [...found.skills, ...found.mcpServers, ...found.routines]
-        .filter((item) => item.warnings.length > 0)
-        .map((item) => item.id);
+      // Anything that runs or acts (skills, MCP servers, routines) starts unticked, as do
+      // untouched defaults the source wrote: the user ticks each one they want.
+      const flagged = [
+        ...found.skills,
+        ...found.mcpServers,
+        ...found.routines,
+        ...found.instructions.filter((item) => item.stock),
+        ...found.memory.filter((item) => item.stock),
+      ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
         const known = new Set(
@@ -160,6 +170,7 @@ export function AgentImportForm({
         setUnchecked(new Set(flagged));
         setDestinations({});
         setName(found.suggestedName);
+        setDescription(found.suggestedDescription);
       }
       setPlan(found);
     } catch (err) {
@@ -305,6 +316,7 @@ export function AgentImportForm({
         includeSecrets,
         skillFiles,
         name: name.trim(),
+        description: description.trim(),
         computerMode,
         selection: {
           instructions: selectedInstructions.map((item) => item.id),
@@ -384,6 +396,8 @@ export function AgentImportForm({
     </li>
   );
 
+  // An untouched file the source wrote for every new agent.
+  const defaultNote = plan?.source === "hermes" ? t`Default from Hermes` : t`Default from OpenClaw`;
   const skipReason = (reason: AgentImportSkipReason) =>
     ({
       runtime: t`Not used by Rakazo`,
@@ -392,6 +406,7 @@ export function AgentImportForm({
       unsupported: t`Not supported in Rakazo`,
       connected: t`Already connected`,
       invalid_file: t`Could not read these files`,
+      default: defaultNote,
     })[reason];
   const warningText = (warning: AgentImportWarning) =>
     ({
@@ -453,7 +468,20 @@ export function AgentImportForm({
                 <Trans>Instructions</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.instructions.map((entry) => item(entry.id, entry.title, entry.content))}
+                {plan.instructions.map((entry) => {
+                  const mentions = entry.mentions.join(", ");
+                  return item(
+                    entry.id,
+                    entry.title,
+                    entry.content,
+                    entry.stock
+                      ? note(defaultNote)
+                      : mentions
+                        ? note(t`Mentions OpenClaw features`)
+                        : undefined,
+                    mentions ? t`Mentions: ${mentions}` : undefined,
+                  );
+                })}
               </ul>
               {tooLong ? (
                 <p role="alert" className="mt-2 text-[13px] text-destructive">
@@ -476,21 +504,24 @@ export function AgentImportForm({
                     entry.id,
                     renamed ? t`${title}, saved as ${savedAs}` : title,
                     entry.content,
-                    <NativeSelect
-                      size="sm"
-                      aria-label={t`Memory for ${title}`}
-                      value={destination}
-                      disabled={unchecked.has(entry.id)}
-                      onChange={(event) =>
-                        setDestinations((current) => ({
-                          ...current,
-                          [entry.id]: event.target.value as AgentImportMemoryDestination,
-                        }))
-                      }
-                    >
-                      <NativeSelectOption value="bot">{t`This bot`}</NativeSelectOption>
-                      <NativeSelectOption value="space">{t`All bots`}</NativeSelectOption>
-                    </NativeSelect>,
+                    <>
+                      {entry.stock ? note(defaultNote) : null}
+                      <NativeSelect
+                        size="sm"
+                        aria-label={t`Memory for ${title}`}
+                        value={destination}
+                        disabled={unchecked.has(entry.id)}
+                        onChange={(event) =>
+                          setDestinations((current) => ({
+                            ...current,
+                            [entry.id]: event.target.value as AgentImportMemoryDestination,
+                          }))
+                        }
+                      >
+                        <NativeSelectOption value="bot">{t`This bot`}</NativeSelectOption>
+                        <NativeSelectOption value="space">{t`All bots`}</NativeSelectOption>
+                      </NativeSelect>
+                    </>,
                   );
                 })}
               </ul>
@@ -626,6 +657,18 @@ export function AgentImportForm({
               className="mt-2"
             />
           </label>
+          {plan.suggestedDescription ? (
+            <label htmlFor={`${ids}-description`} className={`mt-6 block ${headingClass}`}>
+              <Trans>Description</Trans>
+              <Input
+                id={`${ids}-description`}
+                value={description}
+                maxLength={BOT_DESCRIPTION_MAX_LENGTH}
+                onChange={(event) => setDescription(event.target.value)}
+                className="mt-2"
+              />
+            </label>
+          ) : null}
           <ComputerModePicker value={computerMode} onChange={setComputerMode} />
           <div className={page ? "mt-8 flex gap-3" : "mt-5"}>
             <Button disabled={!name.trim() || tooLong || busy} onClick={() => void create()}>

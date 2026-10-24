@@ -28,7 +28,7 @@ function writeFolder(root: string, files: Record<string, string>) {
 const workspaceFiles: Record<string, string> = {
   "SOUL.md": "Calm and direct.\n",
   "AGENTS.md": "Check the calendar before suggesting a time.\n",
-  "IDENTITY.md": "- **Name:** Pebble\n",
+  "IDENTITY.md": "- **Name:** Pebble\n- **Vibe:** calm and practical\n- **Emoji:** 🪨\n",
   "MEMORY.md": "The garden project starts in spring.\n",
   "USER.md": "Prefers metric units.\n",
   "TOOLS.md": "Local tool notes.\n",
@@ -157,12 +157,14 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
       await expect(boxes.nth(index)).toHaveAccessibleName(name);
     }
   }
-  // Items that may not work here start unticked, with the reason next to them.
+  // Skills, MCP servers and routines all start unticked: each needs the user's tick. Items
+  // that may not work here also say why.
   const skills = homePreview.getByTestId("agent-import-skills");
   await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
   await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
   const mcp = homePreview.getByTestId("agent-import-mcp");
-  await expect(mcp.getByRole("checkbox", { name: "docs" })).toBeChecked();
+  await expect(mcp.getByRole("checkbox", { name: "docs" })).not.toBeChecked();
   await expect(mcp.getByRole("checkbox", { name: "files" })).toBeDisabled();
   await expect(mcp.getByText("Not supported in Rakazo", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-compatibility");
@@ -170,6 +172,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   const nameBox = homePreview.getByRole("textbox", { name: "Name" });
   await nameBox.fill("Home bot");
   await skills.getByRole("checkbox", { name: "inbox-triage" }).click();
+  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
   await homePreview
     .getByTestId("agent-import-instructions")
     .getByRole("button", { name: "SOUL.md", exact: true })
@@ -218,12 +221,12 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(homePreview).not.toContainText("placeholder-");
   await captureScreenshot(page, testInfo, "agent-import-preview-settings");
   await expect(nameBox).toHaveValue("Home bot");
-  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
   await optIn.click();
   await expect(optIn).not.toBeChecked();
   await expect(keys.getByRole("heading", { name: "API keys" })).toHaveCount(0);
   await expect(nameBox).toHaveValue("Home bot");
-  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
+  await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).toBeChecked();
   await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await panel.getByRole("button", { name: "Back", exact: true }).click();
 
@@ -239,23 +242,30 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     "Skills",
     "Not imported",
   ]);
-  for (const [section, names] of [
-    ["agent-import-instructions", ["SOUL.md", "AGENTS.md", "IDENTITY.md"]],
-    ["agent-import-memory", ["MEMORY.md", "USER.md"]],
-    ["agent-import-skills", ["weekly-review"]],
+  // Instructions and memory start ticked; a skill waits for the user's tick.
+  for (const [section, names, ticked] of [
+    ["agent-import-instructions", ["SOUL.md", "AGENTS.md"], true],
+    ["agent-import-memory", ["MEMORY.md", "USER.md"], true],
+    ["agent-import-skills", ["weekly-review"], false],
   ] as const) {
     const boxes = preview.getByTestId(section).getByRole("checkbox");
     await expect(boxes).toHaveCount(names.length);
     for (const [index, name] of names.entries()) {
       await expect(boxes.nth(index)).toHaveAccessibleName(name);
-      await expect(boxes.nth(index)).toBeChecked();
+      if (ticked) await expect(boxes.nth(index)).toBeChecked();
+      else await expect(boxes.nth(index)).not.toBeChecked();
     }
   }
   await preview.getByRole("button", { name: "Not imported", exact: true }).click();
   await expect(preview.getByTestId("agent-import-skipped").getByRole("listitem")).toHaveText([
+    "IDENTITY.md: Emoji · Not used by Rakazo",
     "TOOLS.md · Not used by Rakazo",
   ]);
+  // IDENTITY.md names and describes the bot; it is not part of its instructions.
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
+  await expect(preview.getByRole("textbox", { name: "Description" })).toHaveValue(
+    "calm and practical",
+  );
   await captureScreenshot(page, testInfo, "agent-import-preview");
 
   const memorySection = preview.getByTestId("agent-import-memory");
@@ -275,7 +285,13 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
   const pebbleId = activeBotId(page);
   const pebble = await rpc<Bot>(page, "bots/get", { botId: pebbleId });
-  expect(pebble.instructions).toContain("Calm and direct.");
+  expect(pebble.instructions).toBe(
+    "# Persona\n\nCalm and direct.\n\n# Working instructions\n\nCheck the calendar before suggesting a time.",
+  );
+  expect(pebble.description).toBe("calm and practical");
+  // An untouched Create imported no skill.
+  const pebbleSkills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
+  expect(pebbleSkills.some((item) => item.name === "weekly-review")).toBe(false);
   const pebbleMemory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: pebbleId });
   expect(pebbleMemory.map((doc) => [doc.path, doc.content])).toEqual([
     ["MEMORY.md", "The garden project starts in spring.\n"],
@@ -295,7 +311,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     documentPreview.getByTestId("agent-import-memory").getByRole("checkbox"),
   ).toHaveCount(2);
   await expect(documentPreview.getByRole("checkbox", { name: "About me" })).toBeChecked();
-  await expect(documentPreview.getByRole("checkbox", { name: "trip-planner" })).toBeChecked();
+  await expect(documentPreview.getByRole("checkbox", { name: "trip-planner" })).not.toBeChecked();
+  await documentPreview.getByRole("checkbox", { name: "trip-planner" }).click();
   await expect(documentPreview.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   await documentPreview.getByRole("button", { name: "Create", exact: true }).click();
   await page.waitForURL((url) => !url.pathname.endsWith(pebbleId));
@@ -305,9 +322,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   const atlasMemory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: atlasId });
   expect(atlasMemory.map((doc) => doc.path).sort()).toEqual(["MEMORY.md", "about-me.md"]);
   const library = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
-  expect(library.map((item) => item.name)).toEqual(
-    expect.arrayContaining(["weekly-review", "trip-planner"]),
-  );
+  expect(library.map((item) => item.name)).toEqual(expect.arrayContaining(["trip-planner"]));
 });
 
 /** A minimal zip writer (stored entries), for synthetic backups built at run time. */
@@ -449,7 +464,7 @@ test("imports Hermes and OpenClaw backups, reading them on this device", async (
   await panel.getByTestId("agent-import-archive").setInputFiles(openclaw);
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Harbor");
   await expect(preview.getByTestId("agent-import-instructions").getByRole("checkbox")).toHaveCount(
-    2,
+    1,
   );
   await captureScreenshot(page, testInfo, "agent-import-backup-openclaw");
 
@@ -480,7 +495,11 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   const panel = await openImport(page);
   await panel.getByTestId("agent-import-folder").setInputFiles(home);
   const preview = panel.getByTestId("agent-import-preview");
-  await expect(preview.getByRole("checkbox", { name: "docs" })).toBeChecked();
+  for (const name of ["docs", "inbox-triage"]) {
+    const box = preview.getByRole("checkbox", { name });
+    await expect(box).not.toBeChecked();
+    await box.click();
+  }
   await preview.getByRole("button", { name: "Create", exact: true }).click();
   await page.waitForURL(/\/app\/[^/]+$/);
   await expect(page.getByPlaceholder("Message Undoable")).toBeVisible();
@@ -507,4 +526,52 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   expect(bots.some((bot) => bot.id === botId)).toBe(false);
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.some((item) => item.name === "inbox-triage")).toBe(false);
+});
+
+/** OpenClaw's SOUL.md template and Hermes' SOUL.md, as each writes them for a new agent. */
+const OPENCLAW_DEFAULT_SOUL =
+  "# SOUL.md - Who You Are\n\n_You're not a chatbot. You're becoming someone._\n\nWant a sharper version? See [SOUL.md personality guide](/concepts/soul).\n\n## Core Truths\n\n**Be genuinely helpful, not performatively helpful.** Skip the \"Great question!\" and \"I'd be happy to help!\" — just help.\n\n**Have opinions.** Disagree, prefer things, find stuff amusing or boring. No personality is just a search engine with extra steps.\n\n**Be resourceful before asking.** Read the file, check the context, search for it. Come back with answers, not questions.\n\n**Earn trust through competence.** Do what you're asked, fully. Check before public or outbound actions nobody asked for.\n\n**Remember you're a guest.** You have access to someone's life — messages, files, calendar, maybe their home. Treat it with respect.\n\n## Boundaries\n\n";
+const HERMES_DEFAULT_SOUL =
+  "You are Hermes Agent, built by Nous Research. Be direct: match the length of your reply to the weight of the ask — a one-line question gets a one-line answer, and finished work gets a short report of what changed, what's verified, and what's left, never a replay of the process. No filler (\"Great question,\" \"I'd be happy to\"), no restating the request back, no re-summarizing what you already said, no narrating tool calls the user can see. Plain claims over adjectives; when unsure, say so plainly. Agree because it's right, not because the user said it. Depth is earned — give it when the user asks for detail, teaches, or the stakes demand it, not by default.";
+
+test("untouched defaults start unticked, and OpenClaw runtime references are flagged", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `agent-import-defaults-${Date.now()}@rakazo.test`, "password12", "Defaults");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const home = testInfo.outputPath("openclaw-defaults");
+  writeFolder(home, {
+    "workspace/SOUL.md": OPENCLAW_DEFAULT_SOUL,
+    "workspace/AGENTS.md":
+      "# House rules\n\nAnswer briefly.\n\n## Session Startup\n\nRead BOOTSTRAP.md first.\n",
+  });
+  const panel = await openImport(page);
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
+  const instructions = panel.getByTestId("agent-import-instructions");
+  await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
+  await expect(instructions.getByText("Default from OpenClaw", { exact: true })).toBeVisible();
+  await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
+  await expect(instructions.getByText("Mentions OpenClaw features", { exact: true })).toBeVisible();
+  await instructions.getByRole("button", { name: "AGENTS.md", exact: true }).click();
+  await expect(instructions.getByText("Mentions: Session Startup, BOOTSTRAP.md")).toBeVisible();
+  await captureScreenshot(page, testInfo, "agent-import-defaults-openclaw");
+  await panel.getByRole("button", { name: "Back", exact: true }).click();
+
+  const hermes = testInfo.outputPath("hermes-defaults.zip");
+  writeFileSync(
+    hermes,
+    zip({
+      "SOUL.md": HERMES_DEFAULT_SOUL,
+      "AGENTS.md": "Answer in English.\n",
+      "config.yaml": "model:\n  provider: openrouter\n",
+    }),
+  );
+  await panel.getByTestId("agent-import-archive").setInputFiles(hermes);
+  await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
+  await expect(instructions.getByText("Default from Hermes", { exact: true })).toBeVisible();
+  await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
+  await captureScreenshot(page, testInfo, "agent-import-defaults-hermes");
 });

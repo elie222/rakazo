@@ -52,10 +52,11 @@ export type { SkillFiles } from "./shared.js";
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
 const WORKSPACE_FILES = new Set<string>([
-  ...OPENCLAW_INSTRUCTION_FILES,
+  ...OPENCLAW_INSTRUCTION_FILES.map(([path]) => path),
+  "IDENTITY.md",
   ...OPENCLAW_MEMORY_FILES,
   ...OPENCLAW_RUNTIME_FILES,
-  ...HERMES_INSTRUCTION_FILES,
+  ...HERMES_INSTRUCTION_FILES.map(([path]) => path),
   ...HERMES_MEMORY_FILES.map(([source]) => source),
 ]);
 /** Top-level folders a source keeps; a path starting with one has no upload root. */
@@ -328,11 +329,47 @@ function detectSource(
 }
 
 /** Instruction files as one text, each under its own heading when there are several. */
+/** Neutral headings for the two kinds of instruction text, when both are imported. */
+export const IMPORTED_INSTRUCTION_HEADINGS = {
+  persona: "Persona",
+  working: "Working instructions",
+} as const;
+
+/**
+ * A bot's instructions from imported files, keeping what each file is for: the persona
+ * (who the agent is, its tone and boundaries) first, then the working instructions (how it
+ * works). With both, each gets a short heading of its own; with one, it is used as is. A
+ * file's own title naming the file (`# SOUL.md - Who You Are`) is left out, since it would
+ * read as a heading about a file the bot does not have.
+ */
 export function combineImportedInstructions(
-  items: readonly Pick<AgentImportInstruction, "title" | "content">[],
+  items: readonly Pick<AgentImportInstruction, "title" | "content" | "role">[],
 ): string {
-  if (items.length === 1) return items[0]!.content.trim();
-  return items.map((item) => `# ${item.title}\n\n${item.content.trim()}`).join("\n\n");
+  const text = (role: AgentImportInstruction["role"]) =>
+    items
+      .filter((item) => item.role === role)
+      .map((item) => withoutFileTitle(item.title, item.content))
+      .filter(Boolean)
+      .join("\n\n");
+  const persona = text("persona");
+  const working = text("working");
+  if (!persona || !working) return persona || working;
+  return [
+    `# ${IMPORTED_INSTRUCTION_HEADINGS.persona}`,
+    persona,
+    `# ${IMPORTED_INSTRUCTION_HEADINGS.working}`,
+    working,
+  ].join("\n\n");
+}
+
+function withoutFileTitle(file: string, content: string): string {
+  const text = content.replace(/\r\n?/g, "\n").trim();
+  const name = file.split("/").at(-1) ?? file;
+  const first = text.split("\n", 1)[0] ?? "";
+  if (/^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
+    return text.slice(first.length).trim();
+  }
+  return text;
 }
 
 /**
