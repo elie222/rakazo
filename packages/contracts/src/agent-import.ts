@@ -213,6 +213,8 @@ export const AgentImportPreviewInput = z.strictObject({
 export const AgentImportCreateInput = z.strictObject({
   /** Chosen by the client once per import, so a retried create returns the same bot. */
   importKey: z.string().trim().min(8).max(100).optional(),
+  /** Like `bots.create`: one bot per key in a space (onboarding's first bot). */
+  spawnKey: z.string().trim().min(1).max(120).optional(),
   files: AgentImportFilesSchema,
   includeSecrets,
   skillFiles,

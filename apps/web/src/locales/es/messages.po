@@ -2811,6 +2811,7 @@ msgstr "Área de carga de imagen"
 msgid "Import"
 msgstr "Importar"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "Importar un agente"

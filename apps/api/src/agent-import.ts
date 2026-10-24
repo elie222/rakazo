@@ -58,6 +58,7 @@ export type AgentImportServices<PreparedKey = unknown> = {
       computerMode: AgentImportCreateInput["computerMode"];
       modelProvider: string | null;
       modelId: string | null;
+      spawnKey?: string;
       seed: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
     },
   ) => Promise<Bot>;
@@ -400,6 +401,7 @@ export async function createImportedBot<PreparedKey>(
     credentials: [],
   };
   const routineRows: Routine[] = [];
+  let seeded = false;
   const created = services.createBot(actor, {
     name: input.name,
     title: "",
@@ -409,7 +411,9 @@ export async function createImportedBot<PreparedKey>(
     computerMode: input.computerMode,
     modelProvider: model?.provider ?? null,
     modelId: model?.modelId ?? null,
+    spawnKey: input.spawnKey,
     seed: async (tx, botId) => {
+      seeded = true;
       for (const prepared of preparedKeys) {
         const credential = await services.writeModelKey(tx, actor, prepared);
         record.credentials.push(credential);
@@ -539,6 +543,8 @@ export async function createImportedBot<PreparedKey>(
     if (!winner) throw error;
     return winner;
   }
+  // A spawn key already taken returns that bot without running the import.
+  if (!seeded) throw new ORPCError("CONFLICT", { message: "Your first bot already exists." });
   const settle = (label: string) => (error: unknown) => {
     getLogger().error(label, error);
   };

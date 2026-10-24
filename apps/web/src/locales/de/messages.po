@@ -2811,6 +2811,7 @@ msgstr "Bild-Upload-Bereich"
 msgid "Import"
 msgstr "Importieren"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "Agent importieren"

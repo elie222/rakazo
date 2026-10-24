@@ -2811,6 +2811,7 @@ msgstr "Область загрузки изображения"
 msgid "Import"
 msgstr "Импорт"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "Импорт агента"

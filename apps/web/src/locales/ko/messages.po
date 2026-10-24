@@ -2811,6 +2811,7 @@ msgstr "이미지 업로드 영역"
 msgid "Import"
 msgstr "가져오기"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "에이전트 가져오기"

@@ -29,6 +29,8 @@ import {
   NativeSelect,
   NativeSelectOption,
   Textarea,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@rakazo/ui-web";
 import {
   Collapsible,
@@ -42,8 +44,9 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { ComputerModePicker } from "./bot-panel";
 
-const sectionClass = "mt-6";
-const headingClass = "text-sm text-foreground";
+const panelStyle = { section: "mt-6", heading: "text-sm text-foreground" };
+// Onboarding's step style: label rhythm, full-width groups (see SignupSurvey).
+const pageStyle = { section: "mt-6 first:mt-0", heading: "text-sm font-medium text-foreground" };
 
 /** Import an OpenClaw or Hermes folder, or another assistant's exported document, as a new bot. */
 /** A chosen folder or opened backup: its paths, and its files read on demand. */
@@ -53,15 +56,27 @@ export type AgentImportSource = {
   size: (path: string) => number | undefined;
 };
 
+/** What the form sends to create the bot. */
+export type AgentImportCreateRequest = Parameters<typeof rpc.bots.importCreate>[0];
+
 export function AgentImportForm({
   onBack,
   onCancel,
   onCreated,
+  createBot = (input) => rpc.bots.importCreate(input),
+  layout = "panel",
 }: {
   onBack: () => void;
   onCancel: () => void;
   onCreated: (bot: Bot) => void;
+  /** How the bot is created; onboarding wraps it so a first bot is only made once. */
+  createBot?: (input: AgentImportCreateRequest) => Promise<Bot>;
+  /** `page` renders as an onboarding step; `panel` as the shell's side panel. */
+  layout?: "panel" | "page";
 }) {
+  const page = layout === "page";
+  const { section: sectionClass, heading: headingClass } = page ? pageStyle : panelStyle;
+  const [kind, setKind] = useState<"folder" | "document">("folder");
   const { t } = useLingui();
   const ids = useId();
   const folderInput = useRef<HTMLInputElement>(null);
@@ -284,7 +299,7 @@ export function AgentImportForm({
     setError(null);
     setBusy(true);
     try {
-      const bot = await rpc.bots.importCreate({
+      const bot = await createBot({
         importKey: importKey.current ?? undefined,
         files,
         includeSecrets,
@@ -396,35 +411,41 @@ export function AgentImportForm({
 
   return (
     <div data-testid="agent-import">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t`Back`}
-            onClick={() => (plan ? setPlan(null) : onBack())}
-          >
-            <ArrowLeft size={16} strokeWidth={1.8} />
+      {page ? (
+        <h1 className="text-[32px] font-medium text-foreground">
+          <Trans>Import an agent</Trans>
+        </h1>
+      ) : (
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t`Back`}
+              onClick={() => (plan ? setPlan(null) : onBack())}
+            >
+              <ArrowLeft size={16} strokeWidth={1.8} />
+            </Button>
+            <span className="text-[13.5px] text-muted-foreground">
+              <Trans>Import an agent</Trans>
+            </span>
+          </div>
+          <Button variant="ghost" size="icon-sm" aria-label={t`Cancel new bot`} onClick={onCancel}>
+            <X size={16} strokeWidth={1.8} />
           </Button>
-          <span className="text-[13.5px] text-muted-foreground">
-            <Trans>Import an agent</Trans>
-          </span>
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label={t`Cancel new bot`} onClick={onCancel}>
-          <X size={16} strokeWidth={1.8} />
-        </Button>
-      </div>
+      )}
       {error ? (
         <p
           role="alert"
           data-testid="agent-import-error"
-          className="mb-3 text-[13px] text-destructive"
+          className={page ? "mt-3 text-sm text-destructive" : "mb-3 text-[13px] text-destructive"}
         >
           {error}
         </p>
       ) : null}
       {plan ? (
-        <div data-testid="agent-import-preview">
+        <div data-testid="agent-import-preview" className={page ? "mt-8" : undefined}>
           {plan.instructions.length ? (
             <section className={sectionClass} data-testid="agent-import-instructions">
               <h3 className={headingClass}>
@@ -593,7 +614,7 @@ export function AgentImportForm({
               </CollapsibleContent>
             </Collapsible>
           ) : null}
-          <label htmlFor={`${ids}-name`} className="mt-6 block text-sm text-foreground">
+          <label htmlFor={`${ids}-name`} className={`mt-6 block ${headingClass}`}>
             <Trans>Name</Trans>
             <Input
               id={`${ids}-name`}
@@ -605,20 +626,49 @@ export function AgentImportForm({
             />
           </label>
           <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-          <Button
-            className="mt-5"
-            disabled={!name.trim() || tooLong || busy}
-            onClick={() => void create()}
-          >
-            {busy ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
-          </Button>
+          <div className={page ? "mt-8 flex gap-3" : "mt-5"}>
+            <Button disabled={!name.trim() || tooLong || busy} onClick={() => void create()}>
+              {busy ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
+            </Button>
+            {page ? (
+              <Button variant="outline" disabled={busy} onClick={() => setPlan(null)}>
+                <Trans>Back</Trans>
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : (
-        <div data-testid="agent-import-choose">
-          <section>
-            <h3 className={headingClass}>
-              <Trans>OpenClaw or Hermes</Trans>
-            </h3>
+        <div data-testid="agent-import-choose" className={page ? "mt-8" : undefined}>
+          {page ? (
+            <ToggleGroup
+              aria-label={t`Import an agent`}
+              value={[kind]}
+              onValueChange={([next]) => {
+                if (next) setKind(next as "folder" | "document");
+              }}
+              spacing={1}
+              className="grid w-full grid-cols-2 rounded-lg bg-muted p-1"
+            >
+              <ToggleGroupItem
+                value="folder"
+                className="aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>OpenClaw or Hermes</Trans>
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="document"
+                className="aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                <Trans>Another assistant</Trans>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
+          <section className={page ? (kind === "folder" ? "mt-6" : "hidden") : undefined}>
+            {page ? null : (
+              <h3 className={headingClass}>
+                <Trans>OpenClaw or Hermes</Trans>
+              </h3>
+            )}
             <input
               ref={(node) => {
                 folderInput.current = node;
@@ -643,7 +693,7 @@ export function AgentImportForm({
                 event.target.value = "";
               }}
             />
-            <div className="mt-2 flex gap-2">
+            <div className={page ? "grid gap-3 sm:grid-cols-2" : "mt-2 flex gap-2"}>
               <Button
                 variant="outline"
                 disabled={busy}
@@ -660,11 +710,17 @@ export function AgentImportForm({
               </Button>
             </div>
           </section>
-          <section className={sectionClass}>
-            <h3 className={headingClass}>
-              <Trans>Another assistant</Trans>
-            </h3>
-            <Button variant="outline" className="mt-2" onClick={() => void copyPrompt()}>
+          <section className={page ? (kind === "document" ? "mt-6" : "hidden") : sectionClass}>
+            {page ? null : (
+              <h3 className={headingClass}>
+                <Trans>Another assistant</Trans>
+              </h3>
+            )}
+            <Button
+              variant="outline"
+              className={page ? "w-full" : "mt-2"}
+              onClick={() => void copyPrompt()}
+            >
               {copied ? <Trans>Copied</Trans> : <Trans>Copy prompt</Trans>}
             </Button>
             <Textarea
@@ -695,6 +751,11 @@ export function AgentImportForm({
               </Button>
             </div>
           </section>
+          {page ? (
+            <Button variant="outline" className="mt-8" onClick={onBack}>
+              <Trans>Back</Trans>
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

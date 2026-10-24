@@ -804,6 +804,39 @@ describeIntegration("agent import", () => {
     });
   });
 
+  it("imports as the first bot once, never beside another first bot", async () => {
+    const cookie = await signup(app, `import-first-${stamp}@rakazo.test`, "First User");
+    const files = [{ path: "workspace/SOUL.md", content: "Calm.\n" }];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+    const request = {
+      files,
+      name: "Imported",
+      spawnKey: "onboarding:first",
+      selection: { instructions: plan.instructions.map((item) => item.id), memory: [], skills: [] },
+    };
+    const imported = await rpc<Bot>(app, cookie, "bots/importCreate", request);
+    const chief = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      spawnKey: "onboarding:first",
+    });
+    // Onboarding's Chief reuses the imported first bot instead of making a second one.
+    expect(chief.id).toBe(imported.id);
+
+    const other = await signup(app, `import-first-other-${stamp}@rakazo.test`, "Other User");
+    const existing = await rpc<Bot>(app, other, "bots/create", {
+      name: "Chief",
+      spawnKey: "onboarding:first",
+    });
+    const refused = await raw(app, other, "bots/importCreate", request);
+    expect(refused.status).toBe(409);
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: existing.id },
+      select: { spaceId: true, userId: true },
+    });
+    expect(await db.bot.count({ where: owner })).toBe(1);
+    expect(await db.agentImport.count({ where: owner })).toBe(0);
+  });
+
   it("keeps each import inside the actor's own space", async () => {
     const ownerCookie = await signup(app, `import-owner-${stamp}@rakazo.test`, "Owner");
     const otherCookie = await signup(app, `import-other-${stamp}@rakazo.test`, "Other");

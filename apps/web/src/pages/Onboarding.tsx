@@ -62,6 +62,7 @@ import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
+import { OnboardingImport } from "./onboarding-import";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 /** A provider whose catalog entry offers both sign-in and a key appears once per way to connect. */
@@ -169,6 +170,9 @@ export function OnboardingPage() {
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
+  // An imported agent replaces Chief as the first bot.
+  const [importing, setImporting] = useState(false);
+  const importedBotRef = useRef<{ id: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -500,14 +504,16 @@ export function OnboardingPage() {
     createStartedRef.current = true;
     setError(null);
     try {
-      const bot = await ensureFirstBot();
+      const imported = importedBotRef.current;
+      const bot = imported ?? (await ensureFirstBot());
       // Onboarding continues conversationally in the thread: greeting first,
-      // then the focus choice (immediate for the first bot).
+      // then the focus choice (immediate for the first bot). An imported bot
+      // already has a role, so it is not asked for one.
       const started = await rpc.onboarding
         .start({ botId: bot.id })
         .then(() => true)
         .catch(() => false);
-      if (started) {
+      if (started && !imported) {
         await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
       }
       navigate(`/app/${bot.id}`);
@@ -531,7 +537,29 @@ export function OnboardingPage() {
           </p>
         ) : null}
         {step === "survey" ? <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} /> : null}
-        {step === "model" ? (
+        {step === "model" && importing ? (
+          <OnboardingImport
+            firstBot={{
+              lock: withFirstBotLock,
+              existing: async () => findFirstBot(await rpc.bots.list()),
+              spawnKey: FIRST_BOT_SPAWN_KEY,
+            }}
+            onBack={() => setImporting(false)}
+            onDone={(bot) => {
+              importedBotRef.current = bot;
+              setImporting(false);
+              // The model step is done when the import brought a usable connection,
+              // decided exactly as on load.
+              void rpc
+                .me()
+                .then((me) => {
+                  if (!me.needsModel) setStep("bot");
+                })
+                .catch(() => undefined);
+            }}
+          />
+        ) : null}
+        {step === "model" && !importing ? (
           <div>
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Connect a model</Trans>
@@ -1012,6 +1040,11 @@ export function OnboardingPage() {
                   <Trans>Use Rakazo credits</Trans>
                 </Button>
               ) : null}
+              {importedBotRef.current ? null : (
+                <Button variant="outline" onClick={() => setImporting(true)}>
+                  <Trans>Import an agent</Trans>
+                </Button>
+              )}
             </div>
           </div>
         ) : null}

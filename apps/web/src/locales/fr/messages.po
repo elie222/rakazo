@@ -2811,6 +2811,7 @@ msgstr "Zone de téléchargement d'image"
 msgid "Import"
 msgstr "Importer"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "Importer un agent"

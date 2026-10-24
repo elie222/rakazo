@@ -2811,6 +2811,7 @@ msgstr "图片上传区域"
 msgid "Import"
 msgstr "导入"
 
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Import an agent"
 msgstr "导入 Agent"
