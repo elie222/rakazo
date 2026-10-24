@@ -538,8 +538,23 @@ export function OnboardingPage() {
             <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null}
-        {step === "survey" ? <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} /> : null}
-        {step === "model" && importing ? (
+        {step === "survey" && !importing ? (
+          <>
+            <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} />
+            {/* With no model step to follow, this is the one screen before the first bot is
+                made: the same quiet way in as on the model step. */}
+            {afterSurveyRef.current === "bot" && !importedBotRef.current ? (
+              <Button
+                variant="link"
+                className="mt-6 h-auto px-0 text-muted-foreground"
+                onClick={() => setImporting(true)}
+              >
+                <Trans>Import an agent</Trans>
+              </Button>
+            ) : null}
+          </>
+        ) : null}
+        {(step === "model" || step === "survey") && importing ? (
           <OnboardingImport
             firstBot={{
               lock: withFirstBotLock,
@@ -555,6 +570,9 @@ export function OnboardingPage() {
                 return;
               }
               importedBotRef.current = bot;
+              // From the survey, the survey still comes first; its Continue then opens the
+              // imported bot instead of making Chief.
+              if (step === "survey") return;
               // The model step is done when the import brought a usable connection,
               // decided exactly as on load.
               void rpc

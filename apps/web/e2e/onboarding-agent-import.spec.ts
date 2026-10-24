@@ -154,3 +154,63 @@ test("an import that finds a first bot already made says so and lands in that bo
   const bots = await rpc<Bot[]>(page, "bots/list", {});
   expect(bots.map((bot) => bot.name)).toEqual(["Chief"]);
 });
+
+test("with a model already provided, import is offered before the first bot is made", async ({
+  page,
+}, testInfo) => {
+  // A deployment that provides the model: no model step, only the sign-up survey.
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: { json: { ...body.json, needsModel: false, needsSignupSurvey: true } },
+    });
+  });
+  await signup(page, `onboarding-import-ready-${Date.now()}@rakazo.test`, "password12", "Ready");
+  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible({
+    timeout: 20_000,
+  });
+  // No bot is made while the user is still choosing.
+  expect(await rpc<Bot[]>(page, "bots/list", {})).toEqual([]);
+  const entry = page.getByRole("button", { name: "Import an agent", exact: true });
+  await expect(entry).toBeVisible();
+  await captureScreenshot(page, testInfo, "onboarding-import-entry-no-model-step");
+
+  await entry.click();
+  const panel = page.getByTestId("agent-import");
+  const home = testInfo.outputPath("openclaw-ready");
+  mkdirSync(path.join(home, "workspace"), { recursive: true });
+  writeFileSync(path.join(home, "workspace/SOUL.md"), "Calm.\n");
+  writeFileSync(path.join(home, "workspace/IDENTITY.md"), "- **Name:** Pebble\n");
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
+  await panel.getByRole("button", { name: "Create", exact: true }).click();
+  // The survey still comes first; its Continue opens the imported bot, and no Chief is made.
+  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.waitForURL(/\/app\/[^/]+$/, { timeout: 20_000 });
+  await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
+  const bots = await rpc<Bot[]>(page, "bots/list", {});
+  expect(bots.map((bot) => bot.name)).toEqual(["Pebble"]);
+});
+
+test("with a model already provided, ignoring import still starts with Chief at once", async ({
+  page,
+}) => {
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: { json: { ...body.json, needsModel: false, needsSignupSurvey: true } },
+    });
+  });
+  await signup(page, `onboarding-no-import-ready-${Date.now()}@rakazo.test`, "password12", "Plain");
+  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
+    timeout: 20_000,
+  });
+});
