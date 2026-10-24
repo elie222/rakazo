@@ -25,7 +25,10 @@ if (!openclaw || !hermes) {
 }
 
 function fingerprint(content) {
-  const text = content.replace(/^\uFEFF/, "").replace(/\s+/g, " ").trim();
+  const text = content
+    .replace(/^\uFEFF/, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const bytes = new TextEncoder().encode(text);
   let hash = 0x811c9dc5;
   for (const byte of bytes) {
