@@ -72,16 +72,23 @@ export function openAgentImportArchive(
   }
   let read = 0;
   const decoder = new TextDecoder("utf-8", { fatal: false });
+  // Each file is decompressed and counted once: reading it again (turning API keys on and
+  // off reads the same choice again) returns the same text without using more budget.
+  const texts = new Map<string, string>();
   return {
     paths,
     size: (path) => byVirtual.get(path)?.size,
     read: (path) => {
+      const cached = texts.get(path);
+      if (cached !== undefined) return cached;
       const entry = byVirtual.get(path);
       const bytes = entry && (entry.data ?? zip?.read(entry.path));
       if (!bytes) throw tooLarge();
       read += bytes.length;
       if (read > limits.readBytes) throw tooLarge();
-      return decoder.decode(bytes);
+      const text = decoder.decode(bytes);
+      texts.set(path, text);
+      return text;
     },
   };
 }

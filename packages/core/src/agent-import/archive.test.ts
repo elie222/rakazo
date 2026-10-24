@@ -438,3 +438,25 @@ describe("malformed archives", () => {
     await fails(() => read(gzipSync(raw.subarray(0, raw.length - 1024))), "unreadable");
   });
 });
+
+describe("reading the same files again", () => {
+  it("counts each file once, so turning API keys on and off never makes a backup too large", () => {
+    // About 3 MB that an import reads: four memory files under the 1 MB file limit.
+    const line = "Notes about the garden and the weekly plan.\n";
+    const memory = Array.from({ length: 4 }, (_, n) => ({
+      name: `memories/note-${n}.md`,
+      content: line.repeat(Math.floor((750 * 1024) / line.length)),
+    }));
+    const archive = openAgentImportArchive(
+      zip([{ name: "SOUL.md", content: "Calm.\n" }, ...memory]),
+    );
+    const chosen = archive.paths.filter((path) => path.includes("memories/"));
+    const total = chosen.reduce((sum, path) => sum + (archive.size(path) ?? 0), 0);
+    expect(total).toBeGreaterThan(2.9 * 1024 * 1024);
+    // Three reads of the same choice: more than the read budget if each one were counted.
+    for (let pass = 0; pass < 3; pass++) {
+      for (const path of chosen) expect(archive.read(path).length).toBe(memory[0]!.content.length);
+    }
+    expect(3 * total).toBeGreaterThan(AGENT_IMPORT_ARCHIVE_LIMITS.readBytes);
+  });
+});

@@ -216,3 +216,26 @@ describe("an empty checklist", () => {
     expect(container.innerHTML).toBe("");
   });
 });
+
+describe("an undone import's checklist", () => {
+  it("is not shown, so it never links to what Undo removed", async () => {
+    importSetupState.mockResolvedValue({ providers: {}, serverIds: {}, routineIds: {} });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <ImportSetupCard
+          botId="bot-1"
+          block={{
+            kind: "import_setup",
+            undone: true,
+            items: [{ kind: "routine", routineId: "routine-1", name: "morning" }],
+          }}
+        />,
+      );
+    });
+    expect(container.innerHTML).toBe("");
+  });
+});

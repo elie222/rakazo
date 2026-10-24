@@ -28,6 +28,7 @@ import {
   CreateRoutineInput,
   isValidTimeZone,
   MEMORY_INDEX_PATH,
+  MessageBlock as MessageBlockSchema,
 } from "@rakazo/contracts";
 import type { SkillFiles } from "@rakazo/core";
 import {
@@ -39,6 +40,7 @@ import {
 } from "@rakazo/core";
 import type { McpServer as McpServerRow, Prisma, PrismaClient, Routine } from "@rakazo/db";
 import {
+  appendEventInTransaction,
   createThreadMessageInTransaction,
   InstructionConflictError,
   IsolationError,
@@ -168,6 +170,8 @@ type ImportRecord = {
   credentials: { id: string; secretId: string; provider: string }[];
   /** Added to a bot that existed before: Undo removes what was added, never the bot. */
   existingBot?: boolean;
+  /** The checklist message this import posted, retired by Undo. */
+  setupMessageId?: string;
   /** When the import replaced that bot's instructions: the history entry with the old ones. */
   instructions?: { versionId: string; imported: string };
   /** When the import set that bot's model: the one it had before, and the one set. */
@@ -207,6 +211,8 @@ type Built = {
   settings: (AgentImportSettings & { keyValues: Map<string, string> }) | null;
   routineInputs: Map<string, CreateRoutineInputType>;
   mcpConfigs: Map<string, ImportedMcpServer & { slug: string }>;
+  /** Key ids skipped because their provider is connected (since the preview, perhaps). */
+  connectedKeyIds: Set<string>;
 };
 
 /**
@@ -226,7 +232,9 @@ async function buildPlan(
     base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
-  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs };
+  // Keys whose provider is connected now: never imported, and fine to still be selected.
+  const connectedKeyIds = new Set<string>();
+  if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
   const settings = readAgentImportSettings(folder, {
     includeSecrets,
     stdioAllowed: services.stdioAllowed,
@@ -248,6 +256,7 @@ async function buildPlan(
     // An existing connection is never replaced by an import.
     if (await services.hasModelConnection(actor, key.provider)) {
       skipped.push({ path: key.source, reason: "connected" });
+      connectedKeyIds.add(key.id);
     } else {
       apiKeys.push({ id: key.id, title: key.title, provider: key.provider });
     }
@@ -308,6 +317,7 @@ async function buildPlan(
     settings,
     routineInputs,
     mcpConfigs,
+    connectedKeyIds,
   };
 }
 
@@ -384,7 +394,7 @@ export async function createImportedBot<PreparedKey>(
   const target =
     destination.kind === "existing" ? await services.findBot(actor, destination.botId) : null;
   if (destination.kind === "existing" && !target) throw new IsolationError();
-  const { plan, settings, routineInputs, mcpConfigs } = await buildPlan(
+  const { plan, settings, routineInputs, mcpConfigs, connectedKeyIds } = await buildPlan(
     services as AgentImportServices,
     actor,
     input,
@@ -415,7 +425,12 @@ export async function createImportedBot<PreparedKey>(
   const routines = selected(plan.routines, input.selection.routines).map(
     (item) => routineInputs.get(item.id)!,
   );
-  const keys = selected(plan.apiKeys, input.selection.apiKeys);
+  // A key whose provider was connected after the preview stays selected in the request; it
+  // is skipped like any connected key, and the existing connection is kept.
+  const keys = selected(
+    plan.apiKeys,
+    input.selection.apiKeys.filter((id) => !connectedKeyIds.has(id)),
+  );
   const model = input.selection.model ? plan.model : null;
   if (input.selection.model) {
     const keyed = keys.some((key) => key.provider === model?.provider);
@@ -684,11 +699,12 @@ export async function createImportedBot<PreparedKey>(
     }
     // One checklist of what is left to set up, in the same transaction; none if nothing is.
     if (setup.length) {
-      await createThreadMessageInTransaction(tx, {
+      const message = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,
         role: "bot",
         blocks: [{ kind: "import_setup", items: setup }],
       });
+      record.setupMessageId = message.id;
     }
     // A new bot's memory is all from the import (and its starting index).
     if (!target) {
@@ -1112,6 +1128,15 @@ export async function undoAgentImport(
           data: { modelProvider: previous.provider, modelId: previous.modelId },
         });
       }
+      // The bot stays, so does its chat: its checklist would link to what Undo removed.
+      if (thread && plan.record.setupMessageId) {
+        await retireSetupMessage(
+          tx,
+          actor,
+          { botId, threadId: thread.id },
+          plan.record.setupMessageId,
+        );
+      }
       await tx.agentImport.delete({ where: { id: plan.found.id } });
       result = current.infoFor(removed, instructions);
     });
@@ -1128,6 +1153,38 @@ export async function undoAgentImport(
     },
   });
   return result;
+}
+
+/**
+ * Marks an import's checklist undone, the way other cards are settled: the message is
+ * updated in place and the change is sent to open chats.
+ */
+async function retireSetupMessage(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  target: { botId: string; threadId: string },
+  messageId: string,
+) {
+  const message = await tx.message.findFirst({
+    where: { id: messageId, threadId: target.threadId },
+    select: { blocks: true },
+  });
+  const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
+  if (!parsed.success) return;
+  const blocks = parsed.data.map((block) =>
+    block.kind === "import_setup" ? { ...block, undone: true } : block,
+  );
+  await tx.message.update({
+    where: { id: messageId },
+    data: { blocks: blocks as Prisma.InputJsonValue },
+  });
+  await appendEventInTransaction(tx, {
+    spaceId: actor.spaceId,
+    threadId: target.threadId,
+    botId: target.botId,
+    type: "thread.message.updated",
+    payload: { messageId, role: "bot", blocks },
+  });
 }
 
 /** SHA-256 of a create request with object keys and lists in a fixed order. */

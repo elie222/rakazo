@@ -961,6 +961,57 @@ describeIntegration("agent import", () => {
     expect([info.remove.apiKeys, info.keep.apiKeys]).toEqual([[], []]);
   });
 
+  it("keeps a connection made between preview and Create, and still creates the bot", async () => {
+    const cookie = await signup(app, `import-key-between-${stamp}@rakazo.test`, "Between User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/.env", content: "OPENROUTER_API_KEY=placeholder-imported-key\n" },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+      files,
+      includeSecrets: true,
+    });
+    expect(plan.apiKeys.map((item) => item.id)).toEqual(["key:openrouter"]);
+    // Connected by hand after the preview showed the key, before Create.
+    await rpc(app, cookie, "models/connect", {
+      provider: "openrouter",
+      apiKey: "placeholder-manual-key",
+    });
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Between",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [],
+        skills: [],
+        apiKeys: ["key:openrouter"],
+      },
+    });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: { userId: true },
+    });
+    const credentials = await db.userModelCredential.findMany({ where: { userId: owner.userId } });
+    expect(credentials).toHaveLength(1);
+    expect(await db.secret.count({ where: { userId: owner.userId, kind: "model" } })).toBe(1);
+    const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
+    expect((record.created as { credentials: unknown[] }).credentials).toEqual([]);
+    // An id that was never offered is still refused.
+    const refused = await raw(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Unknown",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [],
+        skills: [],
+        apiKeys: ["key:anthropic"],
+      },
+    });
+    expect(refused.status).toBe(400);
+  });
+
   it("returns the same bot for a retried create and refuses a reused key", async () => {
     const cookie = await signup(app, `import-retry-${stamp}@rakazo.test`, "Retry User");
     const files = [{ path: "workspace/SOUL.md", content: "Calm.\n" }];
@@ -1419,6 +1470,22 @@ describeIntegration("agent import", () => {
       expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
         "Chief's own instructions.",
       );
+      // The chat stays, but its checklist no longer offers links to what was removed:
+      // it is marked undone in place, and open chats are told.
+      const checklist = await db.message.findFirstOrThrow({
+        where: { thread: { botId: chief.id }, role: "bot" },
+        orderBy: { seq: "desc" },
+        select: { id: true, blocks: true },
+      });
+      expect(checklist.blocks).toEqual([
+        expect.objectContaining({ kind: "import_setup", undone: true }),
+      ]);
+      const updated = await db.event.findFirst({
+        where: { thread: { botId: chief.id }, type: "thread.message.updated" },
+        orderBy: { seq: "desc" },
+        select: { payload: true },
+      });
+      expect(updated?.payload).toMatchObject({ messageId: checklist.id });
     });
 
     it("replaces the instructions only when chosen, as a recorded edit Undo can restore", async () => {

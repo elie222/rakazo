@@ -190,6 +190,19 @@ export const Composer = memo(function Composer({
     retryNonce.current = null;
   }
 
+  // The chat a drop was made in, and whether the composer is still mounted.
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  // A drop's Import / Attach choice belongs to the chat it was dropped in.
+  useEffect(() => setAgentDrop(null), [draftKey]);
+
   function pickAttachments(files: FileList | readonly File[] | null) {
     if (!files?.length) return;
     if (onAttachmentPick(files)) markEdited();
@@ -383,10 +396,20 @@ export const Composer = memo(function Composer({
     // The event's file list is empty once this handler returns: everything later (Attach,
     // or the fallback for an ordinary archive) uses the copy taken during the event.
     const files = drop.files;
+    // Reading a large archive takes a while: the drop belongs to this chat, so nothing
+    // happens if the user moved to another one (or left) in the meantime.
+    const target = draftKey;
+    const stillHere = () => mountedRef.current && draftKeyRef.current === target;
     // Looked at by name only, on this device; nothing is uploaded until the user chooses.
     void droppedAgent(drop).then(
-      (agent) => (agent ? setAgentDrop({ agent, files }) : pickAttachments(files)),
-      () => pickAttachments(files),
+      (agent) => {
+        if (!stillHere()) return;
+        if (agent) setAgentDrop({ agent, files });
+        else pickAttachments(files);
+      },
+      () => {
+        if (stillHere()) pickAttachments(files);
+      },
     );
   }
 

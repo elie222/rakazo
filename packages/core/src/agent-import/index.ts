@@ -315,7 +315,9 @@ export function parseAgentImport(
   skillFiles: SkillFiles = {},
 ): AgentImportPlan | { error: string } {
   const only = files.length === 1 ? files[0] : undefined;
-  if (only && isAgentDocument(only.content)) {
+  // A known agent file (SOUL.md, MEMORY.md, memories/…) is read as one even when its text
+  // has the document's headings; only another file or the pasted reply is a document.
+  if (only && !isKnownAgentFile(only.path) && isAgentDocument(only.content)) {
     return plan("document", parseAgentDocument(only.content));
   }
   const folder = readAgentImportFolder(files, { includeSecrets: false });
@@ -329,6 +331,15 @@ export function parseAgentImport(
     return { error: AGENT_IMPORT_NOT_FOUND };
   }
   return plan(folder.source, parsed);
+}
+
+/** True when a path, from any folder down, names a file an OpenClaw or Hermes agent keeps. */
+function isKnownAgentFile(path: string): boolean {
+  const parts = path.split("/");
+  return parts.some((_, index) => {
+    const tail = parts.slice(index).join("/");
+    return isAgentImportCandidate(tail) && !AGENT_IMPORT_CONFIG_FILES.has(tail);
+  });
 }
 
 function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportPlan {
