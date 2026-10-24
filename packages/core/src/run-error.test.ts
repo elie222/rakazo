@@ -2,9 +2,11 @@ import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_ACTION_NOT_RUN_ERROR,
+  isImageInputConfirmation,
   isModelRequiredSendError,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_IMAGE_INPUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUIRED_SEND_ERROR,
   modelFallbackFailure,
@@ -491,6 +493,34 @@ describe("isModelRequiredSendError", () => {
     `${MODEL_REQUIRED_SEND_ERROR} suffix`,
   ])("rejects unrelated values: %s", (error) => {
     expect(isModelRequiredSendError(error)).toBe(false);
+  });
+});
+
+it("normalizes the shared image rejection with model recovery", () => {
+  const translate = (message: string) => `translated:${message}`;
+  expect(normalizeRunError(MODEL_IMAGE_INPUT_ERROR, translate)).toMatchObject({
+    summary: `translated:${MODEL_IMAGE_INPUT_ERROR}`,
+    recovery: "model",
+    kind: "model",
+  });
+});
+
+it("requires structured server metadata before offering file confirmation", () => {
+  expect(
+    isImageInputConfirmation({ status: 409, data: { reason: "model_image_input_unsupported" } }),
+  ).toBe(true);
+  expect(isImageInputConfirmation({ status: 409, message: MODEL_IMAGE_INPUT_ERROR })).toBe(false);
+  expect(isImageInputConfirmation(MODEL_IMAGE_INPUT_ERROR)).toBe(false);
+});
+
+it("keeps model recovery for an image rejection after backups are exhausted", () => {
+  const details = modelFallbackFailure(MODEL_IMAGE_INPUT_ERROR, [
+    { provider: "fake-provider", modelId: "fake-model", status: "failed", reason: "fake" },
+  ]);
+  expect(normalizeRunError(details)).toMatchObject({
+    summary: `${MODEL_IMAGE_INPUT_ERROR} Your backup models also failed.`,
+    recovery: "model",
+    kind: "model",
   });
 });
 

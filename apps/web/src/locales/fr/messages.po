@@ -1075,6 +1075,10 @@ msgstr "Annulé"
 msgid "Card view"
 msgstr "Vue en cartes"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Changer de modèle"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Changer le mot de passe"
@@ -2808,6 +2812,15 @@ msgstr "Si vous avez entendu cela, la voix est prête."
 msgid "Ignore"
 msgstr "Ignorer"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La saisie d’images n’est pas configurée pour ce modèle."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La saisie d’images n’est pas configurée pour ce modèle."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Zone de téléchargement d'image"
@@ -4510,6 +4523,10 @@ msgstr "Envoyez <0>{linkCode}</0> au numéro depuis votre application de discuss
 msgid "Send answer"
 msgstr "Envoyer la réponse"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Envoyer comme fichier"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Envoyer le code de suppression"
@@ -4920,6 +4937,10 @@ msgstr "Exécution de test"
 msgid "Testing…"
 msgstr "Test en cours…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "Le bot peut utiliser le fichier, mais ne verra pas l'image."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "La connexion a expiré."
@@ -5003,6 +5024,15 @@ msgstr "Ce fichier n'est pas un texte UTF-8 valide."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ce Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Ce modèle ne peut pas lire les images. Choisissez un modèle qui les prend en charge."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Ce modèle ne peut pas lire les images. Choisissez un modèle qui les prend en charge."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

@@ -1075,6 +1075,10 @@ msgstr "रद्द किया गया"
 msgid "Card view"
 msgstr ""
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "मॉडल बदलें"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "पासवर्ड बदलें"
@@ -2808,6 +2812,15 @@ msgstr "अगर आपने वह सुना, तो आवाज़ त�
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "इस मॉडल के लिए चित्र इनपुट कॉन्फ़िगर नहीं है।"
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "इस मॉडल के लिए चित्र इनपुट कॉन्फ़िगर नहीं है।"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
@@ -4510,6 +4523,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "उत्तर भेजें"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "फ़ाइल के रूप में भेजें"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "हटाने का कोड भेजें"
@@ -4920,6 +4937,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "परीक्षण हो रहा है…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "बॉट फ़ाइल का उपयोग कर सकता है, लेकिन तस्वीर नहीं देख पाएगा।"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "कनेक्शन का समय समाप्त हो गया।"
@@ -5003,6 +5024,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "यह Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "यह मॉडल चित्र नहीं पढ़ सकता। चित्रों का समर्थन करने वाला मॉडल चुनें।"
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "यह मॉडल चित्र नहीं पढ़ सकता। चित्रों का समर्थन करने वाला मॉडल चुनें।"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

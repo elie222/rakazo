@@ -416,6 +416,8 @@ export interface AgentSteeringMessage {
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  imageFileFallback?: boolean;
 }
 
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
@@ -486,6 +488,10 @@ export interface AgentRunRequest {
     images?: AgentInputImage[];
   }>;
   currentTurnImages?: AgentInputImage[];
+  /** A confirmed image belongs to this run, including a resumed waiting-input reply. */
+  currentRunRequiresImageInput?: boolean;
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */

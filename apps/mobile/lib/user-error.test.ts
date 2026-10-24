@@ -1,5 +1,6 @@
+import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { loadFailureKind } from "./user-error";
+import { errorText, loadFailureKind } from "./user-error";
 
 const withStatus = (status: number) =>
   Object.defineProperty(new Error("Something went wrong. Try again."), "status", { value: status });
@@ -16,4 +17,9 @@ describe("loadFailureKind", () => {
     expect(loadFailureKind(withStatus(400))).toBe("other");
     expect(loadFailureKind(new Error("Could not save the default space"))).toBe("other");
   });
+});
+
+it("recognizes image compatibility errors from old clients and new servers", () => {
+  expect(errorText(new Error(MODEL_IMAGE_INPUT_ERROR))).toBe(MODEL_IMAGE_INPUT_ERROR);
+  expect(errorText(`  ${MODEL_IMAGE_INPUT_ERROR}  `)).toBe(MODEL_IMAGE_INPUT_ERROR);
 });

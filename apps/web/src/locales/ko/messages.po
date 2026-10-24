@@ -1075,6 +1075,10 @@ msgstr "취소됨"
 msgid "Card view"
 msgstr ""
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "모델 변경"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "비밀번호 변경"
@@ -2808,6 +2812,15 @@ msgstr "샘플이 들렸다면 음성 설정이 완료되었습니다."
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "이 모델에는 이미지 입력이 설정되어 있지 않습니다."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "이 모델에는 이미지 입력이 설정되어 있지 않습니다."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "이미지 업로드 영역"
@@ -4510,6 +4523,10 @@ msgstr "10분 안에 채팅 앱에서 연결할 회선으로 <0>{linkCode}</0>�
 msgid "Send answer"
 msgstr "답변 보내기"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "파일로 보내기"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "삭제 코드 보내기"
@@ -4920,6 +4937,10 @@ msgstr "테스트 실행"
 msgid "Testing…"
 msgstr "테스트 중…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "Bot은 파일을 사용할 수 있지만 이미지는 볼 수 없습니다."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."
@@ -5003,6 +5024,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "이 Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "이 모델은 이미지를 읽을 수 없습니다. 이미지를 지원하는 모델을 선택하세요."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "이 모델은 이미지를 읽을 수 없습니다. 이미지를 지원하는 모델을 선택하세요."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

@@ -146,6 +146,7 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendInput = threadTarget
   .safeExtend({
+    imageHandling: z.enum(["confirm", "file"]).optional(),
     text: z.string().optional(),
     artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
     /** Bare bot ids (legacy) or typed mention chips from the composer. */

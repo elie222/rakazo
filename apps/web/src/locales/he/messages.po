@@ -1075,6 +1075,10 @@ msgstr "בוטל"
 msgid "Card view"
 msgstr "תצוגת כרטיסים"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "החלפת מודל"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "שינוי סיסמה"
@@ -2808,6 +2812,15 @@ msgstr "אם שמעת את זה, הקול מוכן."
 msgid "Ignore"
 msgstr "התעלמות"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
@@ -4510,6 +4523,10 @@ msgstr "יש לשלוח את <0>{linkCode}</0> לקו מאפליקציית הצ�
 msgid "Send answer"
 msgstr "שליחת תשובה"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "שליחה כקובץ"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "שליחת קוד מחיקה"
@@ -4920,6 +4937,10 @@ msgstr "הרצת בדיקה"
 msgid "Testing…"
 msgstr "בודק…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "תם הזמן הקצוב לחיבור."
@@ -5003,6 +5024,15 @@ msgstr "הקובץ אינו טקסט UTF-8 תקין."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ה-Mac הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

@@ -286,3 +286,171 @@ test("an accepted send clears recovered text after returning to the thread", asy
   await page.reload();
   await expect(composer).toHaveValue("");
 });
+
+test("an unsupported-image rejection keeps the draft for a compatible resend", async ({
+  page,
+}, testInfo) => {
+  const composer = await openComposer(page, "image-model-rejection");
+  const botId = activeBotId(page);
+  await rpc(page, "models/connect", {
+    provider: "openai-compatible",
+    modelId: "fixture-text-model",
+    baseUrl: "http://127.0.0.1:8090/v1",
+    supportsImages: false,
+  });
+  await rpc(page, "bots/update", {
+    botId,
+    modelProvider: "openai-compatible",
+    modelId: "fixture-text-model",
+  });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "picture.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  const remove = page.getByRole("button", { name: "Remove picture.png" });
+  await expect(remove).toBeVisible();
+  let rejectedBody: unknown;
+  let uploads = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/rpc/artifacts/create")) uploads++;
+  });
+  const rejection = page.waitForResponse(
+    (response) => response.url().includes("/rpc/threads/send") && response.status() === 409,
+  );
+  page.on("request", (request) => {
+    if (request.url().includes("/rpc/threads/send") && !rejectedBody)
+      rejectedBody = request.postDataJSON();
+  });
+  await composer.fill("Read this picture");
+  await composer.press("Enter");
+  await rejection;
+  expect((rejectedBody as { json: { imageHandling?: string } }).json.imageHandling).toBe("confirm");
+  await expect(page.getByTestId("composer-error")).toHaveText(/This model cannot read images/);
+  await expect(composer).toHaveValue("Read this picture");
+  await expect(remove).toBeVisible();
+  const sendAsFile = page.getByRole("button", { name: "Send as file", exact: true });
+  const changeModel = page.getByRole("button", { name: "Change model", exact: true });
+  await expect(sendAsFile).toBeVisible();
+  await expect(changeModel).toBeVisible();
+  const fileNote = "The bot can use the file but won't see the picture.";
+  await expect(
+    page.getByTestId("composer-error").getByText(fileNote, { exact: true }),
+  ).toBeVisible();
+  await expect(sendAsFile).toHaveAccessibleDescription(fileNote);
+  await captureScreenshot(page, testInfo, "image-model-rejection-keeps-draft");
+  // In a bot thread the bot's own model is the one this send used.
+  await changeModel.click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings.getByRole("combobox", { name: "Model", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Close panel", exact: true }).click();
+  await expect(settings).toBeHidden();
+  await expect(composer).toHaveValue("Read this picture");
+  const resent = page.waitForRequest("**/rpc/threads/send");
+  await sendAsFile.click();
+  const body = (await resent).postDataJSON();
+  expect(body.json).toEqual({ ...(rejectedBody as { json: object }).json, imageHandling: "file" });
+  expect(uploads).toBe(1);
+  await expect(
+    page.getByTestId("transcript").getByText("Read this picture", { exact: true }),
+  ).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await expect(remove).toBeHidden();
+  await captureScreenshot(page, testInfo, "image-sent-as-file");
+});
+
+for (const change of ["text", "attachment"] as const) {
+  test(`a late image rejection offers no file resend after a ${change} edit`, async ({ page }) => {
+    const composer = await openComposer(page, `late-image-rejection-${change}`);
+    const botId = activeBotId(page);
+    await rpc(page, "models/connect", {
+      provider: "openai-compatible",
+      modelId: "fixture-text-model",
+      baseUrl: "http://127.0.0.1:8090/v1",
+      supportsImages: false,
+    });
+    await rpc(page, "bots/update", {
+      botId,
+      modelProvider: "openai-compatible",
+      modelId: "fixture-text-model",
+    });
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "picture.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+    await expect(page.getByRole("button", { name: "Remove picture.png" })).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let intercepted!: () => void;
+    const reached = new Promise<void>((resolve) => (intercepted = resolve));
+    await page.route("**/rpc/threads/send", async (route) => {
+      intercepted();
+      await held;
+      await route.continue();
+    });
+    const rejection = page.waitForResponse(
+      (response) => response.url().includes("/rpc/threads/send") && response.status() === 409,
+    );
+    await composer.fill("Read this picture");
+    await composer.press("Enter");
+    await reached;
+    // The newer draft is not the submission the server is about to reject.
+    if (change === "text") await composer.fill("A newer draft");
+    else
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "extra.txt",
+        mimeType: "text/plain",
+        buffer: Buffer.from("extra"),
+      });
+    release();
+    await rejection;
+    await expect(page.getByTestId("composer-error")).toHaveText(/This model cannot read images/);
+    await expect(page.getByRole("button", { name: "Send as file", exact: true })).toHaveCount(0);
+    if (change === "text") await expect(composer).toHaveValue("A newer draft");
+    else await expect(page.getByRole("button", { name: "Remove extra.txt" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove picture.png" })).toBeVisible();
+  });
+}
+
+test("separate picks with matching file metadata upload their own bytes", async ({ page }) => {
+  const composer = await openComposer(page, "attachment-identity");
+  const uploads: string[] = [];
+  await page.route("**/rpc/artifacts/create", async (route) => {
+    uploads.push(route.request().postDataJSON().json.contentBase64);
+    await route.continue();
+  });
+  const metadata: Array<{ name: string; size: number; lastModified: number }> = [];
+  for (const content of ["first", "other"]) {
+    metadata.push(
+      await page.locator('input[type="file"]').evaluate((element, text) => {
+        const input = element as HTMLInputElement;
+        const file = new File([text], "same.txt", {
+          type: "text/plain",
+          lastModified: 1234567890000,
+        });
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return { name: file.name, size: file.size, lastModified: file.lastModified };
+      }, content),
+    );
+  }
+  expect(metadata[0]).toEqual(metadata[1]);
+  await composer.fill("Process both files");
+  await composer.press("Enter");
+  await expect(
+    page.getByTestId("transcript").getByText("Process both files", { exact: true }),
+  ).toBeVisible();
+  expect(uploads).toEqual([
+    Buffer.from("first").toString("base64"),
+    Buffer.from("other").toString("base64"),
+  ]);
+});

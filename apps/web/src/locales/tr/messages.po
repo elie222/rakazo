@@ -1075,6 +1075,10 @@ msgstr "İptal edildi"
 msgid "Card view"
 msgstr ""
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Modeli değiştir"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Parolayı değiştir"
@@ -2808,6 +2812,15 @@ msgstr "Bunu duyduysan ses hazır."
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Görüntü yükleme alanı"
@@ -4510,6 +4523,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Yanıtı gönder"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Dosya olarak gönder"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Silme kodu gönder"
@@ -4920,6 +4937,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "Bot dosyayı kullanabilir ama resmi göremez."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Bağlantı zaman aşımına uğradı."
@@ -5003,6 +5024,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "bu Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

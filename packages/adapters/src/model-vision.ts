@@ -115,3 +115,11 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
   if (acceptsImages) return tools;
   return tools.filter((tool) => !IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name));
 }
+
+/** Attachment admission needs proof, unlike conservative screenshot tool gating. */
+export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
+  const resolved = resolveModelRefForVisionCheck(provider, modelId);
+  if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
+  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  return model ? model.input.includes("image") : undefined;
+}

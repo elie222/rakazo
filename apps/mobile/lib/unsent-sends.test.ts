@@ -22,6 +22,13 @@ function attempt(error: string): SendAttempt {
 }
 beforeEach(() => vi.clearAllMocks());
 describe("notDelivered", () => {
+  it("leaves image confirmation to the contextual choices without a generic modal", () => {
+    notDelivered({
+      ...attempt("Image input is not configured for this model."),
+      imageConfirmation: true,
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
   it("offers Models settings and cancellation for the missing-model rejection", () => {
     notDelivered(attempt(` ${MODEL_REQUIRED_SEND_ERROR} `));
     const [title, message, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;

@@ -1,4 +1,12 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Not sent · Tap for options": "Niet verzonden · Tik voor opties",
+  "Image input is not configured for this model.":
+    "Afbeeldingsinvoer is niet ingesteld voor dit model.",
+  "Send as file": "Als bestand verzenden",
+  "The bot can use the file but won't see the picture.":
+    "De bot kan het bestand gebruiken, maar ziet de afbeelding niet.",
+  "This model cannot read images. Choose a model that supports images.":
+    "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt.",
   "Use 80 characters or fewer": "Gebruik maximaal 80 tekens",
   "Could not update name": "Naam kon niet worden bijgewerkt",
   "{summary} Your backup models also failed.": "{summary} Je reservemodellen zijn ook mislukt.",

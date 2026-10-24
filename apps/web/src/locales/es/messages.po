@@ -1075,6 +1075,10 @@ msgstr "Cancelado"
 msgid "Card view"
 msgstr ""
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Cambiar modelo"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Cambiar contraseña"
@@ -2808,6 +2812,15 @@ msgstr "Si escuchaste eso, la voz está lista."
 msgid "Ignore"
 msgstr ""
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La entrada de imágenes no está configurada para este modelo."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "La entrada de imágenes no está configurada para este modelo."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Área de carga de imagen"
@@ -4510,6 +4523,10 @@ msgstr "Envía <0>{linkCode}</0> a la línea desde tu app de chat en un plazo de
 msgid "Send answer"
 msgstr "Enviar respuesta"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Enviar como archivo"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Enviar código de eliminación"
@@ -4920,6 +4937,10 @@ msgstr "Ejecución de prueba"
 msgid "Testing…"
 msgstr "Probando…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "El bot puede usar el archivo, pero no verá la imagen."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Se agotó el tiempo de conexión."
@@ -5003,6 +5024,15 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "esta Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Este modelo no puede leer imágenes. Elige un modelo que admita imágenes."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Este modelo no puede leer imágenes. Elige un modelo que admita imágenes."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

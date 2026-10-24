@@ -1075,6 +1075,10 @@ msgstr "Geannuleerd"
 msgid "Card view"
 msgstr "Kaartweergave"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Model wijzigen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
@@ -2808,6 +2812,15 @@ msgstr "Als je dat hoorde, is de stem klaar."
 msgid "Ignore"
 msgstr "Negeren"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Gebied voor afbeeldingsuploads"
@@ -4510,6 +4523,10 @@ msgstr "Stuur <0>{linkCode}</0> binnen 10 minuten naar het gesprek met de bot in
 msgid "Send answer"
 msgstr "Antwoord verzenden"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Als bestand verzenden"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Verwijderingscode verzenden"
@@ -4920,6 +4937,10 @@ msgstr "Testrun"
 msgid "Testing…"
 msgstr "Bezig met testen…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "De bot kan het bestand gebruiken, maar ziet de afbeelding niet."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "De verbinding is verlopen."
@@ -5003,6 +5024,15 @@ msgstr "Dit bestand is geen geldige UTF-8-tekst."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "deze Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

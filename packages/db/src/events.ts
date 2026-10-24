@@ -1088,8 +1088,8 @@ export async function retireWaitingQuestionInTransaction(
   return true;
 }
 
-/** Answer a waiting question ask with composer free-text. Approval and secret cards stay on the card path. */
-export async function answerWaitingRunWithTextInTransaction(
+/** Read-only eligibility shared by image admission and composer free-text answers. */
+export async function eligibleWaitingTextAnswer(
   tx: Prisma.TransactionClient,
   input: {
     spaceId: string;
@@ -1101,7 +1101,7 @@ export async function answerWaitingRunWithTextInTransaction(
     /** Explicit reaction target; composer replies must pass the latest-message check. */
     messageId?: string;
   },
-): Promise<{ threadId: string; seq: number } | null> {
+): Promise<string | null> {
   const answer = input.answer.trim();
   if (!answer) return null;
   const found = await findPendingAsk(tx, input);
@@ -1129,7 +1129,18 @@ export async function answerWaitingRunWithTextInTransaction(
       beforeSeq = latest.seq;
     }
   }
-  return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
+  return found.messageId;
+}
+
+/** Commit only answers that pass the same read-only composer eligibility check. */
+export async function answerWaitingRunWithTextInTransaction(
+  tx: Prisma.TransactionClient,
+  input: Parameters<typeof eligibleWaitingTextAnswer>[1],
+): Promise<{ threadId: string; seq: number } | null> {
+  const messageId = await eligibleWaitingTextAnswer(tx, input);
+  return messageId
+    ? commitAnswerRunInput(tx, { ...input, messageId, answer: input.answer.trim() })
+    : null;
 }
 
 export async function pauseRunForInput(

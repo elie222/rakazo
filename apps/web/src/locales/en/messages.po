@@ -1075,6 +1075,10 @@ msgstr "Cancelled"
 msgid "Card view"
 msgstr "Card view"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Change model"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Change password"
@@ -2808,6 +2812,15 @@ msgstr "If you heard that, voice is ready."
 msgid "Ignore"
 msgstr "Ignore"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Image upload area"
@@ -4510,6 +4523,10 @@ msgstr "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes.
 msgid "Send answer"
 msgstr "Send answer"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Send as file"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Send deletion code"
@@ -4920,6 +4937,10 @@ msgstr "Test run"
 msgid "Testing…"
 msgstr "Testing…"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "The bot can use the file but won't see the picture."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "The connection timed out."
@@ -5003,6 +5024,15 @@ msgstr "This file is not valid UTF-8 text."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "this Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

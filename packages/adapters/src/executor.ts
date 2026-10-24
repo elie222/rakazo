@@ -100,6 +100,7 @@ import {
   redactSecrets,
   renderBotDirectory,
   resolveActionApprovalDetail,
+  runReadsThreadHistory,
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -4012,6 +4013,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
           run.sourceMessageId,
         );
         const turnBlocks = currentTurnMessage?.blocks;
+        // A run owns its source message and steering bound to it, including waiting-input
+        // replies. message.runId alone is display linkage: a send during background work
+        // points at that run but waits for its continuation. Read independently of history.
+        const currentRunImageMessages = await deps.prisma.message.findMany({
+          where: {
+            threadId: thread.id,
+            OR: [
+              ...(run.sourceMessageId ? [{ id: run.sourceMessageId }] : []),
+              { steeringMessages: { some: { runId, botId: run.botId } } },
+            ],
+            role: "user",
+            blocks: { array_contains: [{ kind: "image" }] },
+          },
+          select: { id: true, blocks: true },
+          orderBy: { seq: "asc" },
+        });
+        // The content extension decrypts imageHandling after filtering on plain kind.
+        const confirmedRunImages = currentRunImageMessages.flatMap((message) =>
+          (message.blocks as MessageBlock[]).filter(
+            (block) => block.kind === "image" && block.imageHandling === "confirm",
+          ),
+        );
+        const currentRunRequiresImageInput = confirmedRunImages.length > 0;
         const allowSilentPeerMessage = botMessageAllowsSilence(
           peerMessage?.intent,
           peerMessage?.repliesToRequest,
@@ -7911,6 +7935,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 .join("\n\n"),
               history: runtimeHistory,
               currentTurnImages,
+              currentRunRequiresImageInput,
+              currentTurnImageFileFallback: Boolean(
+                currentTurnImages?.length &&
+                  currentTurnFiles.length &&
+                  !turnBlocks?.some(
+                    (block) => block.kind === "image" && block.imageHandling === "confirm",
+                  ),
+              ),
               tools,
               model: {
                 provider: runModelProvider,
@@ -8042,7 +8074,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       ]
                         .filter(Boolean)
                         .join("\n\n"),
-                      images,
+                      // A legacy run without sourceMessageId may resolve this same
+                      // message as its current turn. Its images are already supplied.
+                      images:
+                        item.messageId === currentTurnMessage?.id && currentTurnImages?.length
+                          ? undefined
+                          : images,
+                      imageFileFallback: Boolean(
+                        images?.length &&
+                          files.length &&
+                          !item.blocks.some(
+                            (block) => block.kind === "image" && block.imageHandling === "confirm",
+                          ),
+                      ),
                     };
                   }),
                 );
@@ -9592,7 +9636,7 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   }
   // Routine runs stay isolated from thread history. The creation intro does
   // too: a message that arrives during it waits and is answered afterward.
-  if (trigger === "created" || trigger === "routine") {
+  if (!runReadsThreadHistory(trigger)) {
     return {
       messages: [] as T[],
       summary: null,
