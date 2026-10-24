@@ -638,7 +638,7 @@ if [[ ! -e "$ACTIVE_DATA" ]]; then
     if [[ "$argument" == "$ACTIVE_DATA" ]]; then exit 17; fi
   done
 fi
-exec /usr/bin/mv "$@"
+PATH=/usr/bin:/bin exec mv "$@"
 `,
     );
     chmodSync(mv, 0o755);
