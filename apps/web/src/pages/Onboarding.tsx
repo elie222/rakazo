@@ -1069,12 +1069,17 @@ export function OnboardingPage() {
                   <Trans>Use Rakazo credits</Trans>
                 </Button>
               ) : null}
-              {importedBotRef.current ? null : (
-                <Button variant="outline" onClick={() => setImporting(true)}>
-                  <Trans>Import an agent</Trans>
-                </Button>
-              )}
             </div>
+            {/* A quieter way in, below the step, not a peer of Continue. */}
+            {importedBotRef.current ? null : (
+              <Button
+                variant="link"
+                className="mt-6 h-auto px-0 text-muted-foreground"
+                onClick={() => setImporting(true)}
+              >
+                <Trans>Import an agent</Trans>
+              </Button>
+            )}
           </div>
         ) : null}
         {step === "bot" ? (

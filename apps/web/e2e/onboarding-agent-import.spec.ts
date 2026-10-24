@@ -119,3 +119,38 @@ test("a new user who ignores import still starts with Chief", async ({ page }, t
   expect(bots.map((bot) => bot.name)).toEqual(["Chief"]);
   await captureScreenshot(page, testInfo, "onboarding-chief-without-import");
 });
+
+test("an import that finds a first bot already made says so and lands in that bot", async ({
+  page,
+}, testInfo) => {
+  const model = await controlNeedsModel(page);
+  await signup(page, `onboarding-import-raced-${Date.now()}@rakazo.test`, "password12", "Raced");
+  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: "Import an agent", exact: true }).click();
+  const home = testInfo.outputPath("openclaw-raced");
+  mkdirSync(path.join(home, "workspace"), { recursive: true });
+  writeFileSync(path.join(home, "workspace/SOUL.md"), "Calm.\n");
+  writeFileSync(path.join(home, "workspace/IDENTITY.md"), "- **Name:** Pebble\n");
+  const panel = page.getByTestId("agent-import");
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
+  const preview = panel.getByTestId("agent-import-preview");
+  await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
+  // Another tab or device finishes onboarding first.
+  const chief = await rpc<Bot>(page, "bots/create", {
+    name: "Chief",
+    spawnKey: "onboarding:first",
+  });
+  model.needsModel = false;
+  await preview.getByRole("button", { name: "Create", exact: true }).click();
+  const notice = page.getByTestId("onboarding-not-imported");
+  await expect(notice.getByRole("alert")).toHaveText(
+    "Your first bot already existed, so the agent was not imported.",
+  );
+  await captureScreenshot(page, testInfo, "onboarding-import-not-imported");
+  await notice.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.waitForURL(new RegExp(`/app/${chief.id}$`), { timeout: 20_000 });
+  const bots = await rpc<Bot[]>(page, "bots/list", {});
+  expect(bots.map((bot) => bot.name)).toEqual(["Chief"]);
+});
