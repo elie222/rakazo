@@ -1,18 +1,21 @@
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileMe } from "../lib/api";
 import { rpc } from "../lib/api";
+import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
 import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { setVoiceBackgroundPlayback } from "../lib/voice";
 import { BotAvatar } from "./bot-avatar";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -20,15 +23,13 @@ import type { NativeSymbol } from "./native-symbol";
 
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
+const START_RETRY_MS = 3000;
+const START_ATTEMPTS = 20;
 
 let cachedInitial: string | null = null;
 
-/**
- * A call lives in the foreground: once the screen locks, Android pauses the app and the
- * microphone, recognition, and reply feed stop until it is unlocked. Mounted only while a
- * call is up, so the screen sleeps normally the rest of the time.
- */
-function KeepScreenOnDuringCall() {
+/** Fallback until the native call service owns the call. */
+function KeepCallAwake() {
   useKeepAwake("rakazo-call");
   return null;
 }
@@ -40,7 +41,20 @@ export function CallCard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [initial, setInitial] = useState(cachedInitial ?? "");
+  const [serviceStarted, setServiceStarted] = useState(false);
+  const serviceStartedFor = useRef<string | null>(null);
+  const startSeq = useRef(0);
   const onCall = Boolean(call);
+  // A crash inside the call UI unmounts this card without ending the call, so the
+  // service and its wake lock are released here rather than on the next call change.
+  const mountedCall = useRef(false);
+  mountedCall.current = onCall;
+  useEffect(
+    () => () => {
+      if (mountedCall.current) void stopCallBackground();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!onCall || cachedInitial !== null) return;
@@ -51,6 +65,58 @@ export function CallCard() {
       })
       .catch(() => undefined);
   }, [onCall]);
+
+  // A call keeps its replies playing while the screen is off.
+  useEffect(() => {
+    if (!onCall) return;
+    setVoiceBackgroundPlayback(true);
+    return () => setVoiceBackgroundPlayback(false);
+  }, [onCall]);
+
+  // A microphone foreground service keeps the call alive when the display sleeps.
+  // Start it only after the microphone permission is granted; retry when the call
+  // phase changes or a moment passes, because the first turn may have just shown
+  // the permission prompt.
+  useEffect(() => {
+    if (!call) {
+      startSeq.current += 1;
+      serviceStartedFor.current = null;
+      setServiceStarted(false);
+      void stopCallBackground();
+      return;
+    }
+    if (Platform.OS !== "android" || serviceStartedFor.current === call.botId) return;
+    startSeq.current += 1;
+    const seq = startSeq.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const retry = () => {
+      if (cancelled || attempts >= START_ATTEMPTS) return;
+      attempts += 1;
+      timer = setTimeout(() => void attempt(), START_RETRY_MS);
+    };
+    const attempt = async () => {
+      try {
+        const permission = await AudioModule.getRecordingPermissionsAsync();
+        if (cancelled || seq !== startSeq.current) return;
+        if (!permission.granted) return retry();
+        const started = await startCallBackground(call.botName);
+        // A newer attempt owns the service now, so its result decides the fallback.
+        if (cancelled || seq !== startSeq.current) return;
+        if (!started) return retry();
+        serviceStartedFor.current = call.botId;
+        setServiceStarted(true);
+      } catch {
+        // Keep the screen-awake fallback when the native service is unavailable.
+      }
+    };
+    void attempt();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
   return (
@@ -66,7 +132,7 @@ export function CallCard() {
         },
       ]}
     >
-      <KeepScreenOnDuringCall />
+      {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
       <View style={styles.row}>
         <BotAvatar color={call.botColor} identity={call.botId} size={28} motion="live" />
         <Pressable

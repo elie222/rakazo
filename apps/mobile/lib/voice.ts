@@ -85,6 +85,16 @@ export function stopSpeaking(): void {
   stopVoicePlayback();
 }
 
+let playsInBackground = false;
+
+/**
+ * A call keeps its replies playing while the screen is off; the microphone
+ * foreground service is what keeps the app alive then.
+ */
+export function setVoiceBackgroundPlayback(enabled: boolean): void {
+  playsInBackground = enabled;
+}
+
 // --- Sequential playback across several messages: speaking a message plays
 // it, then keeps going through the rest of the queue until Stop is pressed or
 // the last one finishes. Built on top of speakText, one call at a time, so a
@@ -513,7 +523,7 @@ async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): 
   await setAudioModeAsync({
     playsInSilentMode: true,
     interruptionMode: "mixWithOthers",
-    shouldPlayInBackground: false,
+    shouldPlayInBackground: playsInBackground,
   });
   const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
   file.create({ overwrite: true });
