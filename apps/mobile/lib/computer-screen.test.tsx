@@ -15,6 +15,7 @@ const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>
 const foreground = vi.hoisted(() => ({ value: true }));
 const screens = vi.hoisted(() => ({
   mounts: 0,
+  error: undefined as undefined | (() => void),
   message: undefined as undefined | ((event: { nativeEvent: { data: string } }) => void),
 }));
 const picker = vi.hoisted(() => ({
@@ -102,8 +103,10 @@ vi.mock("react-native-webview", () => {
       accessibilityElementsHidden?: boolean;
       importantForAccessibility?: string;
       onMessage?: (event: { nativeEvent: { data: string } }) => void;
+      onError?: () => void;
     }) => {
       screens.message = props.onMessage;
+      screens.error = props.onError;
       useEffect(() => {
         screens.mounts += 1;
       }, []);
@@ -295,6 +298,19 @@ describe("computer screen", () => {
       (button) => button.textContent === "Take control",
     );
   }
+
+  it("offers Retry screen when the full-window page fails to load", async () => {
+    respond(botWorking);
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(view.querySelector("section iframe")).not.toBeNull();
+    expect(screens.error).toBeTypeOf("function");
+    act(() => screens.error?.());
+    const window = view.querySelector("section");
+    expect(window?.textContent).toContain("Could not load the desktop.");
+    expect(window?.textContent).toContain("Retry screen");
+  });
 
   it("shows a fixed screen failure when the page stalls", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

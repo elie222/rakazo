@@ -161,6 +161,7 @@ export default function Computer() {
     setComputer(null);
     setScreenUrl(null);
     setScreenError(null);
+    setScreenOriginError(false);
     setError(null);
     setReadyBotId(null);
     setBootingCount(0);
@@ -603,7 +604,7 @@ export default function Computer() {
               </View>
             </SafeAreaView>
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
-              {foreground && loadedScreenUrl && !screenError ? (
+              {foreground && loadedScreenUrl ? (
                 <ScreenWebView
                   key={screenReload}
                   url={loadedScreenUrl}
@@ -620,6 +621,7 @@ export default function Computer() {
                   onRendererLost={() => void reloadScreen()}
                   onError={() => {
                     refreshController.invalidateScreen();
+                    setScreenOriginError(true);
                     setScreenError(
                       t("Could not load the desktop. This device cannot reach the screen URL."),
                     );

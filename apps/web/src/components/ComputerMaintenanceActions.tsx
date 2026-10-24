@@ -29,10 +29,10 @@ export function ComputerMaintenanceActions({
   onChanged,
   visibleRecover = false,
 }: {
-  visibleRecover?: boolean;
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
+  visibleRecover?: boolean;
 }) {
   const { t } = useLingui();
   const [menuOpen, setMenuOpen] = useState(false);
