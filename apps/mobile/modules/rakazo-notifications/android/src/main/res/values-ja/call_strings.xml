@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">通話中</string>
+  <string name="rakazo_call_title">Rakazoの通話</string>
+  <string name="rakazo_call_text">マイクがオンです</string>
+</resources>
