@@ -149,7 +149,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   for (const [section, names] of [
     ["agent-import-instructions", ["SOUL.md"]],
     ["agent-import-memory", ["MEMORY.md"]],
-    ["agent-import-skills", ["inbox-triage", "cleanup"]],
+    ["agent-import-skills", ["cleanup", "inbox-triage"]],
   ] as const) {
     const boxes = homePreview.getByTestId(section).getByRole("checkbox");
     await expect(boxes).toHaveCount(names.length);

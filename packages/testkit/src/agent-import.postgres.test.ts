@@ -406,9 +406,19 @@ describeIntegration("agent import", () => {
       include: { assignments: true },
       orderBy: { slug: "asc" },
     });
+    // Like a server added in the MCP form with its credential left blank: nothing stored.
     expect(
-      servers.map((row) => [row.slug, row.transport, row.headers, Boolean(row.secretId)]),
-    ).toEqual([["docs", "streamable_http", { Authorization: true }, true]]);
+      servers.map((row) => [row.slug, row.transport, row.headers, row.env, row.secretId]),
+    ).toEqual([["docs", "streamable_http", {}, {}, null]]);
+    const listed = await rpc<{ slug: string; hasSecret: boolean; headerKeys: string[] }[]>(
+      app,
+      cookie,
+      "mcp/servers/list",
+      {},
+    );
+    expect(listed.map((row) => [row.slug, row.hasSecret, row.headerKeys])).toEqual([
+      ["docs", false, []],
+    ]);
     // Not given to the bot, and not probed or launched: an approval card asks the user first.
     expect(servers[0]!.assignments).toEqual([]);
     expect([servers[0]!.healthStatus, servers[0]!.healthCheckedAt]).toEqual(["unknown", null]);
@@ -470,8 +480,7 @@ describeIntegration("agent import", () => {
       selection: { instructions: [], memory: [], skills: [], mcpServers: ["mcp:docs"] },
     });
     const plain = await db.mcpServer.findFirstOrThrow({ where: { ...owner, slug: "docs-2" } });
-    // Header names only, with empty values for the user to fill in after approving.
-    expect(plain.headers).toEqual({ Authorization: true });
+    expect([plain.headers, plain.secretId]).toEqual([{}, null]);
 
     // Another user sees none of it.
     const other = await signup(app, `import-settings-other-${stamp}@rakazo.test`, "Other");
@@ -726,12 +735,73 @@ describeIntegration("agent import", () => {
       ),
     ).toEqual(["openrouter"]);
     const servers = await db.mcpServer.findMany({ where: owner });
-    expect(servers.map((row) => [row.slug, row.endpoint, row.headers])).toEqual([
-      ["docs", "https://mcp.example.com/mcp", { Authorization: true }],
+    expect(servers.map((row) => [row.slug, row.endpoint, row.headers, row.secretId])).toEqual([
+      ["docs", "https://mcp.example.com/mcp", {}, null],
     ]);
     for (const row of await db.secret.findMany({ where: { userId: owner.userId } })) {
       expect(row.ciphertext).not.toContain("placeholder-");
     }
+  });
+
+  it("undoes only its own import when two imports bring the same names", async () => {
+    const cookie = await signup(app, `import-twins-${stamp}@rakazo.test`, "Twins User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/workspace/USER.md", content: "Prefers tea.\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content: '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp" } } } }',
+      },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+    ];
+    const importOnce = async (name: string) => {
+      const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+      return rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        name,
+        selection: {
+          instructions: [],
+          memory: plan.memory.map((item) => ({ id: item.id, destination: "space" })),
+          skills: plan.skills.map((item) => item.id),
+          mcpServers: plan.mcpServers.map((item) => item.id),
+        },
+      });
+    };
+    const first = await importOnce("First");
+    const second = await importOnce("Second");
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: first.id },
+      select: { spaceId: true, userId: true },
+    });
+    const info = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", { botId: second.id });
+    expect(info.remove).toEqual({
+      skills: ["garden-2"],
+      spaceMemory: ["USER-2.md"],
+      mcpServers: ["docs-2"],
+      apiKeys: [],
+    });
+    await rpc(app, cookie, "bots/importUndo", { botId: second.id });
+    expect(
+      (await db.mcpServer.findMany({ where: owner, select: { slug: true } })).map(
+        (row) => row.slug,
+      ),
+    ).toEqual(["docs"]);
+    expect(
+      (await db.agentSkill.findMany({ where: owner, select: { name: true } })).map(
+        (row) => row.name,
+      ),
+    ).toEqual(["garden"]);
+    expect(
+      (
+        await db.memoryDocument.findMany({
+          where: { ...owner, scope: "user", path: { startsWith: "USER" } },
+          select: { path: true },
+        })
+      ).map((row) => row.path),
+    ).toEqual(["USER.md"]);
+    expect(await rpc(app, cookie, "bots/importInfo", { botId: first.id })).toMatchObject({
+      remove: { mcpServers: ["docs"], skills: ["garden"], spaceMemory: ["USER.md"] },
+    });
   });
 
   it("keeps each import inside the actor's own space", async () => {

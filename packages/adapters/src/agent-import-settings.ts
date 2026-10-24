@@ -266,10 +266,8 @@ function mcpServer(
   const warnings: AgentImportWarning[] = [];
   // An approved server gets all its tools in Rakazo, so a source tool limit would widen.
   if (Array.isArray(filter.include) && filter.include.length > 0) warnings.push("dropped_settings");
-  // MCP credentials are never imported: header and env names come with empty values, and
-  // the user fills them in after approving the server.
-  const values = (record: unknown): Record<string, string> =>
-    isObject(record) ? Object.fromEntries(Object.keys(record).map((key) => [key, ""])) : {};
+  // MCP credentials are never imported. The server is created as the MCP form creates one
+  // with its credential left blank (no headers, no env); the names show in the preview.
   const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
   const base = {
     slug: mcpSlug(name),
@@ -280,7 +278,7 @@ function mcpServer(
   let candidate: unknown;
   let content: string;
   if (text(entry.url)) {
-    const headers = values(entry.headers);
+    const headers: Record<string, string> = {};
     const kind = `${text(entry.transport)}${text(entry.type)}`.toLowerCase();
     candidate = {
       ...base,
@@ -290,7 +288,7 @@ function mcpServer(
     };
     content = [text(entry.url), ...names(entry.headers)].join("\n");
   } else if (text(entry.command)) {
-    const env = values(entry.env);
+    const env: Record<string, string> = {};
     const args = Array.isArray(entry.args) ? entry.args.map(String) : [];
     if (!stdioAllowed(text(entry.command))) warnings.unshift("unsupported_command");
     // Rakazo runs servers on its computers: a working folder is dropped, local paths are absent.

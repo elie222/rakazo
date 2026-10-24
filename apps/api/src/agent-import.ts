@@ -635,7 +635,8 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       ...plan.spaceMemory[side].map((row) => row.path),
       ...(side === "keep" && plan.botMemoryChanged ? plan.botMemory.map((row) => row.path) : []),
     ],
-    mcpServers: plan.mcpServers[side].map((row) => row.name),
+    // Slugs, not display names: two imports can each bring a server named the same.
+    mcpServers: plan.mcpServers[side].map((row) => row.slug),
     apiKeys: plan.credentials[side].map((row) => row.label),
   });
   const info: AgentImportInfo = {

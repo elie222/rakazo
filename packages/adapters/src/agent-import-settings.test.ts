@@ -217,7 +217,7 @@ describe("OpenClaw settings", () => {
           enabled: true,
           transport: "streamable_http",
           endpoint: "https://mcp.example.com/mcp",
-          headers: { Authorization: "" },
+          headers: {},
         },
       ],
       [
@@ -230,13 +230,10 @@ describe("OpenClaw settings", () => {
           transport: "stdio",
           command: "npx",
           args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-          env: { EXAMPLE_TOKEN: "" },
+          env: {},
         },
       ],
-      [
-        "vault",
-        expect.objectContaining({ transport: "stdio", command: "vault-mcp", env: { TOKEN: "" } }),
-      ],
+      ["vault", expect.objectContaining({ transport: "stdio", command: "vault-mcp", env: {} })],
     ]);
     expect(settings.mcpServers.map((server) => server.warnings)).toEqual([
       [],
@@ -255,9 +252,9 @@ describe("OpenClaw settings", () => {
     const configs = Object.fromEntries(
       settings.mcpServers.map((server) => [server.title, server.config]),
     );
-    expect(configs.docs).toMatchObject({ headers: { Authorization: "" } });
-    expect(configs.files).toMatchObject({ env: { EXAMPLE_TOKEN: "" } });
-    expect(configs.vault).toMatchObject({ env: { TOKEN: "" } });
+    expect(configs.docs).toMatchObject({ headers: {} });
+    expect(configs.files).toMatchObject({ env: {} });
+    expect(configs.vault).toMatchObject({ env: {} });
     const visible = JSON.stringify(settings.mcpServers);
     expect(visible).not.toContain("placeholder-docs-token");
     expect(visible).not.toContain("placeholder-env-token");
@@ -350,7 +347,7 @@ describe("Hermes settings", () => {
       deepseek: "placeholder-pool-key",
       xai: "placeholder-xai-key",
     });
-    expect(settings.mcpServers[0]!.config).toMatchObject({ headers: { Authorization: "" } });
+    expect(settings.mcpServers[0]!.config).toMatchObject({ headers: {} });
   });
 });
 
