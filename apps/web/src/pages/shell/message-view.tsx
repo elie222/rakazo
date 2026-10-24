@@ -435,7 +435,11 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "import_setup") {
             return (
               <div key={i} className="flex justify-start">
-                <ImportSetupCard block={block} onOpen={onOpenImportSetup} />
+                <ImportSetupCard
+                  botId={"botId" in artifactTarget ? artifactTarget.botId : message.botId}
+                  block={block}
+                  onOpen={onOpenImportSetup}
+                />
               </div>
             );
           }

@@ -21,6 +21,9 @@ vi.mock("@rakazo/ui-web", () => ({
   ),
 }));
 
+const importSetupState = vi.fn();
+vi.mock("../../lib/rpc", () => ({ rpc: { bots: { importSetupState } } }));
+
 const { ImportSetupCard } = await import("./import-setup-card");
 
 let root: Root | null = null;
@@ -32,6 +35,7 @@ afterEach(() => {
 
 describe("the import setup checklist", () => {
   it("lists what each item needs and opens where it is finished", () => {
+    importSetupState.mockReturnValue(new Promise(() => undefined));
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const onOpen = vi.fn();
     const container = document.createElement("div");
@@ -86,5 +90,63 @@ describe("the import setup checklist", () => {
       { kind: "mcp" },
       { kind: "routine", routineId: "routine-1" },
     ]);
+  });
+});
+
+describe("the checklist's live state", () => {
+  const block = {
+    kind: "import_setup",
+    items: [
+      {
+        kind: "mcp",
+        serverId: "server-1",
+        name: "files",
+        needs: [{ kind: "program", name: "npx" }],
+      },
+      { kind: "routine", routineId: "routine-1", name: "morning" },
+    ],
+  } as const;
+  async function show() {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <ImportSetupCard botId="bot-1" onOpen={vi.fn()} block={structuredClone(block) as never} />,
+      );
+    });
+    return container;
+  }
+
+  it("marks done items from current data and keeps the rest openable", async () => {
+    importSetupState.mockResolvedValue({
+      providers: {},
+      serverIds: { "server-1": true },
+      routineIds: { "routine-1": false },
+    });
+    const container = await show();
+    expect(importSetupState).toHaveBeenLastCalledWith({
+      botId: "bot-1",
+      providers: [],
+      serverIds: ["server-1"],
+      routineIds: ["routine-1"],
+    });
+    const rows = [...container.querySelectorAll("li")];
+    expect(rows.map((row) => row.dataset.done ?? "")).toEqual(["true", ""]);
+    expect(rows[0]!.querySelector("button")).toBeNull();
+    expect(rows[1]!.querySelector("button")?.getAttribute("aria-label")).toBe("Open morning");
+  });
+
+  it("shrinks to one line when everything is done", async () => {
+    importSetupState.mockResolvedValue({
+      providers: {},
+      serverIds: { "server-1": true },
+      routineIds: { "routine-1": true },
+    });
+    const container = await show();
+    const card = container.querySelector("[data-testid='import-setup-card']")!;
+    expect(card.getAttribute("data-complete")).toBe("true");
+    expect(card.textContent).toBe("Setup complete");
   });
 });

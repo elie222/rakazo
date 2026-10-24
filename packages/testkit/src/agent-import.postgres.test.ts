@@ -512,7 +512,43 @@ describeIntegration("agent import", () => {
         ],
       },
     ]);
+    const state = () =>
+      rpc<{
+        providers: Record<string, boolean>;
+        serverIds: Record<string, boolean>;
+        routineIds: Record<string, boolean>;
+      }>(app, cookie, "bots/importSetupState", {
+        botId: bot.id,
+        providers: ["openrouter", "deepseek"],
+        serverIds: [servers[0]!.id, "missing"],
+        routineIds: routineRows.map((row) => row.id),
+      });
+    // Read from current data: nothing approved or turned on yet; the imported key is connected.
+    expect(await state()).toEqual({
+      providers: { openrouter: true, deepseek: false },
+      serverIds: { [servers[0]!.id]: false, missing: false },
+      routineIds: Object.fromEntries(routineRows.map((row) => [row.id, false])),
+    });
     await rpc(app, cookie, "mcp/assignments/approve", { botId: bot.id, serverId: servers[0]!.id });
+    await db.routine.update({ where: { id: routineRows[0]!.id }, data: { active: true } });
+    const after = await state();
+    expect(after.serverIds[servers[0]!.id]).toBe(true);
+    expect(after.routineIds[routineRows[0]!.id]).toBe(true);
+    await db.routine.update({ where: { id: routineRows[0]!.id }, data: { active: false } });
+    // Another user reads nothing of these.
+    const stranger = await signup(app, `import-state-other-${stamp}@rakazo.test`, "Stranger");
+    expect(
+      await rpc(app, stranger, "bots/importSetupState", {
+        botId: bot.id,
+        providers: [],
+        serverIds: [servers[0]!.id],
+        routineIds: routineRows.map((row) => row.id),
+      }),
+    ).toEqual({
+      providers: {},
+      serverIds: { [servers[0]!.id]: false },
+      routineIds: Object.fromEntries(routineRows.map((row) => [row.id, false])),
+    });
     expect(
       await db.botMcpServer.findMany({
         where: { botId: bot.id },
@@ -532,7 +568,7 @@ describeIntegration("agent import", () => {
       ["morning", ["0 9 * * *"], "Asia/Kolkata", false, null],
     ]);
 
-    const record = await db.agentImport.findUniqueOrThrow({ where: { botId: bot.id } });
+    const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
     expect(record).toMatchObject({ ...owner, source: "openclaw" });
     expect(record.created).toMatchObject({
       credentials: [{ id: imported.id, provider: "openrouter" }],

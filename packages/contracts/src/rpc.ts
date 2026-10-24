@@ -6,6 +6,7 @@ import {
   AgentImportPlanSchema,
   AgentImportPreviewInput,
 } from "./agent-import.js";
+import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
@@ -340,6 +341,8 @@ export const appContract = {
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
     /** Whether a bot came from an import, and what Undo would remove or keep. */
     importInfo: oc.input(botId).output(AgentImportInfoSchema.nullable()),
+    /** What is already done on an import's setup checklist, from current data. */
+    importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
     /** Removes an imported bot and what the import created, keeping what changed since. */
     importUndo: oc.input(botId).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),

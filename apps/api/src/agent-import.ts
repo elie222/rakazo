@@ -15,6 +15,7 @@ import type {
   AgentImportMemoryDestination,
   AgentImportPlan,
   AgentImportSetupItem,
+  AgentImportSetupState,
   AgentImportSource,
   AgentImportWarning,
   Bot,
@@ -880,6 +881,52 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
     routines: ids(plan.routines.remove),
   };
   return { record, plan, info: info(planned), infoFor: info };
+}
+
+/**
+ * Whether each item on an import's setup checklist is done now: a model connected for the
+ * provider, an MCP server with credentials or given to this bot, a routine turned on. Only
+ * the actor's own rows are read; unknown ids are simply not done.
+ */
+export async function agentImportSetupState(
+  services: AgentImportServices,
+  actor: Actor,
+  input: { botId: string; providers: string[]; serverIds: string[]; routineIds: string[] },
+): Promise<AgentImportSetupState> {
+  const owner = { spaceId: actor.spaceId, userId: actor.userId };
+  const db = services.prisma;
+  const [servers, assigned, routines] = await Promise.all([
+    db.mcpServer.findMany({
+      where: { ...owner, id: { in: input.serverIds } },
+      select: { id: true, secretId: true },
+    }),
+    db.botMcpServer.findMany({
+      where: { ...owner, botId: input.botId, serverId: { in: input.serverIds } },
+      select: { serverId: true },
+    }),
+    db.routine.findMany({
+      where: { botId: input.botId, id: { in: input.routineIds }, bot: owner },
+      select: { id: true, active: true },
+    }),
+  ]);
+  const given = new Set(assigned.map((row) => row.serverId));
+  const providers = await Promise.all(
+    input.providers.map(
+      async (provider) => [provider, await services.hasModelConnection(actor, provider)] as const,
+    ),
+  );
+  return {
+    providers: Object.fromEntries(providers),
+    serverIds: Object.fromEntries(
+      input.serverIds.map((id) => {
+        const row = servers.find((server) => server.id === id);
+        return [id, Boolean(row && (row.secretId || given.has(id)))];
+      }),
+    ),
+    routineIds: Object.fromEntries(
+      input.routineIds.map((id) => [id, routines.some((row) => row.id === id && row.active)]),
+    ),
+  };
 }
 
 export async function agentImportInfo(

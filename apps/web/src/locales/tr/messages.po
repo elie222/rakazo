@@ -2356,6 +2356,7 @@ msgstr "Hesabın yok mu?"
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "Bitti"
 
@@ -4740,6 +4741,10 @@ msgstr "Ayarlar: Genel"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: Usage"
 msgstr "Ayarlar: Kullanım"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "Kurulum tamamlandı"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"

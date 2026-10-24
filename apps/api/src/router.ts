@@ -271,6 +271,7 @@ import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "./agent-import.js";
 import {
   agentImportInfo,
+  agentImportSetupState,
   createImportedBot,
   previewAgentImport,
   undoAgentImport,
@@ -2222,6 +2223,9 @@ export function createRouter(deps: RouterDeps) {
       }),
       importInfo: authed.bots.importInfo.handler(async ({ context, input }) =>
         agentImportInfo(agentImportServices as AgentImportServices, context.actor, input.botId),
+      ),
+      importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
+        agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),
       importUndo: authed.bots.importUndo.handler(async ({ context, input }) =>
         undoAgentImport(agentImportServices as AgentImportServices, context.actor, input.botId),

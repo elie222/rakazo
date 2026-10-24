@@ -2356,6 +2356,7 @@ msgstr "Heb je geen account?"
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "Klaar"
 
@@ -4740,6 +4741,10 @@ msgstr "Instellingen: algemeen"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: Usage"
 msgstr "Instellingen: gebruik"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "Instellen voltooid"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"

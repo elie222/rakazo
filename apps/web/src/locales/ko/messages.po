@@ -2356,6 +2356,7 @@ msgstr "계정이 없나요?"
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "완료"
 
@@ -4740,6 +4741,10 @@ msgstr "설정: 일반"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: Usage"
 msgstr "설정: 사용량"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "설정 완료"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"

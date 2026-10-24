@@ -2356,6 +2356,7 @@ msgstr "खाता नहीं है?"
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "पूर्ण"
 
@@ -4740,6 +4741,10 @@ msgstr "सेटिंग्स: सामान्य"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Settings: Usage"
 msgstr "सेटिंग्स: उपयोग"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "सेटअप पूरा हुआ"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"

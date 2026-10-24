@@ -31,6 +31,23 @@ export const AgentImportStatusSchema = z.discriminatedUnion("kind", [
 ]);
 export type AgentImportStatus = z.infer<typeof AgentImportStatusSchema>;
 
+/** Which items of an import's setup checklist are done now, read when the card is shown. */
+export const AgentImportSetupStateInput = z.strictObject({
+  botId: z.string().min(1).max(100),
+  providers: z.array(z.string().max(100)).max(50),
+  serverIds: z.array(z.string().max(100)).max(200),
+  routineIds: z.array(z.string().max(100)).max(200),
+});
+export const AgentImportSetupStateSchema = z.object({
+  /** A model credential is connected for the provider. */
+  providers: z.record(z.string(), z.boolean()),
+  /** The server has credentials, or this bot was given it. */
+  serverIds: z.record(z.string(), z.boolean()),
+  /** The routine is turned on. */
+  routineIds: z.record(z.string(), z.boolean()),
+});
+export type AgentImportSetupState = z.infer<typeof AgentImportSetupStateSchema>;
+
 /** One line of the setup checklist an import posts in the bot's chat. */
 export const AgentImportSetupItemSchema = z.discriminatedUnion("kind", [
   z.object({
