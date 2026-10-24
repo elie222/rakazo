@@ -166,4 +166,5 @@ ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
 USER 1000:1000
-CMD ["/usr/local/bin/rakazo-computer"]
+# Start Bash without the wrapper; user-env enables it once both files exist.
+CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]
