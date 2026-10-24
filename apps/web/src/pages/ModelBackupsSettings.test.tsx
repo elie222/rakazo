@@ -411,3 +411,37 @@ describe("ModelBackupsSettings", () => {
     );
   });
 });
+
+it("names subscription connections by their plan in backup rows", async () => {
+  backupApi.backups.mockResolvedValue([
+    { provider: "openai-codex", modelId: "gpt-sol" },
+    { provider: "anthropic", modelId: "claude-sonnet" },
+  ]);
+  await renderSettings({
+    catalog: [
+      ...catalog,
+      {
+        provider: "openai-codex",
+        providerName: "OpenAI Codex",
+        id: "gpt-sol",
+        label: "GPT Sol",
+        billing: "",
+      },
+    ],
+    credentials: [
+      { ...credentials[0]!, authKind: "oauth" },
+      {
+        id: "codex-credential",
+        provider: "openai-codex",
+        label: "OpenAI Codex",
+        hasKey: false,
+        isDefault: false,
+        authKind: "oauth",
+      },
+    ],
+  });
+  expect(backupRows()).toEqual([
+    "ChatGPT subscription · GPT Sol",
+    "Claude subscription · Claude Sonnet",
+  ]);
+});

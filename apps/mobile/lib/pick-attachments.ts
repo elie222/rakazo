@@ -1,18 +1,27 @@
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import {
+  ATTACHMENT_IMAGE_MAX_EDGE,
+  ATTACHMENT_IMAGE_QUALITY,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
+} from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
+import type { DroppedFile } from "./file-drop";
+import { releaseDroppedFile } from "./file-drop";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
-import { filterPickedAttachments } from "./pick-attachments-filter.js";
+import {
+  attachmentCountSkipReason,
+  attachmentSizeSkipReason,
+  attachmentSkipReason,
+  filterPickedAttachments,
+  pickedAttachment,
+} from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
-
-/** A phone photo does not need its native resolution to be useful in chat. */
-const MAX_IMAGE_EDGE = 1_600;
-const IMAGE_COMPRESSION = 0.7;
 
 let imageManipulator: typeof ImageManipulatorModule | null | undefined;
 
@@ -44,7 +53,7 @@ async function prepareImage(
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
-  if (!width || !height || Math.max(width, height) <= MAX_IMAGE_EDGE) {
+  if (!width || !height || Math.max(width, height) <= ATTACHMENT_IMAGE_MAX_EDGE) {
     return { uri, name, mimeType };
   }
   const manipulator = loadImageManipulator();
@@ -53,9 +62,13 @@ async function prepareImage(
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
     const context = manipulator.ImageManipulator.manipulate(uri);
-    context.resize(width >= height ? { width: MAX_IMAGE_EDGE } : { height: MAX_IMAGE_EDGE });
+    context.resize(
+      width >= height
+        ? { width: ATTACHMENT_IMAGE_MAX_EDGE }
+        : { height: ATTACHMENT_IMAGE_MAX_EDGE },
+    );
     const image = await context.renderAsync();
-    const saved = await image.saveAsync({ compress: IMAGE_COMPRESSION, format });
+    const saved = await image.saveAsync({ compress: ATTACHMENT_IMAGE_QUALITY, format });
     return {
       uri: saved.uri,
       name: compressedImageName(name, format),
@@ -195,4 +208,61 @@ export async function pickDocuments(
     }),
   );
   return filterPickedAttachments(existingCount, candidates, maxBytes);
+}
+
+export async function readDroppedFiles(
+  files: DroppedFile[],
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+  notCopied: readonly string[] = [],
+): Promise<{
+  attachments: PickedAttachment[];
+  skipped: PickSkip[];
+}> {
+  const skipped: PickSkip[] = notCopied.map((name) => ({
+    name,
+    reason: attachmentCountSkipReason(),
+  }));
+  const attachments: PickedAttachment[] = [];
+  try {
+    for (const file of files) {
+      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+      const reason = attachmentSkipReason(
+        { name: file.name, size: file.size ?? 0, mimeType },
+        existingCount,
+        attachments.length,
+        maxBytes,
+      );
+      if (reason) {
+        skipped.push({ name: file.name, reason });
+        continue;
+      }
+      if (!file.uri) continue;
+      const read = await readUriAsBase64(file.uri, maxBytes).catch(() => null);
+      if (!read) {
+        // A copy that vanished or cannot be read costs that file only.
+        skipped.push({ name: file.name, reason: "permission denied" });
+        continue;
+      }
+      const { contentBase64, size } = read;
+      if (size > maxBytes) {
+        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        continue;
+      }
+      const previewUri = mimeType?.startsWith("image/")
+        ? `data:${mimeType};base64,${contentBase64}`
+        : undefined;
+      attachments.push(
+        pickedAttachment(
+          { name: file.name, mimeType, size, contentBase64, previewUri },
+          existingCount + attachments.length,
+        ),
+      );
+    }
+  } finally {
+    await Promise.allSettled(
+      files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
+    );
+  }
+  return { attachments, skipped };
 }

@@ -31,6 +31,7 @@ import {
 } from "@rakazo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
+import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../../lib/model-auth";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
@@ -141,7 +142,8 @@ export function useModelSettings(onClose: () => void) {
           pickCatalogModelId(
             nextCatalog,
             nextProvider,
-            nextCredential?.modelId ?? nextMe.defaultModel,
+            nextCredential?.modelId ??
+              (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
           ));
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
@@ -203,12 +205,16 @@ export function useModelSettings(onClose: () => void) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: entries[0]?.providerName ?? id,
+        name: providerDisplayName(
+          id,
+          entries[0]?.providerName ?? id,
+          credentials.find((entry) => entry.provider === id)?.authKind,
+        ),
         entries,
       })),
       (group) => group.id,
     );
-  }, [catalog]);
+  }, [catalog, credentials]);
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
@@ -267,7 +273,7 @@ export function useModelSettings(onClose: () => void) {
   selectedLabelRef.current = selected?.label;
   const selectedProviderName = compatibleConnectionName(
     baseUrl,
-    selected?.providerName ?? selected?.provider ?? "",
+    groups.find((group) => group.id === provider)?.name ?? provider,
   );
   const disconnectName = selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
@@ -385,7 +391,12 @@ export function useModelSettings(onClose: () => void) {
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
-        : pickCatalogModelId(catalog, nextProvider, nextCredential?.modelId ?? me?.defaultModel);
+        : pickCatalogModelId(
+            catalog,
+            nextProvider,
+            nextCredential?.modelId ??
+              (nextProvider === me?.defaultProvider ? me.defaultModel : null),
+          );
     setProvider(nextProvider);
     setReasoning(nextCredential?.reasoning ?? false);
     const nextEntry = catalog.find(

@@ -10,6 +10,7 @@ import type { PiCatalogEntry } from "./pi-models.js";
 import {
   catalogModelLabel,
   catalogProviderProbeBaseUrl,
+  isRecommendedCatalogModel,
   listPiCatalog,
   probeCatalogProviderModels,
 } from "./pi-models.js";
@@ -69,6 +70,7 @@ export function liveCatalogEntry(provider: string, id: string): PiCatalogEntry |
   return {
     ...entry,
     id,
+    recommended: isRecommendedCatalogModel(provider, id),
     label: catalogModelLabel(id),
     live: true,
     reasoning: model.reasoning,

@@ -15,12 +15,14 @@ export function MenuPickerMenu({
   choices,
   value,
   onChange,
+  disabled = false,
   children,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
+  disabled?: boolean;
   children: ReactElement<ViewProps>;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -30,6 +32,8 @@ export function MenuPickerMenu({
     <View
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       style={menuStyles.fullWidth}
+      pointerEvents={disabled ? "none" : "auto"}
+      accessibilityState={{ disabled }}
     >
       <MenuView
         style={menuStyles.fullWidth}
@@ -38,11 +42,12 @@ export function MenuPickerMenu({
           id: `choice:${choice.key}`,
           title: choice.label,
           state: choice.key === value ? "on" : "off",
+          attributes: { disabled },
         }))}
         colorScheme={colorScheme}
         onPressAction={(event) => {
           const id = event.nativeEvent.event;
-          if (id.startsWith("choice:")) onChange(id.slice("choice:".length));
+          if (!disabled && id.startsWith("choice:")) onChange(id.slice("choice:".length));
         }}
         title={label}
       >

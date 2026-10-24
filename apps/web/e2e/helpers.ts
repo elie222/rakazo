@@ -162,8 +162,7 @@ export async function captureScreenshot(page: Page, testInfo: TestInfo, name: st
 export async function openNewBot(page: Page) {
   await page.getByTestId("create-menu-trigger").click();
   await page.getByTestId("create-new-bot").click();
-  await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "create");
-  await expect(page.getByTestId("create-bot-form")).toBeVisible();
+  await expect(page.getByTestId("create-bot-dialog")).toBeVisible();
 }
 
 export async function openNewGroup(page: Page) {
@@ -176,33 +175,17 @@ export async function openNewSpace(page: Page) {
   await page.getByTestId("create-new-space").click();
 }
 
-/** Open the create form from the + picker, submit, and wait for the new chat. */
+/** Open the create dialog from the + picker, name the bot, and wait for the new chat. */
 export async function createBotFromPicker(
   page: Page,
-  options: {
-    name?: string;
-    title?: string;
-    description?: string;
-    computerMode?: "team" | "dedicated";
-  } = {},
+  { name = "New Bot" }: { name?: string } = {},
 ) {
-  const name = options.name ?? "New Bot";
   await openNewBot(page);
-  const form = page.getByTestId("create-bot-form");
-  await form.locator("label:has-text('Name') input").fill(name);
-  if (options.title != null) {
-    await form.locator("label:has-text('Title') input").fill(options.title);
-  }
-  if (options.description != null) {
-    await form.locator("label:has-text('Description') textarea").fill(options.description);
-  }
-  if (options.computerMode === "dedicated") {
-    await form.getByTestId("create-bot-private").click();
-  } else if (options.computerMode === "team") {
-    await form.getByTestId("create-bot-team").click();
-  }
-  await form.getByRole("button", { name: "Create", exact: true }).click();
+  const dialog = page.getByTestId("create-bot-dialog");
+  await dialog.getByPlaceholder("Name your Bot").fill(name);
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
   await page.waitForURL(/\/app\/[^/]+$/);
+  await expect(dialog).toBeHidden();
   await expect(page.getByTestId("side-panel")).toHaveAttribute("data-panel", "closed");
 }
 
@@ -219,8 +202,11 @@ export async function openUserSettings(
     | "billing"
     | "updates",
 ) {
-  await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  // A reload keeps settings open because the URL holds them; closing clears the URL at once.
+  if (!new URL(page.url()).searchParams.has("settings")) {
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+  }
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
   if (section && section !== "general") {

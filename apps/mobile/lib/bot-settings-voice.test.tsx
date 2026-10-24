@@ -12,6 +12,7 @@ import { MenuPicker } from "../components/menu-picker";
 const mocks = vi.hoisted(() => ({
   instructions: "",
   description: "",
+  crossSpaceCommunication: false,
   focus: undefined as string | undefined,
   os: "ios",
   work: [] as unknown[],
@@ -84,6 +85,7 @@ vi.mock("./api", () => ({
         autoSpeak: false,
         computerMode: "team",
         fleetManagement: false,
+        crossSpaceCommunication: mocks.crossSpaceCommunication,
       };
     if (procedure === "scratchpad/list") return mocks.work;
     if (procedure === "memory/list") return mocks.docs;
@@ -336,6 +338,7 @@ describe("bot settings device voice menu", () => {
   let root: Root;
   let container: HTMLDivElement;
   beforeEach(() => {
+    mocks.crossSpaceCommunication = false;
     vi.clearAllMocks();
     mocks.focus = undefined;
     mocks.instructions = "";
@@ -364,6 +367,20 @@ describe("bot settings device voice menu", () => {
     await expand();
   };
   const menu = () => container.querySelector('[data-menu="Device voice"]');
+
+  it.each([false, true])("loads and saves cross-space communication: %s", async (enabled) => {
+    mocks.crossSpaceCommunication = enabled;
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Allow cross-space bot communication"]',
+    )!;
+    expect(toggle.getAttribute("aria-checked")).toBe(String(enabled));
+    await act(async () => toggle.click());
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      crossSpaceCommunication: !enabled,
+    });
+  });
 
   it.each(["ios", "android"])(
     "uses muted section disclosure and nonrepeating labels on %s",
@@ -644,6 +661,7 @@ describe("bot settings device voice menu", () => {
       model: "Model",
       readAloud: "Read replies aloud",
       voice: "Device voice",
+      crossSpaceCommunication: "Allow cross-space bot communication",
       fleetManagement: "Manage the bots it creates",
     };
     const actual = [...container.querySelectorAll("span")].flatMap((span) =>
@@ -660,7 +678,13 @@ describe("bot settings device voice menu", () => {
         .flat()
         .filter((key) => key in labels && key !== "instructions" && key !== "computer"),
     );
-    expect(actual).toEqual(["model", "readAloud", "voice", "fleetManagement"]);
+    expect(actual).toEqual([
+      "model",
+      "readAloud",
+      "voice",
+      "crossSpaceCommunication",
+      "fleetManagement",
+    ]);
 
     await expand();
     expect(container.textContent).not.toContain("Read replies aloud");

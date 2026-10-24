@@ -205,6 +205,7 @@ describe("isOneShotRoutineCron", () => {
 });
 
 describe("schedule tool persistence", () => {
+  const noTimezone = { findUnique: vi.fn(async () => null) };
   it.each([{ cron: "0 9 * * *" }, { watch: { kind: "files", paths: ["inbox"] } }])(
     "rejects an invalid timezone before persisting %j",
     async (schedule) => {
@@ -245,7 +246,11 @@ describe("schedule tool persistence", () => {
       nextRunAt: args.data.nextRunAt,
     }));
     const deps = {
-      prisma: { bot: { findFirst: vi.fn(async () => ({ computer: null })) }, routine: { create } },
+      prisma: {
+        user: noTimezone,
+        bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+        routine: { create },
+      },
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -278,6 +283,45 @@ describe("schedule tool persistence", () => {
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { saved: "Europe/Paris", timezone: "Europe/Paris", nextRunAt: "2026-10-19T07:00:00.000Z" },
+    { saved: "Mars/Olympus_Mons", timezone: "UTC", nextRunAt: "2026-10-19T09:00:00.000Z" },
+  ])("defaults to the user's saved timezone $saved", async ({ saved, timezone, nextRunAt }) => {
+    vi.useFakeTimers({ now: new Date("2026-10-18T12:00:00Z") });
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const deps = {
+      prisma: {
+        user: { findUnique: vi.fn(async () => ({ timezone: saved })) },
+        routine: { create },
+      },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+
+    try {
+      await createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Morning brief",
+        prompt: "Summarize the news",
+        schedule: { cron: "0 9 * * *" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ timezone, nextRunAt: new Date(nextRunAt) }),
+      }),
+    );
+  });
+
   it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
@@ -286,7 +330,7 @@ describe("schedule tool persistence", () => {
       ...args.data,
     }));
     const deps = {
-      prisma: { routine: { create } },
+      prisma: { user: noTimezone, routine: { create } },
       events: { append },
       jobs: { enqueue, cancel: vi.fn(async () => undefined) },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
@@ -323,6 +367,7 @@ describe("schedule tool persistence", () => {
     const remove = vi.fn(async () => undefined);
     const deps = {
       prisma: {
+        user: noTimezone,
         routine: {
           create: vi.fn(async () => ({
             id: "routine-1",
@@ -360,6 +405,7 @@ describe("schedule tool persistence", () => {
     const remove = vi.fn(async () => undefined);
     const deps = {
       prisma: {
+        user: noTimezone,
         routine: {
           create: vi.fn(async () => ({
             id: "routine-1",
@@ -397,6 +443,7 @@ describe("schedule tool persistence", () => {
     const update = vi.fn(async () => undefined);
     const deps = {
       prisma: {
+        user: noTimezone,
         routine: {
           create: vi.fn(async () => ({
             id: "routine-1",
@@ -439,6 +486,7 @@ describe("schedule tool persistence", () => {
   it("propagates when enqueue rollback cannot deactivate", async () => {
     const deps = {
       prisma: {
+        user: noTimezone,
         routine: {
           create: vi.fn(async () => ({
             id: "routine-1",
@@ -481,6 +529,7 @@ describe("schedule tool persistence", () => {
     const findFirst = vi.fn(async () => null);
     const deps = {
       prisma: {
+        user: noTimezone,
         routine: { findMany, findFirst, deleteMany: vi.fn(async () => ({ count: 1 })) },
       },
       events: { append: vi.fn(async () => undefined) },
@@ -559,6 +608,7 @@ describe("schedule_create with a watch", () => {
       enqueue,
       deps: {
         prisma: {
+          user: { findUnique: vi.fn(async () => null) },
           connection: { findMany: vi.fn(async () => []) },
           bot: { findFirst: vi.fn(async () => ({ computer: null })) },
           routine: { create },

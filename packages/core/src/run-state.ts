@@ -23,8 +23,8 @@ const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.
  * Routine and webhook runs are not the conversation, and neither is a wake from another bot:
- * its reply goes back to that bot. The creation intro has no tools; a message that lands
- * during any of them waits, and the continuation after the turn finishes answers it.
+ * its reply goes back to that bot. The creation intro can only ask what it is for; a message
+ * that lands during any of them waits, and the continuation after the turn finishes answers it.
  */
 const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
   "routine",

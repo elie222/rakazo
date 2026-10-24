@@ -51,6 +51,7 @@ const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
 /** Outside the workspace so checkpoints never carry it. Boat runs every command as `user`. */
 const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
 const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
+const BOAT_RECOVER_POLL_MAX_MS = 15_000;
 const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
@@ -98,6 +99,12 @@ const BOAT_NOT_RUNNING_CODES = new Set([
   "sandbox_not_ready",
   "machine_not_running",
   "sandbox_resuming",
+]);
+const BOAT_RECOVER_WAIT_CODES = new Set([
+  "sandbox_is_reachable",
+  "too_soon",
+  "recover_unsupported",
+  "reset_failed",
 ]);
 
 interface BoatCommandResult {
@@ -193,6 +200,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      savedAt?: Date;
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
@@ -213,12 +221,15 @@ export class BoatSandboxProvider implements SandboxProvider {
       botId: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      savedAt?: Date;
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
     if (request.providerRef && request.providerKind === "boat") {
       try {
-        const started = await this.ensureRunnable(request.providerRef, context.signal);
+        const started = await this.ensureRunnable(request.providerRef, context.signal, {
+          savedAt: request.savedAt,
+        });
         return { ...this.ref(request.providerRef, request.botId, false), started };
       } catch (error) {
         if (!isSandboxGoneError(error)) throw error;
@@ -662,31 +673,70 @@ export class BoatSandboxProvider implements SandboxProvider {
    * Waits until the sandbox can run commands, resuming or recovering it on the way. Throws a
    * gone error when Boat cannot bring it back, so the caller replaces it from its checkpoint.
    * Returns whether this call started it.
+   *
+   * A sandbox in `error` follows Boat's documented order: recover it and wait for it to answer;
+   * if it still does not, force-stop it to its last good snapshot and resume that. It is gone
+   * instead when it has no snapshot, or when the caller's saved workspace is at least as new,
+   * since a replacement restores that save in full. The rollback happens only on `reconnect`,
+   * before anything runs on the sandbox; elsewhere it is reported unavailable until then.
    */
-  private async ensureRunnable(id: string, signal?: AbortSignal): Promise<boolean> {
-    const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
+  private async ensureRunnable(
+    id: string,
+    signal?: AbortSignal,
+    reconnect?: { savedAt?: Date },
+  ): Promise<boolean> {
+    let deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let started = false;
     let recovering = false;
+    let forced = false;
+    let pause = 1_000;
     while (true) {
       if (signal?.aborted) {
         throw signal.reason ?? new Error("Boat preparation aborted");
       }
       const { sandbox } = await this.client.get({ sandboxId: id }, { signal });
-      if (RUNNABLE_STATES.has(sandbox.state)) return started;
+      if (RUNNABLE_STATES.has(sandbox.state)) {
+        if (recovering) logRecovery(forced ? "resumed" : "answered");
+        return started;
+      }
       // `cancelled` is terminal, and a stopped sandbox whose data Boat deleted cannot resume.
       if (sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw boatSandboxGone(id);
       if (sandbox.state === "archived" && !started) {
         await this.resume(id, signal);
         started = true;
       } else if (sandbox.state === "error" && !recovering) {
-        await this.recover(id, signal);
+        logRecovery("wait", await this.recover(id, signal));
         recovering = started = true;
       }
       if (Date.now() >= deadline) {
-        if (sandbox.state === "error") throw boatSandboxGone(id);
-        throw new SandboxUnavailableError({ cause: new Error(`Boat ${id} did not become ready`) });
+        if (sandbox.state !== "error") {
+          throw new SandboxUnavailableError({
+            cause: new Error(`Boat ${id} did not become ready`),
+          });
+        }
+        const snapshotAt = sandbox.snapshotCompletedAt;
+        if (forced || !snapshotAt) {
+          logRecovery("gone", forced ? "resume_failed" : "no_snapshot");
+          throw boatSandboxGone(id);
+        }
+        if (!reconnect) {
+          logRecovery("deferred");
+          throw new SandboxUnavailableError({ cause: new Error(`Boat ${id} is not answering`) });
+        }
+        if (reconnect.savedAt && reconnect.savedAt >= snapshotAt) {
+          logRecovery("gone", "checkpoint_newer");
+          throw boatSandboxGone(id);
+        }
+        // Read just now and still not answering, so the stop cannot cut off live work.
+        logRecovery("force_stop");
+        await this.client.stop({ sandboxId: id, stopRequest: { force: true } }, { signal });
+        forced = true;
+        started = false;
+        deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
       }
-      await delay(1_000, undefined, { signal });
+      // A recovering machine usually answers within 1-2 minutes; back off while it reboots.
+      pause = sandbox.state === "error" ? Math.min(pause * 2, BOAT_RECOVER_POLL_MAX_MS) : 1_000;
+      await delay(pause, undefined, { signal });
     }
   }
 
@@ -724,19 +774,22 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  /** Boat's documented way out of the `error` state: power-cycle the machine, or resume. */
-  private async recover(id: string, signal?: AbortSignal): Promise<void> {
+  /**
+   * Boat's documented way out of the `error` state: power-cycle the machine, or resume. Returns
+   * Boat's reason when it refused and the caller can only wait for the sandbox to answer.
+   */
+  private async recover(id: string, signal?: AbortSignal): Promise<string | undefined> {
     try {
       await this.client.recover({ sandboxId: id }, { signal });
     } catch (error) {
       if (!(error instanceof BoatApiError) || error.response.status !== 409) throw error;
-      if (error.code === "no_machine") return this.resume(id, signal);
-      // Already answering again, or an earlier recover is still running.
-      if (error.code === "sandbox_is_reachable" || error.code === "too_soon") return;
-      // Boat cannot bring this machine back.
-      if (error.code === "recover_unsupported" || error.code === "reset_failed") {
-        throw boatSandboxGone(id, error);
+      if (error.code === "no_machine") {
+        await this.resume(id, signal);
+        return error.code;
       }
+      // Already answering again, or an earlier recover is still running. A machine Boat cannot
+      // power-cycle, or whose power-cycle failed, can still answer again by itself.
+      if (error.code && BOAT_RECOVER_WAIT_CODES.has(error.code)) return error.code;
       throw error;
     }
   }
@@ -1103,6 +1156,14 @@ function commandFailure(result: BoatCommandResult): string {
   if (result.timedOut) return "timed out";
   const last = (result.stderr || result.stdout).trim().split("\n").at(-1)?.slice(0, 300);
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
+}
+
+/** Each step of bringing back a sandbox that stopped answering; none is a failure by itself. */
+function logRecovery(
+  step: "wait" | "answered" | "deferred" | "force_stop" | "resumed" | "gone",
+  reason?: string,
+): void {
+  getLogger().warn("sandbox.recover", { provider: "boat", step, ...(reason ? { reason } : {}) });
 }
 
 /** Boat deletes a stopped sandbox's data after 14 days but keeps the record; it cannot resume. */

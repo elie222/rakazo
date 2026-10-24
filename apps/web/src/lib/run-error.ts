@@ -42,6 +42,24 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{provider} could not find the requested model.",
         values,
       });
+    case "{provider} denied access to this model.":
+      return i18n._({
+        id: "{provider} denied access to this model.",
+        message: "{provider} denied access to this model.",
+        values,
+      });
+    case "The model returned an unusable response. Try again.":
+      return i18n._({
+        id: "The model returned an unusable response. Try again.",
+        message: "The model returned an unusable response. Try again.",
+        values,
+      });
+    case "This model's context window is too small. Choose another model.":
+      return i18n._({
+        id: "This model's context window is too small. Choose another model.",
+        message: "This model's context window is too small. Choose another model.",
+        values,
+      });
     case "{provider} took too long to respond. Try again.":
       return i18n._({
         id: "{provider} took too long to respond. Try again.",
@@ -131,6 +149,24 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
       return i18n._({
         id: "{provider} reached its monthly spending limit.",
         message: "{provider} reached its monthly spending limit.",
+        values,
+      });
+    case "{summary} Your backup models also failed.":
+      return i18n._({
+        id: "{summary} Your backup models also failed.",
+        message: "{summary} Your backup models also failed.",
+        values,
+      });
+    case "{summary} No backup model was usable for this request.":
+      return i18n._({
+        id: "{summary} No backup model was usable for this request.",
+        message: "{summary} No backup model was usable for this request.",
+        values,
+      });
+    case "{summary} Backup models failed or were unavailable for this request.":
+      return i18n._({
+        id: "{summary} Backup models failed or were unavailable for this request.",
+        message: "{summary} Backup models failed or were unavailable for this request.",
         values,
       });
     default:

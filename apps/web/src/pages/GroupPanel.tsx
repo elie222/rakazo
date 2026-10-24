@@ -101,7 +101,7 @@ function MemberPicker({
             <div
               key={bot.id}
               className={`flex w-full items-center rounded-xl px-2.5 py-2.5 ${
-                checked ? "bg-muted" : "hover:bg-accent"
+                checked ? "bg-accent" : "hover:bg-accent"
               }`}
             >
               <button

@@ -15,6 +15,7 @@ import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
 export type PiCatalogEntry = {
+  recommended?: boolean;
   provider: string;
   providerName: string;
   id: string;
@@ -34,6 +35,18 @@ export type PiCatalogEntry = {
   catalogProbe?: boolean;
   live?: true;
 };
+
+/** Product defaults for new connections; only exact catalog IDs are recommended. */
+const RECOMMENDED_MODEL_IDS: Readonly<Record<string, string>> = {
+  "openai-codex": "gpt-6-luna",
+  openai: "gpt-6-luna",
+  openrouter: "openai/gpt-6-luna",
+  anthropic: "claude-haiku-5-5",
+};
+
+export function isRecommendedCatalogModel(provider: string, id: string): boolean {
+  return RECOMMENDED_MODEL_IDS[canonicalPiProviderId(provider)] === id;
+}
 
 const catalogProbeBaseUrls = new Map<string, string>();
 
@@ -204,6 +217,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         provider: provider.id,
         providerName,
         id: model.id,
+        recommended: isRecommendedCatalogModel(provider.id, model.id),
         label: catalogModelLabel(model.id, model.name, modelIds),
         billing,
         auth,

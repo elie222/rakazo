@@ -1199,6 +1199,7 @@ describe("bot management tool gating", () => {
     ["create_group", { name: "Crew", bot_ids: ["a", "b"] }],
     ["set_child_instructions", { bot_id: "child-1", instructions: "Obey", expected_version: "v1" }],
     ["update_bot", { bot_id: "child-1", name: "Obeys" }],
+    ["archive_bot", { bot_id: "peer-1", confirm_name: "Peer" }],
   ])("refuses %s from a helper even on a run the owner started", async (name, args) => {
     const f = fixture({ name, builtin: true, fleetManagement: true });
     f.setCalls([{ args, executionId: JSON.stringify(["pi-tool", "helper-call", "call-1"]) }]);
@@ -1238,6 +1239,23 @@ describe("bot management tool gating", () => {
             : { error: "Helpers cannot use bot management tools." },
       );
       expect(f.effects[0]!.status).toBe("approved");
+    },
+  );
+
+  it.each(["switch", "external", "channel"])(
+    "refuses archiving a peer through the %s management gate",
+    async (gate) => {
+      const f = fixture({
+        name: "archive_bot",
+        builtin: true,
+        fleetManagement: gate !== "switch",
+        trigger: gate === "external" ? "bot_message" : "user",
+      });
+      if (gate === "channel") f.claimedOutsideSteering(true);
+      f.setCalls([{ args: { bot_id: "peer-1", confirm_name: "Peer" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results.at(-1)).toHaveProperty("error");
+      expect(f.effects).toEqual([]);
     },
   );
 

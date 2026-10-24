@@ -89,11 +89,17 @@ export async function executeCloudAgentTool(
         type: "thread.message.created",
         payload: { messageId: message.id, role: "bot", blocks },
       });
-      return { agent: saved, seq: event.seq };
+      return {
+        agent: saved,
+        seq: event.seq,
+        firstResponseRunId: event.firstResponse ? run.id : undefined,
+      };
     });
     agent = result.agent;
     if (result.seq !== undefined)
-      await deps.events.notify(run.threadId, result.seq).catch(() => undefined);
+      await deps.events
+        .notify(run.threadId, result.seq, result.firstResponseRunId)
+        .catch(() => undefined);
   } else {
     const owned = await deps.prisma.cloudAgent.findFirst({
       where: {

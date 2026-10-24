@@ -1,3 +1,4 @@
+import type { ThreadMessage } from "@rakazo/contracts";
 import type { ThreadScrollState } from "@rakazo/core";
 
 export type { ThreadScrollState } from "@rakazo/core";
@@ -5,11 +6,37 @@ export type { ThreadScrollState } from "@rakazo/core";
 export type ThreadScrollAction = "jump" | "smooth" | null;
 
 /** The last row that isn't a folded peer reply, so expanding or collapsing a fold isn't an arrival. */
-export function latestArrivalMessageId<M extends { id: string }>(
+export function latestArrivalMessage<M extends { id: string }>(
   visible: readonly M[],
   markerOf: ReadonlyMap<string, string>,
-): string | null {
-  return visible.findLast((message) => !markerOf.has(message.id))?.id ?? null;
+): M | undefined {
+  return visible.findLast((message) => !markerOf.has(message.id));
+}
+
+/** Older transcripts do not carry a human author; retain their bubble ownership rule. */
+export function isOwnThreadMessage(
+  message: (Pick<ThreadMessage, "role" | "blocks"> & { userId?: string }) | undefined,
+  userId: string,
+): boolean {
+  if (message?.role !== "user") return false;
+  if (message.userId !== undefined) return message.userId === userId;
+  return !message.blocks.some(
+    (block) => block.kind === "channel_message" || block.kind === "bot_message_received",
+  );
+}
+
+export type ThreadRowKey = {
+  messageId: string | null;
+  unsentKeys: readonly string[];
+  own: boolean;
+};
+
+export function latestThreadRowKey(
+  messageId: string | null,
+  unsentKeys: readonly string[] = [],
+  own = false,
+): ThreadRowKey {
+  return { messageId, unsentKeys, own };
 }
 
 export class ThreadScrollBehavior {
@@ -22,7 +49,8 @@ export class ThreadScrollBehavior {
   private dragging = false;
   private userScrolling = false;
   private pendingFollow = false;
-  private latestMessageId: string | null = null;
+  private latestRowKey: ThreadRowKey | null = null;
+  private followingOwnSend: ThreadScrollAction = null;
   private currentState: ThreadScrollState = { detached: false, unread: false };
 
   openThread(threadKey: string): void {
@@ -30,7 +58,8 @@ export class ThreadScrollBehavior {
     this.threadKey = threadKey;
     this.laidOut = false;
     this.contentReady = false;
-    this.latestMessageId = null;
+    this.latestRowKey = null;
+    this.followingOwnSend = null;
     this.viewportHeight = null;
     this.contentHeight = null;
     this.distanceFromEnd = 0;
@@ -50,12 +79,34 @@ export class ThreadScrollBehavior {
     return this.contentReady && !this.currentState.detached ? "jump" : null;
   }
 
-  onContentChanged(blocked: boolean, latestMessageId: string | null): ThreadScrollAction {
+  onOwnSend(): ThreadScrollAction {
+    this.followingOwnSend = this.currentState.detached ? "jump" : "smooth";
+    this.dragging = false;
+    this.userScrolling = false;
+    this.pendingFollow = false;
+    this.jumpToLatest();
+    return this.followingOwnSend;
+  }
+
+  onContentChanged(blocked: boolean, next: ThreadRowKey): ThreadScrollAction {
     if (blocked) return null;
     this.contentReady = true;
-    if (latestMessageId === null || latestMessageId === this.latestMessageId) return null;
-    const initial = this.latestMessageId === null;
-    this.latestMessageId = latestMessageId;
+    const previous = this.latestRowKey;
+    this.latestRowKey = next;
+    const messageChanged = next.messageId !== (previous?.messageId ?? null);
+    const outboxAdded = next.unsentKeys.some((key) => !previous?.unsentKeys.includes(key));
+    const ownSendAction = this.followingOwnSend;
+    const outboxRemoved = previous?.unsentKeys.some((key) => !next.unsentKeys.includes(key));
+    if ((messageChanged && next.own) || outboxRemoved) this.followingOwnSend = null;
+    if (!messageChanged && !outboxAdded) return null;
+    const initial =
+      previous === null || (previous.messageId === null && previous.unsentKeys.length === 0);
+    const own = !messageChanged || next.own;
+    if (own) {
+      if (ownSendAction) return ownSendAction;
+      if (this.currentState.detached || this.userScrolling) return null;
+      return initial ? (this.laidOut ? "jump" : null) : "smooth";
+    }
     if (this.userScrolling) {
       this.pendingFollow = true;
       if (this.currentState.detached) this.currentState = { detached: true, unread: true };
@@ -70,6 +121,7 @@ export class ThreadScrollBehavior {
   }
 
   onUserDragStart(): void {
+    this.followingOwnSend = null;
     this.dragging = true;
     this.userScrolling = true;
   }
@@ -81,6 +133,7 @@ export class ThreadScrollBehavior {
   onUserMomentumEnd(): ThreadScrollAction {
     if (this.dragging) return null;
     this.userScrolling = false;
+    if (this.followingOwnSend) return this.followingOwnSend;
     const follow = this.pendingFollow && !this.currentState.detached;
     this.pendingFollow = false;
     return follow ? this.jumpToLatest() : null;
@@ -101,6 +154,7 @@ export class ThreadScrollBehavior {
   }
 
   onUserScroll(distanceFromEnd: number): ThreadScrollState {
+    if (this.followingOwnSend) return this.state();
     const maxDistance =
       this.contentHeight === null || this.viewportHeight === null
         ? Number.POSITIVE_INFINITY

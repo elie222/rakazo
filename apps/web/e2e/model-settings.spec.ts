@@ -1005,3 +1005,90 @@ test("Ollama Cloud preset saves an OpenAI-compatible connection", async ({ page 
     );
   await captureScreenshot(page, testInfo, "ollama-preset");
 });
+
+test("a Claude subscription folds the key form and bots move to the space default", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const stamp = Date.now();
+  await signup(page, `subscription-${stamp}@rakazo.test`, "password12", "Subscription Preview");
+  await completeOnboarding(page);
+  const catalog = await rpc<Array<{ provider: string; id: string; placeholder?: boolean }>>(
+    page,
+    "models/list",
+    {},
+  );
+  const claude = catalog.find((entry) => entry.provider === "anthropic" && !entry.placeholder);
+  if (!claude) throw new Error("catalog has no Anthropic model");
+  const pinned = new Map<string, string>();
+  for (const name of ["Archie", "Inbox"]) {
+    const bot = await rpc<{ id: string }>(page, "bots/create", {
+      name,
+      title: "",
+      description: "",
+      notifyOnFinish: true,
+    });
+    pinned.set(bot.id, name);
+  }
+  // A signed-in subscription and bots with their own model, without a live provider.
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    Object.assign(body.json, {
+      needsModel: false,
+      defaultProvider: "anthropic",
+      defaultModel: claude.id,
+    });
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/models/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-claude",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: false,
+            isDefault: true,
+            modelId: claude.id,
+            authKind: "oauth",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/rpc/bots/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Array<{ id: string }> };
+    body.json = body.json.map((bot) =>
+      pinned.has(bot.id) ? { ...bot, modelProvider: "anthropic", modelId: claude.id } : bot,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/bots/update", async (route) => {
+    pinned.delete((route.request().postDataJSON() as { json: { botId: string } }).json.botId);
+    await route.continue();
+  });
+
+  await openUserSettings(page, "models");
+  await page.getByRole("button", { name: /^Claude subscription/ }).click();
+  await expect(page.locator("#model-api-key")).toHaveCount(0);
+  const bots = page.getByTestId("space-bots-model");
+  await expect(bots).toContainText("2 bots have their own model: Archie, Inbox");
+  await captureScreenshot(page, testInfo, "subscription-key-folded-and-bot-models");
+
+  await page.getByRole("button", { name: "Or paste an API key" }).click();
+  await expect(page.getByLabel("Or paste an API key")).toBeFocused();
+  await expect(page.getByRole("button", { name: "Connect API key" })).toBeVisible();
+
+  await bots.getByRole("button", { name: "Use space default" }).click();
+  const confirm = page.getByRole("alertdialog");
+  await expect(
+    confirm.getByRole("heading", { name: "Switch 2 bots to the space default?" }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "bot-models-confirm");
+  await confirm.getByRole("button", { name: "Switch", exact: true }).click();
+  await expect(bots).toContainText("2 bots now use the space default.");
+  await expect(bots.getByRole("button", { name: "Use space default" })).toHaveCount(0);
+});

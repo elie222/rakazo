@@ -3,7 +3,6 @@ import type {
   AgentSkillCatalogEntry,
   Bot,
   BotSection,
-  ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
   Group,
@@ -19,12 +18,7 @@ import type {
   ThreadSnapshot,
   VoiceStatus,
 } from "@rakazo/contracts";
-import {
-  ATTACHMENT_MAX_COUNT,
-  attachmentMaxBytes,
-  attachmentSizeLabel,
-  normalizeCreateBotProfile,
-} from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes, attachmentSizeLabel } from "@rakazo/contracts";
 import type { ComposerMention, ReadBoundary } from "@rakazo/core";
 import {
   accountDisplay,
@@ -158,6 +152,7 @@ import {
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { usePreloadRecoveryState } from "../lib/preload-recovery";
+import { canPrepareImage, prepareImage } from "../lib/prepare-image";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import type { Panel, RightPanelState } from "../lib/right-panel-state";
 import {
@@ -201,16 +196,17 @@ import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { ResizableSidePanel } from "./ResizableSidePanel";
 import { RoutineEditor } from "./RoutineEditor";
-import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { ArchivedChats } from "./shell/archived-chats";
-import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import { BotSettings } from "./shell/bot-panel";
 import type { PendingAttachment } from "./shell/chat-shared";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import { Composer } from "./shell/composer";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
+import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
+import { CreateBotDialog } from "./shell/create-bot-dialog";
 import {
   ClearConversationDialog,
   DeleteBotDialog,
@@ -230,6 +226,13 @@ import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./s
 import { Transcript } from "./shell/transcript";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
+import type { SettingsSection, ShellOverlay } from "./shell-overlay";
+import {
+  readShellOverlay,
+  searchString,
+  shellOverlaySearch,
+  withShellOverlay,
+} from "./shell-overlay";
 
 const READ_ALOUD_TOAST = "read-aloud-error";
 
@@ -317,6 +320,15 @@ function SpaceShell() {
   // effect below, which should only restart when the active bot changes).
   const searchParamsRef = useRef(searchParams);
   searchParamsRef.current = searchParams;
+  /** Picking the thread for a bare or stale route keeps an overlay the URL asked for. */
+  const redirectKeepingOverlay = useCallback(
+    (pathname: string) =>
+      navigate(
+        { pathname, search: shellOverlaySearch(searchParamsRef.current) },
+        { replace: true },
+      ),
+    [navigate],
+  );
   const session = authClient.useSession();
   const userId = session.data?.user.id;
   const [groups, setGroups] = useState<Group[]>([]);
@@ -330,12 +342,7 @@ function SpaceShell() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [archivedBots, setArchivedBots] = useState<Bot[]>([]);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>([]);
-  const {
-    collapsedSidebarSections,
-    collapsedRosterParents,
-    toggleSidebarSection,
-    toggleRosterParent,
-  } = useSidebarExpansion(userId);
+  const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   useEffect(() => {
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
   }, [userId]);
@@ -482,17 +489,11 @@ function SpaceShell() {
   function updateSnapshot(update: (prev: ThreadSnapshot | null) => ThreadSnapshot | null) {
     commitSnapshot(update(snapshotRef.current));
   }
-  const [pluginsOpen, setPluginsOpen] = usePreloadRecoveryState("integrations", false);
-  const [mcpOpen, setMcpOpen] = usePreloadRecoveryState("mcp", false);
-  const [settingsOpen, setSettingsOpen] = usePreloadRecoveryState("settings", false);
-  const [settingsSection, setSettingsSection] = usePreloadRecoveryState<SettingsSection>(
-    "settingsSection",
-    "general",
-  );
-  const [messagingSettingsOpen, setMessagingSettingsOpen] = usePreloadRecoveryState(
-    "messaging",
-    false,
-  );
+  const overlay = readShellOverlay(searchParams);
+  // Overlays replace the URL rather than adding history, so opening and closing never race a navigation.
+  function setOverlay(next: ShellOverlay) {
+    navigate({ search: searchString(withShellOverlay(searchParams, next)) }, { replace: true });
+  }
   const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
   const [messagingProviders, setMessagingProviders] = useState<string[]>([]);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
@@ -529,6 +530,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [createBotOpen, setCreateBotOpen] = useState(false);
   const [pickerInfoTopic, setPickerInfoTopic] = useState<"group" | "space" | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -605,18 +607,13 @@ function SpaceShell() {
   }, [bootstrapMe?.phoneCallsEnabled]);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
   // null: settings follow the space the app is showing.
-  const [settingsSpaceId, setSettingsSpaceId] = usePreloadRecoveryState<string | null>(
-    "settingsSpaceId",
-    null,
-  );
+  const settingsSpaceId = overlay?.kind === "settings" ? overlay.spaceId : null;
   const settingsSpace =
     spaces.find((space) => space.id === (settingsSpaceId ?? currentSpaceId)) ?? null;
   // Never fall back to another space's settings when the edited space goes away.
   const settingsSpaceGone = initialBotsLoaded && settingsSpaceId !== null && !settingsSpace;
   useEffect(() => {
-    if (!settingsSpaceGone) return;
-    setSettingsOpen(false);
-    setSettingsSpaceId(null);
+    if (settingsSpaceGone) setOverlay(null);
   }, [settingsSpaceGone]);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
@@ -1026,13 +1023,13 @@ function SpaceShell() {
         const currentGroupId = routeGroupId.current;
         if (currentGroupId) {
           if (!groupList.some((group) => group.id === currentGroupId)) {
-            navigate(firstThreadRoute(list, groupList), { replace: true });
+            redirectKeepingOverlay(firstThreadRoute(list, groupList));
           }
           return;
         }
         const currentBotId = routeBotId.current;
         if (!currentBotId || !list.some((bot) => bot.id === currentBotId)) {
-          navigate(firstThreadRoute(list, groupList), { replace: true });
+          redirectKeepingOverlay(firstThreadRoute(list, groupList));
         }
       } finally {
         botsRefreshInFlight.current -= 1;
@@ -1273,13 +1270,13 @@ function SpaceShell() {
         }
         if (groupId) {
           if (!groupList.some((group) => group.id === groupId)) {
-            navigate(firstThreadRoute(bootstrap.bots, groupList), { replace: true });
+            redirectKeepingOverlay(firstThreadRoute(bootstrap.bots, groupList));
           }
           return;
         }
         const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
         if (selectedBotId && selectedBotId !== botId) {
-          navigate(`/app/${selectedBotId}`, { replace: true });
+          redirectKeepingOverlay(`/app/${selectedBotId}`);
         }
       })
       .catch(() => {
@@ -1765,13 +1762,13 @@ function SpaceShell() {
   // Drags only act on bots of the active space; other spaces are read-only here.
   const draggedBot = draggedBotId ? bots.find((bot) => bot.id === draggedBotId) : undefined;
   const rosterDropAction = useCallback(
-    (target: RosterDropTarget, sameParent: boolean) =>
-      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameParent }) : null,
+    (target: RosterDropTarget, sameList: boolean) =>
+      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameList }) : null,
     [draggedBot],
   );
   const applyRosterDrop = useCallback(
-    (target: RosterDropTarget, sameParent: boolean, groupBotIds: string[]) => {
-      const action = rosterDropAction(target, sameParent);
+    (target: RosterDropTarget, sameList: boolean, groupBotIds: string[]) => {
+      const action = rosterDropAction(target, sameList);
       setDraggedBotId(null);
       setRosterDropKey(null);
       if (!action || !draggedBot) return;
@@ -2258,7 +2255,8 @@ function SpaceShell() {
           skipped.push(t`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
           continue;
         }
-        if (file.size > attachmentMaxBytes(bootstrapMe)) {
+        // Raster photos get a chance to shrink before server-side size validation.
+        if (file.size > attachmentMaxBytes(bootstrapMe) && !canPrepareImage(file)) {
           skipped.push(
             t`${file.name} (over ${attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))})`,
           );
@@ -2363,7 +2361,8 @@ function SpaceShell() {
           if (!mimeType) {
             throw new Error(t`Unsupported file type: ${pending.file.name}`);
           }
-          const contentBase64 = await readFileAsBase64(pending.file);
+          const file = await prepareImage(pending.file);
+          const contentBase64 = await readFileAsBase64(file);
           const artifact = await rpc.artifacts.create(
             groupTarget
               ? { groupId: groupTarget, name: pending.file.name, mimeType, contentBase64 }
@@ -2576,31 +2575,19 @@ function SpaceShell() {
     writeBotsSidebarCollapsed(userId, collapsed);
   }
 
-  function openSettings(section: SettingsSection = "general") {
-    setSettingsSpaceId(null);
-    setSettingsSection(section);
-    setSettingsOpen(true);
+  function openSettings(section: SettingsSection = "general", spaceId: string | null = null) {
+    setOverlay({ kind: "settings", section, spaceId });
   }
 
   // Space-scoped sections bind their own rpc client to this space, so another
   // space's settings open in place without switching the app or reloading.
   function openSpaceSettings(spaceId: string) {
-    openSettings("models");
-    setSettingsSpaceId(spaceId);
+    openSettings("models", spaceId);
   }
 
-  async function createBot(input: {
-    name: string;
-    title: string;
-    description: string;
-    computerMode: ComputerMode;
-  }) {
+  async function createBot(input: CreateBotDialogInput) {
     const isFirstBot = botsRef.current.length === 0;
-    const bot = await rpc.bots.create({
-      ...normalizeCreateBotProfile(input),
-      notifyOnFinish: true,
-      computerMode: input.computerMode,
-    });
+    const bot = await rpc.bots.create({ ...input, notifyOnFinish: true });
     // A roster requested before creation may omit this bot and redirect its new chat.
     botsRefreshEpoch.current += 1;
     setBots((current) =>
@@ -2608,6 +2595,7 @@ function SpaceShell() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    setCreateBotOpen(false);
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
     cancelFocusPrompt();
@@ -3206,6 +3194,7 @@ function SpaceShell() {
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          setCreateBotOpen={setCreateBotOpen}
           setPickerInfoTopic={setPickerInfoTopic}
         />
         {miniSidebar ? (
@@ -3298,7 +3287,6 @@ function SpaceShell() {
                 mini={miniSidebar}
                 sidebarGroups={sidebarGroups}
                 collapsedSidebarSections={collapsedSidebarSections}
-                collapsedRosterParents={collapsedRosterParents}
                 bootstrapMe={bootstrapMe}
                 botSections={botSections}
                 spaces={spaces}
@@ -3320,7 +3308,6 @@ function SpaceShell() {
                 displayedRunError={displayedRunError}
                 draggedBotId={draggedBotId}
                 setDraggedBotId={setDraggedBotId}
-                toggleRosterParent={toggleRosterParent}
                 botMenu={botMenu}
                 setBotMenu={setBotMenu}
                 reorderRosterBot={reorderRosterBot}
@@ -3358,7 +3345,7 @@ function SpaceShell() {
           }}
           onIntegrations={() => {
             setMenuOpen(false);
-            setPluginsOpen(true);
+            setOverlay({ kind: "integrations" });
           }}
           onBoard={
             bootstrapMe?.ticketBoardEnabled
@@ -3491,7 +3478,7 @@ function SpaceShell() {
         <CallReturnBar />
         {!active && !activeGroup && initialBotsLoaded ? (
           <div className="grid flex-1 place-items-center">
-            <Button onClick={() => setPanel("create")}>
+            <Button onClick={() => setCreateBotOpen(true)}>
               <Plus size={16} aria-hidden="true" />
               <Trans>Create new Bot</Trans>
             </Button>
@@ -3633,15 +3620,12 @@ function SpaceShell() {
       />
 
       <ResizableSidePanel
-        open={Boolean(panel && (active || activeGroup || panel === "create"))}
+        open={Boolean(panel && (active || activeGroup))}
         panel={panel ?? "closed"}
       >
-        {panel && (active || activeGroup || panel === "create") ? (
+        {panel && (active || activeGroup) ? (
           <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
-            {panel !== "routine" &&
-            panel !== "create" &&
-            panel !== "create-group" &&
-            panel !== "group-settings" ? (
+            {panel !== "routine" && panel !== "create-group" && panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
                   {panel === "settings" ? null : active ? (
@@ -3756,12 +3740,6 @@ function SpaceShell() {
                 onClose={() => setPanel(null)}
                 onOpenBot={openBot}
                 covered={computerOpen}
-              />
-            ) : null}
-            {panel === "create" ? (
-              <CreateBotForm
-                onCancel={() => setPanel(null)}
-                onCreate={(input) => createBot(input)}
               />
             ) : null}
             {panel === "settings" && active ? (
@@ -4009,6 +3987,10 @@ function SpaceShell() {
           }}
         />
 
+        {createBotOpen ? (
+          <CreateBotDialog onCancel={() => setCreateBotOpen(false)} onCreate={createBot} />
+        ) : null}
+
         {newSpaceOpen ? (
           <NewSpaceDialog
             onCancel={() => setNewSpaceOpen(false)}
@@ -4058,45 +4040,43 @@ function SpaceShell() {
 
         {deleteRoutineDialogProps ? <DeleteItemDialog {...deleteRoutineDialogProps} /> : null}
 
-        {pluginsOpen ? (
+        {overlay?.kind === "integrations" ? (
           <PluginsOverlay
             onConnectedAppsChange={setFooterLogos}
             activeBotId={activeBotId.current}
-            onClose={() => setPluginsOpen(false)}
-            onOpenMcp={() => {
-              setPluginsOpen(false);
-              setMcpOpen(true);
-            }}
+            onClose={() => setOverlay(null)}
+            onOpenMcp={() => setOverlay({ kind: "mcp" })}
           />
         ) : null}
-        {mcpOpen ? <McpServersOverlay onClose={() => setMcpOpen(false)} /> : null}
-        {messagingSettingsOpen ? (
-          <MessagingSettingsOverlay onClose={() => setMessagingSettingsOpen(false)} />
+        {overlay?.kind === "mcp" ? <McpServersOverlay onClose={() => setOverlay(null)} /> : null}
+        {overlay?.kind === "messaging" ? (
+          <MessagingSettingsOverlay onClose={() => setOverlay(null)} />
         ) : null}
       </Suspense>
 
       <Suspense fallback={null}>
-        {settingsOpen && (settingsSpaceId === null || settingsSpace) ? (
+        {overlay?.kind === "settings" && (settingsSpaceId === null || settingsSpace) ? (
           <SettingsOverlay
             space={settingsSpace}
             spaces={spaces}
             currentSpaceId={currentSpaceId}
-            onSpaceChange={setSettingsSpaceId}
-            name={userName}
+            onSpaceChange={(spaceId) => setOverlay({ ...overlay, spaceId })}
+            name={session.data?.user.name ?? ""}
+            onNameSaved={async () => {
+              await session.refetch({ query: { disableCookieCache: true } });
+            }}
             email={session.data?.user.email}
             usage={usage}
             onUsageOpen={refreshUsage}
-            initialSection={settingsSection}
+            section={overlay.section}
+            onSectionChange={(section) => setOverlay({ ...overlay, section })}
             billingEnabled={bootstrapMe?.billingEnabled === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
             onSandboxProviderChange={(sandboxProvider) =>
               setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
             }
             messagingEnabled={messagingSurfaceEnabled}
-            onOpenMessaging={() => {
-              setSettingsOpen(false);
-              setMessagingSettingsOpen(true);
-            }}
+            onOpenMessaging={() => setOverlay({ kind: "messaging" })}
             timezone={bootstrapMe?.timezone ?? null}
             onTimezoneChange={async (timezone) => {
               const nextMe = await rpc.preferences.update({ timezone });
@@ -4117,10 +4097,7 @@ function SpaceShell() {
                 setVoiceStatus(null);
               }
             }}
-            onClose={() => {
-              setSettingsOpen(false);
-              setSettingsSection("general");
-            }}
+            onClose={() => setOverlay(null)}
           />
         ) : null}
         {peerConversation && active ? (

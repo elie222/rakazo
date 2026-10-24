@@ -2,6 +2,8 @@
 
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
+import { act, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NativeActionButton as FallbackButton } from "../components/native-action-button";
@@ -61,8 +63,10 @@ vi.mock("./native", () => ({
   },
 }));
 vi.mock("@expo/ui/swift-ui", () => ({
-  Host: (props: { children: ReactNode }) => {
-    swiftHost(props);
+  Host: (props: { children: ReactNode; matchContents?: unknown }) => {
+    // Like the native host, these measurement axes are fixed for a mounted instance.
+    const [mountedMatchContents] = useState(() => props.matchContents);
+    swiftHost({ ...props, mountedMatchContents });
     return <div>{props.children}</div>;
   },
   Button: (props: { children?: ReactNode }) => {
@@ -81,23 +85,29 @@ vi.mock("@expo/ui/swift-ui", () => ({
 }));
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
-  return Object.fromEntries(
-    [
-      "accessibilityLabel",
-      "accessibilityAddTraits",
-      "accessibilityRemoveTraits",
-      "labelStyle",
-      "buttonStyle",
-      "controlSize",
-      "disabled",
-      "font",
-      "foregroundStyle",
-      "frame",
-      "padding",
-      "progressViewStyle",
-      "tint",
-    ].map((name) => [name, modifier(name)]),
-  );
+  return {
+    ...Object.fromEntries(
+      [
+        "accessibilityLabel",
+        "accessibilityAddTraits",
+        "accessibilityRemoveTraits",
+        "labelStyle",
+        "buttonStyle",
+        "controlSize",
+        "disabled",
+        "font",
+        "foregroundStyle",
+        "frame",
+        "padding",
+        "progressViewStyle",
+        "tint",
+        "background",
+        "fixedSize",
+        "strokeBorder",
+      ].map((name) => [name, modifier(name)]),
+    ),
+    shapes: { roundedRectangle: modifier("roundedRectangle") },
+  };
 });
 
 beforeEach(() => {
@@ -110,6 +120,32 @@ beforeEach(() => {
 });
 
 describe("iOS action styling", () => {
+  it("updates native measurement axes when recovery buttons stack and return to a row", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const root = createRoot(document.createElement("div"));
+    try {
+      for (const fill of [false, true, false]) {
+        act(() =>
+          root.render(
+            <IosButton
+              label="Set your own key"
+              variant="rectangular"
+              fill={fill}
+              style={fill ? { width: 280 } : undefined}
+              onPress={() => {}}
+            />,
+          ),
+        );
+        expect(swiftHost.mock.lastCall?.[0].mountedMatchContents).toEqual(
+          fill ? { vertical: true } : true,
+        );
+      }
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([18, 26])("keeps quiet actions small and muted on iOS %s", (version) => {
     platform.Version = version;
     renderToStaticMarkup(<IosButton label="Continue" prominence="quiet" onPress={() => {}} />);

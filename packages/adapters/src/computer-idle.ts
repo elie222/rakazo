@@ -5,7 +5,11 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerSleepJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  computerSleepJob,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -337,7 +341,7 @@ export async function sleepComputerIfIdle(
     );
     const saved = await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { homeRevision: revision, updatedAt: checkpointedAt },
+      data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: checkpointedAt },
     });
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
@@ -372,12 +376,13 @@ export async function sleepComputerIfIdle(
     });
     scheduleComputerSleep(deps.jobs, computerId);
     // A sandbox too busy or stuck to answer cannot be checkpointed now; the next idle check
-    // tries again instead of reporting the same timeout every window.
-    if (error instanceof SandboxUnresponsiveError) {
+    // tries again instead of reporting the same timeout every window. One the provider can only
+    // bring back from its own snapshot waits for the next use, which restores a newer save.
+    if (error instanceof SandboxUnresponsiveError || error instanceof SandboxUnavailableError) {
       getLogger().warn("computer.sleep_deferred", {
         "computer.id": computerId,
         provider: computer.kind,
-        reason: "unresponsive",
+        reason: error instanceof SandboxUnresponsiveError ? "unresponsive" : "unavailable",
       });
       return;
     }

@@ -217,7 +217,13 @@ test("a space's menu opens its settings in place, and settings can switch space"
   await dialog.getByRole("button", { name: "Create space", exact: true }).click();
   await completeOnboarding(page);
   await expect(sidebar.getByText("Support", { exact: true })).toBeVisible();
-  const chatUrl = page.url();
+  const chatPath = new URL(page.url()).pathname;
+  // Settings stay on the chat's route; only the overlay params change.
+  const onChat = () => {
+    const url = new URL(page.url());
+    expect(url.pathname).toBe(chatPath);
+    expect(url.searchParams.get("settings")).toBe("models");
+  };
   const selected = await page.evaluate(() => localStorage.getItem("rakazo:space-id"));
   await page.evaluate(() => {
     document.documentElement.dataset.settingsTest = "same-document";
@@ -230,7 +236,7 @@ test("a space's menu opens its settings in place, and settings can switch space"
   await expect(settings).toHaveAttribute("data-settings-section", "models");
   const picker = settings.getByTestId("settings-space");
   await expect(picker).toHaveText("Personal");
-  expect(page.url()).toBe(chatUrl);
+  onChat();
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
   await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
   await captureScreenshot(page, testInfo, "space-settings-from-menu");
@@ -241,7 +247,7 @@ test("a space's menu opens its settings in place, and settings can switch space"
   await page.getByRole("option", { name: "Support", exact: true }).click();
   await expect(picker).toHaveText("Support");
   await expect(settings).toHaveAttribute("data-settings-section", "models");
-  expect(page.url()).toBe(chatUrl);
+  onChat();
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
   await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
 

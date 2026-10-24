@@ -10,6 +10,8 @@ import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBackgroundJobHandlers } from "./background-job-handlers.js";
 import type { createRunExecutor } from "./executor.js";
+import { InMemoryRealtimeFanout } from "./realtime.js";
+import { RunJobPublisher, RunWorkerHost } from "./run-wakeup.js";
 import { createReservedGraphileJobWorkerHost, GraphileJobPublisher } from "./wakeup.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
@@ -104,12 +106,19 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
   });
 
   /** A run whose tool forgets every filter: it sees only what the database lets it. */
-  function careless(prisma: PrismaClient, afterHandoff?: Promise<void>) {
+  function careless(prisma: PrismaClient, afterHandoff?: Promise<void>, claim = false) {
     const seen = new Map<string, { messages: string[]; connections: string[] }>();
     const ours = (ids: string[], key: "threadId" | "spaceId") =>
       [...new Set(ids)].filter((id) => tenants.some((t) => t[key] === id));
     const continueRun = vi.fn(
       async (runId: string, _workerId?: string, onRunStarted?: () => void) => {
+        if (claim) {
+          const claimed = await prisma.run.updateMany({
+            where: { id: runId, status: "queued" },
+            data: { status: "running" },
+          });
+          if (claimed.count !== 1) return;
+        }
         onRunStarted?.();
         await afterHandoff;
         const messages = await prisma.message.findMany({ select: { threadId: true } });
@@ -148,6 +157,47 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
     await handlers["run.continue"]({ runId: b.runId });
     expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
     expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
+  });
+
+  it("preserves tenant scope after direct wakeup handoff without a queue job", async () => {
+    await runAsSystem("reset direct dispatch fixtures", () =>
+      owner.prisma.run.updateMany({
+        where: { id: { in: tenants.map((tenant) => tenant.runId) } },
+        data: { status: "queued" },
+      }),
+    );
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { handlers, seen, continueRun } = careless(app.prisma, pending, true);
+    const realtime = new InMemoryRealtimeFanout();
+    const background = { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() };
+    const publisher = new RunJobPublisher(app.prisma, realtime, background);
+    const host = new RunWorkerHost(app.prisma, realtime, { intervalMs: 25 });
+    try {
+      await host.start(handlers);
+      for (const tenant of tenants)
+        await runAsTenant(tenant, () =>
+          publisher.enqueue({ name: "run.continue", payload: { runId: tenant.runId } }),
+        );
+      await vi.waitFor(() => expect(continueRun).toHaveBeenCalledTimes(2));
+      expect(background.enqueue).not.toHaveBeenCalled();
+      expect(seen.size).toBe(0);
+      release();
+      await vi.waitFor(() => expect(seen.size).toBe(2));
+      expect(seen.get(a.runId)).toEqual({ messages: [a.threadId], connections: [a.spaceId] });
+      expect(seen.get(b.runId)).toEqual({ messages: [b.threadId], connections: [b.spaceId] });
+    } finally {
+      release();
+      await host.stop();
+      await runAsSystem("reset direct dispatch fixtures", () =>
+        owner.prisma.run.updateMany({
+          where: { id: { in: tenants.map((tenant) => tenant.runId) } },
+          data: { status: "queued" },
+        }),
+      );
+    }
   });
 
   it("runs tenant jobs through the Graphile queue", async () => {

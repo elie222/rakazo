@@ -98,7 +98,7 @@ vi.mock("../components/ComputersUnavailableHint", () => ({
   ComputersUnavailableHint: () => null,
 }));
 vi.mock("../components/DesktopUpdates", () => ({ DesktopUpdateSection: () => null }));
-vi.mock("../lib/auth", () => ({ authClient: { changePassword: vi.fn() } }));
+vi.mock("../lib/auth", () => ({ authClient: { changePassword: vi.fn(), updateUser: vi.fn() } }));
 vi.mock("../lib/i18n", () => ({
   getActiveUiLocale: () => "en",
   setUiLocale: (locale: string) => Promise.resolve(locale),
@@ -108,6 +108,7 @@ vi.mock("../lib/ui-appearance", () => ({
   setUiAppearance: vi.fn(),
 }));
 
+import { authClient } from "../lib/auth";
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
   getComposerEnterToSend,
@@ -294,5 +295,192 @@ it("does not expose server integration configuration", async () => {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  }
+});
+
+async function renderNameEditor(name = "Alex Rivera") {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onNameSaved = vi.fn<() => Promise<void>>(async () => undefined);
+  await act(async () =>
+    root.render(
+      <GeneralSettingsPanels name={name} email="demo@example.com" onNameSaved={onNameSaved} />,
+    ),
+  );
+  const card = container.querySelector<HTMLElement>('[data-testid="account-card"]')!;
+  const button = (label: string) =>
+    [...card.querySelectorAll("button")].find((b) => b.textContent === label)!;
+  await act(async () => button("Edit").click());
+  const input = card.querySelector("input")!;
+  return {
+    card,
+    input,
+    button,
+    onNameSaved,
+    change: async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }),
+    submit: async () =>
+      act(async () => {
+        card
+          .querySelector("form")!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      }),
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+it("saves a trimmed name and refreshes the account data", async () => {
+  vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
+  const editor = await renderNameEditor();
+  try {
+    expect(editor.input.value).toBe("Alex Rivera");
+    expect(editor.input.maxLength).toBe(80);
+    await editor.change("  Sam Rivera  ");
+    await editor.submit();
+    expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
+    expect(editor.card.querySelector("input")).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it("closes an unchanged name without saving", async () => {
+  vi.mocked(authClient.updateUser).mockClear();
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("  Alex Rivera  ");
+    await editor.submit();
+    expect(authClient.updateUser).not.toHaveBeenCalled();
+    expect(editor.onNameSaved).not.toHaveBeenCalled();
+    expect(editor.card.querySelector("input")).toBeNull();
+    expect(editor.card.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it.each(["button", "Escape"])("cancels a name edit with %s without saving", async (method) => {
+  vi.mocked(authClient.updateUser).mockClear();
+  const editor = await renderNameEditor();
+  try {
+    await editor.change("Discard me");
+    await act(async () => {
+      if (method === "button") editor.button("Cancel").click();
+      else
+        editor.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(editor.card.querySelector("input")).toBeNull();
+    expect(editor.card.textContent).toContain("Alex Rivera");
+    expect(authClient.updateUser).not.toHaveBeenCalled();
+    await act(async () => editor.button("Edit").click());
+    expect(editor.card.querySelector("input")!.value).toBe("Alex Rivera");
+  } finally {
+    await editor.cleanup();
+  }
+});
+
+it.each(["__AbCdEfGh__", "demo", "demo@example.com"])(
+  "starts hidden name %s empty and rejects invalid submissions",
+  async (name) => {
+    vi.mocked(authClient.updateUser).mockClear();
+    const editor = await renderNameEditor(name);
+    try {
+      expect(editor.input.value).toBe("");
+      expect(editor.button("Save").disabled).toBe(true);
+      for (const value of ["", "   ", "x".repeat(81)]) {
+        await editor.change(value);
+        await editor.submit();
+      }
+      expect(authClient.updateUser).not.toHaveBeenCalled();
+      expect(editor.onNameSaved).not.toHaveBeenCalled();
+    } finally {
+      await editor.cleanup();
+    }
+  },
+);
+
+it.each(["💬", "__AbCdEfGh__"])(
+  "rejects unsupported name %s without losing the current name",
+  async (name) => {
+    vi.mocked(authClient.updateUser).mockClear();
+    const editor = await renderNameEditor();
+    try {
+      await editor.change(name);
+      await editor.submit();
+      expect(authClient.updateUser).not.toHaveBeenCalled();
+      expect(editor.onNameSaved).not.toHaveBeenCalled();
+      expect(editor.input.value).toBe(name);
+      expect(editor.card.querySelector('[role="alert"]')?.textContent).toBe(
+        "Could not update name",
+      );
+      await act(async () => editor.button("Cancel").click());
+      expect(editor.card.textContent).toContain("Alex Rivera");
+    } finally {
+      await editor.cleanup();
+    }
+  },
+);
+
+it.each(["response", "network"])(
+  "keeps the draft and shows an inline %s error",
+  async (failure) => {
+    if (failure === "network")
+      vi.mocked(authClient.updateUser).mockRejectedValue(new Error("offline"));
+    else
+      vi.mocked(authClient.updateUser).mockResolvedValue({
+        data: null,
+        error: { status: 500, statusText: "Server error" },
+      });
+    const editor = await renderNameEditor();
+    try {
+      await editor.change("Sam Rivera");
+      await editor.submit();
+      expect(editor.card.querySelector('[role="alert"]')?.textContent).toBe(
+        "Could not update name",
+      );
+      expect(editor.input.value).toBe("Sam Rivera");
+      expect(editor.button("Save").disabled).toBe(false);
+      expect(editor.onNameSaved).not.toHaveBeenCalled();
+    } finally {
+      await editor.cleanup();
+    }
+  },
+);
+
+it("closes the name editor before refresh finishes and ignores a refresh failure", async () => {
+  vi.mocked(authClient.updateUser).mockResolvedValue({ data: { status: true }, error: null });
+  const editor = await renderNameEditor();
+  let rejectRefresh!: (error: Error) => void;
+  editor.onNameSaved.mockImplementation(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectRefresh = reject;
+      }),
+  );
+  try {
+    await editor.change("Sam Rivera");
+    await editor.submit();
+    expect(authClient.updateUser).toHaveBeenCalledWith({ name: "Sam Rivera" });
+    expect(editor.onNameSaved).toHaveBeenCalledOnce();
+    expect(editor.card.querySelector("input")).toBeNull();
+    expect(editor.button("Edit").disabled).toBe(false);
+    await act(async () => rejectRefresh(new Error("offline")));
+    expect(editor.card.querySelector("input")).toBeNull();
+    expect(editor.card.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await editor.cleanup();
   }
 });

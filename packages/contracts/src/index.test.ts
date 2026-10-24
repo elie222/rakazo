@@ -250,6 +250,15 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.title).toBe("");
     expect(parsed.notifyOnFinish).toBe(true);
+    expect(parsed.avatarFamily).toBeUndefined();
+  });
+
+  it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {
+    expect(CreateBotInput.parse({ name: "Chief", avatarFamily: 0 }).avatarFamily).toBe(0);
+    expect(CreateBotInput.parse({ name: "Chief", avatarFamily: 9 }).avatarFamily).toBe(9);
+    for (const avatarFamily of [-1, 10, 2.5, "3"]) {
+      expect(CreateBotInput.safeParse({ name: "Chief", avatarFamily }).success).toBe(false);
+    }
   });
 
   it("normalizes bot creation fields without losing the longer instruction copy", () => {
