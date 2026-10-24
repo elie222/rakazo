@@ -810,6 +810,10 @@ msgid "at {timeSelect}"
 msgstr "{timeSelect} बजे"
 
 #: src/pages/shell/composer.tsx
+msgid "Attach"
+msgstr "अटैच करें"
+
+#: src/pages/shell/composer.tsx
 msgid "Attach file"
 msgstr "फ़ाइल संलग्न करें"
 
@@ -2847,6 +2851,7 @@ msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/composer.tsx
 msgid "Import"
 msgstr "इंपोर्ट करें"
 
@@ -2858,6 +2863,10 @@ msgstr "एजेंट इंपोर्ट करें"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON इम्पोर्ट करें"
+
+#: src/pages/shell/composer.tsx
+msgid "Import this agent as a bot?"
+msgstr "इस एजेंट को बॉट के रूप में इंपोर्ट करें?"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"

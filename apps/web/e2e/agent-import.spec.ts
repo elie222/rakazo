@@ -689,3 +689,146 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   const restored = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
   expect(restored.instructions).toBe("Chief's own instructions.");
 });
+
+/** Drops a synthetic folder (as file system entries) or files onto the chat composer. */
+async function dropOnComposer(
+  page: Page,
+  drop: {
+    folder?: { name: string; files: Record<string, string> };
+    zip?: { name: string; base64: string };
+  },
+) {
+  await page.evaluate(({ folder, zip }) => {
+    const target = window.document.querySelector("fieldset[aria-label='Message composer']");
+    if (!target) throw new Error("composer not found");
+    type Tree = { [name: string]: string | Tree };
+    const tree: Tree = {};
+    for (const [path, content] of Object.entries(folder?.files ?? {})) {
+      const parts = path.split("/");
+      let node = tree;
+      for (const part of parts.slice(0, -1)) {
+        node[part] ??= {};
+        node = node[part] as Tree;
+      }
+      node[parts.at(-1)!] = content;
+    }
+    const entry = (name: string, value: string | Tree, parent: string): unknown => {
+      const fullPath = `${parent}/${name}`;
+      if (typeof value === "string") {
+        return {
+          name,
+          fullPath,
+          isFile: true,
+          isDirectory: false,
+          file: (resolve: (file: File) => void) => resolve(new File([value], name)),
+        };
+      }
+      let listed = false;
+      const children = Object.entries(value).map(([child, inner]) => entry(child, inner, fullPath));
+      return {
+        name,
+        fullPath,
+        isFile: false,
+        isDirectory: true,
+        createReader: () => ({
+          readEntries: (resolve: (entries: unknown[]) => void) => {
+            resolve(listed ? [] : children);
+            listed = true;
+          },
+        }),
+      };
+    };
+    const files = zip
+      ? [new File([Uint8Array.from(atob(zip.base64), (c) => c.charCodeAt(0))], zip.name)]
+      : [new File([], folder!.name)];
+    const root = folder ? entry(folder.name, tree, "") : null;
+    const dataTransfer = {
+      files,
+      types: ["Files"],
+      items: files.map((file) => ({
+        kind: "file",
+        getAsFile: () => file,
+        webkitGetAsEntry: () =>
+          root ?? { name: file.name, fullPath: `/${file.name}`, isFile: true, isDirectory: false },
+      })),
+      dropEffect: "copy",
+    };
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+      target.dispatchEvent(event);
+    }
+  }, drop);
+}
+
+test("an agent dropped into a chat is offered for import, never uploaded first", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `agent-import-drop-${Date.now()}@rakazo.test`, "password12", "Dropper");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const [chief] = await rpc<Bot[]>(page, "bots/list", {});
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("/rpc/artifacts/") || url.includes("/rpc/bots/import")) requests.push(url);
+  });
+
+  await dropOnComposer(page, {
+    folder: {
+      name: "openclaw-home",
+      files: {
+        "openclaw.json": "{}",
+        ".env": "OPENROUTER_API_KEY=placeholder-drop-key\n",
+        "workspace/SOUL.md": "Calm and direct.\n",
+        "workspace/IDENTITY.md": "- **Name:** Pebble\n",
+      },
+    },
+  });
+  const choice = page.getByTestId("agent-drop-choice");
+  await expect(choice).toContainText("Import this agent as a bot?");
+  // Nothing has left the browser: no attachment upload and no import request yet.
+  expect(requests).toEqual([]);
+  await captureScreenshot(page, testInfo, "agent-import-drop-choice");
+
+  const preview = page.waitForRequest((request) =>
+    request.url().includes("/rpc/bots/importPreview"),
+  );
+  await choice.getByRole("button", { name: "Import", exact: true }).click();
+  expect((await preview).postData() ?? "").not.toContain("placeholder-");
+  const panel = page.getByTestId("agent-import-preview");
+  await expect(panel.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
+  const destination = panel.getByTestId("agent-import-destination");
+  // A new bot is the default; the chat's bot is offered but not chosen.
+  await expect(destination.getByRole("button", { name: "New bot" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await destination.getByRole("button", { name: "Add to an existing bot" }).click();
+  const picker = destination.getByRole("combobox", { name: "Bot" });
+  await expect(picker).toHaveValue("");
+  await expect(picker.getByRole("option", { name: chief!.name })).toHaveCount(1);
+  await destination.getByRole("button", { name: "New bot" }).click();
+  await captureScreenshot(page, testInfo, "agent-import-drop-preview");
+  await page.getByRole("button", { name: "Cancel new bot" }).click();
+
+  // A backup can still be attached as a file, as before.
+  const backup = Buffer.from(
+    zip({ "SOUL.md": "Direct.\n", "config.yaml": "model:\n  provider: openrouter\n" }),
+  ).toString("base64");
+  requests.length = 0;
+  await dropOnComposer(page, { zip: { name: "hermes.zip", base64: backup } });
+  await expect(choice).toBeVisible();
+  expect(requests).toEqual([]);
+  await choice.getByRole("button", { name: "Attach", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remove hermes.zip" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "agent-import-drop-attached");
+
+  // An ordinary archive is attached straight away, with no question.
+  await dropOnComposer(page, {
+    zip: { name: "photos.zip", base64: Buffer.from(zip({ "photo.txt": "x" })).toString("base64") },
+  });
+  await expect(page.getByRole("button", { name: "Remove photos.zip" })).toBeVisible();
+  await expect(choice).toHaveCount(0);
+});

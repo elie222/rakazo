@@ -1,6 +1,6 @@
 import type { AgentImportFile } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { combineImportedInstructions, parseAgentImport } from "./index.js";
+import { combineImportedInstructions, isAgentHome, parseAgentImport } from "./index.js";
 import { openClawRuntimeMentions, parseOpenClawIdentity } from "./openclaw.js";
 import { isHermesDefault, isOpenClawDefault } from "./stock.js";
 
@@ -159,5 +159,17 @@ describe("skill status", () => {
       kind: "unsupported",
       reason: "other_platform",
     });
+  });
+});
+
+describe("recognising a dropped agent by its file names", () => {
+  it("knows OpenClaw and Hermes homes and workspaces, not ordinary projects", () => {
+    expect(isAgentHome(["home/openclaw.json", "home/workspace/AGENTS.md"])).toBe(true);
+    expect(isAgentHome(["workspace/SOUL.md", "workspace/MEMORY.md"])).toBe(true);
+    expect(isAgentHome(["hermes/config.yaml", "hermes/memories/MEMORY.md"])).toBe(true);
+    expect(isAgentHome([".hermes/SOUL.md"])).toBe(true);
+    // A code project with an AGENTS.md for its coding agent is not an agent home.
+    expect(isAgentHome(["repo/AGENTS.md", "repo/src/index.ts", "repo/README.md"])).toBe(false);
+    expect(isAgentHome(["photos/beach.jpg"])).toBe(false);
   });
 });

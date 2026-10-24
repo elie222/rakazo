@@ -73,6 +73,33 @@ export function isAgentImportCandidate(path: string): boolean {
   return WORKSPACE_FILES.has(path) || isOpenClawDailyMemory(path) || isSkillPath(path);
 }
 
+/** Files only an OpenClaw or Hermes agent keeps (AGENTS.md alone is common in projects). */
+const AGENT_SIGNATURES = new Set([
+  "openclaw.json",
+  "SOUL.md",
+  "IDENTITY.md",
+  "HERMES.md",
+  ".hermes.md",
+]);
+
+/**
+ * True when a folder's or backup's file names look like an OpenClaw or Hermes home or
+ * workspace. Only names are looked at, so this can decide before anything is read or sent.
+ * Paths an archive reader already mapped to `.openclaw/` or `.hermes/` count as recognised.
+ */
+export function isAgentHome(paths: readonly string[]): boolean {
+  if (paths.some((path) => path.startsWith(".openclaw/") || path.startsWith(".hermes/"))) {
+    return true;
+  }
+  const homes = [...agentImportFolder(paths).files.values()];
+  return homes.some(
+    (home) =>
+      AGENT_SIGNATURES.has(home) ||
+      home.startsWith("memories/") ||
+      AGENT_SIGNATURES.has(home.split("/").slice(1).join("/")),
+  );
+}
+
 /**
  * The files of a chosen folder an import uses, keyed by their path in the upload (which
  * starts with the folder's name) and mapped to their path in the agent's workspace or home.

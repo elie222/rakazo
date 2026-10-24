@@ -810,6 +810,10 @@ msgid "at {timeSelect}"
 msgstr "om {timeSelect}"
 
 #: src/pages/shell/composer.tsx
+msgid "Attach"
+msgstr "Bijvoegen"
+
+#: src/pages/shell/composer.tsx
 msgid "Attach file"
 msgstr "Bestand bijvoegen"
 
@@ -2847,6 +2851,7 @@ msgid "Image upload area"
 msgstr "Gebied voor afbeeldingsuploads"
 
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/composer.tsx
 msgid "Import"
 msgstr "Importeren"
 
@@ -2858,6 +2863,10 @@ msgstr "Een agent importeren"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI-JSON importeren"
+
+#: src/pages/shell/composer.tsx
+msgid "Import this agent as a bot?"
+msgstr "Deze agent als bot importeren?"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"

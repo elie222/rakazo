@@ -105,6 +105,7 @@ import { SidebarFooter } from "../components/SidebarFooter";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import { emptyActivityFilters } from "../lib/activity-list-filters";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
+import type { DroppedAgent } from "../lib/agent-drop";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { autoReadStillWanted } from "../lib/auto-read";
@@ -384,6 +385,8 @@ function SpaceShell() {
   const [modelFocusRequest, setModelFocusRequest] = useState(0);
   const [panel, setPanelState] = useState<Panel>(null);
   const [importingBot, setImportingBot] = useState(false);
+  // An agent dropped into a chat, waiting in the import form.
+  const [droppedAgent, setDroppedAgent] = useState<DroppedAgent | null>(null);
   // Leaving the new bot panel returns it to the form next time.
   if (importingBot && panel !== "create") setImportingBot(false);
   const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
@@ -3589,6 +3592,11 @@ function SpaceShell() {
             key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
             draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
             enterToSend={enterToSend}
+            onImportAgent={(agent) => {
+              setDroppedAgent(agent);
+              setImportingBot(true);
+              setPanel("create");
+            }}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
             running={composerRunning}
             disabled={Boolean(recordingSkill)}
@@ -3774,9 +3782,17 @@ function SpaceShell() {
             {panel === "create" && importingBot ? (
               <AgentImportForm
                 bots={bots.filter((bot) => !bot.archivedAt)}
-                onBack={() => setImportingBot(false)}
-                onCancel={() => setPanel(null)}
+                initialSource={droppedAgent ?? undefined}
+                onBack={() => {
+                  setDroppedAgent(null);
+                  setImportingBot(false);
+                }}
+                onCancel={() => {
+                  setDroppedAgent(null);
+                  setPanel(null);
+                }}
                 onCreated={(bot) => {
+                  setDroppedAgent(null);
                   openCreatedBot(bot);
                   // An import into an existing bot changes it and its chat.
                   void refreshBots().catch(() => undefined);

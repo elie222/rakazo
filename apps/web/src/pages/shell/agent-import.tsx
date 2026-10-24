@@ -44,7 +44,7 @@ import {
 } from "@rakazo/ui-web/components/ui/collapsible";
 import { ArrowLeft, ChevronDown, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { ComputerModePicker } from "./bot-panel";
@@ -79,6 +79,7 @@ export function AgentImportForm({
   createBot = (input) => rpc.bots.importCreate(input),
   layout = "panel",
   bots = [],
+  initialSource,
 }: {
   onBack: () => void;
   onCancel: () => void;
@@ -92,6 +93,8 @@ export function AgentImportForm({
    * hides the choice: the import always makes a new bot.
    */
   bots?: readonly Bot[];
+  /** A folder or backup already chosen (dropped into a chat): previewed straight away. */
+  initialSource?: AgentImportSource;
 }) {
   const page = layout === "page";
   const { section: sectionClass, heading: headingClass } = page ? pageStyle : panelStyle;
@@ -245,6 +248,9 @@ export function AgentImportForm({
     }
   }
 
+  const loadSourceRef = useRef(loadSource);
+  loadSourceRef.current = loadSource;
+
   /** The opt-in reads `.env`/`auth.json` now, and sends only their allowlisted entries. */
   async function toggleSecrets(checked: boolean) {
     if (!source) return;
@@ -285,6 +291,14 @@ export function AgentImportForm({
       setError(readError(err));
     }
   }
+
+  // A dropped agent is read once, with the same rule as one chosen here.
+  const loaded = useRef<AgentImportSource | null>(null);
+  useEffect(() => {
+    if (!initialSource || loaded.current === initialSource) return;
+    loaded.current = initialSource;
+    void loadSourceRef.current(initialSource);
+  }, [initialSource]);
 
   const secretsAvailable =
     hasSecretFiles || folder.some(({ home, content }) => hasAgentImportSecrets(home, content));

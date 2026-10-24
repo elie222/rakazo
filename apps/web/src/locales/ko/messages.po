@@ -810,6 +810,10 @@ msgid "at {timeSelect}"
 msgstr "{timeSelect}에"
 
 #: src/pages/shell/composer.tsx
+msgid "Attach"
+msgstr "첨부"
+
+#: src/pages/shell/composer.tsx
 msgid "Attach file"
 msgstr "파일 첨부"
 
@@ -2847,6 +2851,7 @@ msgid "Image upload area"
 msgstr "이미지 업로드 영역"
 
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/composer.tsx
 msgid "Import"
 msgstr "가져오기"
 
@@ -2858,6 +2863,10 @@ msgstr "에이전트 가져오기"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON 가져오기"
+
+#: src/pages/shell/composer.tsx
+msgid "Import this agent as a bot?"
+msgstr "이 에이전트를 봇으로 가져올까요?"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
