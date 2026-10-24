@@ -117,10 +117,7 @@ function measure(before: boolean) {
           onLongPress={() => action(bot)}
         />
       ) : (
-        React.cloneElement(
-          renderItem({ item: { type: "bot", bot, depth: 0, hasChildren: false } }),
-          { key: bot.id },
-        )
+        React.cloneElement(renderItem({ item: { type: "bot", bot } }), { key: bot.id })
       ),
     );
   }
@@ -815,9 +812,9 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
   });
   // Chats listed from another space have no row menu, as with Archive.
   const items = [
-    { type: "bot", bot: chat("current-bot", "space-current"), depth: 0, hasChildren: false },
+    { type: "bot", bot: chat("current-bot", "space-current") },
     { type: "group", group: chat("current-group", "space-current") },
-    { type: "bot", bot: chat("other-bot", "space-other"), depth: 0, hasChildren: false },
+    { type: "bot", bot: chat("other-bot", "space-other") },
     { type: "group", group: chat("other-group", "space-other") },
   ];
   const root = createRoot(document.createElement("div"));

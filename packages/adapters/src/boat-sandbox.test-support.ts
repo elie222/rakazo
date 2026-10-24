@@ -52,6 +52,8 @@ interface FakeSandbox {
   sandbox: Sandbox;
   env: Record<string, string>;
   files: Map<string, { content: Uint8Array; executable: boolean }>;
+  /** The disk as of Boat's last good snapshot. */
+  snapshot: Map<string, { content: Uint8Array; executable: boolean }>;
   recovery: BoatRecovery;
 }
 
@@ -162,6 +164,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
       sandbox,
       env: { ...request.createSandboxRequest?.env },
       files: new Map(),
+      snapshot: new Map(),
       recovery: "recovers",
     });
     return {
@@ -245,11 +248,24 @@ export class FakeBoatApi implements BoatSandboxSdk {
     }
   }
 
-  async stop({ sandboxId }: StopOperationRequest): Promise<SandboxActionResponse> {
+  /** Boat saved the sandbox's disk, as it does by itself while the sandbox runs. */
+  saveSnapshot(id: string): void {
+    this.snapshotDisk(this.require(id));
+  }
+
+  /** A stop saves the disk first; a forced one keeps only the last good snapshot. */
+  async stop({ sandboxId, stopRequest }: StopOperationRequest): Promise<SandboxActionResponse> {
     const box = this.require(sandboxId);
     box.sandbox.state = "archived";
-    box.sandbox.snapshotAvailable = true;
+    if (!stopRequest?.force) this.snapshotDisk(box);
+    else box.files = new Map(box.snapshot);
     return this.action(box);
+  }
+
+  private snapshotDisk(box: FakeSandbox): void {
+    box.snapshot = new Map(box.files);
+    box.sandbox.snapshotAvailable = true;
+    box.sandbox.snapshotCompletedAt = new Date();
   }
 
   async update({ sandboxId }: UpdateRequest): Promise<SandboxInfoResponse> {

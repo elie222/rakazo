@@ -7,6 +7,7 @@ import {
   DISMISSED_CHOICE_ANSWER_ID,
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
+  messageHasInlineControls,
   messagePresentationSegments,
   quotableMessageSegments,
   threadCardWidth,
@@ -233,6 +234,30 @@ describe("quotableMessageSegments", () => {
     expect(quotableMessageSegments("user", blocks)).not.toBe(
       quotableMessageSegments("bot", blocks),
     );
+  });
+});
+
+describe("messageHasInlineControls", () => {
+  it("leaves a plain message to the row gestures", () => {
+    expect(messageHasInlineControls([{ kind: "text", text: "hello" } as MessageBlock])).toBe(false);
+  });
+
+  it("keeps the taps of cards that render their own controls", () => {
+    expect(
+      messageHasInlineControls([
+        { kind: "ask", question: "Which one?", actions: [] } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
+    expect(
+      messageHasInlineControls([
+        { kind: "mcp_approval", serverId: "s" } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
+    expect(
+      messageHasInlineControls([
+        { kind: "app_connect", provider: "github" } as unknown as MessageBlock,
+      ]),
+    ).toBe(true);
   });
 });
 

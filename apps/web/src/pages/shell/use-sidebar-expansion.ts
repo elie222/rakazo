@@ -5,11 +5,6 @@ function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): 
   return `rakazo:collapsed-sidebar-sections:${userId}`;
 }
 
-function collapsedRosterParentsStorageKey(userId: string | null | undefined): string | null {
-  if (!userId) return null;
-  return `rakazo:collapsed-roster-parents:${userId}`;
-}
-
 function readCollapsedIdSet(storageKey: string | null): Set<string> {
   if (!storageKey) return new Set();
   try {
@@ -45,17 +40,11 @@ function readCollapsedSidebarSections(userId: string | null | undefined): Set<st
   return readCollapsedIdSet(collapsedSidebarSectionsStorageKey(userId));
 }
 
-function readCollapsedRosterParents(userId: string | null | undefined): Set<string> {
-  return readCollapsedIdSet(collapsedRosterParentsStorageKey(userId));
-}
-
 export function useSidebarExpansion(userId: string | null | undefined) {
   const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(() => new Set<string>());
-  const [collapsedRosterParents, setCollapsedRosterParents] = useState(() => new Set<string>());
 
   useEffect(() => {
     setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
-    setCollapsedRosterParents(readCollapsedRosterParents(userId));
   }, [userId]);
   const toggleSidebarSection = useCallback(
     (key: string) => {
@@ -65,18 +54,8 @@ export function useSidebarExpansion(userId: string | null | undefined) {
     },
     [userId],
   );
-  const toggleRosterParent = useCallback(
-    (botId: string) => {
-      setCollapsedRosterParents((previous) =>
-        toggleCollapsedIdSet(previous, botId, collapsedRosterParentsStorageKey(userId)),
-      );
-    },
-    [userId],
-  );
   return {
     collapsedSidebarSections,
-    collapsedRosterParents,
     toggleSidebarSection,
-    toggleRosterParent,
   };
 }

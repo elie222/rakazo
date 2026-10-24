@@ -27,6 +27,23 @@ export function organicAvatarLook(family: number): number {
   return family === 8 ? 2 : family;
 }
 
+/** The distinct organic bodies a new bot can get: every look except the heart. */
+export const ORGANIC_AVATAR_LOOKS: readonly number[] = [
+  ...new Set(
+    Array.from({ length: ORGANIC_AVATAR_FAMILY_COUNT }, (_, family) => family)
+      .filter((family) => family !== ORGANIC_AVATAR_HEART_FAMILY)
+      .map(organicAvatarLook),
+  ),
+];
+
+/** A stable identity whose organic body is the given family, for previews before a bot has an id. */
+export function organicAvatarSampleIdentity(family: number): string {
+  for (let index = 0; ; index++) {
+    const identity = `look-${family}-${index}`;
+    if (organicAvatarFamily(identity) === family) return identity;
+  }
+}
+
 export function organicAvatarPath(seed: number, phaseOffset = 0): string {
   const phase = ((seed % 360) * Math.PI) / 180 + phaseOffset;
   const family = seed % ORGANIC_AVATAR_FAMILY_COUNT;

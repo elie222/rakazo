@@ -89,6 +89,7 @@ export async function spawnBot(
       description: (input.description ?? "").trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
       instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
       notifyOnFinish: true,
+      // Creation provenance only; bots remain peers in the roster.
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,
       computerMode: input.computerMode,
@@ -224,7 +225,15 @@ type LifecycleBot = {
   webhookSecretId?: string | null;
 };
 
-/** Bots the caller created. No `archivedAt` filter: a retry on an archived child must still reconcile. */
+/** Management stays within the current user's space, regardless of who created the bot. */
+export function managedBotsWhere(caller: {
+  userId: string;
+  spaceId: string;
+}): Prisma.BotWhereInput {
+  return { userId: caller.userId, spaceId: caller.spaceId };
+}
+
+/** Creation provenance for the roster metadata; this does not grant management permissions. */
 export function createdByWhere(caller: {
   botId: string;
   userId: string;
@@ -249,22 +258,20 @@ export async function archiveSpawnedBot(
     return { error: "confirm_name is required. Refusing to archive." };
   }
 
-  const spawned = await deps.prisma.bot.findMany({
-    where: createdByWhere({
-      botId: input.spawnedByBotId,
-      userId: input.userId,
-      spaceId: input.spaceId,
-    }),
+  // Archived bots stay eligible so retries can reconcile unfinished cleanup.
+  const matches = await deps.prisma.bot.findMany({
+    where: {
+      ...managedBotsWhere(input),
+      ...(input.botId ? { id: input.botId } : { name: confirmName }),
+    },
+    take: 2,
   });
-  const matches = input.botId
-    ? spawned.filter((bot) => bot.id === input.botId)
-    : spawned.filter((bot) => bot.name === confirmName);
 
   if (input.botId && matches.length === 0) {
-    return { error: "That bot was not created by this bot. Refusing to archive." };
+    return { error: "That bot is not in this space. Refusing to archive." };
   }
   if (!input.botId && matches.length === 0) {
-    return { error: `This bot did not create a bot named "${confirmName}". Refusing to archive.` };
+    return { error: `This space has no bot named "${confirmName}". Refusing to archive.` };
   }
   if (!input.botId && matches.length > 1) {
     return {

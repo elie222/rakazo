@@ -91,6 +91,7 @@ function mapBot(
     thinkingLevel?: string | null;
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
+    crossSpaceCommunication?: boolean;
     fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
@@ -136,6 +137,7 @@ function mapBot(
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
+    crossSpaceCommunication: bot.crossSpaceCommunication ?? false,
     fleetManagement: bot.fleetManagement ?? false,
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
@@ -502,6 +504,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         fleetManagement?: boolean;
         color?: string;
+        avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
@@ -559,6 +562,7 @@ export function createRepos(
               select: { id: true, color: true },
             }),
             input.color,
+            { family: input.avatarFamily },
           );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",

@@ -29,6 +29,7 @@ import {
   archiveSpawnedBot,
   confirmSpawnedBotName,
   destroyBot,
+  managedBotsWhere,
   spawnBot,
 } from "./child-bots.js";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
@@ -184,6 +185,40 @@ describe("spawned bot creation", () => {
   });
 });
 describe("spawned bot archival", () => {
+  it("scopes management by account and space without requiring a creator", () => {
+    expect(managedBotsWhere({ userId: "user-1", spaceId: "space-1" })).toEqual({
+      userId: "user-1",
+      spaceId: "space-1",
+    });
+  });
+
+  it("refuses an out-of-scope bot before stopping work", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { bot: { findMany } } as unknown as PrismaClient;
+    expect(
+      await archiveSpawnedBot(
+        {
+          prisma,
+          sandbox: {} as SandboxProvider,
+          home: {} as AgentHomeStore,
+          jobs: {} as JobPublisher,
+        },
+        {
+          spawnedByBotId: "caller",
+          userId: "user-1",
+          spaceId: "space-1",
+          botId: "outside",
+          confirmName: "Outside",
+        },
+        context,
+      ),
+    ).toHaveProperty("error");
+    expect(findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: "space-1", id: "outside" },
+      take: 2,
+    });
+  });
+
   it("refuses when confirm_name does not match exactly", () => {
     expect(confirmSpawnedBotName("scout", "Scout")).toMatchObject({ ok: false });
     expect(confirmSpawnedBotName("Scout ", "Scout")).toMatchObject({ ok: false });
@@ -193,7 +228,7 @@ describe("spawned bot archival", () => {
     expect(confirmSpawnedBotName("Scout", "Scout")).toEqual({ ok: true });
   });
 
-  it("reconciles a retry when the child is already archived", async () => {
+  it("reconciles a retry when the peer is already archived", async () => {
     const archivedAt = new Date("2026-08-16T12:00:00.000Z");
     const prisma = {
       bot: {
@@ -202,7 +237,7 @@ describe("spawned bot archival", () => {
             id: "child-1",
             spaceId: "workspace-1",
             userId: "user-1",
-            parentBotId: "parent-1",
+            parentBotId: null,
             name: "Scout",
             archivedAt,
           },
@@ -242,6 +277,10 @@ describe("spawned bot archival", () => {
         context,
       ),
     ).resolves.toMatchObject({ ok: true, botId: "child-1", name: "Scout" });
+    expect(prisma.bot.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", spaceId: "workspace-1", id: "child-1" },
+      take: 2,
+    });
   });
 });
 

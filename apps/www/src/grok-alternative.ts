@@ -204,6 +204,12 @@ export const GROK_OTHER_ALTERNATIVES = [
     image: altShot("instinct", "Instinct homepage"),
   },
   {
+    href: "/claude-duet-alternative/",
+    label: "Claude Duet",
+    note: "Anthropic's proactive personal agent, released as a research preview on October 21, 2026. It runs on a cloud computer Anthropic operates and comes with Claude Pro and Max in the US.",
+    image: altShot("claude-duet", "Claude Duet"),
+  },
+  {
     href: "/hark-alternative/",
     label: "Hark Pro",
     note: "The hosted personal agent at hark.com, launched October 6, 2026, with a free tier. $20 a month is twice the usage, and $100 a month is ten times the usage.",
@@ -265,7 +271,7 @@ export const GROK_ALTERNATIVE_FAQ = [
   {
     question: "What are the other alternatives?",
     answer:
-      "Meta Muse, OpenAI Dots, Instinct, and Hark Pro are hosted assistants. OpenClaw and Hermes Agent are open source agents you can run yourself, with a gateway and a config file in their docs. OpenMausBot is an Apache-2.0 desktop app; its docs say bots can run a signed-in agent CLI, or Mistral from an API key with no CLI, and that application data stays on your machine. OpenMuse is CopilotKit's MIT-licensed personal agent, with a chat, a persistent browser, and an optional Linux terminal, and those surfaces run in the alpha. The comparisons page lists licenses, prices, and setup side by side. None of them imports a Grok Bot account.",
+      "Meta Muse, OpenAI Dots, Instinct, Claude Duet, and Hark Pro are hosted assistants. OpenClaw and Hermes Agent are open source agents you can run yourself, with a gateway and a config file in their docs. OpenMausBot is an Apache-2.0 desktop app; its docs say bots can run a signed-in agent CLI, or Mistral from an API key with no CLI, and that application data stays on your machine. OpenMuse is CopilotKit's MIT-licensed personal agent, with a chat, a persistent browser, and an optional Linux terminal, and those surfaces run in the alpha. The comparisons page lists licenses, prices, and setup side by side. None of them imports a Grok Bot account.",
   },
 ] as const;
 

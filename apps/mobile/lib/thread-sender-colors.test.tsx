@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
 import { botColors, darkTokens, fontWeight, typeScale } from "@rakazo/ui-tokens";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { expect, it } from "vitest";
@@ -14,12 +14,21 @@ const helpers = source.slice(
   source.indexOf("type MessageActionProps"),
 );
 const cards = source.slice(
-  source.indexOf("const MessageBubble = memo(function MessageBubble({"),
+  source.indexOf("const MessageBubble = memo(function MessageBubble("),
   source.indexOf("function AgentEventLabel("),
 );
 const scope = {
   React,
   useState,
+  useRef,
+  useEffect,
+  useReducedMotion: () => true,
+  useSharedValue: (value: number) => ({ value }),
+  useAnimatedStyle: (style: () => unknown) => style(),
+  withTiming: (value: number) => value,
+  Animated: { View: "div" },
+  NativeSymbol: () => null,
+  openHelpers: new Set<string>(),
   memo: <T,>(component: T) => component,
   useResolvedAppearance: () => "dark",
   mobileTokens: () => darkTokens,

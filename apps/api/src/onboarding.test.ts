@@ -1,7 +1,7 @@
 import type * as db from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { chooseFocus, markAppConnected } from "./onboarding.js";
+import { chooseFocus, markAppConnected, promptFocus } from "./onboarding.js";
 
 const posted = vi.hoisted(() => [] as Array<{ blocks: unknown[]; markUnread?: boolean }>);
 vi.mock("@rakazo/db", async (original) => ({
@@ -64,6 +64,47 @@ describe("onboarding connection suggestions", () => {
     ).toEqual([
       expect.objectContaining({ connectorId: "pipedream", provider: "slack", name: "Slack" }),
     ]);
+  });
+});
+
+describe("promptFocus", () => {
+  function focusFixture(options: { introRun?: boolean; blocks?: unknown[] } = {}) {
+    const { deps, actor, tx } = fixture([]);
+    tx.message.findMany = vi.fn(async () =>
+      options.blocks ? [{ role: "bot", blocks: options.blocks }] : [],
+    ) as never;
+    const run = {
+      findFirst: vi.fn(async () => (options.introRun ? { id: "intro" } : null)),
+    };
+    Object.assign(tx, { run });
+    return { deps, actor, run };
+  }
+
+  it("posts the fixed focus card when the bot has no creation intro", async () => {
+    const { deps, actor } = focusFixture();
+    await promptFocus(deps, actor, "bot");
+    expect(posted.flatMap((message) => message.blocks)).toContainEqual(
+      expect.objectContaining({ kind: "choice" }),
+    );
+  });
+
+  it("leaves the question to a bot whose creation intro is queued or running", async () => {
+    const { deps, actor, run } = focusFixture({ introRun: true });
+    await promptFocus(deps, actor, "bot");
+    expect(posted).toEqual([]);
+    expect(run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ threadId: "thread", trigger: "created" }),
+      }),
+    );
+  });
+
+  it("does not post over a question the bot already asked", async () => {
+    const { deps, actor } = focusFixture({
+      blocks: [{ kind: "ask", text: "What do you want me for?", status: "answered" }],
+    });
+    await promptFocus(deps, actor, "bot");
+    expect(posted).toEqual([]);
   });
 });
 

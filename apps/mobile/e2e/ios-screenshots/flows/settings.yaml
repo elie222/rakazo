@@ -47,8 +47,9 @@ name: Settings
 - tapOn: "Back"
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Model"
     timeout: 15000
+- assertNotVisible: "Active model"
 - takeScreenshot: 06-models
 - openLink: "rakazo:///integrations"
 - extendedWaitUntil:

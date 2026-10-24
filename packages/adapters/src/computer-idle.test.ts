@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -279,6 +280,26 @@ describe("sandbox idle", () => {
       expect.objectContaining({ level: "warn", message: "computer.sleep_deferred" }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("keeps a computer only its provider's snapshot can bring back for the next use", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ exportError: new SandboxUnavailableError() });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "unavailable",
+      }),
+    );
   });
 
   it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {

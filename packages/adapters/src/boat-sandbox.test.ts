@@ -54,13 +54,14 @@ async function boat() {
   return { api, provider, computer };
 }
 
-function reconnect(provider: BoatSandboxProvider, computer: ComputerRef) {
+function reconnect(provider: BoatSandboxProvider, computer: ComputerRef, savedAt?: Date) {
   return provider.provision(
     {
       botId: computer.botId,
       homePath: "/unused",
       providerRef: computer.providerRef,
       providerKind: "boat",
+      savedAt,
     },
     context,
   );
@@ -271,8 +272,9 @@ describe("BoatSandboxProvider", () => {
   });
 
   // Every Boat state, error and recover answer either leaves a usable sandbox or reports it gone
-  // so the caller replaces it from its checkpoint. Nothing may keep failing on the same ref.
-  type Outcome = "kept" | "started" | "replaced";
+  // so the caller replaces it from its checkpoint. Nothing may keep failing on the same ref: one
+  // that only Boat's snapshot can bring back is unavailable until a reconnect rolls it back.
+  type Outcome = "kept" | "started" | "rolled back" | "replaced";
   const stateOutcomes: Record<SandboxStateEnum, Outcome> = {
     init: "kept",
     provisioning: "kept",
@@ -311,6 +313,17 @@ describe("BoatSandboxProvider", () => {
         outcome,
       ],
     ),
+    // One that never answers again is force-stopped to its last good snapshot and resumed.
+    ...(["stuck", "recover_unsupported", "reset_failed"] as const).map(
+      (recovery): [string, (api: FakeBoatApi, id: string) => void, Outcome] => [
+        `error state with a snapshot, recover answers ${recovery}`,
+        (api, id) => {
+          api.saveSnapshot(id);
+          api.fail(id, recovery);
+        },
+        "rolled back",
+      ],
+    ),
     ["snapshot data expired", (api, id) => api.expire(id), "replaced"],
     ["deleted", (api, id) => api.delete(id), "replaced"],
   ];
@@ -326,6 +339,7 @@ describe("BoatSandboxProvider", () => {
         (error: unknown) => error,
       );
       if (outcome === "replaced") expect(isSandboxGoneError(result)).toBe(true);
+      else if (outcome === "rolled back") expect(result).toBeInstanceOf(SandboxUnavailableError);
       else expect(result).toBe("ready");
     },
   );
@@ -340,7 +354,7 @@ describe("BoatSandboxProvider", () => {
       await provider.prepare(ref, context);
       expect(ref.providerRef === computer.providerRef).toBe(outcome !== "replaced");
       expect(ref.fresh).toBe(outcome === "replaced");
-      if (outcome !== "replaced") expect(ref.started).toBe(outcome === "started");
+      if (outcome !== "replaced") expect(ref.started).toBe(outcome !== "kept");
       expect(["ready", "idle", "running"]).toContain(api.state(ref.providerRef));
     },
   );
@@ -476,6 +490,183 @@ describe("BoatSandboxProvider", () => {
     expect((error as Error).message).toContain("HTTP 409");
     expect(isSandboxGoneError(error)).toBe(false);
   });
+
+  describe.each(["recover_unsupported", "reset_failed"] as const)(
+    "a sandbox Boat cannot power-cycle (%s)",
+    (recovery) => {
+      /** Runs `effect` on each read once the adapter first saw the sandbox in `error`. */
+      function onRead(effect: (api: FakeBoatApi, id: string, elapsedMs: number) => void) {
+        let since: number | undefined;
+        const get = FakeBoatApi.prototype.get;
+        vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+          this: FakeBoatApi,
+          request,
+        ) {
+          if (since === undefined && this.state(request.sandboxId) === "error") since = Date.now();
+          if (since !== undefined) effect(this, request.sandboxId, Date.now() - since);
+          return get.call(this, request);
+        });
+      }
+
+      it("waits for it to answer again and never stops it", async () => {
+        const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+        // It answers again two minutes later, as Boat says most do.
+        onRead((fake, id, elapsedMs) => {
+          if (elapsedMs >= 2 * 60_000 && fake.state(id) === "error") fake.setState(id, "running");
+        });
+        const { api, provider, computer } = await boat();
+        api.saveSnapshot(computer.id);
+        api.fail(computer.id, recovery);
+
+        const ref = await reconnect(provider, computer);
+
+        expect(ref).toMatchObject({ providerRef: computer.providerRef, fresh: false });
+        expect(stop).not.toHaveBeenCalled();
+      });
+
+      it("force-stops it to its last good snapshot and resumes that when it never answers", async () => {
+        const sink = createTestSink();
+        installLogger(createLogger({ service: "test", sinks: [sink] }));
+        try {
+          const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+          const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+          const { api, provider, computer } = await boat();
+          const file = (path: string) => ({ path, content: Uint8Array.of(1) });
+          await provider.writeFile(computer, file("saved.txt"), context);
+          // The caller's own save is older than Boat's snapshot.
+          const savedAt = new Date();
+          vi.setSystemTime(Date.now() + 60_000);
+          api.saveSnapshot(computer.id);
+          vi.setSystemTime(Date.now() + 60_000);
+          await provider.writeFile(computer, file("unsaved.txt"), context);
+          api.fail(computer.id, recovery);
+          const failedAt = Date.now();
+
+          const ref = await reconnect(provider, computer, savedAt);
+
+          expect(Date.now() - failedAt).toBeGreaterThanOrEqual(5 * 60_000);
+          expect(stop).toHaveBeenCalledExactlyOnceWith(
+            { sandboxId: computer.id, stopRequest: { force: true } },
+            { signal: context.signal },
+          );
+          expect(resume).toHaveBeenCalledOnce();
+          expect(ref).toMatchObject({
+            providerRef: computer.providerRef,
+            fresh: false,
+            started: true,
+          });
+          expect(api.state(computer.id)).toBe("ready");
+          // Boat's snapshot is the newest saved state; what came after it is lost.
+          expect(await provider.readFile(ref, "saved.txt", context)).toEqual(Uint8Array.of(1));
+          await expect(provider.readFile(ref, "unsaved.txt", context)).rejects.toThrow();
+          const steps = sink.events.filter((event) => event.message === "sandbox.recover");
+          expect(steps).toEqual([
+            expect.objectContaining({
+              level: "warn",
+              provider: "boat",
+              step: "wait",
+              reason: recovery,
+            }),
+            expect.objectContaining({ level: "warn", provider: "boat", step: "force_stop" }),
+            expect.objectContaining({ level: "warn", provider: "boat", step: "resumed" }),
+          ]);
+          expect(JSON.stringify(steps)).not.toContain(computer.id);
+        } finally {
+          installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+        }
+      });
+
+      it("reports it gone without stopping it when the caller's save is newer", async () => {
+        const sink = createTestSink();
+        installLogger(createLogger({ service: "test", sinks: [sink] }));
+        try {
+          const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+          const { api, provider, computer } = await boat();
+          api.saveSnapshot(computer.id);
+          vi.setSystemTime(Date.now() + 60_000);
+          const savedAt = new Date();
+          api.fail(computer.id, recovery);
+
+          const ref = await reconnect(provider, computer, savedAt);
+
+          expect(ref.fresh).toBe(true);
+          expect(ref.providerRef).not.toBe(computer.providerRef);
+          expect(stop).not.toHaveBeenCalled();
+          expect(sink.events).toContainEqual(
+            expect.objectContaining({
+              level: "warn",
+              message: "sandbox.recover",
+              step: "gone",
+              reason: "checkpoint_newer",
+            }),
+          );
+        } finally {
+          installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+        }
+      });
+
+      it("reports it gone without stopping it when Boat has no snapshot of it", async () => {
+        const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+        const { api, provider, computer } = await boat();
+        api.fail(computer.id, recovery);
+
+        const error = await provider
+          .prepare(computer, context)
+          .catch((failure: unknown) => failure);
+        expect(isSandboxGoneError(error)).toBe(true);
+
+        const ref = await reconnect(provider, computer);
+        expect(ref.fresh).toBe(true);
+        expect(ref.providerRef).not.toBe(computer.providerRef);
+        expect(stop).not.toHaveBeenCalled();
+      });
+
+      it("stops waiting without stopping it when the caller gives up", async () => {
+        const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+        const caller = new AbortController();
+        const cancelled = new Error("run cancelled");
+        onRead((_fake, _id, elapsedMs) => {
+          if (elapsedMs >= 60_000) caller.abort(cancelled);
+        });
+        const { api, provider, computer } = await boat();
+        api.saveSnapshot(computer.id);
+        api.fail(computer.id, recovery);
+
+        const error = await provider
+          .provision(
+            {
+              botId: computer.botId,
+              homePath: "/unused",
+              providerRef: computer.providerRef,
+              providerKind: "boat",
+            },
+            { ...context, signal: caller.signal },
+          )
+          .catch((failure: unknown) => failure);
+
+        expect(error).toBe(cancelled);
+        expect(stop).not.toHaveBeenCalled();
+        expect(api.state(computer.id)).toBe("error");
+      });
+
+      it("leaves the rollback to the next reconnect when work in progress finds it down", async () => {
+        const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+        const { api, provider, computer } = await boat();
+        await provider.prepare(computer, context);
+        api.saveSnapshot(computer.id);
+        api.fail(computer.id, recovery);
+
+        const error = await provider
+          .readFile(computer, "notes.txt", context)
+          .catch((failure: unknown) => failure);
+
+        expect(error).toBeInstanceOf(SandboxUnavailableError);
+        expect(isSandboxGoneError(error)).toBe(false);
+        expect(stop).not.toHaveBeenCalled();
+        expect(api.state(computer.id)).toBe("error");
+      });
+    },
+  );
 
   it("reports a sandbox that never becomes runnable as unavailable, not gone", async () => {
     const get = FakeBoatApi.prototype.get;

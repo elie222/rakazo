@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   connectAgent,
   messageConnectedAgent,
+  prepareAgentConnectionResponse,
   respondAgentConnection,
 } from "./agent-connections.js";
 
@@ -29,6 +30,8 @@ const targetIdentity = {
 
 function createDeps(
   overrides: {
+    blockedBot?: "bot-1" | "bot-2";
+    disabledInsideTx?: boolean;
     connection?: Record<string, unknown> | null;
     pendingConnection?: Record<string, unknown> | null;
     sourceHop?: number;
@@ -38,6 +41,13 @@ function createDeps(
     connectionRevokedAfterReadInsideTx?: boolean;
   } = {},
 ) {
+  const policyRows = () =>
+    ["bot-1", "bot-2"].map((id) => ({
+      id,
+      spaceId: id === "bot-1" ? "ws-1" : "ws-2",
+      crossSpaceCommunication: id !== overrides.blockedBot,
+      archivedAt: null,
+    }));
   const outboundRows: Array<Record<string, unknown>> = [];
   const txCalls = {
     messageCreate: [] as unknown[],
@@ -73,7 +83,12 @@ function createDeps(
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 4, nextEventSeq: 9 })) },
     bot: { findFirst: vi.fn(async () => ({ id: "bot-2" })) },
     // What a `SELECT ... FOR UPDATE` on the connection row would see.
-    $queryRaw: vi.fn(async () => {
+    $queryRaw: vi.fn(async (query: TemplateStringsArray) => {
+      if (query.join("").includes("FROM bots"))
+        return policyRows().map((bot) => ({
+          ...bot,
+          crossSpaceCommunication: overrides.disabledInsideTx ? false : bot.crossSpaceCommunication,
+        }));
       if (overrides.connectionRevokedInsideTx || overrides.connectionRevokedAfterReadInsideTx) {
         return [{ status: "revoked" }];
       }
@@ -168,7 +183,9 @@ function createDeps(
     user: { findUnique: vi.fn(async () => ({ id: "user-1", name: "Alice Owner" })) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-2" })) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
-    $queryRaw: txMock.$queryRaw,
+    $queryRaw: vi.fn(async (query: TemplateStringsArray) =>
+      query.join("").includes("FROM bots") ? policyRows() : txMock.$queryRaw(query),
+    ),
   };
   // connectAgent claim+invite runs on the transaction client.
   Object.assign(txMock, {
@@ -258,7 +275,7 @@ describe("connectAgent", () => {
     expect(reinvite).toEqual(expect.objectContaining({ ok: true, status: "pending" }));
     expect(declined.prisma.agentConnection.update).toHaveBeenCalledWith({
       where: { id: "ac-1" },
-      data: { status: "pending" },
+      data: { status: "pending", requestVersion: { increment: 1 } },
     });
     expect(declined.outboundRows).toEqual([
       expect.objectContaining({ kind: "dm", identityId: "mi-2" }),
@@ -296,18 +313,26 @@ describe("respondAgentConnection", () => {
         status: "pending",
       },
     });
-    const result = await respondAgentConnection(deps, run, sender, { accept: true });
+    const result = await respondAgentConnection(deps, run, sender, {
+      accept: true,
+      connectionId: "ac-1",
+      connectionVersion: 1,
+    });
 
     expect(result).toEqual(expect.objectContaining({ ok: true, status: "approved" }));
     expect(deps.prisma.agentConnection.updateMany).toHaveBeenCalledWith({
-      where: { id: "ac-1", status: "pending" },
+      where: { id: "ac-1", status: "pending", requestVersion: 1 },
       data: { status: "approved" },
     });
   });
 
   it("fails when nothing is pending", async () => {
     const deps = createDeps();
-    const result = await respondAgentConnection(deps, run, sender, { accept: false });
+    const result = await respondAgentConnection(deps, run, sender, {
+      accept: false,
+      connectionId: "ac-1",
+      connectionVersion: 1,
+    });
     expect(result).toEqual(expect.objectContaining({ ok: false }));
   });
 });
@@ -429,7 +454,11 @@ describe("agent connection status races", () => {
         return { count: 1 };
       },
     );
-    const result = await respondAgentConnection(deps, run, sender, { accept: true });
+    const result = await respondAgentConnection(deps, run, sender, {
+      accept: true,
+      connectionId: "ac-1",
+      connectionVersion: 1,
+    });
 
     expect(result).toEqual(expect.objectContaining({ ok: false }));
     expect(state.status).toBe("revoked");
@@ -527,5 +556,151 @@ describe("messageConnectedAgent revocation locking", () => {
     expect(deps.txCalls.taskCreate).toHaveLength(0);
     expect(deps.txCalls.runCreate).toHaveLength(0);
     expect(deps.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("cross-space communication permission", () => {
+  it.each(["bot-1", "bot-2"] as const)(
+    "blocks requests when %s has not opted in",
+    async (blockedBot) => {
+      const deps = createDeps({ blockedBot });
+      expect(await connectAgent(deps, run, sender, { address: targetIdentity.address })).toEqual({
+        ok: false,
+        error: "no agent can be reached at that address",
+      });
+      expect(deps.prisma.agentConnection.create).not.toHaveBeenCalled();
+      expect(deps.outboundRows).toHaveLength(0);
+    },
+  );
+  it.each(["bot-1", "bot-2"] as const)(
+    "blocks an approved connection when %s opts out",
+    async (blockedBot) => {
+      const deps = createDeps({ blockedBot, connection: { id: "ac-1", status: "approved" } });
+      expect(
+        await messageConnectedAgent(deps, run, sender, {
+          address: targetIdentity.address,
+          message: "Private text",
+        }),
+      ).toEqual({ ok: false, error: "no agent can be reached at that address" });
+      expect(deps.txCalls.messageCreate).toHaveLength(0);
+      expect(deps.txCalls.runCreate).toHaveLength(0);
+    },
+  );
+  it("checks permission again inside the request transaction", async () => {
+    const deps = createDeps({ disabledInsideTx: true });
+    expect(
+      await connectAgent(deps, run, sender, { address: targetIdentity.address }),
+    ).toMatchObject({ ok: false });
+    expect(deps.prisma.agentConnection.create).not.toHaveBeenCalled();
+  });
+  it("does not approve a connection after opt-out", async () => {
+    const deps = createDeps({
+      blockedBot: "bot-1",
+      pendingConnection: {
+        id: "ac-1",
+        requesterBotId: "bot-2",
+        targetBotId: "bot-1",
+        status: "pending",
+      },
+    });
+    expect(
+      await respondAgentConnection(deps, run, sender, {
+        accept: true,
+        connectionId: "ac-1",
+        connectionVersion: 1,
+      }),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps a confirmed connection response bound to its original request", async () => {
+  const deps = createDeps();
+  deps.prisma.agentConnection.findFirst.mockResolvedValueOnce(null);
+  expect(
+    await respondAgentConnection(deps, run, sender, {
+      accept: true,
+      connectionId: "original-request",
+      connectionVersion: 1,
+    }),
+  ).toMatchObject({ ok: false });
+  expect(deps.prisma.agentConnection.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        targetBotId: sender.id,
+        status: "pending",
+        id: "original-request",
+        requestVersion: 1,
+      },
+    }),
+  );
+  expect(deps.prisma.agentConnection.updateMany).not.toHaveBeenCalled();
+});
+
+it("rejects an approval when the same connection is reopened during the approval write", async () => {
+  const deps = createDeps({
+    pendingConnection: {
+      id: "ac-1",
+      requesterBotId: "bot-2",
+      targetBotId: "bot-1",
+      status: "pending",
+      requestVersion: 1,
+    },
+  });
+  // The pending read saw the original request; revoke + reconnect replaces it before the write.
+  const replacement = { status: "pending", requestVersion: 2 };
+  deps.prisma.agentConnection.updateMany = vi.fn(
+    async ({ where }: { where: { requestVersion: number; status: string } }) => ({
+      count:
+        where.requestVersion === replacement.requestVersion && where.status === replacement.status
+          ? 1
+          : 0,
+    }),
+  ) as never;
+  expect(
+    await respondAgentConnection(deps, run, sender, {
+      accept: true,
+      connectionId: "ac-1",
+      connectionVersion: 1,
+    }),
+  ).toMatchObject({ ok: false });
+  expect(deps.prisma.agentConnection.updateMany).toHaveBeenCalledWith({
+    where: { id: "ac-1", status: "pending", requestVersion: 1 },
+    data: { status: "approved" },
+  });
+  expect(replacement.status).toBe("pending");
+});
+
+it("captures the requester and decision with the request version for approval", async () => {
+  const deps = createDeps({
+    pendingConnection: {
+      id: "request-1",
+      requestVersion: 3,
+      requesterBotId: "bot-2",
+      targetBotId: "bot-1",
+      status: "pending",
+    },
+  });
+  const captured = await prepareAgentConnectionResponse(deps.prisma, "bot-1", false);
+  expect(captured).toEqual({
+    accept: false,
+    connection_id: "request-1",
+    connection_version: 3,
+    requester_name: "Helper",
+    requester_address: targetIdentity.address,
+    requester_provider: targetIdentity.provider,
+  });
+  deps.prisma.agentConnection.findFirst.mockResolvedValueOnce({
+    id: "request-2",
+    requestVersion: 1,
+    requesterBotId: "bot-1",
+  } as never);
+  await prepareAgentConnectionResponse(deps.prisma, "bot-1", true);
+  expect(captured).toMatchObject({
+    connection_id: "request-1",
+    connection_version: 3,
+    requester_name: "Helper",
   });
 });
