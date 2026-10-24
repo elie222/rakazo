@@ -62,6 +62,7 @@ vi.mock("./i18n", () => {
 });
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null, Checkmark: () => null }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({

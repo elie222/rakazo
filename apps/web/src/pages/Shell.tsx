@@ -3,7 +3,6 @@ import type {
   AgentSkillCatalogEntry,
   Bot,
   BotSection,
-  ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
   Group,
@@ -19,12 +18,7 @@ import type {
   ThreadSnapshot,
   VoiceStatus,
 } from "@rakazo/contracts";
-import {
-  ATTACHMENT_MAX_COUNT,
-  attachmentMaxBytes,
-  attachmentSizeLabel,
-  normalizeCreateBotProfile,
-} from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes, attachmentSizeLabel } from "@rakazo/contracts";
 import type { ComposerMention, ReadBoundary } from "@rakazo/core";
 import {
   accountDisplay,
@@ -205,13 +199,15 @@ import { ResizableSidePanel } from "./ResizableSidePanel";
 import { RoutineEditor } from "./RoutineEditor";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { ArchivedChats } from "./shell/archived-chats";
-import { BotSettings, CreateBotForm } from "./shell/bot-panel";
+import { BotSettings } from "./shell/bot-panel";
 import type { PendingAttachment } from "./shell/chat-shared";
 import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import { Composer } from "./shell/composer";
 import { ComputerOverlay } from "./shell/computer-overlay";
 import { ComputerPanel } from "./shell/computer-panel";
+import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
+import { CreateBotDialog } from "./shell/create-bot-dialog";
 import {
   ClearConversationDialog,
   DeleteBotDialog,
@@ -550,6 +546,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
+  const [createBotOpen, setCreateBotOpen] = useState(false);
   const [pickerInfoTopic, setPickerInfoTopic] = useState<"group" | "space" | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -2642,18 +2639,9 @@ function SpaceShell() {
     openSettings("models", spaceId);
   }
 
-  async function createBot(input: {
-    name: string;
-    title: string;
-    description: string;
-    computerMode: ComputerMode;
-  }) {
+  async function createBot(input: CreateBotDialogInput) {
     const isFirstBot = botsRef.current.length === 0;
-    const bot = await rpc.bots.create({
-      ...normalizeCreateBotProfile(input),
-      notifyOnFinish: true,
-      computerMode: input.computerMode,
-    });
+    const bot = await rpc.bots.create({ ...input, notifyOnFinish: true });
     // A roster requested before creation may omit this bot and redirect its new chat.
     botsRefreshEpoch.current += 1;
     setBots((current) =>
@@ -2661,6 +2649,7 @@ function SpaceShell() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
+    setCreateBotOpen(false);
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
     cancelFocusPrompt();
@@ -3259,6 +3248,7 @@ function SpaceShell() {
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          setCreateBotOpen={setCreateBotOpen}
           setPickerInfoTopic={setPickerInfoTopic}
         />
         {miniSidebar ? (
@@ -3542,7 +3532,7 @@ function SpaceShell() {
         <CallReturnBar />
         {!active && !activeGroup && initialBotsLoaded ? (
           <div className="grid flex-1 place-items-center">
-            <Button onClick={() => setPanel("create")}>
+            <Button onClick={() => setCreateBotOpen(true)}>
               <Plus size={16} aria-hidden="true" />
               <Trans>Create new Bot</Trans>
             </Button>
@@ -3686,15 +3676,12 @@ function SpaceShell() {
       />
 
       <ResizableSidePanel
-        open={Boolean(panel && (active || activeGroup || panel === "create"))}
+        open={Boolean(panel && (active || activeGroup))}
         panel={panel ?? "closed"}
       >
-        {panel && (active || activeGroup || panel === "create") ? (
+        {panel && (active || activeGroup) ? (
           <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
-            {panel !== "routine" &&
-            panel !== "create" &&
-            panel !== "create-group" &&
-            panel !== "group-settings" ? (
+            {panel !== "routine" && panel !== "create-group" && panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-[13.5px] text-muted-foreground">
                   {panel === "settings" ? null : active ? (
@@ -3809,12 +3796,6 @@ function SpaceShell() {
                 onClose={() => setPanel(null)}
                 onOpenBot={openBot}
                 covered={computerOpen}
-              />
-            ) : null}
-            {panel === "create" ? (
-              <CreateBotForm
-                onCancel={() => setPanel(null)}
-                onCreate={(input) => createBot(input)}
               />
             ) : null}
             {panel === "settings" && active ? (
@@ -4062,6 +4043,10 @@ function SpaceShell() {
           }}
         />
 
+        {createBotOpen ? (
+          <CreateBotDialog onCancel={() => setCreateBotOpen(false)} onCreate={createBot} />
+        ) : null}
+
         {newSpaceOpen ? (
           <NewSpaceDialog
             onCancel={() => setNewSpaceOpen(false)}
@@ -4132,7 +4117,10 @@ function SpaceShell() {
             spaces={spaces}
             currentSpaceId={currentSpaceId}
             onSpaceChange={(spaceId) => setOverlay({ ...overlay, spaceId })}
-            name={userName}
+            name={session.data?.user.name ?? ""}
+            onNameSaved={async () => {
+              await session.refetch({ query: { disableCookieCache: true } });
+            }}
             email={session.data?.user.email}
             usage={usage}
             onUsageOpen={refreshUsage}

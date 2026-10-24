@@ -66,6 +66,9 @@ export function ComposerError({
       document.removeEventListener("visibilitychange", recordIfPresented);
     };
   }, [onRunErrorPresented, runError, runErrorId]);
+  const normalizedRunError = runError
+    ? normalizeRunError(runError, translateRunError, i18n.locale || "en")
+    : null;
 
   const warning = Boolean(sendError) && imageConfirmation;
   return sendError || runError ? (
@@ -86,10 +89,7 @@ export function ComposerError({
             {sendError}
           </button>
         ) : (
-          (sendError ??
-          (runError
-            ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
-            : null))
+          (sendError ?? normalizedRunError?.summary ?? null)
         )}
         {warning && onSendAsFile ? (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -114,7 +114,9 @@ export function ComposerError({
         {!sendError && runError ? (
           <details key={runError} className="mt-1">
             <summary className="w-fit cursor-pointer">{t`Details`}</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{runError}</pre>
+            <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+              {normalizedRunError?.details}
+            </pre>
           </details>
         ) : null}
       </div>

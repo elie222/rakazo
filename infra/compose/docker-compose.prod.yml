@@ -24,7 +24,7 @@ x-app-environment: &app-environment
   ENCRYPTION_MASTER_KEYS:
   # on encrypts new content at rest; off stores it readable (docs/self-host.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep bot homes in S3-compatible object storage (docs/self-host.md#bot-homes-in-object-storage).
+  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:

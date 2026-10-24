@@ -78,10 +78,6 @@ tags:
 - tapOn:
     id: "search-sheet-close"
 
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "07-new-bot"
-
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"
 - takeScreenshot: "08-new-group"
@@ -106,17 +102,23 @@ tags:
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Active model"
+    visible: "Model"
     timeout: 10000
-- scrollUntilVisible:
-    element: "Show more"
-    direction: DOWN
+- assertNotVisible: "Active model"
 - takeScreenshot: "11-models"
-- tapOn: "Show more"
+- tapOn: "Thinking"
+- assertVisible: "Medium"
+- takeScreenshot: "11a-thinking-menu"
+- back
+- assertNotVisible: "Medium"
 - scrollUntilVisible:
-    element: "Show less"
+    element: "Advanced"
     direction: DOWN
-- takeScreenshot: "11b-all-providers"
+- tapOn: "Advanced"
+- scrollUntilVisible:
+    element: "Maximum output tokens"
+    direction: DOWN
+- takeScreenshot: "11b-models-advanced"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
@@ -178,6 +180,9 @@ tags:
 - assertVisible: "Speak message"
 - takeScreenshot: "15b-message-actions"
 - back
+# Settle the keyboard inset before measuring the next message target.
+- hideKeyboard
+- waitForAnimationToEnd
 # User messages omit Speak.
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"
@@ -253,10 +258,6 @@ tags:
     element: "Notification settings"
     direction: DOWN
 - takeScreenshot: "22b-account-notifications-dark"
-
-- openLink: "rakazo:///new"
-- assertVisible: "Name this bot"
-- takeScreenshot: "23-new-bot-dark"
 
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"

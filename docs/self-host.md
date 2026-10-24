@@ -1059,6 +1059,8 @@ Each bot computer has a home: its files, logged-in browser profiles and CLI toke
 homes live under `DATA_DIR/homes` on the server. Set `OBJECT_STORAGE_BUCKET` to keep them in any
 S3-compatible bucket instead, so `DATA_DIR` is only a cache and API and worker hosts no longer need
 a shared disk for homes. Leave it unset to keep homes on local disk, as before.
+The same connection also stores new artifacts; see [shared storage migration](#shared-storage-migration)
+for migrating existing files and push registrations.
 
 ```env
 OBJECT_STORAGE_BUCKET=rakazo-homes
@@ -1894,3 +1896,57 @@ in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive int
 Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
 limit advertised by the server. If a reverse proxy limits request bodies, allow
 room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
+
+## Shared storage migration
+
+Push notification registrations now live in Postgres, encrypted with `ENCRYPTION_KEY`.
+The same key must be configured on every API and worker replica. Registrations remain
+bound to their authenticated session; deleting an account also deletes its registration.
+
+With `OBJECT_STORAGE_BUCKET` configured, new artifact contents use the existing
+S3-compatible connection alongside computer homes. Artifact contents are always encrypted
+before upload using the space's content key and authenticated segments bound to the
+artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
+checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor
+public object URLs. Without object storage, artifacts continue using the local volume.
+
+Existing artifact rows continue reading their local files until migrated. Before spreading
+API or worker replicas across machines, migrate files from every original application
+volume. Back up the database and volume first. Deploy the schema migration and the new
+application version, then stop **all API and worker processes**, including old releases,
+while running the following commands from a maintenance container with the original volume,
+`DATABASE_URL`, `ENCRYPTION_KEY`, content master keys, and object storage configuration:
+
+```sh
+# Published image (run from /app/apps/api):
+node dist/cli/shared-storage.js artifacts --dry-run
+node dist/cli/shared-storage.js artifacts
+node dist/cli/shared-storage.js push-tokens --dry-run
+node dist/cli/shared-storage.js push-tokens
+
+# Source checkout equivalents:
+pnpm --filter @rakazo/api shared-storage artifacts
+pnpm --filter @rakazo/api shared-storage push-tokens
+```
+
+The artifact migration uploads and decrypts each file to verify it before conditionally
+updating its database storage key. It keeps the original local files and skips rows already
+migrated, so interrupted runs can resume. A database failure after upload can leave an
+unreferenced object; do not delete objects blindly after a failed migration. Keep local
+originals until the migration is complete and verified. Files absent from the mounted volume
+are counted as pending while migration continues for files present on that volume. Run the
+command on each original volume, then run `artifacts --dry-run` again and require `pending: 0`
+before starting independent replicas. Object-backed artifacts require
+object storage to remain configured; old application versions cannot read their new keys.
+The local content-encryption CLI operates on local artifacts only; object artifacts stay
+encrypted and retain access through the key versions referenced in their headers.
+
+The push import preserves registrations with a live session, skips missing/expired or
+sessionless registrations, accounts already registered in Postgres, and devices owned by any
+existing database registration. Import never hands a device back to an older account. It archives processed
+files with a `.migrated` suffix. Those archives are never used as a runtime fallback, so they
+cannot restore a registration after logout. Clients skipped during migration register again
+when they next open the app. Remove the archived token files after verifying the import.
+Restart API and worker processes after both commands finish. A schema-only rollback remains
+compatible with the previous release, but the old code does not read database registrations
+or object-backed artifacts.

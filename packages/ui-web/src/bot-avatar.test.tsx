@@ -156,6 +156,14 @@ describe("BotAvatar", () => {
     expect(html).toContain("focus-visible:ring-2");
   });
 
+  it("previews an organic body when no studio shape is given", () => {
+    const html = renderToString(
+      <BotShapePreview identity="maya" label="Shape 1" color="#8B5CF6" selected={false} />,
+    );
+    expect(html).toContain('aria-label="Shape 1"');
+    expect(html).toContain("rakazo-organic-avatar");
+  });
+
   it("draws every plain-colour bot with the organic body", () => {
     const html = renderToString(<BotAvatar color={DEFAULT_BOT_AVATAR_COLOR} identity="maya" />);
     expect(html).toContain("rakazo-organic-avatar");

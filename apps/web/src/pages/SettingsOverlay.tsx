@@ -67,6 +67,7 @@ export function SettingsOverlay({
   onUsageOpen,
   section: requestedSection,
   onSectionChange,
+  onNameSaved,
   timezone,
   onTimezoneChange,
   billingEnabled = false,
@@ -96,6 +97,7 @@ export function SettingsOverlay({
   onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
+  onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string) => Promise<void>;
   billingEnabled?: boolean;
@@ -320,7 +322,7 @@ export function SettingsOverlay({
                     onClick={() => onSectionChange(item.id)}
                     className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-[13.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                       active
-                        ? "bg-muted text-foreground"
+                        ? "bg-accent text-accent-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     }`}
                   >
@@ -392,6 +394,7 @@ export function SettingsOverlay({
                   <GeneralSettingsPanels
                     email={email}
                     name={name}
+                    onNameSaved={onNameSaved}
                     timezone={timezone}
                     onTimezoneChange={onTimezoneChange}
                     messagingEnabled={messagingEnabled}

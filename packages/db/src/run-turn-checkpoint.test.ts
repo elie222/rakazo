@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import type { DataKey } from "./content-crypto.js";
-import { loadRunTurnCheckpoint, saveRunTurnCheckpoint } from "./run-turn-checkpoint.js";
+import {
+  dropRunTurnCheckpoint,
+  loadRunTurnCheckpoint,
+  saveRunTurnCheckpoint,
+} from "./run-turn-checkpoint.js";
 
 const run = { id: "fixture-run", spaceId: "fixture-space" };
 const key: DataKey = {
@@ -69,6 +73,17 @@ describe("encrypted run turn checkpoint", () => {
       saveRunTurnCheckpoint(state.client, run, "fixture-worker", 1, "fixture"),
     ).rejects.toThrow("lease expired");
     expect(state.upsert).not.toHaveBeenCalled();
+  });
+  it("drops a saved turn only for the worker that holds the lease", async () => {
+    const state = fixture();
+    await saveRunTurnCheckpoint(state.client, run, "fixture-worker", 1, "fixture");
+    state.locked.mockResolvedValueOnce({ count: 0 });
+    await expect(dropRunTurnCheckpoint(state.client, run, "stale-worker", 1)).rejects.toThrow(
+      "lease expired",
+    );
+    expect(await loadRunTurnCheckpoint(state.client, run)).toBe("fixture");
+    await dropRunTurnCheckpoint(state.client, run, "fixture-worker", 1);
+    expect(await loadRunTurnCheckpoint(state.client, run)).toBeUndefined();
   });
   it("clears content in the same transaction as cancellation", async () => {
     const state = fixture();

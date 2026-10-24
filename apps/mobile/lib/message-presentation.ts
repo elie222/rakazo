@@ -13,6 +13,14 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
   );
 }
 
+/** Cards with a text field, buttons or links own the taps that land inside them. */
+export function messageHasInlineControls(blocks: readonly MessageBlock[]): boolean {
+  return blocks.some(
+    (block) =>
+      block.kind === "ask" || block.kind === "app_connect" || block.kind === "mcp_approval",
+  );
+}
+
 export type MessagePresentationSegment = {
   kind: "content";
   blocks: MessageBlock[];

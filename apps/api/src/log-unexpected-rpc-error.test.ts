@@ -5,6 +5,7 @@ import {
   SandboxUnavailableError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
+import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +25,18 @@ describe("logUnexpectedRpcError", () => {
       "readFile",
     ]);
 
+    expect(sink.events).toEqual([]);
+  });
+
+  it("keeps an image send the model cannot read out of error reports", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const rejection = new ORPCError("CONFLICT", {
+      message: MODEL_IMAGE_INPUT_ERROR,
+      data: { reason: "model_image_input_unsupported" },
+    });
+
+    expect(() => handleRpcError(rejection, ["threads", "send"])).not.toThrow();
     expect(sink.events).toEqual([]);
   });
 

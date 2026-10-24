@@ -151,6 +151,31 @@ it("selects only This device and hides all provider controls until it is turned 
   expect(container.textContent).toContain("fish-audio voice");
 });
 
+it("falls back to an available provider when the saved provider is hidden", async () => {
+  state.load.mockResolvedValue(false);
+  activeProvider = "openai-compatible";
+  const original = state.rpc.getMockImplementation()!;
+  let connected = true;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
+    if (proc === "voice/credentials" && connected)
+      return [{ id: "self-hosted", provider: "openai-compatible", voiceId: "voice" }];
+    if (proc === "voice/disconnect") {
+      connected = false;
+      return undefined;
+    }
+    return original(proc, args);
+  });
+  await render();
+  selected("Fish Audio");
+  expect(container.querySelector('input[aria-label="Server URL"]')).toBeNull();
+  expect(state.rpc).not.toHaveBeenCalledWith("voice/voices", {
+    provider: "openai-compatible",
+  });
+  await click("Disconnect Self-hosted");
+  expect(state.rpc).toHaveBeenCalledWith("voice/disconnect", { provider: "openai-compatible" });
+  expect(container.textContent).not.toContain("Disconnect Self-hosted");
+});
+
 it("disables provider rows until the saved device preference has loaded", async () => {
   let finish!: (value: boolean) => void;
   state.load.mockReturnValue(

@@ -796,6 +796,10 @@ async function commitAnswerRunInput(
     }
   }
 
+  // Answering the creation intro's question tells the bot what it is for, so it resumes as
+  // the user's turn: with the conversation and every tool, to get going on that answer.
+  const resumedTrigger =
+    run.trigger === "created" && !approvalAsk && !secretAsk ? "user" : run.trigger;
   const queued = await tx.run.updateMany({
     where: {
       id: input.runId,
@@ -805,6 +809,7 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
+      ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
     },
   });
@@ -923,7 +928,7 @@ async function commitAnswerRunInput(
       where: { runs: { some: { id: input.runId } } },
       data: {
         prompt: resumePrompt(
-          run,
+          { ...run, trigger: resumedTrigger },
           pendingAsk.text,
           selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
         ),

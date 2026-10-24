@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,7 @@ import {
   sandboxIdleMs,
   scheduleComputerSleep,
   sleepComputerIfIdle,
+  TAKEOVER_IDLE_GRACE_MS,
   touchRunningComputer,
 } from "./computer-idle.js";
 import { e2bCreateOptions } from "./e2b-sandbox.js";
@@ -156,7 +158,7 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
   });
 
-  it("does not let an abandoned waiting takeover prevent idle suspension", async () => {
+  it("does not let an abandoned waiting takeover past its grace prevent idle suspension", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
       where.status.in.includes("waiting_takeover") ? { id: "waiting" } : null,
@@ -279,6 +281,26 @@ describe("sandbox idle", () => {
       expect.objectContaining({ level: "warn", message: "computer.sleep_deferred" }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("keeps a computer only its provider's snapshot can bring back for the next use", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ exportError: new SandboxUnavailableError() });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "unavailable",
+      }),
+    );
   });
 
   it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {
@@ -559,6 +581,97 @@ describe("maximum active lifetime", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, false])(
+    "keeps an unbilled computer (%s) awake for a run that just asked for takeover",
+    async (billing) => {
+      const harness = idleHarness({
+        billsWhileRunning: billing,
+        takeoverRequestedAt: new Date(now - 5 * 60_000),
+      });
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.prisma.run.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { bot: { computerId: harness.computer.id }, status: "waiting_takeover" },
+        }),
+      );
+      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+      expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+      );
+    },
+  );
+
+  it("rechecks a waiting takeover when its grace ends", async () => {
+    const requestedAt = new Date(now - TAKEOVER_IDLE_GRACE_MS + 60_000);
+    const harness = idleHarness({ takeoverRequestedAt: requestedAt });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        availableAt: new Date(requestedAt.getTime() + TAKEOVER_IDLE_GRACE_MS),
+      }),
+    );
+  });
+
+  it("suspends a computer once a waiting takeover outlasts its grace", async () => {
+    const harness = idleHarness({
+      takeoverRequestedAt: new Date(now - TAKEOVER_IDLE_GRACE_MS - 1),
+    });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["within", recently],
+    ["past", longAgo],
+  ])(
+    "suspends a billed computer %s the lifetime limit inside the takeover grace",
+    async (_, runningSince) => {
+      const harness = idleHarness({
+        billsWhileRunning: true,
+        runningSince,
+        takeoverRequestedAt: new Date(now - 60_000),
+      });
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.prisma.event.findFirst).not.toHaveBeenCalled();
+      expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("holds a waiting takeover under user control without the grace", async () => {
+    const harness = idleHarness({
+      takeoverRequestedAt: new Date(now - TAKEOVER_IDLE_GRACE_MS - 60_000),
+    });
+    Object.assign(harness.computer, {
+      controlHolder: "user",
+      controlLeaseId: "lease",
+      controlLeaseExpiresAt: new Date(now + 60_000),
+    });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.event.findFirst).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+    );
+  });
+
   it("does not pull the computer out from under a run that is executing", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
@@ -804,6 +917,7 @@ function idleHarness(
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
     runningSince?: Date | null;
     billsWhileRunning?: boolean;
+    takeoverRequestedAt?: Date;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -834,7 +948,19 @@ function idleHarness(
         return { count: 1 };
       }),
     },
-    run: { findFirst: vi.fn().mockResolvedValue(null) },
+    run: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi
+        .fn()
+        .mockResolvedValue(options.takeoverRequestedAt ? [{ id: "waiting-for-user" }] : []),
+    },
+    event: {
+      findFirst: vi.fn(async ({ where }) =>
+        options.takeoverRequestedAt && options.takeoverRequestedAt > where.createdAt.gt
+          ? { createdAt: options.takeoverRequestedAt }
+          : null,
+      ),
+    },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),

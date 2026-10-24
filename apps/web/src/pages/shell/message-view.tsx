@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/web";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
-import { isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
+import { isPeerReceiptBlocks, isSecretAskBlock, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar, Button, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { memo, useMemo } from "react";
 import { ArtifactFileCard } from "../../components/ArtifactFileCard";
@@ -145,7 +145,11 @@ export const MessageView = memo(function MessageView({
   );
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
-  const hoverAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
+  const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
+  const hoverAnchorIndex =
+    textAnchorIndex === -1
+      ? message.blocks.findIndex((block) => block.kind === "ask")
+      : textAnchorIndex;
   const hoverActions = isPeerReceiptBlocks(message.blocks) ? null : (
     <MessageHoverActions
       message={message}
@@ -499,14 +503,19 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "ask") {
             return (
-              <AskCard
+              <div
                 key={i}
-                block={block}
-                canAnswer={canAnswer}
-                canDismiss={canDismiss}
-                onAnswer={(text, username) => onAnswer(message, text, username)}
-                onDismiss={() => onAnswer(message, "", undefined, true)}
-              />
+                className={`relative w-full min-w-0 ${isSecretAskBlock(block) ? "" : "max-w-xl"}`}
+              >
+                <AskCard
+                  block={block}
+                  canAnswer={canAnswer}
+                  canDismiss={canDismiss}
+                  onAnswer={(text, username) => onAnswer(message, text, username)}
+                  onDismiss={() => onAnswer(message, "", undefined, true)}
+                />
+                {i === hoverAnchorIndex ? hoverActions : null}
+              </div>
             );
           }
           if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;

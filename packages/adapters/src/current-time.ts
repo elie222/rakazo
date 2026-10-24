@@ -33,7 +33,7 @@ function weekdayIn(now: Date, timeZone: string) {
 }
 
 /** "Saturday, 2026-10-17 22:15 (UTC+13:00)", or undefined for an unusable timezone. */
-function localDateTime(now: Date, timeZone: string): string | undefined {
+export function localDateTime(now: Date, timeZone: string): string | undefined {
   let parts: Intl.DateTimeFormatPart[];
   try {
     parts = new Intl.DateTimeFormat("en-US", {

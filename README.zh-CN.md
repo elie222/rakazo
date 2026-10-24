@@ -1,6 +1,6 @@
 # Rakazo
 
-[English](./README.md) | [简体中文](./README.zh-CN.md)
+[English](./README.md) | [简体中文](./README.zh-CN.md) | [日本語](./README.ja.md)
 
 [![GitHub stars](https://img.shields.io/github/stars/elie222/rakazo?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/elie222/rakazo/stargazers)
 [![加入 Discord 社区](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?labelColor=black&style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/RWwKa2Sn7h)
@@ -14,7 +14,7 @@ Rakazo 是一个开源 AI 智能体项目，让你拥有可长期协作的 AI �
 [Android](https://github.com/elie222/rakazo/releases/download/android/rakazo.apk) 应用。
 你可以接入自己的模型和计算环境提供商，也可以在本地运行完整服务。
 
-它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent 和 Hark Pro 的开源、自托管替代方案。
+它是 Grok Bot、Meta Muse、OpenAI Dots、Instinct、OpenClaw、Hermes Agent、Claude Duet 和 Hark Pro 的开源、自托管替代方案。
 
 Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
 
@@ -23,7 +23,7 @@ Rakazo 目前处于测试阶段。详情见 [rakazo.com](https://rakazo.com)。
 ## 与其他产品的比较
 
 Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
-Muse、Dots、Instinct 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
+Muse、Dots、Instinct、Claude Duet 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
 后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
 
 - [Grok Bot](https://rakazo.com/grok-bot-alternative/)
@@ -32,6 +32,7 @@ Muse、Dots、Instinct 和 Hark Pro 是托管式助手；OpenClaw 和 Hermes Age
 - [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
 - [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
+- [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
 - [Hark Pro](https://rakazo.com/hark-alternative/)，hark.com 提供的个人智能体
 - [全部对比](https://rakazo.com/alternatives/)
 - [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
@@ -228,12 +229,12 @@ chmod +x Rakazo-*.AppImage
 ## 界面语言
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
-印地语、巴西葡萄牙语、简体中文、西班牙语、俄语、法语、希伯来语和荷兰语。
-Expo 应用包含英语、简体中文、俄语、德语和荷兰语翻译，**Account → Language**（账号 → 语言）列出这五种语言。
+印地语、巴西葡萄牙语、简体中文、西班牙语、俄语、法语、希伯来语、荷兰语和日语。
+Expo 应用包含英语、简体中文、俄语、德语、荷兰语和日语翻译，**Account → Language**（账号 → 语言）列出这六种语言。
 在用户保存选择之前，移动端的初始语言由设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 决定。
 
-官网首页（`apps/www`）提供英语、德语、韩语和中文版本，可通过页脚语言链接切换，
-对应路径为 `/`、`/de/`、`/ko/` 和 `/zh/`；其他官网页面仍为英文。
+官网首页（`apps/www`）提供英语、德语、韩语、中文和日语版本，可通过页脚语言链接切换，
+对应路径为 `/`、`/de/`、`/ko/`、`/zh/` 和 `/ja/`；其他官网页面仍为英文。
 俄语官网首页，以及 Electron 原生设置窗口和菜单的本地化仍有待完成。
 
 ## 开发

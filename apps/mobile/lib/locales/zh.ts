@@ -5,6 +5,14 @@ export const ZH_MESSAGES: Record<string, string> = {
   "The bot can use the file but won't see the picture.": "Bot 可以使用该文件，但看不到图片内容。",
   "This model cannot read images. Choose a model that supports images.":
     "此模型无法读取图片。请选择支持图片的模型。",
+  "Use 80 characters or fewer": "请使用不超过 80 个字符",
+  "Could not update name": "无法更新姓名",
+  "{summary} Your backup models also failed.": "{summary} 备用模型也失败了。",
+  "{summary} No backup model was usable for this request.":
+    "{summary} 没有可用于此请求的备用模型。",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} 备用模型失败或无法用于此请求。",
+
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "Ollama API 密钥",
   "Show password": "显示密码",
@@ -82,9 +90,15 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{provider} rejected the API key. Check your connection settings.":
     "{provider}拒绝了 API 密钥。请检查连接设置。",
   "{provider} could not find the requested model.": "{provider}找不到请求的模型。",
+  "{provider} denied access to this model.": "{provider}拒绝了对此模型的访问。",
+  "The model returned an unusable response. Try again.": "模型返回了无法使用的回复。请重试。",
+  "This model's context window is too small. Choose another model.":
+    "此模型的上下文窗口太小。请选择其他模型。",
   "{provider} took too long to respond. Try again.": "{provider}响应超时。请重试。",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider}当前负载过高。请稍后再试。",
+  "{provider} couldn't be reached. Check that it's running.":
+    "无法连接到{provider}。请检查它是否正在运行。",
   "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
     "此对话对模型来说太长了。重试无济于事。请开始新的聊天或缩短你的消息。",
   "{provider} key hit its limit.": "{provider}的密钥已达到限额。",
@@ -399,11 +413,11 @@ export const ZH_MESSAGES: Record<string, string> = {
   Deny: "拒绝",
   "Deployment default": "部署默认",
   Description: "描述",
-  "Describe what this bot does": "描述这个 Bot 的工作",
   "Don’t have an account?": "还没有账户？",
   Done: "完成",
   "Disconnect {name}?": "断开 {name}？",
   Disconnect: "断开",
+  "Disconnect Self-hosted": "断开自托管连接",
   "This removes the connection from every space.": "这将从每个 Space 移除该连接。",
   "Disconnecting…": "正在断开…",
   Email: "邮箱",
@@ -483,7 +497,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Models: "模型",
   "Move to": "移动到",
   Name: "名称",
-  "Name this bot": "为这个 Bot 命名",
   "Needs attention": "需要处理",
   "Needs input": "等待输入",
   "Needs takeover": "等待接管",

@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import { accountDisplay, displayName } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppMark } from "../../components/app-mark";
+import { NameDialog } from "../../components/name-dialog";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import {
@@ -27,6 +28,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
+import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
   currentApiBase,
@@ -38,6 +40,7 @@ import {
   rpc,
   selectedSpaceId,
   signOut,
+  updateAccountName,
 } from "../../lib/api";
 import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
 import {
@@ -93,6 +96,32 @@ export default function Account() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const account = accountDisplay(me ?? {}, t("Your account"));
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const currentName = account.label === me?.email ? "" : displayName(me?.name, "");
+
+  const nameSaving = useRef(false);
+  const nameSaveVersion = useRef(0);
+  const { saveName, editName, closeNameDialog } = createAccountNameEditor({
+    currentName,
+    pending: nameSaving,
+    saveVersion: nameSaveVersion,
+    Platform,
+    Alert,
+    t,
+    errorText,
+    updateAccountName,
+    refresh: () => rpc<MobileMe>("me"),
+    onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
+    onRefreshed: setMe,
+    setNameDraft,
+    setNamePending,
+    setNameError,
+    setNameDialogOpen,
+  });
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
@@ -369,16 +398,28 @@ export default function Account() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
         {focus === "usage" ? <SettingsGroup>{usageBlock}</SettingsGroup> : null}
         <SettingsGroup>
           <SettingsRow
-            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t("Edit name")}
+            accessibilityValue={{
+              text:
+                me?.email && account.label !== me.email
+                  ? `${account.label}, ${me.email}`
+                  : account.label,
+            }}
+            chevron="right"
+            disabled={!me}
             detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
             title={account.label}
+            dimmed={namePending}
+            onPress={editName}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
@@ -668,6 +709,19 @@ export default function Account() {
           ) : null}
         </SettingsGroup>
       </ScrollView>
+      {nameDialogOpen ? (
+        <NameDialog
+          draft={nameDraft}
+          error={nameError}
+          saving={namePending}
+          onChange={(value) => {
+            setNameDraft(value);
+            setNameError(null);
+          }}
+          onSave={(value) => void saveName(value)}
+          onClose={closeNameDialog}
+        />
+      ) : null}
       {deleteOpen ? (
         <Modal transparent animationType="fade" onRequestClose={closeDeletePrompt}>
           <KeyboardAvoidingView
