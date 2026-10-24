@@ -1504,6 +1504,122 @@ describeIntegration("agent import", () => {
     });
   });
 
+  it("keeps imports apart between two members of one space", async () => {
+    const owner = await signup(app, `import-shared-owner-${stamp}@rakazo.test`, "Owner");
+    const shared = await rpc<{ id: string }>(app, owner, "spaces/create", { name: "Shared" });
+    const { organizationId } = await db.space.findUniqueOrThrow({
+      where: { id: shared.id },
+      select: { organizationId: true },
+    });
+    // The second member, added as the authorization tests add one.
+    const member = await signup(app, `import-shared-member-${stamp}@rakazo.test`, "Member");
+    const memberActor = await rpc<{ userId: string }>(app, member, "me");
+    await db.member.deleteMany({ where: { userId: memberActor.userId } });
+    await db.member.create({
+      data: {
+        id: `import-shared-org-member-${stamp}`,
+        organizationId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    await db.spaceMember.create({
+      data: {
+        id: `import-shared-space-member-${stamp}`,
+        spaceId: shared.id,
+        organizationId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/workspace/USER.md", content: "Prefers tea.\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content:
+          '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp", headers: { Authorization: "x" } } } } }',
+      },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+    ];
+    const selection = (plan: AgentImportPlan) => ({
+      instructions: plan.instructions.map((item) => item.id),
+      memory: plan.memory.map((item) => ({ id: item.id, destination: "space" })),
+      skills: plan.skills.map((item) => item.id),
+      mcpServers: plan.mcpServers.map((item) => item.id),
+    });
+    const ownerPlan = await rpc<AgentImportPlan>(
+      app,
+      owner,
+      "bots/importPreview",
+      { files },
+      shared.id,
+    );
+    const ownerBot = await rpc<Bot>(
+      app,
+      owner,
+      "bots/importCreate",
+      { files, name: "Owned", selection: selection(ownerPlan) },
+      shared.id,
+    );
+    const server = await db.mcpServer.findFirstOrThrow({
+      where: { slug: "docs", spaceId: shared.id },
+    });
+
+    // Both act in the shared space.
+    const memberBot = await rpc<Bot>(app, member, "bots/create", { name: "Mine" }, shared.id);
+    expect(
+      (
+        await db.bot.findMany({
+          where: { id: { in: [ownerBot.id, memberBot.id] } },
+          select: { spaceId: true },
+        })
+      ).map((row) => row.spaceId),
+    ).toEqual([shared.id, shared.id]);
+    // The member's names are their own: nothing of the owner's is taken.
+    const memberPlan = await rpc<AgentImportPlan>(
+      app,
+      member,
+      "bots/importPreview",
+      { files },
+      shared.id,
+    );
+    expect(memberPlan.skills.map((item) => item.name)).toEqual(["garden"]);
+    expect(memberPlan.memory.find((item) => item.path === "USER.md")?.spacePath).toBe("USER.md");
+    expect(memberPlan.mcpServers.map((item) => item.name)).toEqual(["docs"]);
+
+    // The owner's bot is not a target, and its import cannot be read or undone by the member.
+    const target = await raw(
+      app,
+      member,
+      "bots/importCreate",
+      {
+        files,
+        destination: { kind: "existing", botId: ownerBot.id },
+        selection: selection(memberPlan),
+      },
+      shared.id,
+    );
+    expect(target.status).toBe(404);
+    expect(await rpc(app, member, "bots/importInfo", { botId: ownerBot.id }, shared.id)).toBeNull();
+    expect(
+      await rpc(
+        app,
+        member,
+        "bots/importSetupState",
+        { botId: ownerBot.id, providers: [], serverIds: [server.id], routineIds: [] },
+        shared.id,
+      ),
+    ).toEqual({ providers: {}, serverIds: { [server.id]: false }, routineIds: {} });
+    expect(
+      (await raw(app, member, "bots/importUndo", { botId: ownerBot.id }, shared.id)).status,
+    ).not.toBe(200);
+    expect(await db.bot.count({ where: { id: ownerBot.id } })).toBe(1);
+    expect(await db.agentImport.count({ where: { botId: ownerBot.id } })).toBe(1);
+  });
+
   it("keeps each import inside the actor's own space", async () => {
     const ownerCookie = await signup(app, `import-owner-${stamp}@rakazo.test`, "Owner");
     const otherCookie = await signup(app, `import-other-${stamp}@rakazo.test`, "Other");
@@ -1546,8 +1662,14 @@ async function signup(app: App, email: string, name: string) {
   return sessionCookieHeader(response);
 }
 
-async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}): Promise<T> {
-  const res = await raw(app, cookie, proc, body);
+async function rpc<T>(
+  app: App,
+  cookie: string,
+  proc: string,
+  body: unknown = {},
+  spaceId?: string,
+): Promise<T> {
+  const res = await raw(app, cookie, proc, body, spaceId);
   const text = await res.text();
   const parsed = JSON.parse(text) as { json?: T; error?: { message?: string } };
   if (res.status >= 400 || parsed.error) {
@@ -1556,10 +1678,15 @@ async function rpc<T>(app: App, cookie: string, proc: string, body: unknown = {}
   return parsed.json as T;
 }
 
-async function raw(app: App, cookie: string, proc: string, body: unknown) {
+async function raw(app: App, cookie: string, proc: string, body: unknown, spaceId?: string) {
   return app.request(`/rpc/${proc}`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie, origin: "http://127.0.0.1:5173" },
+    headers: {
+      "content-type": "application/json",
+      cookie,
+      origin: "http://127.0.0.1:5173",
+      ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
+    },
     body: JSON.stringify({ json: body }),
   });
 }

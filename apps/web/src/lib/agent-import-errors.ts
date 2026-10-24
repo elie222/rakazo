@@ -18,7 +18,7 @@ function errorProvider(error: unknown): string {
 export function agentImportErrorText(error: unknown): string | undefined {
   switch (agentImportErrorReason(error)) {
     case "selection_mismatch":
-      return t`These files changed. Choose them again.`;
+      return t`These files or choices no longer match. Choose the files again.`;
     case "cannot_run_here":
       return t`Something you chose cannot work here. Untick it and try again.`;
     case "model_needs_key":

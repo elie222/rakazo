@@ -2,29 +2,30 @@
 /**
  * Rebuilds the default-file table in packages/core/src/agent-import/stock.ts.
  *
- *   node scripts/agent-import-defaults.mjs <openclaw-checkout> [<hermes-SOUL.md> ...]
+ *   node scripts/agent-import-defaults.mjs <openclaw-checkout> <hermes-agent-checkout>
  *
- * Reads every committed version of OpenClaw's docs/reference/templates/{SOUL,AGENTS,USER,
- * IDENTITY}.md from a local git checkout, and each given Hermes SOUL.md, and prints the
- * table with the commits each fingerprint covers. Offline: it only reads local files and git.
- * The fingerprint matches `fingerprint()` in stock.ts: front matter removed (OpenClaw only,
- * as OpenClaw seeds the file), a byte order mark dropped, whitespace runs collapsed, then
+ * - OpenClaw: every committed version of docs/reference/templates/{SOUL,AGENTS,USER,
+ *   IDENTITY}.md. The checkout needs its full history (`git clone` without `--depth`); a
+ *   shallow one is refused, as it would silently miss versions.
+ * - Hermes Agent: the texts `hermes_cli/default_soul.py` treats as untouched defaults
+ *   (`DEFAULT_SOUL_MD` and `_LEGACY_TEMPLATE_SOULS`), read with python3 at the checkout's HEAD.
+ *
+ * Offline: only local files, git and python3. Output is sorted, with full commit hashes,
+ * and any failure to read a version stops the script. The fingerprint matches
+ * `fingerprint()` in stock.ts: front matter removed (OpenClaw only, as OpenClaw seeds the
+ * file), a byte order mark dropped, whitespace runs collapsed, then
  * `<32-bit FNV-1a hex>:<UTF-8 length>`.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 
-const [checkout, ...hermes] = process.argv.slice(2);
-if (!checkout) {
-  console.error("usage: agent-import-defaults.mjs <openclaw-checkout> [<hermes-SOUL.md> ...]");
+const [openclaw, hermes] = process.argv.slice(2);
+if (!openclaw || !hermes) {
+  console.error("usage: agent-import-defaults.mjs <openclaw-checkout> <hermes-agent-checkout>");
   process.exit(1);
 }
 
 function fingerprint(content) {
-  const text = content
-    .replace(/^\uFEFF/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = content.replace(/^\uFEFF/, "").replace(/\s+/g, " ").trim();
   const bytes = new TextEncoder().encode(text);
   let hash = 0x811c9dc5;
   for (const byte of bytes) {
@@ -39,33 +40,55 @@ function withoutFrontmatter(content) {
   return text.replace(/^---\n[\s\S]*?\n---\n/, "");
 }
 
-const git = (...args) => execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8" });
+const git = (checkout, ...args) =>
+  execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8" });
 
+if (git(openclaw, "rev-parse", "--is-shallow-repository").trim() !== "false") {
+  throw new Error(`${openclaw} is a shallow clone: fetch its full history first`);
+}
+
+const lines = [];
 for (const name of ["SOUL", "AGENTS", "USER", "IDENTITY"]) {
   const file = `docs/reference/templates/${name}.md`;
   // Each commit that touched the file, with the path it had then (renames followed).
-  const log = git("log", "--follow", "--format=%h", "--name-only", "--", file)
+  const log = git(openclaw, "log", "--follow", "--format=%H", "--name-only", "--", file)
     .split("\n")
     .filter(Boolean);
+  if (log.length === 0 || log.length % 2 !== 0) throw new Error(`unexpected git log for ${file}`);
   const versions = new Map();
   for (let index = 0; index < log.length; index += 2) {
     const [sha, path] = [log[index], log[index + 1]];
-    let content;
-    try {
-      content = git("show", `${sha}:${path}`);
-    } catch {
-      continue;
-    }
+    if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`unexpected commit "${sha}" for ${file}`);
+    // A version that cannot be read stops the script rather than being skipped.
+    const content = git(openclaw, "show", `${sha}:${path}`);
     if (!content.trim()) continue;
     const key = fingerprint(withoutFrontmatter(content));
-    versions.set(key, [...(versions.get(key) ?? []), sha]);
+    versions.set(key, [...(versions.get(key) ?? []), sha].sort());
   }
-  console.log(`  "${name}.md": versions([`);
-  for (const [key, shas] of versions) console.log(`    "${key}", // ${shas.join(" ")}`);
-  console.log("  ]),");
+  lines.push(`  "${name}.md": versions([`);
+  for (const key of [...versions.keys()].sort()) {
+    lines.push(`    "${key}", // ${versions.get(key).join(" ")}`);
+  }
+  lines.push("  ]),");
 }
-for (const path of hermes) {
-  console.log(
-    `"${fingerprint(readFileSync(path, "utf8"))}", // Hermes SOUL.md: ${path.split("/").at(-1)}`,
-  );
-}
+
+const head = git(hermes, "rev-parse", "HEAD").trim();
+const texts = JSON.parse(
+  execFileSync(
+    "python3",
+    [
+      "-c",
+      [
+        "import importlib.util, json, sys",
+        "spec = importlib.util.spec_from_file_location('d', sys.argv[1])",
+        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)",
+        "print(json.dumps([m.DEFAULT_SOUL_MD, *m._LEGACY_TEMPLATE_SOULS]))",
+      ].join("\n"),
+      `${hermes}/hermes_cli/default_soul.py`,
+    ],
+    { encoding: "utf8" },
+  ),
+);
+lines.push(`// Hermes Agent hermes_cli/default_soul.py at ${head}`);
+for (const key of [...new Set(texts.map(fingerprint))].sort()) lines.push(`"${key}",`);
+console.log(lines.join("\n"));

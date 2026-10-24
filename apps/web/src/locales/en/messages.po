@@ -5157,8 +5157,8 @@ msgid "These files are too large to import."
 msgstr "These files are too large to import."
 
 #: src/lib/agent-import-errors.ts
-msgid "These files changed. Choose them again."
-msgstr "These files changed. Choose them again."
+msgid "These files or choices no longer match. Choose the files again."
+msgstr "These files or choices no longer match. Choose the files again."
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."

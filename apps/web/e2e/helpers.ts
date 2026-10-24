@@ -265,9 +265,15 @@ export async function chooseOption(trigger: Locator, option: string | { index: n
  * reflects it. The wait starts before the click, so a fast reply is never missed.
  */
 export async function clickAndWaitForRpc(page: Page, button: Locator, path: string) {
-  const reply = page.waitForResponse(
-    (response) => response.url().includes(`/rpc/${path}`) && response.request().method() === "POST",
-  );
-  await button.click();
-  expect((await reply).status()).toBe(200);
+  const [reply] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/rpc/${path}` &&
+        response.request().method() === "POST",
+    ),
+    button.click(),
+  ]);
+  expect(reply.status()).toBe(200);
+  // The whole reply has arrived, not just its headers.
+  await reply.finished();
 }
