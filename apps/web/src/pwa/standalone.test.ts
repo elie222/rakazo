@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { lockStandaloneZoom } from "./standalone.js";
 
 const VIEWPORT = "width=device-width, initial-scale=1.0, viewport-fit=cover";
 
+/** A fresh document per case, so gesture listeners never carry over between cases. */
 function host(options: { standalone?: boolean; displayMode?: boolean }) {
-  document.head.innerHTML = `<meta name="viewport" content="${VIEWPORT}" />`;
-  document.documentElement.style.touchAction = "";
+  const doc = document.implementation.createHTMLDocument();
+  doc.head.innerHTML = `<meta name="viewport" content="${VIEWPORT}" />`;
   return {
-    document,
+    document: doc,
     navigator: { standalone: options.standalone } as Navigator & { standalone?: boolean },
     matchMedia: (() => ({
       matches: options.displayMode ?? false,
@@ -16,32 +17,37 @@ function host(options: { standalone?: boolean; displayMode?: boolean }) {
   };
 }
 
-function pinch() {
-  const event = new Event("gesturestart", { cancelable: true });
-  document.dispatchEvent(event);
-  return event.defaultPrevented;
+function locked(doc: Document) {
+  const pinch = new Event("gesturestart", { cancelable: true });
+  doc.dispatchEvent(pinch);
+  return {
+    viewport: doc.querySelector('meta[name="viewport"]')?.getAttribute("content"),
+    touchAction: doc.documentElement.style.touchAction,
+    pinchCancelled: pinch.defaultPrevented,
+  };
 }
-
-const viewport = () => document.querySelector('meta[name="viewport"]')?.getAttribute("content");
-
-afterEach(() => {
-  document.head.innerHTML = "";
-});
 
 describe("lockStandaloneZoom", () => {
   it("keeps zoom in a browser tab", () => {
-    lockStandaloneZoom(host({}));
-    expect(viewport()).toBe(VIEWPORT);
-    expect(document.documentElement.style.touchAction).toBe("");
-    expect(pinch()).toBe(false);
+    const target = host({});
+    lockStandaloneZoom(target);
+    expect(locked(target.document)).toEqual({
+      viewport: VIEWPORT,
+      touchAction: "",
+      pinchCancelled: false,
+    });
   });
 
-  it("locks zoom in the installed app on iOS and Android", () => {
-    for (const options of [{ standalone: true }, { displayMode: true }]) {
-      lockStandaloneZoom(host(options));
-      expect(viewport()).toBe(`${VIEWPORT}, maximum-scale=1, user-scalable=no`);
-      expect(document.documentElement.style.touchAction).toBe("manipulation");
-      expect(pinch()).toBe(true);
-    }
+  it.each([
+    ["iOS", { standalone: true }],
+    ["display-mode standalone", { displayMode: true }],
+  ])("locks zoom in the installed app (%s)", (_name, options) => {
+    const target = host(options);
+    lockStandaloneZoom(target);
+    expect(locked(target.document)).toEqual({
+      viewport: `${VIEWPORT}, maximum-scale=1, user-scalable=no`,
+      touchAction: "manipulation",
+      pinchCancelled: true,
+    });
   });
 });
