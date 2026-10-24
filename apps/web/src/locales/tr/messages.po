@@ -1454,6 +1454,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth ile bağlan"
 
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "Önce bu modelin sağlayıcısını bağla."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg'i bağla"
@@ -2482,13 +2486,13 @@ msgstr "Görüntü sınırı için 1 ile 1000 arasında bir tam sayı girin."
 msgid "Enter an API key before testing."
 msgstr "Test etmeden önce bir API anahtarı gir."
 
-#: src/pages/shell/import-status.ts
-msgid "Env: {names}"
-msgstr "Ortam: {names}"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Ortam değişkenleri"
+
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "Ortam değişkenleri: {names}"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
@@ -2932,6 +2936,7 @@ msgstr "Talimat geçmişi"
 msgid "Instructions"
 msgstr "Talimatlar"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "Talimatlar çok uzun. Bazı dosyaların işaretini kaldırın."
@@ -2985,6 +2990,10 @@ msgstr "Sohbeti, dosyaları ve rutinleri kalıcı olarak silinecek. Oluşturduğ
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions changed since the import, so they stay."
 msgstr "Talimatları içe aktarmadan sonra değişti, bu yüzden kalıyor."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "Talimatları değişti. Gözden geçirip yeniden dene."
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions go back to before the import."
@@ -3488,6 +3497,7 @@ msgstr ""
 msgid "Name"
 msgstr "Ad"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
@@ -4905,6 +4915,14 @@ msgstr "Bazı ayarlar içe aktarılmaz"
 msgid "Something went wrong. Try again."
 msgstr "Bir şeyler ters gitti. Tekrar deneyin."
 
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "Aynı adda bir şey az önce eklendi. Yeniden dene."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "Seçtiğin bir şey burada çalışamaz. İşaretini kaldırıp yeniden dene."
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5129,6 +5147,10 @@ msgstr "Seçilen hafıza sağlayıcısı bu sürümde kullanılamıyor."
 msgid "These files are too large to import."
 msgstr "Bu dosyalar içe aktarmak için çok büyük."
 
+#: src/lib/agent-import-errors.ts
+msgid "These files changed. Choose them again."
+msgstr "Bu dosyalar değişti. Yeniden seç."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -5155,6 +5177,10 @@ msgstr "Bu bot"
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Bu bot bir Linux masaüstünde değil, bu bilgisayarda çalışır. Kabuk ve dosyalar senin kullanıcı klasörünü kullanır."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "Bu bot içe aktarılmadı."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5190,6 +5216,14 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "Bu içe aktarma değişti. Yeniden dene."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "Bu içe aktarma zaten kullanıldı. Dosyaları yeniden seç."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5756,6 +5790,10 @@ msgstr "E-posta adresin"
 #: src/pages/Onboarding.tsx
 msgid "Your first bot already existed, so the agent was not imported."
 msgstr "İlk botun zaten vardı, bu yüzden ajan içe aktarılmadı."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "İlk botun zaten var."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

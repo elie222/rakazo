@@ -1454,6 +1454,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth verbinden"
 
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "Verbinde zuerst den Anbieter dieses Modells."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg verbinden"
@@ -2482,13 +2486,13 @@ msgstr "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein."
 msgid "Enter an API key before testing."
 msgstr "Gib vor dem Test einen API-Schlüssel ein."
 
-#: src/pages/shell/import-status.ts
-msgid "Env: {names}"
-msgstr "Umgebung: {names}"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Umgebungsvariablen"
+
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "Umgebungsvariablen: {names}"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
@@ -2932,6 +2936,7 @@ msgstr "Anweisungsverlauf"
 msgid "Instructions"
 msgstr "Anweisungen"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "Die Anweisungen sind zu lang. Wähle einige Dateien ab."
@@ -2985,6 +2990,10 @@ msgstr "Seine Unterhaltung, Dateien und Routinen werden dauerhaft gelöscht. Von
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions changed since the import, so they stay."
 msgstr "Die Anweisungen wurden seit dem Import geändert und bleiben daher."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "Die Anweisungen wurden geändert. Prüfe sie und versuche es erneut."
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions go back to before the import."
@@ -3488,6 +3497,7 @@ msgstr "Stummgeschaltet"
 msgid "Name"
 msgstr "Name"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
@@ -4905,6 +4915,14 @@ msgstr "Einige Einstellungen werden nicht importiert"
 msgid "Something went wrong. Try again."
 msgstr "Etwas ist schiefgelaufen. Versuche es erneut."
 
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "Gerade wurde etwas mit demselben Namen hinzugefügt. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "Etwas Ausgewähltes funktioniert hier nicht. Entferne das Häkchen und versuche es erneut."
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5129,6 +5147,10 @@ msgstr "Der ausgewählte Erinnerungsanbieter ist in diesem Build nicht verfügba
 msgid "These files are too large to import."
 msgstr "Diese Dateien sind zu groß für den Import."
 
+#: src/lib/agent-import-errors.ts
+msgid "These files changed. Choose them again."
+msgstr "Diese Dateien haben sich geändert. Wähle sie erneut aus."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -5155,6 +5177,10 @@ msgstr "Dieser Bot"
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Dieser Bot wird auf diesem Computer und nicht auf einem Linux-Desktop ausgeführt. Shell und Dateien verwenden deinen persönlichen Ordner."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "Dieser Bot wurde nicht importiert."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5190,6 +5216,14 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "Dieser Import hat sich geändert. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "Dieser Import wurde bereits verwendet. Wähle die Dateien erneut aus."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5756,6 +5790,10 @@ msgstr "Deine E-Mail-Adresse"
 #: src/pages/Onboarding.tsx
 msgid "Your first bot already existed, so the agent was not imported."
 msgstr "Dein erster Bot existierte bereits, daher wurde der Agent nicht importiert."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "Dein erster Bot existiert bereits."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

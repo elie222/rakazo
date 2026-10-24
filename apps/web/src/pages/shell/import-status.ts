@@ -16,8 +16,9 @@ export function useImportStatusText() {
         return t`Credentials: ${names}`;
       }
       case "env": {
+        // The same words as the MCP server settings use.
         const names = item.names.join(", ");
-        return t`Env: ${names}`;
+        return t`Environment variables: ${names}`;
       }
       case "program": {
         const name = item.name;

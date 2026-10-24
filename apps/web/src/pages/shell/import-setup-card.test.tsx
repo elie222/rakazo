@@ -74,7 +74,7 @@ describe("the import setup checklist", () => {
     );
     expect(rows).toEqual([
       ["openrouter/example", "API key for openrouter"],
-      ["files", "Program: npx · Env: EXAMPLE_TOKEN · Check this yourself"],
+      ["files", "Program: npx · Environment variables: EXAMPLE_TOKEN · Check this yourself"],
       ["morning", "Paused"],
       ["triage", "Needs: gh, curl · Check this yourself"],
     ]);

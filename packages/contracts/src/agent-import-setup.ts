@@ -67,3 +67,32 @@ export const AgentImportSetupItemSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("skill"), name: z.string(), needs: z.array(AgentImportNeedSchema) }),
 ]);
 export type AgentImportSetupItem = z.infer<typeof AgentImportSetupItemSchema>;
+
+/**
+ * Why an import or its Undo was refused, sent as `data.reason` with the error so clients show
+ * their own words for it (the message stays English, for logs and other clients).
+ */
+export const AGENT_IMPORT_ERROR_REASONS = [
+  "selection_mismatch",
+  "cannot_run_here",
+  "model_needs_key",
+  "instructions_too_long",
+  "import_reused",
+  "first_bot_new_only",
+  "name_required",
+  "first_bot_exists",
+  "instructions_changed",
+  "name_just_taken",
+  "not_imported",
+  "import_changed",
+] as const;
+export type AgentImportErrorReason = (typeof AGENT_IMPORT_ERROR_REASONS)[number];
+
+/** The reason an import RPC error carries, if any. */
+export function agentImportErrorReason(error: unknown): AgentImportErrorReason | undefined {
+  const data = error && typeof error === "object" && "data" in error ? error.data : undefined;
+  const reason = data && typeof data === "object" && "reason" in data ? data.reason : undefined;
+  return (AGENT_IMPORT_ERROR_REASONS as readonly unknown[]).includes(reason)
+    ? (reason as AgentImportErrorReason)
+    : undefined;
+}

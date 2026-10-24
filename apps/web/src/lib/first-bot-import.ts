@@ -1,4 +1,5 @@
 import type { Bot } from "@rakazo/contracts";
+import { agentImportErrorReason } from "@rakazo/contracts";
 
 type FirstBot = { id: string };
 type ImportCreateRequest = { spawnKey?: string } & Record<string, unknown>;
@@ -26,9 +27,7 @@ export async function importAsFirstBot<Request extends ImportCreateRequest>(
     } catch (error) {
       // Another device made the first bot meanwhile: the server keeps it and imports nothing.
       const made =
-        (error as { code?: string } | null)?.code === "CONFLICT"
-          ? await deps.existing()
-          : undefined;
+        agentImportErrorReason(error) === "first_bot_exists" ? await deps.existing() : undefined;
       if (!made) throw error;
       return { bot: made, imported: false };
     }

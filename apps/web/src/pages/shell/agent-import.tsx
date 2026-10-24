@@ -46,6 +46,7 @@ import { ArrowLeft, ChevronDown, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { readAgentDocument } from "../../lib/agent-document";
+import { agentImportErrorText } from "../../lib/agent-import-errors";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { ComputerModePicker } from "./bot-panel";
@@ -143,7 +144,11 @@ export function AgentImportForm({
 
   function failure(err: unknown, fallback: string) {
     const message = err instanceof Error ? err.message : "";
-    setError(message === AGENT_IMPORT_NOT_FOUND ? notFound() : errorText(err, fallback));
+    setError(
+      message === AGENT_IMPORT_NOT_FOUND
+        ? notFound()
+        : (agentImportErrorText(err) ?? errorText(err, fallback)),
+    );
   }
 
   function notFound() {
@@ -430,7 +435,7 @@ export function AgentImportForm({
   ) => (
     <li key={id} className="py-1">
       <Collapsible>
-        <div className="flex min-h-9 items-center gap-3">
+        <div className="flex min-h-9 flex-wrap items-center gap-x-3">
           <Checkbox
             aria-label={title}
             checked={
@@ -503,12 +508,20 @@ export function AgentImportForm({
         !STATUS_WARNINGS.has(warning) &&
         !(warning === "runs_code" && status.kind === "needs_review"),
     );
-    return note(
-      [statusText.status(status), ...others.map(warningText)].filter(Boolean).join(" · "),
-    );
+    // Ready is what a ticked box already says: only exceptions get a label.
+    const label = [
+      status.kind === "ready" ? null : statusText.status(status),
+      ...others.map(warningText),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return label ? note(label) : undefined;
   };
+  // Its own line under the name, so a long status never cuts the name short.
   const note = (text: string) => (
-    <span className="shrink-0 text-[12.5px] text-muted-foreground">{text}</span>
+    <span className="ms-7 -mt-1 mb-1 basis-full text-[12.5px] text-muted-foreground" dir="auto">
+      {text}
+    </span>
   );
 
   return (
@@ -663,7 +676,6 @@ export function AgentImportForm({
                     renamed ? t`${title}, saved as ${savedAs}` : title,
                     entry.content,
                     <>
-                      {entry.stock ? note(defaultNote) : null}
                       <NativeSelect
                         size="sm"
                         aria-label={t`Memory for ${title}`}
@@ -679,6 +691,7 @@ export function AgentImportForm({
                         <NativeSelectOption value="bot">{t`This bot`}</NativeSelectOption>
                         <NativeSelectOption value="space">{t`All bots`}</NativeSelectOption>
                       </NativeSelect>
+                      {entry.stock ? note(defaultNote) : null}
                     </>,
                   );
                 })}
@@ -718,23 +731,23 @@ export function AgentImportForm({
                   plan.model.id,
                   plan.model.title,
                   `${plan.model.provider}\n${plan.model.modelId}`,
-                  note(
-                    statusText.status(
-                      modelUsable
-                        ? { kind: "ready" }
-                        : plan.model.status === "unknown"
-                          ? { kind: "unsupported", reason: "not_in_catalog" }
-                          : {
-                              kind: "needs_setup",
-                              needs: [
-                                {
-                                  kind: "api_key",
-                                  provider: plan.model.providerName ?? plan.model.provider,
-                                },
-                              ],
-                            },
-                    ),
-                  ),
+                  modelUsable
+                    ? undefined
+                    : note(
+                        statusText.status(
+                          plan.model.status === "unknown"
+                            ? { kind: "unsupported", reason: "not_in_catalog" }
+                            : {
+                                kind: "needs_setup",
+                                needs: [
+                                  {
+                                    kind: "api_key",
+                                    provider: plan.model.providerName ?? plan.model.provider,
+                                  },
+                                ],
+                              },
+                        ),
+                      ),
                   undefined,
                   !modelUsable,
                 )}

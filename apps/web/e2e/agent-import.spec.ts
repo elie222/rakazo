@@ -7,6 +7,7 @@ import type { Bot, MemoryDocument } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
+  clickAndWaitForRpc,
   completeOnboarding,
   expandAdvancedSection,
   openNewBot,
@@ -164,6 +165,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
   // Each item has one status: Ready, what it needs, to review first, or not supported.
   await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
+  // A ready item needs no label: the checkbox says enough.
+  await expect(homePreview.getByText("Ready", { exact: true })).toHaveCount(0);
   const mcp = homePreview.getByTestId("agent-import-mcp");
   await expect(mcp.getByRole("checkbox", { name: "docs" })).not.toBeChecked();
   await expect(mcp.getByText("Credentials: Authorization", { exact: true })).toBeVisible();
@@ -282,7 +285,11 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 
   await preview.getByRole("checkbox", { name: "USER.md", exact: true }).click();
   await expect(preview.getByRole("checkbox", { name: "USER.md", exact: true })).not.toBeChecked();
-  await preview.getByRole("button", { name: "Create", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
   await page.waitForURL(/\/app\/[^/]+$/);
   await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
   const pebbleId = activeBotId(page);
@@ -316,7 +323,11 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await expect(documentPreview.getByRole("checkbox", { name: "trip-planner" })).not.toBeChecked();
   await documentPreview.getByRole("checkbox", { name: "trip-planner" }).click();
   await expect(documentPreview.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
-  await documentPreview.getByRole("button", { name: "Create", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    documentPreview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
   await page.waitForURL((url) => !url.pathname.endsWith(pebbleId));
   await expect(page.getByPlaceholder("Message Atlas")).toBeVisible();
   const atlasId = activeBotId(page);
@@ -523,7 +534,11 @@ test("an imported bot asks before using MCP servers, and its import can be undon
     await expect(box).not.toBeChecked();
     await box.click();
   }
-  await preview.getByRole("button", { name: "Create", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
   await page.waitForURL(/\/app\/[^/]+$/);
   await expect(page.getByPlaceholder("Message Undoable")).toBeVisible();
   const botId = activeBotId(page);
@@ -554,7 +569,11 @@ test("an imported bot asks before using MCP servers, and its import can be undon
     "docs",
   ]);
   await captureScreenshot(page, testInfo, "agent-import-undo");
-  await dialog.getByRole("button", { name: "Undo import", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    dialog.getByRole("button", { name: "Undo import", exact: true }),
+    "bots/importUndo",
+  );
   await expect(dialog).toHaveCount(0);
   const bots = await rpc<Bot[]>(page, "bots/list", {});
   expect(bots.some((bot) => bot.id === botId)).toBe(false);
@@ -656,8 +675,14 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   );
   await expect(preview.getByTestId("agent-import-instructions")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "agent-import-destination-existing");
-  await preview.getByRole("button", { name: "Add", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Add", exact: true }),
+    "bots/importCreate",
+  );
+  // Done visibly: the panel closes on that bot's chat, as for a new bot.
   await page.waitForURL(new RegExp(`/app/${chief!.id}$`));
+  await expect(page.getByTestId("agent-import")).toHaveCount(0);
   const kept = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
   expect([kept.name, kept.instructions]).toEqual(["Chief", "Chief's own instructions."]);
   const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: chief!.id });
@@ -675,7 +700,11 @@ test("imports into an existing bot only when chosen, keeping its instructions un
   await second.getByRole("button", { name: "Replace its instructions" }).click();
   await expect(second.getByTestId("agent-import-instructions")).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-destination-replace");
-  await second.getByRole("button", { name: "Add", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    second.getByRole("button", { name: "Add", exact: true }),
+    "bots/importCreate",
+  );
   await expect
     .poll(async () => (await rpc<Bot>(page, "bots/get", { botId: chief!.id })).instructions)
     .toBe("# Persona\n\nCalm and direct.\n\n# Working instructions\n\nShort replies.");
@@ -689,7 +718,11 @@ test("imports into an existing bot only when chosen, keeping its instructions un
     "Its instructions go back to before the import.",
   );
   await captureScreenshot(page, testInfo, "agent-import-undo-existing");
-  await dialog.getByRole("button", { name: "Undo import", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    dialog.getByRole("button", { name: "Undo import", exact: true }),
+    "bots/importUndo",
+  );
   await expect(dialog).toHaveCount(0);
   const restored = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
   expect(restored.instructions).toBe("Chief's own instructions.");

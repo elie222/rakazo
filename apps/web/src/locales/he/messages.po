@@ -1454,6 +1454,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "חיבור OAuth"
 
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "יש לחבר קודם את הספק של המודל הזה."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "חיבור Treg"
@@ -2482,13 +2486,13 @@ msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת ה�
 msgid "Enter an API key before testing."
 msgstr "יש להזין מפתח API לפני הבדיקה."
 
-#: src/pages/shell/import-status.ts
-msgid "Env: {names}"
-msgstr "סביבה: {names}"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "משתני סביבה"
+
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "משתני סביבה: {names}"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
@@ -2932,6 +2936,7 @@ msgstr "היסטוריית הנחיות"
 msgid "Instructions"
 msgstr "הנחיות"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "ההנחיות ארוכות מדי. בטלו את הסימון של חלק מהקבצים."
@@ -2985,6 +2990,10 @@ msgstr "השיחה, הקבצים והרוטינות שלו יימחקו לצמי
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions changed since the import, so they stay."
 msgstr "ההוראות שלו השתנו מאז הייבוא, ולכן הן נשארות."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "ההוראות שלו השתנו. יש לעבור עליהן ולנסות שוב."
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions go back to before the import."
@@ -3488,6 +3497,7 @@ msgstr ""
 msgid "Name"
 msgstr "שם"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
@@ -4905,6 +4915,14 @@ msgstr "חלק מההגדרות לא מיובאות"
 msgid "Something went wrong. Try again."
 msgstr "משהו השתבש. אפשר לנסות שוב."
 
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "משהו עם אותו שם נוסף זה עתה. יש לנסות שוב."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "משהו שבחרת לא יכול לעבוד כאן. יש לבטל את הסימון ולנסות שוב."
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5129,6 +5147,10 @@ msgstr "ספק הזיכרון שנבחר אינו זמין בגרסה הזו."
 msgid "These files are too large to import."
 msgstr "הקבצים האלה גדולים מדי לייבוא."
 
+#: src/lib/agent-import-errors.ts
+msgid "These files changed. Choose them again."
+msgstr "הקבצים האלה השתנו. יש לבחור אותם שוב."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
@@ -5155,6 +5177,10 @@ msgstr "הבוט הזה"
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "הבוט הזה פועל על המחשב הזה, לא על שולחן עבודה של Linux. המעטפת והקבצים משתמשים בתיקיית הבית."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "הבוט הזה לא יובא."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5190,6 +5216,14 @@ msgstr "פעולה זו מוחקת את כל {0} הגרסאות של התוצר.
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr "הקובץ אינו טקסט UTF-8 תקין."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "הייבוא הזה השתנה. יש לנסות שוב."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "הייבוא הזה כבר נוצל. יש לבחור את הקבצים שוב."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5756,6 +5790,10 @@ msgstr "כתובת האימייל"
 #: src/pages/Onboarding.tsx
 msgid "Your first bot already existed, so the agent was not imported."
 msgstr "הבוט הראשון שלך כבר היה קיים, ולכן הסוכן לא יובא."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "הבוט הראשון שלך כבר קיים."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

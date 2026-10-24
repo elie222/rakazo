@@ -1454,6 +1454,10 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth 연결"
 
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "먼저 이 모델의 제공자를 연결하세요."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg 연결"
@@ -2482,13 +2486,13 @@ msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
 
-#: src/pages/shell/import-status.ts
-msgid "Env: {names}"
-msgstr "환경 변수: {names}"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "환경 변수"
+
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "환경 변수: {names}"
 
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
@@ -2932,6 +2936,7 @@ msgstr "지침 기록"
 msgid "Instructions"
 msgstr "지침"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 msgid "Instructions are too long. Untick some files."
 msgstr "지침이 너무 깁니다. 일부 파일의 선택을 해제하세요."
@@ -2985,6 +2990,10 @@ msgstr "대화, 파일, 자동 실행이 영구 삭제됩니다. 이 Bot이 만�
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions changed since the import, so they stay."
 msgstr "가져온 뒤 지침이 바뀌었으므로 그대로 유지됩니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "지침이 바뀌었습니다. 확인한 뒤 다시 시도하세요."
 
 #: src/pages/shell/agent-import-undo.tsx
 msgid "Its instructions go back to before the import."
@@ -3488,6 +3497,7 @@ msgstr ""
 msgid "Name"
 msgstr "이름"
 
+#: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
@@ -4905,6 +4915,14 @@ msgstr "일부 설정은 가져오지 않습니다"
 msgid "Something went wrong. Try again."
 msgstr "문제가 발생했습니다. 다시 시도하세요."
 
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "같은 이름의 항목이 방금 추가되었습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "선택한 항목 중 여기서 작동하지 않는 것이 있습니다. 선택을 해제하고 다시 시도하세요."
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5129,6 +5147,10 @@ msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습�
 msgid "These files are too large to import."
 msgstr "이 파일은 가져오기에 너무 큽니다."
 
+#: src/lib/agent-import-errors.ts
+msgid "These files changed. Choose them again."
+msgstr "파일이 바뀌었습니다. 다시 선택하세요."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -5155,6 +5177,10 @@ msgstr "이 봇"
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "이 Bot은 별도 Linux 화면이 아니라 현재 컴퓨터에서 실행됩니다. 터미널과 파일 작업은 홈 폴더를 사용합니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "이 봇은 가져온 봇이 아닙니다."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5190,6 +5216,14 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "이 가져오기가 바뀌었습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "이미 사용된 가져오기입니다. 파일을 다시 선택하세요."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5756,6 +5790,10 @@ msgstr "이메일 주소"
 #: src/pages/Onboarding.tsx
 msgid "Your first bot already existed, so the agent was not imported."
 msgstr "첫 번째 봇이 이미 있어서 에이전트를 가져오지 않았습니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "첫 번째 봇이 이미 있습니다."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

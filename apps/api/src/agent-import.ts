@@ -10,6 +10,7 @@ import {
 import type {
   Actor,
   AgentImportCreateInput,
+  AgentImportErrorReason,
   AgentImportFile,
   AgentImportInfo,
   AgentImportMemoryDestination,
@@ -308,15 +309,15 @@ function selected<
   const known = new Set(items.map((item) => item.id));
   const chosen = new Set(ids);
   if (chosen.size !== ids.length || ids.some((id) => !known.has(id))) {
-    throw new ORPCError("BAD_REQUEST", { message: "The selection does not match the files." });
+    throw refused("BAD_REQUEST", "selection_mismatch", "The selection does not match the files.");
   }
   const picked = items.filter((item) => chosen.has(item.id));
   if (picked.some((item) => item.warnings?.some((warning) => BLOCKING.has(warning)))) {
-    throw new ORPCError("BAD_REQUEST", { message: "That MCP server cannot run here." });
+    throw refused("BAD_REQUEST", "cannot_run_here", "That MCP server cannot run here.");
   }
   // Not supported here at all (a skill for another platform): never created.
   if (picked.some((item) => item.status?.kind === "unsupported")) {
-    throw new ORPCError("BAD_REQUEST", { message: "That item cannot work here." });
+    throw refused("BAD_REQUEST", "cannot_run_here", "That item cannot work here.");
   }
   return picked;
 }
@@ -345,9 +346,11 @@ export async function createImportedBot<PreparedKey>(
     });
     if (!found) return null;
     if (found.requestDigest !== digest) {
-      throw new ORPCError("PRECONDITION_FAILED", {
-        message: "This import was already used with different files or choices.",
-      });
+      throw refused(
+        "PRECONDITION_FAILED",
+        "import_reused",
+        "This import was already used with different files or choices.",
+      );
     }
     return services.findBot(actor, found.botId);
   };
@@ -355,10 +358,10 @@ export async function createImportedBot<PreparedKey>(
   if (repeated) return repeated;
   const destination = input.destination;
   if (destination.kind === "existing" && input.spawnKey) {
-    throw new ORPCError("BAD_REQUEST", { message: "A first bot is always a new bot." });
+    throw refused("BAD_REQUEST", "first_bot_new_only", "A first bot is always a new bot.");
   }
   if (destination.kind === "new" && !input.name) {
-    throw new ORPCError("BAD_REQUEST", { message: "Name the new bot." });
+    throw refused("BAD_REQUEST", "name_required", "Name the new bot.");
   }
   // Only the actor's own bot in this space; anything else is not found.
   const target =
@@ -375,9 +378,11 @@ export async function createImportedBot<PreparedKey>(
   const writesInstructions =
     input.destination.kind === "new" || input.destination.replaceInstructions;
   if (writesInstructions && instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Instructions can be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters. Import fewer files.`,
-    });
+    throw refused(
+      "BAD_REQUEST",
+      "instructions_too_long",
+      `Instructions can be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters. Import fewer files.`,
+    );
   }
   const destinations = new Map<string, AgentImportMemoryDestination>(
     input.selection.memory.map((choice) => [choice.id, choice.destination]),
@@ -403,7 +408,7 @@ export async function createImportedBot<PreparedKey>(
         keyed &&
         isCatalogModelChoice(model.provider, model.modelId));
     if (!model || !usable) {
-      throw new ORPCError("BAD_REQUEST", { message: "Connect this model's provider first." });
+      throw refused("BAD_REQUEST", "model_needs_key", "Connect this model's provider first.");
     }
   }
   for (const routine of routines) {
@@ -713,11 +718,11 @@ export async function createImportedBot<PreparedKey>(
     // attempt wrote into a bot that never committed: neither is this bot. What happens to the
     // record after the commit (an Undo, say) does not change that this import committed.
     if (importedInto !== bot.id) {
-      throw new ORPCError("CONFLICT", { message: "Your first bot already exists." });
+      throw refused("CONFLICT", "first_bot_exists", "Your first bot already exists.");
     }
   } catch (error) {
     if (error instanceof InstructionConflictError) {
-      throw new ORPCError("CONFLICT", { message: error.message });
+      throw refused("CONFLICT", "instructions_changed", error.message);
     }
     // Two requests with one import key: the second's transaction lost the race.
     const winner = isUniqueViolation(error) ? await already() : null;
@@ -975,7 +980,7 @@ export async function undoAgentImport(
   botId: string,
 ): Promise<AgentImportInfo> {
   const before = await undoPlan(services.prisma, actor, botId);
-  if (!before) throw new ORPCError("NOT_FOUND", { message: "This bot was not imported." });
+  if (!before) throw refused("NOT_FOUND", "not_imported", "This bot was not imported.");
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   let result = before.info;
   // Locks what Undo may remove, then decides again: an edit or assignment made meanwhile
@@ -997,7 +1002,7 @@ export async function undoAgentImport(
     await tx.$queryRaw`SELECT id FROM routines WHERE id = ANY(${routineIds}) FOR UPDATE`;
     const current = await undoPlan(tx, actor, botId);
     if (!current || current.plan.found.id !== before.plan.found.id) {
-      throw new ORPCError("CONFLICT", { message: "This import changed. Try again." });
+      throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
     }
     const { plan } = current;
     // Each delete also matches the state it was decided on; the counts say what happened.
@@ -1116,9 +1121,18 @@ function contentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+/** An error a client shows in its own words, by `data.reason`. */
+function refused(
+  code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND" | "PRECONDITION_FAILED",
+  reason: AgentImportErrorReason,
+  message: string,
+) {
+  return new ORPCError(code, { message, data: { reason } });
+}
+
 function conflict(message: string) {
   return (error: unknown): never => {
-    if (isUniqueViolation(error)) throw new ORPCError("CONFLICT", { message });
+    if (isUniqueViolation(error)) throw refused("CONFLICT", "name_just_taken", message);
     throw error;
   };
 }

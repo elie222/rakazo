@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
+import { agentImportErrorText } from "../../lib/agent-import-errors";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 
@@ -159,7 +160,9 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                     .importUndo({ botId })
                     .then(() => onUndone())
                     .catch((err: unknown) => {
-                      setError(errorText(err, t`Could not undo the import`));
+                      setError(
+                        agentImportErrorText(err) ?? errorText(err, t`Could not undo the import`),
+                      );
                       setBusy(false);
                     });
                 }}

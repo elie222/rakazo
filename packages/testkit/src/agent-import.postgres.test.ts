@@ -1267,6 +1267,8 @@ describeIntegration("agent import", () => {
       });
       // An edit made since the preview is never overwritten, and nothing else is written.
       expect(stale.status).toBe(409);
+      // With a reason clients show in their own words.
+      expect(await stale.text()).toContain('"reason":"instructions_changed"');
       expect(await db.agentImport.count({ where: { botId: chief.id } })).toBe(0);
       expect(await db.routine.count({ where: { botId: chief.id } })).toBe(0);
 

@@ -52,7 +52,10 @@ describe("importing an agent as the first bot", () => {
     let made: { id: string } | undefined;
     const importCreate = vi.fn(async () => {
       made = { id: "chief" };
-      throw Object.assign(new Error("Your first bot already exists."), { code: "CONFLICT" });
+      throw Object.assign(new Error("Your first bot already exists."), {
+        code: "CONFLICT",
+        data: { reason: "first_bot_exists" },
+      });
     });
     const result = await importAsFirstBot(
       {

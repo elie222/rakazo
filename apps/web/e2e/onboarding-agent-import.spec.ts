@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot } from "@rakazo/contracts";
-import { activeBotId, captureScreenshot, rpc, signup } from "./helpers";
+import { activeBotId, captureScreenshot, clickAndWaitForRpc, rpc, signup } from "./helpers";
 
 /** Onboarding shows the model step only while the account needs a model; tests decide when. */
 async function controlNeedsModel(page: Page) {
@@ -93,7 +93,11 @@ test("a new user can start from an imported agent instead of Chief", async ({ pa
 
   // The import's own connection (here: the deployment's) completes the model step.
   model.needsModel = false;
-  await preview.getByRole("button", { name: "Create", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
   await page.waitForURL(/\/app\/[^/]+$/, { timeout: 20_000 });
   await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
   const botId = activeBotId(page);
@@ -184,7 +188,11 @@ test("with a model already provided, import is offered before the first bot is m
   writeFileSync(path.join(home, "workspace/SOUL.md"), "Calm.\n");
   writeFileSync(path.join(home, "workspace/IDENTITY.md"), "- **Name:** Pebble\n");
   await panel.getByTestId("agent-import-folder").setInputFiles(home);
-  await panel.getByRole("button", { name: "Create", exact: true }).click();
+  await clickAndWaitForRpc(
+    page,
+    panel.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
   // The survey still comes first; its Continue opens the imported bot, and no Chief is made.
   await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
