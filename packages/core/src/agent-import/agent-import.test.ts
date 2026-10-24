@@ -248,7 +248,11 @@ describe("detection", () => {
 
 describe("instructions", () => {
   it("puts the persona first and the working instructions second, each under its purpose", () => {
-    const soul = { title: "SOUL.md", content: "# SOUL.md - Who You Are\n\nCalm.\n", role: "persona" } as const;
+    const soul = {
+      title: "SOUL.md",
+      content: "# SOUL.md - Who You Are\n\nCalm.\n",
+      role: "persona",
+    } as const;
     const agents = { title: "AGENTS.md", content: "Short replies.\n", role: "working" } as const;
     expect(combineImportedInstructions([soul])).toBe("Calm.");
     expect(combineImportedInstructions([agents])).toBe("Short replies.");
@@ -262,9 +266,7 @@ describe("instructions", () => {
         agents,
         { title: "HERMES.md", content: "Answer in English.\n", role: "working" },
       ]),
-    ).toBe(
-      "# Persona\n\nCalm.\n\n# Working instructions\n\nShort replies.\n\nAnswer in English.",
-    );
+    ).toBe("# Persona\n\nCalm.\n\n# Working instructions\n\nShort replies.\n\nAnswer in English.");
   });
 
   it("reports the combined length so an oversized import can be refused", () => {
