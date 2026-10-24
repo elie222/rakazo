@@ -441,15 +441,19 @@ export async function createImportedBot<PreparedKey>(
     const apiKey = settings?.keyValues.get(key.provider);
     if (!apiKey) continue;
     preparedKeys.push(
-      await services.prepareModelKey(
-        actor,
-        {
-          provider: key.provider,
-          apiKey,
-          modelId: model?.provider === key.provider ? model.modelId : undefined,
-        },
-        signal,
-      ),
+      await services
+        .prepareModelKey(
+          actor,
+          {
+            provider: key.provider,
+            apiKey,
+            modelId: model?.provider === key.provider ? model.modelId : undefined,
+          },
+          signal,
+        )
+        .catch((error: unknown) => {
+          throw keyCheckFailure(error, key.title);
+        }),
     );
   }
   const preparedServers: { id: string; config: McpServerConfigInput; stored: Stored }[] = [];
@@ -1145,6 +1149,28 @@ export function requestDigest(request: unknown): string {
 
 function contentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * A key the import could not connect, as a reason the client words itself. The provider's
+ * own text is never passed on: it can echo details of the request.
+ */
+function keyCheckFailure(error: unknown, provider: string) {
+  if (signalAborted(error)) return error;
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  const reason: AgentImportErrorReason = message.includes("rejected")
+    ? "key_rejected"
+    : message.includes("could not verify")
+      ? "key_unverified"
+      : "key_check_failed";
+  return new ORPCError("BAD_REQUEST", {
+    message: `The ${provider} API key could not be connected.`,
+    data: { reason, provider },
+  });
+}
+
+function signalAborted(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
 /** An error a client shows in its own words, by `data.reason`. */

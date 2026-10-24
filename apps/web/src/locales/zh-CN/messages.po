@@ -655,6 +655,14 @@ msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 msgid "An existing Honcho peer to read from. Rakazo never writes to it."
 msgstr "用于读取数据的现有 Honcho peer。Rakazo 绝不会向其写入数据。"
 
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be checked. Try again."
+msgstr "无法检查导入的 API 密钥。请重试。"
+
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be used. Untick it and try again."
+msgstr "无法使用导入的 API 密钥。取消勾选后重试。"
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "集成工具"

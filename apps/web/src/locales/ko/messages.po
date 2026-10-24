@@ -655,6 +655,14 @@ msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되�
 msgid "An existing Honcho peer to read from. Rakazo never writes to it."
 msgstr "데이터를 읽어올 기존 Honcho 피어입니다. Rakazo는 이 피어에 데이터를 쓰지 않습니다."
 
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be checked. Try again."
+msgstr "가져온 API 키를 확인하지 못했습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be used. Untick it and try again."
+msgstr "가져온 API 키를 사용할 수 없습니다. 선택을 해제하고 다시 시도하세요."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "연동 도구"

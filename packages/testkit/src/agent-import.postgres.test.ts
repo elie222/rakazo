@@ -92,7 +92,7 @@ const settingsHome = [
 ];
 
 /** Runs once inside the next model key check: something the user does meanwhile. */
-const keyCheck: { during: (() => Promise<void>) | null } = { during: null };
+const keyCheck: { during: (() => Promise<void>) | null; status?: number } = { during: null };
 
 describeIntegration("agent import", () => {
   let app: App;
@@ -112,7 +112,7 @@ describeIntegration("agent import", () => {
       // Offline: key checks and MCP endpoint checks never leave the test.
       modelConnectionFetch: async () => {
         await keyCheck.during?.();
-        return new Response("{}", { status: 200 });
+        return new Response("{}", { status: keyCheck.status ?? 200 });
       },
       remoteConnectors: {
         fetch: async () => new Response("", { status: 503 }),
@@ -879,6 +879,39 @@ describeIntegration("agent import", () => {
     const third = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: plain.id });
     expect([third.remove.mcpServers, third.keep.mcpServers]).toEqual([[plainServer.slug], []]);
     expect(await db.mcpServer.count({ where: { id: plainServer.id } })).toBe(0);
+  });
+
+  it("refuses a key the provider rejects, in words the client chooses, writing nothing", async () => {
+    const cookie = await signup(app, `import-key-rejected-${stamp}@rakazo.test`, "Rejected User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/.env", content: "OPENROUTER_API_KEY=placeholder-rejected-key\n" },
+    ];
+    keyCheck.status = 401;
+    try {
+      const response = await raw(app, cookie, "bots/importCreate", {
+        files,
+        includeSecrets: true,
+        name: "Rejected",
+        selection: {
+          instructions: ["instructions:SOUL.md"],
+          memory: [],
+          skills: [],
+          apiKeys: ["key:openrouter"],
+        },
+      });
+      expect(response.status).toBe(400);
+      const body = await response.text();
+      expect(body).toContain('"reason":"key_rejected"');
+      expect(body).toContain('"provider":"OpenRouter"');
+      // The provider's own text never reaches the client.
+      expect(body).not.toContain("rejected by the provider");
+      expect(body).not.toContain("placeholder-");
+    } finally {
+      keyCheck.status = undefined;
+    }
+    const me = await rpc<Bot[]>(app, cookie, "bots/list", {});
+    expect(me).toEqual([]);
   });
 
   it("never replaces a key connected after the import checked it", async () => {

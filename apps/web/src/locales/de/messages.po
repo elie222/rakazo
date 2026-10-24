@@ -655,6 +655,14 @@ msgstr "Für diesen Anbieter ist ein API-Schlüssel gespeichert, keine Anmeldung
 msgid "An existing Honcho peer to read from. Rakazo never writes to it."
 msgstr "Ein bestehender Honcho-Peer, aus dem gelesen wird. Rakazo schreibt niemals in diesen Peer."
 
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be checked. Try again."
+msgstr "Ein importierter API-Schlüssel konnte nicht geprüft werden. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be used. Untick it and try again."
+msgstr "Ein importierter API-Schlüssel konnte nicht verwendet werden. Entferne das Häkchen und versuche es erneut."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Ein Integrationstool"

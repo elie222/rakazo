@@ -88,6 +88,9 @@ export const AGENT_IMPORT_ERROR_REASONS = [
   "name_just_taken",
   "not_imported",
   "import_changed",
+  "key_rejected",
+  "key_unverified",
+  "key_check_failed",
 ] as const;
 export type AgentImportErrorReason = (typeof AGENT_IMPORT_ERROR_REASONS)[number];
 

@@ -1,10 +1,20 @@
 import { t } from "@lingui/core/macro";
 import { agentImportErrorReason } from "@rakazo/contracts";
+import { translateRunError } from "./run-error";
 
 /**
  * Copy for an import or Undo the server refused, chosen by the reason it sends (its message
  * is English). Undefined for anything else, which `errorText` handles as before.
  */
+/** The provider an import error names, for copy that says which key failed. */
+function errorProvider(error: unknown): string {
+  const data = error && typeof error === "object" && "data" in error ? error.data : undefined;
+  const provider = data && typeof data === "object" && "provider" in data ? data.provider : "";
+  return typeof provider === "string" && provider
+    ? provider
+    : translateRunError("Your model provider");
+}
+
 export function agentImportErrorText(error: unknown): string | undefined {
   switch (agentImportErrorReason(error)) {
     case "selection_mismatch":
@@ -29,6 +39,15 @@ export function agentImportErrorText(error: unknown): string | undefined {
       return t`This bot was not imported.`;
     case "import_changed":
       return t`This import changed. Try again.`;
+    case "key_rejected":
+      // The same words, and translations, as when a connected key is rejected in a chat.
+      return translateRunError("{provider} rejected the API key. Check your connection settings.", {
+        provider: errorProvider(error),
+      });
+    case "key_unverified":
+      return t`An imported API key could not be checked. Try again.`;
+    case "key_check_failed":
+      return t`An imported API key could not be used. Untick it and try again.`;
     default:
       // `first_bot_new_only` cannot come from this app's forms.
       return undefined;
