@@ -161,12 +161,14 @@ test("a running computer without a screen URL offers recovery", async ({ page },
   await completeOnboarding(page);
   const botId = activeBotId(page);
   await rpc(page, "computer/boot", { botId });
-  await page.route("**/rpc/computer/screenUrl", (route) =>
-    route.fulfill({
+  let screenReads = 0;
+  await page.route("**/rpc/computer/screenUrl", (route) => {
+    screenReads += 1;
+    return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ json: { url: null } }),
-    }),
-  );
+    });
+  });
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
   await expect(preview.getByRole("alert")).toContainText("Screen not connected");
@@ -175,6 +177,16 @@ test("a running computer without a screen URL offers recovery", async ({ page },
     preview.getByRole("button", { name: "Recover computer", exact: true }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "computer-screen-url-missing");
+
+  await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toContainText("Recover computer?");
+  // A control change re-reads the screen in the background; the open confirmation stays.
+  const readsBefore = screenReads;
+  await rpc(page, "computer/takeover", { botId });
+  await expect.poll(() => screenReads).toBeGreaterThan(readsBefore);
+  await page.waitForTimeout(500);
+  await expect(confirmation).toContainText("Recover computer?");
 });
 
 test("a healthy running computer is not diagnosed while its screen URL loads", async ({

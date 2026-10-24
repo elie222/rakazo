@@ -485,6 +485,8 @@ function SpaceShell() {
   }, [streamResponses]);
 
   function commitComputer(next: ComputerStatus | null) {
+    // A finished screen read stays valid until the computer stops running; control events keep it.
+    if (next?.state !== "running") setScreenUrlLoadedBotId(null);
     computerRef.current = next;
     setComputer(next);
   }
@@ -1492,7 +1494,6 @@ function SpaceShell() {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void refreshThread(active.id).catch(() => undefined);
         } else if (isComputerStatusEvent(event)) {
-          setScreenUrlLoadedBotId(null);
           void refreshComputerScreen(active.id).catch(() => undefined);
         }
       },
