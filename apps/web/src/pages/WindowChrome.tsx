@@ -34,3 +34,12 @@ export function WindowChrome() {
     </div>
   );
 }
+
+/** The strip along the top of a page without its own header: window controls and a drag area. */
+export function WindowStrip() {
+  return (
+    <div className="app-drag flex gap-2 px-5 py-[18px]">
+      <WindowChrome />
+    </div>
+  );
+}

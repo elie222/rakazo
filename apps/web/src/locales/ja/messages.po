@@ -4646,7 +4646,6 @@ msgstr "サイドバーの密度"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "ログイン"
 
@@ -4674,7 +4673,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "サブスクリプションでログインするか、代わりにAPIキーをテストしてください。"
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "新規登録"
 
@@ -5561,10 +5559,6 @@ msgstr "お使いのOpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "自分のサブスクリプションまたはAPIキー"
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "実際の仕事を任せられる、<0/>常時稼働のエージェントチーム。"
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
