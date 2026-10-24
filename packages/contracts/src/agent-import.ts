@@ -48,6 +48,21 @@ export const AgentImportFilesSchema = z
 export const AgentImportSourceSchema = z.enum(["openclaw", "hermes", "document"]);
 export type AgentImportSource = z.infer<typeof AgentImportSourceSchema>;
 
+/**
+ * Why an item may not work in Rakazo. Items with a warning start unticked;
+ * `unsupported_command` cannot run at all and cannot be selected.
+ */
+export const AgentImportWarningSchema = z.enum([
+  "needs_setup",
+  "bundled_files",
+  "runs_code",
+  "unsupported_command",
+  "local_path",
+  "dropped_settings",
+]);
+export type AgentImportWarning = z.infer<typeof AgentImportWarningSchema>;
+const warnings = z.array(AgentImportWarningSchema).default([]);
+
 export const AgentImportInstructionSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -75,6 +90,7 @@ export const AgentImportSkillSchema = z.object({
   description: z.string(),
   /** SKILL.md as it will be saved. */
   content: z.string(),
+  warnings,
 });
 export type AgentImportSkill = z.infer<typeof AgentImportSkillSchema>;
 
@@ -97,6 +113,7 @@ export const AgentImportMcpServerSchema = z.object({
   name: z.string(),
   /** What the server runs or connects to, without credential values. */
   content: z.string(),
+  warnings,
 });
 export type AgentImportMcpServer = z.infer<typeof AgentImportMcpServerSchema>;
 
@@ -105,6 +122,7 @@ export const AgentImportRoutineSchema = z.object({
   title: z.string(),
   /** Schedule and prompt, as shown in the preview. */
   content: z.string(),
+  warnings,
 });
 export type AgentImportRoutine = z.infer<typeof AgentImportRoutineSchema>;
 
@@ -122,6 +140,7 @@ export const AgentImportSkipReasonSchema = z.enum([
   "builtin",
   "unsupported",
   "connected",
+  "invalid_file",
 ]);
 export type AgentImportSkipReason = z.infer<typeof AgentImportSkipReasonSchema>;
 
@@ -173,16 +192,48 @@ export type AgentImportSelection = z.infer<typeof AgentImportSelectionSchema>;
 /** API keys and credential values are read only when the user opted in. */
 const includeSecrets = z.boolean().default(false);
 
+/**
+ * Names (never contents) of the other files in each skill's folder, keyed by the SKILL.md
+ * path in the agent's home. Those files are not imported; their names show what is missing.
+ */
+const skillFiles = z
+  .record(
+    z.string().max(AGENT_IMPORT_MAX_PATH_LENGTH),
+    z.array(z.string().max(AGENT_IMPORT_MAX_PATH_LENGTH)).max(200),
+  )
+  .refine((value) => Object.keys(value).length <= AGENT_IMPORT_MAX_FILES)
+  .default({});
+
 export const AgentImportPreviewInput = z.strictObject({
   files: AgentImportFilesSchema,
   includeSecrets,
+  skillFiles,
 });
 
 export const AgentImportCreateInput = z.strictObject({
+  /** Chosen by the client once per import, so a retried create returns the same bot. */
+  importKey: z.string().trim().min(8).max(100).optional(),
   files: AgentImportFilesSchema,
   includeSecrets,
+  skillFiles,
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   computerMode: ComputerModeSchema.default("team"),
   selection: AgentImportSelectionSchema,
 });
 export type AgentImportCreateInput = z.infer<typeof AgentImportCreateInput>;
+
+const importedNames = z.object({
+  skills: z.array(z.string()),
+  spaceMemory: z.array(z.string()),
+  mcpServers: z.array(z.string()),
+  apiKeys: z.array(z.string()),
+});
+
+/** What Undo would do for an imported bot: what it removes and what it keeps because it changed. */
+export const AgentImportInfoSchema = z.object({
+  source: AgentImportSourceSchema,
+  createdAt: z.string(),
+  remove: importedNames,
+  keep: importedNames,
+});
+export type AgentImportInfo = z.infer<typeof AgentImportInfoSchema>;

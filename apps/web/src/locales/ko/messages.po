@@ -967,11 +967,8 @@ msgstr ""
 msgid "Browse MCP servers"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
-msgid "Built in"
-msgstr "기본 제공"
-
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "기본 제공"
 
@@ -1021,6 +1018,7 @@ msgstr "이미지를 읽을 수 없음"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
@@ -1159,6 +1157,10 @@ msgstr "새 비밀번호 선택"
 #: src/pages/Onboarding.tsx
 msgid "Choose a provider"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "백업 선택"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1469,6 +1471,10 @@ msgstr "연결 테스트에 실패했습니다."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Contains code to run"
+msgstr "실행할 코드 포함"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1936,6 +1942,10 @@ msgstr "직접 조작으로 전환하지 못했습니다."
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "MCP 서버를 테스트하지 못했습니다."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "가져오기를 취소하지 못했습니다"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2933,6 +2943,10 @@ msgstr "방금"
 msgid "Keep memories"
 msgstr "기억은 유지"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "유지됨"
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "key"
@@ -3411,6 +3425,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "입력 필요"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs setup Rakazo may not have"
+msgstr "Rakazo에 없을 수 있는 설정이 필요합니다"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4193,6 +4211,10 @@ msgstr "작업 기술 {0} 삭제"
 msgid "Remove webhook"
 msgstr "웹훅 제거"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "제거됨"
+
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "대화, 컴퓨터, 기억과 함께 삭제되었습니다."
@@ -4734,6 +4756,10 @@ msgstr "작업 기술 {0}"
 msgid "Skills"
 msgstr "스킬"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "스킬은 모든 봇이 공유하는 라이브러리에 추가됩니다."
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "건너뛰기"
@@ -4758,6 +4784,10 @@ msgstr ""
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "일부 설정은 가져오지 않습니다"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4963,6 +4993,10 @@ msgstr "테스트 실행"
 msgid "Testing…"
 msgstr "테스트 중…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "봇과 가져오기로 추가된 항목이 제거됩니다."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "연결 시간이 초과되었습니다."
@@ -4980,6 +5014,10 @@ msgstr "서비스가 요청 속도를 제한하고 있습니다."
 msgid "The selected memory provider is not available in this build."
 msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습니다."
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "이 파일은 가져오기에 너무 큽니다."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -4994,6 +5032,10 @@ msgstr "생각 깊이"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "이 백업을 읽지 못했습니다."
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
@@ -5216,6 +5258,14 @@ msgstr "섹션 없음"
 msgid "Undo"
 msgstr "실행 취소"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "가져오기 취소"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "가져오기를 취소할까요?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -5376,6 +5426,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses files that are not imported"
+msgstr "가져오지 않는 파일을 사용합니다"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses paths on your computer"
+msgstr "내 컴퓨터의 경로를 사용합니다"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

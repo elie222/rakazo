@@ -5,7 +5,11 @@ import type {
   AgentImportPlan,
   AgentImportSkill,
 } from "@rakazo/contracts";
+import { parse as parseYaml } from "yaml";
 import { parseSkillMd } from "../agent-skill.js";
+
+/** Names of the other files in each skill's folder, by SKILL.md path. */
+export type SkillFiles = Readonly<Record<string, readonly string[]>>;
 
 /** What a source parser returns; detection adds the source. */
 export type AgentImportParse = Omit<
@@ -53,11 +57,12 @@ export function memoryItem(id: string, title: string, path: string, content: str
 /** Skill items from SKILL.md files; invalid ones are reported, not imported. */
 export function skillItems(
   files: Map<string, string>,
+  skillFiles: SkillFiles = {},
 ): Pick<AgentImportParse, "skills" | "skipped"> {
   const skills: AgentImportSkill[] = [];
   const skipped: AgentImportParse["skipped"] = [];
   for (const path of [...files.keys()].filter(isSkillPath).sort()) {
-    const item = skillItem(`skills:${path}`, files.get(path) ?? "");
+    const item = skillItem(`skills:${path}`, files.get(path) ?? "", skillFiles[path] ?? []);
     if (item) skills.push(item);
     else skipped.push({ path, reason: "invalid_skill" });
   }
@@ -65,36 +70,53 @@ export function skillItems(
 }
 
 /**
- * A skill item that keeps the SKILL.md text as written (only a BOM and CRLF line endings are
- * normalised): the frontmatter parser here is minimal and would flatten nested metadata.
+ * A skill item that keeps the SKILL.md bytes exactly as written, including a byte order mark
+ * or CRLF line endings: the frontmatter parser here is minimal and would flatten nested
+ * metadata, so it only checks a normalised copy.
  */
-export function skillItem(id: string, markdown: string): AgentImportSkill | null {
-  const content = markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
-  const parsed = parseSkillMd(content);
-  if ("error" in parsed || content.length > SKILL_CONTENT_MAX_LENGTH) return null;
+export function skillItem(
+  id: string,
+  markdown: string,
+  siblings: readonly string[] = [],
+): AgentImportSkill | null {
+  const view = normalise(markdown);
+  const parsed = parseSkillMd(view);
+  if ("error" in parsed || markdown.length > SKILL_CONTENT_MAX_LENGTH) return null;
   return {
     id,
     title: parsed.name,
     name: parsed.name,
     description: parsed.description,
-    content,
+    content: markdown,
+    warnings: skillWarnings(view, parsed.body, siblings),
   };
 }
 
-/** Rewrites only the frontmatter `name:` entry, keeping every other byte of the SKILL.md. */
+function normalise(markdown: string): string {
+  return markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+/** Rewrites only the value of the frontmatter `name:` entry, keeping every other byte. */
 export function renameSkillMd(content: string, name: string): string {
-  const match = /^---\n([\s\S]*?)\n---(?=\n|$)/.exec(content);
+  const match = /^(\uFEFF?---\r?\n)([\s\S]*?)(\r?\n---)(?=\r?\n|$)/.exec(content);
   if (!match) return content;
-  const lines = match[1]!.split("\n");
-  const index = lines.findIndex((line) => /^name\s*:/.test(line));
-  if (index < 0) return content;
-  let end = index + 1;
-  // A block scalar name continues on indented lines.
-  if (/^name\s*:\s*[|>]/.test(lines[index]!)) {
-    while (end < lines.length && (/^\s/.test(lines[end]!) || lines[end] === "")) end += 1;
+  const head = match[1]!;
+  const body = match[2]!;
+  const line = /^name[ \t]*:[ \t]*(.*?)[ \t]*(\r?)$/m.exec(body);
+  if (!line) return content;
+  const value = line[1]!;
+  const start = line.index + line[0].indexOf(":") + 1;
+  let end = line.index + line[0].length - line[2]!.length;
+  let replacement = ` ${yamlScalar(name)}`;
+  // A block scalar name continues on indented lines; replace those lines too.
+  if (/^[|>]/.test(value)) {
+    const rest = body.slice(line.index + line[0].length);
+    const continuation = /^(?:\r?\n(?:[ \t]+.*|[ \t]*)(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
+    end = line.index + line[0].length + continuation.length;
+    replacement = ` ${yamlScalar(name)}${line[2] ?? ""}`;
   }
-  lines.splice(index, end - index, `name: ${yamlScalar(name)}`);
-  return `---\n${lines.join("\n")}\n---${content.slice(match[0].length)}`;
+  const renamed = `${body.slice(0, start)}${replacement}${body.slice(end)}`;
+  return `${head}${renamed}${content.slice(head.length + body.length)}`;
 }
 
 function yamlScalar(value: string): string {
@@ -103,4 +125,71 @@ function yamlScalar(value: string): string {
     !/\s$/.test(value) &&
     !/^(?:true|false|null|yes|no|on|off|~|-?\d+(?:\.\d+)?)$/i.test(value);
   return plain ? value : JSON.stringify(value);
+}
+
+/** Fenced blocks in a language a shell or interpreter runs, or a shebang line. */
+const RUNNABLE_CODE =
+  /^\s*(?:`{3,}|~{3,})\s*(?:bash|sh|shell|zsh|fish|console|powershell|pwsh|ps1|cmd|bat|python3?|py|javascript|js|node|typescript|ts|ruby|rb|perl|php|applescript|osascript|lua|go|rust)\b|^#!/im;
+/** How a skill points at files kept next to its SKILL.md. */
+const BUNDLED_REFERENCE = /\{baseDir\}|(?:^|[\s(`'"/])(?:scripts|references|templates|assets)\//m;
+
+/**
+ * Why a skill may not work in Rakazo, from what it declares and what its text does:
+ * OpenClaw `metadata.openclaw.requires` and `os`; Hermes `platforms`, `prerequisites`,
+ * `required_environment_variables` and `metadata.hermes.requires_toolsets`; references to
+ * files in its folder (never imported); and runnable code the user should read first.
+ */
+function skillWarnings(
+  content: string,
+  body: string,
+  siblings: readonly string[],
+): AgentImportSkill["warnings"] {
+  const warnings: AgentImportSkill["warnings"] = [];
+  if (declaresRequirements(frontmatter(content))) warnings.push("needs_setup");
+  const bundled = siblings.length > 0 && BUNDLED_REFERENCE.test(body);
+  if (bundled) warnings.push("bundled_files");
+  const runsBundledScript = bundled && siblings.some((name) => name.startsWith("scripts/"));
+  if (RUNNABLE_CODE.test(body) || runsBundledScript) warnings.push("runs_code");
+  return warnings;
+}
+
+function frontmatter(content: string): Record<string, unknown> {
+  const match = /^---\n([\s\S]*?)\n---/.exec(content);
+  try {
+    const value: unknown = match ? parseYaml(match[1]!) : null;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function declaresRequirements(front: Record<string, unknown>): boolean {
+  const field = (value: unknown, key: string): unknown =>
+    value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
+  const nonEmpty = (value: unknown) =>
+    Array.isArray(value)
+      ? value.length > 0
+      : value && typeof value === "object"
+        ? Object.keys(value).length > 0
+        : typeof value === "string" && value.trim() !== "";
+  // Rakazo runs skills on Linux computers.
+  const otherPlatform = (value: unknown) =>
+    Array.isArray(value) &&
+    value.length > 0 &&
+    !value.some((entry) => String(entry).toLowerCase() === "linux");
+  const metadata = field(front, "metadata");
+  const openclaw = field(metadata, "openclaw");
+  const requires = field(openclaw, "requires");
+  const hermes = field(metadata, "hermes");
+  return (
+    ["bins", "anyBins", "env", "config"].some((key) => nonEmpty(field(requires, key))) ||
+    otherPlatform(field(openclaw, "os")) ||
+    otherPlatform(front.os) ||
+    otherPlatform(front.platforms) ||
+    Boolean(nonEmpty(field(field(front, "prerequisites"), "commands"))) ||
+    Boolean(nonEmpty(front.required_environment_variables)) ||
+    Boolean(nonEmpty(field(hermes, "requires_toolsets")))
+  );
 }

@@ -4,18 +4,22 @@ import type {
   AgentImportMemoryDestination,
   AgentImportPlan,
   AgentImportSkipReason,
+  AgentImportWarning,
   Bot,
   ComputerMode,
 } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_ARCHIVE_LIMITS,
   AGENT_IMPORT_NOT_FOUND,
   AGENT_IMPORT_PROMPT,
-  agentImportFolder,
+  AgentImportArchiveError,
+  agentImportSkillFiles,
+  agentImportUpload,
+  chooseAgentImportFiles,
   combineImportedInstructions,
   hasAgentImportSecrets,
-  isAgentImportSecretFile,
-  stripAgentImportSecrets,
+  openAgentImportArchive,
 } from "@rakazo/core";
 import {
   Button,
@@ -42,6 +46,13 @@ const sectionClass = "mt-6";
 const headingClass = "text-sm text-foreground";
 
 /** Import an OpenClaw or Hermes folder, or another assistant's exported document, as a new bot. */
+/** A chosen folder or opened backup: its paths, and its files read on demand. */
+export type AgentImportSource = {
+  paths: string[];
+  read: (path: string) => Promise<string> | string;
+  size: (path: string) => number | undefined;
+};
+
 export function AgentImportForm({
   onBack,
   onCancel,
@@ -56,9 +67,17 @@ export function AgentImportForm({
   const folderInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<AgentImportFile[]>([]);
-  // A chosen folder's files by upload path, with their path in the agent's home.
+  // The chosen folder or backup, read on demand.
+  const [source, setSource] = useState<AgentImportSource | null>(null);
+  // Its files read so far, by upload path, with their path in the agent's home.
   const [folder, setFolder] = useState<{ path: string; home: string; content: string }[]>([]);
+  const [hasSecretFiles, setHasSecretFiles] = useState(false);
   const [includeSecrets, setIncludeSecrets] = useState(false);
+  // One key per import, so a retried create returns the bot the first one made.
+  const importKey = useRef<string | null>(null);
+  // Names of the other files in each skill's folder; never their contents.
+  const [skillFiles, setSkillFiles] = useState<Record<string, string[]>>({});
+  const archiveInput = useRef<HTMLInputElement>(null);
   const [plan, setPlan] = useState<AgentImportPlan | null>(null);
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   const [destinations, setDestinations] = useState<Record<string, AgentImportMemoryDestination>>(
@@ -80,7 +99,12 @@ export function AgentImportForm({
     return t`No OpenClaw, Hermes or agent document found.`;
   }
 
-  async function preview(next: AgentImportFile[], secrets = false, keepChoices = false) {
+  async function preview(
+    next: AgentImportFile[],
+    secrets = false,
+    keepChoices = false,
+    siblings = skillFiles,
+  ) {
     setError(null);
     if (next.length === 0) {
       setError(notFound());
@@ -88,12 +112,37 @@ export function AgentImportForm({
     }
     setBusy(true);
     try {
-      const found = await rpc.bots.importPreview({ files: next, includeSecrets: secrets });
+      const found = await rpc.bots.importPreview({
+        files: next,
+        includeSecrets: secrets,
+        skillFiles: siblings,
+      });
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Turning the API key opt-in on or off keeps what the user already chose.
-      if (!keepChoices) {
-        setUnchecked(new Set());
+      // Items that may not work here start unticked; the user reads them and decides.
+      const flagged = [...found.skills, ...found.mcpServers, ...found.routines]
+        .filter((item) => item.warnings.length > 0)
+        .map((item) => item.id);
+      if (keepChoices && plan) {
+        // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
+        const known = new Set(
+          [
+            ...plan.instructions,
+            ...plan.memory,
+            ...plan.skills,
+            ...plan.mcpServers,
+            ...plan.routines,
+            ...plan.apiKeys,
+            ...(plan.model ? [plan.model] : []),
+          ].map((item) => item.id),
+        );
+        setUnchecked((current) => {
+          const merged = new Set(current);
+          for (const id of flagged) if (!known.has(id)) merged.add(id);
+          return merged;
+        });
+      } else {
+        setUnchecked(new Set(flagged));
         setDestinations({});
         setName(found.suggestedName);
       }
@@ -105,45 +154,109 @@ export function AgentImportForm({
     }
   }
 
-  async function pickFolder(list: FileList | null) {
-    // Only the files an import uses are read; the rest stay on this device.
-    const byPath = new Map(
-      [...(list ?? [])].map((file) => [file.webkitRelativePath || file.name, file]),
-    );
-    const { files: used } = agentImportFolder([...byPath.keys()]);
-    const read = await Promise.all(
-      [...used].map(async ([path, home]) => ({
-        path,
-        home,
-        content: await byPath.get(path)!.text(),
-      })),
-    );
-    setFolder(read);
-    await preview(folderUpload(read, false));
+  /** Why a folder or backup could not be used, as the alert shows it. */
+  function readError(err: unknown) {
+    if (err instanceof AgentImportArchiveError) {
+      return err.reason === "too_large"
+        ? t`These files are too large to import.`
+        : t`This backup could not be read.`;
+    }
+    return t`Could not read these files`;
   }
 
   /**
-   * Without the API key opt-in, secret files are not sent and settings files are sent
-   * without credential values, using the same function the server applies.
+   * Reads a folder or backup with the shared rule: sizes are checked first, bundled skills
+   * and `.env`/`auth.json` are not read, and only the files an import uses leave the device.
    */
-  function folderUpload(
-    entries: { path: string; home: string; content: string }[],
-    secrets: boolean,
-  ): AgentImportFile[] {
-    return entries.flatMap(({ path, home, content }) => {
-      if (secrets) return [{ path, content }];
-      if (isAgentImportSecretFile(home)) return [];
-      return [{ path, content: stripAgentImportSecrets(home, content) }];
+  async function loadSource(next: AgentImportSource) {
+    setError(null);
+    try {
+      const chosen = await chooseAgentImportFiles(next.paths, next.read, {
+        includeSecrets: false,
+        size: next.size,
+      });
+      const siblings = agentImportSkillFiles(
+        next.paths,
+        new Map(chosen.entries.map((entry) => [entry.path, entry.home])),
+      );
+      setSource(next);
+      setFolder(chosen.entries);
+      setHasSecretFiles(chosen.hasSecretFiles);
+      setSkillFiles(siblings);
+      importKey.current = crypto.randomUUID();
+      await preview(
+        agentImportUpload(chosen.entries, { includeSecrets: false }),
+        false,
+        false,
+        siblings,
+      );
+    } catch (err) {
+      setError(readError(err));
+    }
+  }
+
+  /** The opt-in reads `.env`/`auth.json` now, and sends only their allowlisted entries. */
+  async function toggleSecrets(checked: boolean) {
+    if (!source) return;
+    try {
+      const chosen = await chooseAgentImportFiles(source.paths, source.read, {
+        includeSecrets: checked,
+        size: source.size,
+      });
+      setFolder(chosen.entries);
+      await preview(agentImportUpload(chosen.entries, { includeSecrets: checked }), checked, true);
+    } catch (err) {
+      setError(readError(err));
+    }
+  }
+
+  async function pickFolder(list: FileList | null) {
+    const byPath = new Map(
+      [...(list ?? [])].map((file) => [file.webkitRelativePath || file.name, file]),
+    );
+    await loadSource({
+      paths: [...byPath.keys()],
+      read: (path) => byPath.get(path)!.text(),
+      size: (path) => byPath.get(path)?.size,
     });
   }
 
-  const secretsAvailable = folder.some(({ home, content }) => hasAgentImportSecrets(home, content));
+  /** A backup is unpacked here, on this device, one file at a time. */
+  async function pickArchive(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      if (file.size > AGENT_IMPORT_ARCHIVE_LIMITS.archiveBytes) {
+        throw new AgentImportArchiveError("too_large");
+      }
+      const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()));
+      await loadSource(archive);
+    } catch (err) {
+      setError(readError(err));
+    }
+  }
+
+  const secretsAvailable =
+    hasSecretFiles || folder.some(({ home, content }) => hasAgentImportSecrets(home, content));
+
+  /** A pasted or chosen document: no folder, no secrets. */
+  async function previewDocument(content: string) {
+    setSource(null);
+    setFolder([]);
+    setHasSecretFiles(false);
+    setSkillFiles({});
+    importKey.current = crypto.randomUUID();
+    await preview([{ path: "agent.md", content }], false, false, {});
+  }
 
   async function pickDocument(list: FileList | null) {
     const file = list?.[0];
     if (!file) return;
-    setFolder([]);
-    await preview([{ path: "agent.md", content: await file.text() }]);
+    try {
+      await previewDocument(await file.text());
+    } catch (err) {
+      setError(readError(err));
+    }
   }
 
   async function copyPrompt() {
@@ -172,8 +285,10 @@ export function AgentImportForm({
     setBusy(true);
     try {
       const bot = await rpc.bots.importCreate({
+        importKey: importKey.current ?? undefined,
         files,
         includeSecrets,
+        skillFiles,
         name: name.trim(),
         computerMode,
         selection: {
@@ -183,7 +298,9 @@ export function AgentImportForm({
             .map((item) => ({ id: item.id, destination: destinations[item.id] ?? "bot" })),
           skills: chosen(plan.skills).map((item) => item.id),
           model: Boolean(plan.model && modelUsable && !unchecked.has(plan.model.id)),
-          mcpServers: chosen(plan.mcpServers).map((item) => item.id),
+          mcpServers: chosen(plan.mcpServers)
+            .filter((item) => !item.warnings.includes("unsupported_command"))
+            .map((item) => item.id),
           routines: chosen(plan.routines).map((item) => item.id),
           apiKeys: chosen(plan.apiKeys).map((item) => item.id),
         },
@@ -256,10 +373,23 @@ export function AgentImportForm({
     ({
       runtime: t`Not used by Rakazo`,
       invalid_skill: t`Not a valid skill`,
-      builtin: t`Built in`,
+      builtin: t`Built-in`,
       unsupported: t`Not supported in Rakazo`,
       connected: t`Already connected`,
+      invalid_file: t`Could not read these files`,
     })[reason];
+  const warningText = (warning: AgentImportWarning) =>
+    ({
+      needs_setup: t`Needs setup Rakazo may not have`,
+      bundled_files: t`Uses files that are not imported`,
+      runs_code: t`Contains code to run`,
+      unsupported_command: t`Not supported in Rakazo`,
+      local_path: t`Uses paths on your computer`,
+      dropped_settings: t`Some settings are not imported`,
+    })[warning];
+  /** The first reason an item may not work here, next to its title. */
+  const warningNote = (warnings: AgentImportWarning[]) =>
+    warnings[0] ? note(warningText(warnings[0])) : undefined;
   const note = (text: string) => (
     <span className="shrink-0 text-[12.5px] text-muted-foreground">{text}</span>
   );
@@ -349,13 +479,16 @@ export function AgentImportForm({
               <h3 className={headingClass}>
                 <Trans>Skills</Trans>
               </h3>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">
+                <Trans>Skills join the library all your bots share.</Trans>
+              </p>
               <ul className="mt-2">
-                {plan.skills.map(({ id, title, name: savedAs, content, description }) =>
+                {plan.skills.map(({ id, title, name: savedAs, content, description, warnings }) =>
                   item(
                     id,
                     savedAs === title ? title : t`${title}, saved as ${savedAs}`,
                     content,
-                    undefined,
+                    warningNote(warnings),
                     description,
                   ),
                 )}
@@ -391,8 +524,15 @@ export function AgentImportForm({
                 <Trans>MCP servers</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.mcpServers.map(({ id, title, name: savedAs, content }) =>
-                  item(id, savedAs === title ? title : t`${title}, saved as ${savedAs}`, content),
+                {plan.mcpServers.map(({ id, title, name: savedAs, content, warnings }) =>
+                  item(
+                    id,
+                    savedAs === title ? title : t`${title}, saved as ${savedAs}`,
+                    content,
+                    warningNote(warnings),
+                    undefined,
+                    warnings.includes("unsupported_command"),
+                  ),
                 )}
               </ul>
             </section>
@@ -403,7 +543,9 @@ export function AgentImportForm({
                 <Trans>Routines</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.routines.map((entry) => item(entry.id, entry.title, entry.content))}
+                {plan.routines.map((entry) =>
+                  item(entry.id, entry.title, entry.content, warningNote(entry.warnings)),
+                )}
               </ul>
             </section>
           ) : null}
@@ -413,9 +555,7 @@ export function AgentImportForm({
                 <Checkbox
                   checked={includeSecrets}
                   disabled={busy}
-                  onCheckedChange={(checked) =>
-                    void preview(folderUpload(folder, checked), checked)
-                  }
+                  onCheckedChange={(checked) => void toggleSecrets(checked)}
                 />
                 <Trans>Include API keys</Trans>
               </Label>
@@ -492,14 +632,33 @@ export function AgentImportForm({
                 event.target.value = "";
               }}
             />
-            <Button
-              variant="outline"
-              className="mt-2"
-              disabled={busy}
-              onClick={() => folderInput.current?.click()}
-            >
-              <Trans>Choose folder</Trans>
-            </Button>
+            <input
+              ref={archiveInput}
+              type="file"
+              accept=".zip,.tar.gz,.tgz,application/zip,application/gzip"
+              data-testid="agent-import-archive"
+              className="hidden"
+              onChange={(event) => {
+                void pickArchive(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+            />
+            <div className="mt-2 flex gap-2">
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => folderInput.current?.click()}
+              >
+                <Trans>Choose folder</Trans>
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => archiveInput.current?.click()}
+              >
+                <Trans>Choose backup</Trans>
+              </Button>
+            </div>
           </section>
           <section className={sectionClass}>
             <h3 className={headingClass}>
@@ -528,13 +687,7 @@ export function AgentImportForm({
               }}
             />
             <div className="mt-3 flex gap-2">
-              <Button
-                disabled={!reply.trim() || busy}
-                onClick={() => {
-                  setFolder([]);
-                  void preview([{ path: "agent.md", content: reply }]);
-                }}
-              >
+              <Button disabled={!reply.trim() || busy} onClick={() => void previewDocument(reply)}>
                 <Trans>Continue</Trans>
               </Button>
               <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>

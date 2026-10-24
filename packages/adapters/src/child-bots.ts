@@ -376,7 +376,11 @@ export async function destroyBot(
   deps: BotLifecycleDeps,
   bot: LifecycleBot,
   context: AdapterContext,
-  options: { deleteMemories: boolean },
+  options: {
+    deleteMemories: boolean;
+    /** More removals that must commit or fail together with the bot's deletion. */
+    within?: (tx: Prisma.TransactionClient) => Promise<void>;
+  },
 ) {
   const [dedicated, activeRuns, routines] = await Promise.all([
     deps.prisma.computer.findUnique({
@@ -458,6 +462,7 @@ export async function destroyBot(
           memoriesPreserved: !options.deleteMemories,
         },
       });
+      await options.within?.(tx);
       await tx.bot.delete({ where: { id: bot.id } });
       if (webhookSecretId) {
         await tx.secret.deleteMany({

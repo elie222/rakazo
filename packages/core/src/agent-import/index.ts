@@ -5,9 +5,15 @@ import type {
   AgentImportSource,
 } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_MAX_FILE_LENGTH,
+  AGENT_IMPORT_MAX_FILES,
+  AGENT_IMPORT_MAX_TOTAL_LENGTH,
+} from "@rakazo/contracts";
+import { AgentImportArchiveError } from "./archive.js";
+import {
   AGENT_IMPORT_CONFIG_FILES,
   isAgentImportSecretFile,
-  stripAgentImportSecrets,
+  prepareAgentImportFiles,
 } from "./config.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
 import { HERMES_INSTRUCTION_FILES, HERMES_MEMORY_FILES, parseHermes } from "./hermes.js";
@@ -18,16 +24,30 @@ import {
   OPENCLAW_RUNTIME_FILES,
   parseOpenClaw,
 } from "./openclaw.js";
-import type { AgentImportParse } from "./shared.js";
+import type { AgentImportParse, SkillFiles } from "./shared.js";
 import { isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
 
 export {
+  AGENT_IMPORT_ARCHIVE_LIMITS,
+  AgentImportArchiveError,
+  type AgentImportArchiveErrorReason,
+  type AgentImportArchiveLimits,
+  openAgentImportArchive,
+  safeArchivePath,
+} from "./archive.js";
+export {
+  AGENT_IMPORT_PROVIDER_KEYS,
   hasAgentImportSecrets,
+  hasInlineMcpCredential,
   isAgentImportSecretFile,
+  normalizeImportProvider,
+  parseDotEnv,
+  prepareAgentImportFiles,
   readAgentImportConfig,
   stripAgentImportSecrets,
 } from "./config.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
+export type { SkillFiles } from "./shared.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
@@ -62,10 +82,17 @@ export function isAgentImportCandidate(path: string): boolean {
  * `skills/` and the settings files at the home's root; workspace skills win over managed
  * ones with the same path, as in OpenClaw.
  */
-export function agentImportFolder(paths: readonly string[]): {
+export function agentImportFolder(
+  paths: readonly string[],
+  options: { bundledSkills?: ReadonlySet<string> } = {},
+): {
   root: string;
   files: Map<string, string>;
 } {
+  // Hermes' own skills (named in skills/.bundled_manifest) are never read or sent.
+  const bundled = options.bundledSkills;
+  const candidate = (path: string) =>
+    isAgentImportCandidate(path) && !(bundled && isBundledSkill(path, bundled));
   const first = paths[0]?.split("/")[0] ?? "";
   const shared =
     first && !SOURCE_FOLDERS.has(first) && paths.every((path) => path.startsWith(`${first}/`));
@@ -87,7 +114,7 @@ export function agentImportFolder(paths: readonly string[]): {
   if (ownFiles || workspaces.size === 0) {
     return {
       root,
-      files: new Map(relative.filter(([, path]) => isAgentImportCandidate(path))),
+      files: new Map(relative.filter(([, path]) => candidate(path))),
     };
   }
   const workspace = workspaces.has("workspace")
@@ -99,7 +126,7 @@ export function agentImportFolder(paths: readonly string[]): {
   if (!workspace) return { root, files };
   for (const [path, inHome] of relative) {
     const inWorkspace = inHome.slice(workspace.length + 1);
-    if (inHome.startsWith(`${workspace}/`) && isAgentImportCandidate(inWorkspace)) {
+    if (inHome.startsWith(`${workspace}/`) && candidate(inWorkspace)) {
       files.set(path, inWorkspace);
     }
   }
@@ -111,6 +138,27 @@ export function agentImportFolder(paths: readonly string[]): {
     }
   }
   return { root: workspace, files };
+}
+
+/**
+ * For each chosen SKILL.md, the names of the other files in its folder. Only names are
+ * sent: those files are not imported, and their names show what a skill would be missing.
+ */
+export function agentImportSkillFiles(
+  paths: readonly string[],
+  used: ReadonlyMap<string, string>,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [path, home] of used) {
+    if (!home.endsWith("SKILL.md") || !isSkillPath(home)) continue;
+    const folder = path.slice(0, -"SKILL.md".length);
+    const names = paths
+      .filter((other) => other !== path && other.startsWith(folder))
+      .map((other) => other.slice(folder.length))
+      .slice(0, 200);
+    if (names.length) out[home] = names;
+  }
+  return out;
 }
 
 /**
@@ -126,19 +174,107 @@ export function readAgentImportFolder(
   root: string;
   files: Map<string, string>;
 } | null {
-  const folder = agentImportFolder(files.map((file) => file.path));
-  const kept = new Map<string, string>();
-  for (const file of files) {
-    const path = folder.files.get(file.path);
-    if (!path) continue;
-    if (!options.includeSecrets && isAgentImportSecretFile(path)) continue;
-    kept.set(
-      path,
-      options.includeSecrets ? file.content : stripAgentImportSecrets(path, file.content),
-    );
-  }
+  const contents = new Map(files.map((file) => [file.path, file.content]));
+  const folder = chooseFolder(
+    files.map((file) => file.path),
+    (path) => contents.get(path) ?? "",
+  );
+  const home = new Map<string, string>();
+  for (const [path, inHome] of folder.files) home.set(inHome, contents.get(path) ?? "");
+  const kept = prepareAgentImportFiles(home, options);
   const source = detectSource(new Set(kept.keys()), folder.root);
   return source ? { source, root: folder.root, files: kept } : null;
+}
+
+/** The skill folder names a Hermes `skills/.bundled_manifest` lists (`name:hash` lines). */
+export function bundledSkillNames(manifest: string): Set<string> {
+  return new Set(
+    manifest
+      .split(/\r?\n/)
+      .map((line) => line.split(":")[0]!.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function isBundledSkill(path: string, bundled: ReadonlySet<string>): boolean {
+  if (!isSkillPath(path)) return false;
+  const folder = path.split("/").at(-2)?.toLowerCase() ?? "";
+  return bundled.has(folder);
+}
+
+/** The folder choice, with Hermes' bundled skills left out once its manifest is read. */
+function chooseFolder(paths: readonly string[], read: (path: string) => string) {
+  const first = agentImportFolder(paths);
+  const manifest = [...first.files].find(([, home]) => home === BUNDLED_MANIFEST)?.[0];
+  if (!manifest) return first;
+  return agentImportFolder(paths, { bundledSkills: bundledSkillNames(read(manifest)) });
+}
+
+const BUNDLED_MANIFEST = "skills/.bundled_manifest";
+
+/**
+ * What a client reads from a chosen folder or backup: the same choice the server makes.
+ * Sizes are checked before anything is read; the manifest is read first so bundled skills
+ * are never read; `.env` and `auth.json` are read only with the API key opt-in.
+ */
+export async function chooseAgentImportFiles(
+  paths: readonly string[],
+  read: (path: string) => Promise<string> | string,
+  options: { includeSecrets: boolean; size?: (path: string) => number | undefined },
+): Promise<{
+  entries: { path: string; home: string; content: string }[];
+  /** Whether the folder has `.env` or `auth.json`, read only after the opt-in. */
+  hasSecretFiles: boolean;
+}> {
+  const first = agentImportFolder(paths);
+  const manifestPath = [...first.files].find(([, home]) => home === BUNDLED_MANIFEST)?.[0];
+  if (manifestPath) checkSizes([manifestPath], options.size);
+  const folder = manifestPath
+    ? agentImportFolder(paths, { bundledSkills: bundledSkillNames(await read(manifestPath)) })
+    : first;
+  const all = [...folder.files];
+  const hasSecretFiles = all.some(([, home]) => isAgentImportSecretFile(home));
+  const wanted = all.filter(([, home]) => options.includeSecrets || !isAgentImportSecretFile(home));
+  checkSizes(
+    wanted.map(([path]) => path),
+    options.size,
+  );
+  const entries = await Promise.all(
+    wanted.map(async ([path, home]) => ({ path, home, content: await read(path) })),
+  );
+  return { entries, hasSecretFiles };
+}
+
+/** Refuses a choice too large to upload before any of it is read. */
+function checkSizes(paths: readonly string[], size?: (path: string) => number | undefined) {
+  if (paths.length > AGENT_IMPORT_MAX_FILES) throw new AgentImportArchiveError("too_large");
+  let total = 0;
+  for (const path of paths) {
+    // A character takes at least one byte, so a byte size bounds the text the server checks.
+    const bytes = size?.(path) ?? 0;
+    if (bytes > AGENT_IMPORT_MAX_FILE_LENGTH * 4) throw new AgentImportArchiveError("too_large");
+    total += bytes;
+  }
+  if (total > AGENT_IMPORT_MAX_TOTAL_LENGTH * 4) throw new AgentImportArchiveError("too_large");
+}
+
+/**
+ * The upload for files chosen from a folder or backup: the shared rule of
+ * `prepareAgentImportFiles`, keyed back to the upload paths. Secret files are sent only
+ * with the opt-in, and then only their allowlisted entries.
+ */
+export function agentImportUpload(
+  entries: readonly { path: string; home: string; content: string }[],
+  options: { includeSecrets: boolean },
+): AgentImportFile[] {
+  const prepared = prepareAgentImportFiles(
+    new Map(entries.map((entry) => [entry.home, entry.content])),
+    options,
+  );
+  return entries.flatMap(({ path, home }) => {
+    const content = prepared.get(home);
+    return content === undefined ? [] : [{ path, content }];
+  });
 }
 
 /**
@@ -146,7 +282,10 @@ export function readAgentImportFolder(
  * document into one plan. Imported text is data: nothing here follows it. Settings
  * (model, MCP servers, scheduled jobs, API keys) are added by the server.
  */
-export function parseAgentImport(files: AgentImportFile[]): AgentImportPlan | { error: string } {
+export function parseAgentImport(
+  files: AgentImportFile[],
+  skillFiles: SkillFiles = {},
+): AgentImportPlan | { error: string } {
   const only = files.length === 1 ? files[0] : undefined;
   if (only && isAgentDocument(only.content)) {
     return plan("document", parseAgentDocument(only.content));
@@ -154,7 +293,10 @@ export function parseAgentImport(files: AgentImportFile[]): AgentImportPlan | { 
   const folder = readAgentImportFolder(files, { includeSecrets: false });
   if (!folder) return { error: AGENT_IMPORT_NOT_FOUND };
   const kept = [...folder.files].map(([path, content]) => ({ path, content }));
-  const parsed = folder.source === "hermes" ? parseHermes(kept) : parseOpenClaw(kept, folder.root);
+  const parsed =
+    folder.source === "hermes"
+      ? parseHermes(kept, skillFiles)
+      : parseOpenClaw(kept, folder.root, skillFiles);
   if (!parsed.instructions.length && !parsed.memory.length && !parsed.skills.length) {
     return { error: AGENT_IMPORT_NOT_FOUND };
   }

@@ -967,11 +967,8 @@ msgstr ""
 msgid "Browse MCP servers"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
-msgid "Built in"
-msgstr "बिल्ट-इन"
-
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "अंतर्निहित"
 
@@ -1021,6 +1018,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
@@ -1159,6 +1157,10 @@ msgstr "नया पासवर्ड चुनें"
 #: src/pages/Onboarding.tsx
 msgid "Choose a provider"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "बैकअप चुनें"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1469,6 +1471,10 @@ msgstr "कनेक्शन परीक्षण विफल रहा।"
 #: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} से कनेक्शन अभी लंबित है। आप इसे बंद करके बाद में जांच सकते हैं।"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Contains code to run"
+msgstr "चलाने योग्य कोड है"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1936,6 +1942,10 @@ msgstr "नियंत्रण नहीं लिया जा सका"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "MCP सर्वर का परीक्षण नहीं हो सका"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "इंपोर्ट पूर्ववत नहीं हो सका"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2933,6 +2943,10 @@ msgstr "अभी-अभी"
 msgid "Keep memories"
 msgstr "मेमोरी रखें"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "रखा जाएगा"
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr ""
@@ -3411,6 +3425,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "इनपुट चाहिए"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs setup Rakazo may not have"
+msgstr "ऐसा सेटअप चाहिए जो Rakazo में शायद न हो"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4193,6 +4211,10 @@ msgstr "स्किल {0} हटाएं"
 msgid "Remove webhook"
 msgstr ""
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "हटाया जाएगा"
+
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "चैट, कंप्यूटर और मेमोरी सहित हटाया गया।"
@@ -4734,6 +4756,10 @@ msgstr "स्किल {0}"
 msgid "Skills"
 msgstr "स्किल्स"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "स्किल्स उस लाइब्रेरी में जुड़ती हैं जिसे आपके सभी बॉट साझा करते हैं।"
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "छोड़ें"
@@ -4758,6 +4784,10 @@ msgstr ""
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "कुछ सेटिंग्स इंपोर्ट नहीं होतीं"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4963,6 +4993,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "परीक्षण हो रहा है…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "बॉट और उसके इंपोर्ट से जोड़ी गई चीज़ें हटा दी जाएँगी।"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "कनेक्शन का समय समाप्त हो गया।"
@@ -4980,6 +5014,10 @@ msgstr "प्रोवाइडर अनुरोधों की दर स�
 msgid "The selected memory provider is not available in this build."
 msgstr "चयनित मेमोरी प्रोवाइडर इस बिल्ड में उपलब्ध नहीं है।"
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "ये फ़ाइलें इंपोर्ट के लिए बहुत बड़ी हैं।"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -4994,6 +5032,10 @@ msgstr "सोच रहा है"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "यह बैकअप पढ़ा नहीं जा सका।"
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
@@ -5216,6 +5258,14 @@ msgstr "असाइन नहीं किया गया"
 msgid "Undo"
 msgstr "पूर्ववत करें"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "इंपोर्ट पूर्ववत करें"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "इंपोर्ट पूर्ववत करें?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -5376,6 +5426,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses files that are not imported"
+msgstr "ऐसी फ़ाइलें इस्तेमाल करता है जो इंपोर्ट नहीं होतीं"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses paths on your computer"
+msgstr "आपके कंप्यूटर के पाथ इस्तेमाल करता है"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

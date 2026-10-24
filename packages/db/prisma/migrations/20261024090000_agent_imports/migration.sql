@@ -1,0 +1,29 @@
+-- What an agent import created, so it can be undone. A new table only: the previous
+-- release never reads it, so it needs no previous-release policy.
+CREATE TABLE "agent_imports" (
+    "id" TEXT NOT NULL,
+    "spaceId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "botId" TEXT NOT NULL,
+    "source" TEXT NOT NULL,
+    "created" JSONB NOT NULL,
+    "importKey" TEXT,
+    "requestDigest" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "agent_imports_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "agent_imports_botId_key" ON "agent_imports"("botId");
+CREATE INDEX "agent_imports_spaceId_userId_idx" ON "agent_imports"("spaceId", "userId");
+CREATE UNIQUE INDEX "agent_imports_spaceId_userId_importKey_key" ON "agent_imports"("spaceId", "userId", "importKey");
+
+ALTER TABLE "agent_imports" ADD CONSTRAINT "agent_imports_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "spaces"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "agent_imports" ADD CONSTRAINT "agent_imports_botId_fkey" FOREIGN KEY ("botId") REFERENCES "bots"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Same policies as agent_skills (20261021140000_row_level_security).
+ALTER TABLE "agent_imports" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY agent_imports_tenant ON "agent_imports"
+  USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
+CREATE POLICY agent_imports_system ON "agent_imports"
+  USING (current_setting('app.rls_bypass', true) = 'on');

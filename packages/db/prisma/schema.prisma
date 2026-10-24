@@ -257,6 +257,7 @@ model Space {
   scratchpadItems             ScratchpadItem[]
   taughtSkills                TaughtSkill[]
   agentSkills                 AgentSkill[]
+  agentImports                AgentImport[]
   connections                 Connection[]
   capabilities                CapabilityInstall[]
   memoryDocuments             MemoryDocument[]
@@ -518,6 +519,7 @@ model Bot {
   runs              Run[]
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
+  agentImport       AgentImport?
   groupMembers      ChatGroupMember[]
   botSecrets BotSecret[]
   assignedTickets   Ticket[]          @relation("TicketAssigneeBot")
@@ -937,6 +939,30 @@ model TaughtSkill {
 /// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
 /// The Pi runtime already understands this format; we persist and inject them.
 /// Distinct from TaughtSkill (demo/record playbooks).
+/// What an agent import created, so the import can be undone. One per imported bot.
+model AgentImport {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String
+  botId     String   @unique
+  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  /// openclaw | hermes | document
+  source    String
+  /// Rows the import created and their state then (skills, space memory, MCP servers,
+  /// routines, model credentials), so Undo can keep what the user changed since.
+  created   Json
+  /// Chosen by the client per import, so a retried create returns the same bot.
+  importKey String?
+  /// SHA-256 of the create request, so a reused key with a different request is refused.
+  requestDigest String?
+  createdAt DateTime @default(now())
+
+  @@unique([spaceId, userId, importKey])
+  @@index([spaceId, userId])
+  @@map("agent_imports")
+}
+
 model AgentSkill {
   id          String   @id @default(cuid())
   spaceId     String

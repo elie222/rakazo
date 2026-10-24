@@ -75,6 +75,7 @@ import {
   forgetBotSecret,
   hasActiveComputerControl,
   hostCredentialSource,
+  isAllowedStdioCommand,
   isAutoReviewCheckerConfigured,
   isComputerScreenUnavailable,
   isSandboxGoneError,
@@ -173,6 +174,7 @@ import {
   foldComputerCommands,
   isDeletableMemoryDocument,
   isOllamaCloudBaseUrl,
+  ModelConnectInputSchema,
   mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
@@ -267,7 +269,12 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { AgentImportServices } from "./agent-import.js";
-import { createImportedBot, previewAgentImport } from "./agent-import.js";
+import {
+  agentImportInfo,
+  createImportedBot,
+  previewAgentImport,
+  undoAgentImport,
+} from "./agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
@@ -729,6 +736,9 @@ export interface RouterDeps {
     integrationsCatalogUrl?: string;
     mcpAllowPrivateEndpoint?: boolean;
     desktopHostChoiceEnabled?: boolean;
+    /** Whether MCP stdio servers can run, and the commands they may launch. */
+    mcpStdioEnabled?: boolean;
+    mcpStdioAllowedCommands?: string[];
   };
 }
 
@@ -1001,6 +1011,25 @@ export function createRouter(deps: RouterDeps) {
     void probeMcpServer(row, actor);
     return display;
   };
+  /** The writes of `mcp.servers.remove`, shared with undoing an import. */
+  const removeMcpServerInTransaction = async (
+    tx: Prisma.TransactionClient,
+    actor: Actor,
+    server: { id: string; secretId: string | null },
+  ) => {
+    const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
+    await tx.mcpServer.delete({ where: { id: server.id } });
+    if (server.secretId) {
+      await tx.secret.deleteMany({
+        where: {
+          id: server.secretId,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        },
+      });
+    }
+    return painted;
+  };
   /** `mcp.servers.create` in three steps, shared with agent imports: validate and encrypt, */
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
@@ -1081,13 +1110,12 @@ export function createRouter(deps: RouterDeps) {
     }
   };
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
-  /** Saves a model connection: the `models.connect` path, shared with agent imports. */
-  const connectModelCredential = async (
+  /** The checks of `models.connect` before anything is saved; returns the secret to store. */
+  const verifyModelConnection = async (
     actor: Actor,
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
-    options: { keepExistingDefault?: boolean } = {},
-  ) => {
+  ): Promise<string> => {
     let plaintext: string;
     try {
       let previousPlaintext: string | undefined;
@@ -1145,6 +1173,15 @@ export function createRouter(deps: RouterDeps) {
       const saved = parseModelSecret(plaintext);
       await assertNoDanglingModelPins(deps, actor, saved, input.modelId ?? "");
     }
+    return plaintext;
+  };
+  /** Saves a model connection: the `models.connect` path. */
+  const connectModelCredential = async (
+    actor: Actor,
+    input: ModelConnectInput,
+    signal: AbortSignal | undefined,
+  ) => {
+    const plaintext = await verifyModelConnection(actor, input, signal);
     return persistModelCredential(
       deps,
       actor,
@@ -1159,7 +1196,6 @@ export function createRouter(deps: RouterDeps) {
           input.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : input.thinkingLevel,
         supportsImages: input.supportsImages,
         signal,
-        keepExistingDefault: options.keepExistingDefault,
       },
       codexCatalog,
     );
@@ -1181,13 +1217,43 @@ export function createRouter(deps: RouterDeps) {
       return { provider: me.defaultProvider, model: me.defaultModel };
     },
   });
-  const agentImportServices: AgentImportServices = {
+  /** `bots.remove`: the bot, its computer, runs and history, shared with undoing an import. */
+  const removeBot = async (
+    actor: Actor,
+    botId: string,
+    options: Parameters<typeof destroyBot>[3],
+  ) => {
+    const bot = await repos.getBot(actor, botId, { includeArchived: true });
+    await destroyBot(
+      {
+        prisma: deps.prisma,
+        sandbox: deps.sandbox,
+        home: deps.home,
+        jobs: deps.jobs,
+        artifacts: deps.artifacts,
+        dataDir: deps.dataDir,
+      },
+      bot,
+      {
+        operationId: "destroy",
+        traceId: "destroy",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        botId: bot.id,
+        signal: new AbortController().signal,
+      },
+      options,
+    );
+  };
+  type ImportKey = {
+    credential: Parameters<typeof prepareModelCredential>[2];
+    prepared: Awaited<ReturnType<typeof prepareModelCredential>>;
+  };
+  const agentImportServices: AgentImportServices<ImportKey> = {
     prisma: deps.prisma,
     createBot: (actor, input) => repos.createBot(actor, input),
     hasModelConnection: async (actor, provider) =>
       Boolean(await findModelCredential(deps.prisma, actor, provider)),
-    connectModel: (actor, input, signal) =>
-      connectModelCredential(actor, input, signal, { keepExistingDefault: true }),
     validateBotModel: async (actor, provider, modelId) => {
       const result = await validateBotModelChange(botModelValidation(actor), {
         userId: actor.userId,
@@ -1199,13 +1265,41 @@ export function createRouter(deps: RouterDeps) {
       });
       return result.ok ? null : result.error;
     },
+    stdioAllowed: (command) =>
+      deps.env.mcpStdioEnabled === true &&
+      isAllowedStdioCommand(command, deps.env.mcpStdioAllowedCommands ?? []),
+    prepareModelKey: async (actor, input, signal) => {
+      const connect = ModelConnectInputSchema.parse(input);
+      const plaintext = await verifyModelConnection(actor, connect, signal);
+      const credential = {
+        provider: input.provider,
+        plaintext,
+        modelId: input.modelId,
+        signal,
+        keepExistingDefault: true,
+      };
+      return {
+        credential,
+        prepared: await prepareModelCredential(deps, actor, credential, codexCatalog),
+      };
+    },
+    writeModelKey: async (tx, actor, key) => {
+      const row = await writeModelCredential(tx, actor, key.credential, key.prepared);
+      return { id: row.id, secretId: row.secretId, provider: row.provider };
+    },
+    afterModelKey: (provider) =>
+      (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(provider)),
     prepareMcpServer,
     insertMcpServer,
-    announceMcpServer,
+    findBot: async (actor, botId) =>
+      (await repos.listBots(actor)).find((bot) => bot.id === botId) ?? null,
     assertRoutineSchedule,
     routineNextRunAt,
     routineRowData,
     announceRoutine,
+    destroyBot: removeBot,
+    removeModelConnection: removeModelConnectionInTransaction,
+    removeMcpServer: removeMcpServerInTransaction,
   };
   const catalogForSpace = async (actor: Actor) => {
     const auth = await modelCredentialAuthKindsForSpace(
@@ -2037,38 +2131,7 @@ export function createRouter(deps: RouterDeps) {
         });
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
-            async (tx) => {
-              await tx.spaceBackupModel.deleteMany({
-                where: {
-                  userId: context.actor.userId,
-                  provider: modelCredentialProviderFilter(input.provider),
-                },
-              });
-              const existing = await tx.userModelCredential.findMany({
-                where: {
-                  userId: context.actor.userId,
-                  provider: modelCredentialProviderFilter(input.provider),
-                },
-              });
-              if (existing.length === 0) return;
-              const ids = existing.map((row) => row.id);
-              // Credentials belong to the account, not the space — disconnecting
-              // removes them everywhere, matching voice.disconnect. Linked
-              // preferences in other spaces go with their credential.
-              await tx.spaceModelPreference.deleteMany({
-                where: { userId: context.actor.userId, credentialId: { in: ids } },
-              });
-              await tx.userModelCredential.deleteMany({
-                where: { userId: context.actor.userId, id: { in: ids } },
-              });
-              for (const row of existing) {
-                await deleteUnreferencedCredentialSecret(tx, {
-                  credentialKind: "model",
-                  credentialId: row.id,
-                  secretId: row.secretId,
-                });
-              }
-            },
+            (tx) => removeModelConnectionInTransaction(tx, context.actor, input.provider),
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
@@ -2101,7 +2164,7 @@ export function createRouter(deps: RouterDeps) {
         return bot;
       }),
       importPreview: authed.bots.importPreview.handler(async ({ context, input }) =>
-        previewAgentImport(agentImportServices, context.actor, input.files, input.includeSecrets),
+        previewAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
       importCreate: authed.bots.importCreate.handler(async ({ context, input }) => {
         let bot: Bot;
@@ -2110,12 +2173,15 @@ export function createRouter(deps: RouterDeps) {
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }
-        // Like a new bot, it states how it read its imported instructions.
-        await enqueueBotIntroRun(deps, context.actor, bot).catch((error) => {
-          getLogger().error("bot intro run enqueue", error);
-        });
+        // An imported bot starts inert: no intro run, paused routines, unapproved servers.
         return bot;
       }),
+      importInfo: authed.bots.importInfo.handler(async ({ context, input }) =>
+        agentImportInfo(agentImportServices as AgentImportServices, context.actor, input.botId),
+      ),
+      importUndo: authed.bots.importUndo.handler(async ({ context, input }) =>
+        undoAgentImport(agentImportServices as AgentImportServices, context.actor, input.botId),
+      ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
         const duplicate = await repos
@@ -2354,27 +2420,7 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
-        await destroyBot(
-          {
-            prisma: deps.prisma,
-            sandbox: deps.sandbox,
-            home: deps.home,
-            jobs: deps.jobs,
-            artifacts: deps.artifacts,
-            dataDir: deps.dataDir,
-          },
-          bot,
-          {
-            operationId: "destroy",
-            traceId: "destroy",
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            botId: bot.id,
-            signal: new AbortController().signal,
-          },
-          { deleteMemories: input.deleteMemories },
-        );
+        await removeBot(context.actor, input.botId, { deleteMemories: input.deleteMemories });
         return { ok: true as const };
       }),
       rotateWebhookSecret: authed.bots.rotateWebhookSecret.handler(async ({ context, input }) => {
@@ -4892,25 +4938,9 @@ export function createRouter(deps: RouterDeps) {
           if (!server) throw new IsolationError();
           // Assignments cascade; the encrypted credential must go with the server.
           // Cards are closed first, including ones that were never assigned.
-          const seqs = await deps.prisma.$transaction(async (tx) => {
-            const painted = await dismissMcpServerApprovals(
-              onboardingDeps,
-              context.actor,
-              server.id,
-              tx,
-            );
-            await tx.mcpServer.delete({ where: { id: server.id } });
-            if (server.secretId) {
-              await tx.secret.deleteMany({
-                where: {
-                  id: server.secretId,
-                  spaceId: context.actor.spaceId,
-                  userId: context.actor.userId,
-                },
-              });
-            }
-            return painted;
-          });
+          const seqs = await deps.prisma.$transaction((tx) =>
+            removeMcpServerInTransaction(tx, context.actor, server),
+          );
           for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
           return { ok: true as const };
         }),
@@ -7402,20 +7432,23 @@ function computerHostFor(
   return null;
 }
 
-async function persistModelCredential(
+type ModelCredentialInput = {
+  provider: string;
+  plaintext: string;
+  label?: string;
+  modelId?: string;
+  thinkingLevel?: string | null;
+  supportsImages?: boolean;
+  signal?: AbortSignal;
+  /** Leave the space's existing default model as it is; set this one only if there is none. */
+  keepExistingDefault?: boolean;
+};
+
+/** Checks a connection's model and encrypts its secret; nothing is written yet. */
+async function prepareModelCredential(
   deps: RouterDeps,
   actor: Actor,
-  input: {
-    provider: string;
-    plaintext: string;
-    label?: string;
-    modelId?: string;
-    thinkingLevel?: string | null;
-    supportsImages?: boolean;
-    signal?: AbortSignal;
-    /** Leave the space's existing default model as it is; set this one only if there is none. */
-    keepExistingDefault?: boolean;
-  },
+  input: ModelCredentialInput,
   codexCatalog: CodexLiveCatalog,
 ) {
   throwIfAborted(input.signal);
@@ -7458,101 +7491,153 @@ async function persistModelCredential(
     userId: actor.userId,
     signal: input.signal ?? new AbortController().signal,
   });
+  return { stored, defaultModel, allowedThinking };
+}
+
+/** Writes a prepared connection in the caller's transaction. */
+async function writeModelCredential(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  input: ModelCredentialInput,
+  prepared: Awaited<ReturnType<typeof prepareModelCredential>>,
+) {
+  const { stored, defaultModel, allowedThinking } = prepared;
+  throwIfAborted(input.signal);
+  const existing = await tx.userModelCredential.findFirst({
+    where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
+    orderBy: newestModelCredentialOrder,
+  });
+  throwIfAborted(input.signal);
+  const secret = await tx.secret.create({
+    data: {
+      id: stored.id,
+      userId: actor.userId,
+      spaceId: null,
+      kind: "model",
+      ciphertext: stored.ciphertext,
+    },
+  });
+  throwIfAborted(input.signal);
+  const credential = !existing
+    ? await tx.userModelCredential.create({
+        data: {
+          userId: actor.userId,
+          provider: input.provider,
+          label: input.label ?? input.provider,
+          secretId: secret.id,
+          supportsImages: input.supportsImages ?? false,
+        },
+      })
+    : await tx.userModelCredential.update({
+        where: { id: existing.id },
+        data: {
+          label: input.label ?? input.provider,
+          secretId: secret.id,
+          ...(input.supportsImages !== undefined ? { supportsImages: input.supportsImages } : {}),
+        },
+      });
+  throwIfAborted(input.signal);
+  let thinkingLevel = input.thinkingLevel;
+  if (thinkingLevel === undefined) {
+    // A stored effort only carries over while it still names this model.
+    const previous = await tx.spaceModelPreference.findFirst({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        credentialId: credential.id,
+      },
+      select: { modelId: true, thinkingLevel: true },
+    });
+    thinkingLevel =
+      previous?.modelId === usableModelId(defaultModel) ? previous.thinkingLevel : null;
+  }
+  // Connect and limit saves can still carry an effort chosen for the previous
+  // model. Keep it only when this model supports it; otherwise clamp or clear.
+  thinkingLevel = defaultModel ? clampCatalogThinkingLevel(thinkingLevel, allowedThinking) : null;
+  const makeDefault =
+    !input.keepExistingDefault ||
+    !(await tx.spaceModelPreference.findFirst({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        isDefault: true,
+        credentialId: { not: credential.id },
+      },
+      select: { id: true },
+    }));
+  await selectSpaceModelPreference(
+    tx,
+    actor,
+    credential.id,
+    defaultModel,
+    thinkingLevel,
+    makeDefault,
+  );
+  throwIfAborted(input.signal);
+  if (existing) {
+    await deleteUnreferencedCredentialSecret(tx, {
+      credentialKind: "model",
+      credentialId: existing.id,
+      secretId: existing.secretId,
+    });
+    throwIfAborted(input.signal);
+  }
+  return { ...credential, isDefault: makeDefault, defaultModel };
+}
+
+async function persistModelCredential(
+  deps: RouterDeps,
+  actor: Actor,
+  input: ModelCredentialInput,
+  codexCatalog: CodexLiveCatalog,
+) {
+  const prepared = await prepareModelCredential(deps, actor, input, codexCatalog);
   throwIfAborted(input.signal);
   const cred = await withSerializableRetry(() =>
-    deps.prisma.$transaction(
-      async (tx) => {
-        throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
-          where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
-          orderBy: newestModelCredentialOrder,
-        });
-        throwIfAborted(input.signal);
-        const secret = await tx.secret.create({
-          data: {
-            id: stored.id,
-            userId: actor.userId,
-            spaceId: null,
-            kind: "model",
-            ciphertext: stored.ciphertext,
-          },
-        });
-        throwIfAborted(input.signal);
-        const credential = !existing
-          ? await tx.userModelCredential.create({
-              data: {
-                userId: actor.userId,
-                provider: input.provider,
-                label: input.label ?? input.provider,
-                secretId: secret.id,
-                supportsImages: input.supportsImages ?? false,
-              },
-            })
-          : await tx.userModelCredential.update({
-              where: { id: existing.id },
-              data: {
-                label: input.label ?? input.provider,
-                secretId: secret.id,
-                ...(input.supportsImages !== undefined
-                  ? { supportsImages: input.supportsImages }
-                  : {}),
-              },
-            });
-        throwIfAborted(input.signal);
-        let thinkingLevel = input.thinkingLevel;
-        if (thinkingLevel === undefined) {
-          // A stored effort only carries over while it still names this model.
-          const previous = await tx.spaceModelPreference.findFirst({
-            where: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              credentialId: credential.id,
-            },
-            select: { modelId: true, thinkingLevel: true },
-          });
-          thinkingLevel =
-            previous?.modelId === usableModelId(defaultModel) ? previous.thinkingLevel : null;
-        }
-        // Connect and limit saves can still carry an effort chosen for the previous
-        // model. Keep it only when this model supports it; otherwise clamp or clear.
-        thinkingLevel = defaultModel
-          ? clampCatalogThinkingLevel(thinkingLevel, allowedThinking)
-          : null;
-        const makeDefault =
-          !input.keepExistingDefault ||
-          !(await tx.spaceModelPreference.findFirst({
-            where: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              isDefault: true,
-              credentialId: { not: credential.id },
-            },
-            select: { id: true },
-          }));
-        await selectSpaceModelPreference(
-          tx,
-          actor,
-          credential.id,
-          defaultModel,
-          thinkingLevel,
-          makeDefault,
-        );
-        throwIfAborted(input.signal);
-        if (existing) {
-          await deleteUnreferencedCredentialSecret(tx, {
-            credentialKind: "model",
-            credentialId: existing.id,
-            secretId: existing.secretId,
-          });
-          throwIfAborted(input.signal);
-        }
-        return { ...credential, isDefault: makeDefault, defaultModel };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    ),
+    deps.prisma.$transaction((tx) => writeModelCredential(tx, actor, input, prepared), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    }),
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   return modelCredentialDto(cred, input.plaintext);
+}
+
+/** The writes of `models.disconnect`: the provider's connections, preferences and backups. */
+async function removeModelConnectionInTransaction(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  provider: string,
+): Promise<void> {
+  await tx.spaceBackupModel.deleteMany({
+    where: {
+      userId: actor.userId,
+      provider: modelCredentialProviderFilter(provider),
+    },
+  });
+  const existing = await tx.userModelCredential.findMany({
+    where: {
+      userId: actor.userId,
+      provider: modelCredentialProviderFilter(provider),
+    },
+  });
+  if (existing.length === 0) return;
+  const ids = existing.map((row) => row.id);
+  // Credentials belong to the account, not the space — disconnecting
+  // removes them everywhere, matching voice.disconnect. Linked
+  // preferences in other spaces go with their credential.
+  await tx.spaceModelPreference.deleteMany({
+    where: { userId: actor.userId, credentialId: { in: ids } },
+  });
+  await tx.userModelCredential.deleteMany({
+    where: { userId: actor.userId, id: { in: ids } },
+  });
+  for (const row of existing) {
+    await deleteUnreferencedCredentialSecret(tx, {
+      credentialKind: "model",
+      credentialId: row.id,
+      secretId: row.secretId,
+    });
+  }
 }
 
 /** The `routines.create` schedule rules, shared with agent imports. */

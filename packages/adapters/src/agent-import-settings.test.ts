@@ -80,7 +80,7 @@ const openclawJobs = JSON.stringify({
       name: "morning",
       enabled: false,
       schedule: { kind: "cron", expr: "0 9 * * *", tz: "Asia/Kolkata" },
-      payload: { kind: "agentTurn", message: "Summarise my day" },
+      payload: { kind: "agentTurn", message: "Summarise my day", toolsAllow: ["web_search"] },
     },
     {
       name: "odd",
@@ -217,7 +217,7 @@ describe("OpenClaw settings", () => {
           enabled: true,
           transport: "streamable_http",
           endpoint: "https://mcp.example.com/mcp",
-          headers: {},
+          headers: { Authorization: "" },
         },
       ],
       [
@@ -230,12 +230,19 @@ describe("OpenClaw settings", () => {
           transport: "stdio",
           command: "npx",
           args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-          env: {},
+          env: { EXAMPLE_TOKEN: "" },
         },
       ],
-      ["vault", expect.objectContaining({ transport: "stdio", command: "vault-mcp", env: {} })],
+      [
+        "vault",
+        expect.objectContaining({ transport: "stdio", command: "vault-mcp", env: { TOKEN: "" } }),
+      ],
     ]);
-    expect(settings.mcpServers[1]!.allowedTools).toEqual(["read_file"]);
+    expect(settings.mcpServers.map((server) => server.warnings)).toEqual([
+      [],
+      ["dropped_settings", "local_path"],
+      [],
+    ]);
     expect(settings.mcpServers[0]!.content).toBe("https://mcp.example.com/mcp\nAuthorization");
     expect(settings.skipped.filter((item) => item.path.startsWith("openclaw.json"))).toEqual([
       { path: "openclaw.json: signin", reason: "unsupported" },
@@ -243,32 +250,28 @@ describe("OpenClaw settings", () => {
     ]);
   });
 
-  it("resolves credential values only with the opt-in, from the uploaded .env", () => {
+  it("never imports MCP credential values, even with the opt-in", () => {
     const settings = openclaw(true);
     const configs = Object.fromEntries(
       settings.mcpServers.map((server) => [server.title, server.config]),
     );
-    expect(configs.docs).toMatchObject({
-      headers: { Authorization: "Bearer placeholder-docs-token" },
-    });
-    expect(configs.files).toMatchObject({ env: { EXAMPLE_TOKEN: "placeholder-env-token" } });
-    // A file SecretRef cannot be read from an upload.
-    expect(configs.vault).toBeUndefined();
-    expect(settings.skipped).toContainEqual({
-      path: "openclaw.json: vault",
-      reason: "unsupported",
-    });
+    expect(configs.docs).toMatchObject({ headers: { Authorization: "" } });
+    expect(configs.files).toMatchObject({ env: { EXAMPLE_TOKEN: "" } });
+    expect(configs.vault).toMatchObject({ env: { TOKEN: "" } });
+    const visible = JSON.stringify(settings.mcpServers);
+    expect(visible).not.toContain("placeholder-docs-token");
+    expect(visible).not.toContain("placeholder-env-token");
   });
 
   it("turns user jobs into routines and skips OpenClaw's own jobs", () => {
     const settings = openclaw(false);
     expect(
-      settings.routines.map(({ name, prompt, cron, timezone, active }) => ({
+      settings.routines.map(({ name, prompt, cron, timezone, warnings }) => ({
         name,
         prompt,
         cron,
         timezone,
-        active,
+        warnings,
       })),
     ).toEqual([
       {
@@ -276,14 +279,14 @@ describe("OpenClaw settings", () => {
         prompt: "Check the inbox",
         cron: "*/30 * * * *",
         timezone: null,
-        active: true,
+        warnings: [],
       },
       {
         name: "morning",
         prompt: "Summarise my day",
         cron: "0 9 * * *",
         timezone: "Asia/Kolkata",
-        active: false,
+        warnings: ["dropped_settings"],
       },
     ]);
     expect(settings.skipped.filter((item) => item.path.startsWith("cron"))).toEqual([
@@ -329,7 +332,7 @@ describe("Hermes settings", () => {
       known: true,
     });
     expect(settings.mcpServers.map((server) => server.config.slug)).toEqual(["docs", "files"]);
-    expect(settings.mcpServers[1]!.allowedTools).toEqual(["read_file", "list_directory"]);
+    expect(settings.mcpServers[1]!.warnings).toEqual(["dropped_settings", "local_path"]);
     expect(settings.routines.map((routine) => [routine.name, routine.cron])).toEqual([
       ["morning", "0 9 * * *"],
       ["check", "0 */2 * * *"],
@@ -347,9 +350,7 @@ describe("Hermes settings", () => {
       deepseek: "placeholder-pool-key",
       xai: "placeholder-xai-key",
     });
-    expect(settings.mcpServers[0]!.config).toMatchObject({
-      headers: { Authorization: "Bearer placeholder-header-token" },
-    });
+    expect(settings.mcpServers[0]!.config).toMatchObject({ headers: { Authorization: "" } });
   });
 });
 
@@ -390,5 +391,117 @@ describe("helpers", () => {
       B: "two words",
       C: "3",
     });
+  });
+});
+
+describe("compatibility", () => {
+  const home = (config: string) =>
+    readAgentImportSettings(
+      { source: "hermes", root: ".hermes", files: new Map([["config.yaml", config]]) },
+      { includeSecrets: false, stdioAllowed: (command) => command === "npx" },
+    );
+
+  it("marks stdio commands this deployment cannot launch and local paths", () => {
+    const settings = home(
+      [
+        "mcp_servers:",
+        "  allowed:",
+        "    command: npx",
+        "    args: [-y, example-server]",
+        "  python:",
+        "    command: uvx",
+        "    args: [example-server]",
+        "  local:",
+        "    command: npx",
+        "    args: [-y, example-server, /home/example/notes]",
+        "  folder:",
+        "    command: npx",
+        "    args: [-y, example-server]",
+        "    cwd: /home/example/project",
+      ].join("\n"),
+    );
+    expect(settings.mcpServers.map((server) => [server.title, server.warnings])).toEqual([
+      ["allowed", []],
+      ["python", ["unsupported_command"]],
+      ["local", ["local_path"]],
+      ["folder", ["local_path"]],
+    ]);
+  });
+
+  it("marks Hermes jobs whose skills, model or toolsets would be dropped", () => {
+    const settings = readAgentImportSettings(
+      {
+        source: "hermes",
+        root: ".hermes",
+        files: new Map([
+          [
+            "cron/jobs.json",
+            JSON.stringify({
+              jobs: [
+                {
+                  id: "a",
+                  name: "plain",
+                  prompt: "Hi",
+                  schedule: { kind: "cron", expr: "0 9 * * *" },
+                },
+                {
+                  id: "b",
+                  name: "skilled",
+                  prompt: "Hi",
+                  skills: ["arxiv"],
+                  schedule: { kind: "cron", expr: "0 9 * * *" },
+                },
+                {
+                  id: "c",
+                  name: "pinned",
+                  prompt: "Hi",
+                  model: "example-model",
+                  schedule: { kind: "cron", expr: "0 9 * * *" },
+                },
+              ],
+            }),
+          ],
+        ]),
+      },
+      { includeSecrets: false },
+    );
+    expect(settings.routines.map((routine) => [routine.name, routine.warnings])).toEqual([
+      ["plain", []],
+      ["skilled", ["dropped_settings"]],
+      ["pinned", ["dropped_settings"]],
+    ]);
+  });
+});
+
+describe("credentials inside MCP URLs and arguments", () => {
+  it("skip the server instead of storing them in plain text", () => {
+    const settings = readAgentImportSettings(
+      {
+        source: "hermes",
+        root: ".hermes",
+        files: new Map([
+          [
+            "config.yaml",
+            [
+              "mcp_servers:",
+              "  query:",
+              "    url: https://mcp.example.test/mcp?api_key=placeholder-query-key",
+              "  flag:",
+              "    command: npx",
+              "    args: [server, --token, placeholder-flag-token]",
+              "  clean:",
+              "    url: https://mcp.example.test/mcp",
+            ].join("\n"),
+          ],
+        ]),
+      },
+      { includeSecrets: true },
+    );
+    expect(settings.mcpServers.map((server) => server.title)).toEqual(["clean"]);
+    expect(settings.skipped).toEqual([
+      { path: "config.yaml: query", reason: "unsupported" },
+      { path: "config.yaml: flag", reason: "unsupported" },
+    ]);
+    expect(JSON.stringify(settings)).not.toContain("placeholder-");
   });
 });

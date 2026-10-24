@@ -967,11 +967,8 @@ msgstr "Breinlabel"
 msgid "Browse MCP servers"
 msgstr "MCP-servers doorzoeken"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Built in"
-msgstr "Ingebouwd"
-
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Ingebouwd"
 
@@ -1021,6 +1018,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
@@ -1159,6 +1157,10 @@ msgstr "Kies een nieuw wachtwoord"
 #: src/pages/Onboarding.tsx
 msgid "Choose a provider"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "Back-up kiezen"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1469,6 +1471,10 @@ msgstr "Verbindingstest mislukt."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "De verbinding met {0} is nog in afwachting. Je kunt dit venster sluiten en later opnieuw controleren."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Contains code to run"
+msgstr "Bevat code om uit te voeren"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1936,6 +1942,10 @@ msgstr "Overnemen mislukt"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "MCP-server testen mislukt"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "Import kon niet ongedaan worden gemaakt"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2933,6 +2943,10 @@ msgstr "zojuist"
 msgid "Keep memories"
 msgstr "Herinneringen bewaren"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "Behouden"
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "sleutel"
@@ -3411,6 +3425,10 @@ msgstr "Heeft een antwoord nodig"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Heeft invoer nodig"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs setup Rakazo may not have"
+msgstr "Heeft instellingen nodig die Rakazo misschien niet heeft"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4193,6 +4211,10 @@ msgstr "Skill {0} verwijderen"
 msgid "Remove webhook"
 msgstr "Webhook verwijderen"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "Verwijderd"
+
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "Verwijderd samen met chat, computer en geheugen."
@@ -4734,6 +4756,10 @@ msgstr "Skill {0}"
 msgid "Skills"
 msgstr "Skills"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "Skills komen in de bibliotheek die al je bots delen."
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "Overslaan"
@@ -4758,6 +4784,10 @@ msgstr "Slack is niet ingeschakeld"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr "Schuif omhoog om te vergrendelen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "Sommige instellingen worden niet geïmporteerd"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4963,6 +4993,10 @@ msgstr "Testrun"
 msgid "Testing…"
 msgstr "Bezig met testen…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "De bot en wat de import heeft toegevoegd worden verwijderd."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "De verbinding is verlopen."
@@ -4980,6 +5014,10 @@ msgstr "De aanbieder beperkt het aantal verzoeken."
 msgid "The selected memory provider is not available in this build."
 msgstr "De gekozen geheugenaanbieder is niet beschikbaar in deze build."
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "Deze bestanden zijn te groot om te importeren."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "Deze opgeslagen instellingen kunnen niet worden gelezen. Verwijder ze en voeg ze opnieuw toe."
@@ -4994,6 +5032,10 @@ msgstr "Denkt"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr "Denkt: {activeThinkingLabel}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "Deze back-up kon niet worden gelezen."
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
@@ -5216,6 +5258,14 @@ msgstr "Niet toegewezen"
 msgid "Undo"
 msgstr "Ongedaan maken"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "Import ongedaan maken"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "Import ongedaan maken?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "Verwijderen"
@@ -5376,6 +5426,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr "Gebruikersnaam"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses files that are not imported"
+msgstr "Gebruikt bestanden die niet worden geïmporteerd"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses paths on your computer"
+msgstr "Gebruikt paden op je computer"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

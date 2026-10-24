@@ -967,11 +967,8 @@ msgstr "תווית Brain"
 msgid "Browse MCP servers"
 msgstr "עיון בשרתי MCP"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Built in"
-msgstr "מובנה"
-
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "מובנה"
 
@@ -1021,6 +1018,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
@@ -1159,6 +1157,10 @@ msgstr "בחירת סיסמה חדשה"
 #: src/pages/Onboarding.tsx
 msgid "Choose a provider"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "בחירת גיבוי"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1469,6 +1471,10 @@ msgstr "בדיקת החיבור נכשלה."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "החיבור ל-{0} עדיין ממתין. אפשר לסגור את החלון ולבדוק שוב."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Contains code to run"
+msgstr "מכיל קוד להרצה"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1936,6 +1942,10 @@ msgstr "לא ניתן להשתלט"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "לא ניתן לבדוק את שרת ה-MCP"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "לא ניתן לבטל את הייבוא"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2933,6 +2943,10 @@ msgstr "הרגע"
 msgid "Keep memories"
 msgstr "שמירת הזיכרונות"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "יישמר"
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr "מפתח"
@@ -3411,6 +3425,10 @@ msgstr "ממתין לתשובה"
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "ממתין לקלט"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs setup Rakazo may not have"
+msgstr "דורש הגדרה ש-Rakazo אולי לא כוללת"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4193,6 +4211,10 @@ msgstr "הסרת המיומנות {0}"
 msgid "Remove webhook"
 msgstr "הסרת ה-webhook"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "יוסר"
+
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "הוסר יחד עם הצ׳אט, המחשב והזיכרון."
@@ -4734,6 +4756,10 @@ msgstr "מיומנות {0}"
 msgid "Skills"
 msgstr "מיומנויות"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "המיומנויות מצטרפות לספרייה שכל הבוטים שלך חולקים."
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "דילוג"
@@ -4758,6 +4784,10 @@ msgstr "Slack לא מופעל"
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "חלק מההגדרות לא מיובאות"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4963,6 +4993,10 @@ msgstr "הרצת בדיקה"
 msgid "Testing…"
 msgstr "בודק…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "הבוט ומה שהייבוא שלו הוסיף יוסרו."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "תם הזמן הקצוב לחיבור."
@@ -4980,6 +5014,10 @@ msgstr "הספק מגביל את קצב הבקשות."
 msgid "The selected memory provider is not available in this build."
 msgstr "ספק הזיכרון שנבחר אינו זמין בגרסה הזו."
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "הקבצים האלה גדולים מדי לייבוא."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
@@ -4994,6 +5032,10 @@ msgstr "חשיבה"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr "חשיבה: {activeThinkingLabel}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "לא ניתן לקרוא את הגיבוי הזה."
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
@@ -5216,6 +5258,14 @@ msgstr "ללא שיוך"
 msgid "Undo"
 msgstr "ביטול"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "ביטול ייבוא"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "לבטל את הייבוא?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "הסרת התקנה"
@@ -5376,6 +5426,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr "שם משתמש"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses files that are not imported"
+msgstr "משתמש בקבצים שלא מיובאים"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses paths on your computer"
+msgstr "משתמש בנתיבים במחשב שלך"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

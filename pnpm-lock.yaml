@@ -845,6 +845,9 @@ importers:
       dotenv:
         specifier: 17.4.2
         version: 17.4.2
+      fflate:
+        specifier: 0.4.9
+        version: 0.4.9
       hast-util-to-text:
         specifier: 4.0.2
         version: 4.0.2

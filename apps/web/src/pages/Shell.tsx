@@ -3810,6 +3810,10 @@ function SpaceShell() {
                   URL.revokeObjectURL(url);
                 }}
                 onClear={() => setClearTarget({ kind: "bot", chat: active })}
+                onUndoImport={() => {
+                  setPanel(null);
+                  void refreshBots(true);
+                }}
               />
             ) : null}
             {panel === "routine" && routineEditorProps ? (

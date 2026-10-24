@@ -65,6 +65,7 @@
     "croner": "10.0.1",
     "d3-dsv": "3.0.1",
     "dotenv": "17.4.2",
+    "fflate": "0.4.9",
     "hast-util-to-text": "4.0.2",
     "json5": "2.2.3",
     "mdast-util-to-hast": "13.2.1",

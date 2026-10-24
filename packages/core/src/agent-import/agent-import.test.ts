@@ -5,10 +5,14 @@ import { parseSkillMd } from "../agent-skill.js";
 import {
   AGENT_IMPORT_PROMPT,
   agentImportFolder,
+  agentImportUpload,
+  chooseAgentImportFiles,
   combineImportedInstructions,
   hasAgentImportSecrets,
+  hasInlineMcpCredential,
   isAgentImportCandidate,
   parseAgentImport,
+  parseDotEnv,
   readAgentImportConfig,
   readAgentImportFolder,
   resolveAgentImportNames,
@@ -330,14 +334,17 @@ describe("skill files", () => {
     expect(hermes.skills.map((item) => item.content)).toEqual([hermesSkill]);
   });
 
-  it("normalises only a byte order mark and CRLF line endings", () => {
-    const result = plan([
-      {
-        path: "workspace/skills/arxiv/SKILL.md",
-        content: `\uFEFF${hermesSkill.replaceAll("\n", "\r\n")}`,
-      },
-    ]);
-    expect(result.skills[0]!.content).toBe(hermesSkill);
+  it("keeps a byte order mark and CRLF line endings, byte for byte", () => {
+    const original = `\uFEFF${hermesSkill.replaceAll("\n", "\r\n")}`;
+    const result = plan([{ path: "workspace/skills/arxiv/SKILL.md", content: original }]);
+    expect(result.skills[0]!.content).toBe(original);
+    const renamed = resolveAgentImportNames(result, {
+      spaceMemoryPaths: [],
+      skillNames: ["arxiv"],
+    });
+    expect(renamed.skills[0]!.content).toBe(
+      original.replace("name: arxiv\r\n", "name: arxiv-2\r\n"),
+    );
   });
 
   it("renames by rewriting only the name line", () => {
@@ -491,10 +498,32 @@ describe("Hermes bundled skills", () => {
       { path: ".hermes/skills/mine/garden-log/SKILL.md", content: skill("garden-log", "Mine") },
     ]);
     expect(result.skills.map((item) => item.name)).toEqual(["garden-log"]);
-    expect(result.skipped).toEqual([
-      { path: "skills/research/arxiv/SKILL.md", reason: "builtin" },
-      { path: "skills/software-development/github/SKILL.md", reason: "builtin" },
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("never reads or sends a bundled skill's file", async () => {
+    const files: Record<string, string> = {
+      ".hermes/SOUL.md": "Direct.\n",
+      ".hermes/skills/.bundled_manifest": "arxiv:abc123\ngithub:def456\n",
+      ".hermes/skills/research/arxiv/SKILL.md": skill("arxiv", "Papers"),
+      ".hermes/skills/software-development/github/SKILL.md": skill("github", "PRs"),
+      ".hermes/skills/mine/garden-log/SKILL.md": skill("garden-log", "Mine"),
+    };
+    const read: string[] = [];
+    const chosen = await chooseAgentImportFiles(
+      Object.keys(files),
+      (path) => {
+        read.push(path);
+        return files[path]!;
+      },
+      { includeSecrets: false },
+    );
+    expect(chosen.entries.map((entry) => entry.home)).toEqual([
+      "SOUL.md",
+      "skills/.bundled_manifest",
+      "skills/mine/garden-log/SKILL.md",
     ]);
+    expect(read.filter((path) => path.includes("arxiv") || path.includes("github"))).toEqual([]);
   });
 });
 
@@ -606,7 +635,256 @@ describe("secret stripping", () => {
     expect([...without.files.keys()]).toEqual(["SOUL.md", "openclaw.json"]);
     expect(JSON.stringify([...without.files])).not.toMatch(/placeholder/);
     const opted = readAgentImportFolder(files, { includeSecrets: true })!;
-    expect(opted.files.get(".env")).toBe("OPENROUTER_API_KEY=placeholder-env-key");
-    expect(opted.files.get("openclaw.json")).toBe(openclawJson);
+    expect(opted.files.get(".env")).toBe('OPENROUTER_API_KEY="placeholder-env-key"\n');
+    expect(opted.files.get("openclaw.json")).not.toContain("placeholder-gateway-token");
+  });
+
+  it("with the opt-in, sends only model-provider keys", () => {
+    const env = [
+      "# Hermes environment (shaped like the real file)",
+      ...Array.from({ length: 30 }, (_, index) => `# EXAMPLE_SETTING_${index}=`),
+      "# OPENROUTER_API_KEY=",
+      "",
+      "TERMINAL_TIMEOUT=60",
+      "TELEGRAM_BOT_TOKEN=placeholder-telegram-token",
+      "DOCS_TOKEN=placeholder-docs-token",
+      'ANTHROPIC_API_KEY="placeholder-anthropic-key"',
+      "OPENROUTER_API_KEY=placeholder-openrouter-key",
+    ].join("\n");
+    const upload = agentImportUpload(
+      [
+        { path: ".openclaw/openclaw.json", home: "openclaw.json", content: openclawJson },
+        { path: ".openclaw/.env", home: ".env", content: env },
+        {
+          path: ".openclaw/auth.json",
+          home: "auth.json",
+          content: JSON.stringify({
+            credential_pool: {
+              openai: [{ auth_type: "oauth", source: "device", access_token: "placeholder-oauth" }],
+              deepseek: [
+                { auth_type: "api_key", source: "manual", access_token: "placeholder-pool-key" },
+              ],
+            },
+          }),
+        },
+      ],
+      { includeSecrets: true },
+    );
+    const body = JSON.stringify(upload);
+    for (const secret of [
+      "placeholder-gateway-token",
+      "placeholder-channel-token",
+      "placeholder-telegram-token",
+      "placeholder-plugin-key",
+      "placeholder-oauth",
+      "TERMINAL_TIMEOUT",
+      "EXAMPLE_SETTING",
+    ]) {
+      expect(body).not.toContain(secret);
+    }
+    const sent = new Map(upload.map((file) => [file.path, file.content]));
+    expect(parseDotEnv(sent.get(".openclaw/.env")!)).toEqual({
+      ANTHROPIC_API_KEY: "placeholder-anthropic-key",
+      OPENROUTER_API_KEY: "placeholder-openrouter-key",
+    });
+    const config = readAgentImportConfig("openclaw.json", sent.get(".openclaw/openclaw.json")!)!;
+    expect(config.env).toEqual({ vars: { OPENROUTER_API_KEY: "placeholder-env-key" } });
+    expect(config.models).toEqual({
+      providers: { anthropic: { apiKey: "placeholder-provider-key" } },
+    });
+    expect(JSON.stringify(config.mcp)).not.toContain("placeholder-header-token");
+    expect(sent.get(".openclaw/auth.json")).toContain("placeholder-pool-key");
+  });
+
+  it("never sends MCP credential values, or .env names only they refer to", () => {
+    const config =
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: OpenClaw's own ${VAR} reference syntax.
+      '{ mcp: { servers: { docs: { url: "https://mcp.example.test", headers: { Authorization: "Bearer ${DOCS_TOKEN}" } } } } }';
+    const upload = agentImportUpload(
+      [
+        { path: "h/openclaw.json", home: "openclaw.json", content: config },
+        {
+          path: "h/.env",
+          home: ".env",
+          content: "DOCS_TOKEN=placeholder-docs\nOTHER=placeholder-other\n",
+        },
+      ],
+      { includeSecrets: true },
+    );
+    expect(JSON.stringify(upload)).not.toContain("placeholder-");
+    expect(JSON.stringify(upload)).not.toContain("DOCS_TOKEN");
+  });
+});
+
+describe("skill compatibility", () => {
+  const files = (content: string) => [
+    { path: "workspace/SOUL.md", content: "Calm.\n" },
+    { path: "workspace/skills/a/SKILL.md", content },
+  ];
+  const warnings = (content: string, siblings: string[] = []) =>
+    plan2(files(content), { "skills/a/SKILL.md": siblings }).skills[0]!.warnings;
+  const plan2 = (input: AgentImportFile[], skillFiles: Record<string, string[]>) => {
+    const parsed = parseAgentImport(input, skillFiles);
+    if ("error" in parsed) throw new Error(parsed.error);
+    return parsed;
+  };
+
+  it("flags declared requirements from OpenClaw and Hermes skills", () => {
+    const openclaw = `---\nname: a\ndescription: d\nmetadata: {"openclaw":{"requires":{"bins":["gh"]}}}\n---\n\nUse gh.\n`;
+    const macOnly = `---\nname: a\ndescription: d\nmetadata: {"openclaw":{"os":["darwin"]}}\n---\n\nNotes.\n`;
+    const hermes = [
+      "---",
+      "name: a",
+      "description: d",
+      "platforms: [macos]",
+      "required_environment_variables:",
+      "  - name: EXAMPLE_KEY",
+      "---",
+      "",
+      "Notes.",
+    ].join("\n");
+    const toolsets =
+      "---\nname: a\ndescription: d\nmetadata:\n  hermes:\n    requires_toolsets: [browser]\n---\n\nNotes.\n";
+    const plain = "---\nname: a\ndescription: d\n---\n\nJust notes.\n";
+    expect(warnings(openclaw)).toEqual(["needs_setup"]);
+    expect(warnings(macOnly)).toEqual(["needs_setup"]);
+    expect(warnings(hermes)).toEqual(["needs_setup"]);
+    expect(warnings(toolsets)).toEqual(["needs_setup"]);
+    expect(warnings(plain)).toEqual([]);
+  });
+
+  it("flags runnable code and files the skill expects next to it", () => {
+    const code = "---\nname: a\ndescription: d\n---\n\n```bash\nrm -rf build\n```\n";
+    const shebang = "---\nname: a\ndescription: d\n---\n\n#!/usr/bin/env python3\nprint(1)\n";
+    const prose = "---\nname: a\ndescription: d\n---\n\n```text\nhello\n```\n";
+    const bundled = "---\nname: a\ndescription: d\n---\n\nFollow {baseDir}/references/guide.md\n";
+    const script = "---\nname: a\ndescription: d\n---\n\nRun scripts/build.sh\n";
+    expect(warnings(code)).toEqual(["runs_code"]);
+    expect(warnings(shebang)).toEqual(["runs_code"]);
+    expect(warnings(prose)).toEqual([]);
+    expect(warnings(bundled, ["references/guide.md"])).toEqual(["bundled_files"]);
+    expect(warnings(bundled)).toEqual([]);
+    expect(warnings(script, ["scripts/build.sh"])).toEqual(["bundled_files", "runs_code"]);
+  });
+});
+
+describe("credentials inside MCP URLs and arguments", () => {
+  const config = `{
+    mcp: {
+      servers: {
+        query: { url: "https://mcp.example.test/mcp?token=placeholder-query-token" },
+        userinfo: { url: "https://user:placeholder-password@mcp.example.test/mcp" },
+        flag: { command: "npx", args: ["-y", "server", "--api-key=placeholder-flag-key"] },
+        split: { command: "npx", args: ["server", "--token", "placeholder-split-token"] },
+        assignment: { command: "env", args: ["EXAMPLE_API_KEY=placeholder-env-arg", "server"] },
+        clean: { url: "https://mcp.example.test/mcp?region=eu", headers: { Authorization: "Bearer placeholder-header" } },
+      },
+    },
+  }`;
+
+  it("are detected", () => {
+    const parsed = readAgentImportConfig("openclaw.json", config)!;
+    const servers = (parsed.mcp as { servers: Record<string, Record<string, unknown>> }).servers;
+    expect(
+      Object.entries(servers).map(([name, entry]) => [name, hasInlineMcpCredential(entry)]),
+    ).toEqual([
+      ["query", true],
+      ["userinfo", true],
+      ["flag", true],
+      ["split", true],
+      ["assignment", true],
+      ["clean", false],
+    ]);
+  });
+
+  it("are never sent, with or without the opt-in", () => {
+    for (const includeSecrets of [false, true]) {
+      const upload = agentImportUpload(
+        [{ path: "h/openclaw.json", home: "openclaw.json", content: config }],
+        { includeSecrets },
+      );
+      const body = JSON.stringify(upload);
+      for (const secret of [
+        "placeholder-query-token",
+        "placeholder-password",
+        "placeholder-flag-key",
+        "placeholder-split-token",
+        "placeholder-env-arg",
+      ]) {
+        expect(body).not.toContain(secret);
+      }
+      expect(body).toContain("region=eu");
+    }
+  });
+});
+
+describe("settings parsing", () => {
+  it("refuses prototype keys, deep nesting and alias bombs", () => {
+    expect(
+      readAgentImportConfig("openclaw.json", '{ "__proto__": { "polluted": true } }'),
+    ).toBeNull();
+    expect(readAgentImportConfig("config.yaml", "constructor:\n  prototype: 1\n")).toBeNull();
+    const deep = `${"{ a: ".repeat(40)}1${" }".repeat(40)}`;
+    expect(readAgentImportConfig("openclaw.json", deep)).toBeNull();
+    const bomb = [
+      "a: &a [x, x, x, x, x, x, x, x, x, x]",
+      "b: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]",
+      "c: &c [*b, *b, *b, *b, *b, *b, *b, *b, *b, *b]",
+      "d: [*c, *c, *c, *c, *c, *c, *c, *c, *c, *c]",
+    ].join("\n");
+    expect(readAgentImportConfig("config.yaml", bomb)).toBeNull();
+    expect(readAgentImportConfig("config.yaml", "model:\n  provider: openrouter\n")).toEqual({
+      model: { provider: "openrouter" },
+    });
+  });
+});
+
+describe("reading a chosen folder", () => {
+  const files: Record<string, string> = {
+    "h/SOUL.md": "Calm.\n",
+    "h/config.yaml": "model:\n  provider: openrouter\n",
+    "h/.env": "OPENROUTER_API_KEY=placeholder\n",
+    "h/auth.json": "{}",
+  };
+
+  it("reads .env and auth.json only after the opt-in", async () => {
+    const read: string[] = [];
+    const reader = (path: string) => {
+      read.push(path);
+      return files[path]!;
+    };
+    const without = await chooseAgentImportFiles(Object.keys(files), reader, {
+      includeSecrets: false,
+    });
+    expect(without.hasSecretFiles).toBe(true);
+    expect(read.sort()).toEqual(["h/SOUL.md", "h/config.yaml"]);
+    const opted = await chooseAgentImportFiles(Object.keys(files), reader, {
+      includeSecrets: true,
+    });
+    expect(opted.entries.map((entry) => entry.home).sort()).toEqual([
+      ".env",
+      "SOUL.md",
+      "auth.json",
+      "config.yaml",
+    ]);
+  });
+
+  it("refuses an oversized choice before reading anything", async () => {
+    const read: string[] = [];
+    const reader = (path: string) => {
+      read.push(path);
+      return files[path]!;
+    };
+    await expect(
+      chooseAgentImportFiles(Object.keys(files), reader, {
+        includeSecrets: false,
+        size: (path) => (path === "h/SOUL.md" ? 50 * 1024 * 1024 : 10),
+      }),
+    ).rejects.toMatchObject({ reason: "too_large" });
+    const many = Array.from({ length: 600 }, (_, index) => `h/memory/${index}.md`);
+    await expect(
+      chooseAgentImportFiles(["h/SOUL.md", ...many], reader, { includeSecrets: false }),
+    ).rejects.toMatchObject({ reason: "too_large" });
+    expect(read).toEqual([]);
   });
 });

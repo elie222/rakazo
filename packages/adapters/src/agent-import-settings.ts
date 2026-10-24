@@ -1,6 +1,13 @@
-import type { McpServerConfigInput } from "@rakazo/contracts";
+import type { AgentImportWarning, McpServerConfigInput } from "@rakazo/contracts";
 import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
-import { nextCronDateAcrossStrict, readAgentImportConfig } from "@rakazo/core";
+import {
+  AGENT_IMPORT_PROVIDER_KEYS,
+  hasInlineMcpCredential,
+  nextCronDateAcrossStrict,
+  normalizeImportProvider,
+  parseDotEnv,
+  readAgentImportConfig,
+} from "@rakazo/core";
 import { listPiCatalog } from "./pi-models.js";
 
 /**
@@ -12,7 +19,7 @@ import { listPiCatalog } from "./pi-models.js";
 type Json = Record<string, unknown>;
 type Skipped = {
   path: string;
-  reason: "builtin" | "unsupported";
+  reason: "builtin" | "unsupported" | "invalid_file";
 };
 
 export type ImportedModel = { title: string; provider: string; modelId: string; known: boolean };
@@ -21,7 +28,7 @@ export type ImportedMcpServer = {
   title: string;
   content: string;
   config: McpServerConfigInput;
-  allowedTools: string[] | null;
+  warnings: AgentImportWarning[];
 };
 export type ImportedRoutine = {
   id: string;
@@ -32,7 +39,7 @@ export type ImportedRoutine = {
   cron: string;
   /** The job's own IANA timezone, when it has one. */
   timezone: string | null;
-  active: boolean;
+  warnings: AgentImportWarning[];
 };
 export type ImportedApiKey = { id: string; provider: string; title: string; source: string };
 export type AgentImportSettings = {
@@ -43,39 +50,8 @@ export type AgentImportSettings = {
   skipped: Skipped[];
 };
 
-/** Provider-key variables an import may read; anything else (channel tokens, ...) is ignored. */
-const PROVIDER_KEY_VARIABLES: Record<string, string> = {
-  OPENROUTER_API_KEY: "openrouter",
-  ANTHROPIC_API_KEY: "anthropic",
-  OPENAI_API_KEY: "openai",
-  GEMINI_API_KEY: "google",
-  GOOGLE_API_KEY: "google",
-  DEEPSEEK_API_KEY: "deepseek",
-  XAI_API_KEY: "xai",
-  MINIMAX_API_KEY: "minimax",
-  KIMI_API_KEY: "kimi-coding",
-  MOONSHOT_API_KEY: "moonshotai",
-  MISTRAL_API_KEY: "mistral",
-  GROQ_API_KEY: "groq",
-};
-
-/** Provider names the source tools use for Rakazo's catalog providers. */
-const PROVIDER_ALIASES: Record<string, string> = {
-  gemini: "google",
-  "google-gemini": "google",
-  claude: "anthropic",
-  "x-ai": "xai",
-  grok: "xai",
-  kimi: "kimi-coding",
-  moonshot: "moonshotai",
-  "z-ai": "zai",
-  zhipu: "zai",
-};
-
-export function normalizeImportProvider(provider: string): string {
-  const id = provider.trim().toLowerCase();
-  return PROVIDER_ALIASES[id] ?? id;
-}
+/** Re-exported so callers keep one import for the settings translation. */
+export { normalizeImportProvider, parseDotEnv };
 
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -87,14 +63,23 @@ const text = (value: unknown) => (typeof value === "string" ? value.trim() : "")
  */
 export function readAgentImportSettings(
   folder: { source: "openclaw" | "hermes"; root: string; files: Map<string, string> },
-  options: { includeSecrets: boolean },
+  options: {
+    includeSecrets: boolean;
+    /** Whether this deployment can launch a stdio command (its allowlist). */
+    stdioAllowed?: (command: string) => boolean;
+  },
 ): AgentImportSettings & { keyValues: Map<string, string> } {
   const env = options.includeSecrets ? parseDotEnv(folder.files.get(".env") ?? "") : {};
   const configPath = folder.source === "hermes" ? "config.yaml" : "openclaw.json";
   const rawConfig = folder.files.get(configPath);
-  const config = rawConfig ? (readAgentImportConfig(configPath, rawConfig) ?? {}) : {};
+  const parsedConfig =
+    rawConfig === undefined ? null : readAgentImportConfig(configPath, rawConfig);
+  const config = parsedConfig ?? {};
   const resolve = (value: unknown) => resolveSecret(value, env);
   const skipped: Skipped[] = [];
+  // A settings file that cannot be read is reported, not silently ignored.
+  if (rawConfig !== undefined && !parsedConfig)
+    skipped.push({ path: configPath, reason: "invalid_file" });
 
   const model =
     folder.source === "hermes" ? hermesModel(config) : openClawModel(config, folder.root);
@@ -103,7 +88,7 @@ export function readAgentImportSettings(
   const servers =
     folder.source === "hermes" ? config.mcp_servers : (config.mcp as Json | undefined)?.servers;
   for (const [name, entry] of Object.entries(isObject(servers) ? servers : {})) {
-    const server = mcpServer(name, entry, options.includeSecrets ? resolve : null);
+    const server = mcpServer(name, entry, options.stdioAllowed ?? (() => true));
     if (server) mcpServers.push({ ...server, id: `mcp:${name}` });
     else skipped.push({ path: `${configPath}: ${name}`, reason: "unsupported" });
   }
@@ -111,6 +96,9 @@ export function readAgentImportSettings(
   const routines: ImportedRoutine[] = [];
   const jobsFile = folder.files.get("cron/jobs.json");
   const jobs = jobsFile ? readAgentImportConfig("cron/jobs.json", jobsFile)?.jobs : undefined;
+  if (jobsFile !== undefined && !Array.isArray(jobs)) {
+    skipped.push({ path: "cron/jobs.json", reason: "invalid_file" });
+  }
   const agentId = /^workspace-(.+)$/.exec(folder.root)?.[1] ?? "main";
   for (const [index, job] of (Array.isArray(jobs) ? jobs : []).entries()) {
     if (!isObject(job)) continue;
@@ -150,26 +138,12 @@ export function readAgentImportSettings(
     }
     const envVars = folder.source === "openclaw" ? openClawEnv(config) : {};
     for (const [name, value] of [...Object.entries(envVars), ...Object.entries(env)]) {
-      const provider = PROVIDER_KEY_VARIABLES[name];
+      const provider = AGENT_IMPORT_PROVIDER_KEYS[name];
       if (provider) offer(provider, value, name);
     }
   }
 
   return { model, mcpServers, routines, apiKeys, skipped, keyValues };
-}
-
-/** `KEY=value` lines, with optional `export` and quotes; comments and blanks ignored. */
-export function parseDotEnv(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const line of content.split(/\r?\n/)) {
-    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
-    if (!match || line.trimStart().startsWith("#")) continue;
-    let value = match[2]!;
-    const quoted = /^(['"])(.*)\1$/.exec(value);
-    value = quoted ? quoted[2]! : value.replace(/\s+#.*$/, "");
-    values[match[1]!] = value;
-  }
-  return values;
 }
 
 /**
@@ -273,9 +247,11 @@ function folderName(path: string): string {
 function mcpServer(
   name: string,
   entry: unknown,
-  resolve: ((value: unknown) => string | null) | null,
+  stdioAllowed: (command: string) => boolean,
 ): Omit<ImportedMcpServer, "id"> | null {
   if (!isObject(entry)) return null;
+  // Credentials inside the URL or arguments would be stored in plain text.
+  if (entry.inlineCredential !== undefined || hasInlineMcpCredential(entry)) return null;
   // OAuth, client certificates and `$include` have no import equivalent.
   for (const key of ["auth", "oauth", "tls", "cert", "clientCert", "$include"]) {
     if (entry[key] !== undefined && entry[key] !== false) return null;
@@ -287,21 +263,13 @@ function mcpServer(
       : {};
   // Rakazo only lists allowed tools; dropping an exclusion would grant more than the source.
   if (Array.isArray(filter.exclude) && filter.exclude.length > 0) return null;
-  const allowedTools = Array.isArray(filter.include)
-    ? filter.include.filter((tool): tool is string => typeof tool === "string")
-    : null;
-  // Credential values come only with the API key opt-in; otherwise the server is created
-  // without them and shows as needing credentials, like a server added without auth.
-  const values = (record: unknown): Record<string, string> | null => {
-    if (!resolve || !isObject(record)) return {};
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(record)) {
-      const resolved = resolve(value);
-      if (resolved === null) return null;
-      out[key] = resolved;
-    }
-    return out;
-  };
+  const warnings: AgentImportWarning[] = [];
+  // An approved server gets all its tools in Rakazo, so a source tool limit would widen.
+  if (Array.isArray(filter.include) && filter.include.length > 0) warnings.push("dropped_settings");
+  // MCP credentials are never imported: header and env names come with empty values, and
+  // the user fills them in after approving the server.
+  const values = (record: unknown): Record<string, string> =>
+    isObject(record) ? Object.fromEntries(Object.keys(record).map((key) => [key, ""])) : {};
   const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
   const base = {
     slug: mcpSlug(name),
@@ -313,7 +281,6 @@ function mcpServer(
   let content: string;
   if (text(entry.url)) {
     const headers = values(entry.headers);
-    if (!headers) return null;
     const kind = `${text(entry.transport)}${text(entry.type)}`.toLowerCase();
     candidate = {
       ...base,
@@ -324,8 +291,15 @@ function mcpServer(
     content = [text(entry.url), ...names(entry.headers)].join("\n");
   } else if (text(entry.command)) {
     const env = values(entry.env);
-    if (!env) return null;
     const args = Array.isArray(entry.args) ? entry.args.map(String) : [];
+    if (!stdioAllowed(text(entry.command))) warnings.unshift("unsupported_command");
+    // Rakazo runs servers on its computers: a working folder is dropped, local paths are absent.
+    if (
+      (entry.cwd !== undefined && entry.cwd !== "") ||
+      [text(entry.command), ...args].some(isLocalPath)
+    ) {
+      warnings.push("local_path");
+    }
     candidate = { ...base, transport: "stdio", command: text(entry.command), args, env };
     content = [[text(entry.command), ...args].join(" "), ...names(entry.env)].join("\n");
   } else {
@@ -333,7 +307,12 @@ function mcpServer(
   }
   const parsed = McpServerConfigSchema.safeParse(candidate);
   if (!parsed.success) return null;
-  return { title: name, content, config: parsed.data, allowedTools };
+  return { title: name, content, config: parsed.data, warnings };
+}
+
+/** An absolute, home-relative or drive path: a file on the source machine. */
+function isLocalPath(value: string): boolean {
+  return /^(?:\/|~\/|[A-Za-z]:[\\/])/.test(value);
 }
 
 /** An MCP slug: lowercase letters, digits, `-` and `_`, starting with a letter or digit. */
@@ -356,6 +335,10 @@ function openClawJob(job: Json): JobResult {
   if (job.declarationKey || payload.kind !== "agentTurn" || message.startsWith("__openclaw")) {
     return { reason: "builtin" };
   }
+  // Tool limits and a per-job model have no routine equivalent: dropping them widens the job.
+  const tools = Array.isArray(payload.toolsAllow) ? payload.toolsAllow : [];
+  const limited = tools.length > 0 && !tools.includes("*");
+  const dropped = limited || Boolean(text(payload.model));
   const schedule = isObject(job.schedule) ? job.schedule : {};
   const cron =
     schedule.kind === "cron"
@@ -363,7 +346,7 @@ function openClawJob(job: Json): JobResult {
       : schedule.kind === "every" && typeof schedule.everyMs === "number"
         ? intervalCron(schedule.everyMs / 60_000)
         : null;
-  return routine(job, message, cron, text(schedule.tz));
+  return routine(job, message, cron, text(schedule.tz), dropped);
 }
 
 function hermesJob(job: Json): JobResult {
@@ -375,10 +358,23 @@ function hermesJob(job: Json): JobResult {
       : schedule.kind === "interval" && typeof schedule.minutes === "number"
         ? intervalCron(schedule.minutes)
         : null;
-  return routine(job, text(job.prompt), cron, "");
+  const list = (value: unknown) => Array.isArray(value) && value.length > 0;
+  const dropped =
+    list(job.skills) ||
+    Boolean(text(job.skill)) ||
+    Boolean(text(job.model) || text(job.provider) || text(job.base_url)) ||
+    list(job.enabled_toolsets) ||
+    Boolean(text(job.workdir));
+  return routine(job, text(job.prompt), cron, "", dropped);
 }
 
-function routine(job: Json, prompt: string, cron: string | null, tz: string): JobResult {
+function routine(
+  job: Json,
+  prompt: string,
+  cron: string | null,
+  tz: string,
+  droppedSettings: boolean,
+): JobResult {
   const name = (text(job.name) || text(job.displayName) || "Routine").slice(0, 80);
   if (!prompt || !cron || !validCron(cron)) return { reason: "unsupported" };
   const timezone = tz && isValidTimeZone(tz) ? tz : null;
@@ -388,7 +384,7 @@ function routine(job: Json, prompt: string, cron: string | null, tz: string): Jo
     prompt,
     cron,
     timezone,
-    active: job.enabled !== false,
+    warnings: droppedSettings ? ["dropped_settings"] : [],
     content: `${cron}${timezone ? ` (${timezone})` : ""}\n\n${prompt}`,
   };
 }

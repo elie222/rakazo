@@ -967,11 +967,8 @@ msgstr ""
 msgid "Browse MCP servers"
 msgstr ""
 
-#: src/pages/shell/agent-import.tsx
-msgid "Built in"
-msgstr "Integrado"
-
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Integrado"
 
@@ -1021,6 +1018,7 @@ msgstr "Não pode ler imagens"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
@@ -1159,6 +1157,10 @@ msgstr "Escolha uma nova senha"
 #: src/pages/Onboarding.tsx
 msgid "Choose a provider"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "Escolher backup"
 
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1469,6 +1471,10 @@ msgstr "O teste de conexão falhou."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "A conexão com o {0} ainda está pendente. Você pode fechar isso e verificar novamente."
+
+#: src/pages/shell/agent-import.tsx
+msgid "Contains code to run"
+msgstr "Contém código para executar"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -1936,6 +1942,10 @@ msgstr "Não foi possível assumir o controle"
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "Não foi possível testar o servidor MCP"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "Não foi possível desfazer a importação"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
@@ -2933,6 +2943,10 @@ msgstr "agora mesmo"
 msgid "Keep memories"
 msgstr "Manter memórias"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "Mantido"
+
 #: src/pages/RoutineEditor.tsx
 msgid "key"
 msgstr ""
@@ -3411,6 +3425,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Needs input"
 msgstr "Precisa de entrada"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Needs setup Rakazo may not have"
+msgstr "Precisa de configuração que o Rakazo talvez não tenha"
 
 #: src/pages/ActivityList.tsx
 msgid "Needs takeover"
@@ -4193,6 +4211,10 @@ msgstr "Remover habilidade {0}"
 msgid "Remove webhook"
 msgstr ""
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "Removido"
+
 #: src/pages/shell/message-view.tsx
 msgid "Removed with chat, computer, and memory."
 msgstr "Removido com chat, computador e memória."
@@ -4734,6 +4756,10 @@ msgstr "Habilidade {0}"
 msgid "Skills"
 msgstr "Habilidades"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "As habilidades entram na biblioteca que todos os seus bots compartilham."
+
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
 msgstr "Pular"
@@ -4758,6 +4784,10 @@ msgstr ""
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "Algumas configurações não são importadas"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -4963,6 +4993,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Testando…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "O bot e o que a importação adicionou serão removidos."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "O tempo da conexão se esgotou."
@@ -4980,6 +5014,10 @@ msgstr "O provedor está limitando a frequência das solicitações."
 msgid "The selected memory provider is not available in this build."
 msgstr "O provedor de memória selecionado não está disponível nesta compilação."
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "Estes arquivos são grandes demais para importar."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -4994,6 +5032,10 @@ msgstr "Pensando"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "Não foi possível ler este backup."
 
 #: src/pages/shell/agent-import.tsx
 msgid "This bot"
@@ -5216,6 +5258,14 @@ msgstr "Não atribuído"
 msgid "Undo"
 msgstr "Desfazer"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "Desfazer importação"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "Desfazer a importação?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -5376,6 +5426,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses files that are not imported"
+msgstr "Usa arquivos que não são importados"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Uses paths on your computer"
+msgstr "Usa caminhos do seu computador"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

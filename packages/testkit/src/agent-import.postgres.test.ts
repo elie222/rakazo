@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
+import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 import { asSystem } from "./system-db.js";
@@ -307,7 +308,11 @@ describeIntegration("agent import", () => {
       status: "needs_key",
     });
     expect(preview.apiKeys).toEqual([]);
-    expect(preview.mcpServers.map((item) => item.name)).toEqual(["docs", "files"]);
+    expect(preview.mcpServers.map((item) => [item.name, item.warnings])).toEqual([
+      ["docs", []],
+      // Stdio servers are disabled in this deployment, so this one cannot be created here.
+      ["files", ["unsupported_command", "dropped_settings", "local_path"]],
+    ]);
     expect(preview.routines.map((item) => [item.title, item.content])).toEqual([
       ["check", "*/30 * * * * (Europe/Berlin)\n\nCheck the inbox"],
       ["morning", "0 9 * * * (Asia/Kolkata)\n\nSummarise my day"],
@@ -337,11 +342,17 @@ describeIntegration("agent import", () => {
         memory: [],
         skills: [],
         model: true,
-        mcpServers: preview.mcpServers.map((item) => item.id),
+        mcpServers: ["mcp:docs"],
         routines: preview.routines.map((item) => item.id),
       },
     });
     expect(refused.status).toBe(400);
+    const blocked = await raw(app, cookie, "bots/importCreate", {
+      files: settingsHome,
+      name: "Blocked",
+      selection: { instructions: [], memory: [], skills: [], mcpServers: ["mcp:files"] },
+    });
+    expect(blocked.status).toBe(400);
     expect(await db.bot.count({ where: owner })).toBe(botsBefore);
     expect(await db.mcpServer.count({ where: owner })).toBe(0);
     expect(await db.routine.count({ where: owner })).toBe(0);
@@ -360,7 +371,7 @@ describeIntegration("agent import", () => {
         memory: [],
         skills: [],
         model: true,
-        mcpServers: opted.mcpServers.map((item) => item.id),
+        mcpServers: ["mcp:docs"],
         routines: opted.routines.map((item) => item.id),
         apiKeys: opted.apiKeys.map((item) => item.id),
       },
@@ -396,66 +407,331 @@ describeIntegration("agent import", () => {
       orderBy: { slug: "asc" },
     });
     expect(
-      servers.map((row) => [row.slug, row.transport, row.headers, row.env, Boolean(row.secretId)]),
-    ).toEqual([
-      ["docs", "streamable_http", { Authorization: true }, {}, true],
-      ["files", "stdio", {}, { EXAMPLE_TOKEN: true }, true],
-    ]);
+      servers.map((row) => [row.slug, row.transport, row.headers, Boolean(row.secretId)]),
+    ).toEqual([["docs", "streamable_http", { Authorization: true }, true]]);
+    // Not given to the bot, and not probed or launched: an approval card asks the user first.
+    expect(servers[0]!.assignments).toEqual([]);
+    expect([servers[0]!.healthStatus, servers[0]!.healthCheckedAt]).toEqual(["unknown", null]);
+    // An imported bot starts inert: no intro run.
+    expect(await db.run.count({ where: { botId: bot.id } })).toBe(0);
+    const cards = await db.message.findMany({
+      where: { thread: { botId: bot.id } },
+      select: { blocks: true },
+    });
     expect(
-      servers.map((row) =>
-        row.assignments.map((link) => [link.botId, link.allowAllTools, link.allowedTools]),
-      ),
-    ).toEqual([[[bot.id, true, []]], [[bot.id, false, ["read_file"]]]]);
+      cards.flatMap((row) => row.blocks as { kind: string; serverId?: string }[]),
+    ).toContainEqual(
+      expect.objectContaining({
+        kind: "mcp_approval",
+        serverId: servers[0]!.id,
+        status: "pending",
+      }),
+    );
+    await rpc(app, cookie, "mcp/assignments/approve", { botId: bot.id, serverId: servers[0]!.id });
+    expect(
+      await db.botMcpServer.findMany({
+        where: { botId: bot.id },
+        select: { serverId: true, allowAllTools: true },
+      }),
+    ).toEqual([{ serverId: servers[0]!.id, allowAllTools: true }]);
 
+    // Paused, like every new routine, whatever the source said.
     const routines = await db.routine.findMany({
       where: { botId: bot.id },
       orderBy: { name: "asc" },
     });
     expect(
-      routines.map((row) => [
-        row.name,
-        row.crons,
-        row.timezone,
-        row.active,
-        Boolean(row.nextRunAt),
-      ]),
+      routines.map((row) => [row.name, row.crons, row.timezone, row.active, row.nextRunAt]),
     ).toEqual([
-      ["check", ["*/30 * * * *"], "Europe/Berlin", true, true],
-      ["morning", ["0 9 * * *"], "Asia/Kolkata", false, false],
+      ["check", ["*/30 * * * *"], "Europe/Berlin", false, null],
+      ["morning", ["0 9 * * *"], "Asia/Kolkata", false, null],
     ]);
 
-    // Without the opt-in, servers come without credentials and existing slugs are kept.
+    const record = await db.agentImport.findUniqueOrThrow({ where: { botId: bot.id } });
+    expect(record).toMatchObject({ ...owner, source: "openclaw" });
+    expect(record.created).toMatchObject({
+      credentials: [{ id: imported.id, provider: "openrouter" }],
+      mcpServers: [{ id: servers[0]!.id }],
+      routines: routines.map((row) => ({ id: row.id })),
+    });
+
+    // Imported again, without the opt-in: the existing slug is kept and a free one chosen.
     const again = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
       files: settingsHome,
     });
     expect(again.mcpServers.map((item) => [item.title, item.name])).toEqual([
       ["docs", "docs-2"],
-      ["files", "files-2"],
+      // Never created here (stdio is off), so its name is still free.
+      ["files", "files"],
     ]);
     await rpc<Bot>(app, cookie, "bots/importCreate", {
       files: settingsHome,
       name: "Settings again",
-      selection: {
-        instructions: [],
-        memory: [],
-        skills: [],
-        mcpServers: again.mcpServers.map((item) => item.id),
-      },
+      selection: { instructions: [], memory: [], skills: [], mcpServers: ["mcp:docs"] },
     });
-    const plain = await db.mcpServer.findMany({
-      where: { ...owner, slug: { in: ["docs-2", "files-2"] } },
-      orderBy: { slug: "asc" },
-    });
-    expect(plain.map((row) => [row.slug, row.headers, row.env, row.secretId])).toEqual([
-      ["docs-2", {}, {}, null],
-      ["files-2", {}, {}, null],
-    ]);
+    const plain = await db.mcpServer.findFirstOrThrow({ where: { ...owner, slug: "docs-2" } });
+    // Header names only, with empty values for the user to fill in after approving.
+    expect(plain.headers).toEqual({ Authorization: true });
 
     // Another user sees none of it.
     const other = await signup(app, `import-settings-other-${stamp}@rakazo.test`, "Other");
     expect(await rpc<unknown[]>(app, other, "mcp/servers/list", {})).toEqual([]);
     expect(await rpc<unknown[]>(app, other, "models/credentials", {})).toEqual([]);
     expect((await raw(app, other, "routines/list", { botId: bot.id })).status).not.toBe(200);
+  });
+
+  it("writes nothing at all when the last write of the import fails", async () => {
+    const cookie = await signup(app, `import-rollback-${stamp}@rakazo.test`, "Rollback User");
+    const firstBot = await rpc<Bot>(app, cookie, "bots/create", { name: "First" });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: firstBot.id },
+      select: { spaceId: true, userId: true },
+    });
+    const files = [
+      ...settingsHome,
+      { path: ".openclaw/workspace/USER.md", content: "Prefers tea.\n" },
+      { path: ".openclaw/skills/notes/SKILL.md", content: skill("notes", "Take notes") },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+      files,
+      includeSecrets: true,
+    });
+    const count = async () => ({
+      bots: await db.bot.count({ where: owner }),
+      credentials: await db.userModelCredential.count({ where: { userId: owner.userId } }),
+      secrets: await db.secret.count({ where: { userId: owner.userId } }),
+      servers: await db.mcpServer.count({ where: owner }),
+      routines: await db.routine.count({ where: owner }),
+      skills: await db.agentSkill.count({ where: owner }),
+      memory: await db.memoryDocument.count({ where: owner }),
+      imports: await db.agentImport.count({ where: owner }),
+    });
+    const before = await count();
+    // The import record is the last write; make it fail after keys, memory, skills,
+    // servers and routines were written in the same transaction.
+    const ownerDb = createDb(process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL!);
+    await ownerDb.prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION agent_import_test_fail() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'injected failure'; END $$ LANGUAGE plpgsql`);
+    await ownerDb.prisma.$executeRawUnsafe(
+      `CREATE TRIGGER agent_import_test_fail BEFORE INSERT ON agent_imports
+       FOR EACH ROW EXECUTE FUNCTION agent_import_test_fail()`,
+    );
+    try {
+      const response = await raw(app, cookie, "bots/importCreate", {
+        files,
+        includeSecrets: true,
+        name: "Fails",
+        selection: {
+          instructions: plan.instructions.map((item) => item.id),
+          memory: plan.memory.map((item) => ({ id: item.id, destination: "space" })),
+          skills: plan.skills.map((item) => item.id),
+          model: true,
+          mcpServers: ["mcp:docs"],
+          routines: plan.routines.map((item) => item.id),
+          apiKeys: plan.apiKeys.map((item) => item.id),
+        },
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await ownerDb.prisma.$executeRawUnsafe(
+        "DROP TRIGGER IF EXISTS agent_import_test_fail ON agent_imports",
+      );
+      await ownerDb.prisma.$disconnect();
+    }
+    expect(await count()).toEqual(before);
+  });
+
+  it("undoes an import, keeping what the user changed since", async () => {
+    const cookie = await signup(app, `import-undo-${stamp}@rakazo.test`, "Undo User");
+    const firstBot = await rpc<Bot>(app, cookie, "bots/create", { name: "First" });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: firstBot.id },
+      select: { spaceId: true, userId: true },
+    });
+    const files = [
+      ...settingsHome,
+      { path: ".openclaw/workspace/USER.md", content: "Prefers tea.\n" },
+      { path: ".openclaw/workspace/memory/2026-01-02.md", content: "Planned.\n" },
+      { path: ".openclaw/skills/notes/SKILL.md", content: skill("notes", "Take notes") },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+      files,
+      includeSecrets: true,
+    });
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Imported",
+      selection: {
+        instructions: plan.instructions.map((item) => item.id),
+        memory: plan.memory.map((item) => ({ id: item.id, destination: "space" })),
+        skills: plan.skills.map((item) => item.id),
+        mcpServers: ["mcp:docs"],
+        routines: plan.routines.map((item) => item.id),
+        apiKeys: plan.apiKeys.map((item) => item.id),
+      },
+    });
+    expect(await rpc(app, cookie, "bots/importInfo", { botId: firstBot.id })).toBeNull();
+
+    // The user edits one imported skill and one imported space memory document.
+    const garden = await db.agentSkill.findFirstOrThrow({ where: { ...owner, name: "garden" } });
+    await rpc(app, cookie, "agentSkills/update", {
+      skillId: garden.id,
+      body: "Water the plants twice.\n",
+    });
+    const user = await db.memoryDocument.findFirstOrThrow({
+      where: { ...owner, scope: "user", path: "USER.md" },
+    });
+    await rpc(app, cookie, "memory/update", { documentId: user.id, content: "Prefers coffee.\n" });
+
+    const info = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", { botId: bot.id });
+    expect(info.remove).toEqual({
+      skills: ["notes"],
+      spaceMemory: ["memory/2026-01-02.md"],
+      mcpServers: ["docs"],
+      apiKeys: ["openrouter"],
+    });
+    // The first imported key became the space's default model, so it stays.
+    expect(info.keep).toEqual({
+      skills: ["garden"],
+      spaceMemory: ["USER.md"],
+      mcpServers: [],
+      apiKeys: ["anthropic"],
+    });
+
+    // Another user can neither see nor undo it.
+    const other = await signup(app, `import-undo-other-${stamp}@rakazo.test`, "Other");
+    expect((await raw(app, other, "bots/importInfo", { botId: bot.id })).status).toBe(200);
+    expect(await rpc(app, other, "bots/importInfo", { botId: bot.id })).toBeNull();
+    expect((await raw(app, other, "bots/importUndo", { botId: bot.id })).status).not.toBe(200);
+    expect(await db.bot.count({ where: { id: bot.id } })).toBe(1);
+
+    const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: bot.id });
+    expect(undone.remove).toEqual(info.remove);
+    expect(await db.bot.count({ where: { id: bot.id } })).toBe(0);
+    expect(await db.agentImport.count({ where: { botId: bot.id } })).toBe(0);
+    expect(await db.routine.count({ where: { botId: bot.id } })).toBe(0);
+    expect(
+      (await db.agentSkill.findMany({ where: owner, select: { name: true } })).map(
+        (row) => row.name,
+      ),
+    ).toEqual(["garden"]);
+    expect(
+      (
+        await db.memoryDocument.findMany({
+          where: { ...owner, scope: "user", path: { in: ["USER.md", "memory/2026-01-02.md"] } },
+          select: { path: true, content: true },
+        })
+      ).map((row) => [row.path, row.content]),
+    ).toEqual([["USER.md", "Prefers coffee.\n"]]);
+    expect(await db.mcpServer.count({ where: owner })).toBe(0);
+    expect(
+      (await db.userModelCredential.findMany({ where: { userId: owner.userId } })).map(
+        (row) => row.provider,
+      ),
+    ).toEqual(["anthropic"]);
+    expect(await db.secret.count({ where: { userId: owner.userId, kind: "mcp" } })).toBe(0);
+  });
+
+  it("returns the same bot for a retried create and refuses a reused key", async () => {
+    const cookie = await signup(app, `import-retry-${stamp}@rakazo.test`, "Retry User");
+    const files = [{ path: "workspace/SOUL.md", content: "Calm.\n" }];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+    const request = {
+      importKey: `retry-${stamp}`,
+      files,
+      name: "Retry",
+      selection: { instructions: plan.instructions.map((item) => item.id), memory: [], skills: [] },
+    };
+    const first = await rpc<Bot>(app, cookie, "bots/importCreate", request);
+    const second = await rpc<Bot>(app, cookie, "bots/importCreate", request);
+    expect(second.id).toBe(first.id);
+    const changed = await raw(app, cookie, "bots/importCreate", { ...request, name: "Other" });
+    expect(changed.status).toBe(412);
+
+    const concurrent = { ...request, importKey: `retry-concurrent-${stamp}` };
+    const results = await Promise.all([
+      raw(app, cookie, "bots/importCreate", concurrent),
+      raw(app, cookie, "bots/importCreate", concurrent),
+    ]);
+    const ids = await Promise.all(
+      results.map(async (result) => (JSON.parse(await result.text()) as { json: Bot }).json.id),
+    );
+    expect(results.map((result) => result.status)).toEqual([200, 200]);
+    expect(ids[0]).toBe(ids[1]);
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: first.id },
+      select: { spaceId: true, userId: true },
+    });
+    expect(await db.agentImport.count({ where: owner })).toBe(2);
+  });
+
+  it("ignores disallowed fields a client sends anyway", async () => {
+    const cookie = await signup(app, `import-raw-${stamp}@rakazo.test`, "Raw User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content: JSON.stringify({
+          gateway: { auth: { token: "placeholder-gateway-token" } },
+          channels: { telegram: { botToken: "placeholder-channel-token" } },
+          mcp: {
+            servers: {
+              docs: {
+                url: "https://mcp.example.com/mcp",
+                headers: { Authorization: "Bearer placeholder-mcp-header" },
+              },
+              leaky: { url: "https://mcp.example.com/mcp?token=placeholder-query-token" },
+            },
+          },
+        }),
+      },
+      {
+        path: ".openclaw/.env",
+        content: "OPENROUTER_API_KEY=placeholder-openrouter-key\nSOME_SECRET=placeholder-unknown\n",
+      },
+    ];
+    for (const includeSecrets of [false, true]) {
+      const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+        files,
+        includeSecrets,
+      });
+      expect(JSON.stringify(plan)).not.toContain("placeholder-");
+      expect(plan.mcpServers.map((item) => item.title)).toEqual(["docs"]);
+      expect(plan.apiKeys.map((item) => item.provider)).toEqual(
+        includeSecrets ? ["openrouter"] : [],
+      );
+    }
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Raw",
+      selection: {
+        instructions: [],
+        memory: [],
+        skills: [],
+        mcpServers: ["mcp:docs"],
+        apiKeys: ["key:openrouter"],
+      },
+    });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: { spaceId: true, userId: true },
+    });
+    expect(
+      (await db.userModelCredential.findMany({ where: { userId: owner.userId } })).map(
+        (row) => row.provider,
+      ),
+    ).toEqual(["openrouter"]);
+    const servers = await db.mcpServer.findMany({ where: owner });
+    expect(servers.map((row) => [row.slug, row.endpoint, row.headers])).toEqual([
+      ["docs", "https://mcp.example.com/mcp", { Authorization: true }],
+    ]);
+    for (const row of await db.secret.findMany({ where: { userId: owner.userId } })) {
+      expect(row.ciphertext).not.toContain("placeholder-");
+    }
   });
 
   it("keeps each import inside the actor's own space", async () => {

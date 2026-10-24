@@ -1,5 +1,5 @@
 import type { AgentImportFile } from "@rakazo/contracts";
-import type { AgentImportParse } from "./shared.js";
+import type { AgentImportParse, SkillFiles } from "./shared.js";
 import { byPath, fileMap, instructionItems, memoryItem, skillItems } from "./shared.js";
 
 /** OpenClaw workspace files, in the order they are combined into instructions. */
@@ -13,13 +13,17 @@ export function isOpenClawDailyMemory(path: string): boolean {
   return DAILY_MEMORY.test(path);
 }
 
-export function parseOpenClaw(files: AgentImportFile[], root: string): AgentImportParse {
+export function parseOpenClaw(
+  files: AgentImportFile[],
+  root: string,
+  skillFiles: SkillFiles = {},
+): AgentImportParse {
   const byName = fileMap(files);
   const memoryPaths = [
     ...OPENCLAW_MEMORY_FILES.filter((path) => byName.has(path)),
     ...[...byName.keys()].filter(isOpenClawDailyMemory).sort(),
   ];
-  const skills = skillItems(byName);
+  const skills = skillItems(byName, skillFiles);
   return {
     suggestedName: identityName(byName.get("IDENTITY.md")) ?? workspaceAgentId(root) ?? "OpenClaw",
     instructions: instructionItems(byName, OPENCLAW_INSTRUCTION_FILES),
