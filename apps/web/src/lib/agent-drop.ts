@@ -13,13 +13,17 @@ export type DroppedAgent = {
 };
 
 /** What a drop carried, captured during the event (entries are gone after it). */
-export type CapturedDrop = { entries: FileSystemEntry[]; files: File[] };
+export type CapturedDrop = { entries: FileSystemEntry[]; files: readonly File[] };
 
 const ARCHIVE = /\.(?:zip|tar\.gz|tgz)$/i;
 /** Folders an agent home never needs, skipped while listing a dropped folder. */
 const SKIPPED_FOLDERS = new Set(["node_modules", ".git", ".venv", "venv", "__pycache__"]);
 const MAX_LISTED = 50_000;
 
+/**
+ * Copies what a drop carried while the event runs: the browser empties `dataTransfer` (its
+ * file list and entries) once the handler returns, so nothing may read it later.
+ */
 export function captureDrop(dataTransfer: DataTransfer): CapturedDrop {
   const entries = [...dataTransfer.items].flatMap((item) => {
     const entry = item.kind === "file" ? item.webkitGetAsEntry?.() : null;

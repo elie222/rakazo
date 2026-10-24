@@ -498,7 +498,6 @@ describe("real OpenClaw home tree", () => {
     const soul = { path: "workspace/SOUL.md", content: "Calm.\n" };
     const blank = plan([soul, { path: "workspace/IDENTITY.md", content: template }]);
     expect([blank.suggestedName, blank.suggestedDescription]).toEqual(["OpenClaw", ""]);
-    expect(blank.skipped).toContainEqual({ path: "IDENTITY.md", reason: "default" });
     expect(
       plan([
         soul,

@@ -11,27 +11,38 @@ const actor: Actor = {
   isDeploymentOwner: false,
 };
 
-/** A Prisma stand-in: reads find nothing, writes echo their data with an id. */
+/**
+ * A Prisma stand-in: writes echo their data with an id and are kept; `findFirst` by id finds
+ * a kept row, other reads find nothing.
+ */
 function fakeDb(): never {
   let next = 0;
+  const rows = new Map<string, Record<string, unknown>>();
   const model = (name: string) =>
     new Proxy(
       {},
       {
-        get: (_, method: string) => async (args?: { data?: Record<string, unknown> }) => {
-          if (method === "findMany") return [];
-          if (method.startsWith("find")) {
-            return method === "findFirstOrThrow" ? { id: `${name}-thread` } : null;
-          }
-          next += 1;
-          return {
-            id: `${name}-${next}`,
-            revision: 1,
-            content: "",
-            updatedAt: new Date(0),
-            ...args?.data,
-          };
-        },
+        get:
+          (_, method: string) =>
+          async (args?: { data?: Record<string, unknown>; where?: { id?: unknown } }) => {
+            if (method === "findMany") return [];
+            if (method === "findFirst" && typeof args?.where?.id === "string") {
+              return rows.get(args.where.id) ?? null;
+            }
+            if (method.startsWith("find")) {
+              return method === "findFirstOrThrow" ? { id: `${name}-thread` } : null;
+            }
+            next += 1;
+            const row = {
+              id: `${name}-${next}`,
+              revision: 1,
+              content: "",
+              updatedAt: new Date(0),
+              ...args?.data,
+            };
+            rows.set(row.id, row);
+            return row;
+          },
       },
     );
   return new Proxy({}, { get: (_, name: string) => model(name) }) as never;
@@ -142,5 +153,29 @@ describe("the request digest", () => {
     expect(requestDigest({ ...input, selection: { ...input.selection, routines: [] } })).not.toBe(
       requestDigest(input),
     );
+  });
+});
+
+describe("an import whose attempt did not commit", () => {
+  it("is not reported as imported when a first bot made meanwhile wins", async () => {
+    const afterModelKey = vi.fn();
+    const announceRoutine = vi.fn(async () => undefined);
+    const winner = { id: "chief", threadId: "thread-chief", name: "Chief" } as Bot;
+    const attempt = services({
+      afterModelKey,
+      announceRoutine,
+      // The first attempt runs the import and is rolled back (its writes never commit);
+      // the retry finds the first bot already made and returns it without the import.
+      createBot: async (_actor, request) => {
+        await request.seed(fakeDb(), "rolled-back");
+        return winner;
+      },
+    });
+    await expect(
+      createImportedBot(attempt, actor, { ...input, spawnKey: "onboarding:first" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    // Nothing that only follows a committed import ran.
+    expect(afterModelKey).not.toHaveBeenCalled();
+    expect(announceRoutine).not.toHaveBeenCalled();
   });
 });

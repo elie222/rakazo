@@ -355,7 +355,6 @@ function detectSource(
   return [...paths].some((path) => path.endsWith(".md")) ? "openclaw" : null;
 }
 
-/** Instruction files as one text, each under its own heading when there are several. */
 /** Neutral headings for the two kinds of instruction text, when both are imported. */
 export const IMPORTED_INSTRUCTION_HEADINGS = {
   persona: "Persona",

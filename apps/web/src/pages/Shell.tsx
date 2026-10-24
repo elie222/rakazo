@@ -2250,7 +2250,7 @@ function SpaceShell() {
     [t],
   );
   const onAttachmentPick = useCallback(
-    (files: FileList | null) => {
+    (files: FileList | readonly File[] | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
       if (!threadKey || !files?.length) return false;
       const existing = attachmentsForThread(pendingAttachments, threadKey);

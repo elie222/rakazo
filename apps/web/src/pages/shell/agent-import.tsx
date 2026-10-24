@@ -61,7 +61,6 @@ const panelStyle = { section: "mt-6", heading: "text-sm text-foreground" };
 // Onboarding's step style: label rhythm, full-width groups (see SignupSurvey).
 const pageStyle = { section: "mt-6 first:mt-0", heading: "text-sm font-medium text-foreground" };
 
-/** Import an OpenClaw or Hermes folder, or another assistant's exported document, as a new bot. */
 /** A chosen folder or opened backup: its paths, and its files read on demand. */
 export type AgentImportSource = {
   paths: string[];
@@ -72,6 +71,10 @@ export type AgentImportSource = {
 /** What the form sends to create the bot. */
 export type AgentImportCreateRequest = Parameters<typeof rpc.bots.importCreate>[0];
 
+/**
+ * Import an OpenClaw or Hermes folder or backup, or another assistant's exported document,
+ * into a new bot or (from the shell) one the user already has.
+ */
 export function AgentImportForm({
   onBack,
   onCancel,

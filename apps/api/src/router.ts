@@ -7538,7 +7538,6 @@ async function prepareModelCredential(
   return { stored, defaultModel, allowedThinking };
 }
 
-/** Writes a prepared connection in the caller's transaction. */
 /**
  * An import's key: written only when the user has no connection for the provider. The import
  * runs in a serializable transaction, as `models.connect` does, so a connection saved at the
@@ -7558,6 +7557,7 @@ async function createImportedModelCredential(
   return writeModelCredential(tx, actor, input, prepared);
 }
 
+/** Writes a prepared connection in the caller's transaction. */
 async function writeModelCredential(
   tx: Prisma.TransactionClient,
   actor: Actor,

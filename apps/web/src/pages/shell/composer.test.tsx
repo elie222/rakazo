@@ -606,3 +606,79 @@ it("hides call dictation until the server enables it", () => {
   renderComposer(vi.fn().mockResolvedValue(true));
   expect(container?.querySelector('button[aria-label="Hold to talk"]')).toBeNull();
 });
+
+describe("a dropped folder or archive", () => {
+  /** A drop whose file list the browser empties once the handler returns. */
+  function drop(entries: unknown[], files: File[]) {
+    const fieldset = container!.querySelector("fieldset")!;
+    const list = [...files];
+    const dataTransfer = {
+      files: list,
+      types: ["Files"],
+      items: files.map((file, index) => ({
+        kind: "file",
+        getAsFile: () => file,
+        webkitGetAsEntry: () => entries[index] ?? null,
+      })),
+    };
+    act(() => {
+      const event = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+      fieldset.dispatchEvent(event);
+    });
+    list.length = 0;
+  }
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  it("attaches an archive that is not an agent, after the event's list is gone", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    const archive = new File(["not a zip"], "photos.zip");
+    drop([{ name: "photos.zip", isFile: true, isDirectory: false }], [archive]);
+    await settle();
+    expect(onAttachmentPick).toHaveBeenCalledTimes(1);
+    expect([...(onAttachmentPick.mock.calls[0] as unknown as [File[]])[0]]).toEqual([archive]);
+  });
+
+  it("attaches a dropped agent when the user picks Attach, after the event's list is gone", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    const onImportAgent = vi.fn();
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent },
+    );
+    const soul: unknown = {
+      name: "SOUL.md",
+      fullPath: "/workspace/SOUL.md",
+      isFile: true,
+      isDirectory: false,
+      file: (resolve: (file: File) => void) => resolve(new File(["Calm."], "SOUL.md")),
+    };
+    let listed = false;
+    const folder = {
+      name: "workspace",
+      fullPath: "/workspace",
+      isFile: false,
+      isDirectory: true,
+      createReader: () => ({
+        readEntries: (resolve: (entries: unknown[]) => void) => {
+          resolve(listed ? [] : [soul]);
+          listed = true;
+        },
+      }),
+    };
+    const placeholder = new File([], "workspace");
+    drop([folder], [placeholder]);
+    await settle();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+    const attach = [...container!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Attach",
+    )!;
+    act(() => attach.click());
+    expect([...(onAttachmentPick.mock.calls[0] as unknown as [File[]])[0]]).toEqual([placeholder]);
+    expect(onImportAgent).not.toHaveBeenCalled();
+  });
+});

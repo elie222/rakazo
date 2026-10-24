@@ -441,7 +441,10 @@ export async function createImportedBot<PreparedKey>(
   };
   const routineRows: Routine[] = [];
   const setup: AgentImportSetupItem[] = [];
-  let seeded = false;
+  // The import record the latest attempt wrote. An attempt can be rolled back (a
+  // serialization retry) and a later one may not run the import at all (a first bot made
+  // meanwhile), so success is read back from what committed, never from an earlier attempt.
+  let importId: string | null = null;
   /** Every write of the import, in one transaction, into the new or the existing bot. */
   const write = async (tx: Prisma.TransactionClient, botId: string) => {
     // A serialization conflict runs this again: start each attempt clean.
@@ -621,7 +624,7 @@ export async function createImportedBot<PreparedKey>(
         select: { id: true, revision: true },
       });
     }
-    await tx.agentImport.create({
+    const saved = await tx.agentImport.create({
       data: {
         ...owner,
         botId,
@@ -630,12 +633,15 @@ export async function createImportedBot<PreparedKey>(
         requestDigest: digest,
         created: record as unknown as Prisma.InputJsonValue,
       },
+      select: { id: true },
     });
+    importId = saved.id;
   };
   let bot: Bot;
   try {
     if (target) {
       await services.inTransaction(async (tx) => {
+        importId = null;
         // Writers take the thread before the bot row (see `commitBotUpdate`).
         if (target.threadId) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
@@ -655,12 +661,21 @@ export async function createImportedBot<PreparedKey>(
         modelId: model?.modelId ?? null,
         spawnKey: input.spawnKey,
         seed: async (tx, botId) => {
-          seeded = true;
+          importId = null;
           await write(tx, botId);
         },
       });
-      // A spawn key already taken returns that bot without running the import.
-      if (!seeded) throw new ORPCError("CONFLICT", { message: "Your first bot already exists." });
+    }
+    // Only an import record that committed with this bot counts. A spawn key already taken
+    // returns that bot without the import; an attempt rolled back left nothing.
+    const committed = importId
+      ? await services.prisma.agentImport.findFirst({
+          where: { ...owner, id: importId, botId: bot.id },
+          select: { id: true },
+        })
+      : null;
+    if (!committed) {
+      throw new ORPCError("CONFLICT", { message: "Your first bot already exists." });
     }
   } catch (error) {
     if (error instanceof InstructionConflictError) {

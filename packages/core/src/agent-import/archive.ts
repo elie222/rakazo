@@ -2,9 +2,11 @@ import { Gunzip, Inflate } from "fflate";
 import { AGENT_IMPORT_CONFIG_FILES } from "./config.js";
 
 /**
- * Reads an OpenClaw or Hermes backup in the browser, so the upload can be reduced to what an
- * import uses before anything is sent. Only files an import might use are decompressed and read;
- * every other entry is listed by name only (or, inside a gzip stream, skipped).
+ * Reads an agent backup in the browser, so the upload can be reduced to what an import uses
+ * before anything is sent. OpenClaw's backups are `.tar.gz` (with a manifest, validated
+ * here); zips are mapped by their layout only, such as Hermes' home at the archive root. Only
+ * files an import might use are decompressed and read; every other entry is listed by name
+ * only (or, inside a gzip stream, skipped).
  */
 
 export const AGENT_IMPORT_ARCHIVE_LIMITS = {
@@ -137,6 +139,7 @@ function mayBeRead(path: string): boolean {
 const NESTED_ARCHIVE = /\.(?:zip|tar|tgz|gz|bz2|xz|7z|rar)$/i;
 
 // ---------------------------------------------------------------------------------- zip
+// Zips carry no OpenClaw manifest handling: their files are mapped by layout alone.
 
 function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);

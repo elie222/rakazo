@@ -87,7 +87,7 @@ export const Composer = memo(function Composer({
   onDismissError: () => void;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onAttachmentPick: (files: FileList | null) => boolean;
+  onAttachmentPick: (files: FileList | readonly File[] | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
   onStop: () => Promise<void>;
@@ -139,7 +139,10 @@ export const Composer = memo(function Composer({
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
   // A dropped agent waiting for the user's choice, with what Attach would attach.
-  const [agentDrop, setAgentDrop] = useState<{ agent: DroppedAgent; files: FileList } | null>(null);
+  const [agentDrop, setAgentDrop] = useState<{
+    agent: DroppedAgent;
+    files: readonly File[];
+  } | null>(null);
   useEffect(
     () =>
       subscribeComposerDraftAccepted(draftKey, (text) => {
@@ -187,7 +190,7 @@ export const Composer = memo(function Composer({
     retryNonce.current = null;
   }
 
-  function pickAttachments(files: FileList | null) {
+  function pickAttachments(files: FileList | readonly File[] | null) {
     if (!files?.length) return;
     if (onAttachmentPick(files)) markEdited();
   }
@@ -373,11 +376,14 @@ export const Composer = memo(function Composer({
     if (disabled) return;
     const drop = onImportAgent ? captureDrop(dataTransfer) : null;
     if (!drop || !mightBeAgent(drop)) {
+      // Attached during the event, as before.
       pickAttachments(dataTransfer.files);
       return;
     }
+    // The event's file list is empty once this handler returns: everything later (Attach,
+    // or the fallback for an ordinary archive) uses the copy taken during the event.
+    const files = drop.files;
     // Looked at by name only, on this device; nothing is uploaded until the user chooses.
-    const files = dataTransfer.files;
     void droppedAgent(drop).then(
       (agent) => (agent ? setAgentDrop({ agent, files }) : pickAttachments(files)),
       () => pickAttachments(files),

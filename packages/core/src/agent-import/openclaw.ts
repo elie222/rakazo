@@ -59,7 +59,7 @@ export function parseOpenClaw(
         reason: "runtime" as const,
       })),
       // An avatar and an emoji have no place on a Rakazo bot; a blank template has nothing.
-      ...(identity && !identity.name && !identity.description && !identity.unused.length
+      ...(isOpenClawDefault("IDENTITY.md", byName.get("IDENTITY.md") ?? "")
         ? [{ path: "IDENTITY.md", reason: "default" as const }]
         : []),
       ...(identity?.unused ?? []).map((label) => ({
