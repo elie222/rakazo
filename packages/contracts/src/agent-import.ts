@@ -290,6 +290,8 @@ const importedNames = z.object({
 
 /** What Undo would do for an imported bot: what it removes and what it keeps because it changed. */
 export const AgentImportInfoSchema = z.object({
+  /** The import this describes. Undo names it, so it never removes a different one. */
+  id: z.string(),
   source: AgentImportSourceSchema,
   createdAt: z.string(),
   remove: importedNames,
@@ -305,3 +307,9 @@ export const AgentImportInfoSchema = z.object({
   model: z.enum(["restore", "keep"]).nullable().default(null),
 });
 export type AgentImportInfo = z.infer<typeof AgentImportInfoSchema>;
+
+/** Undoes the bot's latest import only while it is still the one the user was shown. */
+export const AgentImportUndoInput = z.strictObject({
+  botId: z.string().min(1).max(100),
+  importId: z.string().min(1).max(100),
+});

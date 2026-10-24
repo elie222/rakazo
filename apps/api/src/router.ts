@@ -2308,7 +2308,7 @@ export function createRouter(deps: RouterDeps) {
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),
       ),
       importUndo: authed.bots.importUndo.handler(async ({ context, input }) =>
-        undoAgentImport(agentImportServices as AgentImportServices, context.actor, input.botId),
+        undoAgentImport(agentImportServices as AgentImportServices, context.actor, input),
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);

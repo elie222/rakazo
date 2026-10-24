@@ -5,6 +5,7 @@ import {
   AgentImportInfoSchema,
   AgentImportPlanSchema,
   AgentImportPreviewInput,
+  AgentImportUndoInput,
 } from "./agent-import.js";
 import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
@@ -345,7 +346,7 @@ export const appContract = {
     /** What is already done on an import's setup checklist, from current data. */
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
     /** Removes an imported bot and what the import created, keeping what changed since. */
-    importUndo: oc.input(botId).output(AgentImportInfoSchema),
+    importUndo: oc.input(AgentImportUndoInput).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),

@@ -902,6 +902,7 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       rows.filter((row) => ids.includes(row.id)).map(label);
     const added = [...plan.addedBotMemory.remove, ...plan.addedBotMemory.keep];
     const result: AgentImportInfo = {
+      id: found.id,
       source: found.source as AgentImportSource,
       createdAt: found.createdAt.toISOString(),
       existingBot,
@@ -1027,18 +1028,24 @@ export async function agentImportInfo(
 }
 
 /**
- * Undoes a bot's latest import. For a bot the import created, removes the bot and what the
- * import added, in the bot deletion's transaction. For an existing bot, removes only what
- * the import added and keeps the bot. Anything changed since is kept and reported; API keys
- * always stay.
+ * Undoes a bot's latest import, only while it is the one the user was shown. For a bot the
+ * import created, removes the bot and what the import added, in the bot deletion's
+ * transaction. For an existing bot, removes only what the import added and keeps the bot.
+ * Anything changed since is kept and reported; API keys always stay.
  */
 export async function undoAgentImport(
   services: AgentImportServices,
   actor: Actor,
-  botId: string,
+  input: { botId: string; importId: string },
 ): Promise<AgentImportInfo> {
+  const { botId } = input;
   const before = await undoPlan(services.prisma, actor, botId);
   if (!before) throw refused("NOT_FOUND", "not_imported", "This bot was not imported.");
+  // Another tab may have undone the import that was shown, leaving an older one latest:
+  // the import that made the bot, whose Undo deletes it.
+  if (before.plan.found.id !== input.importId) {
+    throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
+  }
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   let result = before.info;
   // Chat events Undo appends (closed MCP cards, the retired checklist), sent once committed.

@@ -3,7 +3,7 @@ import path from "node:path";
 import { crc32, gzipSync } from "node:zlib";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { Bot, MemoryDocument } from "@rakazo/contracts";
+import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -592,6 +592,48 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   expect(bots.some((bot) => bot.id === botId)).toBe(false);
   const skills = await rpc<{ name: string }[]>(page, "agentSkills/list", {});
   expect(skills.some((item) => item.name === "inbox-triage")).toBe(false);
+});
+
+test("Undo removes only the import it showed, even after another tab undid it", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `agent-import-undo-shown-${Date.now()}@rakazo.test`, "password12", "Shown");
+  await completeOnboarding(page);
+  // A bot an import made, then a second import added to it.
+  const files = [
+    { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+    { path: ".openclaw/workspace/IDENTITY.md", content: "- **Name:** Pebble\n" },
+    { path: ".openclaw/workspace/MEMORY.md", content: "Project Alpha.\n" },
+  ];
+  const plan = await rpc<AgentImportPlan>(page, "bots/importPreview", { files });
+  const memory = plan.memory.map((item) => ({ id: item.id, destination: "bot" }));
+  const bot = await rpc<Bot>(page, "bots/importCreate", {
+    files,
+    name: "Pebble",
+    selection: { instructions: plan.instructions.map((item) => item.id), memory, skills: [] },
+  });
+  await rpc(page, "bots/importCreate", {
+    files,
+    destination: { kind: "existing", botId: bot.id },
+    selection: { instructions: [], memory, skills: [] },
+  });
+  await page.goto(`/app/${bot.id}`);
+  await page.getByTestId("bot-settings-trigger").click();
+  await expandAdvancedSection(page.getByTestId("bot-settings-advanced"));
+  await page.getByTestId("agent-import-undo").click();
+  const dialog = page.getByTestId("agent-import-undo-dialog");
+  await expect(dialog).toContainText("What the import added will be removed. The bot stays.");
+
+  // Another tab undoes that addition before this one confirms.
+  const shown = await rpc<AgentImportInfo>(page, "bots/importInfo", { botId: bot.id });
+  await rpc(page, "bots/importUndo", { botId: bot.id, importId: shown.id });
+  await dialog.getByRole("button", { name: "Undo import", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("This import changed. Try again.");
+  // Nothing was removed, and the dialog now says what Undo would do instead.
+  await expect(dialog).toContainText("The bot and what its import added will be removed.");
+  await captureScreenshot(page, testInfo, "agent-import-undo-changed");
+  const bots = await rpc<Bot[]>(page, "bots/list", {});
+  expect(bots.some((item) => item.id === bot.id)).toBe(true);
 });
 
 /** OpenClaw's SOUL.md as it seeds it (template without front matter), and Hermes' SOUL.md. */

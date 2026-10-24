@@ -561,7 +561,13 @@ export function OnboardingPage() {
         ) : null}
         {step === "survey" && !importing ? (
           <>
-            <SignupSurvey onDone={() => setSurveyDone(true)} />
+            <SignupSurvey
+              onDone={() => {
+                // Also past a not-imported notice: on to the first bot that already existed.
+                setNotImported(false);
+                setSurveyDone(true);
+              }}
+            />
             {/* With no model step to follow, this is the one screen before the first bot is
                 made: the same quiet way in as on the model step. */}
             {noModelStep && !importedBotId ? (
@@ -611,21 +617,24 @@ export function OnboardingPage() {
             <p role="alert" className="text-sm text-destructive">
               <Trans>Your first bot already existed, so the agent was not imported.</Trans>
             </p>
-            <Button
-              className="mt-4"
-              onClick={() => {
-                setNotImported(false);
-                // On to that bot once a model is connected; otherwise the model step stays.
-                void rpc
-                  .me()
-                  .then((me) => {
-                    if (!me.needsModel) goTo("bot");
-                  })
-                  .catch(() => undefined);
-              }}
-            >
-              <Trans>Continue</Trans>
-            </Button>
+            {/* On the survey, its own Continue goes on: one way forward, not two. */}
+            {step === "survey" ? null : (
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  setNotImported(false);
+                  // On to that bot once a model is connected; otherwise the model step stays.
+                  void rpc
+                    .me()
+                    .then((me) => {
+                      if (!me.needsModel) goTo("bot");
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                <Trans>Continue</Trans>
+              </Button>
+            )}
           </div>
         ) : null}
         {step === "model" && !importing && !notImported ? (

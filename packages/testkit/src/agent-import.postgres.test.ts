@@ -758,10 +758,15 @@ describeIntegration("agent import", () => {
     const other = await signup(app, `import-undo-other-${stamp}@rakazo.test`, "Other");
     expect((await raw(app, other, "bots/importInfo", { botId: bot.id })).status).toBe(200);
     expect(await rpc(app, other, "bots/importInfo", { botId: bot.id })).toBeNull();
-    expect((await raw(app, other, "bots/importUndo", { botId: bot.id })).status).not.toBe(200);
+    expect(
+      (await raw(app, other, "bots/importUndo", { botId: bot.id, importId: info.id })).status,
+    ).not.toBe(200);
     expect(await db.bot.count({ where: { id: bot.id } })).toBe(1);
 
-    const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: bot.id });
+    const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
+      botId: bot.id,
+      importId: info.id,
+    });
     expect(undone).toEqual(info);
     expect(await db.bot.count({ where: { id: bot.id } })).toBe(0);
     expect(await db.agentImport.count({ where: { botId: bot.id } })).toBe(0);
@@ -825,10 +830,11 @@ describeIntegration("agent import", () => {
     // must then wait on its row lock and see the change once it commits.
     const whileUndoing = async (botId: string, change: (tx: never) => Promise<unknown>) => {
       let undo: Promise<AgentImportInfo> | undefined;
+      const { id: importId } = await db.agentImport.findFirstOrThrow({ where: { botId } });
       await db.$transaction(
         async (tx) => {
           await change(tx as never);
-          undo = rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId });
+          undo = rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId, importId });
           await new Promise((resolve) => setTimeout(resolve, 1_500));
         },
         { timeout: 20_000 },
@@ -890,7 +896,7 @@ describeIntegration("agent import", () => {
     // Unchanged, it goes, and the result says exactly that.
     const plain = await importOne("Plain");
     const plainServer = await serverOf(plain.id);
-    const third = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: plain.id });
+    const third = await undoShown(app, cookie, plain.id);
     expect([third.remove.mcpServers, third.keep.mcpServers]).toEqual([[plainServer.slug], []]);
     expect(await db.mcpServer.count({ where: { id: plainServer.id } })).toBe(0);
   });
@@ -1327,7 +1333,7 @@ describeIntegration("agent import", () => {
     expect(
       secondCards.filter((block) => block.kind === "mcp_approval").map((block) => block.name),
     ).toEqual(["docs-2"]);
-    await rpc(app, cookie, "bots/importUndo", { botId: second.id });
+    await rpc(app, cookie, "bots/importUndo", { botId: second.id, importId: info.id });
     expect(
       (await db.mcpServer.findMany({ where: owner, select: { slug: true } })).map(
         (row) => row.slug,
@@ -1478,7 +1484,7 @@ describeIntegration("agent import", () => {
           routines: ["morning"],
         },
       });
-      await rpc(app, cookie, "bots/importUndo", { botId: chief.id });
+      await rpc(app, cookie, "bots/importUndo", { botId: chief.id, importId: info.id });
       const owner = { spaceId: after.spaceId, userId: after.userId };
       expect(await db.bot.count({ where: { id: chief.id } })).toBe(1);
       expect({
@@ -1569,7 +1575,7 @@ describeIntegration("agent import", () => {
       const thread = await db.thread.findFirstOrThrow({ where: { botId: chief.id } });
       published.length = 0;
 
-      await rpc(app, cookie, "bots/importUndo", { botId: chief.id });
+      await undoShown(app, cookie, chief.id);
       expect(await cards()).toEqual({ [docs.id]: "dismissed", [wiki.id]: "pending" });
       expect(await db.mcpServer.count({ where: { id: { in: [docs.id, wiki.id] } } })).toBe(1);
       // The repaint reached open chats once Undo committed.
@@ -1625,9 +1631,7 @@ describeIntegration("agent import", () => {
       expect(await rpc(app, cookie, "bots/importInfo", { botId: chief.id })).toMatchObject({
         instructions: "restore",
       });
-      const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
-        botId: chief.id,
-      });
+      const undone = await undoShown(app, cookie, chief.id);
       expect(undone.instructions).toBe("restore");
       expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
         "Chief's own instructions.",
@@ -1647,9 +1651,7 @@ describeIntegration("agent import", () => {
         selection: everything(plan),
       });
       await rpc(app, cookie, "bots/update", { botId: chief.id, instructions: "Edited after." });
-      const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
-        botId: chief.id,
-      });
+      const undone = await undoShown(app, cookie, chief.id);
       expect(undone.instructions).toBe("keep");
       expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
         "Edited after.",
@@ -1685,9 +1687,7 @@ describeIntegration("agent import", () => {
         if (changed) {
           await db.bot.update({ where: { id: chief.id }, data: { modelId: "openai/gpt-example" } });
         }
-        const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
-          botId: chief.id,
-        });
+        const undone = await undoShown(app, cookie, chief.id);
         const after = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
         if (changed) {
           expect(undone.model).toBe("keep");
@@ -1715,6 +1715,41 @@ describeIntegration("agent import", () => {
       expect(response.status).toBe(404);
       expect(await db.agentImport.count({ where: { botId: chief.id } })).toBe(0);
       expect(await db.routine.count({ where: { botId: chief.id } })).toBe(0);
+    });
+
+    it("undoes only the import that was shown, never the one that made the bot", async () => {
+      const { cookie, plan } = await setUp("shown");
+      // A bot an import made, then a second import added to it.
+      const made = await rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        name: "Pebble",
+        selection: everything(plan),
+      });
+      await rpc(app, cookie, "bots/importCreate", {
+        files,
+        destination: { kind: "existing", botId: made.id },
+        selection: {
+          ...everything(plan),
+          instructions: [],
+          skills: [],
+          mcpServers: [],
+          routines: [],
+        },
+      });
+      const shown = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", {
+        botId: made.id,
+      });
+      expect(shown.existingBot).toBe(true);
+      // Another tab undoes that addition before this one confirms.
+      await rpc(app, cookie, "bots/importUndo", { botId: made.id, importId: shown.id });
+      const stale = await raw(app, cookie, "bots/importUndo", {
+        botId: made.id,
+        importId: shown.id,
+      });
+      expect(stale.status).toBe(409);
+      expect(await stale.text()).toContain('"reason":"import_changed"');
+      expect(await db.bot.count({ where: { id: made.id } })).toBe(1);
+      expect(await db.agentImport.count({ where: { botId: made.id } })).toBe(1);
     });
   });
 
@@ -1827,8 +1862,17 @@ describeIntegration("agent import", () => {
         shared.id,
       ),
     ).toEqual({ providers: {}, serverIds: { [server.id]: false }, routineIds: {} });
+    const ownerImport = await db.agentImport.findFirstOrThrow({ where: { botId: ownerBot.id } });
     expect(
-      (await raw(app, member, "bots/importUndo", { botId: ownerBot.id }, shared.id)).status,
+      (
+        await raw(
+          app,
+          member,
+          "bots/importUndo",
+          { botId: ownerBot.id, importId: ownerImport.id },
+          shared.id,
+        )
+      ).status,
     ).not.toBe(200);
     expect(await db.bot.count({ where: { id: ownerBot.id } })).toBe(1);
     expect(await db.agentImport.count({ where: { botId: ownerBot.id } })).toBe(1);
@@ -1890,6 +1934,12 @@ async function rpc<T>(
     throw new Error(`${proc} ${res.status}: ${parsed.error?.message ?? text}`);
   }
   return parsed.json as T;
+}
+
+/** Undo as the app's dialog does it: for the import it was shown. */
+async function undoShown(app: App, cookie: string, botId: string) {
+  const shown = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", { botId });
+  return rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId, importId: shown.id });
 }
 
 async function raw(app: App, cookie: string, proc: string, body: unknown, spaceId?: string) {

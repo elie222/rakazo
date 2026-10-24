@@ -157,13 +157,21 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                   setBusy(true);
                   setError(null);
                   rpc.bots
-                    .importUndo({ botId })
+                    .importUndo({ botId, importId: info.id })
                     .then(() => onUndone())
                     .catch((err: unknown) => {
                       setError(
                         agentImportErrorText(err) ?? errorText(err, t`Could not undo the import`),
                       );
                       setBusy(false);
+                      // Shows what Undo would do now: another tab may have undone this import.
+                      rpc.bots
+                        .importInfo({ botId })
+                        .then((found) => {
+                          setInfo(found);
+                          if (!found) setOpen(false);
+                        })
+                        .catch(() => undefined);
                     });
                 }}
               >
