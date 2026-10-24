@@ -238,6 +238,16 @@ describeIntegration("agent import", () => {
       servers: await db.mcpServer.count({ where: owner }),
       routines: await db.routine.count({ where: owner }),
     }).toEqual({ skills: 0, servers: 0, routines: 0 });
+    // Only the model is left to set up: its provider has no key here, so it was not applied.
+    const blocks = (
+      await db.message.findMany({ where: { thread: { botId: bot.id } }, select: { blocks: true } })
+    ).flatMap((row) => row.blocks as { kind: string }[]);
+    expect(blocks.filter((block) => block.kind === "import_setup")).toEqual([
+      {
+        kind: "import_setup",
+        items: [{ kind: "model", title: plan.model!.title, provider: plan.model!.provider }],
+      },
+    ]);
   });
 
   it("refuses unknown selections and oversized instructions without creating a bot", async () => {
@@ -471,6 +481,29 @@ describeIntegration("agent import", () => {
         status: "pending",
       }),
     );
+    // One checklist of what is left, written with the import: the server's credentials and
+    // each paused routine, with the ids the chat opens them by.
+    const routineRows = await db.routine.findMany({
+      where: { botId: bot.id },
+      orderBy: { createdAt: "asc" },
+    });
+    const checklists = cards
+      .flatMap((row) => row.blocks as { kind: string; items?: unknown[] }[])
+      .filter((block) => block.kind === "import_setup");
+    expect(checklists).toEqual([
+      {
+        kind: "import_setup",
+        items: [
+          {
+            kind: "mcp",
+            serverId: servers[0]!.id,
+            name: "docs",
+            needs: [{ kind: "credentials", names: ["Authorization"] }],
+          },
+          ...routineRows.map((row) => ({ kind: "routine", routineId: row.id, name: row.name })),
+        ],
+      },
+    ]);
     await rpc(app, cookie, "mcp/assignments/approve", { botId: bot.id, serverId: servers[0]!.id });
     expect(
       await db.botMcpServer.findMany({
@@ -953,6 +986,14 @@ describeIntegration("agent import", () => {
     };
     const first = await importOnce("First");
     const second = await importOnce("Second");
+    // A ready server and skill leave nothing to set up: no checklist.
+    const secondBlocks = (
+      await db.message.findMany({
+        where: { thread: { botId: second.id } },
+        select: { blocks: true },
+      })
+    ).flatMap((row) => row.blocks as { kind: string }[]);
+    expect(secondBlocks.map((block) => block.kind)).toEqual(["mcp_approval"]);
     const owner = await db.bot.findUniqueOrThrow({
       where: { id: first.id },
       select: { spaceId: true, userId: true },

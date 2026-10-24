@@ -102,6 +102,7 @@ export function skillItem(
     description: parsed.description,
     content: markdown,
     warnings: skillWarnings(view, parsed.body, siblings),
+    status: skillStatus(skillRequirements(frontmatter(view))),
   };
 }
 
@@ -158,7 +159,8 @@ function skillWarnings(
   siblings: readonly string[],
 ): AgentImportSkill["warnings"] {
   const warnings: AgentImportSkill["warnings"] = [];
-  if (declaresRequirements(frontmatter(content))) warnings.push("needs_setup");
+  const requirements = skillRequirements(frontmatter(content));
+  if (requirements.names.length || requirements.otherPlatform) warnings.push("needs_setup");
   const bundled = siblings.length > 0 && BUNDLED_REFERENCE.test(body);
   if (bundled) warnings.push("bundled_files");
   const runsBundledScript = bundled && siblings.some((name) => name.startsWith("scripts/"));
@@ -178,16 +180,41 @@ function frontmatter(content: string): Record<string, unknown> {
   }
 }
 
-function declaresRequirements(front: Record<string, unknown>): boolean {
+function skillStatus(requirements: {
+  names: string[];
+  otherPlatform: boolean;
+}): AgentImportSkill["status"] {
+  if (requirements.otherPlatform) return { kind: "unsupported", reason: "other_platform" };
+  return requirements.names.length
+    ? { kind: "needs_setup", needs: [{ kind: "requires", names: requirements.names }] }
+    : { kind: "ready" };
+}
+
+/**
+ * What a skill's frontmatter says it needs (OpenClaw's `metadata.openclaw.requires`,
+ * Hermes' prerequisites and toolsets), by name, and whether it runs only on a platform
+ * other than Linux, where Rakazo runs skills.
+ */
+function skillRequirements(front: Record<string, unknown>): {
+  names: string[];
+  otherPlatform: boolean;
+} {
   const field = (value: unknown, key: string): unknown =>
     value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
-  const nonEmpty = (value: unknown) =>
+  const names = (value: unknown): string[] =>
     Array.isArray(value)
-      ? value.length > 0
+      ? value.flatMap((entry) =>
+          typeof entry === "string"
+            ? [entry]
+            : typeof field(entry, "name") === "string"
+              ? [field(entry, "name") as string]
+              : [],
+        )
       : value && typeof value === "object"
-        ? Object.keys(value).length > 0
-        : typeof value === "string" && value.trim() !== "";
-  // Rakazo runs skills on Linux computers.
+        ? Object.keys(value)
+        : typeof value === "string" && value.trim()
+          ? [value.trim()]
+          : [];
   const otherPlatform = (value: unknown) =>
     Array.isArray(value) &&
     value.length > 0 &&
@@ -196,13 +223,19 @@ function declaresRequirements(front: Record<string, unknown>): boolean {
   const openclaw = field(metadata, "openclaw");
   const requires = field(openclaw, "requires");
   const hermes = field(metadata, "hermes");
-  return (
-    ["bins", "anyBins", "env", "config"].some((key) => nonEmpty(field(requires, key))) ||
-    otherPlatform(field(openclaw, "os")) ||
-    otherPlatform(front.os) ||
-    otherPlatform(front.platforms) ||
-    Boolean(nonEmpty(field(field(front, "prerequisites"), "commands"))) ||
-    Boolean(nonEmpty(front.required_environment_variables)) ||
-    Boolean(nonEmpty(field(hermes, "requires_toolsets")))
-  );
+  const all = [
+    ...["bins", "anyBins", "env", "config"].flatMap((key) => names(field(requires, key))),
+    ...names(field(field(front, "prerequisites"), "commands")),
+    ...names(front.required_environment_variables),
+    ...names(field(hermes, "requires_toolsets")),
+  ]
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return {
+    names: [...new Set(all)],
+    otherPlatform:
+      otherPlatform(field(openclaw, "os")) ||
+      otherPlatform(front.os) ||
+      otherPlatform(front.platforms),
+  };
 }

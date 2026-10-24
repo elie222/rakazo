@@ -14,6 +14,7 @@ import type {
   AgentImportInfo,
   AgentImportMemoryDestination,
   AgentImportPlan,
+  AgentImportSetupItem,
   AgentImportSource,
   AgentImportWarning,
   Bot,
@@ -220,6 +221,7 @@ async function buildPlan(
       name: slug,
       content: server.content,
       warnings: server.warnings,
+      status: server.status,
     };
   });
 
@@ -253,6 +255,8 @@ async function buildPlan(
         title: routine.title,
         content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
         warnings: routine.warnings,
+        // Created paused: it runs once the user turns it on.
+        status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
     ];
   });
@@ -274,10 +278,9 @@ export async function previewAgentImport(
 }
 
 /** Items of `items` whose ids were selected, in plan order; unknown or repeated ids fail. */
-function selected<T extends { id: string; warnings?: AgentImportWarning[] }>(
-  items: T[],
-  ids: string[],
-): T[] {
+function selected<
+  T extends { id: string; warnings?: AgentImportWarning[]; status?: { kind: string } },
+>(items: T[], ids: string[]): T[] {
   const known = new Set(items.map((item) => item.id));
   const chosen = new Set(ids);
   if (chosen.size !== ids.length || ids.some((id) => !known.has(id))) {
@@ -286,6 +289,10 @@ function selected<T extends { id: string; warnings?: AgentImportWarning[] }>(
   const picked = items.filter((item) => chosen.has(item.id));
   if (picked.some((item) => item.warnings?.some((warning) => BLOCKING.has(warning)))) {
     throw new ORPCError("BAD_REQUEST", { message: "That MCP server cannot run here." });
+  }
+  // Not supported here at all (a skill for another platform): never created.
+  if (picked.some((item) => item.status?.kind === "unsupported")) {
+    throw new ORPCError("BAD_REQUEST", { message: "That item cannot work here." });
   }
   return picked;
 }
@@ -386,10 +393,14 @@ export async function createImportedBot<PreparedKey>(
       ),
     );
   }
-  const preparedServers: { config: McpServerConfigInput; stored: Stored }[] = [];
+  const preparedServers: { id: string; config: McpServerConfigInput; stored: Stored }[] = [];
   for (const server of servers) {
     const config = { ...server.config, slug: server.slug };
-    preparedServers.push({ config, stored: await services.prepareMcpServer(actor, config) });
+    preparedServers.push({
+      id: server.id,
+      config,
+      stored: await services.prepareMcpServer(actor, config),
+    });
   }
 
   const record: ImportRecord = {
@@ -401,6 +412,7 @@ export async function createImportedBot<PreparedKey>(
     credentials: [],
   };
   const routineRows: Routine[] = [];
+  const setup: AgentImportSetupItem[] = [];
   let seeded = false;
   const created = services.createBot(actor, {
     name: input.name,
@@ -471,6 +483,9 @@ export async function createImportedBot<PreparedKey>(
           })
           .catch(conflict("A skill with that name was just added. Try again."));
         record.skills.push({ id: row.id, hash: contentHash(row.content) });
+        if (item.status.kind === "needs_setup") {
+          setup.push({ kind: "skill", name: row.name, needs: item.status.needs });
+        }
       }
       // Imported servers are not given to the bot: an approval card in its chat lets the
       // user grant them, as when a bot asks for a server itself.
@@ -505,6 +520,10 @@ export async function createImportedBot<PreparedKey>(
           ],
         });
         record.mcpServers.push({ id: row.id, revision: row.revision });
+        const status = plan.mcpServers.find((item) => item.id === prepared.id)?.status;
+        if (status?.kind === "needs_setup") {
+          setup.push({ kind: "mcp", serverId: row.id, name: row.slug, needs: status.needs });
+        }
       }
       for (const routine of routines) {
         const routineInput = { ...routine, botId };
@@ -517,6 +536,19 @@ export async function createImportedBot<PreparedKey>(
         });
         record.routines.push({ id: row.id });
         routineRows.push(row);
+        setup.push({ kind: "routine", routineId: row.id, name: row.name });
+      }
+      // A model this import could not apply (its provider has no key here) is set up later.
+      if (plan.model?.status === "needs_key" && !model) {
+        setup.push({ kind: "model", title: plan.model.title, provider: plan.model.provider });
+      }
+      // One checklist of what is left to set up, in the same transaction; none if nothing is.
+      if (setup.length) {
+        await createThreadMessageInTransaction(tx, {
+          threadId: thread.id,
+          role: "bot",
+          blocks: [{ kind: "import_setup", items: setup }],
+        });
       }
       const botMemory = await tx.memoryDocument.findMany({
         where: { ...owner, scope: "bot", botId },

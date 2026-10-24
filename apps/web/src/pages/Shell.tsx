@@ -3568,6 +3568,15 @@ function SpaceShell() {
             speakingMessageId={speakingMessageId}
             onSpeak={speakMessage}
             onOpenComputer={onOpenComputer}
+            onOpenImportSetup={(target) => {
+              if (target.kind === "models") openSettings("models");
+              else if (target.kind === "mcp") setMcpOpen(true);
+              else {
+                const next = new URLSearchParams(searchParams);
+                next.set("routine", target.routineId);
+                setSearchParams(next);
+              }
+            }}
           />
         )}
         {recordingSkill ? (

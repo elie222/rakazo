@@ -252,6 +252,48 @@ describe("OpenClaw settings", () => {
     ]);
   });
 
+  it("says what each MCP server needs before it works here", () => {
+    const status = (allowed: boolean) =>
+      readAgentImportSettings(
+        {
+          source: "openclaw",
+          root: "workspace",
+          files: new Map([["openclaw.json", openclawJson]]),
+        },
+        { includeSecrets: false, stdioAllowed: () => allowed },
+      ).mcpServers.map((server) => [server.title, server.status]);
+    expect(status(true)).toEqual([
+      ["docs", { kind: "needs_setup", needs: [{ kind: "credentials", names: ["Authorization"] }] }],
+      [
+        "files",
+        {
+          kind: "needs_setup",
+          needs: [
+            { kind: "program", name: "npx" },
+            { kind: "env", names: ["EXAMPLE_TOKEN"] },
+            { kind: "local_paths" },
+          ],
+        },
+      ],
+      [
+        "vault",
+        {
+          kind: "needs_setup",
+          needs: [
+            { kind: "program", name: "vault-mcp" },
+            { kind: "env", names: ["TOKEN"] },
+          ],
+        },
+      ],
+    ]);
+    // Where this deployment cannot run stdio servers, they are not supported here.
+    expect(status(false).map(([title, value]) => [title, value])).toEqual([
+      ["docs", { kind: "needs_setup", needs: [{ kind: "credentials", names: ["Authorization"] }] }],
+      ["files", { kind: "unsupported", reason: "unsupported_command" }],
+      ["vault", { kind: "unsupported", reason: "unsupported_command" }],
+    ]);
+  });
+
   it("never imports MCP credential values, even with the opt-in", () => {
     const settings = openclaw(true);
     const configs = Object.fromEntries(

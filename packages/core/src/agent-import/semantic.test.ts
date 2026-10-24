@@ -135,3 +135,29 @@ describe("OpenClaw files by purpose", () => {
     expect(openClawRuntimeMentions("Answer briefly. Keep a daily log.")).toEqual([]);
   });
 });
+
+describe("skill status", () => {
+  const skill = (front: string) =>
+    plan([
+      {
+        path: "workspace/skills/notes/SKILL.md",
+        content: `---\nname: notes\ndescription: Take notes\n${front}---\n\nSteps.\n`,
+      },
+    ]).skills[0]!.status;
+
+  it("is ready, needs what the skill declares, or is not supported on another platform", () => {
+    expect(skill("")).toEqual({ kind: "ready" });
+    expect(
+      skill(
+        "metadata:\n  openclaw:\n    requires:\n      bins: [gh, curl]\n      env: [GH_TOKEN]\n",
+      ),
+    ).toEqual({
+      kind: "needs_setup",
+      needs: [{ kind: "requires", names: ["gh", "curl", "GH_TOKEN"] }],
+    });
+    expect(skill("platforms: [macos]\n")).toEqual({
+      kind: "unsupported",
+      reason: "other_platform",
+    });
+  });
+});

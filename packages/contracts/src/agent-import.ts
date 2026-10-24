@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { AgentImportStatusSchema } from "./agent-import-setup.js";
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH, ComputerModeSchema } from "./domain.js";
 
 export const AGENT_IMPORT_MAX_FILES = 500;
@@ -65,6 +66,8 @@ export const AgentImportWarningSchema = z.enum([
 export type AgentImportWarning = z.infer<typeof AgentImportWarningSchema>;
 const warnings = z.array(AgentImportWarningSchema).default([]);
 
+const status = AgentImportStatusSchema.default({ kind: "ready" });
+
 /** What an instruction file is for: who the agent is, or how it works. */
 export const AgentImportInstructionRoleSchema = z.enum(["persona", "working"]);
 export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRoleSchema>;
@@ -105,6 +108,7 @@ export const AgentImportSkillSchema = z.object({
   /** SKILL.md as it will be saved. */
   content: z.string(),
   warnings,
+  status,
 });
 export type AgentImportSkill = z.infer<typeof AgentImportSkillSchema>;
 
@@ -128,6 +132,7 @@ export const AgentImportMcpServerSchema = z.object({
   /** What the server runs or connects to, without credential values. */
   content: z.string(),
   warnings,
+  status,
 });
 export type AgentImportMcpServer = z.infer<typeof AgentImportMcpServerSchema>;
 
@@ -137,6 +142,7 @@ export const AgentImportRoutineSchema = z.object({
   /** Schedule and prompt, as shown in the preview. */
   content: z.string(),
   warnings,
+  status,
 });
 export type AgentImportRoutine = z.infer<typeof AgentImportRoutineSchema>;
 

@@ -702,6 +702,10 @@ msgstr ""
 msgid "API key"
 msgstr "API कुंजी"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "{provider} के लिए API कुंजी"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API कुंजी हेडर"
@@ -2066,6 +2070,10 @@ msgstr ""
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "क्रेडेंशियल एन्क्रिप्टेड होते हैं और मॉडल को कभी नहीं भेजे जाते।"
 
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "क्रेडेंशियल: {names}"
+
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
@@ -2454,6 +2462,10 @@ msgstr "इमेज सीमा के लिए 1 से 1000 के बी�
 msgid "Enter an API key before testing."
 msgstr "परीक्षण से पहले API कुंजी दर्ज करें।"
 
+#: src/pages/shell/import-status.ts
+msgid "Env: {names}"
+msgstr "एनवायरनमेंट: {names}"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "एनवायरनमेंट वेरिएबल"
@@ -2611,6 +2623,10 @@ msgstr "मॉडल खोजें"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "खोजा जा रहा है…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "सेटअप पूरा करें"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -3456,14 +3472,14 @@ msgstr "ऐसा सेटअप चाहिए जो Rakazo में शा
 msgid "Needs takeover"
 msgstr "नियंत्रण लेना ज़रूरी"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs this provider's API key"
-msgstr "इस प्रदाता की API कुंजी चाहिए"
-
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr ""
+
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "ज़रूरी: {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3650,6 +3666,10 @@ msgstr "कनेक्ट नहीं है"
 msgid "Not imported"
 msgstr "इंपोर्ट नहीं हुआ"
 
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Rakazo के कैटलॉग में नहीं"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr ""
@@ -3659,6 +3679,7 @@ msgid "Not now"
 msgstr "अभी नहीं"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Rakazo में समर्थित नहीं"
 
@@ -3742,6 +3763,7 @@ msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "खोलें"
@@ -3750,6 +3772,10 @@ msgstr "खोलें"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr ""
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "{name} खोलें"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3917,6 +3943,7 @@ msgid "Paste your API key, then test again."
 msgstr "अपनी API कुंजी पेस्ट करें, फिर फिर से परीक्षण करें।"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr ""
 
@@ -4006,6 +4033,10 @@ msgstr "निजी"
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "प्रोग्राम: {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr ""
@@ -4051,6 +4082,10 @@ msgstr "प्रतिक्रियाएँ"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "उत्तर पढ़कर सुनाएं"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "तैयार"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -5458,6 +5493,7 @@ msgid "Uses files that are not imported"
 msgstr "ऐसी फ़ाइलें इस्तेमाल करता है जो इंपोर्ट नहीं होतीं"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "आपके कंप्यूटर के पाथ इस्तेमाल करता है"
 

@@ -1,4 +1,9 @@
-import type { AgentImportWarning, McpServerConfigInput } from "@rakazo/contracts";
+import type {
+  AgentImportNeed,
+  AgentImportStatus,
+  AgentImportWarning,
+  McpServerConfigInput,
+} from "@rakazo/contracts";
 import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
@@ -29,6 +34,7 @@ export type ImportedMcpServer = {
   content: string;
   config: McpServerConfigInput;
   warnings: AgentImportWarning[];
+  status: AgentImportStatus;
 };
 export type ImportedRoutine = {
   id: string;
@@ -305,7 +311,36 @@ function mcpServer(
   }
   const parsed = McpServerConfigSchema.safeParse(candidate);
   if (!parsed.success) return null;
-  return { title: name, content, config: parsed.data, warnings };
+  return {
+    title: name,
+    content,
+    config: parsed.data,
+    warnings,
+    status: mcpStatus(entry, warnings),
+  };
+}
+
+/**
+ * What an imported MCP server needs before it works. A remote server without auth headers is
+ * ready; header names mean credentials to enter; a stdio server this deployment can run needs
+ * its program (and env values) on the bot's computer; one it cannot run is not supported.
+ */
+function mcpStatus(entry: Json, warnings: AgentImportWarning[]): AgentImportStatus {
+  if (warnings.includes("unsupported_command")) {
+    return { kind: "unsupported", reason: "unsupported_command" };
+  }
+  const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
+  const needs: AgentImportNeed[] = [];
+  if (text(entry.url)) {
+    const headers = names(entry.headers);
+    if (headers.length) needs.push({ kind: "credentials", names: headers });
+  } else {
+    needs.push({ kind: "program", name: text(entry.command) });
+    const env = names(entry.env);
+    if (env.length) needs.push({ kind: "env", names: env });
+  }
+  if (warnings.includes("local_path")) needs.push({ kind: "local_paths" });
+  return needs.length ? { kind: "needs_setup", needs } : { kind: "ready" };
 }
 
 /** An absolute, home-relative or drive path: a file on the source machine. */

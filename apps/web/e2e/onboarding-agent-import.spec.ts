@@ -68,14 +68,28 @@ test("a new user can start from an imported agent instead of Chief", async ({ pa
   await expect(panel.getByRole("alert")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-import-preview");
 
+  // The model needs its provider's key: unusable until the key is included.
+  const modelBox = preview
+    .getByTestId("agent-import-model")
+    .getByRole("checkbox", { name: "deepseek/deepseek-flash", exact: true });
+  await expect(modelBox).toBeDisabled();
   await preview.getByRole("checkbox", { name: "Include API keys" }).click();
-  await expect(preview.getByRole("checkbox", { name: "DeepSeek" })).toBeChecked();
+  await expect(
+    preview
+      .getByTestId("agent-import-keys")
+      .getByRole("checkbox", { name: "DeepSeek", exact: true }),
+  ).toBeChecked();
+  await expect(modelBox).toBeEnabled();
   await expect(preview.getByTestId("agent-import-mcp")).toBeVisible();
   await expect(preview.getByTestId("agent-import-routines")).toBeVisible();
   await captureScreenshot(page, testInfo, "onboarding-import-preview-settings");
   // The placeholder key cannot be verified offline, so it is left out of this import.
   await preview.getByRole("checkbox", { name: "Include API keys" }).click();
-  await expect(preview.getByRole("checkbox", { name: "DeepSeek" })).toHaveCount(0);
+  await expect(
+    preview
+      .getByTestId("agent-import-keys")
+      .getByRole("checkbox", { name: "DeepSeek", exact: true }),
+  ).toHaveCount(0);
 
   // The import's own connection (here: the deployment's) completes the model step.
   model.needsModel = false;

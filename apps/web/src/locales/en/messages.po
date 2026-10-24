@@ -702,6 +702,10 @@ msgstr "Any model, with your own key"
 msgid "API key"
 msgstr "API key"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "API key for {provider}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API key header"
@@ -2066,6 +2070,10 @@ msgstr "Credentials"
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Credentials are encrypted and never sent to the model."
 
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "Credentials: {names}"
+
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr "Credit amount"
@@ -2454,6 +2462,10 @@ msgstr "Enter a whole number from 1 to 1000 for the image limit."
 msgid "Enter an API key before testing."
 msgstr "Enter an API key before testing."
 
+#: src/pages/shell/import-status.ts
+msgid "Env: {names}"
+msgstr "Env: {names}"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Environment variables"
@@ -2611,6 +2623,10 @@ msgstr "Find models"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "Finding…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "Finish setting up"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -3456,14 +3472,14 @@ msgstr "Needs setup Rakazo may not have"
 msgid "Needs takeover"
 msgstr "Needs takeover"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs this provider's API key"
-msgstr "Needs this provider's API key"
-
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "Needs you"
+
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "Needs: {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3650,6 +3666,10 @@ msgstr "Not connected"
 msgid "Not imported"
 msgstr "Not imported"
 
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Not in Rakazo's catalog"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "Not in the plugin catalog"
@@ -3659,6 +3679,7 @@ msgid "Not now"
 msgstr "Not now"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Not supported in Rakazo"
 
@@ -3742,6 +3763,7 @@ msgstr "Only empty spaces can be deleted. Delete its bots and groups first."
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "Open"
@@ -3750,6 +3772,10 @@ msgstr "Open"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "Open {0}"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "Open {name}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3917,6 +3943,7 @@ msgid "Paste your API key, then test again."
 msgstr "Paste your API key, then test again."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Paused"
 
@@ -4006,6 +4033,10 @@ msgstr "Private"
 msgid "Private workspace with its own bots and groups."
 msgstr "Private workspace with its own bots and groups."
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "Program: {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "Protected input"
@@ -4051,6 +4082,10 @@ msgstr "Reactions"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Read replies aloud"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "Ready"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -5458,6 +5493,7 @@ msgid "Uses files that are not imported"
 msgstr "Uses files that are not imported"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "Uses paths on your computer"
 

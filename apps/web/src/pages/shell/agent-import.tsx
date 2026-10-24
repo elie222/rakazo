@@ -4,6 +4,7 @@ import type {
   AgentImportMemoryDestination,
   AgentImportPlan,
   AgentImportSkipReason,
+  AgentImportStatus,
   AgentImportWarning,
   Bot,
   ComputerMode,
@@ -47,6 +48,14 @@ import { useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { ComputerModePicker } from "./bot-panel";
+import { useImportStatusText } from "./import-status";
+
+/** Warnings the status label already says. */
+const STATUS_WARNINGS: ReadonlySet<AgentImportWarning> = new Set([
+  "needs_setup",
+  "unsupported_command",
+  "local_path",
+]);
 
 const panelStyle = { section: "mt-6", heading: "text-sm text-foreground" };
 // Onboarding's step style: label rhythm, full-width groups (see SignupSurvey).
@@ -82,6 +91,7 @@ export function AgentImportForm({
   const { section: sectionClass, heading: headingClass } = page ? pageStyle : panelStyle;
   const [kind, setKind] = useState<"folder" | "document">("folder");
   const { t } = useLingui();
+  const statusText = useImportStatusText();
   const ids = useId();
   const folderInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -323,10 +333,12 @@ export function AgentImportForm({
           memory: plan.memory
             .filter((item) => !unchecked.has(item.id))
             .map((item) => ({ id: item.id, destination: destinations[item.id] ?? "bot" })),
-          skills: chosen(plan.skills).map((item) => item.id),
+          skills: chosen(plan.skills)
+            .filter((item) => item.status.kind !== "unsupported")
+            .map((item) => item.id),
           model: Boolean(plan.model && modelUsable && !unchecked.has(plan.model.id)),
           mcpServers: chosen(plan.mcpServers)
-            .filter((item) => !item.warnings.includes("unsupported_command"))
+            .filter((item) => item.status.kind !== "unsupported")
             .map((item) => item.id),
           routines: chosen(plan.routines).map((item) => item.id),
           apiKeys: chosen(plan.apiKeys).map((item) => item.id),
@@ -418,9 +430,16 @@ export function AgentImportForm({
       dropped_settings: t`Some settings are not imported`,
       changed_schedule: t`Timing may differ`,
     })[warning];
-  /** The first reason an item may not work here, next to its title. */
-  const warningNote = (warnings: AgentImportWarning[]) =>
-    warnings[0] ? note(warningText(warnings[0])) : undefined;
+  /**
+   * Next to each skill, MCP server and routine: whether it works here (Ready, what it needs,
+   * or not supported), then anything else worth reading first.
+   */
+  const statusNote = (status: AgentImportStatus, warnings: AgentImportWarning[]) => {
+    const others = warnings.filter((warning) => !STATUS_WARNINGS.has(warning));
+    return note(
+      [statusText.status(status), ...others.map((warning) => warningText(warning))].join(" · "),
+    );
+  };
   const note = (text: string) => (
     <span className="shrink-0 text-[12.5px] text-muted-foreground">{text}</span>
   );
@@ -536,14 +555,16 @@ export function AgentImportForm({
                 <Trans>Skills join the library all your bots share.</Trans>
               </p>
               <ul className="mt-2">
-                {plan.skills.map(({ id, title, name: savedAs, content, description, warnings }) =>
-                  item(
-                    id,
-                    savedAs === title ? title : t`${title}, saved as ${savedAs}`,
-                    content,
-                    warningNote(warnings),
-                    description,
-                  ),
+                {plan.skills.map(
+                  ({ id, title, name: savedAs, content, description, warnings, status }) =>
+                    item(
+                      id,
+                      savedAs === title ? title : t`${title}, saved as ${savedAs}`,
+                      content,
+                      statusNote(status, warnings),
+                      description,
+                      status.kind === "unsupported",
+                    ),
                 )}
               </ul>
             </section>
@@ -558,13 +579,18 @@ export function AgentImportForm({
                   plan.model.id,
                   plan.model.title,
                   `${plan.model.provider}\n${plan.model.modelId}`,
-                  modelUsable
-                    ? undefined
-                    : note(
-                        plan.model.status === "unknown"
-                          ? t`Not supported in Rakazo`
-                          : t`Needs this provider's API key`,
-                      ),
+                  note(
+                    statusText.status(
+                      modelUsable
+                        ? { kind: "ready" }
+                        : plan.model.status === "unknown"
+                          ? { kind: "unsupported", reason: "not_in_catalog" }
+                          : {
+                              kind: "needs_setup",
+                              needs: [{ kind: "api_key", provider: plan.model.provider }],
+                            },
+                    ),
+                  ),
                   undefined,
                   !modelUsable,
                 )}
@@ -577,14 +603,14 @@ export function AgentImportForm({
                 <Trans>MCP servers</Trans>
               </h3>
               <ul className="mt-2">
-                {plan.mcpServers.map(({ id, title, name: savedAs, content, warnings }) =>
+                {plan.mcpServers.map(({ id, title, name: savedAs, content, warnings, status }) =>
                   item(
                     id,
                     savedAs === title ? title : t`${title}, saved as ${savedAs}`,
                     content,
-                    warningNote(warnings),
+                    statusNote(status, warnings),
                     undefined,
-                    warnings.includes("unsupported_command"),
+                    status.kind === "unsupported",
                   ),
                 )}
               </ul>
@@ -597,7 +623,12 @@ export function AgentImportForm({
               </h3>
               <ul className="mt-2">
                 {plan.routines.map((entry) =>
-                  item(entry.id, entry.title, entry.content, warningNote(entry.warnings)),
+                  item(
+                    entry.id,
+                    entry.title,
+                    entry.content,
+                    statusNote(entry.status, entry.warnings),
+                  ),
                 )}
               </ul>
             </section>

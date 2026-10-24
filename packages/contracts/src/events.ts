@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
@@ -259,6 +260,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
     status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
+  }),
+  z.object({
+    /** What an agent import left to set up, each with a way to finish it. */
+    kind: z.literal("import_setup"),
+    items: z.array(AgentImportSetupItemSchema).min(1),
   }),
   z.object({
     kind: z.literal("image"),

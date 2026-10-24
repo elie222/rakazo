@@ -702,6 +702,10 @@ msgstr ""
 msgid "API key"
 msgstr "Clé API"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "Clé API pour {provider}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "En-tête de clé API"
@@ -2066,6 +2070,10 @@ msgstr ""
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Les identifiants sont chiffrés et jamais envoyés au modèle."
 
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "Identifiants : {names}"
+
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
@@ -2454,6 +2462,10 @@ msgstr "Saisissez un nombre entier de 1 à 1000 pour la limite d'images."
 msgid "Enter an API key before testing."
 msgstr "Saisissez une clé API avant de tester."
 
+#: src/pages/shell/import-status.ts
+msgid "Env: {names}"
+msgstr "Environnement : {names}"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Variables d'environnement"
@@ -2611,6 +2623,10 @@ msgstr "Rechercher des modèles"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "Recherche en cours…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "Terminer la configuration"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -3456,14 +3472,14 @@ msgstr "Nécessite une configuration que Rakazo n'a peut-être pas"
 msgid "Needs takeover"
 msgstr "Nécessite une intervention"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs this provider's API key"
-msgstr "Nécessite la clé API de ce fournisseur"
-
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "A besoin de vous"
+
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "Nécessite : {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3650,6 +3666,10 @@ msgstr "Non connecté"
 msgid "Not imported"
 msgstr "Non importé"
 
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Absent du catalogue de Rakazo"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "Pas dans le catalogue de plugins"
@@ -3659,6 +3679,7 @@ msgid "Not now"
 msgstr "Pas maintenant"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Non pris en charge par Rakazo"
 
@@ -3742,6 +3763,7 @@ msgstr "Seuls les espaces vides peuvent être supprimés. Supprimez d'abord ses 
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "Ouvrir"
@@ -3750,6 +3772,10 @@ msgstr "Ouvrir"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "Ouvrir {0}"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "Ouvrir {name}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3917,6 +3943,7 @@ msgid "Paste your API key, then test again."
 msgstr "Collez votre clé API, puis testez à nouveau."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "En pause"
 
@@ -4006,6 +4033,10 @@ msgstr "Privé"
 msgid "Private workspace with its own bots and groups."
 msgstr "Espace de travail privé avec ses propres bots et groupes."
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "Programme : {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr ""
@@ -4051,6 +4082,10 @@ msgstr "Réactions"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Lire les réponses à voix haute"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "Prêt"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -5458,6 +5493,7 @@ msgid "Uses files that are not imported"
 msgstr "Utilise des fichiers non importés"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "Utilise des chemins de votre ordinateur"
 

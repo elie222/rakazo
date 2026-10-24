@@ -702,6 +702,10 @@ msgstr "כל מודל, עם מפתח משלך"
 msgid "API key"
 msgstr "מפתח API"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "מפתח API עבור {provider}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "header של מפתח API"
@@ -2066,6 +2070,10 @@ msgstr "פרטי גישה"
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "פרטי הגישה מוצפנים ולעולם לא נשלחים למודל."
 
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "פרטי גישה: {names}"
+
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
@@ -2454,6 +2462,10 @@ msgstr "יש להזין מספר שלם בין 1 ל-1000 עבור מגבלת ה�
 msgid "Enter an API key before testing."
 msgstr "יש להזין מפתח API לפני הבדיקה."
 
+#: src/pages/shell/import-status.ts
+msgid "Env: {names}"
+msgstr "סביבה: {names}"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "משתני סביבה"
@@ -2611,6 +2623,10 @@ msgstr "חיפוש מודלים"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "מחפש…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "סיום ההגדרה"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -3456,14 +3472,14 @@ msgstr "דורש הגדרה ש-Rakazo אולי לא כוללת"
 msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs this provider's API key"
-msgstr "דרוש מפתח API של הספק הזה"
-
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "נדרשת פעולה"
+
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "דורש: {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3650,6 +3666,10 @@ msgstr "לא מחובר"
 msgid "Not imported"
 msgstr "לא יובא"
 
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "לא בקטלוג של Rakazo"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "לא נמצא בקטלוג התוספים"
@@ -3659,6 +3679,7 @@ msgid "Not now"
 msgstr "לא עכשיו"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "לא נתמך ב-Rakazo"
 
@@ -3742,6 +3763,7 @@ msgstr "אפשר למחוק רק מרחבים ריקים. יש למחוק קוד
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "פתיחה"
@@ -3750,6 +3772,10 @@ msgstr "פתיחה"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "פתיחת {0}"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "פתיחת {name}"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3917,6 +3943,7 @@ msgid "Paste your API key, then test again."
 msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "מושהה"
 
@@ -4006,6 +4033,10 @@ msgstr "פרטי"
 msgid "Private workspace with its own bots and groups."
 msgstr "סביבת עבודה פרטית עם בוטים וקבוצות משלה."
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "תוכנה: {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "קלט מוגן"
@@ -4051,6 +4082,10 @@ msgstr "אמוג׳י"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "הקראת תשובות בקול"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "מוכן"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -5458,6 +5493,7 @@ msgid "Uses files that are not imported"
 msgstr "משתמש בקבצים שלא מיובאים"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "משתמש בנתיבים במחשב שלך"
 

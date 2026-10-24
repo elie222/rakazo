@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { gzipSync } from "node:zlib";
+import { crc32, gzipSync } from "node:zlib";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot, MemoryDocument } from "@rakazo/contracts";
@@ -162,9 +162,11 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   const skills = homePreview.getByTestId("agent-import-skills");
   await expect(skills.getByRole("checkbox", { name: "cleanup" })).not.toBeChecked();
   await expect(skills.getByRole("checkbox", { name: "inbox-triage" })).not.toBeChecked();
-  await expect(skills.getByText("Contains code to run", { exact: true })).toBeVisible();
+  // Each item says whether it works here: Ready, what it needs, or not supported.
+  await expect(skills.getByText("Ready · Contains code to run", { exact: true })).toBeVisible();
   const mcp = homePreview.getByTestId("agent-import-mcp");
   await expect(mcp.getByRole("checkbox", { name: "docs" })).not.toBeChecked();
+  await expect(mcp.getByText("Credentials: Authorization", { exact: true })).toBeVisible();
   await expect(mcp.getByRole("checkbox", { name: "files" })).toBeDisabled();
   await expect(mcp.getByText("Not supported in Rakazo", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-compatibility");
@@ -185,7 +187,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
     name: "deepseek/deepseek-flash",
   });
   await expect(modelBox).toBeDisabled();
-  await expect(model.getByText("Needs this provider's API key", { exact: true })).toBeVisible();
+  await expect(model.getByText("API key for deepseek", { exact: true })).toBeVisible();
   const keys = homePreview.getByTestId("agent-import-keys");
   const optIn = keys.getByRole("checkbox", { name: "Include API keys" });
   await expect(optIn).not.toBeChecked();
@@ -326,7 +328,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
 });
 
 /** A minimal zip writer (stored entries), for synthetic backups built at run time. */
-function zip(files: Record<string, string>): Buffer {
+/** A minimal zip writer (stored entries, with sizes and CRC-32 in both headers). */
+function zip(files: Record<string, string>, options: { badCrc?: boolean } = {}): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
@@ -334,12 +337,15 @@ function zip(files: Record<string, string>): Buffer {
     const nameBytes = Buffer.from(name);
     const body = Buffer.from(content);
     const local = Buffer.alloc(30);
+    const crc = options.badCrc ? (crc32(body) ^ 1) >>> 0 : crc32(body);
     local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(body.length, 18);
     local.writeUInt32LE(body.length, 22);
     local.writeUInt16LE(nameBytes.length, 26);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(body.length, 20);
     central.writeUInt32LE(body.length, 24);
     central.writeUInt16LE(nameBytes.length, 28);
@@ -474,6 +480,11 @@ test("imports Hermes and OpenClaw backups, reading them on this device", async (
   await panel.getByTestId("agent-import-archive").setInputFiles(broken);
   await expect(panel.getByRole("alert")).toHaveText("This backup could not be read.");
   await captureScreenshot(page, testInfo, "agent-import-backup-error");
+  // A zip that opens but whose file fails its checksum when read says so too.
+  const corrupt = testInfo.outputPath("corrupt.zip");
+  writeFileSync(corrupt, zip({ "SOUL.md": "Direct.\n" }, { badCrc: true }));
+  await panel.getByTestId("agent-import-archive").setInputFiles(corrupt);
+  await expect(panel.getByRole("alert")).toHaveText("This backup could not be read.");
 });
 
 test("an imported bot asks before using MCP servers, and its import can be undone", async ({
@@ -487,7 +498,17 @@ test("an imported bot asks before using MCP servers, and its import can be undon
 
   const home = testInfo.outputPath("openclaw-home");
   writeFolder(home, {
-    "openclaw.json": '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp" } } } }',
+    "openclaw.json":
+      '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer placeholder-token" } } } } }',
+    "cron/jobs.json": JSON.stringify({
+      jobs: [
+        {
+          name: "morning",
+          schedule: { kind: "cron", expr: "0 9 * * *" },
+          payload: { kind: "agentTurn", message: "Summarise my day" },
+        },
+      ],
+    }),
     "workspace/SOUL.md": "Careful.\n",
     "workspace/IDENTITY.md": "- **Name:** Undoable\n",
     "skills/inbox-triage/SKILL.md": skill("inbox-triage", "Sort the inbox"),
@@ -495,7 +516,10 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   const panel = await openImport(page);
   await panel.getByTestId("agent-import-folder").setInputFiles(home);
   const preview = panel.getByTestId("agent-import-preview");
-  for (const name of ["docs", "inbox-triage"]) {
+  await expect(
+    preview.getByTestId("agent-import-routines").getByText("Paused", { exact: true }),
+  ).toBeVisible();
+  for (const name of ["docs", "inbox-triage", "morning"]) {
     const box = preview.getByRole("checkbox", { name });
     await expect(box).not.toBeChecked();
     await box.click();
@@ -510,6 +534,17 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   await expect(card).toBeVisible();
   await expect(card.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-approval-card");
+
+  // One checklist of what is left: the server's credentials and turning the routine on.
+  const setup = page.getByTestId("import-setup-card");
+  await expect(setup.getByRole("listitem")).toHaveText([
+    "docsCredentials: AuthorizationOpen",
+    "morningPausedOpen",
+  ]);
+  await captureScreenshot(page, testInfo, "agent-import-setup-checklist");
+  await setup.getByRole("button", { name: "Open docs" }).click();
+  await expect(page.getByRole("dialog").getByText("MCP servers", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close MCP servers" }).click();
 
   await page.getByTestId("bot-settings-trigger").click();
   await expandAdvancedSection(page.getByTestId("bot-settings-advanced"));

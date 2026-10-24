@@ -702,6 +702,10 @@ msgstr "Elk model, met je eigen sleutel"
 msgid "API key"
 msgstr "API-sleutel"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "API-sleutel voor {provider}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API-sleutelheader"
@@ -2066,6 +2070,10 @@ msgstr "Gegevens"
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Gegevens worden versleuteld en nooit naar het model gestuurd."
 
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "Inloggegevens: {names}"
+
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
 msgstr ""
@@ -2454,6 +2462,10 @@ msgstr "Voer een geheel getal van 1 tot 1000 in voor de afbeeldingslimiet."
 msgid "Enter an API key before testing."
 msgstr "Voer een API-sleutel in voordat je test."
 
+#: src/pages/shell/import-status.ts
+msgid "Env: {names}"
+msgstr "Omgeving: {names}"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Environment variables"
 msgstr "Omgevingsvariabelen"
@@ -2611,6 +2623,10 @@ msgstr "Modellen zoeken"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "Bezig met zoeken…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "Instellen afronden"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -3456,14 +3472,14 @@ msgstr "Heeft instellingen nodig die Rakazo misschien niet heeft"
 msgid "Needs takeover"
 msgstr "Heeft overname nodig"
 
-#: src/pages/shell/agent-import.tsx
-msgid "Needs this provider's API key"
-msgstr "Heeft de API-sleutel van deze provider nodig"
-
 #: src/lib/roster-status.ts
 #: src/pages/shell/computer-overlay.tsx
 msgid "Needs you"
 msgstr "Heeft jou nodig"
+
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "Vereist: {names}"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3650,6 +3666,10 @@ msgstr "Niet verbonden"
 msgid "Not imported"
 msgstr "Niet geïmporteerd"
 
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Niet in de catalogus van Rakazo"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "Niet in de plugincatalogus"
@@ -3659,6 +3679,7 @@ msgid "Not now"
 msgstr "Niet nu"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Not supported in Rakazo"
 msgstr "Niet ondersteund in Rakazo"
 
@@ -3742,6 +3763,7 @@ msgstr "Alleen lege spaces kunnen worden verwijderd. Verwijder eerst de bots en 
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "Openen"
@@ -3750,6 +3772,10 @@ msgstr "Openen"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "{0} openen"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "{name} openen"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3917,6 +3943,7 @@ msgid "Paste your API key, then test again."
 msgstr "Plak je API-sleutel en test daarna opnieuw."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "Gepauzeerd"
 
@@ -4006,6 +4033,10 @@ msgstr "Privé"
 msgid "Private workspace with its own bots and groups."
 msgstr "Privéwerkruimte met eigen bots en groepen."
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "Programma: {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr "Beveiligde invoer"
@@ -4051,6 +4082,10 @@ msgstr "Reacties"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Antwoorden hardop voorlezen"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "Klaar"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -5458,6 +5493,7 @@ msgid "Uses files that are not imported"
 msgstr "Gebruikt bestanden die niet worden geïmporteerd"
 
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
 msgid "Uses paths on your computer"
 msgstr "Gebruikt paden op je computer"
 
