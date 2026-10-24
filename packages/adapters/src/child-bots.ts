@@ -4,6 +4,7 @@ import type {
   AdapterContext,
   AgentHomeStore,
   ArtifactStore,
+  ComputerRef,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -705,14 +706,13 @@ async function removeTeamBrowserProfile(
   // the server. See removeTeamBotWorkspace.
   if (computer.providerRef && deps.sandbox.releaseScreen && computer.state === "running") {
     await withCleanupDeadline(profileContext, LIVE_CLEANUP_BUDGET_MS, (cleanupContext) =>
-      removeComputerWorkspaceDirectories(
-        deps.sandbox,
-        toComputerRef(computer),
-        ".browser-profiles",
-        [name],
-        cleanupContext,
-      ),
+      removeProfileOnceClosed(deps.sandbox, toComputerRef(computer), name, cleanupContext),
     ).catch((error) => {
+      // Chromium's helpers can hold the profile's databases open briefly after the stop.
+      if (isBusyError(error)) {
+        getLogger().warn("team browser profile still open; removed on next boot");
+        return;
+      }
       getLogger().error("team browser profile cleanup", error);
     });
   }
@@ -721,6 +721,41 @@ async function removeTeamBrowserProfile(
   await removeContainedDirectory(homeDir, ".browser-profiles", name).catch((error) => {
     getLogger().error("team browser profile cleanup", error);
   });
+}
+
+const PROFILE_BUSY_ATTEMPTS = 3;
+const PROFILE_BUSY_RETRY_MS = 1_000;
+
+function isBusyError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return (
+    (error as NodeJS.ErrnoException).code === "EBUSY" ||
+    error.message.includes("Device or resource busy")
+  );
+}
+
+async function removeProfileOnceClosed(
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+  name: string,
+  context: AdapterContext,
+) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await removeComputerWorkspaceDirectories(
+        sandbox,
+        computer,
+        ".browser-profiles",
+        [name],
+        context,
+      );
+      return;
+    } catch (error) {
+      if (!isBusyError(error) || attempt >= PROFILE_BUSY_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, PROFILE_BUSY_RETRY_MS));
+      context.signal.throwIfAborted();
+    }
+  }
 }
 
 /** A Team Computer that is not running removes the folder when it next boots. */

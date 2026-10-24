@@ -1,4 +1,5 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
+import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycle from "../../adapters/src/computer-lifecycle.js";
 import { createRunExecutor } from "../../adapters/src/executor.js";
@@ -539,6 +540,196 @@ describe("executor paused transcript", () => {
       );
     } finally {
       releaseLate();
+      await model.close();
+    }
+  });
+  it("resumes the approved call when parallel calls need approval at once", async () => {
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tools",
+            calls: [
+              { id: "first-write", name: "fixture_write", arguments: { content: "first" } },
+              { id: "second-write", name: "fixture_write", arguments: { content: "second" } },
+            ],
+          },
+        },
+        {
+          expect(request) {
+            const result = request.messages.find((m) => m.tool_call_id === "first-write");
+            expect(result?.content).toContain("fixture-approved-result");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    try {
+      const state = fixture(model.model);
+      // The store pauses only a running run, and the pause commits after a delay, so both
+      // calls reach the approval step before either pause lands.
+      state.pauseRunForInput.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (state.run.status !== "running") return false as never;
+        state.run.status = "waiting_input";
+        return { continuationRunId: null };
+      });
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+      const card = JSON.stringify(state.pauseRunForInput.mock.calls[0]);
+      const approved = state.effects.find(
+        (effect) => effect.kind === "fixture_write" && card.includes(String(effect.id)),
+      )!;
+      expect(approved.request).toEqual({ content: "first" });
+      const checkpoint = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+      expect(JSON.parse(String(checkpoint.result)).pendingToolCallId).toBe("first-write");
+
+      approved.status = "approved";
+      state.run.status = "queued";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.writes).toHaveBeenCalledExactlyOnceWith({ content: "first" });
+      expect(approved.status).toBe("completed");
+      expect(state.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
+      );
+    } finally {
+      await model.close();
+    }
+  });
+  it("claims the approved row when a resumed call counts its occurrence differently", async () => {
+    const args = { content: "same-fixture" };
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: { type: "tool", id: "earlier", name: "fixture_write", arguments: args },
+        },
+        {
+          expect() {},
+          response: { type: "tool", id: "later", name: "fixture_write", arguments: args },
+        },
+        // The saved turn is unusable, so the model is asked in text and calls again.
+        {
+          expect() {},
+          response: { type: "tool", id: "repeat", name: "fixture_write", arguments: args },
+        },
+        {
+          expect(request) {
+            const result = request.messages.find((m) => m.tool_call_id === "repeat");
+            expect(result?.content).toContain("fixture-approved-result");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    try {
+      const state = fixture(model.model);
+      const approvePending = () => {
+        for (const effect of state.effects)
+          if (effect.status === "intended") effect.status = "approved";
+        state.run.status = "queued";
+      };
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      approvePending();
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.writes).toHaveBeenCalledOnce();
+      expect(state.pauseRunForInput).toHaveBeenCalledTimes(2);
+      const checkpoint = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+      checkpoint.result = JSON.stringify({ ...JSON.parse(String(checkpoint.result)), version: 99 });
+      approvePending();
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.writes.mock.calls).toEqual([[args], [args]]);
+      const writes = state.effects.filter((effect) => effect.kind === "fixture_write");
+      expect(writes.map((effect) => effect.status)).toEqual(["completed", "completed"]);
+      expect(state.pauseRunForInput).toHaveBeenCalledTimes(2);
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
+      );
+    } finally {
+      await model.close();
+    }
+  });
+  it("drops an earlier saved turn when a helper pauses for approval", async () => {
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "earlier",
+            name: "fixture_write",
+            arguments: { content: "main" },
+          },
+        },
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "delegate",
+            name: "run_subagent",
+            arguments: { name: "helper", task: "Write the helper fixture." },
+          },
+        },
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "helper-write",
+            name: "fixture_write",
+            arguments: { content: "helper" },
+          },
+        },
+      ],
+    });
+    try {
+      const state = fixture(model.model);
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      expect(state.effects.some((effect) => effect.kind === "runtime_checkpoint")).toBe(true);
+      for (const effect of state.effects)
+        if (effect.status === "intended") effect.status = "approved";
+      state.run.status = "queued";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.pauseRunForInput).toHaveBeenCalledTimes(2);
+      expect(state.effects.some((effect) => effect.kind === "runtime_checkpoint")).toBe(false);
+    } finally {
+      await model.close();
+    }
+  });
+  it("fails with a clear message when the model does not repeat an approved call", async () => {
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tool",
+            id: "pending",
+            name: "fixture_write",
+            arguments: { content: "approved-fixture" },
+          },
+        },
+        { expect() {}, response: { type: "text", text: "Done." } },
+      ],
+    });
+    try {
+      const state = fixture(model.model);
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      const checkpoint = state.effects.find((effect) => effect.kind === "runtime_checkpoint")!;
+      checkpoint.result = JSON.stringify({ ...JSON.parse(String(checkpoint.result)), version: 99 });
+      for (const effect of state.effects)
+        if (effect.status === "intended") effect.status = "approved";
+      state.run.status = "queued";
+      await state.executor.continueRun(state.run.id, "fixture-worker");
+      model.assertComplete();
+      expect(state.writes).not.toHaveBeenCalled();
+      expect(state.finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "failed", error: APPROVED_ACTION_NOT_RUN_ERROR }),
+      );
+    } finally {
       await model.close();
     }
   });

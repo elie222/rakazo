@@ -709,7 +709,19 @@ describe("connection settings provider picker", () => {
     expect(models).toHaveLength(1);
     expect(thinking).toHaveLength(1);
     expect(thinking[0]!.getAttribute("data-settings-row")).toBe("true");
-    expect(thinking[0]!.getAttribute("aria-valuetext")).toBeTruthy();
+    expect(thinking[0]!.getAttribute("aria-valuetext")).toBe("High");
+    expect(container.textContent).not.toContain("Active model");
+    const thinkingMenu = mocks.menus.get("Thinking")!;
+    expect(thinkingMenu.actions.map((action) => action.title)).toEqual([
+      "Default",
+      "Low",
+      "Medium",
+      "High",
+    ]);
+    act(() => thinkingMenu.onPressAction({ nativeEvent: { event: "choice:medium" } }));
+    expect(thinking[0]!.getAttribute("aria-valuetext")).toBe("Medium");
+    act(() => mocks.menus.get("Thinking")!.onPressAction({ nativeEvent: { event: "choice:" } }));
+    expect(thinking[0]!.getAttribute("aria-valuetext")).toBe("Default");
     const advanced = buttonWithText("Advanced")!;
     expect(advanced.dataset.settingsRow).toBe("true");
     expect(advanced.getAttribute("aria-expanded")).toBe("false");
@@ -723,7 +735,7 @@ describe("connection settings provider picker", () => {
       providers[0]!.nextElementSibling,
       models[0],
       models[0]!.nextElementSibling,
-      thinking[0],
+      thinking[0]!.closest("[data-menu]")!.parentElement,
     ]);
     expect(providers[0]!.nextElementSibling?.tagName).toBe("DIV");
     expect(models[0]!.nextElementSibling?.tagName).toBe("DIV");

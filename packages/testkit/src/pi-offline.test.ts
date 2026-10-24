@@ -6,6 +6,7 @@ import type { AgentRunRequest, AgentRuntimeEvent, ConnectorTool } from "@rakazo/
 import { PiAgentRuntime } from "@rakazo/adapters";
 import * as Core from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { estimateTextTokens } from "../../adapters/src/context-selection.js";
 import { type ModelEmulatorRequest, startModelEmulator } from "./model-emulator.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -114,7 +115,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
     async (contextStrategy) => {
       const decisions: Array<{ droppedMessages: number; truncatedToolResults: number }> = [];
       const assertBounded = (request: ModelEmulatorRequest) => {
-        expect(Buffer.byteLength(JSON.stringify(request.messages))).toBeLessThan(7168);
+        expect(estimateTextTokens(JSON.stringify(request.messages))).toBeLessThan(7168);
         expect(JSON.stringify(request.messages)).toContain("Save hello to notes.txt.");
       };
       const server = await startModelEmulator({
@@ -154,7 +155,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
                 role: "user" as const,
                 content: `Old message ${index} ${"filler ".repeat(80)}`,
               })),
-              executeTool: async () => ({ original: "large evidence ".repeat(6000) }),
+              executeTool: async () => ({ original: "0".repeat(90_000) }),
             },
           ),
         ),
@@ -265,38 +266,56 @@ describe("real Pi against an offline model HTTP endpoint", () => {
     server.assertComplete();
   });
 
-  it("rejects an oversized live request before invoking the model or reserving spend", async () => {
-    const server = await startModelEmulator({ steps: [] });
-    cleanups.push(() => server.close());
-    let reservations = 0;
-    const events: AgentRuntimeEvent[] = [];
-    await expect(
-      collect(
-        new PiAgentRuntime({
-          modelCallObserver: {
-            beforeCall: async () => {
-              reservations += 1;
-              return "reserved";
+  it.each([
+    {
+      name: "live request",
+      overrides: { prompt: "Required user request ".repeat(2000), tools: [] },
+      error: "Required context exceeds the model context budget",
+    },
+    {
+      name: "required instructions",
+      overrides: { instructions: "Required instructions ".repeat(2000), tools: [] },
+      error: "This model's context window is too small. Choose another model.",
+    },
+    {
+      name: "required tools",
+      overrides: { tools: [{ ...writeTool, description: "Required tool schema ".repeat(2000) }] },
+      error: "This model's context window is too small. Choose another model.",
+    },
+  ])(
+    "rejects oversized $name before invoking the model or reserving spend",
+    async ({ overrides, error }) => {
+      const server = await startModelEmulator({ steps: [] });
+      cleanups.push(() => server.close());
+      let reservations = 0;
+      const events: AgentRuntimeEvent[] = [];
+      await expect(
+        collect(
+          new PiAgentRuntime({
+            modelCallObserver: {
+              beforeCall: async () => {
+                reservations += 1;
+                return "reserved";
+              },
+              afterCall: async () => undefined,
             },
-            afterCall: async () => undefined,
-          },
-        }).run(
-          runRequest(
-            { ...server.model, contextWindow: 4096, maxTokens: 1024 },
-            {
-              contextStrategy: "retrieval",
-              prompt: "Required user request ".repeat(2000),
-              tools: [],
-            },
+          }).run(
+            runRequest(
+              { ...server.model, contextWindow: 4096, maxTokens: 1024 },
+              {
+                contextStrategy: "retrieval",
+                ...overrides,
+              },
+            ),
           ),
+          events,
         ),
-        events,
-      ),
-    ).rejects.toThrow("Required context exceeds the model context budget");
-    server.assertComplete();
-    expect(reservations).toBe(0);
-    expect(events.filter((event) => event.type === "usage")).toHaveLength(0);
-  });
+      ).rejects.toThrow(error);
+      server.assertComplete();
+      expect(reservations).toBe(0);
+      expect(events.filter((event) => event.type === "usage")).toHaveLength(0);
+    },
+  );
 
   it("enforces the same context budget inside a delegated tool loop", async () => {
     const decisions: Array<{ agentId?: string; strategy?: string; truncatedToolResults: number }> =
@@ -328,7 +347,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
         },
         {
           expect(request) {
-            expect(Buffer.byteLength(JSON.stringify(request.messages))).toBeLessThan(7168);
+            expect(estimateTextTokens(JSON.stringify(request.messages))).toBeLessThan(7168);
             expect(latestToolResult(request)?.tool_call_id).toBe("child-write");
             expect(String(latestToolResult(request)?.content)).toContain("truncated");
             expect(JSON.stringify(request.messages)).toContain("Save hello to notes.txt.");
@@ -361,7 +380,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
                 },
               },
             ],
-            executeTool: async () => ({ original: "large child evidence ".repeat(3000) }),
+            executeTool: async () => ({ original: "0".repeat(63_000) }),
           },
         ),
       ),
@@ -389,7 +408,7 @@ describe("real Pi against an offline model HTTP endpoint", () => {
           expect(request) {
             expect(request.messages.at(-1)).toMatchObject({
               role: "user",
-              content: [{ type: "text", text: "Save hello to notes.txt." }],
+              content: "Save hello to notes.txt.",
             });
             expect(request.tools).toContainEqual(
               expect.objectContaining({

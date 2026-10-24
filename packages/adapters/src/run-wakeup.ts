@@ -12,6 +12,7 @@ import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import { RunExecutionHost } from "./run-execution.js";
 
 const RUN_READY_TOPIC = "runs:ready";
+const INTERACTIVE_QUEUE_WARNING_MS = 30_000;
 const RESUMABLE = ["queued", "waiting_input", "waiting_takeover"];
 
 /** Runs are durable in Postgres; notifications only reduce dispatch latency. */
@@ -58,7 +59,15 @@ export class RunWorkerHost implements JobWorkerHost {
   private timer: ReturnType<typeof setInterval> | undefined;
   private scanning: Promise<void> | undefined;
   private scanAgain = false;
-  private cursor: { createdAt: Date; id: string } | undefined;
+  private wakeRequested = false;
+  private readonly cursors: Record<
+    "interactive" | "background",
+    { createdAt: Date; id: string } | undefined
+  > = { interactive: undefined, background: undefined };
+  private readonly laneDone = { interactive: false, background: false };
+  private nextQueueCheckAt = 0;
+  private queueCheck: Promise<void> | undefined;
+  private queueDelayed = false;
   private stopping = true;
 
   constructor(
@@ -70,6 +79,13 @@ export class RunWorkerHost implements JobWorkerHost {
   async start(handlers: BackgroundJobHandlers): Promise<void> {
     if (!this.stopping) return;
     this.stopping = false;
+    this.cursors.interactive = undefined;
+    this.cursors.background = undefined;
+    this.laneDone.interactive = false;
+    this.laneDone.background = false;
+    this.nextQueueCheckAt = 0;
+    this.queueDelayed = false;
+    this.wakeRequested = false;
     this.handlers = handlers;
     this.executions.start();
     try {
@@ -94,7 +110,9 @@ export class RunWorkerHost implements JobWorkerHost {
 
   private wake(): void {
     if (this.stopping) return;
+    this.checkQueueAge();
     this.scanAgain = true;
+    this.wakeRequested = true;
     if (this.scanning) return;
     this.scanning = runAsSystem("run recovery scan", async () => {
       try {
@@ -112,7 +130,62 @@ export class RunWorkerHost implements JobWorkerHost {
     });
   }
 
+  /** Observability must keep running even if a claim or dispatch is slow. */
+  private checkQueueAge(): void {
+    const now = Date.now();
+    if (this.queueCheck || now < this.nextQueueCheckAt) return;
+    this.nextQueueCheckAt = now + INTERACTIVE_QUEUE_WARNING_MS;
+    this.queueCheck = runAsSystem("interactive queue health", async () => {
+      const cutoff = new Date(now - INTERACTIVE_QUEUE_WARNING_MS);
+      const [delayed] = await this.prisma.$queryRaw<
+        { delayedRuns: number; oldestDueAt: Date | null }[]
+      >`
+        SELECT COUNT(*)::int AS "delayedRuns",
+               MIN(GREATEST("createdAt", COALESCE("wakeAt", "createdAt"))) AS "oldestDueAt"
+        FROM runs
+        WHERE status = 'queued' AND trigger NOT IN ('routine', 'reaction')
+          AND "createdAt" <= ${cutoff}
+          AND ("wakeAt" IS NULL OR "wakeAt" <= ${cutoff})
+      `;
+      if (this.stopping) return;
+      if (delayed?.delayedRuns && delayed.oldestDueAt) {
+        this.queueDelayed = true;
+        getLogger().warn("run.queue_delayed", {
+          "queue.delayed_runs": delayed.delayedRuns,
+          "queue.oldest_wait_ms": Math.max(0, now - delayed.oldestDueAt.getTime()),
+          "queue.warning_after_ms": INTERACTIVE_QUEUE_WARNING_MS,
+        });
+      } else if (this.queueDelayed) {
+        this.queueDelayed = false;
+        getLogger().info("run.queue_recovered");
+      }
+    })
+      .catch((error) => {
+        if (!this.stopping) getLogger().error("run queue health", error);
+      })
+      .finally(() => {
+        this.queueCheck = undefined;
+      });
+  }
+
   private async scan(): Promise<void> {
+    // New work can arrive after either lane's query snapshot. External wakes
+    // reopen completed lanes without restarting either lane's active pagination.
+    if (this.wakeRequested) {
+      this.laneDone.interactive = false;
+      this.laneDone.background = false;
+      this.wakeRequested = false;
+    }
+    if (!this.laneDone.interactive) await this.scanLane("interactive");
+    if (!this.stopping && !this.laneDone.background) await this.scanLane("background");
+    if (this.laneDone.interactive && this.laneDone.background) {
+      this.laneDone.interactive = false;
+      this.laneDone.background = false;
+    } else this.scanAgain = true;
+  }
+
+  private async scanLane(lane: "interactive" | "background"): Promise<void> {
+    const cursor = this.cursors[lane];
     const now = new Date();
     const due: Prisma.RunWhereInput = {
       OR: [{ wakeAt: null }, { wakeAt: { lte: now } }],
@@ -121,13 +194,17 @@ export class RunWorkerHost implements JobWorkerHost {
     const rows = await this.prisma.run.findMany({
       where: {
         id: { notIn: [...this.inFlight] },
-        ...(this.cursor
+        trigger:
+          lane === "background"
+            ? { in: ["routine", "reaction"] }
+            : { notIn: ["routine", "reaction"] },
+        ...(cursor
           ? {
               AND: [
                 {
                   OR: [
-                    { createdAt: { gt: this.cursor.createdAt } },
-                    { createdAt: this.cursor.createdAt, id: { gt: this.cursor.id } },
+                    { createdAt: { gt: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { gt: cursor.id } },
                   ],
                 },
               ],
@@ -141,29 +218,50 @@ export class RunWorkerHost implements JobWorkerHost {
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: batchSize,
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, botId: true, bot: { select: { computerId: true } } },
     });
+    // Leave resource waits queued. Reclaiming them on every scan changes their
+    // age, hides stuck-work reminders, and produces false execution starts.
+    // The executor still acquires the lease atomically to handle races here.
+    const leases = rows.length
+      ? await this.prisma.computerExecutionLease.findMany({
+          where: { botId: { in: rows.map((row) => row.botId) }, expiresAt: { gt: now } },
+          select: { computerId: true, botId: true, runId: true },
+        })
+      : [];
+    const runnable = rows.filter(
+      (row) =>
+        !leases.some(
+          (lease) =>
+            lease.botId === row.botId &&
+            lease.computerId === row.bot.computerId &&
+            lease.runId !== row.id,
+        ),
+    );
     const dispatch = async (id: string) => {
       if (this.stopping) return;
       this.inFlight.add(id);
       try {
-        await this.executions.execute((execution) =>
-          runCorrelatedJob({
-            name: "run.continue",
-            payload: { runId: id },
-            run: () =>
-              runAsSystem("run dispatch", () =>
-                dispatchBackgroundJob(
-                  this.handlers!,
-                  "run.continue",
-                  { runId: id },
-                  execution,
-                ).finally(() => {
-                  this.inFlight.delete(id);
-                }),
-              ),
-          }),
+        const admitted = await this.executions.execute(
+          (execution) =>
+            runCorrelatedJob({
+              name: "run.continue",
+              payload: { runId: id },
+              run: () =>
+                runAsSystem("run dispatch", () =>
+                  dispatchBackgroundJob(
+                    this.handlers!,
+                    "run.continue",
+                    { runId: id },
+                    execution,
+                  ).finally(() => {
+                    this.inFlight.delete(id);
+                  }),
+                ),
+            }),
+          { waitForCapacity: false },
         );
+        if (!admitted) this.inFlight.delete(id);
       } catch {
         // The durable run remains discoverable. Lease expiry handles failures
         // after a claim; the normal executor handles bounded setup retries.
@@ -174,17 +272,19 @@ export class RunWorkerHost implements JobWorkerHost {
     // hold unrelated chats, while setup cannot flood the database pool.
     let next = 0;
     await Promise.all(
-      Array.from({ length: Math.min(4, rows.length) }, async () => {
-        while (next < rows.length && !this.stopping) {
-          const row = rows[next++];
+      Array.from({ length: Math.min(4, runnable.length) }, async () => {
+        while (next < runnable.length && !this.stopping) {
+          const row = runnable[next++];
           if (row) await dispatch(row.id);
         }
       }),
     );
     if (rows.length === batchSize) {
-      this.cursor = rows.at(-1);
-      this.scanAgain = true;
-    } else this.cursor = undefined;
+      this.cursors[lane] = rows.at(-1);
+    } else {
+      this.cursors[lane] = undefined;
+      this.laneDone[lane] = true;
+    }
   }
 }
 

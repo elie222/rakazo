@@ -34,6 +34,7 @@ import {
   historyCompactJob,
   MEMORY_REVISION_CONFLICT_ERROR,
   ModelAccountError,
+  ModelOutputError,
   routineJobKey,
   routineRetryJob,
   routineWakeupJob,
@@ -117,12 +118,13 @@ import {
   stableJsonValue,
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
-import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { McpServer, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   countUnreadInboxChats,
   createSpaceForMember,
   createThreadMessageInTransaction,
+  dropRunTurnCheckpoint,
   effectiveMemoryScope,
   findDefaultModelCredential,
   InstructionConflictError,
@@ -130,7 +132,6 @@ import {
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
-  Prisma,
   parseComputerMode,
   RUN_TURN_CHECKPOINT_KIND,
   RunHistoryWriteError,
@@ -164,12 +165,14 @@ import {
 } from "./agent-environment.js";
 import type { FleetCardSummary } from "./approval-ask.js";
 import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "./approval-ask.js";
+import type { ApprovalPausedToolResult } from "./approval-effect.js";
 import {
   approvalPausedToolResult,
   approvalReplayPathError,
   approvalReplayResourceError,
   approvalRoutesMatch,
   approvedCatalogReplay,
+  approvedEffectOccurrence,
   approvedReplayArgs,
   boundDirectApprovalDetails,
   boundDirectApprovalRequest,
@@ -370,6 +373,8 @@ import {
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
+import { lateRoutineRunInstruction } from "./routine-lateness.js";
 import { routineTaskInstructions, tickRoutineWatch } from "./routine-watch.js";
 import { lazyRunComputer } from "./run-computer.js";
 import {
@@ -3310,7 +3315,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               new Date(Date.now()),
               routine.timezone,
             );
-      const previousLastRunAt = routine.lastRunAt;
       const skillRecords = await listAgentSkillRecords(deps.prisma, {
         spaceId: routine.spaceId,
         userId: routine.userId,
@@ -3340,6 +3344,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           select: { modelProvider: true, modelId: true, thinkingLevel: true },
         });
         if (!currentModel) return null;
+        const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
+        if (timerTick) {
+          const pending = await findPendingRoutineTick(tx, {
+            routineId: routine.id,
+            spaceId: routine.spaceId,
+            botId: bot.id,
+            userId: routine.userId,
+            threadId: thread.id,
+            prompt: routinePrompt,
+            ...routineRunModelPin(currentModel),
+          });
+          if (pending) return { ...pending, coalesced: true };
+        }
         const task = await tx.task.create({
           data: {
             spaceId: routine.spaceId,
@@ -3350,7 +3367,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             status: "queued",
           },
         });
-        return tx.run.create({
+        const run = await tx.run.create({
           data: {
             spaceId: routine.spaceId,
             botId: bot.id,
@@ -3360,51 +3377,50 @@ export function createRunExecutor(deps: ExecutorDeps) {
             status: "queued",
             trigger: "routine",
             routineId: routine.id,
+            ...(timerTick ? { clientNonce: routineTimerNonce(routine.id, scheduledFor) } : {}),
             ...routineRunModelPin(currentModel),
           },
         });
+        return { ...run, coalesced: false };
       });
       if (!claimed) return;
+      if ("cancelledEvents" in claimed && claimed.cancelledEvents) {
+        for (const event of claimed.cancelledEvents) {
+          await deps.events.notify(event.threadId, event.seq).catch(() => undefined);
+        }
+      }
       // Enqueue continuation first so a thread-signal failure cannot strand the run.
       try {
-        await deps.jobs.enqueue(runContinueJob(claimed.id));
-      } catch (error) {
-        // Restore the claim so wakeup retry / routine reconciliation can fire again.
-        await deps.prisma.$transaction(async (tx) => {
-          await tx.run.deleteMany({
-            where: { id: claimed.id, status: "queued" },
-          });
-          await tx.task.deleteMany({
-            where: { id: claimed.taskId, status: "queued" },
-          });
-          await tx.routine.updateMany({
-            where: {
-              id: routine.id,
-              nextRunAt,
-              ...(nextRunAt ? {} : { active: false }),
-            },
-            data: {
-              nextRunAt: scheduledAt,
-              active: true,
-              lastRunAt: previousLastRunAt,
-              // Put the old fingerprint back too, or the retry would see no change.
-              ...(watchTick?.run
-                ? { watchState: (routine.watchState as Prisma.InputJsonValue) ?? Prisma.DbNull }
-                : {}),
-            },
-          });
+        await deps.jobs.enqueue({
+          ...runContinueJob(claimed.id),
+          ...(claimed.coalesced ? { keepExisting: true } : {}),
         });
-        throw error;
+      } catch (error) {
+        // The committed run and advanced schedule are the durable source of
+        // truth. Another tick or dispatcher may already own them; recovery scans
+        // repair missed notifications without rolling back committed work.
+        getLogger().warn("routine.run_wakeup_failed", {
+          "routine.id": routine.id,
+          "run.id": claimed.id,
+          error: sanitizedError(error),
+        });
+      }
+      if (claimed.coalesced) {
+        getLogger().info("routine.coalesced", {
+          "routine.id": routine.id,
+          "run.id": claimed.id,
+        });
       }
       try {
-        await deps.events.append({
-          spaceId: routine.spaceId,
-          threadId: thread.id,
-          botId: bot.id,
-          type: "routine.fired",
-          runId: claimed.id,
-          payload: { routineId: routine.id, scheduledFor },
-        });
+        if (!claimed.coalesced)
+          await deps.events.append({
+            spaceId: routine.spaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            type: "routine.fired",
+            runId: claimed.id,
+            payload: { routineId: routine.id, scheduledFor },
+          });
       } catch {
         // Best effort: the run is already queued.
       }
@@ -3649,12 +3665,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           leaseOwner: workerId,
           leaseFence: fence,
         },
-        data: { status: "running", startedAt: current.startedAt ?? new Date() },
+        data: { status: "running" },
       });
       if (started.count !== 1) return;
-      getLogger().info("run.execution_started", {
-        ...(await readRunTimingFields(deps.prisma, runId)),
-      });
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
         select: {
@@ -3703,14 +3716,30 @@ export function createRunExecutor(deps: ExecutorDeps) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
         return;
       }
-      const attempt = await deps.prisma.attempt
-        .create({
-          data: { runId, fence, status: "running" },
-        })
-        .catch(async (error) => {
-          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
-          throw error;
+      let attempt: { id: string };
+      // Resumed attempts keep the first start, so lateness reflects when the run began.
+      const executionStartedAt = current.startedAt ?? new Date();
+      try {
+        // Acquiring the computer can requeue a busy run. Count that wait as queue
+        // time, and only stamp execution once this attempt can use its computer.
+        const executionStarted = await deps.prisma.run.updateMany({
+          where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
+          data: { startedAt: executionStartedAt },
         });
+        if (executionStarted.count !== 1) {
+          await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+          return;
+        }
+        getLogger().info("run.execution_started", {
+          ...(await readRunTimingFields(deps.prisma, runId)),
+        });
+        attempt = await deps.prisma.attempt.create({
+          data: { runId, fence, status: "running" },
+        });
+      } catch (error) {
+        await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
+        throw error;
+      }
 
       let leaseValid = true;
       let runCompleted = false;
@@ -4314,7 +4343,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&
           bot.crossSpaceCommunication === true &&
-          !isBackgroundRunTrigger(run.trigger)
+          !isBackgroundRunTrigger(run.trigger) &&
+          run.trigger !== "created"
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];
@@ -4451,6 +4481,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           checkpointLoadError =
             error instanceof Error ? error : new Error("Unsupported turn checkpoint");
         }
+        let storedTurnCheckpoint = Boolean(turnCheckpoint);
         let runTainted =
           !ownerStartedRun || Boolean(turnCheckpoint) || Boolean(checkpointLoadError);
         let earlierAttemptPromise: Promise<boolean> | undefined;
@@ -4462,17 +4493,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if ((await earlierAttemptPromise) || (await receivedOutsideMessage())) runTainted = true;
           return runTainted;
         };
-        // The intro turn confirms how a bot read its own role before anyone hands it
-        // real work — it must not be able to act on that reading (shell, computer,
-        // scheduling, spawning another bot, ...) before the user has assigned any task.
-        const tools = run.trigger === "created" ? [] : [...builtins, ...exposedConnectorTools];
+        // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
+        // so it gets no connector tools either.
+        const tools =
+          run.trigger === "created" ? builtins : [...builtins, ...exposedConnectorTools];
         const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
           ? TASK_CATALOG_GUIDANCE
           : undefined;
         const approvedEffects = await deps.prisma.externalEffect.findMany({
           where: { runId, status: "approved" },
           orderBy: APPROVED_EFFECT_REPLAY_ORDER,
-          select: { kind: true, request: true },
+          select: { kind: true, request: true, idempotencyKey: true },
         });
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
         const baseComputerInstruction = persistentComputerInstruction({
@@ -4595,6 +4626,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
+        let approvalRequest: Promise<ApprovalPausedToolResult> | undefined;
         const pendingTurnCheckpoints = new Map<string, () => string>();
         const persistTurnCheckpoint = async (executionId?: string) => {
           const capture = executionId ? pendingTurnCheckpoints.get(executionId) : undefined;
@@ -4602,6 +4634,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const saved = JSON.parse(capture());
             saved.effectOccurrences = effectOccurrences;
             await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
+            storedTurnCheckpoint = true;
+          } else if (storedTurnCheckpoint) {
+            // Helper calls have no saved turn. An earlier pause's turn must not resume this one.
+            await dropRunTurnCheckpoint(deps.prisma, run, workerId, fence);
+            storedTurnCheckpoint = false;
           }
         };
         let handedOff = false;
@@ -4714,16 +4751,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           toolName: string,
           args: Record<string, unknown>,
           executionId: string,
+          approvedKey?: string,
         ) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
+          const approved = approvedKey
+            ? approvedEffectOccurrence(approvedKey, fingerprint)
+            : undefined;
           const previous = restoredPendingEffect;
           if (previous?.executionId === executionId) {
             restoredPendingEffect = undefined;
-            if (previous.fingerprint === fingerprint) return previous.occurrence;
+            if (previous.fingerprint === fingerprint && approved === undefined)
+              return previous.occurrence;
           }
-          const occurrence = mutatingEffectOccurrences.get(fingerprint) ?? 0;
+          // An approved replay reuses the approved row's occurrence, so it claims that row
+          // even when this call would have counted differently.
+          const occurrence = approved ?? mutatingEffectOccurrences.get(fingerprint) ?? 0;
           effectOccurrences.push({ executionId, fingerprint, occurrence });
-          mutatingEffectOccurrences.set(fingerprint, occurrence + 1);
+          mutatingEffectOccurrences.set(
+            fingerprint,
+            Math.max(mutatingEffectOccurrences.get(fingerprint) ?? 0, occurrence + 1),
+          );
           return occurrence;
         };
 
@@ -4849,6 +4896,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // reconstructs after the worker resumes. This also makes a changed reconstruction
           // hit the already-approved effect instead of creating a second approval card.
           const nextApprovedTool = approvedEffectReplays.nextToolName();
+          let approvedEffectKey: string | undefined;
           const nextApprovedRequest = approvedEffectReplays.nextRequest();
           const liveRoute =
             connectorCall.route?.resourceId &&
@@ -4908,6 +4956,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               CATALOG_APPROVAL_TOOL,
             );
             if (resourceError) return { error: resourceError };
+            approvedEffectKey = approvedEffectReplays.nextIdempotencyKey();
             const approvedRequest = approvedEffectReplays.take(nextApprovedTool)!;
             const approvedCatalog = catalogApprovalDetails(approvedRequest, CATALOG_APPROVAL_TOOL);
             if (approvedCatalog && !catalogRemapped) {
@@ -5153,15 +5202,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const occurrence =
             name === "request_secret" || name === "connect_app"
               ? 0
-              : nextMutatingEffectOccurrence(replayEffectToolName, args, executionId);
+              : nextMutatingEffectOccurrence(
+                  replayEffectToolName,
+                  args,
+                  executionId,
+                  approvedEffectKey,
+                );
+          // An approved replay claims the row the user approved. A derived key can differ
+          // (another call's occurrence count), which would ask again and strand the approval.
           const effectKey =
-            usesApprovalKey && occurrence === 0
+            approvedEffectKey ??
+            (usesApprovalKey && occurrence === 0
               ? approvalEffectKey(runId, replayEffectToolName, args)
-              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence);
+              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
           // Connector read-only hints must not bypass approval, review, or replay decisions.
           // A fetch to a new site is gated like any action, so it needs an effect to approve.
           const applied =
-            READ_ONLY_AGENT_TOOLS.has(name) && siteGate !== "new" && nextApprovedTool !== name
+            READ_ONLY_AGENT_TOOLS.has(name) &&
+            siteGate !== "new" &&
+            nextApprovedTool !== name &&
+            !approvedEffectKey
               ? undefined
               : await recordEffect(
                   deps,
@@ -5460,7 +5520,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw uncertainEffectError(name);
           };
 
-          const requestApproval = async () => {
+          const showApprovalCard = async () => {
             if (!(await renewRunLease(deps, runId, workerId, fence))) {
               // Another worker owns the run now; exit without leaving a local pause card.
               return pauseForApproval();
@@ -5505,6 +5565,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               threadId: thread.id,
             });
             return pauseForApproval();
+          };
+          const requestApproval = () => {
+            // Parallel calls can need approval at once. Only the first saves the turn and shows
+            // its card; the others wait for that pause. Otherwise a later call's save could make
+            // the turn resume a call other than the one the user approved.
+            if (approvalRequest) return approvalRequest.then(() => pauseForApproval());
+            approvalRequest = showApprovalCard();
+            return approvalRequest;
           };
 
           if (applied?.duplicate) {
@@ -7647,6 +7715,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
         } catch {
           // Timezone is optional context; a lookup failure must not prevent a run.
         }
+        let lateRoutineNote: string | undefined;
+        if (run.trigger === "routine" && run.routineId && run.clientNonce) {
+          try {
+            const routine = await deps.prisma.routine.findUnique({
+              where: { id: run.routineId },
+              select: { crons: true, timezone: true },
+            });
+            if (routine)
+              lateRoutineNote = lateRoutineRunInstruction(run, routine, executionStartedAt);
+          } catch {
+            // Lateness is optional context; a lookup failure must not prevent a run.
+          }
+        }
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -7656,6 +7737,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
           formatCurrentTimeInstruction(new Date(), userTimeZone),
+          lateRoutineNote,
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -8575,9 +8657,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
-          if (error instanceof TransientModelError || error instanceof ModelAccountError) {
-            // Provider outages that outlasted retries, and keys or limits the user fixes, are
-            // not server faults; the run error already tells the user what to do.
+          if (
+            error instanceof TransientModelError ||
+            error instanceof ModelAccountError ||
+            error instanceof ModelOutputError ||
+            error instanceof SandboxRateLimitError
+          ) {
+            // Provider outages that outlasted retries, provider accounts, plans and model
+            // choices the user fixes, unusable model output and the computer provider's own
+            // rate limit are not server faults; the run error already tells the user what to do.
             getLogger().warn("run.failed", {
               "run.outcome": "failed",
               "run.failure": error.name,
@@ -9022,6 +9110,14 @@ function fleetPrepareDeps(
   };
 }
 
+/**
+ * The creation intro asks what the bot is for and records the answer on its own profile.
+ * It must not act (shell, computer, scheduling, spawning another bot, ...) before the user
+ * has said what it is for. Answering its question resumes it as the user's turn, with
+ * every tool (see commitAnswerRunInput).
+ */
+const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
+
 export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
@@ -9068,6 +9164,7 @@ export function selectBuiltinToolsForRun(options: {
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
+      (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && fleetToolsAllowed)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&

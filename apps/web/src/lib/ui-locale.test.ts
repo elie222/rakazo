@@ -38,6 +38,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("nl-BE")).toBe("nl");
     expect(normalizeUiLocale("NL")).toBe("nl");
     expect(normalizeUiLocale("nl_nl")).toBe("nl");
+    expect(normalizeUiLocale("ja")).toBe("ja");
+    expect(normalizeUiLocale("ja-JP")).toBe("ja");
+    expect(normalizeUiLocale("ja_JP")).toBe("ja");
     expect(normalizeUiLocale("iw")).toBe("he");
     expect(normalizeUiLocale("iw-IL")).toBe("he");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");

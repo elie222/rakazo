@@ -1,8 +1,9 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
 import { canUseCompatibleModelAsDefault } from "@rakazo/core";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -82,6 +83,16 @@ export function ConnectionControls({
   | "updateApiKey"
 >) {
   const { t } = useLingui();
+  // Signed in with a subscription, a key is an alternative, so it stays folded until asked for.
+  const [keyShownFor, setKeyShownFor] = useState<string | null>(null);
+  const keyFolded =
+    subscriptionSignIn &&
+    credential?.authKind === "oauth" &&
+    keyShownFor !== (selected?.provider ?? null);
+  // Opening the fold swaps the summary for the form, so focus moves to the key field.
+  useEffect(() => {
+    if (keyShownFor) document.getElementById("model-api-key")?.focus();
+  }, [keyShownFor]);
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn ? (
@@ -252,7 +263,17 @@ export function ConnectionControls({
         </div>
       ) : null}
 
-      {acceptsKey ? (
+      {acceptsKey && keyFolded ? (
+        // Only the summary shows here; opening it swaps in the key form below.
+        <Disclosure
+          className="mt-5 text-[13px] leading-[1.5] text-muted-foreground"
+          open={false}
+          onOpenChange={() => setKeyShownFor(selected?.provider ?? null)}
+          summary={<Trans>Or paste an API key</Trans>}
+        >
+          {null}
+        </Disclosure>
+      ) : acceptsKey ? (
         <div className="mt-5 first:mt-0">
           {isCloudflare ? (
             <>
@@ -293,10 +314,10 @@ export function ConnectionControls({
               className={`block text-[13.5px] text-muted-foreground ${isCloudflare ? "mt-4" : ""}`}
               htmlFor="model-api-key"
             >
-              {credential ? (
+              {credential?.hasKey ? (
                 <Trans>Replace API key</Trans>
               ) : subscriptionSignIn ? (
-                <Trans>Or connect an API key</Trans>
+                <Trans>Or paste an API key</Trans>
               ) : (
                 <Trans>API key</Trans>
               )}
@@ -337,7 +358,7 @@ export function ConnectionControls({
             >
               {pending === "connect" ? (
                 <Trans>Saving…</Trans>
-              ) : credential ? (
+              ) : credential?.hasKey ? (
                 <Trans>Replace API key</Trans>
               ) : (
                 <Trans>Connect API key</Trans>

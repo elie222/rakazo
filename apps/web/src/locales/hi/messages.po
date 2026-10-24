@@ -17,10 +17,20 @@ msgstr ""
 msgid " (unread)"
 msgstr " (अपठित)"
 
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr ""
+
 #. placeholder {0}: health.toolCount
 #: src/components/McpServerHealthLine.tsx
 msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {चल रहा है · # टूल} other {चल रहा है · # टूल}}"
+
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
+msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -155,6 +165,10 @@ msgstr "{hours} घंटे पहले"
 msgid "{minutes}m ago"
 msgstr "{minutes} मिनट पहले"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "{name} का अनुरोध"
@@ -182,6 +196,16 @@ msgstr "{name} रोक दिया गया"
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
 msgstr "{provider} को अनुरोधित मॉडल नहीं मिला।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider} तक नहीं पहुँचा जा सका। जाँचें कि यह चल रहा है।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} denied access to this model."
+msgstr "{provider} ने इस मॉडल तक पहुँच अस्वीकार कर दी।"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -285,8 +309,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} बैकअप मॉडल विफल रहे या इस अनुरोध के लिए उपलब्ध नहीं थे।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} इस अनुरोध के लिए कोई बैकअप मॉडल उपयोग योग्य नहीं था।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} {date} को रीसेट होगा।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} आपके बैकअप मॉडल भी विफल रहे।"
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -570,7 +609,7 @@ msgstr "एजेंट:"
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
-msgstr "सभी बॉट"
+msgstr ""
 
 #: src/pages/model-settings/provider-list.tsx
 msgid "All providers"
@@ -953,6 +992,10 @@ msgstr "बॉट"
 msgid "Bot"
 msgstr "बॉट"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bot models"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "बॉट स्क्रीन"
@@ -1038,20 +1081,22 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "नया बॉट रद्द करें"
 
@@ -1104,7 +1149,7 @@ msgstr ""
 msgid "Chat Settings"
 msgstr "चैट सेटिंग्स"
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr ""
 
@@ -1209,7 +1254,7 @@ msgstr "फ़ोल्डर चुनें"
 msgid "Choose how to use Rakazo"
 msgstr ""
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr ""
 
@@ -1359,6 +1404,10 @@ msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
+msgstr "पूर्ण"
+
+#: src/components/SubagentCard.tsx
+msgid "Completed"
 msgstr "पूर्ण"
 
 #: src/pages/SettingsOverlay.tsx
@@ -1554,7 +1603,7 @@ msgstr "ईमेल से जारी रखें"
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr "कॉपी हो गया"
+msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1652,7 +1701,7 @@ msgid "Could not continue"
 msgstr "जारी नहीं रखा जा सका"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "बॉट नहीं बनाया जा सका"
 
@@ -1974,6 +2023,10 @@ msgstr ""
 msgid "Could not submit this answer"
 msgstr "यह उत्तर सबमिट नहीं किया जा सका"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Could not switch {failedNames}. Try again."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Could not take control"
 msgstr "नियंत्रण नहीं लिया जा सका"
@@ -2002,6 +2055,10 @@ msgstr ""
 msgid "Could not update computer"
 msgstr "कंप्यूटर अपडेट नहीं हो सका"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Could not update name"
+msgstr "नाम अपडेट नहीं किया जा सका"
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr ""
@@ -2028,7 +2085,7 @@ msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Create"
@@ -2049,6 +2106,7 @@ msgstr "समूह बनाएं"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Create new Bot"
 msgstr "नया बॉट बनाएं"
 
@@ -2079,7 +2137,6 @@ msgstr ""
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "बनाया जा रहा है…"
@@ -2264,10 +2321,6 @@ msgstr "अस्वीकार करें"
 msgid "Deployment default"
 msgstr "डिप्लॉयमेंट डिफ़ॉल्ट"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Describe what this bot does"
-msgstr "बताएं कि यह बॉट क्या करता है"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -2308,6 +2361,10 @@ msgstr "डिस्कनेक्ट करें"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Disconnect Self-hosted"
 msgstr ""
 
 #. placeholder {0}: selected.providerName ?? selected.provider
@@ -2415,6 +2472,7 @@ msgid "Each name can be used once."
 msgstr "हर नाम का उपयोग केवल एक बार किया जा सकता है।"
 
 #: src/components/AskCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Edit"
 msgstr "संपादित करें"
 
@@ -2592,6 +2650,7 @@ msgstr ""
 msgid "failed"
 msgstr "असफल"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "विफल"
@@ -2868,8 +2927,8 @@ msgstr ""
 msgid "Image upload area"
 msgstr "छवि अपलोड क्षेत्र"
 
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/composer.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Import"
 msgstr "इंपोर्ट करें"
 
@@ -3495,6 +3554,7 @@ msgid "Muted"
 msgstr "माइक बंद है"
 
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3502,13 +3562,13 @@ msgstr "माइक बंद है"
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "नाम"
 
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "इस बॉट को नाम दें"
 
@@ -3518,6 +3578,10 @@ msgstr "इस समूह को नाम दें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Name this routine"
+msgstr ""
+
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Name your Bot"
 msgstr ""
 
 #: src/lib/roster-status.ts
@@ -3546,7 +3610,6 @@ msgid "New"
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "नया बॉट"
 
@@ -3916,9 +3979,6 @@ msgid "Optional header value"
 msgstr "वैकल्पिक हेडर मान"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "Or connect an API key"
-msgstr "या एक API कुंजी कनेक्ट करें"
-
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "या एक API कुंजी पेस्ट करें"
@@ -4108,11 +4168,11 @@ msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "प्रोवाइडर"
 
 #: src/pages/model-settings/provider-list.tsx
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "प्रोवाइडर्स"
 
@@ -4546,6 +4606,7 @@ msgid "running"
 msgstr "चल रहा है"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "चल रहा है"
@@ -4565,6 +4626,7 @@ msgstr ""
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
@@ -4777,6 +4839,11 @@ msgstr "सेटअप सहायता"
 msgid "Shape"
 msgstr "आकार"
 
+#. placeholder {0}: index + 1
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Shape {0}"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -4958,10 +5025,6 @@ msgid "Speak"
 msgstr "बोलें"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak + transcribe"
-msgstr "बोलें + लिप्यंतरण करें"
-
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak only"
 msgstr "केवल बोलें"
 
@@ -5037,7 +5100,6 @@ msgid "Stream replies"
 msgstr "जवाब स्ट्रीम करें"
 
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "सबएजेंट"
 
@@ -5065,11 +5127,16 @@ msgstr "छवियों का समर्थन"
 msgid "Supports thinking"
 msgstr "सोचने की क्षमता का समर्थन करता है"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Switch"
+msgstr ""
+
 #: src/pages/shell/command-palette.tsx
 msgid "Switch bot"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "बदला जा रहा है…"
 
@@ -5144,6 +5211,11 @@ msgstr "कनेक्शन का समय समाप्त हो गय�
 msgid "The model provider returned an error."
 msgstr "मॉडल प्रदाता ने एक त्रुटि लौटाई।"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model returned an unusable response. Try again."
+msgstr "मॉडल ने ऐसा जवाब दिया जिसका उपयोग नहीं हो सकता। फिर से कोशिश करें।"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "प्रोवाइडर अनुरोधों की दर सीमित कर रहा है।"
@@ -5151,6 +5223,10 @@ msgstr "प्रोवाइडर अनुरोधों की दर स�
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "चयनित मेमोरी प्रोवाइडर इस बिल्ड में उपलब्ध नहीं है।"
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Their own model is cleared. You can pick one again in each bot."
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -5237,6 +5313,11 @@ msgstr "यह इंपोर्ट पहले ही इस्तेमा�
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "यह Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model's context window is too small. Choose another model."
+msgstr "इस मॉडल की कॉन्टेक्स्ट विंडो बहुत छोटी है। कोई दूसरा मॉडल चुनें।"
 
 #: src/pages/Artifacts.tsx
 msgid "This month"
@@ -5562,6 +5643,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use space default"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx

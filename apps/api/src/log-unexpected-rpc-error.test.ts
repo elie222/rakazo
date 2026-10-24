@@ -47,7 +47,7 @@ describe("logUnexpectedRpcError", () => {
     });
   });
 
-  it("returns a provider rate limit as too many requests and still logs the cause", () => {
+  it("returns a provider rate limit as too many requests without an error report", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
     const error = new SandboxRateLimitError({ cause: new Error("HTTP 429, rate_limited") });
@@ -61,10 +61,13 @@ describe("logUnexpectedRpcError", () => {
 
     expect(thrown).toBeInstanceOf(ORPCError);
     expect(thrown).toMatchObject({ code: "TOO_MANY_REQUESTS", message: error.message });
-    expect(sink.events[0]).toMatchObject({
-      message: "rpc computer/boot failed",
-      error: { cause: { message: "HTTP 429, rate_limited" } },
-    });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "rpc computer/boot computer rate limited",
+        reason: "HTTP 429, rate_limited",
+      }),
+    ]);
   });
 
   it("returns a computer the provider never started as a retryable 503 without an error report", () => {

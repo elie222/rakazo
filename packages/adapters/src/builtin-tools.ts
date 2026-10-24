@@ -84,7 +84,7 @@ const scheduleCreateProperties = {
     description:
       "Concrete steps for when the schedule fires: name the connected plugin tools to call (e.g. GITHUB_LIST_RELEASES for owner/repo), what to extract, and how to report. Prefer plugin tools over computer browser or web search for app data.",
   },
-  timezone: { type: "string", description: "IANA timezone (default UTC)." },
+  timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
 
 const scheduleTimingNames = [

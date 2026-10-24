@@ -40,6 +40,7 @@ afterEach(() => {
 describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
     expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
@@ -52,7 +53,6 @@ describe("createVoiceProvider", () => {
       "openai",
       "cartesia",
       "fish-audio",
-      "openai-compatible",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
@@ -64,6 +64,18 @@ describe("createVoiceProvider", () => {
     expect(isVoiceProviderId("piper")).toBe(false);
     expect(() => createVoiceProvider("piper")).toThrow(/unknown voice provider/i);
     expect(() => createVoiceProvider("scripted")).toThrow(/unknown voice provider/i);
+  });
+
+  it("shows self-hosted speech only when the operator allows custom endpoints", () => {
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
+    expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(false);
+    expect(
+      listVoiceCatalog({ allowPrivateEndpoint: true }).some(
+        (entry) => entry.id === "openai-compatible",
+      ),
+    ).toBe(true);
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(true);
   });
 
   it("adds the scripted fixture only when the agent runtime is scripted", () => {

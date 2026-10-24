@@ -30,6 +30,7 @@ import {
   CodexCatalogCache,
   ComposioConnector,
   createAgentHomeStore,
+  createArtifactStore,
   createBackgroundJobHandlers,
   createCloudAgentConnection,
   createConnectorStack,
@@ -45,12 +46,10 @@ import {
   createSecretStore,
   createTicketChangeNotifier,
   createWebProvider,
-  deletePushToken,
   deploymentModelUsageLookup,
   destroyBot,
   EmailEmulator,
   ExpoPushProvider,
-  endSessionPushToken,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
@@ -59,7 +58,6 @@ import {
   isComposioEnabled,
   isMessagingSurfaceEnabled,
   isPipedreamEnabled,
-  LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
   messagingPlatformsFromEnv,
@@ -67,6 +65,7 @@ import {
   PiOAuthLogins,
   PipedreamConnector,
   PostgresRealtimeFanout,
+  PrismaPushTokenStore,
   pipedreamConfigFromEnv,
   piSessionsRoot,
   RunJobPublisher,
@@ -89,7 +88,6 @@ import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
-  contentEncryptionOf,
   createBoardEvents,
   createDb,
   createPool,
@@ -354,7 +352,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = createAgentHomeStore(env.dataDir, prisma);
-  const artifacts = new LocalArtifactStore(env.dataDir, contentEncryptionOf(prisma)?.ring);
+  const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
     prisma,
@@ -452,9 +450,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       : new PiAgentRuntime({
           sessionRoot: env.piSessionRecording ? piSessionsRoot(env.dataDir) : undefined,
         }));
+  const pushTokens = new PrismaPushTokenStore(prisma, env.encryptionKey);
   const notifications =
     notificationsOverride ??
-    new ExpoPushProvider(env.dataDir, {
+    new ExpoPushProvider(pushTokens, {
       sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
       jobs,
       accessToken: env.expoAccessToken,
@@ -506,20 +505,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ),
       );
       await removePiUserSessions(env.dataDir, userId);
-      await deletePushToken(env.dataDir, userId).catch((error) =>
-        getLogger().error("push token removal failed", error),
-      );
+      await pushTokens
+        .remove(userId)
+        .catch((error) => getLogger().error("push token removal failed", error));
     },
-    // The session change already happened, so a token file failure must not fail sign-out.
+    // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
-      await endSessionPushToken(env.dataDir, session.userId, session.id).catch((error) =>
-        getLogger().error("push token removal failed", error),
-      );
+      await pushTokens
+        .endSession(session.userId, session.id)
+        .catch((error) => getLogger().error("push token removal failed", error));
     },
     afterReplaceSession: async (previous, session) => {
-      await endSessionPushToken(env.dataDir, session.userId, previous.id, session.id).catch(
-        (error) => getLogger().error("push token session update failed", error),
-      );
+      await pushTokens
+        .endSession(session.userId, previous.id, session.id)
+        .catch((error) => getLogger().error("push token session update failed", error));
     },
   });
   const oauthTokenUpgrade = auth
@@ -632,6 +631,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     cloudAgent,
     codexCatalog,
     prisma,
+    pushTokens,
     events,
     ticketChanges,
     boardEvents,
@@ -1269,10 +1269,13 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
     });
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
-  logUnexpectedRpcError(error, path);
   if (error instanceof SandboxRateLimitError) {
+    getLogger().warn(`rpc ${path.join("/")} computer rate limited`, {
+      reason: error.cause instanceof Error ? error.cause.message : undefined,
+    });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
   }
+  logUnexpectedRpcError(error, path);
 }
 
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {

@@ -17,10 +17,20 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr ""
+
 #. placeholder {0}: health.toolCount
 #: src/components/McpServerHealthLine.tsx
 msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {En ejecución · # herramienta} other {En ejecución · # herramientas}}"
+
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
+msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -155,6 +165,10 @@ msgstr "hace {hours} h"
 msgid "{minutes}m ago"
 msgstr "hace {minutes} min"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "{name} pregunta"
@@ -182,6 +196,16 @@ msgstr "{name} se detuvo"
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
 msgstr "{provider} no pudo encontrar el modelo solicitado."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider} no está accesible. Comprueba que esté en funcionamiento."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} denied access to this model."
+msgstr "{provider} denegó el acceso a este modelo."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -285,8 +309,23 @@ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} Los modelos de respaldo fallaron o no estaban disponibles para esta solicitud."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} Ningún modelo de respaldo pudo utilizarse para esta solicitud."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} Se restablece el {date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} Tus modelos de respaldo también fallaron."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -570,7 +609,7 @@ msgstr "Agentes:"
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
-msgstr "Todos los bots"
+msgstr ""
 
 #: src/pages/model-settings/provider-list.tsx
 msgid "All providers"
@@ -953,6 +992,10 @@ msgstr "Bot"
 msgid "Bot"
 msgstr "Bot"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bot models"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "Pantalla del bot"
@@ -1038,20 +1081,22 @@ msgstr "No puede leer imágenes"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "Cancelar"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "Cancelar nuevo bot"
 
@@ -1104,7 +1149,7 @@ msgstr "Apps de chat"
 msgid "Chat Settings"
 msgstr "Configuración del chat"
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr ""
 
@@ -1209,7 +1254,7 @@ msgstr "Elegir carpeta"
 msgid "Choose how to use Rakazo"
 msgstr ""
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr ""
 
@@ -1359,6 +1404,10 @@ msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
+msgstr "Completado"
+
+#: src/components/SubagentCard.tsx
+msgid "Completed"
 msgstr "Completado"
 
 #: src/pages/SettingsOverlay.tsx
@@ -1554,7 +1603,7 @@ msgstr "Continuar con el correo"
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr "Copiado"
+msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1652,7 +1701,7 @@ msgid "Could not continue"
 msgstr "No se pudo continuar"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "No se pudo crear el bot"
 
@@ -1974,6 +2023,10 @@ msgstr "No se pudo iniciar la enseñanza"
 msgid "Could not submit this answer"
 msgstr "No se pudo enviar esta respuesta"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Could not switch {failedNames}. Try again."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Could not take control"
 msgstr "No se pudo tomar el control"
@@ -2002,6 +2055,10 @@ msgstr ""
 msgid "Could not update computer"
 msgstr "No se pudo actualizar la computadora"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Could not update name"
+msgstr "No se pudo actualizar el nombre"
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "No se pudo actualizar la reacción"
@@ -2028,7 +2085,7 @@ msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Create"
@@ -2049,6 +2106,7 @@ msgstr "Crear grupo"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Create new Bot"
 msgstr "Crear nuevo bot"
 
@@ -2079,7 +2137,6 @@ msgstr "Creado"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "Creando…"
@@ -2264,10 +2321,6 @@ msgstr "Denegar"
 msgid "Deployment default"
 msgstr "Predeterminado del despliegue"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Describe what this bot does"
-msgstr "Describe qué hace este bot"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -2308,6 +2361,10 @@ msgstr "Desconectar"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
+msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Disconnect Self-hosted"
 msgstr ""
 
 #. placeholder {0}: selected.providerName ?? selected.provider
@@ -2415,6 +2472,7 @@ msgid "Each name can be used once."
 msgstr "Cada nombre solo se puede usar una vez."
 
 #: src/components/AskCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Edit"
 msgstr "Editar"
 
@@ -2592,6 +2650,7 @@ msgstr ""
 msgid "failed"
 msgstr "fallido"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "Falló"
@@ -2868,8 +2927,8 @@ msgstr ""
 msgid "Image upload area"
 msgstr "Área de carga de imagen"
 
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/composer.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Import"
 msgstr "Importar"
 
@@ -3495,6 +3554,7 @@ msgid "Muted"
 msgstr "Silenciado"
 
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3502,13 +3562,13 @@ msgstr "Silenciado"
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "Nombre"
 
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "Nombra este bot"
 
@@ -3519,6 +3579,10 @@ msgstr "Nombra este grupo"
 #: src/pages/RoutineEditor.tsx
 msgid "Name this routine"
 msgstr "Nombra esta rutina"
+
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Name your Bot"
+msgstr ""
 
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
@@ -3546,7 +3610,6 @@ msgid "New"
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Nuevo bot"
 
@@ -3916,9 +3979,6 @@ msgid "Optional header value"
 msgstr "Valor de encabezado opcional"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "Or connect an API key"
-msgstr "O conecta una clave de API"
-
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "O pega una clave de API"
@@ -4108,11 +4168,11 @@ msgstr ""
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "Proveedor"
 
 #: src/pages/model-settings/provider-list.tsx
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "Proveedores"
 
@@ -4546,6 +4606,7 @@ msgid "running"
 msgstr "en ejecución"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "En ejecución"
@@ -4565,6 +4626,7 @@ msgstr ""
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
@@ -4777,6 +4839,11 @@ msgstr "Ayuda de configuración"
 msgid "Shape"
 msgstr "Forma"
 
+#. placeholder {0}: index + 1
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Shape {0}"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -4958,10 +5025,6 @@ msgid "Speak"
 msgstr "Hablar"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak + transcribe"
-msgstr "Hablar + transcribir"
-
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak only"
 msgstr "Solo hablar"
 
@@ -5037,7 +5100,6 @@ msgid "Stream replies"
 msgstr "Transmitir respuestas"
 
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "subagente"
 
@@ -5065,11 +5127,16 @@ msgstr "Admite imágenes"
 msgid "Supports thinking"
 msgstr "Admite razonamiento"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Switch"
+msgstr ""
+
 #: src/pages/shell/command-palette.tsx
 msgid "Switch bot"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Cambiando…"
 
@@ -5144,6 +5211,11 @@ msgstr "Se agotó el tiempo de conexión."
 msgid "The model provider returned an error."
 msgstr "El proveedor de modelos devolvió un error."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model returned an unusable response. Try again."
+msgstr "El modelo devolvió una respuesta inutilizable. Inténtalo de nuevo."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "El proveedor está limitando la frecuencia de las solicitudes."
@@ -5151,6 +5223,10 @@ msgstr "El proveedor está limitando la frecuencia de las solicitudes."
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "El proveedor de memoria seleccionado no está disponible en esta build."
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Their own model is cleared. You can pick one again in each bot."
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -5237,6 +5313,11 @@ msgstr "Esta importación ya se usó. Vuelve a elegir los archivos."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "esta Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model's context window is too small. Choose another model."
+msgstr "La ventana de contexto de este modelo es demasiado pequeña. Elige otro modelo."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"
@@ -5562,6 +5643,10 @@ msgstr ""
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use space default"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx

@@ -29,7 +29,13 @@ import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "./router.js";
-import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } from "./router.js";
+import {
+  botIntroPrompt,
+  createRouter,
+  enqueueBotIntroRun,
+  HEARTBEAT_MS,
+  SESSION_RECHECK_MS,
+} from "./router.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
@@ -767,6 +773,28 @@ describe("secret request dismissal", () => {
 
     expect(response.status).toBe(400);
     expect(h.answerRunInput).not.toHaveBeenCalled();
+  });
+
+  it("reports a credential its destination cannot carry as a bad request", async () => {
+    const h = setup(true);
+    h.answerRunInput.mockRejectedValue(
+      new Error("Credential cannot be used with this authentication method"),
+    );
+    const { response } = await h.send({ answer: "example\nvalue" });
+
+    expect(response.status).toBe(400);
+    const body = JSON.stringify(await response.json());
+    expect(body).toContain("Credential cannot be used with this authentication method");
+    expect(body).not.toContain("example");
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps unexpected answer failures as server errors", async () => {
+    const h = setup(true);
+    h.answerRunInput.mockRejectedValue(new Error("database unavailable"));
+    const { response } = await h.send({ answer: "Paris" });
+
+    expect(response.status).toBe(500);
   });
 });
 
@@ -3983,14 +4011,23 @@ describe("bot intro run", () => {
   } satisfies Actor;
   const bot = { id: "bot-1", threadId: "thread-1" } as unknown as Bot;
 
-  function introDeps(options: { agentRuntime?: string; hasCredential?: boolean } = {}) {
+  function introDeps(
+    options: { agentRuntime?: string; hasCredential?: boolean; existingRun?: boolean } = {},
+  ) {
     let calls = 0;
     const create = vi.fn(({ data }: { data: object }) => {
       calls += 1;
       return Promise.resolve({ id: `record-${calls}`, ...data });
     });
     const enqueue = vi.fn().mockResolvedValue(undefined);
-    const tx = { task: { create }, run: { create } };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      task: { create },
+      run: {
+        create,
+        findFirst: vi.fn().mockResolvedValue(options.existingRun ? { id: "run-0" } : null),
+      },
+    };
     const preference =
       (options.hasCredential ?? true)
         ? { isDefault: true, modelId: "model-1", credential: { id: "cred-1", provider: "test" } }
@@ -4001,6 +4038,10 @@ describe("bot intro run", () => {
         $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         spaceModelPreference,
         deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+        user: { findUnique: vi.fn().mockResolvedValue({ name: "Ada Lovelace" }) },
+        space: {
+          findUnique: vi.fn().mockResolvedValue({ name: "Personal", isDefault: true }),
+        },
       },
       jobs: { enqueue },
       env: { agentRuntime: options.agentRuntime ?? "pi" },
@@ -4008,7 +4049,7 @@ describe("bot intro run", () => {
     return { create, enqueue, deps };
   }
 
-  it("queues an invisible-prompt run so the bot states how it read its role", async () => {
+  it("queues an invisible-prompt run so the bot asks what it is for", async () => {
     const { create, enqueue, deps } = introDeps();
 
     await enqueueBotIntroRun(deps, actor, bot);
@@ -4027,7 +4068,9 @@ describe("bot intro run", () => {
     const [taskCall, runCall] = create.mock.calls as Array<
       [{ data: { prompt?: string; trigger?: string; taskId?: string } }]
     >;
-    expect(taskCall?.[0].data.prompt).toMatch(/understood your role/i);
+    expect(taskCall?.[0].data.prompt).toBe(
+      botIntroPrompt({ userName: "Ada Lovelace", spaceName: null, disabledBuiltinTools: [] }),
+    );
     expect(runCall?.[0].data.trigger).toBe("created");
     // The Run must reference the Task this same call created, not a stale or
     // mismatched id, and the enqueued job must target that Run.
@@ -4062,6 +4105,24 @@ describe("bot intro run", () => {
 
     expect(create).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not queue a second intro when an idempotent create returns an existing bot", async () => {
+    const { create, enqueue, deps } = introDeps({ existingRun: true });
+
+    await enqueueBotIntroRun(deps, actor, bot);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("names only the intro tools the bot still has", () => {
+    const prompt = (disabledBuiltinTools: string[]) =>
+      botIntroPrompt({ userName: "Ada", spaceName: null, disabledBuiltinTools });
+    expect(prompt([])).toContain("ask_user");
+    expect(prompt([])).toContain("update_bot");
+    expect(prompt(["ask_user", "update_bot"])).not.toContain("ask_user");
+    expect(prompt(["ask_user", "update_bot"])).not.toContain("update_bot");
   });
 });
 

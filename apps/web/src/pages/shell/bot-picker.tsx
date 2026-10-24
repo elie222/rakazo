@@ -46,19 +46,19 @@ export function BotCreatePicker({
 
   return (
     <div data-testid="bot-create-picker" className="w-[min(320px,calc(100vw-2rem))]">
-      <label className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <span className="shrink-0 text-[13px] text-muted-foreground">
-          <Trans>To:</Trans>
-        </span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t`Search`}
-          aria-label={t`Search`}
-          className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
-        />
-      </label>
       <Command shouldFilter={false} className="rounded-none border-0 bg-transparent p-0">
+        <label className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <span className="shrink-0 text-[13px] text-muted-foreground">
+            <Trans>To:</Trans>
+          </span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t`Search`}
+            aria-label={t`Search`}
+            className="min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </label>
         <CommandList className="max-h-72 p-1">
           <CommandEmpty>
             <Trans>No bots match</Trans>

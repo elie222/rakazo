@@ -1,8 +1,10 @@
+import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   ContextBudgetError,
   ContextCacheTracker,
   estimateContextTokens,
+  estimateTextTokens,
   providerContextPrefix,
   selectContext,
   shortenToolResultText,
@@ -16,11 +18,30 @@ const budget = {
 };
 const user = (content: string) => ({ role: "user", content, timestamp: 1 });
 describe("bounded context selection", () => {
+  it("tells a model too small for the instructions and tools apart from a long conversation", () => {
+    const tools = [{ name: "search", description: "Search ".repeat(1200), parameters: {} }];
+    expect(() =>
+      selectContext([user("hi")], { budget: { ...budget, tools }, strategy: "current" }),
+    ).toThrow(MODEL_CONTEXT_TOO_SMALL_ERROR);
+    expect(() =>
+      selectContext([user("long ".repeat(2000))], { budget, strategy: "current" }),
+    ).toThrow("Required context exceeds the model context budget");
+  });
   it("accounts for instructions, tools, images and output reserve", () => {
     expect(estimateContextTokens([{ type: "image", data: "base64" }], 1000)).toBeGreaterThan(1000);
     const selected = selectContext([user("current")], { budget, strategy: "retrieval" });
     expect(selected.estimatedInputTokens).toBeLessThan(budget.contextWindow - budget.outputReserve);
     expect(selected.estimatedInputTokens).toBeGreaterThan(estimateContextTokens(user("current")));
+  });
+  it("counts mandatory system-message context before trying to shorten conversation history", () => {
+    const messages = [{ role: "system", content: "x".repeat(10_000) }, user("A short request")];
+    expect(() => selectContext(messages, { budget, strategy: "retrieval" })).toThrow(
+      MODEL_CONTEXT_TOO_SMALL_ERROR,
+    );
+    expect(messages).toEqual([
+      { role: "system", content: "x".repeat(10_000) },
+      user("A short request"),
+    ]);
   });
   it("does not budget unknown images as zero or count local-only Pi metadata", () => {
     const image = {
@@ -45,7 +66,8 @@ describe("bounded context selection", () => {
       role: "assistant",
       content: [{ type: "toolCall", id: "call", name: "upload", arguments: args }],
     };
-    expect(estimateContextTokens(assistant, 100)).toBeGreaterThan(10000);
+    expect(estimateContextTokens(assistant, 100)).toBe(estimateContextTokens(assistant));
+    expect(estimateContextTokens(assistant, 100)).toBeGreaterThan(3000);
   });
   it("shortens every result in an indirectly protected tool group and rejects duplicate results", () => {
     const call = {
@@ -69,13 +91,13 @@ describe("bounded context selection", () => {
       role: "assistant",
       content: [{ type: "toolCall", id: "old", name: "read", arguments: {} }],
     };
-    const oldResult = { role: "toolResult", toolCallId: "old", content: "old ".repeat(1000) };
+    const oldResult = { role: "toolResult", toolCallId: "old", content: "old ".repeat(2000) };
     const current = user("current objective");
     const call = {
       role: "assistant",
       content: [{ type: "toolCall", id: "pending", name: "read", arguments: {} }],
     };
-    const result = { role: "toolResult", toolCallId: "pending", content: "x".repeat(1500) };
+    const result = { role: "toolResult", toolCallId: "pending", content: "x".repeat(6000) };
     const steering = user("also check the summary");
     const selected = selectContext([oldCall, oldResult, current, call, result, steering], {
       budget,
@@ -233,7 +255,7 @@ describe("bounded context selection", () => {
         {
           role: "toolResult",
           toolCallId: "read",
-          content: JSON.stringify({ body: "r".repeat(5000) }),
+          content: JSON.stringify({ body: "r".repeat(10_000) }),
         },
         { role: "assistant", content: [{ type: "text", text: "Summary of the file." }] },
         user("next"),
@@ -283,7 +305,7 @@ describe("bounded context selection", () => {
           content: [{ type: "text", text: JSON.stringify(payload) }],
         },
       ],
-      { budget: { ...budget, contextWindow: 4000 }, strategy: "retrieval" },
+      { budget: { ...budget, contextWindow: 1500 }, strategy: "retrieval" },
     );
     const content = selected.messages.at(-1)!.content as Array<{ text: string }>;
     const decoded = JSON.parse(content[0]!.text);
@@ -671,5 +693,88 @@ describe("cache request metadata", () => {
     expect(tracker.record(request)).toEqual({ observedReuse: null });
     expect(tracker.record(request, 0)).toEqual({ observedReuse: false });
     expect(tracker.record(request, 1)).toEqual({ observedReuse: true });
+  });
+});
+
+// Reference counts measured offline with cl100k, o200k, Llama 3, Qwen 2.5 and Mistral's
+// original tokenizer: the fewest and most tokens any of them used for the sample.
+const tokenizedSamples = [
+  {
+    name: "prose",
+    text: "You are a helpful assistant for a small bakery. Answer customer questions about opening hours, prices, allergens and custom cake orders. Keep replies short and friendly, and never promise a delivery time you cannot confirm.\n\nWhen someone asks for a custom cake, collect the date they need it, the number of guests, any dietary restrictions, and the flavor they prefer. Repeat the details back before you save the order, and ask them to confirm. If the requested date is less than three days away, explain that rush orders cost extra and need approval from the owner.",
+    fewest: 111,
+    most: 119,
+  },
+  {
+    name: "code",
+    text: "export function retryDelay(attempt: number, baseMs = 500): number {\n  // Exponential backoff with a ceiling, so a flaky provider is not hammered.\n  const capped = Math.min(attempt, 6);\n  const jitter = (attempt * 37) % 100;\n  return baseMs * 2 ** capped + jitter;\n}\n\nfor (const [index, item] of items.entries()) {\n  if (!item.ready) continue;\n  results.push({ id: item.id, position: index, label: item.name.trim() });\n}\n",
+    fewest: 116,
+    most: 148,
+  },
+  {
+    name: "a JSON tool schema",
+    text: JSON.stringify({
+      name: "ask_user",
+      description:
+        "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", maxLength: 240 },
+          options: {
+            type: "array",
+            items: { type: "string", minLength: 1, maxLength: 80 },
+            minItems: 2,
+            maxItems: 4,
+            uniqueItems: true,
+          },
+        },
+        required: ["question", "options"],
+      },
+    }),
+    fewest: 106,
+    most: 125,
+  },
+  {
+    name: "Chinese",
+    text: "订阅凭据已安全存储。\n添加要监视的文件或文件夹\n请在设置中添加模型后再使用。\n添加通行密钥以更快登录？\n为此一次性任务添加运行时间。\n请填写服务器名称。\n添加触发器以运行此例程。\n请填写 HTTPS 服务器 URL。",
+    fewest: 61,
+    most: 104,
+  },
+  {
+    name: "Japanese",
+    text: "サブスクリプションの認証情報は安全に保存されています。\nアクセストークン（任意）\nアカウントのデフォルト\n実行するコマンドを追加\n監視するファイルまたはフォルダーを追加\nこれを使用するには、設定でモデルを追加してください。",
+    fewest: 68,
+    most: 114,
+  },
+  {
+    name: "Russian",
+    text: "Учётные данные подписки надежно сохранены.\nО пространствах\nТокен доступа (необязательно)\nУчетная запись по умолчанию\nЯрлык аккаунта\nДействия для пространства",
+    fewest: 44,
+    most: 72,
+  },
+  {
+    name: "hex digests",
+    text: "a5bb10eb6bdc95823faeb67d6545b23e0f9ab45fc9ec31eba52c13dfaff8ade7 0899cd856fba9b131050135138cd87c5e5222f0a0657b94730901988d5cabdbb 2be9fec91c2c7e4b40fedb0d2bf11da0f6fe4a7047946e3bd492a7377e7c6154 73014671303fd8235351b0a5e8aa8c6c6d19caf70d0d13900454afde0083d2a4",
+    fewest: 154,
+    most: 227,
+  },
+];
+describe("text token estimate", () => {
+  it.each(tokenizedSamples)(
+    "stays near the least efficient tokenizer for $name",
+    ({ text, fewest, most }) => {
+      const estimate = estimateTextTokens(text);
+      expect(estimate).toBeGreaterThanOrEqual(Math.floor(most * 0.9));
+      expect(estimate).toBeLessThanOrEqual(Math.ceil(most * 1.5));
+      expect(estimate).toBeLessThanOrEqual(fewest * 2.1);
+      expect(estimate).toBeLessThanOrEqual(Buffer.byteLength(text, "utf8"));
+    },
+  );
+  it("counts UTF-16 units instead of bytes", () => {
+    const prose = tokenizedSamples[0]!.text;
+    expect(estimateTextTokens(prose)).toBeLessThan(Buffer.byteLength(prose, "utf8") / 3);
+    expect(estimateTextTokens("")).toBe(0);
+    expect(estimateTextTokens("🙂🙂")).toBe(5);
   });
 });

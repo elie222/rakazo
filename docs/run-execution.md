@@ -12,6 +12,10 @@ claims can start concurrently; model streams and tools run independently after
 durable ownership and heartbeats are established. Memory admission and graceful
 shutdown are shared with legacy queue deliveries.
 
+Runs waiting behind another run's live computer lease stay queued without repeated
+claims. The recovery scan picks them up after release or expiry, while unrelated
+bots can run. Execution timing starts after computer ownership is acquired.
+
 Graphile remains responsible for scheduled and maintenance jobs. Those jobs can
 create runs, which use the same direct dispatch path. Legacy run deliveries remain
 supported during rolling upgrades and drain safely against the same database
@@ -54,3 +58,52 @@ already committed operation.
 These are server-side availability measurements. They do not measure network
 delivery or rendering on a user's device. Client delivery/render timing would need
 a separate acknowledgement.
+
+Recurring timer routines mark their origin durably and keep one pristine pending
+catch-up run for the same routine, prompt, thread, and model selection. A later
+tick reuses that pending work and advances the next scheduled tick, preserving
+any computer retry delay. Already started runs, manual tests, explicit retries,
+one-shot schedules, and change/event-triggered runs remain separate. Unmarked
+older firings are preserved: a scheduled firing event alone cannot distinguish
+recurring work from a one-shot whose routine was later edited.
+A bounded pass cancels redundant marked timer rows with no attempts, effects,
+output, steering, checkpoint, or live computer ownership, preserving historical
+rows and terminal events. The `routine.coalesced` log records reuse without
+another `routine.fired` event.
+A timer run whose first start is more than 15 minutes after the most recent occurrence
+due by then (counted from the occurrence in its marker) tells the agent both
+times in the routine's timezone, so a catch-up after downtime can adapt instead
+of assuming it is still the scheduled time. Late runs are never skipped.
+Committed timer runs and their advanced schedules remain intact when publication
+fails. Recovery repairs delivery for every driver; a notification failure never
+rolls back work that another tick or dispatcher can already own.
+
+Interactive work is scanned before scheduled/reaction work in each bounded pass.
+When memory admission declines a run, dispatch leaves it durable and continues
+scanning instead of waiting in a dispatch slot. Memory admission independently
+checks available physical memory and unused JavaScript heap space against the
+same small attachment startup buffer. External buffers are not counted against
+the JavaScript heap limit, and live-run counts do not set a concurrency limit.
+Notifications and periodic recovery reopen completed lanes without restarting
+active pagination. Active model streams have no new duration limit.
+
+`run.admission_wait` and `run.admission_resumed` identify a capacity episode and
+its duration without logging every retry. Independently, `run.queue_delayed`
+warns every thirty seconds when interactive runs have been due and queued for
+at least thirty seconds, measured from the later of creation and wake time.
+Normal retry backoff does not count toward this wait. It includes `queue.delayed_runs` and
+`queue.oldest_wait_ms`; `run.queue_recovered` marks recovery. Future retries and
+scheduled work do not trigger this warning. These checks do not block dispatch.
+
+For optional Axiom monitoring, alert when the following query returns any events
+in the last two minutes (use the deployment's configured dataset):
+
+```apl
+['YOUR_DATASET']
+| where message == "run.queue_delayed"
+| summarize warnings = count()
+| where warnings > 0
+```
+
+The application emits the signal; notification routing belongs in the deployment's
+monitor configuration. No hosted monitoring service is required for dispatch.

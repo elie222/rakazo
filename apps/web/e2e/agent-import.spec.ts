@@ -96,7 +96,7 @@ const document = [
 
 async function openImport(page: Page) {
   await openNewBot(page);
-  await page.getByTestId("create-bot-form").getByTestId("create-bot-import").click();
+  await page.getByTestId("create-bot-dialog").getByTestId("create-bot-import").click();
   const panel = page.getByTestId("agent-import");
   await expect(panel.getByTestId("agent-import-choose")).toBeVisible();
   return panel;

@@ -14,9 +14,13 @@ const { element } = vi.hoisted(() => ({
       createElement(tag, { "aria-label": accessibilityLabel }, children),
 }));
 
+vi.mock("expo-notifications", () => ({
+  getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
+}));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Alert: { alert: vi.fn() },
+  AppState: { addEventListener: () => ({ remove: () => undefined }) },
   KeyboardAvoidingView: element("div"),
   Modal: ({ children, visible }: { children?: ReactNode; visible?: boolean }) =>
     visible ? createElement("section", null, children) : null,
@@ -65,6 +69,7 @@ vi.mock("./api", () => ({
   ),
   selectedSpaceId: () => "space-1",
   signOut: vi.fn(),
+  updateAccountName: vi.fn(),
 }));
 vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",

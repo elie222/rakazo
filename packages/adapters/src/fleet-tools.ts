@@ -42,6 +42,7 @@ import {
   compactScheduleInput,
   createScheduleFromTool,
   resolveScheduleTiming,
+  userTimeZone,
 } from "./schedule-tools.js";
 import type { UpdateBotPatch } from "./update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "./update-bot-patch.js";
@@ -327,7 +328,7 @@ async function prepareChildRoutine(
   if (hidden) return refuse(hidden);
   const namedRoutine = CreateRoutineInput.shape.name.safeParse(name);
   if (!namedRoutine.success) return refuse(`name: ${issueMessage(namedRoutine.error)}`);
-  const timezone = text(args.timezone) ?? "UTC";
+  const timezone = text(args.timezone) ?? (await userTimeZone(deps.prisma, run.userId));
   if (!TimeZoneSchema.safeParse(timezone).success) {
     return refuse(`Unknown timezone "${timezone}". Use an IANA name like Europe/Paris.`);
   }

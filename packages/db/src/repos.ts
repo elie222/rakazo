@@ -504,6 +504,7 @@ export function createRepos(
         notifyOnFinish: boolean;
         fleetManagement?: boolean;
         color?: string;
+        avatarFamily?: number;
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
@@ -569,6 +570,7 @@ export function createRepos(
               select: { id: true, color: true },
             }),
             input.color,
+            { family: input.avatarFamily },
           );
           const teamComputer = await ensureComputerRecord(tx, {
             mode: "team",

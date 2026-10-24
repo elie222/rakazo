@@ -50,6 +50,7 @@ model User {
   agentSecrets                AgentSecret[]
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
+  pushToken                   PushToken?
   signupSurvey                SignupSurvey?
 
   @@unique([email])
@@ -84,6 +85,19 @@ model Session {
   @@unique([token])
   @@index([userId])
   @@map("session")
+}
+
+/// One current device registration per account, matching the notification API contract.
+/// No session FK: password changes delete a session before the replacement is created.
+model PushToken {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ciphertext String
+  tokenDigest String @unique
+  sessionId String
+  updatedAt DateTime @updatedAt
+
+  @@map("push_tokens")
 }
 
 model Account {
@@ -1108,6 +1122,8 @@ model Computer {
   scopeKey                String                   @unique
   homeKey                 String                   @unique
   homeRevision            String                   @default("empty")
+  /// When the sandbox was read for `homeRevision`; null when an older release saved it.
+  homeRevisionAt          DateTime?
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique

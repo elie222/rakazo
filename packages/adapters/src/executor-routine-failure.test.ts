@@ -1,5 +1,5 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
-import { ModelAccountError, TransientModelError } from "@rakazo/adapter-kit";
+import { ModelAccountError, SandboxRateLimitError, TransientModelError } from "@rakazo/adapter-kit";
 import type * as DbModule from "@rakazo/db";
 import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -784,6 +784,7 @@ describe("reporting a failed run", () => {
   it.each([
     ["a provider outage that outlasted its retries", overloaded()],
     ["a rejected model key", new ModelAccountError('401: {"message":"Invalid API-key provided."}')],
+    ["the computer provider's rate limit", new SandboxRateLimitError()],
   ])("logs %s as a warning, not an error report", async (_label, error) => {
     expect(await failedRunLog(error)).toEqual([
       expect.objectContaining({ level: "warn", "run.failure": error.name, reason: error.message }),

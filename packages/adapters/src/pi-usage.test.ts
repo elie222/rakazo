@@ -403,7 +403,7 @@ describe("Pi usage accounting", () => {
       vi.fn(),
       { beforeCall, afterCall: vi.fn() },
       undefined,
-      { prepareContext: () => ({ messages: [], systemPrompt: "x".repeat(10000) }), onUsage },
+      { prepareContext: () => ({ messages: [], systemPrompt: "0".repeat(10000) }), onUsage },
     );
     for await (const _event of stream) {
     }

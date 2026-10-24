@@ -17,10 +17,20 @@ msgstr ""
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
+msgstr ""
+
 #. placeholder {0}: health.toolCount
 #: src/components/McpServerHealthLine.tsx
 msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
 msgstr "{0, plural, one {פעיל · # כלי} other {פעיל · # כלים}}"
+
+#. placeholder {0}: pinned.length
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
+msgstr ""
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/model-settings/connection-controls.tsx
@@ -155,6 +165,10 @@ msgstr "לפני {hours} שע׳"
 msgid "{minutes}m ago"
 msgstr "לפני {minutes} דק׳"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr ""
+
 #: src/lib/activity-list-filters.ts
 msgid "{name} asked"
 msgstr "בקשה מאת {name}"
@@ -182,6 +196,16 @@ msgstr "{name} נעצר"
 #: src/lib/run-error.ts
 msgid "{provider} could not find the requested model."
 msgstr "{provider} לא מצא את המודל המבוקש."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} couldn't be reached. Check that it's running."
+msgstr "{provider} לא זמין. יש לוודא שהוא פועל."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} denied access to this model."
+msgstr "{provider} דחה את הגישה למודל הזה."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -285,8 +309,23 @@ msgstr "{stepCount, plural, one {בעבודה… · # כלי} other {בעבוד�
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
+msgid "{summary} Backup models failed or were unavailable for this request."
+msgstr "{summary} מודלי הגיבוי נכשלו או לא היו זמינים לבקשה הזו."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} No backup model was usable for this request."
+msgstr "{summary} לא ניתן היה להשתמש באף מודל גיבוי לבקשה הזו."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
 msgstr "{summary} יתאפס ב-{date}."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Your backup models also failed."
+msgstr "{summary} גם מודלי הגיבוי נכשלו."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -953,6 +992,10 @@ msgstr "בוט"
 msgid "Bot"
 msgstr "בוט"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Bot models"
+msgstr ""
+
 #: src/pages/shell/computer-overlay.tsx
 msgid "Bot screen"
 msgstr "מסך הבוט"
@@ -1038,20 +1081,22 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/markdown-link-prompt.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Cancel"
 msgstr "ביטול"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Cancel new bot"
 msgstr "ביטול בוט חדש"
 
@@ -1104,7 +1149,7 @@ msgstr "אפליקציות צ׳אט"
 msgid "Chat Settings"
 msgstr "הגדרות צ׳אט"
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
 msgstr ""
 
@@ -1209,7 +1254,7 @@ msgstr "בחירת תיקייה"
 msgid "Choose how to use Rakazo"
 msgstr ""
 
-#: src/pages/Onboarding.tsx
+#: src/lib/localized-provider-hint.ts
 msgid "Claude subscription"
 msgstr ""
 
@@ -1359,6 +1404,10 @@ msgstr "צפוף"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
+msgstr "הושלם"
+
+#: src/components/SubagentCard.tsx
+msgid "Completed"
 msgstr "הושלם"
 
 #: src/pages/SettingsOverlay.tsx
@@ -1652,7 +1701,7 @@ msgid "Could not continue"
 msgstr "לא ניתן להמשיך"
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "לא ניתן ליצור את הבוט"
 
@@ -1974,6 +2023,10 @@ msgstr "לא ניתן להתחיל לימוד"
 msgid "Could not submit this answer"
 msgstr "לא ניתן לשלוח את התשובה"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Could not switch {failedNames}. Try again."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Could not take control"
 msgstr "לא ניתן להשתלט"
@@ -2002,6 +2055,10 @@ msgstr ""
 msgid "Could not update computer"
 msgstr "לא ניתן לעדכן את המחשב"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Could not update name"
+msgstr "לא ניתן לעדכן את השם"
+
 #: src/pages/Shell.tsx
 msgid "Could not update reaction"
 msgstr "לא ניתן לעדכן את האמוג׳י"
@@ -2028,7 +2085,7 @@ msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Create"
@@ -2049,6 +2106,7 @@ msgstr "יצירת קבוצה"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Create new Bot"
 msgstr "יצירת בוט חדש"
 
@@ -2079,7 +2137,6 @@ msgstr "נוצר"
 
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "יוצר…"
@@ -2264,10 +2321,6 @@ msgstr "דחייה"
 msgid "Deployment default"
 msgstr "ברירת המחדל של ההתקנה"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Describe what this bot does"
-msgstr "תיאור של מה שהבוט עושה"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -2309,6 +2362,10 @@ msgstr "ניתוק"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
 msgstr "לנתק את {disconnectName}?"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Disconnect Self-hosted"
+msgstr ""
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
@@ -2415,6 +2472,7 @@ msgid "Each name can be used once."
 msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."
 
 #: src/components/AskCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 msgid "Edit"
 msgstr "עריכה"
 
@@ -2592,6 +2650,7 @@ msgstr "גבוה מאוד"
 msgid "failed"
 msgstr "נכשל"
 
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Failed"
 msgstr "נכשל"
@@ -2868,8 +2927,8 @@ msgstr "התעלמות"
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
 
-#: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/composer.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 msgid "Import"
 msgstr "ייבוא"
 
@@ -3495,6 +3554,7 @@ msgid "Muted"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
@@ -3502,13 +3562,13 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Name"
 msgstr "שם"
 
 #: src/lib/agent-import-errors.ts
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "Name this bot"
 msgstr "שם לבוט"
 
@@ -3519,6 +3579,10 @@ msgstr "שם לקבוצה"
 #: src/pages/RoutineEditor.tsx
 msgid "Name this routine"
 msgstr "שם לרוטינה"
+
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Name your Bot"
+msgstr ""
 
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
@@ -3546,7 +3610,6 @@ msgid "New"
 msgstr ""
 
 #: src/pages/shell/agent-import.tsx
-#: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "בוט חדש"
 
@@ -3916,9 +3979,6 @@ msgid "Optional header value"
 msgstr "ערך header אופציונלי"
 
 #: src/pages/model-settings/connection-controls.tsx
-msgid "Or connect an API key"
-msgstr "או חיבור עם מפתח API"
-
 #: src/pages/Onboarding.tsx
 msgid "Or paste an API key"
 msgstr "או הדבקת מפתח API"
@@ -4108,11 +4168,11 @@ msgstr "קלט מוגן"
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "ספק"
 
 #: src/pages/model-settings/provider-list.tsx
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Providers"
 msgstr "ספקים"
 
@@ -4546,6 +4606,7 @@ msgid "running"
 msgstr "פועל"
 
 #: src/components/McpServerHealthLine.tsx
+#: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "פועל"
@@ -4565,6 +4626,7 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
@@ -4777,6 +4839,11 @@ msgstr "עזרה בהגדרה"
 msgid "Shape"
 msgstr "צורה"
 
+#. placeholder {0}: index + 1
+#: src/pages/shell/avatar-studio-popover.tsx
+msgid "Shape {0}"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
@@ -4958,10 +5025,6 @@ msgid "Speak"
 msgstr "הקראה"
 
 #: src/pages/VoiceSettingsOverlay.tsx
-msgid "Speak + transcribe"
-msgstr "הקראה + תמלול"
-
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speak only"
 msgstr "הקראה בלבד"
 
@@ -5037,7 +5100,6 @@ msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
 #: src/lib/identity-display.ts
-#: src/pages/shell/message-view.tsx
 msgid "subagent"
 msgstr "סוכן משנה"
 
@@ -5065,11 +5127,16 @@ msgstr "תומך בתמונות"
 msgid "Supports thinking"
 msgstr "תומך בחשיבה"
 
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Switch"
+msgstr ""
+
 #: src/pages/shell/command-palette.tsx
 msgid "Switch bot"
 msgstr "החלפת בוט"
 
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "מחליף…"
 
@@ -5144,6 +5211,11 @@ msgstr "תם הזמן הקצוב לחיבור."
 msgid "The model provider returned an error."
 msgstr "ספק המודל החזיר שגיאה."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model returned an unusable response. Try again."
+msgstr "המודל החזיר תשובה שאי אפשר להשתמש בה. אפשר לנסות שוב."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "הספק מגביל את קצב הבקשות."
@@ -5151,6 +5223,10 @@ msgstr "הספק מגביל את קצב הבקשות."
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "ספק הזיכרון שנבחר אינו זמין בגרסה הזו."
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Their own model is cleared. You can pick one again in each bot."
+msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "These files are too large to import."
@@ -5237,6 +5313,11 @@ msgstr "הייבוא הזה כבר נוצל. יש לבחור את הקבצים �
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ה-Mac הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model's context window is too small. Choose another model."
+msgstr "חלון ההקשר של המודל הזה קטן מדי. יש לבחור מודל אחר."
 
 #: src/pages/Artifacts.tsx
 msgid "This month"
@@ -5562,6 +5643,10 @@ msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 #: src/components/ModelCredits.tsx
 #: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
+msgstr ""
+
+#: src/pages/model-settings/space-bots-model.tsx
+msgid "Use space default"
 msgstr ""
 
 #: src/pages/model-settings/connection-controls.tsx

@@ -32,10 +32,13 @@ async function expectNoTouchSideGutter(frame: Locator) {
     const parentWidth = element.parentElement?.getBoundingClientRect().width ?? 0;
     const maxWidth = getComputedStyle(element).maxWidth;
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-    const parsed = Number.parseFloat(maxWidth);
-    // Touch caps are percentages (84% / 88%). Resolve them against the parent
-    // before comparing with the pixel gutter.
-    const max = maxWidth.endsWith("%") ? (parsed / 100) * parentWidth : parsed;
+    // Let the browser resolve the cap (it mixes percentages and rem) by
+    // overflowing the frame and reading back its clamped width.
+    const frame = element as HTMLElement;
+    const width = frame.style.width;
+    frame.style.width = "100000px";
+    const max = frame.getBoundingClientRect().width;
+    frame.style.width = width;
     return {
       parentWidth,
       max,

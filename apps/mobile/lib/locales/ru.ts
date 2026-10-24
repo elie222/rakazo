@@ -1,4 +1,13 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Use 80 characters or fewer": "Не более 80 символов",
+  "Could not update name": "Не удалось обновить имя",
+  "{summary} Your backup models also failed.":
+    "{summary} Резервные модели тоже завершились с ошибкой.",
+  "{summary} No backup model was usable for this request.":
+    "{summary} Ни одна резервная модель не подошла для этого запроса.",
+  "{summary} Backup models failed or were unavailable for this request.":
+    "{summary} Резервные модели завершились с ошибкой или были недоступны для этого запроса.",
+
   "Ollama Cloud": "Ollama Cloud",
   "Ollama API key": "API-ключ Ollama",
   "Show password": "Показать пароль",
@@ -79,10 +88,17 @@ export const RU_MESSAGES: Record<string, string> = {
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} отклонил API-ключ. Проверьте настройки подключения.",
   "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
+  "{provider} denied access to this model.": "{provider} отказал в доступе к этой модели.",
+  "The model returned an unusable response. Try again.":
+    "Модель вернула непригодный ответ. Попробуйте ещё раз.",
+  "This model's context window is too small. Choose another model.":
+    "Контекстное окно этой модели слишком мало. Выберите другую модель.",
   "{provider} took too long to respond. Try again.":
     "{provider} не ответил вовремя. Повторите попытку.",
   "{provider} is overloaded right now. Try again in a moment.":
     "{provider} сейчас перегружен. Повторите попытку чуть позже.",
+  "{provider} couldn't be reached. Check that it's running.":
+    "{provider} недоступен. Проверьте, что он запущен.",
   "This conversation is too long for the model. Retrying won't help. Start a new chat or shorten your message.":
     "Этот разговор слишком длинный для модели. Повторная попытка не поможет. Начните новый чат или сократите сообщение.",
   "{provider} key hit its limit.": "{provider}: достигнут лимит ключа.",
@@ -417,11 +433,11 @@ export const RU_MESSAGES: Record<string, string> = {
   Deny: "Запретить",
   "Deployment default": "Развертывание по умолчанию",
   Description: "Описание",
-  "Describe what this bot does": "Опишите, что делает этот бот",
   "Don’t have an account?": "Нет аккаунта?",
   Done: "Готово",
   "Disconnect {name}?": "Отключить {name}?",
   Disconnect: "Отключить",
+  "Disconnect Self-hosted": "Отключить собственный сервер",
   "This removes the connection from every space.":
     "Подключение будет удалено во всех пространствах.",
   "Disconnecting…": "Отключение…",
@@ -503,7 +519,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Models: "Модели",
   "Move to": "Переместить в",
   Name: "Имя",
-  "Name this bot": "Назовите этого бота",
   "Needs attention": "Требует внимания",
   "Needs input": "Требуется ввод данных",
   "Needs takeover": "Ожидает передачи управления",

@@ -113,9 +113,6 @@ function browserRunningFunction(profile: string, pidFile: string) {
   const flag = shellQuote(`--user-data-dir=${profile}`);
   const profileQuoted = shellQuote(profile);
   return [
-    "browser_running() {",
-    `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
-    `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
     // Match the configured flag in either NUL-separated argv or Chromium's one-line
     // setproctitle. Searching for the whole flag keeps spaces and " --" inside the path.
     "  cmdline_text() {",
@@ -153,6 +150,9 @@ function browserRunningFunction(profile: string, pidFile: string) {
     `    printf %s "$1" >${pidFile} 2>/dev/null || true`,
     "    return 0",
     "  }",
+    "browser_running() {",
+    `  tracked=$(cat ${pidFile} 2>/dev/null || true)`,
+    `  lock=$(readlink ${profileQuoted}/SingletonLock 2>/dev/null || true)`,
     // Pid files and SingletonLock miss the browser after a supervisor restart or a wrapper
     // whose lock does not point at the process that still has --user-data-dir.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
@@ -288,10 +288,12 @@ export function stopBrowserProfileCommand(profile: string, pidFile: string) {
     ...browserRunningFunction(profile, pidFile),
     `if browser_running; then`,
     `  python3 -c ${shellQuote(CLOSE_BROWSER)} "$pid" ${shellQuote(profile)} >/dev/null 2>&1 || true`,
-    `  for i in $(seq 1 40); do browser_running || break; sleep 0.25; done`,
-    `  if browser_running; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_running || break; sleep 0.25; done; fi`,
-    `  browser_running && kill -KILL "$pid" 2>/dev/null || true`,
+    `  for i in $(seq 1 40); do browser_matches "$pid" || break; sleep 0.25; done`,
+    `  if browser_matches "$pid"; then kill "$pid" 2>/dev/null || true; for i in $(seq 1 40); do browser_matches "$pid" || break; sleep 0.25; done; fi`,
+    `  browser_matches "$pid" && kill -KILL "$pid" 2>/dev/null || true`,
     `fi`,
+    // A supervisor may have replaced the selected PID while it was closing.
+    // Rediscover once before removing lock state rather than on every close poll.
     `if browser_running; then echo 'browser still running' >&2; exit 1; fi`,
     `rm -f ${pidFile}`,
     `rm -f ${shellQuote(profile)}/SingletonLock ${shellQuote(profile)}/SingletonCookie ${shellQuote(profile)}/SingletonSocket`,

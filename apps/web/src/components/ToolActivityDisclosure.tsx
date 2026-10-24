@@ -127,7 +127,7 @@ export function StandaloneToolActivity({
 }) {
   return (
     <div className="flex justify-start" dir="ltr" data-testid="tool-activity-line">
-      <div className="max-w-[74%] min-w-0 ps-1">
+      <div className="max-w-full min-w-0 ps-1">
         <ToolActivityDisclosure live={live} stepCount={stepCount} durationMs={durationMs}>
           <ToolSteps
             steps={steps}

@@ -10,8 +10,16 @@ import { File } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { requireOptionalNativeModule } from "expo-modules-core";
+import type { DroppedFile } from "./file-drop";
+import { releaseDroppedFile } from "./file-drop";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
-import { filterPickedAttachments } from "./pick-attachments-filter.js";
+import {
+  attachmentCountSkipReason,
+  attachmentSizeSkipReason,
+  attachmentSkipReason,
+  filterPickedAttachments,
+  pickedAttachment,
+} from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 
@@ -200,4 +208,61 @@ export async function pickDocuments(
     }),
   );
   return filterPickedAttachments(existingCount, candidates, maxBytes);
+}
+
+export async function readDroppedFiles(
+  files: DroppedFile[],
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+  notCopied: readonly string[] = [],
+): Promise<{
+  attachments: PickedAttachment[];
+  skipped: PickSkip[];
+}> {
+  const skipped: PickSkip[] = notCopied.map((name) => ({
+    name,
+    reason: attachmentCountSkipReason(),
+  }));
+  const attachments: PickedAttachment[] = [];
+  try {
+    for (const file of files) {
+      const mimeType = inferAttachmentMimeType(file.name, file.mimeType || undefined);
+      const reason = attachmentSkipReason(
+        { name: file.name, size: file.size ?? 0, mimeType },
+        existingCount,
+        attachments.length,
+        maxBytes,
+      );
+      if (reason) {
+        skipped.push({ name: file.name, reason });
+        continue;
+      }
+      if (!file.uri) continue;
+      const read = await readUriAsBase64(file.uri, maxBytes).catch(() => null);
+      if (!read) {
+        // A copy that vanished or cannot be read costs that file only.
+        skipped.push({ name: file.name, reason: "permission denied" });
+        continue;
+      }
+      const { contentBase64, size } = read;
+      if (size > maxBytes) {
+        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        continue;
+      }
+      const previewUri = mimeType?.startsWith("image/")
+        ? `data:${mimeType};base64,${contentBase64}`
+        : undefined;
+      attachments.push(
+        pickedAttachment(
+          { name: file.name, mimeType, size, contentBase64, previewUri },
+          existingCount + attachments.length,
+        ),
+      );
+    }
+  } finally {
+    await Promise.allSettled(
+      files.flatMap((file) => (file.uri ? [releaseDroppedFile(file.uri)] : [])),
+    );
+  }
+  return { attachments, skipped };
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">Текущий звонок</string>
+  <string name="rakazo_call_title">Звонок Rakazo</string>
+  <string name="rakazo_call_text">Микрофон активен</string>
+</resources>

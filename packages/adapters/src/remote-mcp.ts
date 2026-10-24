@@ -175,8 +175,7 @@ async function inspectSafeRemoteUrl(
   if (url.protocol === "http:" && isLocalMcpHost(hostname)) {
     return { url, addresses: literal ?? [] };
   }
-  if (privateHost && literal) return { url, addresses: literal };
-  const addresses = await resolve(hostname);
+  const addresses = literal ?? (await resolve(hostname));
   try {
     assertAllowedAddresses(addresses, policy);
   } catch (error) {
@@ -419,23 +418,11 @@ function assertPublicAddresses(addresses: ResolvedAddress[]): void {
 export function limitRemoteMcpPayload(value: unknown): unknown {
   const serialized = JSON.stringify(value);
   if (serialized === undefined) return value;
-  const bytes = Buffer.from(serialized, "utf8");
-  if (bytes.byteLength <= MAX_RESULT_BYTES) return value;
+  if (Buffer.byteLength(serialized, "utf8") <= MAX_RESULT_BYTES) return value;
+  const bytes = Buffer.allocUnsafe(MAX_RESULT_BYTES);
+  const written = bytes.write(serialized, 0, MAX_RESULT_BYTES, "utf8");
   return {
     truncated: true,
-    content: decodeUtf8Prefix(bytes, MAX_RESULT_BYTES),
+    content: bytes.toString("utf8", 0, written),
   };
-}
-
-function decodeUtf8Prefix(bytes: Uint8Array, maxBytes: number): string {
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  let end = Math.min(bytes.byteLength, maxBytes);
-  while (end > 0) {
-    try {
-      return decoder.decode(bytes.subarray(0, end));
-    } catch {
-      end -= 1;
-    }
-  }
-  return "";
 }

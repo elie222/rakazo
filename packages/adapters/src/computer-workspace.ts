@@ -374,6 +374,7 @@ export async function checkpointAndRecordComputerWorkspace(
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string> {
+  const checkpointedAt = new Date();
   const revision = await checkpointComputerWorkspace(
     deps.home,
     deps.sandbox,
@@ -383,7 +384,7 @@ export async function checkpointAndRecordComputerWorkspace(
   );
   await deps.prisma.computer.updateMany({
     where: { id: computerRecord.id },
-    data: { homeRevision: revision },
+    data: { homeRevision: revision, homeRevisionAt: checkpointedAt },
   });
   return revision;
 }

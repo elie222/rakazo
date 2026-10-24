@@ -1,20 +1,16 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { STUCK_WORK_NOTICE, stuckWorkStatusMessage } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deletePushToken, ExpoPushProvider, savePushToken } from "./expo-push.js";
+import { ExpoPushProvider } from "./expo-push.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { MemoryPushTokenStore } from "./push-token-store.test-support.js";
 import { reconcileStuckWork, STUCK_NOTICE_CLAIM_TTL_MS } from "./stuck-work.js";
 
 const now = new Date("2026-09-28T16:00:00.000Z");
-const dirs: string[] = [];
 
 afterEach(async () => {
   vi.unstubAllGlobals();
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 function age(hours: number) {
@@ -156,19 +152,18 @@ describe("reconcileStuckWork", () => {
   });
 
   it("does not stamp a reminder until Expo has a token to deliver it", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-stuck-push-"));
-    dirs.push(dataDir);
+    const tokens = new MemoryPushTokenStore();
     const run = candidate("waiting_takeover", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
-    const push = new ExpoPushProvider(dataDir);
+    const push = new ExpoPushProvider(tokens);
 
     await reconcileStuckWork({ prisma, jobs, notifications: push, now, batchSize: 100 });
 
     expect(stamps).toHaveLength(0);
 
-    await savePushToken(dataDir, run.userId, "ExponentPushToken[test]");
+    await tokens.save(run.userId, "ExponentPushToken[test]");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ data: { status: "ok", id: "ticket" } })),
@@ -188,20 +183,19 @@ describe("reconcileStuckWork", () => {
   });
 
   it("drops the claim when the token is removed before Expo accepts the push", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-stuck-push-"));
-    dirs.push(dataDir);
+    const tokens = new MemoryPushTokenStore();
     const run = candidate("waiting_takeover", 5);
     const stamps: Array<{ id?: string; runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
-    const push = new ExpoPushProvider(dataDir);
-    await savePushToken(dataDir, run.userId, "ExponentPushToken[test]");
+    const push = new ExpoPushProvider(tokens);
+    await tokens.save(run.userId, "ExponentPushToken[test]");
     const fetchMock = vi.fn(async () => Response.json({ data: { status: "ok", id: "ticket" } }));
     vi.stubGlobal("fetch", fetchMock);
     const hasPushRecipient = push.hasPushRecipient.bind(push);
     push.hasPushRecipient = async (userId) => {
       const registered = await hasPushRecipient(userId);
-      if (registered) await deletePushToken(dataDir, userId);
+      if (registered) await tokens.remove(userId);
       return registered;
     };
 
@@ -210,7 +204,7 @@ describe("reconcileStuckWork", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(stamps).toHaveLength(0);
 
-    await savePushToken(dataDir, run.userId, "ExponentPushToken[later]");
+    await tokens.save(run.userId, "ExponentPushToken[later]");
     push.hasPushRecipient = hasPushRecipient;
     await reconcileStuckWork({ prisma, jobs, notifications: push, now, batchSize: 100 });
 
@@ -223,14 +217,13 @@ describe("reconcileStuckWork", () => {
   });
 
   it("stops reminding once Expo reports the device unregistered", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-stuck-push-"));
-    dirs.push(dataDir);
+    const tokens = new MemoryPushTokenStore();
     const run = candidate("waiting_takeover", 5);
     const stamps: Array<{ runId: string | null; payload: unknown }> = [];
     const prisma = noticePrisma(run, stamps);
     const { jobs } = publisher();
-    const push = new ExpoPushProvider(dataDir);
-    await savePushToken(dataDir, run.userId, "ExponentPushToken[gone]");
+    const push = new ExpoPushProvider(tokens);
+    await tokens.save(run.userId, "ExponentPushToken[gone]");
     const fetchMock = vi.fn(async () =>
       Response.json({
         data: { status: "error", message: "gone", details: { error: "DeviceNotRegistered" } },

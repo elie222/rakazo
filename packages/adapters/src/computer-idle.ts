@@ -5,7 +5,11 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { computerSleepJob, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  computerSleepJob,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -21,6 +25,12 @@ export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
  * COMPUTER_MAX_ACTIVE_MS configures the limit; 0 disables it.
  */
 export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long a run waiting for takeover keeps a computer that does not bill while running awake
+ * after asking, so the user can answer the push and finish a login, Duo, or CAPTCHA step on the
+ * same open page. Billed computers get no grace: an ignored request would keep them running.
+ */
+export const TAKEOVER_IDLE_GRACE_MS = 30 * 60 * 1000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -33,50 +43,98 @@ export const BACKGROUND_WORK_LAUNCH = [
   'exec bash -lc "$4"',
 ].join("\n");
 
+// Unobservable proc entries are skipped; unexpected errors invalidate the whole scan.
+const LINUX_BACKGROUND_HOLDERS = [
+  "linux_background_holders() {",
+  '  python3 - "$prefix" "$@" <<\'PY\'',
+  "import errno",
+  "import os",
+  "import sys",
+  "",
+  "prefix = sys.argv[1]",
+  "unobservable = {errno.ENOENT, errno.ESRCH, errno.EACCES, errno.EPERM}",
+  "holders = set()",
+  "",
+  "def inspect(pid):",
+  "    try:",
+  '        with os.scandir("/proc/" + pid + "/fd") as entries:',
+  "            for entry in entries:",
+  "                if not entry.name.isascii() or not entry.name.isdigit():",
+  "                    continue",
+  "                try:",
+  "                    target = os.readlink(entry.path)",
+  "                except OSError as error:",
+  "                    if error.errno in unobservable:",
+  "                        continue",
+  "                    raise",
+  "                if target.startswith(prefix):",
+  "                    holders.add(int(pid))",
+  "    except OSError as error:",
+  "        if error.errno not in unobservable:",
+  "            raise",
+  "",
+  "try:",
+  '    if not os.access("/proc", os.R_OK | os.X_OK):',
+  "        sys.exit(2)",
+  "    if len(sys.argv) > 2:",
+  "        pid = sys.argv[2]",
+  "        if not pid.isascii() or not pid.isdigit() or int(pid) <= 0:",
+  "            sys.exit(2)",
+  "        inspect(pid)",
+  "    else:",
+  '        with os.scandir("/proc") as entries:',
+  "            for entry in entries:",
+  "                if entry.name.isascii() and entry.name.isdigit() and int(entry.name) > 0:",
+  "                    inspect(entry.name)",
+  "except OSError:",
+  "    sys.exit(2)",
+  "",
+  "for pid in sorted(holders):",
+  "    print(pid)",
+  "PY",
+  "}",
+].join("\n");
+
 /** Terminate background shell wrappers for one cancelled run. Browser teardown stays screen-scoped. */
 export const CANCEL_COMPUTER_RUN_WORK = [
   'computerId="$1"',
   'runId="$2"',
   '[ -n "$computerId" ] && [ -n "$runId" ] || exit 0',
   `prefix="${BACKGROUND_WORK_MARKER_PREFIX}$computerId-$runId-"`,
-  // Match the timeout wrapper cmdline (still contains the launch tag after exec into the user command).
-  `pkill -TERM -f "rakazo-background-launch $computerId $runId " 2>/dev/null || true`,
+  LINUX_BACKGROUND_HOLDERS,
   "if [ -d /proc ]; then",
-  "  for fd in /proc/[0-9]*/fd/*; do",
-  '    target="$(readlink "$fd" 2>/dev/null)" || continue',
-  '    case "$target" in',
-  '      "$prefix"*)',
-  `        pid="\${fd#/proc/}"; pid="\${pid%%/*}"`,
-  '        if [ -n "$pid" ] && [ "$pid" -eq "$pid" ] 2>/dev/null; then',
-  // Never kill -PID (process group): sandbox work often shares the caller's PGID.
-  '          kill -TERM "$pid" 2>/dev/null || true',
-  "        fi",
-  "        ;;",
-  "    esac",
+  '  holders="$(linux_background_holders)" || holders=""',
+  "  for pid in $holders; do",
+  '    current="$(linux_background_holders "$pid")" || continue',
+  '    [ "$current" = "$pid" ] && kill -TERM "$pid" 2>/dev/null || true',
   "  done",
+  "  sleep 0.2",
+  '  holders="$(linux_background_holders)" || holders=""',
+  "  for pid in $holders; do",
+  '    current="$(linux_background_holders "$pid")" || continue',
+  // Never signal a process group. Sandbox work can share the caller's PGID.
+  '    [ "$current" = "$pid" ] && kill -KILL "$pid" 2>/dev/null || true',
+  "  done",
+  '  markers=("$prefix"*)',
+  '  if holders="$(linux_background_holders)" && [ -z "$holders" ]; then',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+  '    for marker in "${markers[@]}"; do rm -f -- "$marker" 2>/dev/null || true; done',
+  "  fi",
+  "  exit 0",
   'elif [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v lsof >/dev/null 2>&1; then',
+  `  pkill -TERM -f "rakazo-background-launch $computerId $runId " 2>/dev/null || true`,
   '  for marker in "$prefix"*; do',
   '    [ -e "$marker" ] || continue',
   '    for pid in $(lsof -t -- "$marker" 2>/dev/null); do',
   '      kill -TERM "$pid" 2>/dev/null || true',
   "    done",
   "  done",
+  "else",
+  "  exit 0",
   "fi",
   "sleep 0.2",
   `pkill -KILL -f "rakazo-background-launch $computerId $runId " 2>/dev/null || true`,
-  "if [ -d /proc ]; then",
-  "  for fd in /proc/[0-9]*/fd/*; do",
-  '    target="$(readlink "$fd" 2>/dev/null)" || continue',
-  '    case "$target" in',
-  '      "$prefix"*)',
-  `        pid="\${fd#/proc/}"; pid="\${pid%%/*}"`,
-  '        if [ -n "$pid" ] && [ "$pid" -eq "$pid" ] 2>/dev/null; then',
-  '          kill -KILL "$pid" 2>/dev/null || true',
-  "        fi",
-  "        ;;",
-  "    esac",
-  "  done",
-  'elif [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v lsof >/dev/null 2>&1; then',
+  'if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v lsof >/dev/null 2>&1; then',
   '  for marker in "$prefix"*; do',
   '    [ -e "$marker" ] || continue',
   '    for pid in $(lsof -t -- "$marker" 2>/dev/null); do',
@@ -157,13 +215,11 @@ export async function cancelComputerRunWork(
 export const BACKGROUND_WORK_PROBE = [
   `prefix="${BACKGROUND_WORK_MARKER_PREFIX}$1-"`,
   `idle() { printf '${BACKGROUND_WORK_IDLE_SENTINEL}\\n'; exit 1; }`,
+  LINUX_BACKGROUND_HOLDERS,
   'markers=("$prefix"*)',
   "if [ -d /proc ]; then",
-  "  command -v readlink >/dev/null 2>&1 || exit 2",
-  "  for fd in /proc/[0-9]*/fd/*; do",
-  '    target="$(readlink "$fd" 2>/dev/null)"',
-  '    case "$target" in "$prefix"*) exit 0 ;; esac',
-  "  done",
+  '  holders="$(linux_background_holders)" || exit 2',
+  '  [ -n "$holders" ] && exit 0',
   `  for marker in "\${markers[@]}"; do [ -e "$marker" ] && rm -f -- "$marker"; done`,
   "  idle",
   "fi",
@@ -195,9 +251,16 @@ export function computerIdleSleepEnabled(): boolean {
   return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
 }
 
-export function scheduleComputerSleep(jobs: JobPublisher, computerId: string): void {
+export function scheduleComputerSleep(
+  jobs: JobPublisher,
+  computerId: string,
+  notAfter?: Date,
+): void {
   if (!computerId || !computerIdleSleepEnabled()) return;
-  void jobs.enqueue(computerSleepJob(computerId, new Date(Date.now() + sandboxIdleMs())));
+  const at = Date.now() + sandboxIdleMs();
+  void jobs.enqueue(
+    computerSleepJob(computerId, new Date(notAfter ? Math.min(at, notAfter.getTime()) : at)),
+  );
 }
 
 function activeLimitReached(
@@ -279,6 +342,7 @@ export async function sleepComputerIfIdle(
   // Past the lifetime limit only a run executing right now holds the computer up; waiting
   // runs and background work start it again when they next need it. A user in control is
   // left alone: control leases expire on their own, and that release resumes the waiting run.
+  // Otherwise a run waiting for takeover holds an unbilled computer for TAKEOVER_IDLE_GRACE_MS.
   const activeControl = hasActiveComputerControl(computer);
   const limitReached =
     activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl;
@@ -292,8 +356,15 @@ export async function sleepComputerIfIdle(
     limitReached
       ? Promise.resolve(false)
       : hasActiveBackgroundWork(deps.sandbox, ref, ctx, computerId);
-  if ((await runHolds()) || (await backgroundHolds())) {
-    scheduleComputerSleep(deps.jobs, computerId);
+  const graceEndsAt = () =>
+    activeControl || deps.sandbox.billsWhileRunning?.(ref) === true
+      ? Promise.resolve(null)
+      : takeoverGraceEndsAt(deps.prisma, computerId);
+  const runHeld = Boolean(await runHolds());
+  const takeoverHeldUntil = runHeld ? null : await graceEndsAt();
+  if (runHeld || takeoverHeldUntil || (await backgroundHolds())) {
+    // Recheck when the takeover grace ends so the computer sleeps on time.
+    scheduleComputerSleep(deps.jobs, computerId, takeoverHeldUntil ?? undefined);
     try {
       await deps.sandbox.keepAlive?.(ref);
     } catch (error) {
@@ -337,7 +408,7 @@ export async function sleepComputerIfIdle(
     );
     const saved = await deps.prisma.computer.updateMany({
       where: suspensionClaim,
-      data: { homeRevision: revision, updatedAt: checkpointedAt },
+      data: { homeRevision: revision, homeRevisionAt: checkpointedAt, updatedAt: checkpointedAt },
     });
     if (saved.count !== 1) {
       await deps.prisma.computer.updateMany({
@@ -372,32 +443,39 @@ export async function sleepComputerIfIdle(
     });
     scheduleComputerSleep(deps.jobs, computerId);
     // A sandbox too busy or stuck to answer cannot be checkpointed now; the next idle check
-    // tries again instead of reporting the same timeout every window.
-    if (error instanceof SandboxUnresponsiveError) {
+    // tries again instead of reporting the same timeout every window. One the provider can only
+    // bring back from its own snapshot waits for the next use, which restores a newer save.
+    if (error instanceof SandboxUnresponsiveError || error instanceof SandboxUnavailableError) {
       getLogger().warn("computer.sleep_deferred", {
         "computer.id": computerId,
         provider: computer.kind,
-        reason: "unresponsive",
+        reason: error instanceof SandboxUnresponsiveError ? "unresponsive" : "unavailable",
       });
       return;
     }
     throw error;
   }
 
-  const [current, activeAfterCheckpoint, backgroundAfterCheckpoint] = await Promise.all([
-    deps.prisma.computer.findUnique({
-      where: { id: computerId },
-      select: { state: true, providerRef: true, updatedAt: true },
-    }),
-    runHolds(),
-    backgroundHolds(),
-  ]);
-  if (activeAfterCheckpoint || backgroundAfterCheckpoint) {
+  const [current, activeAfterCheckpoint, takeoverAfterCheckpoint, backgroundAfterCheckpoint] =
+    await Promise.all([
+      deps.prisma.computer.findUnique({
+        where: { id: computerId },
+        select: { state: true, providerRef: true, updatedAt: true },
+      }),
+      runHolds(),
+      graceEndsAt(),
+      backgroundHolds(),
+    ]);
+  if (activeAfterCheckpoint || takeoverAfterCheckpoint || backgroundAfterCheckpoint) {
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
       data: { state: "running" },
     });
-    scheduleComputerSleep(deps.jobs, computerId);
+    scheduleComputerSleep(
+      deps.jobs,
+      computerId,
+      activeAfterCheckpoint ? undefined : (takeoverAfterCheckpoint ?? undefined),
+    );
     if (backgroundAfterCheckpoint) await deps.sandbox.keepAlive?.(ref);
     return;
   }
@@ -498,6 +576,25 @@ function findActiveRun(
     },
     select: { id: true },
   });
+}
+
+/** When the newest takeover request of a run still waiting on this computer stops holding it. */
+async function takeoverGraceEndsAt(prisma: PrismaClient, computerId: string): Promise<Date | null> {
+  const waiting = await prisma.run.findMany({
+    where: { bot: { computerId }, status: "waiting_takeover" },
+    select: { id: true },
+  });
+  if (waiting.length === 0) return null;
+  const requested = await prisma.event.findFirst({
+    where: {
+      runId: { in: waiting.map((run) => run.id) },
+      type: "computer.takeover.requested",
+      createdAt: { gt: new Date(Date.now() - TAKEOVER_IDLE_GRACE_MS) },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  return requested ? new Date(requested.createdAt.getTime() + TAKEOVER_IDLE_GRACE_MS) : null;
 }
 
 async function hasActiveBackgroundWork(

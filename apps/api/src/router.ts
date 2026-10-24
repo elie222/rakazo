@@ -36,6 +36,7 @@ import type {
   MemoryProviderResolver,
   PiOAuthLogins,
   ProviderCatalogCache,
+  PushTokenStore,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
 } from "@rakazo/adapters";
@@ -64,7 +65,6 @@ import {
   createFaviconResolver,
   createTicket,
   defaultCatalogModelId,
-  deletePushToken,
   deploymentAutoReviewDefault,
   destroyBot,
   displayBotWorkspacePath,
@@ -120,7 +120,6 @@ import {
   routineRunModelPin,
   sanitizeComposioError,
   savedCatalogSelections,
-  savePushToken,
   scheduleComputerControlExpiry,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -246,7 +245,6 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   parseComputerMode,
-  pushSessionExpiresAt,
   recordSecurityEvent,
   releaseSpaceDeletionClaim,
   renameSpaceForMember,
@@ -668,6 +666,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  pushTokens: PushTokenStore;
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
@@ -783,15 +782,22 @@ const BOT_SECRET_INPUT_ERRORS = [
   "Credential limit reached",
 ];
 
-/** Map credential validation failures to a bad request without echoing the submitted value. */
-function mapBotSecretStoreError(error: unknown): unknown {
-  if (error instanceof ORPCError) return error;
+/** A credential the user typed that cannot be stored, as a bad request. Never echoes the value. */
+function mapBotSecretInputError(error: unknown): unknown {
   if (
     error instanceof Error &&
     BOT_SECRET_INPUT_ERRORS.some((prefix) => error.message.startsWith(prefix))
   ) {
     return new ORPCError("BAD_REQUEST", { message: error.message });
   }
+  return error;
+}
+
+/** Map credential validation failures to a bad request without echoing the submitted value. */
+function mapBotSecretStoreError(error: unknown): unknown {
+  if (error instanceof ORPCError) return error;
+  const mapped = mapBotSecretInputError(error);
+  if (mapped !== error) return mapped;
   // Login decoding failures: a JSON parse message can quote the submitted value, so never forward it.
   if (error instanceof SyntaxError || (error instanceof Error && error.name === "ZodError")) {
     return new ORPCError("BAD_REQUEST", {
@@ -832,15 +838,45 @@ function botSecretMetadataDto(row: {
   };
 }
 
-const BOT_INTRO_PROMPT =
-  "You were just created. In one reply, say what you understood your role to be from your title, description and instructions, and ask for anything you need to get started.";
+/** The creation intro's hidden prompt. It names only the tools this bot still has. */
+export function botIntroPrompt(input: {
+  userName: string;
+  spaceName: string | null;
+  disabledBuiltinTools: readonly string[];
+}): string {
+  const canAsk = !input.disabledBuiltinTools.includes("ask_user");
+  const canUpdate = !input.disabledBuiltinTools.includes("update_bot");
+  const options =
+    "two to four short options that fit your name, anything your title, description or instructions already say, and what you know about them, never a stock list";
+  return [
+    [
+      "You were just created.",
+      input.userName ? `${input.userName} made you.` : undefined,
+      input.spaceName ? `Their team space is called "${input.spaceName}".` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    // Text streamed before ask_user is not kept once the run pauses, so the greeting
+    // goes in the question itself.
+    canAsk
+      ? `Call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
+      : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
+    "If your profile already makes that clear, say in one line what you will do instead of asking.",
+    canUpdate
+      ? "Once you know what you are for, use update_bot to set your title to a short role and your description to one line. Leave them unset if the answer is too vague, and keep your name and look."
+      : undefined,
+    "Then get started, asking one follow-up only if you cannot start without it.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 /**
- * A freshly created bot otherwise sits silent until someone hands it real work,
- * so a misunderstood role goes unnoticed until it costs a run. Queue one
- * invisible-prompt turn (like a routine or skill test run) so its first
- * message states how it read its own instructions. The executor gives the
- * "created" trigger no tools (see executor.ts), so this turn can only speak.
+ * Creating a bot asks only for a name and a look, so the bot finds out what it
+ * is for itself. Queue one hidden-prompt turn (like a routine or skill test
+ * run) that greets the user and asks. The executor limits the "created"
+ * trigger to that question and the bot's own profile (see executor.ts), and
+ * answering resumes the run as the user's turn.
  */
 export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
   const threadId = bot.threadId;
@@ -850,14 +886,29 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   // harness queued next, for a bot it doesn't otherwise get to opt out of.
   if (deps.env.agentRuntime === "scripted") return;
   if ((await modelSetup(deps, actor)).needsModel) return;
+  const [user, space] = await Promise.all([
+    deps.prisma.user.findUnique({ where: { id: actor.userId }, select: { name: true } }),
+    deps.prisma.space.findUnique({
+      where: { id: actor.spaceId },
+      select: { name: true, isDefault: true },
+    }),
+  ]);
+  const prompt = botIntroPrompt({
+    userName: user?.name.trim() ?? "",
+    spaceName: space && !space.isDefault ? space.name.trim() || null : null,
+    disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
+  });
   const run = await deps.prisma.$transaction(async (tx) => {
+    // An idempotent create (spawnKey) returns the bot it already made; it gets one intro.
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+    if (await tx.run.findFirst({ where: { botId: bot.id }, select: { id: true } })) return null;
     const task = await tx.task.create({
       data: {
         spaceId: actor.spaceId,
         botId: bot.id,
         threadId,
         userId: actor.userId,
-        prompt: BOT_INTRO_PROMPT,
+        prompt,
         status: "queued",
       },
     });
@@ -874,7 +925,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
       select: { id: true },
     });
   });
-  await deps.jobs.enqueue(runContinueJob(run.id));
+  if (run) await deps.jobs.enqueue(runContinueJob(run.id));
 }
 
 async function resolveSpaceBoard(
@@ -3115,17 +3166,22 @@ export function createRouter(deps: RouterDeps) {
       }),
       answer: authed.threads.answer.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        const answered = await deps.events.answerRunInput({
-          spaceId: context.actor.spaceId,
-          threadId: target.threadId,
-          runId: input.runId,
-          messageId: input.messageId,
-          answeredByUserId: context.actor.userId,
-          answer: input.answer,
-          clientNonce: input.clientNonce,
-          username: input.username,
-          dismiss: input.dismiss,
-        });
+        const answered = await deps.events
+          .answerRunInput({
+            spaceId: context.actor.spaceId,
+            threadId: target.threadId,
+            runId: input.runId,
+            messageId: input.messageId,
+            answeredByUserId: context.actor.userId,
+            answer: input.answer,
+            clientNonce: input.clientNonce,
+            username: input.username,
+            dismiss: input.dismiss,
+          })
+          .catch((error: unknown) => {
+            // A typed credential its destination cannot carry (e.g. a header with a line break).
+            throw mapBotSecretInputError(error);
+          });
         if (!answered) {
           throw new ORPCError("CONFLICT", {
             message: "This prompt is no longer awaiting an answer",
@@ -3201,6 +3257,10 @@ export function createRouter(deps: RouterDeps) {
         } catch (error) {
           if (error instanceof ComputerBusyError) {
             throw new ORPCError("CONFLICT", { message: "Computer is busy" });
+          }
+          // The bot was deleted or moved to another computer while this boot waited.
+          if (isRecordNotFound(error)) {
+            throw new ORPCError("NOT_FOUND", { message: "Computer no longer exists" });
           }
           throw error;
         } finally {
@@ -6836,12 +6896,7 @@ export function createRouter(deps: RouterDeps) {
         const sessionId = context.sessionId;
         if (!sessionId) throw new ORPCError("UNAUTHORIZED");
         try {
-          await savePushToken(deps.dataDir, context.actor.userId, input.token, sessionId, {
-            sessionActive: async () => {
-              const expiresAt = await pushSessionExpiresAt(deps.prisma, sessionId);
-              return expiresAt !== null && expiresAt.getTime() > Date.now();
-            },
-          });
+          await deps.pushTokens.save(context.actor.userId, input.token, sessionId);
         } catch (error) {
           if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
           throw error;
@@ -6849,7 +6904,7 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
-        await deletePushToken(deps.dataDir, context.actor.userId);
+        await deps.pushTokens.remove(context.actor.userId);
         return { ok: true as const };
       }),
     },
@@ -6867,7 +6922,9 @@ export function createRouter(deps: RouterDeps) {
       })),
     },
     voice: {
-      catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
+      catalog: authed.voice.catalog.handler(async () =>
+        listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
+      ),
       status: authed.voice.status.handler(async ({ context }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
         return toVoiceStatus(cred);

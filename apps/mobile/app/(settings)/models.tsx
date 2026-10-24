@@ -62,6 +62,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -75,7 +76,6 @@ import type {
 import { captureApiRequestContext, rpc, selectedSpaceId } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
@@ -469,19 +469,6 @@ export default function Models() {
   const cloudflareRoutingReady =
     !isCloudflare || cloudflareModelRouting({ provider, accountId, gatewayId }) !== undefined;
   const credential = credentials.find((entry) => entry.provider === provider);
-  const currentEntry = catalog.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
-  );
-  const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
-  );
-  // The banner shows the effective effort — stored level or the runtime
-  // default — only when the active model can actually think.
-  const activeThinkingLabel =
-    (currentEntry?.thinkingLevels ?? []).some((level) => level !== "off") ||
-    activeCredential?.reasoning
-      ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
-      : null;
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
@@ -501,9 +488,6 @@ export default function Models() {
       ? (selected.thinkingLevels ?? []).filter((level) => level !== "off")
       : [];
   const reasoningEffortValue = thinkingLevel ? thinkingLevelLabel(thinkingLevel, t) : t("Default");
-  const catalogThinkingValue = thinkingLevel
-    ? thinkingLevelLabel(thinkingLevel, t)
-    : t("Default ({level})", { level: thinkingLevelLabel("medium", t) });
   const selectedStoredLevel =
     !isOpenAiCompatible && credential?.modelId === selected?.id
       ? (credential?.thinkingLevel ?? null)
@@ -1087,35 +1071,32 @@ export default function Models() {
               />
             </View>
             {reasoning ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("Reasoning effort")}
-                accessibilityValue={{ text: reasoningEffortValue }}
+              <MenuPickerMenu
+                label={t("Reasoning effort")}
+                choices={[
+                  { key: "", label: t("Default") },
+                  ...THINKING_LEVEL_OPTIONS.map((level) => ({
+                    key: level,
+                    label: thinkingLevelLabel(level, t),
+                  })),
+                ]}
+                value={thinkingLevel ?? ""}
                 disabled={busy}
-                onPress={() => {
-                  presentMessageActionSheet({
-                    title: t("Reasoning effort"),
-                    selected: [null, ...THINKING_LEVEL_OPTIONS].indexOf(thinkingLevel),
-                    cancel: t("Cancel"),
-                    more: t("More"),
-                    colorScheme,
-                    actions: [
-                      {
-                        text: t("Default"),
-                        onPress: () => setThinkingLevel(null),
-                      },
-                      ...THINKING_LEVEL_OPTIONS.map((level) => ({
-                        text: thinkingLevelLabel(level, t),
-                        onPress: () => setThinkingLevel(level),
-                      })),
-                    ],
-                  });
-                }}
-                style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
+                onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
               >
-                <Text style={styles.modelLabel}>{t("Reasoning effort")}</Text>
-                <Text style={styles.rowValue}>{reasoningEffortValue}</Text>
-              </Pressable>
+                <View>
+                  <SettingsRow
+                    title={t("Reasoning effort")}
+                    value={reasoningEffortValue}
+                    chevron="down"
+                    accessibilityRole="button"
+                    accessible
+                    accessibilityLabel={t("Reasoning effort")}
+                    accessibilityState={{ disabled: busy }}
+                    accessibilityValue={{ text: reasoningEffortValue }}
+                  />
+                </View>
+              </MenuPickerMenu>
             ) : null}
             <View style={[styles.modelRow, styles.singleRow]}>
               <Text style={styles.modelLabel}>{t("Supports images")}</Text>
@@ -1378,35 +1359,32 @@ export default function Models() {
           />
           {catalogThinkingLevels.length ? <View style={styles.modelDivider} /> : null}
           {catalogThinkingLevels.length ? (
-            <SettingsRow
-              title={t("Thinking")}
-              value={catalogThinkingValue}
-              accessibilityRole="button"
-              accessibilityLabel={t("Thinking")}
-              accessibilityValue={{ text: catalogThinkingValue }}
+            <MenuPickerMenu
+              label={t("Thinking")}
+              choices={[
+                { key: "", label: t("Default") },
+                ...catalogThinkingLevels.map((level) => ({
+                  key: level,
+                  label: thinkingLevelLabel(level, t),
+                })),
+              ]}
+              value={thinkingLevel ?? ""}
               disabled={busy}
-              onPress={() => {
-                presentMessageActionSheet({
-                  title: t("Thinking"),
-                  selected: [null, ...catalogThinkingLevels].indexOf(thinkingLevel),
-                  cancel: t("Cancel"),
-                  more: t("More"),
-                  colorScheme,
-                  actions: [
-                    {
-                      text: t("Default ({level})", {
-                        level: thinkingLevelLabel("medium", t),
-                      }),
-                      onPress: () => setThinkingLevel(null),
-                    },
-                    ...catalogThinkingLevels.map((level) => ({
-                      text: thinkingLevelLabel(level, t),
-                      onPress: () => setThinkingLevel(level),
-                    })),
-                  ],
-                });
-              }}
-            />
+              onChange={(value) => setThinkingLevel((value || null) as ThinkingLevel | null)}
+            >
+              <View>
+                <SettingsRow
+                  title={t("Thinking")}
+                  value={reasoningEffortValue}
+                  chevron="down"
+                  accessibilityRole="button"
+                  accessible
+                  accessibilityLabel={t("Thinking")}
+                  accessibilityState={{ disabled: busy }}
+                  accessibilityValue={{ text: reasoningEffortValue }}
+                />
+              </View>
+            </MenuPickerMenu>
           ) : null}
         </View>
         {disclosureRow(t("Advanced"), showAdvanced, () => setShowAdvanced((visible) => !visible))}
@@ -1780,19 +1758,6 @@ export default function Models() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.activeCard}>
-          <Text style={styles.eyebrow}>{t("Active model")}</Text>
-          <Text style={styles.activeModel}>
-            {currentEntry?.label ?? me?.defaultModel ?? t("Deployment default")}
-          </Text>
-          <Text style={styles.secondary}>
-            {currentEntry?.providerName ?? me?.defaultProvider ?? t("Configured by deployment")}
-            {activeThinkingLabel
-              ? ` · ${t("Thinking: {level}", { level: activeThinkingLabel })}`
-              : ""}
-          </Text>
-        </View>
-
         {!selected || isOpenAiCompatible || !credential ? (
           <View style={styles.card}>{providerRow}</View>
         ) : null}
@@ -1926,24 +1891,6 @@ function createModelsStyles() {
       padding: 20,
       gap: 12,
       paddingBottom: 40,
-    },
-    activeCard: {
-      borderRadius: 16,
-      backgroundColor: native.fill,
-      padding: 18,
-      marginBottom: 8,
-    },
-    eyebrow: {
-      color: native.tertiaryLabel,
-      fontSize: 12,
-      textTransform: "uppercase",
-      letterSpacing: 1,
-    },
-    activeModel: {
-      color: native.label,
-      fontSize: 19,
-      fontWeight: "600",
-      marginTop: 6,
     },
     secondary: {
       color: native.secondaryLabel,

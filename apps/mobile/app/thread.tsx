@@ -1,14 +1,8 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { ChatMarkdown, markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type {
-  AgentSkillCatalogEntry,
-  Connection,
-  ConnectionCatalogItem,
-  MessageBlock,
-  MessageReaction,
-  Routine,
-} from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, MessageBlock, MessageReaction } from "@rakazo/contracts";
 import {
+  ATTACHMENT_MAX_COUNT,
   attachmentMaxBytes,
   canReactToThreadMessage,
   isAttachmentAudioMimeType,
@@ -70,6 +64,7 @@ import {
   useRouter,
 } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
+import type { ComponentProps } from "react";
 import {
   memo,
   useCallback,
@@ -114,6 +109,8 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withTiming,
+  ZoomIn,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
@@ -191,7 +188,9 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { chatSettingsRoute } from "../lib/chat-settings-route";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
+import { canDoubleTapReact } from "../lib/double-tap";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
+import { helperHeaderOffset, helperOpenTarget } from "../lib/helper-header-offset";
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
@@ -209,6 +208,7 @@ import {
   applyLocalChoiceDismissals,
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
+  messageHasInlineControls,
   messagePresentationSegments,
   quotableMessageSegments,
   truncateQuoteExcerpt,
@@ -223,7 +223,13 @@ import {
 } from "../lib/notification-open";
 import { peerChipPress } from "../lib/peer-chip";
 import type { PickedAttachment } from "../lib/pick-attachments";
-import { pickDocuments, pickFromLibrary, takePhoto } from "../lib/pick-attachments";
+import {
+  pickDocuments,
+  pickFromLibrary,
+  readDroppedFiles,
+  takePhoto,
+} from "../lib/pick-attachments";
+import { attachmentCountSkipReason } from "../lib/pick-attachments-filter";
 import { threadRefreshDelayMs } from "../lib/refresh";
 import {
   getCachedResponseStreamingEnabled,
@@ -253,11 +259,18 @@ import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { threadKeyboardOffset } from "../lib/thread-keyboard-offset";
+import { useThreadMentionCatalog } from "../lib/thread-mention-catalog";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
-import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
+import {
+  isOwnThreadMessage,
+  latestArrivalMessage,
+  latestThreadRowKey,
+  ThreadScrollBehavior,
+} from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
+import { useFileDrop } from "../lib/use-file-drop";
 import type { UserBubble } from "../lib/user-bubble";
 import { withUserBubble } from "../lib/user-bubble";
 import { errorText } from "../lib/user-error";
@@ -517,6 +530,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const onCall = Boolean(botId) && call?.botId === botId;
   const voiceCallStarting = useRef(false);
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
+  const helperViewport = useRef<View>(null);
+  const helperScrollOffset = useRef(0);
+  const helperResize = useRef<(() => void) | null>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
@@ -656,15 +672,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const mentionBotsRef = useRef<MobileBot[]>([]);
   mentionBotsRef.current = mentionBots;
   const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>([]);
-  const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
-  const [mentionConnectors, setMentionConnectors] = useState<
-    Array<{
-      id: string;
-      name: string;
-      authStatus: "connected" | "needs_auth";
-      connectionId?: string;
-    }>
-  >([]);
+  const {
+    routines: mentionRoutines,
+    connectors: mentionConnectors,
+    onMentionRequested,
+  } = useThreadMentionCatalog(
+    JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
+    mentionBots,
+  );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -732,8 +747,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
   );
   const visibleMessages = reactionView.visibleMessages;
-  const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
+  const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
+  const latestMessageId = latestMessage?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
+  // Read by a second drop that starts before the first one commits.
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  pendingAttachmentsRef.current = pendingAttachments;
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
     () =>
@@ -889,71 +908,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       .then(setMentionGroups)
       .catch(() => setMentionGroups([]));
   }, [refreshMentionBots]);
-
-  useEffect(() => {
-    if (mentionBots.length === 0) {
-      setMentionRoutines([]);
-      setMentionConnectors([]);
-      return;
-    }
-    let cancelled = false;
-    const botNameById = new Map(mentionBots.map((bot) => [bot.id, bot.name]));
-    void Promise.all(
-      mentionBots.map((bot) =>
-        rpc<Routine[]>("routines/list", { botId: bot.id })
-          .then((rows) =>
-            rows.map((routine) => ({
-              ...routine,
-              botName: botNameById.get(bot.id) ?? bot.name,
-            })),
-          )
-          .catch(() => [] as Array<Routine & { botName?: string }>),
-      ),
-    ).then((lists) => {
-      if (!cancelled) setMentionRoutines(lists.flat());
-    });
-    void Promise.all([
-      rpc<Connection[]>("connections/list").catch(() => [] as Connection[]),
-      rpc<ConnectionCatalogItem[]>("connections/catalog", {}).catch(
-        () => [] as ConnectionCatalogItem[],
-      ),
-    ]).then(([connections, catalog]) => {
-      if (cancelled) return;
-      const connected = connections.filter((row) => row.status === "connected");
-      const options: Array<{
-        id: string;
-        name: string;
-        authStatus: "connected" | "needs_auth";
-        connectionId?: string;
-      }> = connected.map((row) => ({
-        id: row.id,
-        name: row.displayName,
-        authStatus: "connected" as const,
-        connectionId: row.id,
-      }));
-      for (const item of catalog) {
-        if (item.connected || item.noAuth) continue;
-        if (
-          connected.some(
-            (row) =>
-              row.provider.toLowerCase() === item.slug.toLowerCase() ||
-              row.displayName.toLowerCase() === item.name.toLowerCase(),
-          )
-        ) {
-          continue;
-        }
-        options.push({
-          id: `catalog:${item.connectorId}:${item.slug}`,
-          name: item.name,
-          authStatus: "needs_auth",
-        });
-      }
-      setMentionConnectors(options);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionBots]);
 
   function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
     return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
@@ -1669,30 +1623,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
-              if (
-                event.type === "thread.progress" ||
-                event.type === "agent.tool.called" ||
-                event.type === "agent.tool.completed" ||
-                event.type === "thread.message.created" ||
-                event.type === "thread.message.updated" ||
-                event.type === "thread.message.reaction" ||
-                event.type === "thread.subagent" ||
-                event.type === "thread.cloud_agent" ||
-                event.type === "thread.cleared" ||
-                event.type === "run.waiting_input" ||
-                event.type === "computer.takeover.requested" ||
-                event.type === "computer.takeover.released" ||
-                isRunTerminalEvent(event)
-              ) {
-                if (event.type === "thread.cleared") {
-                  expandedHistoryThread.current = null;
-                  pinnedAroundRef.current = null;
-                  jumpScrollTarget.current = null;
-                  jumpAnchor.current.release();
-                  historyEpoch.current += 1;
-                }
-                commitSnap(applyMobileThreadEvent(snapRef.current, event));
+              if (event.type === "thread.cleared") {
+                expandedHistoryThread.current = null;
+                pinnedAroundRef.current = null;
+                jumpScrollTarget.current = null;
+                jumpAnchor.current.release();
+                historyEpoch.current += 1;
               }
+              const previous = snapRef.current;
+              const reduced = applyMobileThreadEvent(previous, event);
+              if (reduced !== previous) commitSnap(reduced);
               liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
@@ -1854,6 +1794,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     });
   }
 
+  function followOwnSend() {
+    if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
+    performScroll(scrollBehavior.current.onOwnSend());
+    publishThreadScrollState(scrollBehavior.current.state());
+  }
+
   async function send() {
     if (readOnly) return;
     const initialBotTarget = botId;
@@ -1922,9 +1868,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     setReplyTarget(null);
     setReplyQuote(null);
     setAttachmentNotice(null);
-    if (pinnedAroundRef.current) showLatest();
-    performScroll(scrollBehavior.current.jumpToLatest());
-    publishThreadScrollState(scrollBehavior.current.state());
+    followOwnSend();
     await deliver(attempt);
   }
 
@@ -2174,23 +2118,49 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     if (!targetKey) return;
     const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
     if ((groupId ?? botId) !== targetKey) return;
-    if (result.attachments.length) {
+    // Two drops can overlap, so the room left is settled against the draft as it
+    // is now, not as it was when this read began.
+    const room = Math.max(
+      0,
+      ATTACHMENT_MAX_COUNT - attachmentsForThread(pendingAttachmentsRef.current, targetKey).length,
+    );
+    const accepted = result.attachments.slice(0, room);
+    if (accepted.length) {
       setPendingAttachments((current) => [
         ...current,
-        ...result.attachments.map((attachment) => ({
+        ...accepted.map((attachment) => ({
           ...attachment,
           threadKey: targetKey,
         })),
       ]);
     }
+    const skipped = [
+      ...result.skipped,
+      ...result.attachments.slice(room).map((attachment) => ({
+        name: attachment.name,
+        reason: attachmentCountSkipReason(),
+      })),
+    ];
     setAttachmentNotice(
-      result.skipped.length
+      skipped.length
         ? t("Skipped {items}", {
-            items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+            items: skipped.map((item) => formatAttachmentSkip(item)).join(", "),
           })
         : null,
     );
   }
+
+  useFileDrop(
+    threadKey ?? null,
+    ({ files, skipped }) => {
+      void addAttachments((count, maxBytes) => readDroppedFiles(files, count, maxBytes, skipped));
+    },
+    {
+      enabled: !readOnly && Boolean(groupId ?? botId),
+      maxBytes: attachmentMaxBytes(uploadConfig),
+      maxFiles: ATTACHMENT_MAX_COUNT,
+    },
+  );
 
   const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const dismissableAskIds = useMemo(() => dismissableAskMessageIds(snap, userId), [snap, userId]);
@@ -2323,10 +2293,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   async function reactToMessage(message: MobileMessage, reaction: MessageReaction) {
-    if (readOnly) return;
+    if (readOnly) return false;
     const targetBotId = botId;
     const targetGroupId = groupId;
-    if (!targetBotId && !targetGroupId) return;
+    if (!targetBotId && !targetGroupId) return false;
     try {
       const result = await rpc<{ ok: true; runIds?: string[] }>("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
@@ -2338,14 +2308,67 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         // The reaction is saved; a failed refresh is caught up by live events.
         await refresh().catch(() => {});
       }
+      return true;
     } catch (err) {
-      if (!isCurrentTarget(targetBotId, targetGroupId)) return;
+      if (!isCurrentTarget(targetBotId, targetGroupId)) return false;
       Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
+      return false;
     }
   }
 
   // Event actions read the latest committed screen state without invalidating settled rows.
   const currentRowActions: MessageRowActions = {
+    helperToggle: (measure, toggle, opening) => {
+      if (Platform.OS !== "ios") {
+        toggle();
+        return;
+      }
+      measure((before) => {
+        const correct = () => {
+          requestAnimationFrame(() =>
+            measure((after, cardBottom) => {
+              helperViewport.current?.measureInWindow((_x, y, _width, height) => {
+                const target = opening
+                  ? helperOpenTarget({
+                      headerY: before,
+                      cardBottom: cardBottom + before - after,
+                      topLimit: headerClearance.anchor,
+                      visibleBottom: y + height - (readOnly ? insets.bottom : 0),
+                    })
+                  : before;
+                if (showPinnedPage) {
+                  pinnedScroll.current?.scrollTo({
+                    y: helperHeaderOffset(pinnedScrollMetrics.current.offset, after, target),
+                    animated: false,
+                  });
+                } else {
+                  const offset = helperHeaderOffset(helperScrollOffset.current, target, after);
+                  scroll.current?.scrollToOffset({ offset, animated: false });
+                  // The settled list ignores this scroll's event, so record where it now sits.
+                  helperScrollOffset.current = offset;
+                  const previous = scrollBehavior.current.state();
+                  const next = scrollBehavior.current.onUserScroll(offset);
+                  if (reconcileThreadScrollState(previous, next) !== previous) {
+                    publishThreadScrollState(next);
+                  }
+                }
+              });
+            }),
+          );
+        };
+        helperResize.current = correct;
+        toggle();
+        // A helper without a body may not change the list's content size.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (helperResize.current === correct) {
+              helperResize.current = null;
+              correct();
+            }
+          }),
+        );
+      });
+    },
     reply: (message) => {
       setReplyTarget(message);
       setReplyQuote(null);
@@ -2353,7 +2376,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     quote: setQuoteTarget,
     select: setSelectableText,
     speak,
-    react: (message, reaction) => void reactToMessage(message, reaction),
+    react: (message, reaction) => reactToMessage(message, reaction),
     markUnread: markUnreadFrom,
     answer: answerMessage,
     openBot,
@@ -2416,6 +2439,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   });
   const rowActions = useMemo<MessageRowActions>(
     () => ({
+      helperToggle: (measure, toggle, opening) =>
+        rowActionsRef.current.helperToggle(measure, toggle, opening),
       reply: (message) => rowActionsRef.current.reply(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
@@ -2485,6 +2510,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           unreadDivider={message.id === unreadDividerId}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
+          waitingForUser={[...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some(
+            (run) =>
+              run.id === message.runId &&
+              (run.status === "waiting_input" || run.status === "waiting_takeover"),
+          )}
           messageReactions={messageReactions}
           peerReplies={
             peerTranscript.folded.has(message.id)
@@ -2640,7 +2670,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       key={attempt.clientNonce}
       attempt={attempt}
       needsModel={needsModel}
-      onRetry={() => void deliver(attempt, true)}
+      onRetry={() => {
+        followOwnSend();
+        void deliver(attempt, true);
+      }}
       onDelete={() => feedback.discard(attempt)}
       userBubble={userBubble}
     />
@@ -2690,7 +2723,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         }}
       >
         {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
-        <View style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}>
+        <View
+          ref={helperViewport}
+          collapsable={false}
+          style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}
+        >
           {showPinnedPage ? (
             <ThreadScrollSurface
               key={`pinned:${jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}`}
@@ -2714,6 +2751,12 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 onContentSizeChange={(_, height) => {
                   pinnedScrollMetrics.current.content = height;
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    correctHelper();
+                    return;
+                  }
                   const jumpOffset = jumpAnchor.current.align(headerClearance.anchor);
                   if (jumpOffset != null) scrollPinnedTo(jumpOffset);
                   const armedAt = joinPinnedAfterLayout.current;
@@ -2799,6 +2842,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   liveScrollBack.current.onDragStart(event.nativeEvent);
                 }}
                 onScroll={(event) => {
+                  helperScrollOffset.current = event.nativeEvent.contentOffset.y;
                   if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
                     KeyboardController.dismiss();
                   }
@@ -2806,7 +2850,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                 }}
                 // Keep tracking after release: a fling can cross the threshold mid-momentum.
                 onScrollEndDrag={(event) => {
-                  updateUserScroll(event);
+                  if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
                   scrollBehavior.current.onUserDragEnd();
                   liveScrollBack.current.onDragEnd();
                   scheduleScrollIdle();
@@ -2827,6 +2871,13 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                   publishThreadScrollState(scrollBehavior.current.state());
                 }}
                 onContentSizeChange={(_, height) => {
+                  const correctHelper = helperResize.current;
+                  if (correctHelper) {
+                    helperResize.current = null;
+                    publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
+                    correctHelper();
+                    return;
+                  }
                   publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
                   if (loadingOlderContent.current) {
                     loadingOlderContent.current = false;
@@ -2841,7 +2892,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
                             pinnedAroundRef.current.groupId === groupId))) ||
                       expandedHistoryThread.current === snap?.threadId,
                   );
-                  performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+                  performScroll(
+                    scrollBehavior.current.onContentChanged(
+                      blocked,
+                      latestThreadRowKey(
+                        latestMessageId,
+                        feedback.unsentSends.map((attempt) => attempt.clientNonce),
+                        isOwnThreadMessage(latestMessage, userId),
+                      ),
+                    ),
+                  );
                   publishThreadScrollState(scrollBehavior.current.state());
                 }}
                 ListFooterComponent={loadEarlierControl}
@@ -3006,6 +3066,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             ref={composerRef}
             agentSkills={agentSkills}
             composerMentionTargets={composerMentionTargets}
+            onMentionRequested={onMentionRequested}
             composerPrompt={composerPrompt}
             replyTargetId={replyTarget?.id}
             replyQuote={replyQuote}
@@ -3098,13 +3159,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             }}
           />
         ) : null}
+        {/* The header buttons float over the chat; only the clock gets a soft backdrop. */}
         {headerHeight > 0 ? (
-          <View
-            pointerEvents="none"
-            style={[styles.headerFade, { height: headerClearance.opaqueHeight }]}
-          >
-            <View style={styles.headerFadeEdge} />
-          </View>
+          <View pointerEvents="none" style={[styles.statusBarFade, { height: insets.top }]} />
         ) : null}
       </KeyboardAvoidingView>
     </View>
@@ -3259,11 +3316,16 @@ function threadItemKey(item: ThreadItem<MobileMessage>) {
 }
 
 type MessageRowActions = {
+  helperToggle: (
+    measure: (done: (y: number, cardBottom: number) => void) => void,
+    toggle: () => void,
+    opening: boolean,
+  ) => void;
   reply: (message: MobileMessage) => void;
   quote: (message: MobileMessage) => void;
   select: (text: string) => void;
   speak: (message: MobileMessage) => void;
-  react: (message: MobileMessage, reaction: MessageReaction) => void;
+  react: (message: MobileMessage, reaction: MessageReaction) => Promise<boolean>;
   markUnread: (message: MobileMessage) => void;
   answer: (
     message: MobileMessage,
@@ -3302,6 +3364,7 @@ type MessageRowProps = {
   unreadDivider: boolean;
   replyAuthor: string;
   replyFallbackText?: string;
+  waitingForUser: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   /** Set on a received marker whose peer run has folded replies. */
   peerReplies?: "collapsed" | "expanded";
@@ -3345,6 +3408,7 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
+  waitingForUser,
   peerReplies,
   activityBotId,
   activityColor,
@@ -3374,10 +3438,20 @@ const MessageRow = memo(function MessageRow({
         : undefined,
     [actions, message.id, enableJump, index],
   );
-  const { actionProps, menu, onMenuAction } = useMemo<{
+  const [optimisticLike, setOptimisticLike] = useState(false);
+  const likeInFlight = useRef(false);
+  const reducedMotion = useReducedMotion();
+  const hasLike = messageReactions?.has("👍") ?? false;
+  useEffect(() => {
+    if (hasLike) setOptimisticLike(false);
+  }, [hasLike]);
+  const displayedReactions = new Map(messageReactions);
+  if (optimisticLike && !hasLike) displayedReactions.set("👍", 1);
+  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{
     actionProps: MessageActionProps;
     menu: ReturnType<typeof buildMessageContextMenu>;
     onMenuAction: (id: string) => void;
+    likeMessage?: () => void;
   }>(() => {
     const messageText = selectableMobileMessageText(message);
     const includeQuote =
@@ -3525,6 +3599,20 @@ const MessageRow = memo(function MessageRow({
       });
     return {
       menu,
+      likeMessage: canDoubleTapReact(includeReact, message.blocks, waitingForUser)
+        ? () => {
+            if (hasLike || optimisticLike || likeInFlight.current) return;
+            likeInFlight.current = true;
+            setOptimisticLike(true);
+            void react("👍")
+              .then((success) => {
+                if (!success) setOptimisticLike(false);
+              })
+              .finally(() => {
+                likeInFlight.current = false;
+              });
+          }
+        : undefined,
       onMenuAction: (id) => {
         const reaction = messageMenuReaction(id);
         if (reaction && (MESSAGE_REACTIONS as readonly string[]).includes(reaction)) {
@@ -3549,7 +3637,18 @@ const MessageRow = memo(function MessageRow({
         },
       },
     };
-  }, [message, actions, readOnly, onCall, colorScheme, t, locale]);
+  }, [
+    message,
+    actions,
+    readOnly,
+    onCall,
+    colorScheme,
+    t,
+    locale,
+    waitingForUser,
+    hasLike,
+    optimisticLike,
+  ]);
   return (
     <View
       key={message.id}
@@ -3628,6 +3727,7 @@ const MessageRow = memo(function MessageRow({
             colorScheme={colorScheme}
             onAction={onMenuAction}
             onLongPress={actionProps.onLongPress}
+            onDoubleTap={messageHasInlineControls(message.blocks) ? undefined : likeMessage}
           >
             <ThreadReadOnlyContext.Provider value={readOnly}>
               <MessageBubble
@@ -3650,11 +3750,13 @@ const MessageRow = memo(function MessageRow({
                 onTogglePeerReplies={actions.togglePeerReplies}
                 onOpenPeerChat={actions.openPeerChat}
                 actionProps={actionProps}
+                doubleTapSurface={Boolean(likeMessage)}
+                onHelperToggle={actions.helperToggle}
                 userBubble={userBubble}
               />
             </ThreadReadOnlyContext.Provider>
           </MessageContextMenu>
-          {messageReactions ? (
+          {displayedReactions.size > 0 ? (
             <View
               style={{
                 flexDirection: "row",
@@ -3664,8 +3766,13 @@ const MessageRow = memo(function MessageRow({
                 justifyContent: message.role === "user" ? "flex-end" : "flex-start",
               }}
             >
-              {[...messageReactions].map(([emoji, count]) => (
-                <Text
+              {[...displayedReactions].map(([emoji, count]) => (
+                <Animated.Text
+                  entering={
+                    emoji === "👍" && optimisticLike && !reducedMotion
+                      ? ZoomIn.duration(150).withInitialValues({ transform: [{ scale: 0.9 }] })
+                      : undefined
+                  }
                   key={emoji}
                   style={{
                     color: tokens.foreground,
@@ -3678,7 +3785,7 @@ const MessageRow = memo(function MessageRow({
                 >
                   {emoji}
                   {count > 1 ? ` ${count}` : ""}
-                </Text>
+                </Animated.Text>
               ))}
             </View>
           ) : null}
@@ -3688,7 +3795,62 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
-const MessageBubble = memo(function MessageBubble({
+// A running helper's live card and the saved message that replaces it have different ids, so
+// its row mounts again when the helper finishes. Remember open cards by agent id across that.
+const openHelpers = new Set<string>();
+
+const MessageBubble = memo(function MessageBubble(
+  props: ComponentProps<typeof MessageBubbleContent>,
+) {
+  const { message } = props;
+  if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
+
+  const pieces: MessageBlock[][] = [];
+  for (const block of message.blocks) {
+    const previous = pieces.at(-1);
+    if (isSpecialMessageBlock(block) || !previous || isSpecialMessageBlock(previous[0]!)) {
+      pieces.push([block]);
+    } else {
+      previous.push(block);
+    }
+  }
+  const content = pieces.map((blocks, index) => {
+    const first = blocks[0]!;
+    return isSpecialMessageBlock(first) ? (
+      <SpecialMessageCard
+        key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
+        special={first}
+        actionProps={props.actionProps}
+        onOpenBot={props.onOpenBot}
+        onHelperToggle={props.onHelperToggle}
+        userBubble={props.userBubble}
+      />
+    ) : (
+      <MessageBubbleContent
+        {...props}
+        key={`content-${index}`}
+        message={{ ...message, blocks }}
+        onAnswer={(_, ...answer) => props.onAnswer(message, ...answer)}
+      />
+    );
+  });
+  return content.length === 1 ? (
+    content[0]
+  ) : (
+    <View style={{ gap: 8, width: "100%" }}>{content}</View>
+  );
+});
+
+type SpecialMessageBlock = Extract<
+  MessageBlock,
+  { kind: "subagent" | "child_bot" | "cloud_agent" }
+>;
+
+function isSpecialMessageBlock(block: MessageBlock): block is SpecialMessageBlock {
+  return block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent";
+}
+
+const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
   botName,
   showBotSenderName,
@@ -3699,7 +3861,6 @@ const MessageBubble = memo(function MessageBubble({
   canAnswer,
   canDismiss,
   onAnswer,
-  onOpenBot,
   onOpenComputer,
   onChoiceDismissed,
   onPreviewMarkdown,
@@ -3708,8 +3869,10 @@ const MessageBubble = memo(function MessageBubble({
   onTogglePeerReplies,
   onOpenPeerChat,
   actionProps,
+  doubleTapSurface = false,
   userBubble,
 }: {
+  onHelperToggle?: MessageRowActions["helperToggle"];
   botId: string;
   botName?: string;
   showBotSenderName: boolean;
@@ -3734,6 +3897,7 @@ const MessageBubble = memo(function MessageBubble({
   onTogglePeerReplies: (markerId: string) => void;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
+  doubleTapSurface?: boolean;
   userBubble?: UserBubble;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3903,169 +4067,6 @@ const MessageBubble = memo(function MessageBubble({
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {messagingProviderLabel(channelMessage.provider, channelMessage.transport)} ·{" "}
           {channelMessage.fromLabel}: {channelMessage.text}
-        </Text>
-      </Pressable>
-    );
-  }
-  const special = message.blocks.find(
-    (block) =>
-      block.kind === "subagent" || block.kind === "child_bot" || block.kind === "cloud_agent",
-  );
-  if (special?.kind === "subagent") {
-    const running = special.status === "running";
-    const failed = special.status === "failed";
-    return (
-      <Pressable
-        {...actionProps}
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {safeDisplayName(special.name, t("subagent"))}
-          </Text>
-          <Text
-            style={{
-              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              ...typeScale.caption,
-            }}
-          >
-            {running
-              ? t("Running")
-              : special.status === "failed"
-                ? t("Failed")
-                : special.status === "completed"
-                  ? t("Completed")
-                  : special.status}
-          </Text>
-        </View>
-        {special.task ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {special.task}
-          </Text>
-        ) : null}
-        {special.result || special.progress ? (
-          <View style={{ marginTop: 8 }}>
-            <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
-              {special.result || special.progress || ""}
-            </ChatMarkdown>
-          </View>
-        ) : null}
-      </Pressable>
-    );
-  }
-  if (special?.kind === "cloud_agent") {
-    const title = special.title || t("Cloud agent");
-    const statusLabel =
-      special.status === "running"
-        ? t("running")
-        : special.status === "finished"
-          ? t("finished")
-          : special.status === "cancelled"
-            ? t("cancelled")
-            : special.status === "expired"
-              ? t("expired")
-              : t("failed");
-    const running = special.status === "running";
-    const failed = special.status !== "running" && special.status !== "finished";
-    const prHref = cloudAgentHttpsUrl(special.prUrl);
-    const href = prHref ?? cloudAgentHttpsUrl(special.url);
-    return (
-      <Pressable
-        onPress={() => {
-          if (href) Linking.openURL(href).catch(() => undefined);
-        }}
-        testID="cloud-agent-card"
-        accessibilityRole={href ? "link" : "text"}
-        accessibilityLabel={`${title}: ${statusLabel}`}
-        disabled={!href}
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-      >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-          <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
-            {title}
-          </Text>
-          <Text
-            style={{
-              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
-              ...typeScale.caption,
-            }}
-          >
-            {statusLabel}
-          </Text>
-        </View>
-        {prHref ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {t("Pull request")}
-          </Text>
-        ) : special.branch ? (
-          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-            {special.branch}
-          </Text>
-        ) : null}
-      </Pressable>
-    );
-  }
-  if (special?.kind === "child_bot") {
-    const removed = special.status === "deleted" || special.status === "archived";
-    return (
-      <Pressable
-        {...actionProps}
-        onPress={
-          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
-        }
-        style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          opacity: removed ? 0.6 : 1,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {special.name || t("Bot")}
-          </Text>
-          <Text
-            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
-          >
-            {special.status === "archived"
-              ? t("archived")
-              : special.status === "deleted"
-                ? t("deleted")
-                : t("bot")}
-          </Text>
-        </View>
-        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-          {removed
-            ? special.status === "archived"
-              ? t("Archived. Chat, memory, and files kept.")
-              : t("Removed with chat, computer, and memory.")
-            : special.title || t("Opened its thread.")}
         </Text>
       </Pressable>
     );
@@ -4398,6 +4399,7 @@ const MessageBubble = memo(function MessageBubble({
           speaker={showBotSenderName && index === firstContent ? speaker : undefined}
           speakerColor={showBotSenderName && index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
+          doubleTapSurface={doubleTapSurface}
           userBubble={userBubble}
         />
       ))}
@@ -4437,26 +4439,278 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
+type SpecialMessageCardProps = Pick<
+  ComponentProps<typeof MessageBubbleContent>,
+  "actionProps" | "onOpenBot" | "onHelperToggle" | "userBubble"
+> & { special: SpecialMessageBlock };
+
+function HelperMessageCard({
+  special,
+  actionProps,
+  onHelperToggle,
+  userBubble,
+}: Pick<SpecialMessageCardProps, "actionProps" | "onHelperToggle" | "userBubble"> & {
+  special: Extract<MessageBlock, { kind: "subagent" }>;
+}) {
+  const colorScheme = useResolvedAppearance();
+  const tokens = withUserBubble(mobileTokens(), userBubble);
+  const { t } = useI18n();
+  const helperHeader = useRef<View>(null);
+  const helperCard = useRef<View>(null);
+  const helperReducedMotion = useReducedMotion();
+  const [subagentOpen, setSubagentOpen] = useState(() => openHelpers.has(special.agentId));
+  const helperRotation = useSharedValue(subagentOpen ? 180 : 0);
+  useEffect(() => {
+    helperRotation.value = helperReducedMotion
+      ? subagentOpen
+        ? 180
+        : 0
+      : withTiming(subagentOpen ? 180 : 0, { duration: 150 });
+  }, [subagentOpen, helperReducedMotion, helperRotation]);
+  const helperChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${helperRotation.value}deg` }],
+  }));
+  const running = special.status === "running";
+  const failed = special.status === "failed";
+  return (
+    <Pressable
+      {...actionProps}
+      ref={helperCard}
+      collapsable={false}
+      style={{
+        width: "90%",
+        borderRadius: 18,
+        backgroundColor: tokens.card,
+      }}
+    >
+      <Pressable
+        {...actionProps}
+        onPress={() => {
+          const toggle = () => {
+            if (subagentOpen) openHelpers.delete(special.agentId);
+            else openHelpers.add(special.agentId);
+            setSubagentOpen(!subagentOpen);
+          };
+          if (onHelperToggle) {
+            onHelperToggle(
+              (done) =>
+                helperHeader.current?.measureInWindow((_x, y) => {
+                  helperCard.current?.measureInWindow((_cardX, cardY, _width, height) =>
+                    done(y, cardY + height),
+                  );
+                }),
+              toggle,
+              !subagentOpen,
+            );
+          } else toggle();
+        }}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: subagentOpen }}
+        style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14, minHeight: 44 }}
+      >
+        <View ref={helperHeader} collapsable={false}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <Text
+              style={{
+                flexShrink: 1,
+                flexGrow: 1,
+                color: tokens.foreground,
+                ...typeScale.cardTitle,
+              }}
+            >
+              {safeDisplayName(special.name, t("subagent"))}
+            </Text>
+            <Text
+              style={{
+                color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+                ...typeScale.caption,
+              }}
+            >
+              {running
+                ? t("Running")
+                : special.status === "failed"
+                  ? t("Failed")
+                  : special.status === "completed"
+                    ? t("Completed")
+                    : special.status}
+            </Text>
+            <Animated.View style={helperChevronStyle}>
+              <NativeSymbol
+                ios="chevron.down"
+                android="chevron-down"
+                size={12}
+                color={tokens.mutedForeground}
+              />
+            </Animated.View>
+          </View>
+          {special.task ? (
+            <Text
+              numberOfLines={subagentOpen ? undefined : 1}
+              style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}
+            >
+              {special.task}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+      {subagentOpen && (special.result || special.progress) ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14, marginTop: -6 }}>
+          <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={running}>
+            {special.result || special.progress || ""}
+          </ChatMarkdown>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function SpecialMessageCard(props: SpecialMessageCardProps) {
+  const { special, actionProps, onOpenBot, userBubble } = props;
+  const tokens = withUserBubble(mobileTokens(), userBubble);
+  const { t } = useI18n();
+  if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
+  if (special.kind === "cloud_agent") {
+    const title = special.title || t("Cloud agent");
+    const statusLabel =
+      special.status === "running"
+        ? t("running")
+        : special.status === "finished"
+          ? t("finished")
+          : special.status === "cancelled"
+            ? t("cancelled")
+            : special.status === "expired"
+              ? t("expired")
+              : t("failed");
+    const running = special.status === "running";
+    const failed = special.status !== "running" && special.status !== "finished";
+    const prHref = cloudAgentHttpsUrl(special.prUrl);
+    const href = prHref ?? cloudAgentHttpsUrl(special.url);
+    return (
+      <Pressable
+        {...actionProps}
+        onPress={() => {
+          if (href) Linking.openURL(href).catch(() => undefined);
+        }}
+        testID="cloud-agent-card"
+        accessibilityRole={href ? "link" : "text"}
+        accessibilityLabel={`${title}: ${statusLabel}`}
+        disabled={!href}
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          backgroundColor: tokens.card,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ flexShrink: 1, color: tokens.cardForeground, ...typeScale.cardTitle }}>
+            {title}
+          </Text>
+          <Text
+            style={{
+              color: failed ? tokens.destructive : running ? tokens.warning : tokens.success,
+              ...typeScale.caption,
+            }}
+          >
+            {statusLabel}
+          </Text>
+        </View>
+        {prHref ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+            {t("Pull request")}
+          </Text>
+        ) : special.branch ? (
+          <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+            {special.branch}
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+  }
+  if (special.kind === "child_bot") {
+    const removed = special.status === "deleted" || special.status === "archived";
+    return (
+      <Pressable
+        {...actionProps}
+        onPress={
+          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
+        }
+        style={{
+          width: "90%",
+          borderRadius: 18,
+          backgroundColor: tokens.card,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          opacity: removed ? 0.6 : 1,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
+            {special.name || t("Bot")}
+          </Text>
+          <Text
+            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
+          >
+            {special.status === "archived"
+              ? t("archived")
+              : special.status === "deleted"
+                ? t("deleted")
+                : t("bot")}
+          </Text>
+        </View>
+        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
+          {removed
+            ? special.status === "archived"
+              ? t("Archived. Chat, memory, and files kept.")
+              : t("Removed with chat, computer, and memory.")
+            : special.title || t("Opened its thread.")}
+        </Text>
+      </Pressable>
+    );
+  }
+  return null;
+}
+
 function MessageTextCard({
   message,
   speaker,
   speakerColor,
   actionProps,
+  doubleTapSurface = false,
   userBubble,
 }: {
   message: MobileMessage;
   speaker?: string;
   speakerColor?: string;
   actionProps: MessageActionProps;
+  doubleTapSurface?: boolean;
   userBubble?: UserBubble;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const contentText = blockText(message);
   if (!contentText) return null;
+  // The menu wrapper owns surface gestures; links and code controls remain responders.
+  const Surface = doubleTapSurface ? View : Pressable;
   return (
-    <Pressable
+    <Surface
       {...actionProps}
+      accessible
+      onLongPress={doubleTapSurface ? undefined : actionProps.onLongPress}
       style={{
         flexShrink: 1,
         minWidth: 0,
@@ -4485,7 +4739,7 @@ function MessageTextCard({
         colorScheme={colorScheme}
         streaming={message.id.startsWith("progress:")}
       />
-    </Pressable>
+    </Surface>
   );
 }
 

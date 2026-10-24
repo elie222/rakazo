@@ -119,6 +119,12 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      /**
+       * When the saved workspace a replacement would restore was read from the computer. A
+       * provider that can only bring `providerRef` back from an older snapshot of its own
+       * reports it gone instead, so the newer save wins.
+       */
+      savedAt?: Date;
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;

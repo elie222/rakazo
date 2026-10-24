@@ -61,7 +61,10 @@ let openingPending = false;
 const pendingCallSends = new Map<string, Set<Promise<unknown>>>();
 let transcribe: boolean | undefined;
 let thread: ThreadSnapshot | null = null;
-let feed: AbortController | null = null;
+let feed: {
+  controller: AbortController;
+  load: () => Promise<ThreadSnapshot | null>;
+} | null = null;
 /** Every bot message already spoken this call: a streaming message updates many times. */
 const spokenMessageIds = new Set<string>();
 let unsubSpeech: (() => void) | null = null;
@@ -216,7 +219,7 @@ export function endCall(): void {
   pickup?.abort();
   pickup = null;
   openingPending = false;
-  feed?.abort();
+  feed?.controller.abort();
   feed = null;
   hangUpAfterReply = false;
   botEndedCall = false;
@@ -269,8 +272,25 @@ export function setCallMinimized(minimized: boolean): void {
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
 function watchThread(botId: string) {
   const controller = new AbortController();
-  feed = controller;
-  const load = async () => commit(await rpc.threads.get({ botId }, { signal: controller.signal }));
+  const feedCallId = callId;
+  let requestEpoch = 0;
+  let acceptedEpoch = 0;
+  const isCurrent = () =>
+    feed?.controller === controller &&
+    !controller.signal.aborted &&
+    callId === feedCallId &&
+    state?.botId === botId;
+  const load = async () => {
+    if (!isCurrent()) return null;
+    const request = ++requestEpoch;
+    const next = await rpc.threads.get({ botId }, { signal: controller.signal });
+    if (!isCurrent()) return null;
+    if (request < acceptedEpoch) return thread;
+    if (thread?.threadId === next.threadId && thread.cursor > next.cursor) return thread;
+    acceptedEpoch = request;
+    return commit(next);
+  };
+  feed = { controller, load };
   void runThreadSubscription({
     signal: controller.signal,
     loadInitial: load,
@@ -445,7 +465,7 @@ async function handleTranscript(text: string) {
   }
   if (!state || state.botId !== botId || callId !== turnCallId) return;
   try {
-    commit(await rpc.threads.get({ botId }, { signal: callFeed?.signal }));
+    await callFeed?.load();
   } catch (error) {
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     awaitingReply = false;

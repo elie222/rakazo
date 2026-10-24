@@ -11,6 +11,32 @@ export type PickedAttachment = {
 
 export type PickSkip = { name: string; reason: string };
 
+export function attachmentCountSkipReason(): string {
+  return `max ${ATTACHMENT_MAX_COUNT} attachments`;
+}
+
+export function attachmentSizeSkipReason(maxBytes: number): string {
+  return `over ${attachmentSizeLabel(maxBytes)}`;
+}
+
+/**
+ * Why a candidate cannot become an attachment, or null when it can. Callers can
+ * ask before reading the content, so a rejected file is never loaded.
+ */
+export function attachmentSkipReason(
+  candidate: { name: string; size: number; mimeType: string | null },
+  existingCount: number,
+  acceptedCount: number,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): string | null {
+  if (existingCount + acceptedCount >= ATTACHMENT_MAX_COUNT) {
+    return attachmentCountSkipReason();
+  }
+  if (candidate.size > maxBytes) return attachmentSizeSkipReason(maxBytes);
+  if (!candidate.mimeType) return "unsupported type";
+  return null;
+}
+
 export function filterPickedAttachments(
   existingCount: number,
   candidates: Array<{
@@ -25,25 +51,25 @@ export function filterPickedAttachments(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const candidate of candidates) {
-    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
-      skipped.push({ name: candidate.name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` });
+    const reason = attachmentSkipReason(candidate, existingCount, attachments.length, maxBytes);
+    if (reason) {
+      skipped.push({ name: candidate.name, reason });
       continue;
     }
-    if (candidate.size > maxBytes) {
-      skipped.push({ name: candidate.name, reason: `over ${attachmentSizeLabel(maxBytes)}` });
-      continue;
-    }
-    if (!candidate.mimeType) {
-      skipped.push({ name: candidate.name, reason: "unsupported type" });
-      continue;
-    }
-    attachments.push({
-      id: `${candidate.name}-${candidate.size}-${existingCount + attachments.length}`,
-      name: candidate.name,
-      mimeType: candidate.mimeType as AttachmentMimeType,
-      contentBase64: candidate.contentBase64,
-      previewUri: candidate.previewUri,
-    });
+    attachments.push(pickedAttachment(candidate, existingCount + attachments.length));
   }
   return { attachments, skipped };
+}
+
+export function pickedAttachment(
+  candidate: Parameters<typeof filterPickedAttachments>[1][number],
+  index: number,
+): PickedAttachment {
+  return {
+    id: `${candidate.name}-${candidate.size}-${index}`,
+    name: candidate.name,
+    mimeType: candidate.mimeType as AttachmentMimeType,
+    contentBase64: candidate.contentBase64,
+    previewUri: candidate.previewUri,
+  };
 }

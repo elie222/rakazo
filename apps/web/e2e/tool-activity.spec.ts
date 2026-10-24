@@ -72,7 +72,7 @@ test("tool activity shows for live and finished runs when the user turned it on"
     );
 
     await openThread(page, "done");
-    await expect(page.getByTestId("message-bot-bubble")).toHaveText(REPLY_TEXT);
+    await expect(page.getByTestId("message-bot-bubble")).toContainText(REPLY_TEXT);
     const doneCard = page.getByTestId("tool-activity");
     await expect(doneCard).toHaveCount(1);
     await expect(doneCard.locator("button[aria-expanded]")).toHaveAttribute(

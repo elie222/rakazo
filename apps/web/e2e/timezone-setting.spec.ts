@@ -28,9 +28,9 @@ test("account settings save the timezone and offer this device's zone back", asy
   await useDevice.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "account-timezone-setting");
 
-  // Saved choices survive a reload; the browser zone does not overwrite the timezone.
+  // Saved choices survive a reload, which keeps settings open; the browser zone does not overwrite the timezone.
   await page.reload();
-  const reopened = await openUserSettings(page);
+  const reopened = page.getByTestId("user-settings");
   await expect(reopened.getByRole("combobox", { name: "Timezone" })).toHaveValue("Europe/London");
 
   await reopened.getByRole("button", { name: "Use Pacific/Auckland" }).click();

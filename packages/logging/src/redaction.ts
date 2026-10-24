@@ -63,7 +63,8 @@ export function redactBindings(bindings: Record<string, unknown>): Record<string
   return redactValue(bindings) as Record<string, unknown>;
 }
 
-const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+// Consume a failed local-part candidate once instead of retrying at every dot or hyphen.
+const EMAIL_CANDIDATE = /\b[A-Z0-9._%+-]+(?:@[A-Z0-9.-]+\.[A-Z]{2,}\b)?/gi;
 const BEARER = /\bBearer\s+[^\s"',;&]+/gi;
 const SECRET_ASSIGNMENT =
   /\b([A-Za-z0-9_]*(?:password|secret|token|authorization|apikey|api_key)[A-Za-z0-9_]*)\s*[:=]\s*\S+/gi;
@@ -74,7 +75,7 @@ const BARE_SECRET =
 
 export function redactSensitiveText(text: string): string {
   return text
-    .replace(EMAIL, REDACTED)
+    .replace(EMAIL_CANDIDATE, (candidate) => (candidate.includes("@") ? REDACTED : candidate))
     .replace(JSON_SECRET_FIELD, `"$1":"${REDACTED}"`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(SECRET_ASSIGNMENT, (_match, key: string) => `${key}=${REDACTED}`)

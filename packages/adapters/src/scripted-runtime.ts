@@ -5,9 +5,12 @@ import type {
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
 import {
+  APPROVED_ACTION_NOT_RUN_ERROR,
   abortableDelay,
   BOT_MESSAGE_WAKE_CUE,
   inferHandoffTargetName,
+  MODEL_CONTEXT_TOO_SMALL_ERROR,
+  modelFallbackFailure,
   STEERING_CONTINUATION_PROMPT,
 } from "@rakazo/core";
 
@@ -657,8 +660,24 @@ function shouldFail(prompt: string): boolean {
   return prompt.toLowerCase().includes("fail this run");
 }
 
-/** The error a failing run throws; "overloaded" sends the body Anthropic returns with a 529. */
+/**
+ * The error a failing run throws; "overloaded" sends the body Anthropic returns with a 529 and
+ * "unreachable" sends what the provider SDKs report when nothing listens at the base URL.
+ */
 function scriptedFailure(prompt: string): string {
+  if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
+  if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
+  if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
+  if (/\bexhausted backups\b/i.test(prompt)) {
+    return modelFallbackFailure('429: {"message":"Too many requests"}', [
+      {
+        provider: "fake-provider",
+        modelId: "fake-backup",
+        status: "failed",
+        reason: "429 quota exhausted",
+      },
+    ]);
+  }
   return /\boverloaded\b/i.test(prompt)
     ? '529: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
     : "Scripted run failure";
