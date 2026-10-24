@@ -785,7 +785,8 @@ describe("skill compatibility", () => {
     expect(warnings(shebang)).toEqual(["runs_code"]);
     expect(warnings(prose)).toEqual([]);
     expect(warnings(bundled, ["references/guide.md"])).toEqual(["bundled_files"]);
-    expect(warnings(bundled)).toEqual([]);
+    // The reference alone is enough: the files are not imported either way.
+    expect(warnings(bundled)).toEqual(["bundled_files"]);
     expect(warnings(script, ["scripts/build.sh"])).toEqual(["bundled_files", "runs_code"]);
   });
 });

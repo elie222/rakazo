@@ -1138,6 +1138,10 @@ msgstr "Check the API key or sign-in, then test again."
 msgid "Check the server URL and network, then test again."
 msgstr "Check the server URL and network, then test again."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "Check this yourself"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Check your email"

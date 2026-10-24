@@ -1138,6 +1138,10 @@ msgstr "API कुंजी या साइन-इन जाँचें, फ�
 msgid "Check the server URL and network, then test again."
 msgstr "सर्वर URL और नेटवर्क जाँचें, फिर फिर से परीक्षण करें।"
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "इसे खुद जाँचें"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "अपना ईमेल देखें"

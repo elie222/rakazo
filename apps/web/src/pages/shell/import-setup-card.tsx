@@ -13,12 +13,23 @@ export type ImportSetupTarget =
   | { kind: "mcp" }
   | { kind: "routine"; routineId: string };
 
-/** Done now, not done, or (a skill's needs) only for information. */
+/**
+ * Needs Rakazo cannot check from its own data: what a skill declares, and a program or local
+ * paths a stdio server relies on. Such rows are never shown as done.
+ */
+function isVerifiable(item: AgentImportSetupItem): boolean {
+  if (item.kind === "skill") return false;
+  if (item.kind !== "mcp") return true;
+  return !item.needs.some((need) => need.kind === "program" || need.kind === "local_paths");
+}
+
+/** Done now, not done yet, or null when it cannot be checked (or is not read yet). */
 function isDone(item: AgentImportSetupItem, state: AgentImportSetupState | null) {
-  if (!state || item.kind === "skill") return null;
+  if (!state || !isVerifiable(item)) return null;
   if (item.kind === "model") return state.providers[item.provider] === true;
   if (item.kind === "mcp") return state.serverIds[item.serverId] === true;
-  return state.routineIds[item.routineId] === true;
+  if (item.kind === "routine") return state.routineIds[item.routineId] === true;
+  return null;
 }
 
 /**
@@ -65,8 +76,8 @@ export function ImportSetupCard({
     };
   }, [botId, block]);
 
-  const tracked = block.items.filter((item) => item.kind !== "skill");
-  if (state && tracked.length > 0 && tracked.every((item) => isDone(item, state))) {
+  // Shrinks only when every row is verifiably done; anything unchecked keeps the full list.
+  if (state && block.items.every((item) => isDone(item, state) === true)) {
     return (
       <div
         data-testid="import-setup-card"
@@ -115,7 +126,7 @@ export function ImportSetupCard({
                   {name}
                 </p>
                 <p className="text-[12.5px] text-muted-foreground" dir="auto">
-                  {detail}
+                  {isVerifiable(item) ? detail : `${detail} · ${t`Check this yourself`}`}
                 </p>
               </div>
               {done ? (

@@ -1138,6 +1138,10 @@ msgstr "API 키 또는 로그인을 확인한 뒤 다시 테스트하세요."
 msgid "Check the server URL and network, then test again."
 msgstr "서버 URL과 네트워크를 확인한 뒤 다시 테스트하세요."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "직접 확인하세요"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "이메일을 확인하세요"

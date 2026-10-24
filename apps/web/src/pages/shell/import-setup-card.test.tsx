@@ -74,9 +74,9 @@ describe("the import setup checklist", () => {
     );
     expect(rows).toEqual([
       ["openrouter/example", "API key for openrouter"],
-      ["files", "Program: npx · Env: EXAMPLE_TOKEN"],
+      ["files", "Program: npx · Env: EXAMPLE_TOKEN · Check this yourself"],
       ["morning", "Paused"],
-      ["triage", "Needs: gh, curl"],
+      ["triage", "Needs: gh, curl · Check this yourself"],
     ]);
     const buttons = [...container.querySelectorAll("button")];
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
@@ -100,8 +100,8 @@ describe("the checklist's live state", () => {
       {
         kind: "mcp",
         serverId: "server-1",
-        name: "files",
-        needs: [{ kind: "program", name: "npx" }],
+        name: "docs",
+        needs: [{ kind: "credentials", names: ["Authorization"] }],
       },
       { kind: "routine", routineId: "routine-1", name: "morning" },
     ],
@@ -148,5 +148,53 @@ describe("the checklist's live state", () => {
     const card = container.querySelector("[data-testid='import-setup-card']")!;
     expect(card.getAttribute("data-complete")).toBe("true");
     expect(card.textContent).toBe("Setup complete");
+  });
+});
+
+describe("rows the checklist cannot check", () => {
+  it("never ticks a skill's or a stdio program's needs, and never claims setup is complete", async () => {
+    importSetupState.mockResolvedValue({
+      providers: { openrouter: true },
+      serverIds: { remote: true, stdio: true },
+      routineIds: { "routine-1": true },
+    });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <ImportSetupCard
+          botId="bot-1"
+          onOpen={vi.fn()}
+          block={{
+            kind: "import_setup",
+            items: [
+              { kind: "model", title: "openrouter/example", provider: "openrouter" },
+              {
+                kind: "mcp",
+                serverId: "remote",
+                name: "docs",
+                needs: [{ kind: "credentials", names: ["Authorization"] }],
+              },
+              {
+                kind: "mcp",
+                serverId: "stdio",
+                name: "files",
+                needs: [{ kind: "program", name: "npx" }],
+              },
+              { kind: "routine", routineId: "routine-1", name: "morning" },
+              { kind: "skill", name: "triage", needs: [{ kind: "requires", names: ["gh"] }] },
+            ],
+          }}
+        />,
+      );
+    });
+    const card = container.querySelector("[data-testid='import-setup-card']")!;
+    expect(card.getAttribute("data-complete")).toBeNull();
+    const rows = [...container.querySelectorAll("li")];
+    expect(rows.map((row) => row.dataset.done ?? "")).toEqual(["true", "true", "", "true", ""]);
+    expect(rows[2]!.textContent).toContain("Check this yourself");
+    expect(rows[4]!.textContent).toContain("Check this yourself");
   });
 });

@@ -1138,6 +1138,10 @@ msgstr "Проверьте API-ключ или вход и повторите т
 msgid "Check the server URL and network, then test again."
 msgstr "Проверьте URL сервера и сеть, затем повторите тест."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "Проверьте сами"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Проверьте свою электронную почту"

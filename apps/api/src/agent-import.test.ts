@@ -2,7 +2,7 @@ import type { Actor, Bot } from "@rakazo/contracts";
 import { AgentImportCreateInput } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentImportServices } from "./agent-import.js";
-import { createImportedBot, requestDigest } from "./agent-import.js";
+import { agentImportSetupState, createImportedBot, requestDigest } from "./agent-import.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -59,6 +59,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
       return bot;
     },
     hasModelConnection: async () => false,
+    connectedProviders: async () => new Set(),
     validateBotModel: async () => "Connect that model provider first",
     stdioAllowed: () => false,
     prepareModelKey: async () => ({}),
@@ -177,5 +178,26 @@ describe("an import whose attempt did not commit", () => {
     // Nothing that only follows a committed import ran.
     expect(afterModelKey).not.toHaveBeenCalled();
     expect(announceRoutine).not.toHaveBeenCalled();
+  });
+});
+
+describe("reading an import's setup state", () => {
+  it("reads each provider once, in one read of the actor's connections", async () => {
+    const connectedProviders = vi.fn(async () => new Set(["openrouter"]));
+    const hasModelConnection = vi.fn(async () => true);
+    const state = await agentImportSetupState(
+      services({ connectedProviders, hasModelConnection }),
+      actor,
+      {
+        botId: "bot-1",
+        providers: ["openrouter", "openrouter", "deepseek", "openrouter"],
+        serverIds: [],
+        routineIds: [],
+      },
+    );
+    expect(state.providers).toEqual({ openrouter: true, deepseek: false });
+    expect(connectedProviders).toHaveBeenCalledTimes(1);
+    expect(connectedProviders).toHaveBeenCalledWith(actor, ["openrouter", "deepseek"]);
+    expect(hasModelConnection).not.toHaveBeenCalled();
   });
 });

@@ -161,7 +161,9 @@ function skillWarnings(
   const warnings: AgentImportSkill["warnings"] = [];
   const requirements = skillRequirements(frontmatter(content));
   if (requirements.names.length || requirements.otherPlatform) warnings.push("needs_setup");
-  const bundled = siblings.length > 0 && BUNDLED_REFERENCE.test(body);
+  // A reference to files next to SKILL.md is a need on its own: a document export or an
+  // incomplete backup has no sibling list at all. Listed siblings only add detail below.
+  const bundled = BUNDLED_REFERENCE.test(body);
   if (bundled) warnings.push("bundled_files");
   const runsBundledScript = bundled && siblings.some((name) => name.startsWith("scripts/"));
   if (RUNNABLE_CODE.test(body) || runsBundledScript) warnings.push("runs_code");

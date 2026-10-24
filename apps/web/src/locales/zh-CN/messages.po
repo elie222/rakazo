@@ -1138,6 +1138,10 @@ msgstr "请检查 API 密钥或登录，然后重新测试。"
 msgid "Check the server URL and network, then test again."
 msgstr "请检查服务器 URL 和网络，然后重新测试。"
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "请自行检查"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "请查看邮箱"

@@ -1138,6 +1138,10 @@ msgstr "API anahtarını veya oturumu kontrol et, sonra yeniden test et."
 msgid "Check the server URL and network, then test again."
 msgstr "Sunucu URL'sini ve ağı kontrol et, sonra yeniden test et."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "Bunu kendin kontrol et"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "E-postanızı kontrol edin"

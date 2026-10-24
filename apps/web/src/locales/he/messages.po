@@ -1138,6 +1138,10 @@ msgstr "יש לבדוק את מפתח ה-API או את ההתחברות, ואז 
 msgid "Check the server URL and network, then test again."
 msgstr "יש לבדוק את כתובת ה-URL של השרת ואת הרשת, ואז לבדוק שוב."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "יש לבדוק בעצמך"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "יש לבדוק את תיבת האימייל"

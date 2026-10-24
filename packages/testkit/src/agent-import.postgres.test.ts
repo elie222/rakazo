@@ -531,9 +531,24 @@ describeIntegration("agent import", () => {
     });
     await rpc(app, cookie, "mcp/assignments/approve", { botId: bot.id, serverId: servers[0]!.id });
     await db.routine.update({ where: { id: routineRows[0]!.id }, data: { active: true } });
-    const after = await state();
-    expect(after.serverIds[servers[0]!.id]).toBe(true);
-    expect(after.routineIds[routineRows[0]!.id]).toBe(true);
+    const approved = await state();
+    // Approval is not setup: the server still has no value for its Authorization header.
+    expect(approved.serverIds[servers[0]!.id]).toBe(false);
+    expect(approved.routineIds[routineRows[0]!.id]).toBe(true);
+    await rpc(app, cookie, "mcp/servers/update", {
+      id: servers[0]!.id,
+      config: {
+        slug: "docs",
+        name: "docs",
+        description: "",
+        transport: "streamable_http",
+        endpoint: "https://mcp.example.com/mcp",
+        headers: { Authorization: "Bearer placeholder-entered-later" },
+        enabled: true,
+      },
+    });
+    // Approved, and every header it was shown to need has a value: done.
+    expect((await state()).serverIds[servers[0]!.id]).toBe(true);
     await db.routine.update({ where: { id: routineRows[0]!.id }, data: { active: false } });
     // Another user reads nothing of these.
     const stranger = await signup(app, `import-state-other-${stamp}@rakazo.test`, "Stranger");

@@ -1263,6 +1263,14 @@ export function createRouter(deps: RouterDeps) {
       ),
     hasModelConnection: async (actor, provider) =>
       Boolean(await findModelCredential(deps.prisma, actor, provider)),
+    connectedProviders: async (actor, providers) => {
+      const rows = await deps.prisma.userModelCredential.findMany({
+        where: { userId: actor.userId },
+        select: { provider: true },
+      });
+      const have = new Set(rows.map((row) => canonicalPiProviderId(row.provider)));
+      return new Set(providers.filter((provider) => have.has(canonicalPiProviderId(provider))));
+    },
     validateBotModel: async (actor, provider, modelId) => {
       const result = await validateBotModelChange(botModelValidation(actor), {
         userId: actor.userId,

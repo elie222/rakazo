@@ -198,7 +198,29 @@ describe("one status per skill", () => {
     "error" in result ? null : result.skills[0]!.status;
 
   it("needs setup when it uses files that are not imported, never Ready", () => {
-    expect(of(status("Run `scripts/save.sh`.\n", ["scripts/save.sh"]))).toEqual({
+    const needs = { kind: "needs_setup", needs: [{ kind: "bundled_files" }] };
+    expect(of(status("Run `scripts/save.sh`.\n", ["scripts/save.sh"]))).toEqual(needs);
+    // Without a sibling list (an incomplete backup), the reference alone is the need.
+    for (const body of [
+      "Fill in `templates/report.md`.\n",
+      "See references/api.md first.\n",
+      "Use {baseDir}/assets/logo.png.\n",
+    ]) {
+      expect(of(status(body))).toEqual(needs);
+    }
+  });
+
+  it("needs setup for bundled files in another assistant's document too", () => {
+    const document = [
+      "# Name",
+      "Atlas",
+      "# Skills",
+      "## monthly-report",
+      "Description: Write the monthly report",
+      "Fill in templates/report.md, then send it.",
+    ].join("\n");
+    const parsed = parseAgentImport([{ path: "agent.md", content: document }]);
+    expect("error" in parsed ? null : parsed.skills[0]!.status).toEqual({
       kind: "needs_setup",
       needs: [{ kind: "bundled_files" }],
     });
