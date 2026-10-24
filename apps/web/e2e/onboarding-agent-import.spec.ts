@@ -222,3 +222,82 @@ test("with a model already provided, ignoring import still starts with Chief at 
     timeout: 20_000,
   });
 });
+
+/** A self-hosted deployment that provides the model: no model step and no sign-up survey. */
+async function noOnboardingSteps(page: Page) {
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: { json: { ...body.json, needsModel: false, needsSignupSurvey: false } },
+    });
+  });
+}
+
+test("with no onboarding steps, Chief's first-run card offers import into a new bot", async ({
+  page,
+}, testInfo) => {
+  await noOnboardingSteps(page);
+  await signup(page, `onboarding-import-chief-${Date.now()}@rakazo.test`, "password12", "Host");
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
+    timeout: 20_000,
+  });
+  const [chief] = await rpc<Bot[]>(page, "bots/list", {});
+  const before = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
+  const card = page
+    .getByText("What do you want me on first?", { exact: true })
+    .locator("xpath=ancestor::div[contains(@class,'bg-card')][1]");
+  const entry = card.getByRole("button", { name: "Import an agent", exact: true });
+  await expect(entry).toBeVisible({ timeout: 20_000 });
+  await captureScreenshot(page, testInfo, "onboarding-import-chief-focus-card");
+
+  await entry.click();
+  const panel = page.getByTestId("agent-import");
+  const home = testInfo.outputPath("openclaw-chief");
+  mkdirSync(path.join(home, "workspace"), { recursive: true });
+  writeFileSync(path.join(home, "workspace/SOUL.md"), "Calm.\n");
+  writeFileSync(path.join(home, "workspace/IDENTITY.md"), "- **Name:** Pebble\n");
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
+  const preview = panel.getByTestId("agent-import-preview");
+  // A new bot, as everywhere else; Chief is offered only if the user picks it.
+  await expect(
+    preview.getByTestId("agent-import-destination").getByRole("button", { name: "New bot" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await clickAndWaitForRpc(
+    page,
+    preview.getByRole("button", { name: "Create", exact: true }),
+    "bots/importCreate",
+  );
+  await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
+  const bots = await rpc<Bot[]>(page, "bots/list", {});
+  expect(bots.map((bot) => bot.name).sort()).toEqual(["Chief", "Pebble"]);
+  const after = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
+  expect(after.instructions).toBe(before.instructions);
+});
+
+test("with no onboarding steps, ignoring import changes nothing and the offer ends with first run", async ({
+  page,
+}) => {
+  await noOnboardingSteps(page);
+  await signup(
+    page,
+    `onboarding-import-chief-skip-${Date.now()}@rakazo.test`,
+    "password12",
+    "Skip",
+  );
+  await expect(page.getByRole("combobox", { name: "Message Chief" })).toBeVisible({
+    timeout: 20_000,
+  });
+  const card = page
+    .getByText("What do you want me on first?", { exact: true })
+    .locator("xpath=ancestor::div[contains(@class,'bg-card')][1]");
+  await expect(card.getByRole("button", { name: "Import an agent", exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  expect((await rpc<Bot[]>(page, "bots/list", {})).map((bot) => bot.name)).toEqual(["Chief"]);
+  // Answering the first-run question ends the offer, like the card's own choices.
+  await card.getByRole("button", { name: /Inbox & email/ }).click();
+  await expect(card.getByRole("button", { name: "Import an agent", exact: true })).toHaveCount(0);
+  expect((await rpc<Bot[]>(page, "bots/list", {})).map((bot) => bot.name)).toEqual(["Chief"]);
+});

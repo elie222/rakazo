@@ -60,6 +60,7 @@ export const MessageView = memo(function MessageView({
   onSpeak,
   onOpenComputer,
   onOpenImportSetup,
+  onOpenImport,
   showToolActivity,
   onReply,
   onMarkUnread,
@@ -94,6 +95,8 @@ export const MessageView = memo(function MessageView({
   onOpenComputer: (botId?: string) => void;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  /** Opens the agent importer (from Chief's first-run focus card). */
+  onOpenImport?: () => void;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
@@ -409,7 +412,15 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "choice") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
             if (!botId) return null;
-            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
+            return (
+              <ChoiceCard
+                key={i}
+                botId={botId}
+                block={block}
+                onBotChanged={onBotChanged}
+                onImportAgent={onOpenImport}
+              />
+            );
           }
           if (block.kind === "app_connect") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;

@@ -2867,6 +2867,7 @@ msgstr "ייבוא"
 
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "ייבוא סוכן"
 

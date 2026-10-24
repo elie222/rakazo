@@ -17,10 +17,13 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
+  onImportAgent,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
+  /** Opens the agent importer; offered on the first-run focus card while it is unanswered. */
+  onImportAgent?: () => void;
 }) {
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
@@ -106,10 +109,22 @@ export function ChoiceCard({
             ))}
         </div>
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+        {/* First run only: the same quiet way to bring an agent as in onboarding. */}
+        {onImportAgent && !block.answerId && block.question === FOCUS_QUESTION ? (
+          <Button
+            variant="link"
+            className="mt-2 h-auto px-0 text-muted-foreground"
+            onClick={onImportAgent}
+          >
+            <Trans>Import an agent</Trans>
+          </Button>
+        ) : null}
       </div>
     </div>
   );
 }
+
+const FOCUS_QUESTION = "What do you want me on first?";
 
 /** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
 function OnboardingFocusQuestion({ question }: { question: string }) {

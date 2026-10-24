@@ -3571,6 +3571,11 @@ function SpaceShell() {
             speakingMessageId={speakingMessageId}
             onSpeak={speakMessage}
             onOpenComputer={onOpenComputer}
+            onOpenImport={() => {
+              setDroppedAgent(null);
+              setImportingBot(true);
+              setPanel("create");
+            }}
             onOpenImportSetup={(target) => {
               if (target.kind === "models") openSettings("models");
               else if (target.kind === "mcp") setMcpOpen(true);

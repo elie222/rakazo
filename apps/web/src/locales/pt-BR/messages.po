@@ -2867,6 +2867,7 @@ msgstr "Importar"
 
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-cards.tsx
 msgid "Import an agent"
 msgstr "Importar um agente"
 
