@@ -403,6 +403,63 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     });
   });
 
+  it.each(["bot", "group"] as const)(
+    "binds a file reply to the waiting routine it answers in a %s thread",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const answeringBotId = kind === "bot" ? botId : peerBotId;
+      const waiting = await waitingCard(question, target.threadId, answeringBotId, "routine");
+      const artifact = await system.artifact.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          ...(kind === "bot" ? { botId } : { groupId: groupTarget.groupId }),
+          name: "reply.png",
+          mimeType: "image/png",
+          size: 4,
+          hash: "fixture",
+          storageKey: "fixture",
+        },
+      });
+      const result = await runAsTenant(actor, () =>
+        sendThreadMessage(
+          { prisma, events: { notify } as never, jobs: { enqueue } as never },
+          actor,
+          target,
+          {
+            text: "Paris",
+            artifactIds: [artifact.id],
+            imageHandling: "file",
+            mentions: kind === "group" ? [botId, peerBotId] : [],
+            clientNonce: randomUUID(),
+          },
+        ),
+      );
+      expect(result.runIds).toContain(waiting.run.id);
+      const message = await system.message.findFirstOrThrow({
+        where: { threadId: target.threadId, seq: result.seq },
+      });
+      // Send as file stores the picture as a file the routine can list and copy.
+      expect(message.blocks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "file", artifactId: artifact.id }),
+        ]),
+      );
+      // A routine reads no thread history, so only this row delivers the attachment.
+      expect(await system.steeringMessage.findMany({ where: { messageId: message.id } })).toEqual([
+        expect.objectContaining({ botId: answeringBotId, runId: waiting.run.id }),
+      ]);
+    },
+  );
+
+  it("adds no steering row for a text-only answer to a waiting routine", async () => {
+    const waiting = await waitingCard(question, threadId, botId, "routine");
+    const result = await send(privateTarget());
+    expect(result.runId).toBe(waiting.run.id);
+    const message = await system.message.findFirstOrThrow({ where: { threadId, seq: result.seq } });
+    expect(await system.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
+  });
+
   it("leaves a confirmed image sent during a background routine to its continuation", async () => {
     const task = await system.task.create({
       data: {

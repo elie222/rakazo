@@ -100,6 +100,7 @@ import {
   redactSecrets,
   renderBotDirectory,
   resolveActionApprovalDetail,
+  runReadsThreadHistory,
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -9635,7 +9636,7 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   }
   // Routine runs stay isolated from thread history. The creation intro does
   // too: a message that arrives during it waits and is answered afterward.
-  if (trigger === "created" || trigger === "routine") {
+  if (!runReadsThreadHistory(trigger)) {
     return {
       messages: [] as T[],
       summary: null,

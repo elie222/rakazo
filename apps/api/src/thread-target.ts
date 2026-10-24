@@ -21,6 +21,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   resolveGroupTargetBotIds,
   runFailureError,
+  runReadsThreadHistory,
 } from "@rakazo/core";
 import { deriveMessageQuote, messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -72,6 +73,21 @@ const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
+/**
+ * An answer steers the waiting run it resumes when the model must see its image, or when the run
+ * reads no thread history and would otherwise never get the attachment.
+ */
+function answerSteersRun(
+  run: { trigger?: string | null },
+  attachments: MessageBlock[],
+  imageHandling: "confirm" | "file" | undefined,
+) {
+  return (
+    (imageHandling === "confirm" && attachments.some((block) => block.kind === "image")) ||
+    (attachments.length > 0 && !runReadsThreadHistory(run.trigger))
+  );
+}
+
 /** Background work holds pending steering; paused cards never hold the queue. */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
@@ -836,20 +852,18 @@ export async function sendThreadMessage(
           const primary = answered[0];
           if (!primary) throw new IsolationError();
           await tx.message.update({ where: { id: message.id }, data: { runId: primary.id } });
-          if (
-            attachmentBlocks.some((block) => block.kind === "image") &&
-            input.imageHandling === "confirm"
-          ) {
-            for (const run of answered) {
-              await tx.steeringMessage.create({
-                data: {
-                  messageId: message.id,
-                  botId: target.botId,
-                  userId: actor.userId,
-                  runId: run.id,
-                },
-              });
-            }
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: {
+                messageId: message.id,
+                botId: target.botId,
+                userId: actor.userId,
+                runId: run.id,
+              },
+            });
           }
           const event = await appendEventInTransaction(tx, {
             spaceId: actor.spaceId,
@@ -1083,15 +1097,13 @@ export async function sendThreadMessage(
       for (const botId of targetBotIds) {
         const answered = answeredByBotId.get(botId);
         if (answered) {
-          if (
-            attachmentBlocks.some((block) => block.kind === "image") &&
-            input.imageHandling === "confirm"
-          ) {
-            for (const run of answered) {
-              await tx.steeringMessage.create({
-                data: { messageId: message.id, botId, userId: actor.userId, runId: run.id },
-              });
-            }
+          const steered = answered.filter((run) =>
+            answerSteersRun(run, attachmentBlocks, input.imageHandling),
+          );
+          for (const run of steered) {
+            await tx.steeringMessage.create({
+              data: { messageId: message.id, botId, userId: actor.userId, runId: run.id },
+            });
           }
           runs.push(...answered);
           continue;
