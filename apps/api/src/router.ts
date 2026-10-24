@@ -1251,7 +1251,15 @@ export function createRouter(deps: RouterDeps) {
   };
   const agentImportServices: AgentImportServices<ImportKey> = {
     prisma: deps.prisma,
-    createBot: (actor, input) => repos.createBot(actor, input),
+    // Serializable, like `models.connect`, so an import's create-only key check cannot race
+    // a connection saved at the same moment; a conflict retries the whole import.
+    createBot: (actor, input) =>
+      withSerializableRetry(() =>
+        repos.createBot(actor, {
+          ...input,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        }),
+      ),
     hasModelConnection: async (actor, provider) =>
       Boolean(await findModelCredential(deps.prisma, actor, provider)),
     validateBotModel: async (actor, provider, modelId) => {
@@ -7525,19 +7533,10 @@ async function prepareModelCredential(
 }
 
 /** Writes a prepared connection in the caller's transaction. */
-/** Serialises writes of one user's connection for one provider (connect and import). */
-async function lockModelCredentialProvider(
-  tx: Prisma.TransactionClient,
-  actor: Pick<Actor, "userId">,
-  provider: string,
-): Promise<void> {
-  const scope = `user:${actor.userId}|provider:${canonicalPiProviderId(provider)}`;
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('model-credential'), hashtext(${scope}))`;
-}
-
 /**
- * An import's key: written only when the user has no connection for the provider, checked
- * under the provider lock so a connection made since the preview is never replaced.
+ * An import's key: written only when the user has no connection for the provider. The import
+ * runs in a serializable transaction, as `models.connect` does, so a connection saved at the
+ * same time makes one of the two retry and never leaves two (or a replaced one).
  */
 async function createImportedModelCredential(
   tx: Prisma.TransactionClient,
@@ -7545,7 +7544,6 @@ async function createImportedModelCredential(
   input: ModelCredentialInput,
   prepared: Awaited<ReturnType<typeof prepareModelCredential>>,
 ) {
-  await lockModelCredentialProvider(tx, actor, input.provider);
   const existing = await tx.userModelCredential.findFirst({
     where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
     select: { id: true },
@@ -7562,7 +7560,6 @@ async function writeModelCredential(
 ) {
   const { stored, defaultModel, allowedThinking } = prepared;
   throwIfAborted(input.signal);
-  await lockModelCredentialProvider(tx, actor, input.provider);
   const existing = await tx.userModelCredential.findFirst({
     where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
     orderBy: newestModelCredentialOrder,

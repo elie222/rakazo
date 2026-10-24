@@ -518,6 +518,8 @@ export function createRepos(
         };
         /** Adds content in the creation transaction, after the bot and its MEMORY.md exist. */
         seed?: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
+        /** For a seed whose own checks need it (an agent import's create-only keys). */
+        isolationLevel?: Prisma.TransactionIsolationLevel;
       },
     ): Promise<Bot> {
       let modelProvider = input.modelProvider ?? null;
@@ -546,8 +548,12 @@ export function createRepos(
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
+      const inTransaction = <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) =>
+        input.isolationLevel
+          ? prisma.$transaction(run, { isolationLevel: input.isolationLevel })
+          : prisma.$transaction(run);
       const insertBot = () =>
-        prisma.$transaction(async (tx) => {
+        inTransaction(async (tx) => {
           await lockSpaceForContentCreation(tx, {
             spaceId: actor.spaceId,
             userId: actor.userId,

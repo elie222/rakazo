@@ -253,4 +253,16 @@ describe("truncateQuoteExcerpt", () => {
     expect(truncated).toHaveLength(REPLY_QUOTE_MAX_LENGTH - 1);
     expect(truncated).toBe("x".repeat(REPLY_QUOTE_MAX_LENGTH - 1));
   });
+
+  it("leaves out an agent import's setup checklist, which only the web app draws", () => {
+    const checklist = {
+      kind: "import_setup",
+      items: [{ kind: "routine", routineId: "routine-1", name: "morning" }],
+    } as const;
+    expect(hasVisibleMessagePresentation([checklist])).toBe(false);
+    expect(messagePresentationSegments([checklist])).toEqual([]);
+    expect(messagePresentationSegments([{ kind: "text", text: "Imported." }, checklist])).toEqual([
+      { kind: "content", blocks: [{ kind: "text", text: "Imported." }] },
+    ]);
+  });
 });

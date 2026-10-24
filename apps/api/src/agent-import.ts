@@ -426,6 +426,10 @@ export async function createImportedBot<PreparedKey>(
     spawnKey: input.spawnKey,
     seed: async (tx, botId) => {
       seeded = true;
+      // A serialization conflict runs the seed again: start each attempt clean.
+      for (const list of Object.values(record)) list.length = 0;
+      routineRows.length = 0;
+      setup.length = 0;
       for (const prepared of preparedKeys) {
         // Only keys this import created are recorded; one connected meanwhile stays as is.
         const credential = await services.writeModelKey(tx, actor, prepared);
