@@ -85,6 +85,7 @@ function measure(before: boolean) {
     confirmDeleteSpace: action,
     deleteSection: action,
     me: { spaceId: "space-1" },
+    onShareSelect: undefined,
     openBot: action,
     openGroup: action,
     groupAction: action,
@@ -214,6 +215,7 @@ it.each(["midnight", "focus", "foreground"])(
       confirmDeleteSpace: action,
       deleteSection: action,
       me: { spaceId: "space-1" },
+      onShareSelect: undefined,
       openBot: action,
       openGroup: action,
       organizeBot: action,
@@ -457,6 +459,7 @@ it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scr
     editSectionFromMenu: action,
     groupAction: action,
     me: { spaceId: "space-1" },
+    onShareSelect: undefined,
     openBot: action,
     openGroup: action,
     organizeBot: action,
@@ -552,6 +555,7 @@ it("collapses a section from its heading and keeps the choice for the account", 
     day: 0,
     editSectionFromMenu: action,
     groupAction: action,
+    onShareSelect: undefined,
     openBot: action,
     openGroup: action,
     organizeBot: action,
@@ -574,7 +578,7 @@ it("collapses a section from its heading and keeps the choice for the account", 
   );
   const sessionSource = slice(
     "  useEffect(() => {\n    void Promise.all([loadSessionToken(), loadCollapsedSections()])",
-    "  useEffect(() => {\n    if (!hasSession) return;\n    void registerPushToken",
+    "  useEffect(() => {\n    if (!hasSession || onShareSelect) return;\n    void registerPushToken",
   );
   const listSource = slice("  const renderItem = useCallback(", "  if (!ready) {");
   const compiled = ts.transpileModule(
@@ -773,6 +777,7 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     confirmDeleteSpace: action,
     deleteSection: action,
     me: { spaceId: "space-current" },
+    onShareSelect: undefined,
     openBot: action,
     openGroup: action,
     organizeBot: action,

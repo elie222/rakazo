@@ -250,19 +250,33 @@ export default function HomeRoute() {
 }
 
 /** The chat list beside the open chat on a wide window. */
-type InboxPaneProps = { onSelectSpace?: (spaceId: string) => void };
+type InboxPaneProps = {
+  onSelectSpace?: (spaceId: string) => void;
+  onShareSelect?: (bot: MobileBot | SpaceBot) => void;
+};
 
-export function InboxPane({ onSelectSpace }: InboxPaneProps) {
-  return <HomeSession embedded onSelectSpace={onSelectSpace} />;
+export function InboxPane({ onSelectSpace, onShareSelect }: InboxPaneProps) {
+  return <HomeSession embedded onSelectSpace={onSelectSpace} onShareSelect={onShareSelect} />;
 }
 
-function HomeSession({ embedded = false, onSelectSpace }: InboxPaneProps & { embedded?: boolean }) {
+export function HomeSession({
+  embedded = false,
+  onSelectSpace,
+  onShareSelect,
+}: InboxPaneProps & { embedded?: boolean }) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  return <Home key={`${generation}:${ready}`} embedded={embedded} onSelectSpace={onSelectSpace} />;
+  return (
+    <Home
+      key={`${generation}:${ready}`}
+      embedded={embedded}
+      onSelectSpace={onSelectSpace}
+      onShareSelect={onShareSelect}
+    />
+  );
 }
 
-function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean }) {
+function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -491,9 +505,9 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   }, []);
 
   useEffect(() => {
-    if (!hasSession) return;
+    if (!hasSession || onShareSelect) return;
     void registerPushToken().catch(() => undefined);
-  }, [hasSession]);
+  }, [hasSession, onShareSelect]);
 
   // Show the inbox saved on this device until the first live load replaces it.
   useEffect(() => {
@@ -607,6 +621,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     if (me) setSearchInbox(inboxSpaces);
   }, [inboxSpaces, me]);
   const listData = useMemo((): InboxItem[] => {
+    // Only bot threads support importing shares; use the same rows for every target.
+    if (onShareSelect)
+      return spaceInboxItems(
+        inboxSpaces
+          .filter((space) => space.bots.length > 0)
+          .map((space) => ({ ...space, groups: [] })),
+        collapsed,
+      );
     // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
     const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
@@ -624,7 +646,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups, locale]);
+  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups, locale, onShareSelect]);
   const badgeCount = me ? unreadChatCount(inboxSpaces) : null;
   useEffect(() => {
     if (badgeCount === null || badgeLoad === null) return;
@@ -922,11 +944,12 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   const openBot = useCallback(
     (bot: MobileBot | SpaceBot) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      void openMobileSpace(bot.spaceId, () =>
-        openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
-      );
+      void openMobileSpace(bot.spaceId, () => {
+        if (onShareSelect) onShareSelect(bot);
+        else openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      });
     },
-    [openChat],
+    [openChat, onShareSelect],
   );
   const openGroup = useCallback(
     (group: MobileGroup | SpaceGroup) => {
@@ -1221,7 +1244,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
             >
               <Text style={styles.spaceTitle}>{item.title}</Text>
             </Pressable>
-            {canDeleteInboxSpace(item.space) ? (
+            {!onShareSelect && canDeleteInboxSpace(item.space) ? (
               <MenuView
                 actions={[
                   {
@@ -1319,8 +1342,10 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           bot={item.bot}
           day={day}
           onPress={openBot}
-          onLongPress={!SWIPE_ROWS ? organizeBot : undefined}
-          onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
+          onLongPress={!onShareSelect && !SWIPE_ROWS ? organizeBot : undefined}
+          onAction={
+            !onShareSelect && SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined
+          }
           sections={botSections}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
@@ -1339,6 +1364,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       me?.spaceId,
       openBot,
       openGroup,
+      onShareSelect,
       organizeBot,
       organizeFromMenu,
       organizeGroup,
@@ -1365,7 +1391,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
 
   return (
     <View style={styles.screen}>
-      {nativeHeader ? null : (
+      {nativeHeader || onShareSelect ? null : (
         <View
           style={[
             styles.header,
@@ -1482,7 +1508,9 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                         <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                       </Pressable>
                     ) : null}
-                    {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
+                    {!onShareSelect &&
+                    activityMode &&
+                    (activity.active.length > 0 || activity.recent.length > 0) ? (
                       <ActivitySection activity={activity} bots={bots} />
                     ) : null}
                   </>
@@ -1497,12 +1525,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                       onSignIn={() => void signInAgain()}
                     />
                   ) : (
-                    <Text style={styles.empty}>{me ? t("Tap + to create a bot") : null}</Text>
+                    <Text style={styles.empty}>
+                      {me && !onShareSelect ? t("Tap + to create a bot") : null}
+                    </Text>
                   )
                 }
                 ListFooterComponent={
                   <>
-                    {!showLoadFailure && inboxNeedsCreateHint(listData) ? (
+                    {!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData) ? (
                       <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
                     ) : null}
                     <ArchivedChatsRow
@@ -1514,7 +1544,9 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                 renderItem={renderItem}
               />
             </AvatarViewportScope>
-            {refreshing || showLoadFailure || inboxHasNoChats(listData) ? null : unreadJump.overlay}
+            {onShareSelect || refreshing || showLoadFailure || inboxHasNoChats(listData)
+              ? null
+              : unreadJump.overlay}
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>

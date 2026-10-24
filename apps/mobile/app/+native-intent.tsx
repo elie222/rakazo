@@ -1,8 +1,11 @@
-import { closeSettingsSheet, isSettingsLink } from "../lib/settings-sheet";
+import { receiveIncomingShare } from "../lib/incoming-share";
+import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings-sheet";
 
 /** A link to a screen outside settings closes the settings sheet first, so the screen opens on
- * the root stack instead of over the sheet. Settings links open inside the sheet. */
-export function redirectSystemPath({ path }: { path: string; initial: boolean }): string {
+ * the root stack instead of over the sheet. Settings links open inside the sheet. Something
+ * shared from another app (expo-sharing opens `rakazo://expo-sharing`) opens the share target screen. */
+export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
+  receiveIncomingShare(linkScreen(path) === "expo-sharing", initial);
   if (!isSettingsLink(path)) closeSettingsSheet();
-  return path;
+  return linkScreen(path) === "expo-sharing" ? "/share" : path;
 }

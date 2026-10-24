@@ -33,6 +33,7 @@ import {
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
+import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
 import { passkeysAvailable, signInWithPasskey } from "../lib/passkey";
 import { continueWithSso } from "../lib/sso";
@@ -129,7 +130,7 @@ export default function SignIn() {
       </View>
     );
   }
-  if (hasSession) return <Redirect href="/" />;
+  if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   const codeFlow = Boolean(reset?.passwordAuth && reset.emailCode && mode !== "forgot");
   const usingCode = codeFlow && !usePassword;
@@ -188,7 +189,8 @@ export default function SignIn() {
       } else {
         await signIn(email.trim(), password);
       }
-      await openApp();
+      if (hasIncomingShare()) router.replace("/share");
+      else await openApp();
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -206,7 +208,10 @@ export default function SignIn() {
     setPending(true);
     setError(null);
     try {
-      if (await run()) await openApp();
+      if (await run()) {
+        if (hasIncomingShare()) router.replace("/share");
+        else await openApp();
+      }
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {

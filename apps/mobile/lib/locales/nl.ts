@@ -1,4 +1,7 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Share to": "Delen met",
+  "{count} files": "{count} bestanden",
+  "could not read": "kon niet worden gelezen",
   "Use 80 characters or fewer": "Gebruik maximaal 80 tekens",
   "Could not update name": "Naam kon niet worden bijgewerkt",
   "{summary} Your backup models also failed.": "{summary} Je reservemodellen zijn ook mislukt.",

@@ -5,6 +5,7 @@ const file = vi.hoisted(() => ({
   size: 11 * 1024 * 1024,
   base64: vi.fn().mockResolvedValue("aGVsbG8="),
 }));
+vi.mock("./incoming-share", () => ({ readIncomingShareFile: vi.fn() }));
 vi.mock("expo-file-system", () => ({
   File: class {
     info() {

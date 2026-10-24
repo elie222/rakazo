@@ -6,16 +6,27 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
-import { passwordResetCapabilities, rpc, sendSignInCode, signInWithCode } from "./api";
+import {
+  loadSessionToken,
+  passwordResetCapabilities,
+  rpc,
+  sendSignInCode,
+  signInWithCode,
+  signUp,
+} from "./api";
 import type { NativeActionButtonProps } from "./native-controls";
 import { passkeysAvailable, signInWithPasskey } from "./passkey";
+import { continueWithSso } from "./sso";
 
-const route = vi.hoisted(() => ({ mode: "in" }));
+const route = vi.hoisted(() => ({ mode: "in", waiting: false, redirect: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 const server = vi.hoisted(() => ({ base: "https://example.invalid", refocus: () => {} }));
 
 vi.mock("expo-router", () => ({
-  Redirect: () => null,
+  Redirect: ({ href }: { href: string }) => {
+    route.redirect(href);
+    return null;
+  },
   useRouter: () => router,
   useLocalSearchParams: () => route,
   useFocusEffect: (effect: () => void) => {
@@ -122,6 +133,7 @@ vi.mock("./api", () => ({
   signInWithCode: vi.fn(),
   signUp: vi.fn(),
 }));
+vi.mock("./incoming-share", () => ({ hasIncomingShare: () => route.waiting }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
 vi.mock("./passkey", () => ({ passkeysAvailable: vi.fn(), signInWithPasskey: vi.fn() }));
 vi.mock("./user-error", () => ({ credentialIssueText: vi.fn(), errorText: vi.fn() }));
@@ -137,6 +149,7 @@ let root: Root;
 
 beforeEach(() => {
   route.mode = "in";
+  route.waiting = false;
   server.base = "https://example.invalid";
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -471,4 +484,35 @@ it("hides a revealed password after switching servers", async () => {
   await act(async () => server.refocus());
   expect(input("Password")!.type).toBe("password");
   expect(input("Password")!.value).toBe("example-password");
+});
+
+it.each(["in", "up"])(
+  "returns to the pending share after password authentication (%s)",
+  async (mode) => {
+    route.mode = mode;
+    route.waiting = true;
+    vi.mocked(signUp).mockResolvedValue({ verificationRequired: false });
+    await render();
+    await type(input("Email")!, "share@example.test");
+    await type(input("Password")!, "test-password-123");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[data-prominence="primary"]')!.click(),
+    );
+    expect(router.replace).toHaveBeenCalledWith("/share");
+  },
+);
+
+it("returns to the pending share after SSO", async () => {
+  route.waiting = true;
+  vi.mocked(continueWithSso).mockResolvedValue(true);
+  await render();
+  await act(async () => ssoButtons()[0]!.click());
+  expect(router.replace).toHaveBeenCalledWith("/share");
+});
+
+it("returns an existing session to the pending share", async () => {
+  route.waiting = true;
+  vi.mocked(loadSessionToken).mockResolvedValue("fake-session");
+  await render();
+  expect(route.redirect).toHaveBeenCalledWith("/share");
 });

@@ -199,6 +199,11 @@ import { canDoubleTapReact } from "../lib/double-tap";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { helperHeaderOffset, helperOpenTarget } from "../lib/helper-header-offset";
 import { t, useI18n } from "../lib/i18n";
+import {
+  isIncomingShareCurrent,
+  retryIncomingShare,
+  takeIncomingShare,
+} from "../lib/incoming-share";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
 import { useKeyboardLayout } from "../lib/keyboard-layout";
@@ -234,6 +239,7 @@ import {
   pickDocuments,
   pickFromLibrary,
   readDroppedFiles,
+  readSharedFiles,
   takePhoto,
 } from "../lib/pick-attachments";
 import { attachmentCountSkipReason } from "../lib/pick-attachments-filter";
@@ -324,7 +330,7 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
   if (maxMatch) {
     return t("{name} (max {count} attachments)", { name, count: maxMatch[1] ?? "" });
   }
-  return `${name} (${item.reason})`;
+  return `${name} (${t(item.reason)})`;
 }
 
 function isActiveStatus(status: string | undefined): boolean {
@@ -1868,6 +1874,69 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     setError(null);
   }, [threadKey]);
 
+  // Import only once settings are available, and keep mixed text/files together.
+  const importingShare = useRef(false);
+  const [shareImporting, setShareImporting] = useState(false);
+  // The share a settings refresh interrupted. It is retried on its own, so a
+  // share that arrived in the meantime is left for the picker, not taken here.
+  const interruptedShare = useRef<{ generation: number } | null>(null);
+  const [shareImportTick, setShareImportTick] = useState(0);
+  useEffect(() => {
+    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    const interrupted = interruptedShare.current;
+    interruptedShare.current = null;
+    const share = takeIncomingShare();
+    if (!share) return;
+    if (interrupted && share.generation !== interrupted.generation) {
+      // The interrupted share is gone; this newer one belongs to the picker.
+      retryIncomingShare(share);
+      return;
+    }
+    let active = true;
+    importingShare.current = true;
+    setShareImporting(true);
+    void (async () => {
+      try {
+        const result = await readSharedFiles(
+          share.files,
+          activePendingAttachments.length,
+          attachmentMaxBytes(uploadConfig),
+        );
+        if (!active || !isIncomingShareCurrent(share)) {
+          retryIncomingShare(share);
+          return;
+        }
+        if (result.failedFiles.length)
+          retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        setPendingAttachments((current) => [
+          ...current,
+          ...result.attachments.map((attachment) => ({ ...attachment, threadKey })),
+        ]);
+        setAttachmentNotice(
+          result.skipped.length
+            ? t("Skipped {items}", {
+                items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+              })
+            : null,
+        );
+        if (share.text) composerRef.current?.insert(share.text);
+      } finally {
+        importingShare.current = false;
+        setShareImporting(false);
+        // Only a pass that settings cancelled is tried again; a file the reader
+        // rejected is reported once instead of looping until the share expires.
+        if (!active && isIncomingShareCurrent(share)) {
+          interruptedShare.current = share;
+          retryIncomingShare(share);
+          setShareImportTick((tick) => tick + 1);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [threadKey, readOnly, uploadConfig, shareImportTick]);
+
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
       const settings = chatSettingsRoute({ groupId, botId });
@@ -1887,7 +1956,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   async function send() {
-    if (readOnly) return;
+    if (readOnly || importingShare.current) return;
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
     if ((!initialBotTarget && !initialGroupTarget) || sending || preparingSend.current) return;
@@ -2186,6 +2255,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   ];
 
   function attachFrom(source: string) {
+    if (importingShare.current) return;
     if (source === "library") void addAttachments(pickFromLibrary);
     else if (source === "camera") void addAttachments(takePhoto);
     else if (source === "file") void addAttachments(pickDocuments);
@@ -3159,7 +3229,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             botId={botId}
             onCall={onCall}
             working={working}
-            sending={sending}
+            sending={sending || shareImporting}
             styles={styles}
             attachActions={attachActions}
             attachFrom={attachFrom}

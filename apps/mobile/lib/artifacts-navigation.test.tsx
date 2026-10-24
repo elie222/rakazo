@@ -85,12 +85,13 @@ it("keeps only Activity, Search and Create in the transparent native home header
 it.each(["android", "ios"])("omits Artifacts from the %s fallback header", (platform) => {
   const header = slice(
     home,
-    "      {nativeHeader ? null : (",
+    "      {nativeHeader || onShareSelect ? null : (",
     "      <SelectedChatContext.Provider",
   ).trim();
   const element = evaluate(`return <>${header}</>;`, {
     React,
     nativeHeader: false,
+    onShareSelect: undefined,
     View: ({
       children,
       accessibilityLabel,

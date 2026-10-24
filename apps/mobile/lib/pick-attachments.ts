@@ -266,3 +266,46 @@ export async function readDroppedFiles(
   }
   return { attachments, skipped };
 }
+
+export async function readSharedFiles(
+  files: Array<{ uri: string; name: string; mimeType: string | null }>,
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+) {
+  // Loaded with the first share, so ordinary pickers never pull the share module.
+  const { readIncomingShareFile } = await import("./incoming-share");
+  const attachments: PickedAttachment[] = [];
+  const skipped: PickSkip[] = [];
+  const failedFiles: typeof files = [];
+  for (const file of files) {
+    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
+      skipped.push({ name: file.name, reason: attachmentCountSkipReason() });
+      continue;
+    }
+    try {
+      const result = await readIncomingShareFile(file.uri, maxBytes, async (copy, name, type) => {
+        const mimeType = inferAttachmentMimeType(name, type || file.mimeType || undefined);
+        const { contentBase64, size } = await readUriAsBase64(copy.uri, maxBytes);
+        // The cache copy is removed after this read; previews must own their bytes.
+        const previewUri = mimeType?.startsWith("image/")
+          ? `data:${mimeType};base64,${contentBase64}`
+          : undefined;
+        return filterPickedAttachments(
+          existingCount + attachments.length,
+          [{ name, mimeType, size, contentBase64, previewUri }],
+          maxBytes,
+        );
+      });
+      if (!result) {
+        skipped.push({ name: file.name, reason: attachmentSizeSkipReason(maxBytes) });
+        continue;
+      }
+      attachments.push(...result.attachments);
+      skipped.push(...result.skipped);
+    } catch {
+      skipped.push({ name: file.name, reason: "could not read" });
+      failedFiles.push(file);
+    }
+  }
+  return { attachments, skipped, failedFiles };
+}
