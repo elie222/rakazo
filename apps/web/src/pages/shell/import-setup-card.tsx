@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentImportSetupItem, AgentImportSetupState, MessageBlock } from "@rakazo/contracts";
+import { isRetiredImportSetup } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -51,10 +52,12 @@ export function ImportSetupCard({
   const { t } = useLingui();
   const text = useImportStatusText();
   const [state, setState] = useState<AgentImportSetupState | null>(null);
+  // Retired by Undo or empty: shown as nothing, so nothing is fetched either.
+  const retired = isRetiredImportSetup(block);
 
   // `block` is a new object each time the thread is fetched again, so this follows refreshes.
   useEffect(() => {
-    if (!botId) return;
+    if (!botId || retired) return;
     let current = true;
     const kinds = <K extends AgentImportSetupItem["kind"]>(kind: K) =>
       block.items.filter(
@@ -74,10 +77,10 @@ export function ImportSetupCard({
     return () => {
       current = false;
     };
-  }, [botId, block]);
+  }, [botId, block, retired]);
 
   // Nothing to set up: no card at all.
-  if (block.items.length === 0 || block.undone) return null;
+  if (retired) return null;
   // Shrinks only when every row is verifiably done; anything unchecked keeps the full list.
   if (state && block.items.every((item) => isDone(item, state) === true)) {
     return (

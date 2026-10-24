@@ -264,7 +264,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({
     /** What an agent import left to set up, each with a way to finish it. */
     kind: z.literal("import_setup"),
-    items: z.array(AgentImportSetupItemSchema).min(1),
+    /** Empty once Undo retired it (with `undone`): an empty checklist is never shown. */
+    items: z.array(AgentImportSetupItemSchema),
     /** The import was undone: nothing is left to set up, so the checklist is not shown. */
     undone: z.boolean().optional(),
   }),

@@ -1007,6 +1007,19 @@ describeIntegration("agent import", () => {
     expect(await db.secret.count({ where: { userId: owner.userId, kind: "model" } })).toBe(1);
     const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
     expect((record.created as { credentials: unknown[] }).credentials).toEqual([]);
+    // A repeated id is refused even when its provider is connected.
+    const repeated = await raw(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Repeated",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [],
+        skills: [],
+        apiKeys: ["key:openrouter", "key:openrouter"],
+      },
+    });
+    expect(repeated.status).toBe(400);
     // An id that was never offered is still refused.
     const refused = await raw(app, cookie, "bots/importCreate", {
       files,
@@ -1487,9 +1500,8 @@ describeIntegration("agent import", () => {
         orderBy: { seq: "desc" },
         select: { id: true, blocks: true },
       });
-      expect(checklist.blocks).toEqual([
-        expect.objectContaining({ kind: "import_setup", undone: true }),
-      ]);
+      // Emptied as well as marked, so clients that predate the mark hide it too.
+      expect(checklist.blocks).toEqual([{ kind: "import_setup", items: [], undone: true }]);
       const updated = await db.event.findFirst({
         where: { thread: { botId: chief.id }, type: "thread.message.updated" },
         orderBy: { seq: "desc" },

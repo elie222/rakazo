@@ -139,7 +139,6 @@ export type AgentImportServices<PreparedKey = unknown> = {
       within: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
     },
   ) => Promise<void>;
-  /** The writes of `mcp.servers.remove`. */
   /** `mcp.servers.remove`'s writes; returns the chat events its closed cards appended. */
   removeMcpServer: (
     tx: Prisma.TransactionClient,
@@ -430,6 +429,10 @@ export async function createImportedBot<PreparedKey>(
   );
   // A key whose provider was connected after the preview stays selected in the request; it
   // is skipped like any connected key, and the existing connection is kept.
+  // A repeated id is refused first, connected or not.
+  if (new Set(input.selection.apiKeys).size !== input.selection.apiKeys.length) {
+    throw refused("BAD_REQUEST", "selection_mismatch", "The selection does not match the files.");
+  }
   const keys = selected(
     plan.apiKeys,
     input.selection.apiKeys.filter((id) => !connectedKeyIds.has(id)),
@@ -1189,8 +1192,9 @@ async function retireSetupMessage(
   });
   const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
   if (!parsed.success) return null;
+  // Emptied as well as marked: clients that predate `undone` already hide an empty one.
   const blocks = parsed.data.map((block) =>
-    block.kind === "import_setup" ? { ...block, undone: true } : block,
+    block.kind === "import_setup" ? { ...block, items: [], undone: true } : block,
   );
   await tx.message.update({
     where: { id: messageId },

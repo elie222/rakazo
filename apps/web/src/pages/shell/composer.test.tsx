@@ -702,6 +702,35 @@ describe("a dropped folder or archive", () => {
     expect(onImportAgent).not.toHaveBeenCalled();
   });
 
+  it("attaches nothing when the composer is replaced while a dropped archive is read", async () => {
+    // The shell keys the composer by chat: moving to another chat unmounts this one.
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    const archive = new File(["not a zip"], "photos.zip");
+    let finishRead: (bytes: ArrayBuffer) => void = () => undefined;
+    archive.arrayBuffer = () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finishRead = resolve;
+      });
+    drop([{ name: "photos.zip", isFile: true, isDirectory: false }], [archive]);
+    act(() =>
+      root?.render(
+        <Composer
+          key="bot:bot-2"
+          {...composerProps}
+          draftKey="bot:bot-2"
+          artifactTarget={{ botId: "bot-2" }}
+        />,
+      ),
+    );
+    finishRead(new TextEncoder().encode("not a zip").buffer as ArrayBuffer);
+    await settle();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+  });
+
   it("drops the Import or Attach choice when the user moves to another chat", async () => {
     const onAttachmentPick = vi.fn(() => true);
     renderComposer(

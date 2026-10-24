@@ -219,6 +219,7 @@ describe("an empty checklist", () => {
 
 describe("an undone import's checklist", () => {
   it("is not shown, so it never links to what Undo removed", async () => {
+    importSetupState.mockClear();
     importSetupState.mockResolvedValue({ providers: {}, serverIds: {}, routineIds: {} });
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
@@ -237,5 +238,7 @@ describe("an undone import's checklist", () => {
       );
     });
     expect(container.innerHTML).toBe("");
+    // Nothing is shown, so nothing is fetched.
+    expect(importSetupState).not.toHaveBeenCalled();
   });
 });
