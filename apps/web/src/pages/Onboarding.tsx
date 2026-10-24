@@ -173,6 +173,9 @@ export function OnboardingPage() {
   // An imported agent replaces Chief as the first bot.
   const [importing, setImporting] = useState(false);
   const importedBotRef = useRef<{ id: string } | null>(null);
+  // The same facts for rendering (refs are read only by the async flow and handlers).
+  const [importedBotId, setImportedBotId] = useState<string | null>(null);
+  const [noModelStep, setNoModelStep] = useState(true);
   // The import found a first bot already made (another tab or device): nothing was imported.
   const [notImported, setNotImported] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,6 +211,7 @@ export function OnboardingPage() {
         setCatalog(models);
         const next = me.needsModel ? "model" : "bot";
         afterSurveyRef.current = next;
+        setNoModelStep(next === "bot");
         setStep(me.needsSignupSurvey ? "survey" : next);
       })
       .catch(() => setStep("bot"));
@@ -543,7 +547,7 @@ export function OnboardingPage() {
             <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} />
             {/* With no model step to follow, this is the one screen before the first bot is
                 made: the same quiet way in as on the model step. */}
-            {afterSurveyRef.current === "bot" && !importedBotRef.current ? (
+            {noModelStep && !importedBotId ? (
               <Button
                 variant="link"
                 className="mt-6 h-auto px-0 text-muted-foreground"
@@ -570,6 +574,7 @@ export function OnboardingPage() {
                 return;
               }
               importedBotRef.current = bot;
+              setImportedBotId(bot.id);
               // From the survey, the survey still comes first; its Continue then opens the
               // imported bot instead of making Chief.
               if (step === "survey") return;
@@ -1089,7 +1094,7 @@ export function OnboardingPage() {
               ) : null}
             </div>
             {/* A quieter way in, below the step, not a peer of Continue. */}
-            {importedBotRef.current ? null : (
+            {importedBotId ? null : (
               <Button
                 variant="link"
                 className="mt-6 h-auto px-0 text-muted-foreground"
