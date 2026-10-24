@@ -50,6 +50,7 @@ import {
   buildMcpCredentialBlob,
   buildModelConnectPlaintext,
   CHATGPT_OAUTH_PROVIDER,
+  COMPUTER_SCREEN_UNAVAILABLE,
   CodexCatalogCache,
   ComputerBusyError,
   cancelComputerRunWork,
@@ -3608,7 +3609,7 @@ export function createRouter(deps: RouterDeps) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: error.message });
+              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
             }
             return clearGoneSandbox(deps, computer, error);
           });

@@ -4938,6 +4938,18 @@ msgstr "모델이 사용할 수 없는 응답을 반환했습니다. 다시 시�
 msgid "The provider is rate-limiting requests."
 msgstr "서비스가 요청 속도를 제한하고 있습니다."
 
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "화면 연결이 종료되었습니다."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "화면이 응답하지 않았습니다."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "화면 링크가 만료되었습니다."
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습니다."

@@ -100,7 +100,9 @@ test("a framed screen that fails to connect says so and can be retried", async (
 
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("Failed to connect to server");
+  await expect(preview.getByRole("alert")).toContainText(
+    "Could not connect to the computer screen",
+  );
   await expect(preview.locator("iframe")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-screen-frame-failed");
 
@@ -112,7 +114,7 @@ test("a framed screen that fails to connect says so and can be retried", async (
   await expect(preview.getByRole("alert")).toHaveCount(0);
 });
 
-test("a framed screen the proxy refuses shows the proxy's reason", async ({ page }, testInfo) => {
+test("a refused screen shows a fixed localized reason", async ({ page }, testInfo) => {
   await signup(page, `screen-refused-${Date.now()}@rakazo.test`, "password12", "Screen Refused");
   await completeOnboarding(page);
   const botId = activeBotId(page);
@@ -136,7 +138,7 @@ test("a framed screen the proxy refuses shows the proxy's reason", async ({ page
   );
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
-  await expect(preview.getByRole("alert")).toContainText("Invalid or expired screen capability");
+  await expect(preview.getByRole("alert")).toContainText("The screen link expired.");
   await expect(preview.locator("iframe")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "computer-screen-frame-refused");
 });

@@ -4938,6 +4938,18 @@ msgstr "モデルが利用できない応答を返しました。もう一度お
 msgid "The provider is rate-limiting requests."
 msgstr "プロバイダーがリクエストを制限しています。"
 
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "画面の接続が閉じられました。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "画面から応答がありませんでした。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "画面リンクの有効期限が切れました。"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "選択したメモリプロバイダーはこのビルドでは利用できません。"

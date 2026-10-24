@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -115,7 +116,7 @@ export function screenFrameStarted(message: ScreenFrameMessage): boolean {
 /** The error a frame report means for the screen, or null while it is fine. */
 export function screenFrameError(message: ScreenFrameMessage, fallback: string): string | null {
   if (message.rakazoScreen !== "failed" && message.rakazoScreen !== "disconnected") return null;
-  return message.detail ?? fallback;
+  return message.rakazoScreen === "disconnected" ? t`The screen connection closed.` : fallback;
 }
 
 /**
@@ -135,13 +136,12 @@ export async function probeScreen(
     });
     if (response.ok) return null;
     if (response.type === "opaqueredirect") return fallback;
-    const contentType = response.headers?.get("content-type") ?? "";
-    const body = (await response.text().catch(() => "")).trim();
-    // Only the proxy's own short plain-text reasons are worth showing; an upstream HTML error
-    // page would read as raw markup in the alert.
-    const isHtml = /html/i.test(contentType) || /<[a-z!/]/i.test(body);
-    const text = isHtml ? "" : body.slice(0, 200);
-    return text || `${fallback} (HTTP ${response.status})`;
+    if (response.status === 403) return t`The screen link expired.`;
+    const body = await response.text().catch(() => "");
+    if (response.status === 502 && body.trim() === "Screen unavailable (upstream_timeout)") {
+      return t`The screen did not respond.`;
+    }
+    return fallback;
   } catch {
     return fallback;
   }

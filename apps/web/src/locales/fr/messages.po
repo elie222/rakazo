@@ -4938,6 +4938,18 @@ msgstr "Le modèle a renvoyé une réponse inutilisable. Réessayez."
 msgid "The provider is rate-limiting requests."
 msgstr "Le fournisseur limite le débit des requêtes."
 
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "La connexion à l’écran a été fermée."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "L’écran n’a pas répondu."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "Le lien de l’écran a expiré."
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "Le fournisseur de mémoire sélectionné n'est pas disponible dans cette version."

@@ -4938,6 +4938,18 @@ msgstr "模型返回了无法使用的回复。请重试。"
 msgid "The provider is rate-limiting requests."
 msgstr "提供方正在限制请求频率。"
 
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "屏幕连接已关闭。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "屏幕未响应。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "屏幕链接已过期。"
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "所选记忆提供方在此构建中不可用。"

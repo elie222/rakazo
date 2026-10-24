@@ -4938,6 +4938,18 @@ msgstr "Модель вернула непригодный ответ. Попр�
 msgid "The provider is rate-limiting requests."
 msgstr "Поставщик ограничивает частоту запросов."
 
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "Соединение с экраном закрыто."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Экран не ответил."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "Срок действия ссылки на экран истёк."
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
 msgstr "Выбранный поставщик памяти недоступен в этой сборке."
