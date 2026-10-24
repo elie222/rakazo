@@ -1023,6 +1023,90 @@ describeIntegration("agent import", () => {
     }
   });
 
+  it("counts an MCP server as set up only with non-blank values for every name it needs", async () => {
+    const cookie = await signup(app, `import-blank-${stamp}@rakazo.test`, "Blank User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content:
+          '{ mcp: { servers: { api: { url: "https://mcp.example.com/mcp", headers: { Authorization: "x", "X-Team": "y" } } } } }',
+      },
+    ];
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      name: "Blank",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [],
+        skills: [],
+        mcpServers: ["mcp:api"],
+      },
+    });
+    const server = await db.mcpServer.findFirstOrThrow({
+      where: {
+        slug: "api",
+        userId: (await db.bot.findUniqueOrThrow({ where: { id: bot.id } })).userId,
+      },
+    });
+    await rpc(app, cookie, "mcp/assignments/approve", { botId: bot.id, serverId: server.id });
+    const withHeaders = async (headers: Record<string, string>) => {
+      await rpc(app, cookie, "mcp/servers/update", {
+        id: server.id,
+        config: {
+          slug: "api",
+          name: "api",
+          description: "",
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.com/mcp",
+          headers,
+          enabled: true,
+        },
+      });
+      const state = await rpc<{ serverIds: Record<string, unknown> }>(
+        app,
+        cookie,
+        "bots/importSetupState",
+        { botId: bot.id, providers: [], serverIds: [server.id], routineIds: [] },
+      );
+      return state.serverIds[server.id];
+    };
+    // Stored names with blank values are not set, and every required name must be set.
+    expect(await withHeaders({ Authorization: "", "X-Team": "" })).toBe(false);
+    expect(await withHeaders({ Authorization: "   ", "X-Team": "\t" })).toBe(false);
+    expect(await withHeaders({ Authorization: "Bearer placeholder-set", "X-Team": "" })).toBe(
+      false,
+    );
+    expect(await withHeaders({ Authorization: "Bearer placeholder-set", "X-Team": "ops" })).toBe(
+      true,
+    );
+
+    // A record without the requirements it was shown (older data) counts as not done.
+    const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
+    const created = record.created as { mcpServers: Record<string, unknown>[] };
+    await db.agentImport.update({
+      where: { id: record.id },
+      data: {
+        created: {
+          ...created,
+          mcpServers: created.mcpServers.map(({ id, revision }) => ({ id, revision })),
+        },
+      },
+    });
+    const unknown = await rpc<{ serverIds: Record<string, unknown> }>(
+      app,
+      cookie,
+      "bots/importSetupState",
+      {
+        botId: bot.id,
+        providers: [],
+        serverIds: [server.id],
+        routineIds: [],
+      },
+    );
+    expect(unknown.serverIds[server.id]).toBe(false);
+  });
+
   it("undoes only its own import when two imports bring the same names", async () => {
     const cookie = await signup(app, `import-twins-${stamp}@rakazo.test`, "Twins User");
     const files = [

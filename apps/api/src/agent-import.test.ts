@@ -60,6 +60,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     },
     hasModelConnection: async () => false,
     connectedProviders: async () => new Set(),
+    mcpCredentialValues: async () => null,
     validateBotModel: async () => "Connect that model provider first",
     stdioAllowed: () => false,
     prepareModelKey: async () => ({}),
@@ -213,5 +214,34 @@ describe("reading an import's setup state", () => {
     expect(connectedProviders).toHaveBeenCalledTimes(1);
     expect(connectedProviders).toHaveBeenCalledWith(actor, ["openrouter", "deepseek"]);
     expect(hasModelConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe("an imported stdio server's setup state", () => {
+  it("cannot be verified when it needs a program, so it is never reported done", async () => {
+    const created = {
+      mcpServers: [
+        { id: "files", revision: 1, credentials: [], env: [], unverifiable: true },
+        { id: "docs", revision: 1, credentials: [], env: [] },
+      ],
+    };
+    const prisma = {
+      mcpServer: {
+        findMany: async () => [
+          { id: "files", secretId: null },
+          { id: "docs", secretId: null },
+        ],
+      },
+      botMcpServer: { findMany: async () => [{ serverId: "files" }, { serverId: "docs" }] },
+      routine: { findMany: async () => [] },
+      agentImport: { findMany: async () => [{ created }] },
+    };
+    const state = await agentImportSetupState(services({ prisma: prisma as never }), actor, {
+      botId: "bot-1",
+      providers: [],
+      serverIds: ["files", "docs"],
+      routineIds: [],
+    });
+    expect(state.serverIds).toEqual({ files: "unverifiable", docs: true });
   });
 });

@@ -41,8 +41,11 @@ export const AgentImportSetupStateInput = z.strictObject({
 export const AgentImportSetupStateSchema = z.object({
   /** A model credential is connected for the provider. */
   providers: z.record(z.string(), z.boolean()),
-  /** The server has credentials, or this bot was given it. */
-  serverIds: z.record(z.string(), z.boolean()),
+  /**
+   * The server is given to this bot and has every value it needs; `unverifiable` when it
+   * also needs a program or local paths, which cannot be checked from here.
+   */
+  serverIds: z.record(z.string(), z.union([z.boolean(), z.literal("unverifiable")])),
   /** The routine is turned on. */
   routineIds: z.record(z.string(), z.boolean()),
 });

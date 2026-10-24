@@ -72,6 +72,14 @@ export type AgentImportServices<PreparedKey = unknown> = {
     },
   ) => Promise<Bot>;
   hasModelConnection: (actor: Actor, provider: string) => Promise<boolean>;
+  /**
+   * The header and env values stored for an MCP server's credential, decrypted on the server
+   * only to tell set from blank; never returned to a client. Null when there is none.
+   */
+  mcpCredentialValues: (
+    actor: Actor,
+    secretId: string,
+  ) => Promise<{ headers: Record<string, string>; env: Record<string, string> } | null>;
   /** Which of these providers the actor has a connection for, read once. */
   connectedProviders: (actor: Actor, providers: string[]) => Promise<Set<string>>;
   /** `bots.update`'s model check; an error message or null. */
@@ -145,8 +153,17 @@ type ImportRecord = {
   skills: { id: string; hash: string }[];
   spaceMemory: { id: string; revision: number }[];
   botMemory: { id: string; revision: number }[];
-  /** `credentials`/`env`: names that need values before the server works (its checklist). */
-  mcpServers: { id: string; revision: number; credentials?: string[]; env?: string[] }[];
+  /**
+   * `credentials`/`env`: names that need values before the server works (its checklist);
+   * `unverifiable`: it also needs a program or local paths, which cannot be checked.
+   */
+  mcpServers: {
+    id: string;
+    revision: number;
+    credentials?: string[];
+    env?: string[];
+    unverifiable?: boolean;
+  }[];
   routines: { id: string; updatedAt?: string }[];
   credentials: { id: string; secretId: string; provider: string }[];
   /** Added to a bot that existed before: Undo removes what was added, never the bot. */
@@ -635,6 +652,9 @@ export async function createImportedBot<PreparedKey>(
         revision: row.revision,
         credentials: named("credentials"),
         env: named("env"),
+        unverifiable:
+          status?.kind === "needs_setup" &&
+          status.needs.some((need) => need.kind === "program" || need.kind === "local_paths"),
       });
       if (status?.kind === "needs_setup") {
         setup.push({ kind: "mcp", serverId: row.id, name: row.slug, needs: status.needs });
@@ -910,7 +930,7 @@ export async function agentImportSetupState(
   const [servers, assigned, routines, imports] = await Promise.all([
     db.mcpServer.findMany({
       where: { ...owner, id: { in: input.serverIds } },
-      select: { id: true, secretId: true, headers: true, env: true },
+      select: { id: true, secretId: true },
     }),
     db.botMcpServer.findMany({
       where: { ...owner, botId: input.botId, serverId: { in: input.serverIds } },
@@ -931,29 +951,35 @@ export async function agentImportSetupState(
     ),
   );
   const given = new Set(assigned.map((row) => row.serverId));
-  const keys = (value: unknown) =>
-    new Set(value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : []);
+  const set = (value: string | undefined) => typeof value === "string" && value.trim() !== "";
   // A server is set up when it is given to this bot and every header and setting it was shown
-  // to need has a stored value. Approval alone is not setup.
-  const serverDone = (id: string) => {
+  // to need has a non-blank stored value. Approval alone is not setup; a program or local
+  // paths cannot be checked from here; a record without its requirements is unknown.
+  const serverState = async (id: string): Promise<AgentImportSetupState["serverIds"][string]> => {
     const row = servers.find((server) => server.id === id);
     const need = needed.get(id);
-    if (!row || !need || !given.has(id)) return false;
-    const required = [...(need.credentials ?? []), ...(need.env ?? [])];
-    if (required.length && !row.secretId) return false;
-    const headers = keys(row.headers);
-    const env = keys(row.env);
+    if (!row || !need || !Array.isArray(need.credentials) || !Array.isArray(need.env)) {
+      return false;
+    }
+    if (need.unverifiable) return "unverifiable";
+    if (!given.has(id)) return false;
+    if (need.credentials.length === 0 && need.env.length === 0) return true;
+    const values = row.secretId ? await services.mcpCredentialValues(actor, row.secretId) : null;
+    if (!values) return false;
     return (
-      (need.credentials ?? []).every((name) => headers.has(name)) &&
-      (need.env ?? []).every((name) => env.has(name))
+      need.credentials.every((name) => set(values.headers[name])) &&
+      need.env.every((name) => set(values.env[name]))
     );
   };
+  const serverStates = Object.fromEntries(
+    await Promise.all(input.serverIds.map(async (id) => [id, await serverState(id)] as const)),
+  );
   // Each provider once, with one read of the actor's connections.
   const providers = [...new Set(input.providers)];
   const connected = await services.connectedProviders(actor, providers);
   return {
     providers: Object.fromEntries(providers.map((provider) => [provider, connected.has(provider)])),
-    serverIds: Object.fromEntries(input.serverIds.map((id) => [id, serverDone(id)])),
+    serverIds: serverStates,
     routineIds: Object.fromEntries(
       input.routineIds.map((id) => [id, routines.some((row) => row.id === id && row.active)]),
     ),

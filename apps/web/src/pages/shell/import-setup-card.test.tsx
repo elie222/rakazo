@@ -198,3 +198,19 @@ describe("rows the checklist cannot check", () => {
     expect(rows[4]!.textContent).toContain("Check this yourself");
   });
 });
+
+describe("an empty checklist", () => {
+  it("never says setup is complete", async () => {
+    importSetupState.mockResolvedValue({ providers: {}, serverIds: {}, routineIds: {} });
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <ImportSetupCard botId="bot-1" block={{ kind: "import_setup", items: [] } as never} />,
+      );
+    });
+    expect(container.textContent).not.toContain("Setup complete");
+  });
+});

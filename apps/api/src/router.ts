@@ -1263,6 +1263,16 @@ export function createRouter(deps: RouterDeps) {
       ),
     hasModelConnection: async (actor, provider) =>
       Boolean(await findModelCredential(deps.prisma, actor, provider)),
+    mcpCredentialValues: async (actor, secretId) => {
+      const secret = await deps.prisma.secret.findFirst({
+        where: { id: secretId, spaceId: actor.spaceId, userId: actor.userId },
+      });
+      if (!secret) return null;
+      const material: McpSecretMaterial = JSON.parse(
+        await deps.secrets.load(secret.ciphertext, { recordId: secret.id }),
+      );
+      return { headers: material.headers ?? {}, env: material.env ?? {} };
+    },
     connectedProviders: async (actor, providers) => {
       const rows = await deps.prisma.userModelCredential.findMany({
         where: { userId: actor.userId },
