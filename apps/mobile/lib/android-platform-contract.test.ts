@@ -53,6 +53,8 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("private fun stopIfCurrent(generation: Long)");
     expect(service).toContain("synchronized(sessionLock)");
     expect(service).toContain("working.filterNot(::isOpenThread)");
+    expect(service).toContain("createConfigurationContext");
+    expect(live).toContain("getActiveUiLocale");
     expect(service).toContain("!run.notificationsEnabled || isOpenThread(run)");
     expect(service).toMatch(
       /waiting_input[\s\S]*filter \{ it\.notificationsEnabled \}[\s\S]*alertedAttention\.add/,
@@ -108,7 +110,7 @@ describe("Android mobile platform contract", () => {
       "val working = active.filter(::isWorking).filter { it.notificationsEnabled }",
     );
     expect(service).toMatch(
-      /if \(visibleWorking\.isEmpty\(\)\) clearLive\(\) else showLive\(visibleWorking/,
+      /if \(visibleWorking\.isEmpty\(\)\) clearLive\(\) else \{[\s\S]*showLive\(visibleWorking, avatarStyle, copyContext\)/,
     );
     expect(service).toMatch(
       /private fun showLive\(active: List<RunRecord>[\s\S]*val primary = active\.first\(\)/,
