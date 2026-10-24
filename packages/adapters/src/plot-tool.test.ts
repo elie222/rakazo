@@ -21,6 +21,42 @@ const penguinish = [
 ];
 
 describe("render_plot", () => {
+  it.each(["axisX", "axisY", "gridX", "gridY"])(
+    "rejects excessive generated ticks in a %s mark without input rows",
+    (type) => {
+      expect(() =>
+        renderPlotSpecToSvg(
+          {
+            x: { domain: [0, 1] },
+            y: { domain: [0, 1] },
+            marks: [{ type, options: { ticks: 10_000 } }],
+          },
+          undefined,
+          dom(),
+        ),
+      ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+    },
+  );
+
+  it.each(["x", "y", "fx", "fy"])("rejects excessive ticks in the %s scale", (scale) => {
+    expect(() =>
+      renderPlotSpecToSvg(
+        { [scale]: { domain: [0, 1], ticks: 10_000 }, marks: [{ type: "frame" }] },
+        undefined,
+        dom(),
+      ),
+    ).toThrow("Plot tick count exceeds the 1,000-tick limit.");
+  });
+
+  it("renders a bounded custom tick count", () => {
+    const { plotted } = buildPlotParts(
+      { x: { domain: [0, 10] }, marks: [{ type: "axisX", options: { ticks: 10 } }] },
+      undefined,
+      dom(),
+    );
+    expect(plotted.querySelectorAll("text")).toHaveLength(11);
+  });
+
   it("renders a titled scatterplot with a categorical legend into standalone SVG", () => {
     const svg = renderPlotSpecToSvg(
       {
