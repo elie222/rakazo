@@ -14,7 +14,7 @@ CREATE TABLE "agent_imports" (
     CONSTRAINT "agent_imports_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "agent_imports_botId_key" ON "agent_imports"("botId");
+CREATE INDEX "agent_imports_botId_createdAt_idx" ON "agent_imports"("botId", "createdAt");
 CREATE INDEX "agent_imports_spaceId_userId_idx" ON "agent_imports"("spaceId", "userId");
 CREATE UNIQUE INDEX "agent_imports_spaceId_userId_importKey_key" ON "agent_imports"("spaceId", "userId", "importKey");
 
