@@ -183,6 +183,8 @@ export function AgentImportForm({
         ...found.routines,
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
+        // Key-looking text reaches a bot only when the user ticks it.
+        ...[...found.instructions, ...found.memory].filter((item) => item.containsKey),
       ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
@@ -478,6 +480,8 @@ export function AgentImportForm({
 
   // An untouched file the source wrote for every new agent.
   const defaultNote = plan?.source === "hermes" ? t`Default from Hermes` : t`Default from OpenClaw`;
+  // Never the matched text: the expanded item shows the user's own text, unchanged.
+  const keyNote = t`Looks like it contains a key`;
   const skipReason = (reason: AgentImportSkipReason) =>
     ({
       runtime: t`Not used by Rakazo`,
@@ -645,6 +649,7 @@ export function AgentImportForm({
                     note(
                       [
                         entry.role === "persona" ? t`Persona` : t`Working instructions`,
+                        entry.containsKey ? keyNote : null,
                         entry.stock ? defaultNote : mentions ? t`Mentions OpenClaw features` : null,
                       ]
                         .filter(Boolean)
@@ -691,7 +696,13 @@ export function AgentImportForm({
                         <NativeSelectOption value="bot">{t`This bot`}</NativeSelectOption>
                         <NativeSelectOption value="space">{t`All bots`}</NativeSelectOption>
                       </NativeSelect>
-                      {entry.stock ? note(defaultNote) : null}
+                      {entry.containsKey || entry.stock
+                        ? note(
+                            [entry.containsKey ? keyNote : null, entry.stock ? defaultNote : null]
+                              .filter(Boolean)
+                              .join(" · "),
+                          )
+                        : null}
                     </>,
                   );
                 })}
@@ -708,12 +719,24 @@ export function AgentImportForm({
               </p>
               <ul className="mt-2">
                 {plan.skills.map(
-                  ({ id, title, name: savedAs, content, description, warnings, status }) =>
+                  ({
+                    id,
+                    title,
+                    name: savedAs,
+                    content,
+                    description,
+                    warnings,
+                    status,
+                    containsKey,
+                  }) =>
                     item(
                       id,
                       savedAs === title ? title : t`${title}, saved as ${savedAs}`,
                       content,
-                      statusNote(status, warnings),
+                      <>
+                        {containsKey ? note(keyNote) : null}
+                        {statusNote(status, warnings)}
+                      </>,
                       description,
                       status.kind === "unsupported",
                     ),

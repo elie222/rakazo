@@ -15,6 +15,7 @@ import {
   isAgentImportSecretFile,
   prepareAgentImportFiles,
 } from "./config.js";
+import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
 import { HERMES_INSTRUCTION_FILES, HERMES_MEMORY_FILES, parseHermes } from "./hermes.js";
 import {
@@ -46,6 +47,7 @@ export {
   readAgentImportConfig,
   stripAgentImportSecrets,
 } from "./config.js";
+export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export type { SkillFiles } from "./shared.js";
 
@@ -343,8 +345,21 @@ function isKnownAgentFile(path: string): boolean {
 }
 
 function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportPlan {
+  // Every source, the any-assistant document too: key-looking text is flagged, never changed.
+  const flag = <T extends { content: string }>(item: T) =>
+    looksLikeCredential(item.content) ? { ...item, containsKey: true } : item;
   return resolveAgentImportNames(
-    { source, ...parsed, model: null, mcpServers: [], routines: [], apiKeys: [] },
+    {
+      source,
+      ...parsed,
+      instructions: parsed.instructions.map(flag),
+      memory: parsed.memory.map(flag),
+      skills: parsed.skills.map(flag),
+      model: null,
+      mcpServers: [],
+      routines: [],
+      apiKeys: [],
+    },
     { spaceMemoryPaths: [], skillNames: [] },
   );
 }

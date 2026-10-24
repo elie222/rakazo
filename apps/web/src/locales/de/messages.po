@@ -3229,6 +3229,10 @@ msgstr ""
 msgid "Log out"
 msgstr "Abmelden"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "Scheint einen Schlüssel zu enthalten"
+
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx

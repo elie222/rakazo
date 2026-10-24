@@ -883,3 +883,23 @@ test("an agent dropped into a chat is offered for import, never uploaded first",
   await expect(page.getByRole("button", { name: "Remove photos.zip" })).toBeVisible();
   await expect(choice).toHaveCount(0);
 });
+
+test("an item with key-looking text starts unticked and says so", async ({ page }, testInfo) => {
+  await signup(page, `agent-import-key-${Date.now()}@rakazo.test`, "password12", "Keys");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  // Synthetic, built from parts so no scanner mistakes it for a leak.
+  const key = ["sk", "-proj-", "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zA12345678"].join("");
+  const panel = await openImport(page);
+  await panel
+    .getByRole("textbox", { name: "Paste the reply" })
+    .fill(`# Instructions\nBe brief.\n\n# Memory\n## Deploy\nThe deploy key is ${key}.\n`);
+  await panel.getByRole("button", { name: "Continue", exact: true }).click();
+  const memory = panel.getByTestId("agent-import-memory");
+  await expect(memory).toContainText("Looks like it contains a key");
+  await expect(memory.getByRole("checkbox").first()).not.toBeChecked();
+  // The label never repeats the key; the user's own text is there when expanded.
+  await expect(memory.getByRole("checkbox").first()).not.toHaveAccessibleName(new RegExp(key));
+  await captureScreenshot(page, testInfo, "agent-import-contains-key");
+});

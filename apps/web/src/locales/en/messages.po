@@ -3229,6 +3229,10 @@ msgstr "Local computer access requires the latest desktop app."
 msgid "Log out"
 msgstr "Log out"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "Looks like it contains a key"
+
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx

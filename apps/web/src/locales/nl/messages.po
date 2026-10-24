@@ -3229,6 +3229,10 @@ msgstr "Lokale computertoegang vereist de nieuwste desktopapp."
 msgid "Log out"
 msgstr "Uitloggen"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "Lijkt een sleutel te bevatten"
+
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx

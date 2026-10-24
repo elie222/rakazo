@@ -3229,6 +3229,10 @@ msgstr ""
 msgid "Log out"
 msgstr "लॉग आउट"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "इसमें कोई कुंजी लगती है"
+
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx

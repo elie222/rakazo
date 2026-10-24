@@ -74,6 +74,11 @@ export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRo
 
 /** Unchanged from the default the source writes when an agent is created: starts unticked. */
 const stock = z.boolean().default(false);
+/**
+ * Its text has something shaped like a credential (an API key, a token, a private key): it
+ * starts unticked and says so. The text is never changed, and the match is never named.
+ */
+const containsKey = z.boolean().optional();
 
 export const AgentImportInstructionSchema = z.object({
   id: z.string(),
@@ -81,6 +86,7 @@ export const AgentImportInstructionSchema = z.object({
   content: z.string(),
   role: AgentImportInstructionRoleSchema.default("working"),
   stock,
+  containsKey,
   /** Sections and files of the source's own runtime the text refers to, e.g. `BOOTSTRAP.md`. */
   mentions: z.array(z.string()).default([]),
 });
@@ -95,6 +101,7 @@ export const AgentImportMemorySchema = z.object({
   /** Path in space memory; differs from `path` when that name is already taken. */
   spacePath: z.string(),
   stock,
+  containsKey,
 });
 export type AgentImportMemory = z.infer<typeof AgentImportMemorySchema>;
 
@@ -109,6 +116,7 @@ export const AgentImportSkillSchema = z.object({
   content: z.string(),
   warnings,
   status,
+  containsKey,
 });
 export type AgentImportSkill = z.infer<typeof AgentImportSkillSchema>;
 
