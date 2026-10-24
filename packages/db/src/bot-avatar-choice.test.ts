@@ -106,6 +106,19 @@ describe("chooseBotAvatar", () => {
     expect(chosen.color).not.toBe("#F5A03C");
   });
 
+  it("draws the organic family the caller picked, even one the user's bots already use", () => {
+    const existing = idsForFamilies([3, 3, 3]).map((id) => ({ id, color: "#3EC5A8" }));
+    for (let family = 0; family < ORGANIC_AVATAR_FAMILY_COUNT; family++) {
+      for (let seed = 1; seed <= 5; seed++) {
+        const chosen = chooseBotAvatar(existing, "#8B5CF6", { random: seeded(seed), family });
+        expect(organicAvatarFamily(chosen.id)).toBe(family);
+        expect(chosen.id).toMatch(/^c[a-z0-9]{24}$/);
+        expect(chosen.color).toBe("#8B5CF6");
+      }
+    }
+    expect(organicAvatarFamily(chooseBotAvatar(existing, undefined, { family: 3 }).id)).toBe(3);
+  });
+
   it("keeps a colour the caller chose", () => {
     expect(chooseBotAvatar([], "#123456", { random: seeded(4), now: 0 }).color).toBe("#123456");
   });

@@ -1,5 +1,5 @@
 ---
-import { COMPARED_ON, GET_STARTED } from "../alternatives";
+import { GET_STARTED, ROUNDUP_UPDATED } from "../alternatives";
 import { ogPublicPath } from "../og-pages";
 import { DOCS_URL, GITHUB_URL } from "../site";
 import {
@@ -29,7 +29,7 @@ const columns = ROUNDUP_COLUMNS;
   ogImage={ogPublicPath("alternatives")}
 >
   <h1>{ROUNDUP_H1}</h1>
-  <p class="alt-note">Updated {COMPARED_ON}.</p>
+  <p class="alt-note">Updated {ROUNDUP_UPDATED}.</p>
   <ul>
     {ROUNDUP_CHANGELOG.map((line) => <li>{line}</li>)}
   </ul>

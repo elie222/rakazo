@@ -14,7 +14,7 @@ test("onboarding requires a model and uses compact model selects without mislead
           ...body.json,
           needsModel: true,
           defaultProvider: "openrouter",
-          defaultModel: "openai/gpt-5.6-luna",
+          defaultModel: "openai/gpt-5.5",
         },
       },
     });
@@ -36,7 +36,16 @@ test("onboarding requires a model and uses compact model selects without mislead
   await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-choose-provider");
   await provider.click();
+  await page.getByRole("option", { name: "ChatGPT subscription", exact: true }).click();
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toHaveText("GPT-6 Luna");
+  await captureScreenshot(page, testInfo, "onboarding-luna-default");
+  await provider.click();
+  await page.getByRole("option", { name: "OpenAI API", exact: true }).click();
+  await expect(model).toHaveText("GPT-6 Luna");
+  await provider.click();
   await page.getByRole("option", { name: "OpenRouter", exact: true }).click();
+  await expect(model).toContainText("GPT-6 Luna");
   await page.getByLabel("API key", { exact: true }).fill("   ");
   await expect(continueButton).toBeDisabled();
   await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
@@ -74,6 +83,8 @@ test("onboarding requires a model and uses compact model selects without mislead
   await captureScreenshot(page, testInfo, "onboarding-provider-menu");
   await page.getByRole("option", { name: "Anthropic API", exact: true }).click();
   await expect(provider).toContainText("Anthropic API");
+  await expect(model).toHaveText("Claude Haiku 5.5");
+  await captureScreenshot(page, testInfo, "onboarding-haiku-default");
   await expect(page.getByRole("button", { name: /Sign in with Claude/ })).toHaveCount(0);
   await expect(page.getByLabel(/API key/)).toHaveValue("");
 

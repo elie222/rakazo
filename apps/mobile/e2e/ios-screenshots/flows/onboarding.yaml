@@ -14,15 +14,12 @@ name: Onboarding
     visible: "No artifacts yet|Artifacts"
     timeout: 15000
 - takeScreenshot: 02-empty-artifacts
-- openLink: "rakazo:///new"
+- openLink: "rakazo:///"
 - extendedWaitUntil:
-    visible: "Name this bot"
+    visible: "Create"
     timeout: 15000
-- takeScreenshot: 03-new-bot
-- tapOn: "Name this bot"
-- inputText: "Guide"
-- hideKeyboard
 - tapOn: "Create"
+- tapOn: "New bot"
 - extendedWaitUntil:
     visible: "What do you want me on first\\?"
     timeout: 30000

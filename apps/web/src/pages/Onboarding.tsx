@@ -42,7 +42,7 @@ import {
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
@@ -50,6 +50,7 @@ import {
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { SignupSurvey } from "../components/SignupSurvey";
 import { useCopyText } from "../lib/copy-text";
+import { providerDisplayName } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import type { ModelPreflightFailure } from "../lib/model-connection-preflight";
 import {
@@ -136,17 +137,19 @@ async function ensureFirstBot(): Promise<{ id: string }> {
   return firstBotEnsure;
 }
 
-function providerLabel(entry: ModelCatalogEntry): string {
-  return entry.provider === "openai-codex" ? "ChatGPT" : (entry.providerName ?? entry.provider);
-}
-
 export function OnboardingPage() {
   const { t } = useLingui();
   const navigate = useNavigate();
   const fieldId = useId();
-  const [step, setStep] = useState<"loading" | "survey" | "model" | "bot">("loading");
+  // The URL holds the survey and model steps, so /onboarding/survey and /onboarding/model open directly.
+  const { step: routeStep } = useParams();
+  const linkedStep = routeStep === "survey" || routeStep === "model" ? routeStep : undefined;
+  const [creatingBot, setCreatingBot] = useState(false);
+  const [surveyDone, setSurveyDone] = useState(false);
+  const step = creatingBot ? "bot" : surveyDone ? "loading" : (linkedStep ?? "loading");
   const [billingEnabled, setBillingEnabled] = useState(false);
-  const afterSurveyRef = useRef<"model" | "bot">("bot");
+  // The step after the survey; null until me loads.
+  const [afterSurvey, setAfterSurvey] = useState<"model" | "bot" | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [provider, setProvider] = useState("");
   const [providerAuth, setProviderAuth] = useState<ProviderAuth | undefined>();
@@ -169,7 +172,6 @@ export function OnboardingPage() {
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
-  const deploymentDefaultModelRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -192,7 +194,7 @@ export function OnboardingPage() {
     onClearError: () => setError(null),
     onError: setError,
     onFinished: async () => {
-      setStep("bot");
+      goTo("bot");
     },
   });
 
@@ -201,17 +203,29 @@ export function OnboardingPage() {
       .then(([me, models]) => {
         setBillingEnabled(me.billingEnabled);
         setCatalog(models);
-        // No provider is preselected; the deployment default only seeds the model once one is chosen.
-        deploymentDefaultModelRef.current = me.defaultModel;
         const next = me.needsModel ? "model" : "bot";
-        afterSurveyRef.current = next;
-        setStep(me.needsSignupSurvey ? "survey" : next);
+        setAfterSurvey(next);
+        if (!linkedStep) goTo(me.needsSignupSurvey ? "survey" : next);
       })
-      .catch(() => setStep("bot"));
+      .catch(() => {
+        setAfterSurvey("bot");
+        if (!linkedStep) goTo("bot");
+      });
     return () => {
       modelProbe.invalidate();
     };
   }, []);
+
+  useEffect(() => {
+    if (!surveyDone || !afterSurvey) return;
+    setSurveyDone(false);
+    goTo(afterSurvey);
+  }, [surveyDone, afterSurvey]);
+
+  function goTo(next: "survey" | "model" | "bot") {
+    if (next === "bot") setCreatingBot(true);
+    navigate(next === "bot" ? "/onboarding" : `/onboarding/${next}`, { replace: true });
+  }
 
   const providers = useMemo(() => {
     const seen = new Map<string, ModelCatalogEntry>();
@@ -252,11 +266,11 @@ export function OnboardingPage() {
   // Subscriptions and the common API providers first; every other provider follows.
   const providerOptions = useMemo(() => {
     const byId = new Map(providers.map((entry) => [entry.provider, entry]));
+    // Beside the subscriptions, the key-based options say API.
     const optionLabel = (id: string, auth?: ProviderAuth) => {
-      if (id === "openai-codex") return t`ChatGPT subscription`;
-      if (id === "anthropic") return auth === "sign-in" ? t`Claude subscription` : t`Anthropic API`;
+      if (id === "anthropic" && auth === "key") return t`Anthropic API`;
       if (id === "openai") return t`OpenAI API`;
-      return providerLabel(byId.get(id)!);
+      return providerDisplayName(id, byId.get(id)?.providerName ?? id, auth);
     };
     const main = MAIN_PROVIDER_OPTIONS.filter((option) => byId.has(option.provider)).map(
       (option) => ({
@@ -269,7 +283,7 @@ export function OnboardingPage() {
         (entry) => !MAIN_PROVIDER_OPTIONS.some((option) => option.provider === entry.provider),
       )
       .flatMap((entry) => {
-        const item = { value: entry.provider, label: providerLabel(entry) };
+        const item = { value: entry.provider, label: entry.providerName ?? entry.provider };
         return entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID
           ? [item, { value: "ollama-preset", label: t`Ollama Cloud` }]
           : [item];
@@ -335,7 +349,7 @@ export function OnboardingPage() {
     setModelId(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? ""
-        : pickCatalogModelId(catalog, nextProvider, deploymentDefaultModelRef.current),
+        : pickCatalogModelId(catalog, nextProvider),
     );
     setBaseUrl(presetBaseUrl ?? "");
     setReasoning(false);
@@ -483,7 +497,7 @@ export function OnboardingPage() {
           label: selected?.providerName ?? provider,
         });
       }
-      setStep("bot");
+      goTo("bot");
     } catch (err) {
       setError(errorText(err, t`Could not save model`));
     }
@@ -533,7 +547,7 @@ export function OnboardingPage() {
             <Spinner aria-label={t`Loading…`} />
           </p>
         ) : null}
-        {step === "survey" ? <SignupSurvey onDone={() => setStep(afterSurveyRef.current)} /> : null}
+        {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (
           <div>
             <h1 className="text-[32px] font-medium text-foreground">

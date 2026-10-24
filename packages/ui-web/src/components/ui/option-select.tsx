@@ -31,7 +31,8 @@ function OptionSelect<T extends string>({
   "data-testid": testId,
 }: {
   id?: string;
-  value: T;
+  /** null shows nothing chosen yet. */
+  value: T | null;
   options: readonly SelectOption<T>[];
   onValueChange: (value: T) => void;
   disabled?: boolean;

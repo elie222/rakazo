@@ -28,6 +28,7 @@ import {
   cancelResponseBody,
   displayIdentityEvent,
   displayIdentityResult,
+  displayName,
   ensureAiDataConsent,
   isActive,
   isBackgroundRunTrigger,
@@ -588,6 +589,30 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     );
 }
 
+export async function updateAccountName(name: string): Promise<void> {
+  const nextName = name.trim();
+  if (!nextName || nextName.length > 80 || !displayName(nextName, "")) {
+    throw new Error(t("Could not update name"));
+  }
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/update-user`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "rakazo://",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ name: nextName }),
+    },
+    {},
+  );
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not update name")),
+    );
+}
+
 /** Revoking other sessions also refuses this one until the replacement is saved. */
 let passwordChangesInFlight = 0;
 
@@ -996,6 +1021,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
   | "fleetManagement"
+  | "crossSpaceCommunication"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 

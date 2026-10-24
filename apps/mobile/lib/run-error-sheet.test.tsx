@@ -118,10 +118,13 @@ describe("run error recovery", () => {
     act(() => node.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click());
     expect(onClose).toHaveBeenCalledOnce();
   });
-  it("offers model recovery without suggesting a key failure for a missing model", () => {
+  it.each([
+    '404: {"message":"Model unavailable"}',
+    "This model's context window is too small. Choose another model.",
+  ])("offers model recovery without suggesting a key failure for %s", (details) => {
     const node = mount(
       createElement(RunErrorSheet, {
-        details: '404: {"message":"Model unavailable"}',
+        details,
         onClose: vi.fn(),
         onConnection: vi.fn(),
         onModel: vi.fn(),

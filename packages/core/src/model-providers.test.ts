@@ -55,6 +55,25 @@ describe("pickCatalogModelId", () => {
     expect(pickCatalogModelId(catalog, "openai-codex")).toBe("gpt-5.3-codex-spark");
   });
 
+  it("uses a recommendation before catalog order, but preserves a saved choice", () => {
+    const recommendedCatalog = [
+      { provider: "provider-a", id: "first" },
+      { provider: "provider-a", id: "recommended", recommended: true },
+      { provider: "provider-b", id: "other", recommended: true },
+    ];
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a")).toBe("recommended");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "first")).toBe("first");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "vendor/first")).toBe("first");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-a", "unavailable")).toBe("recommended");
+    expect(pickCatalogModelId(recommendedCatalog, "provider-c")).toBe("");
+    expect(
+      pickCatalogModelId(
+        recommendedCatalog.filter((entry) => !entry.recommended),
+        "provider-a",
+      ),
+    ).toBe("first");
+  });
+
   it("prefers an exact preferred id within the provider", () => {
     expect(pickCatalogModelId(catalog, "openai-codex", "gpt-6-luna")).toBe("gpt-6-luna");
     expect(pickCatalogModelId(catalog, "openrouter", "openai/gpt-6-luna")).toBe(

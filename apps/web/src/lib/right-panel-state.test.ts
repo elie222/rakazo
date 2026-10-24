@@ -22,13 +22,17 @@ describe("right panel preferences", () => {
     writeRightPanelState("user-a:space-a:bot-a", null, "routine-a");
     expect(readRightPanelState("user-a:space-a:bot-a")).toEqual({ panel: null });
   });
-  it.each(["not json", "null", "[]", '{"panel":"unknown"}', '{"panel":{}}', '{"panel":"create"}'])(
-    "ignores malformed preference %s",
-    (value) => {
-      vi.stubGlobal("localStorage", { getItem: () => value });
-      expect(readRightPanelState("state")).toEqual({ panel: null });
-    },
-  );
+  it.each([
+    "not json",
+    "null",
+    "[]",
+    '{"panel":"unknown"}',
+    '{"panel":{}}',
+    '{"panel":"create-group"}',
+  ])("ignores malformed preference %s", (value) => {
+    vi.stubGlobal("localStorage", { getItem: () => value });
+    expect(readRightPanelState("state")).toEqual({ panel: null });
+  });
   it("keeps working when browser storage is unavailable", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => {
@@ -41,7 +45,7 @@ describe("right panel preferences", () => {
     expect(readRightPanelState("state")).toEqual({ panel: null });
     expect(() => writeRightPanelState("state", "computer")).not.toThrow();
   });
-  it("skips ephemeral create panels and builds scoped keys", () => {
+  it("skips the ephemeral create-group panel and builds scoped keys", () => {
     const entries = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => entries.get(key) ?? null,
@@ -50,8 +54,6 @@ describe("right panel preferences", () => {
     const key = rightPanelStorageKey("user-a", "space-a", "bot", "bot-a");
     expect(key).toBe("rakazo:right-panel-state:user-a:space-a:bot:bot-a");
     writeRightPanelState(key, "computer");
-    writeRightPanelState(key, "create");
-    expect(readRightPanelState(key)).toEqual({ panel: "computer" });
     writeRightPanelState(key, "create-group");
     expect(readRightPanelState(key)).toEqual({ panel: "computer" });
   });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
+import { MODEL_CONTEXT_TOO_SMALL_ERROR } from "@rakazo/core";
 
 export type ContextStrategy = AgentContextStrategy;
 export interface ContextMessage {
@@ -35,8 +36,14 @@ export class ContextBudgetError extends Error {
   constructor(
     public readonly estimatedTokens: number,
     public readonly availableTokens: number,
+    /** Instructions and tools alone fill the window, so no conversation can fit. */
+    modelTooSmall = false,
   ) {
-    super("Required context exceeds the model context budget");
+    super(
+      modelTooSmall
+        ? MODEL_CONTEXT_TOO_SMALL_ERROR
+        : "Required context exceeds the model context budget",
+    );
     this.name = "ContextBudgetError";
   }
 }
@@ -462,6 +469,20 @@ export function selectContext<T extends ContextMessage>(
   const fixed = fixedTokens(options.budget);
   const available = Math.floor(options.budget.contextWindow - options.budget.outputReserve - fixed);
   const groups = messageGroups(messages, options.budget.imageTokens);
+  // Pi can carry mandatory instructions and tool schemas in system messages.
+  // A new conversation cannot make either representation fit a smaller model.
+  const requiredFixed =
+    fixed +
+    groups
+      .filter((group) => messages[group.indexes[0]!]!.role === "system")
+      .reduce((total, group) => total + group.tokens, 0);
+  if (requiredFixed > options.budget.contextWindow - options.budget.outputReserve) {
+    throw new ContextBudgetError(
+      requiredFixed,
+      options.budget.contextWindow - options.budget.outputReserve,
+      true,
+    );
+  }
   // A result followed by any assistant message has been read, with or without a later tool call.
   const latestAssistant = messages.findLastIndex((message) => message.role === "assistant");
   const protectedIndexes = new Set(options.protectedIndexes ?? []);
@@ -542,6 +563,7 @@ export function selectContext<T extends ContextMessage>(
     throw new ContextBudgetError(
       used + fixed,
       options.budget.contextWindow - options.budget.outputReserve,
+      available <= 0,
     );
   }
   const keepPrefix =

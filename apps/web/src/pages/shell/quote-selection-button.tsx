@@ -62,7 +62,7 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
       onClick={onQuote}
       style={placement ? { top: placement.top, left: placement.left } : { visibility: "hidden" }}
       className={cn(
-        "fixed z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[13px] font-medium text-foreground shadow-md hover:bg-muted",
+        "fixed z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[13px] font-medium text-foreground shadow-md hover:bg-accent",
         placement?.above === false ? "translate-y-0" : "-translate-y-full",
       )}
     >

@@ -69,6 +69,7 @@ vi.mock("./api", () => ({
   ),
   selectedSpaceId: () => "space-1",
   signOut: vi.fn(),
+  updateAccountName: vi.fn(),
 }));
 vi.mock("./app-version", () => ({
   formatUpdateLabel: () => "",

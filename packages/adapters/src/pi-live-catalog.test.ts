@@ -3,6 +3,7 @@ import { CodexCatalogCache } from "./pi-codex-catalog.js";
 import { liveModelCatalogEnabled } from "./pi-live-cache.js";
 import {
   applyProviderLiveCatalog,
+  liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
 } from "./pi-live-catalog.js";
@@ -34,6 +35,11 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
+  it("recomputes recommendations for live IDs instead of inheriting a sibling's flag", () => {
+    expect(liveCatalogEntry("openai-codex", "gpt-6-luna")?.recommended).toBe(true);
+    expect(liveCatalogEntry("openai-codex", "gpt-future-chat")?.recommended).toBe(false);
+  });
+
   it("defaults probing on and honors the deployment off switch", () => {
     expect(liveModelCatalogEnabled({})).toBe(true);
     expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: " off " })).toBe(false);

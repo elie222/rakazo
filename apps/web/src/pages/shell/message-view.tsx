@@ -8,6 +8,7 @@ import { ArtifactFileCard } from "../../components/ArtifactFileCard";
 import { AskCard } from "../../components/AskCard";
 import { CollaborationMarker } from "../../components/ai/CollaborationMarker";
 import { CloudAgentCard } from "../../components/CloudAgentCard";
+import { SubagentCard } from "../../components/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
@@ -324,43 +325,7 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "subagent") {
-            const running = block.status === "running";
-            const failed = block.status === "failed";
-            return (
-              <div
-                key={i}
-                data-testid="subagent-card"
-                className="w-[420px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[15px] font-medium text-foreground" dir="auto">
-                    {block.name}
-                  </span>
-                  <span
-                    className={`rounded-full px-[11px] py-1 text-[13px] ${
-                      failed
-                        ? "bg-destructive/15 text-destructive"
-                        : running
-                          ? "bg-warning/15 text-warning"
-                          : "bg-success/15 text-success"
-                    }`}
-                    style={{
-                      animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-                    }}
-                  >
-                    {running ? <Trans>subagent</Trans> : block.status}
-                  </span>
-                </div>
-                <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
-                {block.progress || block.result ? (
-                  <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                    <ChatMarkdown streaming={running}>
-                      {block.result || block.progress || ""}
-                    </ChatMarkdown>
-                  </div>
-                ) : null}
-              </div>
-            );
+            return <SubagentCard key={i} block={block} />;
           }
           if (block.kind === "child_bot") {
             const removed = block.status === "deleted" || block.status === "archived";

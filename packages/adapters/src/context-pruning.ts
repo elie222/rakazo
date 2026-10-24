@@ -4,6 +4,8 @@ type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
 
+export class ModelImageLimitError extends Error {}
+
 /**
  * Tools whose result is a view of the current page or screen. Each new result supersedes the
  * earlier ones, so older results only cost context: a long browsing run otherwise re-sends every
@@ -83,7 +85,7 @@ export function pruneComputerScreenshotContext(
       0,
     );
     if (nonScreenshotImages > imageLimit) {
-      throw new Error(
+      throw new ModelImageLimitError(
         `The configured model image limit is ${imageLimit}, but the prompt contains ${nonScreenshotImages} non-screenshot images.`,
       );
     }

@@ -1861,6 +1861,8 @@ native file flow on mobile. No new mobile player or settings screen is required.
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
 
+Plain `http://` is accepted only for a private IP, `localhost`, or a `.local` name. A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
+
 ### Passkeys
 
 Passkeys are on whenever `WEB_ORIGIN` is an HTTPS domain (or `localhost` in development); the

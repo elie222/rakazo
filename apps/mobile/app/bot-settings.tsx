@@ -88,6 +88,7 @@ export default function BotSettingsScreen() {
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(false);
   const [fleetManagement, setFleetManagement] = useState(false);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -102,6 +103,18 @@ export default function BotSettingsScreen() {
   const voiceChoice = useRef(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  const crossSpaceSave = useMemo(
+    () =>
+      createQueuedSave<boolean>(false, {
+        save: async (value) => {
+          await rpc("bots/update", { botId, crossSpaceCommunication: value });
+        },
+        onChange: setCrossSpaceCommunication,
+        onError: (err) => setError(errorText(err, t("Could not save bot"))),
+      }),
+    [botId, t],
+  );
 
   const fleetSave = useMemo(
     () =>
@@ -163,11 +176,13 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
         setNotifyOnFinish(next.notifyOnFinish ?? true);
+        setCrossSpaceCommunication(next.crossSpaceCommunication ?? false);
+        crossSpaceSave.reset(next.crossSpaceCommunication ?? false);
         setFleetManagement(next.fleetManagement);
         fleetSave.reset(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
-  }, [botId, fleetSave, notifySave, profileSaves]);
+  }, [botId, crossSpaceSave, fleetSave, notifySave, profileSaves]);
 
   useEffect(() => {
     void Promise.all([
@@ -223,7 +238,7 @@ export default function BotSettingsScreen() {
 
   const thinkingChoices: MenuPickerChoice[] = useMemo(
     () => [
-      { key: "", label: t("Default (medium)") },
+      { key: "", label: t("Default") },
       ...thinkingOptions.map((level) => ({
         key: level,
         label: thinkingLevelLabel(level, t),
@@ -397,6 +412,7 @@ export default function BotSettingsScreen() {
         setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
       }
       await Promise.all([
+        crossSpaceSave.flush(),
         fleetSave.flush(),
         notifySave.flush(),
         profileSaves.name.flush(),
@@ -710,6 +726,20 @@ export default function BotSettingsScreen() {
               ) : null}
             </SettingsGroup>
             <SettingsGroup label={t("Permissions")}>
+              <View style={styles.row}>
+                <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {t("Allow cross-space bot communication")}
+                </Text>
+                <NativeSwitch
+                  accessibilityLabel={t("Allow cross-space bot communication")}
+                  value={crossSpaceCommunication}
+                  onValueChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    crossSpaceSave.update(value);
+                  }}
+                />
+              </View>
               <View style={styles.row}>
                 <View style={{ gap: 4, flex: 1 }}>
                   <Text

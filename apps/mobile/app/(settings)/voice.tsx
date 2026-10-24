@@ -92,7 +92,12 @@ export default function VoiceSettings() {
       rpc<VoiceCredential[]>("voice/credentials"),
       rpc<VoiceStatus>("voice/status"),
     ]);
-    const selected = nextProvider || nextStatus.provider || nextCatalog[0]?.id || "";
+    const selected =
+      [nextProvider, nextStatus.provider].find((id) =>
+        nextCatalog.some((entry) => entry.id === id),
+      ) ??
+      nextCatalog[0]?.id ??
+      "";
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setStatus(nextStatus);
@@ -250,6 +255,9 @@ export default function VoiceSettings() {
 
   const selected = catalog.find((entry) => entry.id === provider);
   const credential = credentials.find((entry) => entry.provider === provider);
+  const hiddenSelfHosted =
+    !catalog.some((entry) => entry.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
+    credentials.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
   const canConnect = selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8;
@@ -282,14 +290,14 @@ export default function VoiceSettings() {
     }
   }
 
-  async function disconnect() {
-    if (!credential) return;
+  async function disconnect(providerId = credential?.provider) {
+    if (!providerId) return;
     setPending("disconnect");
     setError(null);
     try {
-      await rpc("voice/disconnect", { provider: credential.provider });
+      await rpc("voice/disconnect", { provider: providerId });
       setApiKey("");
-      await load(credential.provider);
+      await load(providerId);
     } catch (err) {
       setError(errorText(err, t("Could not disconnect")));
     } finally {
@@ -411,6 +419,14 @@ export default function VoiceSettings() {
               );
             })}
           </View>
+        ) : null}
+        {hiddenSelfHosted ? (
+          <NativeActionButton
+            label={t("Disconnect Self-hosted")}
+            prominence="quiet"
+            disabled={pending !== null}
+            onPress={() => void disconnect(OPENAI_COMPATIBLE_PROVIDER_ID)}
+          />
         ) : null}
         {selected && !deviceVoice ? (
           <>

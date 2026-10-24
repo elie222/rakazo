@@ -114,6 +114,8 @@ function SettingsFixture() {
         memoryConfig={null}
         onMemoryConfigChange={() => {}}
         onClose={() => {}}
+        section="general"
+        onSectionChange={() => {}}
       />
     </main>
   );

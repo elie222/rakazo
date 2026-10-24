@@ -1023,6 +1023,68 @@ describe("computer provisioning", () => {
     },
   );
 
+  const savedAt = new Date("2024-01-01T00:20:00.000Z");
+  it.each([
+    {
+      saved: "a timed save",
+      homeRevision: "revision-1",
+      homeRevisionAt: savedAt,
+      expected: savedAt,
+    },
+    {
+      saved: "a save of unknown age",
+      homeRevision: "revision-1",
+      homeRevisionAt: null,
+      expected: undefined,
+    },
+    { saved: "no save", homeRevision: "empty", homeRevisionAt: savedAt, expected: undefined },
+  ])("tells the provider when the workspace was saved for $saved", async (row) => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-saved-at-"));
+    const home = new LocalAgentHomeStore(dataDir);
+    const sandbox = new FakeSandboxProvider();
+    const ref = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+    const provision = vi
+      .spyOn(sandbox, "provision")
+      .mockResolvedValue({ ...ref, kind: "boat", providerRef: "provider-1", fresh: false });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          homeRevision: row.homeRevision,
+          homeRevisionAt: row.homeRevisionAt,
+          providerRef: "provider-1",
+          kind: "boat",
+          scope: "dedicated",
+          state: "running",
+          controlLeaseId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      await provisionComputer(
+        {
+          prisma,
+          sandbox,
+          home,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        context,
+      );
+      const request = provision.mock.calls[0]?.[0] as { savedAt?: Date } | undefined;
+      expect(request).toBeDefined();
+      expect(request?.savedAt).toEqual(row.expected);
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { fresh: true, cleanup: "destroy" as const },
     { fresh: false, cleanup: "stop" as const },
