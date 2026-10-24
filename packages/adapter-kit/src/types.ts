@@ -671,6 +671,12 @@ export type BackgroundJob = {
      * replaced. Omit to replace, which is what an explicit continue does.
      */
     keepExisting?: boolean;
+    /**
+     * With `keepExisting`, still replace a job a worker has locked. Set only when
+     * the caller knows that worker is gone (its run lease expired); its lock would
+     * otherwise hold the key until Graphile frees it hours later.
+     */
+    replaceLocked?: boolean;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
   };

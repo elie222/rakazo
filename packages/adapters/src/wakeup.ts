@@ -61,13 +61,19 @@ export class GraphileJobPublisher implements JobPublisher {
     const key = job.replaceKey;
     if (!job.keepExisting || !key) return undefined;
     const existing = await utils.withPgClient(async (client) => {
-      const found = await client.query<{ attempts: number; max_attempts: number }>(
-        "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+      const found = await client.query<{
+        attempts: number;
+        max_attempts: number;
+        locked: boolean;
+      }>(
+        "select attempts, max_attempts, locked_at is not null as locked from graphile_worker._private_jobs where key = $1",
         [key],
       );
       return found.rows[0];
     });
     if (!existing || Number(existing.attempts) >= Number(existing.max_attempts)) return undefined;
+    // replace on a locked row clears its key and inserts a fresh job.
+    if (job.replaceLocked && existing.locked) return undefined;
     return "unsafe_dedupe";
   }
 }

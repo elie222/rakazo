@@ -202,7 +202,7 @@ export function createJobReconciler(
           },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: batchSize,
-          select: { id: true, updatedAt: true },
+          select: { id: true, status: true, updatedAt: true },
         }),
         deps.prisma.routine.findMany({
           where: {
@@ -334,8 +334,16 @@ export function createJobReconciler(
       // A queued run already has a job while it waits out failure backoff.
       // Default replace would zero that job's attempts and run it now. keepExisting
       // leaves the job while attempts remain, and still replaces one that is exhausted.
+      // A leased or running row here has an expired lease, so a worker still holding
+      // its job died without releasing it.
       await Promise.all([
-        ...runs.map((run) => deps.jobs.enqueue({ ...runContinueJob(run.id), keepExisting: true })),
+        ...runs.map((run) =>
+          deps.jobs.enqueue({
+            ...runContinueJob(run.id),
+            keepExisting: true,
+            ...(run.status === "queued" ? {} : { replaceLocked: true }),
+          }),
+        ),
         ...routines.flatMap((routine) =>
           routine.nextRunAt
             ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]

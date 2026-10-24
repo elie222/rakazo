@@ -3,6 +3,7 @@ import {
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
   messagingDeliverJob,
+  runContinueJob,
 } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import type { Runner } from "graphile-worker";
@@ -113,10 +114,22 @@ describe("GraphileJobPublisher.enqueue", () => {
 
   // graphile-worker 0.17.3 add_job: unsafe_dedupe on conflict bumps revision only.
   // replace sets attempts = 0 and run_at = excluded.run_at.
-  function graphileJobs(jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>) {
+  type GraphileRow = { attempts: number; maxAttempts: number; runAt: Date; locked?: boolean };
+
+  function graphileJobs(jobs: Map<string, GraphileRow>) {
     const query = vi.fn(async (_sql: string, params?: readonly unknown[]) => {
       const job = jobs.get(String(params?.[0]));
-      return { rows: job ? [{ attempts: job.attempts, max_attempts: job.maxAttempts }] : [] };
+      return {
+        rows: job
+          ? [
+              {
+                attempts: job.attempts,
+                max_attempts: job.maxAttempts,
+                locked: job.locked ?? false,
+              },
+            ]
+          : [],
+      };
     });
     const addJob = vi.fn(
       async (
@@ -142,9 +155,7 @@ describe("GraphileJobPublisher.enqueue", () => {
     return { query, addJob, withPgClient };
   }
 
-  function publisherOver(
-    jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>,
-  ) {
+  function publisherOver(jobs: Map<string, GraphileRow>) {
     const graphile = graphileJobs(jobs);
     vi.mocked(makeWorkerUtils).mockResolvedValue({
       addJob: graphile.addJob,
@@ -167,7 +178,7 @@ describe("GraphileJobPublisher.enqueue", () => {
       keepExisting: true,
     });
     expect(query).toHaveBeenCalledWith(
-      "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+      "select attempts, max_attempts, locked_at is not null as locked from graphile_worker._private_jobs where key = $1",
       ["run:run-1"],
     );
     expect(addJob).toHaveBeenCalledWith(
@@ -201,8 +212,38 @@ describe("GraphileJobPublisher.enqueue", () => {
     await publisher.close();
   });
 
+  it("keeps a locked job unless the caller says its worker is gone", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 1, maxAttempts: 25, runAt, locked: true }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    await publisher.enqueue({ ...runContinueJob("run-1"), keepExisting: true });
+    await publisher.enqueue({
+      ...runContinueJob("run-1"),
+      keepExisting: true,
+      replaceLocked: true,
+    });
+    const modes = addJob.mock.calls.map((call) => (call[2] as { jobKeyMode?: string }).jobKeyMode);
+    expect(modes).toEqual(["unsafe_dedupe", undefined]);
+    await publisher.close();
+  });
+
+  it("dedupes an unlocked job in backoff even when replaceLocked is set", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 2, maxAttempts: 25, runAt }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    await publisher.enqueue({
+      ...runContinueJob("run-1"),
+      keepExisting: true,
+      replaceLocked: true,
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBe("unsafe_dedupe");
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 2, maxAttempts: 25, runAt });
+    await publisher.close();
+  });
+
   it("enqueues a keepExisting job when no row has that key", async () => {
-    const jobs = new Map<string, { attempts: number; maxAttempts: number; runAt: Date }>();
+    const jobs = new Map<string, GraphileRow>();
     const { publisher, addJob } = publisherOver(jobs);
     const runAt = new Date("2030-01-03T00:00:00.000Z");
     await publisher.enqueue({
