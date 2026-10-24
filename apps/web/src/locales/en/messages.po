@@ -2322,6 +2322,7 @@ msgstr "Don’t have an account?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "Done"
@@ -3655,6 +3656,10 @@ msgstr "On a schedule"
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
 
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "Onboarding steps"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr "One-time purchase. Credits do not expire."
@@ -4646,7 +4651,6 @@ msgstr "Sidebar density"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Sign in"
 
@@ -4674,7 +4678,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Sign in with the subscription, or test the API key instead."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Sign up"
 
@@ -5162,6 +5165,10 @@ msgstr "Try again"
 msgid "Try the test again."
 msgstr "Try the test again."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "Try your agent"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr "Type"
@@ -5421,6 +5428,7 @@ msgid "Weekdays"
 msgstr "Weekdays"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
 msgstr "Welcome to Rakazo"
 
@@ -5561,10 +5569,6 @@ msgstr "Your OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "Your subscription or API key"
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Your team of always-on agents<0/>that you can give real work to."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

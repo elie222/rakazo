@@ -2322,6 +2322,7 @@ msgstr "Du hast noch kein Konto?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "Fertig"
@@ -3655,6 +3656,10 @@ msgstr ""
 msgid "on the 1st at {0}"
 msgstr "am 1. um {0}"
 
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "Einrichtungsschritte"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -4646,7 +4651,6 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Anmelden"
 
@@ -4674,7 +4678,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Melde dich mit dem Abonnement an oder teste stattdessen den API-Schlüssel."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Registrieren"
 
@@ -5162,6 +5165,10 @@ msgstr "Erneut versuchen"
 msgid "Try the test again."
 msgstr "Teste erneut."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "Probiere deinen Agenten aus"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr ""
@@ -5421,8 +5428,9 @@ msgid "Weekdays"
 msgstr "Wochentage"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Willkommen bei Rakazo"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
@@ -5561,10 +5569,6 @@ msgstr "Dein OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Dein Team aus jederzeit verfügbaren Agents<0/>für echte Aufgaben."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

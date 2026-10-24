@@ -2322,6 +2322,7 @@ msgstr "Heb je geen account?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "Klaar"
@@ -3655,6 +3656,10 @@ msgstr "Op een schema"
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
 
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "Stappen om te beginnen"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -4646,7 +4651,6 @@ msgstr "Dichtheid van de zijbalk"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Aanmelden"
 
@@ -4674,7 +4678,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Meld je aan met het abonnement of test in plaats daarvan de API-sleutel."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Registreren"
 
@@ -5162,6 +5165,10 @@ msgstr "Opnieuw proberen"
 msgid "Try the test again."
 msgstr "Probeer de test opnieuw."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "Probeer je agent"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr "Type"
@@ -5421,8 +5428,9 @@ msgid "Weekdays"
 msgstr "Werkdagen"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "Welkom bij Rakazo"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
@@ -5561,10 +5569,6 @@ msgstr "Jouw OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Je team van altijd actieve agents<0/>dat je echt werk kunt geven."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

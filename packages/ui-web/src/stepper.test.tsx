@@ -37,4 +37,19 @@ describe("Stepper", () => {
     expect(html).toMatch(new RegExp(`id="${ids[0]}"[^>]*>Model<`));
     expect(html).toMatch(new RegExp(`id="${ids[1]}"[^>]*>Erledigt<`));
   });
+
+  it("draws in ink by default and in the link blue when asked", () => {
+    const steps = [
+      { id: "model", title: "Model", status: "complete" as const },
+      { id: "apps", title: "Apps", status: "current" as const },
+    ];
+    const ink = renderToString(<Stepper completeLabel="Done" steps={steps} />);
+    const blue = renderToString(<Stepper completeLabel="Done" tone="link" steps={steps} />);
+
+    expect(ink).toContain("bg-primary");
+    expect(ink).not.toContain("bg-link");
+    expect(blue).toContain("bg-link");
+    expect(blue).toContain("border-link");
+    expect(blue).not.toContain("bg-primary");
+  });
 });

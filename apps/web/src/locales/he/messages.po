@@ -2322,6 +2322,7 @@ msgstr "אין חשבון?"
 
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
+#: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
 msgstr "הושלם"
@@ -3655,6 +3656,10 @@ msgstr "לפי תזמון"
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
 
+#: src/pages/Onboarding.tsx
+msgid "Onboarding steps"
+msgstr "שלבי ההתחלה"
+
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
@@ -4646,7 +4651,6 @@ msgstr "צפיפות סרגל הצד"
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "התחברות"
 
@@ -4674,7 +4678,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "אפשר להתחבר עם המנוי, או לבדוק את מפתח ה-API במקום."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "הרשמה"
 
@@ -5162,6 +5165,10 @@ msgstr "לנסות שוב"
 msgid "Try the test again."
 msgstr "אפשר לנסות את הבדיקה שוב."
 
+#: src/pages/Onboarding.tsx
+msgid "Try your agent"
+msgstr "התנסות בסוכן"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
 msgstr "סוג"
@@ -5421,8 +5428,9 @@ msgid "Weekdays"
 msgstr "שני עד שישי"
 
 #: src/components/SignupSurvey.tsx
+#: src/pages/Onboarding.tsx
 msgid "Welcome to Rakazo"
-msgstr ""
+msgstr "ברוכים הבאים ל-Rakazo"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
@@ -5561,10 +5569,6 @@ msgstr "OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."
