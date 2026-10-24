@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "{0} rollup hours"
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0} runs · {1} tokens"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -765,10 +759,6 @@ msgstr "archived"
 msgid "Archived"
 msgstr "Archived"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "Archived. Chat, memory, and files kept."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "Arguments"
@@ -1016,6 +1006,10 @@ msgstr "Calling you…"
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr "Calling…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "Calls"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1538,6 +1532,10 @@ msgstr "Copy"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr "Copy .env example"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "Cost"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2842,6 +2840,10 @@ msgstr "Incoming call"
 msgid "Inherit default"
 msgstr "Inherit default"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "Input"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "Inputs"
@@ -3272,6 +3274,7 @@ msgstr "minutes"
 msgid "Missed call"
 msgstr "Missed call"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3297,10 +3300,6 @@ msgstr "Model id"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "Model options"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "Model spend uses your provider keys."
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3726,10 +3725,6 @@ msgstr "OpenAI API"
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatible server URL"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "Opened its thread."
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "Opening chat…"
@@ -3766,6 +3761,10 @@ msgstr "Original message unavailable"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Other model…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "Output"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4147,10 +4146,6 @@ msgstr "Remove skill {0}"
 msgid "Remove webhook"
 msgstr "Remove webhook"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "Removed with chat, computer, and memory."
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "Removed, but list refresh failed"
@@ -4334,6 +4329,10 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr "Routines that run while you're away"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "Run actions without asking"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Run at"
@@ -4364,6 +4363,10 @@ msgstr "Running · Stop"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Running…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "Runs"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -5111,6 +5114,10 @@ msgstr "To:"
 msgid "Today"
 msgstr "Today"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "Tokens"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Tool arguments (JSON)"
@@ -5289,7 +5296,6 @@ msgid "Urgent"
 msgstr "Urgent"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "Usage"

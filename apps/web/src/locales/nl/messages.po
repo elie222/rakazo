@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "{0} rollup-uren"
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0} uitvoeringen · {1} tokens"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -765,10 +759,6 @@ msgstr "gearchiveerd"
 msgid "Archived"
 msgstr "Gearchiveerd"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "Gearchiveerd. Chat, geheugen en bestanden blijven bewaard."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "Argumenten"
@@ -1016,6 +1006,10 @@ msgstr "Belt je…"
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr "Belt…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "Aanroepen"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1538,6 +1532,10 @@ msgstr "Kopiëren"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ".env-voorbeeld kopiëren"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "Kosten"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2842,6 +2840,10 @@ msgstr "Inkomend gesprek"
 msgid "Inherit default"
 msgstr "Standaard overnemen"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "Invoer"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "Invoer"
@@ -3272,6 +3274,7 @@ msgstr "minuten"
 msgid "Missed call"
 msgstr "Gemist gesprek"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3297,10 +3300,6 @@ msgstr "Model-id"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "Modelopties"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "Modeluitgaven gebruiken je aanbiederssleutels."
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3726,10 +3725,6 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatibele server-URL"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "De thread ervan is geopend."
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "Chat openen…"
@@ -3766,6 +3761,10 @@ msgstr "Oorspronkelijk bericht niet beschikbaar"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Ander model…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "Uitvoer"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4147,10 +4146,6 @@ msgstr "Skill {0} verwijderen"
 msgid "Remove webhook"
 msgstr "Webhook verwijderen"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "Verwijderd samen met chat, computer en geheugen."
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "Verwijderd, maar het vernieuwen van de lijst mislukte"
@@ -4334,6 +4329,10 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr "Routines die draaien terwijl je weg bent"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "Acties uitvoeren zonder te vragen"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Uitvoeren om"
@@ -4364,6 +4363,10 @@ msgstr "Draait · Stoppen"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Bezig met draaien…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "Uitvoeringen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -5111,6 +5114,10 @@ msgstr "Aan:"
 msgid "Today"
 msgstr "Vandaag"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "Tokens"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Toolargumenten (JSON)"
@@ -5289,7 +5296,6 @@ msgid "Urgent"
 msgstr "Dringend"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "Gebruik"

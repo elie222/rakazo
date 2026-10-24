@@ -131,6 +131,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       { command: "act", actions: request.actions },
       context,
     );
+    const elements = Array.isArray(live?.elements) ? live.elements : undefined;
     if (live?.ok !== true || live.fallback === "computer_act") {
       return {
         ok: false,
@@ -138,11 +139,14 @@ export class ComputerBrowserProvider implements BrowserProvider {
         uncertain: live?.uncertain ?? true,
         url: typeof live?.url === "string" ? live.url : "",
         title: typeof live?.title === "string" ? live.title : "",
+        // A step that stopped partway, such as typing, still shows the page as it was left.
+        ...(elements
+          ? { tree: typeof live?.tree === "string" ? live.tree : formatTree(elements), elements }
+          : {}),
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
       };
     }
-    const elements = Array.isArray(live.elements) ? live.elements : undefined;
     return {
       ok: true,
       completed: typeof live.completed === "number" ? live.completed : request.actions.length,

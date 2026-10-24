@@ -744,6 +744,8 @@ export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 export const ActionAutoReviewSettingsSchema = z.object({
   enabled: z.boolean(),
   checkerAvailable: z.boolean(),
+  /** Run every action that would ask, except the ones that always need a person. */
+  skipApprovals: z.boolean(),
 });
 export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSchema>;
 
@@ -965,6 +967,22 @@ export const UsageRecordSchema = z.object({
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
+
+/** Token and cost totals are null when any counted call lacks that figure. */
+const UsageTotalsSchema = z.object({
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  totalTokens: z.number().nullable().optional(),
+  costUsd: z.number().nullable().optional(),
+  modelCalls: z.number().optional(),
+});
+export const UsageSummarySchema = UsageTotalsSchema.extend({
+  runs: z.number(),
+  models: z
+    .array(UsageTotalsSchema.required().extend({ provider: z.string(), model: z.string() }))
+    .optional(),
+});
+export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
 export const COMPUTER_UPDATE_STAGES = [
   "preparing",

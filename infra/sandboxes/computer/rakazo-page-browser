@@ -74,6 +74,11 @@ def discover_ws_url(port: int) -> str:
 WORLD_NAME = "rakazo-page-browser"
 
 
+# A frame asked for, began or committed a load of another document. Same-document changes, such as
+# a new URL fragment, leave the page and its fields in place and are not counted.
+NAVIGATION_EVENTS = ("Page.frameRequestedNavigation", "Page.frameStartedNavigating", "Page.frameNavigated")
+
+
 class CdpClient:
     def __init__(self, ws_url: str) -> None:
         self._ws_url = ws_url
@@ -86,6 +91,8 @@ class CdpClient:
         self._contexts: dict[int, dict[str, Any]] = {}
         # Lifecycle events reached by each frame's current document, per CDP session.
         self._lifecycle: dict[tuple[Any, str], tuple[Any, set[str]]] = {}
+        # Navigations to another document started or committed in each frame, per CDP session.
+        self._navigations: dict[tuple[Any, str], int] = {}
 
     def connect(self) -> None:
         assert self._ws_url.startswith("ws://"), self._ws_url
@@ -245,6 +252,13 @@ class CdpClient:
                 loader_id, reached = params.get("loaderId"), set()
             reached.add(name)
             self._lifecycle[(session_id, frame_id)] = (loader_id, reached)
+        elif method in NAVIGATION_EVENTS:
+            frame_id = params.get("frameId") or (params.get("frame") or {}).get("id")
+            if not isinstance(frame_id, str) or params.get("disposition", "currentTab") != "currentTab":
+                return
+            if params.get("navigationType") in ("sameDocument", "historySameDocument"):
+                return
+            self._navigations[(session_id, frame_id)] = self._navigations.get((session_id, frame_id), 0) + 1
         elif method == "Runtime.executionContextsCleared":
             if session_id is None:
                 self._contexts.clear()
@@ -257,6 +271,9 @@ class CdpClient:
 
     def lifecycle(self, session_id: str, frame_id: str) -> set[str]:
         return self._lifecycle.get((session_id, frame_id), (None, set()))[1]
+
+    def navigations(self, session_id: str, frame_id: str) -> int:
+        return self._navigations.get((session_id, frame_id), 0)
 
     def find_world_context(self, world_name: str, frame_id: str, session_id: str) -> int | None:
         for context_id, context in self._contexts.items():
@@ -365,6 +382,81 @@ EVAL_HELPERS = r"""
   function newRef() {
     return `e${Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("")}`;
   }
+  // Code fields often keep their real input transparent under drawn boxes; it is still the target.
+  function isCodeInput(el) {
+    if (!(el instanceof HTMLInputElement) || el.autocomplete !== "one-time-code") return false;
+    const style = window.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }
+  // Visible fields in page order, on the page or inside root.
+  function pageFields(root = document) {
+    return [...root.querySelectorAll("input, textarea, select, [contenteditable]")]
+      .filter((field) => field.type !== "hidden" && visible(field));
+  }
+  // Boxes are usually named alike apart from their number: "Digit 1", "Digit 2", or not at all.
+  const naming = (field) => [field.getAttribute("aria-label"), field.name, field.id,
+    ...Array.from(field.labels || [], (label) => label.textContent)]
+    .join("|").replace(/[\d\s]+/g, "").toLowerCase();
+  // One box per character: every box of the one code el belongs to, in page order (split groups too).
+  // A box is a one-character input, or a narrow one in a row of at least four, of el's size, type and
+  // form on el's row (named one-character boxes may wrap). The unbroken run stays in its container
+  // once it holds a complete code, so clearing it leaves adjacent widgets alone. A field at either
+  // end of the run that is named unlike the rest, such as a middle initial before the code, is not a box.
+  function codeBoxes(el) {
+    if (!(el instanceof HTMLInputElement)) return [el];
+    const own = el.getBoundingClientRect();
+    const near = (a, b) => Math.abs(a - b) <= Math.max(2, b * 0.15);
+    const isBox = (input) => {
+      if (!(input instanceof HTMLInputElement) || input.type !== el.type || input.form !== el.form) return false;
+      const rect = input.getBoundingClientRect();
+      // Named one-character boxes can wrap onto another line in a narrow viewport.
+      if (!(input.maxLength === 1 && naming(input) === naming(el))
+          && Math.abs(rect.top + rect.height / 2 - (own.top + own.height / 2)) >= own.height / 2) return false;
+      if (!near(rect.width, own.width) || !near(rect.height, own.height)) return false;
+      return input.maxLength === 1 || (input.maxLength <= 2 && rect.width <= rect.height * 2);
+    };
+    const whole = (boxes) => boxes.every((box) => box.maxLength === 1) || boxes.length >= 4;
+    let boxes = [el];
+    if (!isBox(el)) return boxes;
+    for (let parent = el.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+      const fields = pageFields(parent);
+      let from = fields.indexOf(el);
+      let to = from;
+      if (from < 0) break;
+      while (from > 0 && isBox(fields[from - 1])) from--;
+      while (to < fields.length - 1 && isBox(fields[to + 1])) to++;
+      if (to - from >= 12) break;
+      boxes = fields.slice(from, to + 1);
+      // A six-box or longer code stays in its container; smaller subgroups can grow.
+      if (boxes.length < fields.length || boxes.length >= 6) break;
+    }
+    const names = boxes.map(naming);
+    const usual = names.reduce((best, name) =>
+      names.filter((n) => n === name).length > names.filter((n) => n === best).length ? name : best, names[0]);
+    if (names.filter((name) => name === usual).length >= 2) {
+      if (naming(el) !== usual) return [el];
+      while (names[0] !== usual) names.shift(), boxes.shift();
+      while (names[names.length - 1] !== usual) names.pop(), boxes.pop();
+    }
+    return whole(boxes) ? boxes : [el];
+  }
+  // The field typed into; the field, one box or every box of its code that the keys are meant for;
+  // where the first of them is among the page's fields; and how many boxes the code has.
+  let keyTarget = { el: null, boxes: [], at: -1, size: 0, container: null, names: [] };
+  // Some widgets replace every box with a new one on each input. The boxes are then found again at
+  // the same place among the page's fields, in the original container with the same naming.
+  function targetBoxes() {
+    const { boxes, at, size, container, names } = keyTarget;
+    if (size < 2 || boxes.every((box) => box.isConnected)) return boxes;
+    const first = pageFields()[at];
+    const code = first instanceof HTMLInputElement ? codeBoxes(first) : [];
+    if (!container?.isConnected || code.some((box, i) => !container.contains(box) || naming(box) !== names[i])) return boxes;
+    if (code.length !== size || (boxes.length > 1 && code[0] !== first) || !code.includes(first)) return boxes;
+    keyTarget = { ...keyTarget, boxes: boxes.length > 1 ? code : [first] };
+    return keyTarget.boxes;
+  }
+  const TEXT_INPUT_TYPES = ["text", "search", "email", "url", "tel", "password", "number"];
   // Sites usually hide the real file input behind a styled button; it is still the upload target.
   function isFileInput(el) {
     return el instanceof HTMLInputElement && el.type === "file";
@@ -404,6 +496,7 @@ EVAL_HELPERS = r"""
       el.getAttribute("placeholder") ||
       el.getAttribute("name") ||
       el.getAttribute("title") ||
+      (isCodeInput(el) ? "One-time code" : "") ||
       (el.innerText || el.textContent || "").trim().slice(0, 80) ||
       ""
     );
@@ -469,7 +562,7 @@ EVAL_HELPERS = r"""
       // Upload targets do not count toward the 80-control cap, so hidden inputs cannot crowd out buttons.
       let controls = 0;
       for (const el of document.querySelectorAll("body *")) {
-        if (!isInteractive(el) || !(visible(el) || isFileInput(el))) continue;
+        if (!isInteractive(el) || !(visible(el) || isFileInput(el) || isCodeInput(el))) continue;
         describe(el);
         if (!isFileInput(el) && ++controls >= 80) break;
       }
@@ -487,7 +580,7 @@ EVAL_HELPERS = r"""
     },
     resolve(ref) {
       const el = refMap.get(String(ref));
-      if (!el || !el.isConnected || !(visible(el) || isFileInput(el))) return null;
+      if (!el || !el.isConnected || !(visible(el) || isFileInput(el) || isCodeInput(el))) return null;
       if (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true") {
         throw new Error("Element is disabled");
       }
@@ -522,7 +615,7 @@ EVAL_HELPERS = r"""
       }
       el.focus();
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
-        if (el instanceof HTMLInputElement && !["text", "search", "email", "url", "tel", "password", "number"].includes(el.type)) {
+        if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.includes(el.type)) {
           throw new Error("Input type requires desktop tools");
         }
         const prototype = el instanceof HTMLInputElement ? HTMLInputElement.prototype
@@ -548,14 +641,58 @@ EVAL_HELPERS = r"""
       if (count > 1 && !el.multiple) throw new Error("This file upload accepts one file");
       return el;
     },
-    type(ref, text) {
+    // Empties the field and focuses where typing starts. Real key presses then follow the focus of the
+    // page, so a widget that moves between boxes gets each one. For a split code, a whole code empties
+    // every box and starts at the first; one character replaces only the box it is typed into, so a
+    // code can also be entered box by box.
+    focusForKeys(ref, whole = true) {
       const el = this.resolve(ref);
       if (!el) throw new Error(`Unknown element ref: ${ref}`);
-      // Appending keeps any saved login in the field, so the field stays hidden from snapshots.
-      const holdsLogin = loginFilled.has(el);
-      const result = this.fill(ref, `${"value" in el ? el.value : el.textContent || ""}${text}`);
-      if (holdsLogin) loginFilled.add(el);
-      return result;
+      if (el.readOnly) throw new Error("Element is read-only");
+      if (el instanceof HTMLSelectElement) return { select: true };
+      if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.includes(el.type)) {
+        throw new Error("Input type requires desktop tools");
+      }
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable)) {
+        throw new Error(`Element is not fillable: ${ref}`);
+      }
+      const code = codeBoxes(el);
+      const boxes = whole ? code : [el];
+      let container = code[0].parentElement;
+      while (container && !code.every((box) => container.contains(box))) container = container.parentElement;
+      keyTarget = { el, boxes, at: pageFields().indexOf(boxes[0]), size: code.length,
+        container, names: code.map(naming) };
+      // Only boxes that hold something are emptied, so an empty widget sees no events at all.
+      for (let i = 0; i < boxes.length; i++) {
+        const box = targetBoxes()[i];
+        loginFilled.delete(box);
+        if (!(box.isContentEditable ? box.textContent : box.value)) continue;
+        if (box.isContentEditable) box.textContent = "";
+        else Object.getOwnPropertyDescriptor(Object.getPrototypeOf(box), "value").set.call(box, "");
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      targetBoxes()[0].focus();
+      return {
+        focused: this.focusHolds(),
+        multiline: !(el instanceof HTMLInputElement),
+      };
+    },
+    // Whether the next key still lands in the field, or in a box of its code when the widget moved
+    // on by itself. Focus anywhere else, or a box the page removed, ends the typing.
+    focusHolds() {
+      const active = document.activeElement;
+      return Boolean(active) && targetBoxes().some((box) => box.isConnected
+        && (box.contains(active) || (active.isContentEditable && active.contains(box))));
+    },
+    // Whether what the step was meant to change (the field, one box, or every box of a split code)
+    // now holds the typed letters and digits. Widgets may add spaces or dashes, or change case.
+    typed(ref, text) {
+      const el = refMap.get(String(ref));
+      const boxes = el === keyTarget.el ? targetBoxes() : el?.isConnected ? codeBoxes(el) : [];
+      if (!boxes.length || !boxes.every((box) => box.isConnected)) return true;
+      const letters = (value) => String(value).replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+      const shown = boxes.map((box) => (box.isContentEditable ? box.innerText : box.value)).join("");
+      return letters(shown) === letters(text);
     },
   };
   return true;
@@ -730,6 +867,110 @@ def wait_for_settle(client: CdpClient, session_id: str) -> bool:
         return False
 
 
+def key_event(char: str) -> dict[str, Any] | None:
+    """CDP keyDown parameters for one printable ASCII character, or None to insert it as text."""
+    if char == "\n":
+        # Shift+Enter breaks the line; many chat boxes send their message on a plain Enter.
+        return {"key": "Enter", "code": "Enter", "text": "\r", "windowsVirtualKeyCode": 13, "modifiers": 8}
+    if len(char) != 1 or not " " <= char <= "~":
+        return None
+    if char.isdigit():
+        return {"key": char, "code": f"Digit{char}", "text": char, "windowsVirtualKeyCode": ord(char)}
+    if char.isalpha():
+        return {"key": char, "code": f"Key{char.upper()}", "text": char,
+                "windowsVirtualKeyCode": ord(char.upper())}
+    if char == " ":
+        return {"key": " ", "code": "Space", "text": " ", "windowsVirtualKeyCode": 32}
+    return {"key": char, "text": char}
+
+
+def press_key(client: CdpClient, session_id: str, event: dict[str, Any]) -> None:
+    down = {"type": "keyDown", **event}
+    if "text" in event:
+        down["unmodifiedText"] = event["text"]
+    client.call("Input.dispatchKeyEvent", down, session_id=session_id)
+    client.call("Input.dispatchKeyEvent", {"type": "keyUp", **{k: v for k, v in event.items() if k != "text"}},
+                session_id=session_id)
+
+
+class TypingStopped(RuntimeError):
+    """Typing ended before the last key. The message never repeats any of the text."""
+
+
+def focus_holds(client: CdpClient, session_id: str) -> bool | None:
+    """Whether keys still reach the field or its code boxes; None once its document is gone."""
+    try:
+        return eval_json(client, session_id, "window.__rakazoPageBrowser.focusHolds()") is True
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def page_mark(client: CdpClient, session_id: str) -> tuple[dict[str, Any], int]:
+    """The main frame and its navigation count, taken before a type step touches the page."""
+    frame = client.call("Page.getFrameTree", session_id=session_id)["frameTree"]["frame"]
+    return frame, client.navigations(session_id, frame["id"])
+
+
+def type_keys(client: CdpClient, session_id: str, text: str, multiline: bool,
+              mark: tuple[dict[str, Any], int]) -> bool:
+    """Press each character as a real key into whatever element has focus at that moment.
+
+    Before each key, the page must still be the document of mark, with focus in the field or in a
+    box of its code. The check also reads the browser's navigation events, which a page reports
+    before the evaluation's answer, so a page that navigates on a key, or while its field was being
+    emptied, gets no further keys.
+    Returns whether the page moved to another document on the last key, as auto-submitting codes do.
+    Either way, the next document has replaced the old one before this returns, when it loads in time.
+    """
+    frame, navigations = mark
+    frame_id = frame["id"]
+
+    def moved_on(holds: bool | None) -> bool:
+        if holds is not None and client.navigations(session_id, frame_id) == navigations:
+            return False
+        wait_for_new_document(client, session_id, frame.get("loaderId"))
+        return True
+
+    # Enter in a one-line field would submit its form.
+    chars = [char for char in text.replace("\r\n", "\n").replace("\r", "\n") if multiline or char != "\n"]
+    for index, char in enumerate(chars):
+        holds = focus_holds(client, session_id)
+        if moved_on(holds):
+            raise TypingStopped(f"The page changed while typing, after {index} of {len(chars)} characters, "
+                                "so the rest was not typed. Take a fresh snapshot before continuing.")
+        if not holds:
+            raise TypingStopped(f"Focus left the field while typing, after {index} of {len(chars)} characters, "
+                                "so the rest was not typed. Check the page in this snapshot before trying again.")
+        event = key_event(char)
+        if event is None:
+            client.call("Input.insertText", {"text": char}, session_id=session_id)
+        else:
+            press_key(client, session_id, event)
+    return moved_on(focus_holds(client, session_id))
+
+
+def wait_for_new_document(client: CdpClient, session_id: str, loader_id: Any) -> None:
+    """Give a page that began loading another document the settle budget to replace the old one."""
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        try:
+            frame = client.call("Page.getFrameTree", session_id=session_id, timeout_s=SETTLE_SECONDS)
+            if frame["frameTree"]["frame"].get("loaderId") != loader_id:
+                return
+        except Exception:  # noqa: BLE001
+            return
+        time.sleep(0.05)
+
+
+def typed_in_full(client: CdpClient, session_id: str, ref: str, text: str) -> bool:
+    """A widget may refuse keys. A page that submitted or navigated on the last key counts as done."""
+    try:
+        return eval_json(client, session_id,
+                         f"window.__rakazoPageBrowser.typed({json.dumps(ref)}, {json.dumps(text)})") is not False
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def snapshot(client: CdpClient, session_id: str) -> dict[str, Any]:
     settled = wait_for_settle(client, session_id)
     ensure_helpers(client, session_id)
@@ -759,9 +1000,19 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
     ensure_helpers(client, session_id)
     completed = 0
     uncertain = False
+    # Refs belong to the document that was typed into; a page that moved on keeps none of them.
+    page_changed = False
     try:
         for step in actions:
             kind, ref = step["kind"], step["ref"]
+            if page_changed:
+                # The result shows the page the code led to, so the bot can carry on from there.
+                try:
+                    snap = snapshot(client, session_id)
+                except Exception:  # noqa: BLE001
+                    snap = {"uncertain": True}
+                return {"uncertain": False, **snap, "ok": False, "completed": completed,
+                        "error": "Stale element ref. Take a fresh snapshot."}
             # Preflight catches stale refs before a mutation is dispatched.
             if not eval_json(client, session_id, f"Boolean(window.__rakazoPageBrowser.resolve({json.dumps(ref)}))"):
                 raise RuntimeError("Stale element ref. Take a fresh snapshot.")
@@ -771,6 +1022,35 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
                 completed += 1
                 uncertain = False
                 continue
+            if kind == "type":
+                uncertain = True
+                mark = page_mark(client, session_id)
+                # One character goes into the ref'd box alone; longer text replaces the whole code.
+                whole = json.dumps(len(step["text"]) > 1)
+                focus = eval_json(client, session_id,
+                                  f"window.__rakazoPageBrowser.focusForKeys({json.dumps(ref)}, {whole})")
+                if isinstance(focus, dict) and focus.get("select"):
+                    kind = "fill"
+                else:
+                    if not isinstance(focus, dict) or not focus.get("focused"):
+                        raise RuntimeError("The field did not take keyboard focus. Click it, then type again.")
+                    try:
+                        page_changed = type_keys(client, session_id, step["text"],
+                                                 multiline=bool(focus.get("multiline")), mark=mark)
+                    except TypingStopped as stopped:
+                        try:
+                            snap = snapshot(client, session_id)
+                        except Exception:  # noqa: BLE001
+                            snap = {"uncertain": True}
+                        return {"uncertain": False, **snap, "ok": False, "completed": completed,
+                                "error": str(stopped)}
+                    completed += 1
+                    uncertain = False
+                    if not page_changed and not typed_in_full(client, session_id, ref, step["text"]):
+                        return {"uncertain": False, **snapshot(client, session_id), "ok": False, "completed": completed,
+                                "error": "The page did not keep every character typed. "
+                                         "Check the field in this snapshot before trying again."}
+                    continue
             arguments = json.dumps(ref)
             if kind != "click":
                 arguments += ", " + json.dumps(step["text"])

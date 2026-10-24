@@ -415,9 +415,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
   });
-  const botLinkCard = page.getByTestId("bot-link-card");
-  await expect(botLinkCard).toBeVisible({ timeout: 30_000 });
-  await expectCardWidth(botLinkCard, 340);
+  await expect(page.getByTestId("bot-mention").filter({ hasText: "Scout" })).toBeVisible({
+    timeout: 30_000,
+  });
   await captureScreenshot(page, testInfo, "13-spawned-bot");
 
   await page

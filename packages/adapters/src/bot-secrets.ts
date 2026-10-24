@@ -312,26 +312,38 @@ function authMetadata(value: unknown): unknown {
 }
 
 /**
- * Keep a bare origin. Never return the raw string: `new URL` resolves `..`, so the raw
- * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
- * and a real path are removed. A placeholder keeps the origin error when no bare origin remains.
+ * The site a credential is saved under when given a page URL: the origin of an http or https
+ * URL, without its path, query or fragment. Any other scheme gets nothing, since
+ * `blob:https://host/x` reports `https://host` without being a page on it. With
+ * `allowUserinfo` false, a URL carrying a username or password gets nothing either, and so does
+ * one longer than `maxLength`, checked on what was given rather than on the site it reduces to.
  */
-function originMetadata(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  if (value === "") return "";
+export function pageUrlOrigin(
+  value: string,
+  { allowUserinfo, maxLength }: { allowUserinfo: boolean; maxLength: number },
+): string | undefined {
+  if (value.length > maxLength) return undefined;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return "invalid-origin";
+    return undefined;
   }
-  const bare = !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
-  if (bare) return url.origin;
-  url.username = "";
-  url.password = "";
-  url.search = "";
-  url.hash = "";
-  return url.pathname === "/" ? url.origin : `${url.origin}/path`;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (!allowUserinfo && (url.username || url.password)) return undefined;
+  return url.origin;
+}
+
+/**
+ * Keep only the site. Never return the raw string: `new URL` resolves `..`, so the raw
+ * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
+ * and path are removed. A placeholder keeps the origin error when no site remains.
+ */
+function originMetadata(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value === "") return "";
+  // A sign-in redirect URL can be long; the authenticated request URL's limit, not the origin's.
+  return pageUrlOrigin(value, { allowUserinfo: true, maxLength: 8192 }) ?? "invalid-origin";
 }
 
 function parsedCredentialObject(value: unknown): unknown {

@@ -92,6 +92,7 @@ import {
   modelCredentialDto,
   normalizeSecretDestination,
   PushSessionEndedError,
+  pageUrlOrigin,
   parseModelSecret,
   parseRoutineWatch,
   parseRoutineWatchState,
@@ -6454,13 +6455,19 @@ export function createRouter(deps: RouterDeps) {
       put: authed.botSecrets.put.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         const scope = botSecretScope(context.actor, bot.id);
+        // A pasted page URL is saved under its site. One with a username or password is left
+        // as typed, so the origin rule turns it down and the person can fix it.
+        const site = pageUrlOrigin(input.destination.origin, {
+          allowUserinfo: false,
+          maxLength: 2048,
+        });
         let row: Awaited<ReturnType<typeof getBotSecretMetadata>>;
         try {
           row = await storeBotSecret({
             prisma: deps.prisma,
             secretStore: deps.secrets,
             scope,
-            destination: input.destination,
+            destination: site ? { ...input.destination, origin: site } : input.destination,
             plaintext: input.value,
           });
         } catch (error) {
@@ -6546,9 +6553,10 @@ export function createRouter(deps: RouterDeps) {
           create: {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
-            enabled: input.enabled,
+            enabled: input.enabled ?? deploymentAutoReviewDefault(process.env),
+            skipApprovals: input.skipApprovals ?? false,
           },
-          update: { enabled: input.enabled },
+          update: { enabled: input.enabled, skipApprovals: input.skipApprovals },
         });
         return loadAutoReviewSettings(deps, context.actor);
       }),
@@ -6671,27 +6679,53 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const [result, runGroups] = await Promise.all([
-          deps.prisma.usageRecord.aggregate({
-            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
-            _sum: { inputTokens: true, outputTokens: true, totalTokens: true },
-            _count: { _all: true, inputTokens: true, outputTokens: true, totalTokens: true },
-          }),
+        const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        const sums = {
+          inputTokens: true,
+          outputTokens: true,
+          totalTokens: true,
+          costUsd: true,
+        } as const;
+        const counts = { _all: true, ...sums } as const;
+        const [result, modelGroups, runGroups] = await Promise.all([
+          deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
-            by: ["runId", "parentRunId"],
-            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+            by: ["provider", "model"],
+            where,
+            _sum: sums,
+            _count: counts,
           }),
+          deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
         ]);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
-        const completeSum = (field: "inputTokens" | "outputTokens" | "totalTokens") =>
-          result._count[field] === result._count._all ? (result._sum[field] ?? 0) : null;
+        // A total that skips rows without a count would understate spend, so it reads as unknown.
+        const completeSums = (group: {
+          _sum: Record<keyof typeof sums, number | null>;
+          _count: Record<keyof typeof counts, number>;
+        }) => {
+          const complete = (field: keyof typeof sums) =>
+            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
+          return {
+            inputTokens: complete("inputTokens"),
+            outputTokens: complete("outputTokens"),
+            totalTokens: complete("totalTokens"),
+            costUsd: complete("costUsd"),
+            modelCalls: group._count._all,
+          };
+        };
         return {
-          inputTokens: completeSum("inputTokens"),
-          outputTokens: completeSum("outputTokens"),
-          totalTokens: completeSum("totalTokens"),
-          modelCalls: result._count._all,
+          ...completeSums(result),
           runs,
+          models: modelGroups
+            .map((group) => ({
+              provider: group.provider,
+              model: group.model,
+              ...completeSums(group),
+            }))
+            .sort(
+              (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
+            ),
         };
       }),
     },
@@ -7045,7 +7079,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
           userId: actor.userId,
         },
       },
-      select: { enabled: true },
+      select: { enabled: true, skipApprovals: true },
     }),
     requiredUserProvider
       ? deps.prisma.userModelCredential.findFirst({
@@ -7056,7 +7090,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
   ]);
   const enabled = preference?.enabled ?? deploymentAutoReviewDefault(process.env);
   const checkerAvailable = environmentAvailable || Boolean(credential);
-  return { enabled, checkerAvailable };
+  return { enabled, checkerAvailable, skipApprovals: preference?.skipApprovals ?? false };
 }
 
 function hostCredentials(active: boolean, provider: string) {

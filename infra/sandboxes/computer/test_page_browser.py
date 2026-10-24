@@ -197,6 +197,192 @@ class PageBrowserTest(unittest.TestCase):
                 ])
             ensure.assert_not_called()
 
+    def test_key_events_press_printable_characters_and_insert_the_rest(self):
+        self.assertEqual(helper.key_event("6"),
+                         {"key": "6", "code": "Digit6", "text": "6", "windowsVirtualKeyCode": 54})
+        self.assertEqual(helper.key_event("q")["code"], "KeyQ")
+        self.assertEqual(helper.key_event("Q")["windowsVirtualKeyCode"], 81)
+        self.assertEqual(helper.key_event(" ")["code"], "Space")
+        self.assertEqual(helper.key_event("\n"), {"key": "Enter", "code": "Enter", "text": "\r",
+                                                  "windowsVirtualKeyCode": 13, "modifiers": 8})
+        self.assertEqual(helper.key_event("@"), {"key": "@", "text": "@"})
+        self.assertIsNone(helper.key_event("é"))
+
+    def type_once(self, focus, text, typed=True, after_key=None, more=(), on_clear=None, page=None):
+        """Runs one type step against a stand-in browser.
+
+        after_key(n, client, state) runs once key n has landed; on_clear(client, state) while the field is emptied.
+        """
+        client = helper.CdpClient("ws://browser.example.test:9222/test")
+        sent = []
+        state = {"focused": True, "gone": False}
+
+        def call(method, params=None, **_):
+            if method == "Page.getFrameTree":
+                document = (client.navigations("session", "main"), state["gone"])
+                return {"frameTree": {"frame": {"id": "main", "loaderId": str(document)}}}
+            sent.append((method, params))
+            if after_key and (method == "Input.insertText" or params.get("type") == "keyUp"):
+                after_key(sum(m == "Input.insertText" or p.get("type") == "keyUp" for m, p in sent), client, state)
+            return {}
+
+        def evaluate(_, __, expression):
+            if state["gone"]:
+                raise RuntimeError("Runtime.evaluate failed: Cannot find context with specified id")
+            if "resolve(" in expression:
+                return True
+            if "focusForKeys(" in expression:
+                if on_clear:
+                    on_clear(client, state)
+                return focus
+            if "focusHolds()" in expression:
+                return state["focused"]
+            if "typed(" in expression:
+                return typed
+            return {}
+
+        client.call = call
+        with patch.object(helper, "ensure_helpers"), \
+                patch.object(helper, "snapshot", return_value=page or {"ok": True}), \
+                patch.object(helper, "eval_json", side_effect=evaluate) as evaluated:
+            result = helper.act(client, "session", [{"kind": "type", "ref": "e1", "text": text}, *more])
+        return result, sent, [call.args[2] for call in evaluated.call_args_list]
+
+    @staticmethod
+    def navigate_on(key, event="Page.frameRequestedNavigation", **params):
+        def after_key(n, client, state):
+            if n == key:
+                client._handle_event({"method": event, "sessionId": "session",
+                                      "params": {"frameId": "main", **params}})
+        return after_key
+
+    def test_type_presses_each_key_into_the_focused_field(self):
+        result, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "6é")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[1], 'window.__rakazoPageBrowser.focusForKeys("e1", true)')
+        self.assertEqual(evaluated[-1], 'window.__rakazoPageBrowser.typed("e1", "6\\u00e9")')
+        self.assertEqual(sent, [
+            ("Input.dispatchKeyEvent", {"type": "keyDown", "key": "6", "code": "Digit6", "text": "6",
+                                        "windowsVirtualKeyCode": 54, "unmodifiedText": "6"}),
+            ("Input.dispatchKeyEvent", {"type": "keyUp", "key": "6", "code": "Digit6", "windowsVirtualKeyCode": 54}),
+            ("Input.insertText", {"text": "é"}),
+        ])
+
+    def test_type_of_one_character_replaces_only_the_box_it_is_typed_into(self):
+        result, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "8")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[1], 'window.__rakazoPageBrowser.focusForKeys("e1", false)')
+        self.assertEqual([params["key"] for _, params in sent if params.get("type") == "keyDown"], ["8"])
+
+    def test_type_checks_the_page_before_every_key_and_after_the_last(self):
+        _, sent, evaluated = self.type_once({"focused": True, "multiline": False}, "482913")
+        self.assertEqual(len([params for _, params in sent if params.get("type") == "keyDown"]), 6)
+        self.assertEqual(evaluated.count("window.__rakazoPageBrowser.focusHolds()"), 7)
+
+    def test_type_presses_no_key_when_emptying_the_field_made_the_page_navigate(self):
+        def on_clear(client, _):
+            client._handle_event({"method": "Page.frameRequestedNavigation", "sessionId": "session",
+                                  "params": {"frameId": "main", "disposition": "currentTab"}})
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", on_clear=on_clear)
+        self.assertEqual(sent, [])
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+        self.assertIn("page changed while typing, after 0 of 6 characters", result["error"])
+
+    def test_type_breaks_lines_with_shift_enter_only_where_a_line_break_belongs(self):
+        _, one_line, _ = self.type_once({"focused": True, "multiline": False}, "a\r\nb\n")
+        self.assertNotIn("Enter", [params.get("key") for _, params in one_line])
+        _, text_area, _ = self.type_once({"focused": True, "multiline": True}, "a\r\nb\rc")
+        enters = [params for _, params in text_area if params.get("key") == "Enter"]
+        # One line break per newline, each a Shift+Enter in both the key press and its release.
+        self.assertEqual([(params["type"], params["modifiers"]) for params in enters],
+                         [("keyDown", 8), ("keyUp", 8)] * 2)
+        self.assertNotIn("Input.insertText", [method for method, _ in text_area])
+
+    def test_type_reports_characters_the_page_did_not_keep(self):
+        result, _, _ = self.type_once({"focused": True, "multiline": False}, "A7K29Q", typed=False)
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 1})
+        self.assertIn("did not keep every character", result["error"])
+        self.assertNotIn("A7K29Q", result["error"])
+
+    def test_type_stops_at_once_when_the_page_navigates_mid_code(self):
+        events = [
+            ("Page.frameRequestedNavigation", {"disposition": "currentTab"}),
+            ("Page.frameStartedNavigating", {"navigationType": "differentDocument"}),
+            ("Page.frameNavigated", {}),
+        ]
+        for event, params in events:
+            with self.subTest(event=event):
+                if event == "Page.frameNavigated":
+                    def after_key(n, client, _):
+                        if n == 2:
+                            client._handle_event({"method": event, "sessionId": "session",
+                                                  "params": {"frame": {"id": "main"}}})
+                else:
+                    after_key = self.navigate_on(2, event, **params)
+                result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913",
+                                                 after_key=after_key)
+                self.assertEqual([p["key"] for _, p in sent if p.get("type") == "keyDown"], ["4", "8"])
+                self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+                self.assertIn("page changed while typing, after 2 of 6 characters", result["error"])
+                self.assertNotIn("482913", result["error"])
+
+    def test_type_stops_when_the_document_is_gone_before_any_event_arrives(self):
+        def after_key(n, _, state):
+            state["gone"] = n == 3
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 3)
+        self.assertIn("page changed while typing", result["error"])
+
+    def test_type_keeps_going_through_same_document_and_other_tab_navigations(self):
+        elsewhere = [
+            ("Page.frameStartedNavigating", {"frameId": "main", "navigationType": "sameDocument"}),
+            ("Page.frameRequestedNavigation", {"frameId": "main", "disposition": "newTab"}),
+            ("Page.frameRequestedNavigation", {"frameId": "ad", "disposition": "currentTab"}),
+        ]
+
+        def after_key(n, client, _):
+            if n == 1:
+                for event, params in elsewhere:
+                    client._handle_event({"method": event, "sessionId": "session", "params": params})
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 6)
+
+    def test_type_that_submits_on_the_last_key_is_done_and_later_steps_are_stale(self):
+        signed_in = {"ok": True, "url": "https://code.example.test/done", "title": "Signed in", "elements": []}
+        result, sent, evaluated = self.type_once(
+            {"focused": True, "multiline": False}, "482913", after_key=self.navigate_on(6),
+            more=[{"kind": "click", "ref": "e2"}], page=signed_in)
+        self.assertEqual(len([p for _, p in sent if p.get("type") == "keyDown"]), 6)
+        # The result is the page the code led to.
+        self.assertEqual({key: result.get(key) for key in ("ok", "completed", "url", "title")},
+                         {"ok": False, "completed": 1, "url": signed_in["url"], "title": "Signed in"})
+        self.assertIn("Stale element ref", result["error"])
+        self.assertFalse(any("typed(" in expression or "click(" in expression for expression in evaluated))
+        alone, _, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=self.navigate_on(6))
+        self.assertEqual(alone, {"ok": True, "completed": 1})
+
+    def test_type_stops_when_focus_leaves_the_field_or_its_code(self):
+        def after_key(n, _, state):
+            state["focused"] = n < 3
+        result, sent, _ = self.type_once({"focused": True, "multiline": False}, "482913", after_key=after_key)
+        self.assertEqual([p["key"] for _, p in sent if p.get("type") == "keyDown"], ["4", "8", "2"])
+        self.assertEqual({key: result[key] for key in ("ok", "completed")}, {"ok": False, "completed": 0})
+        self.assertIn("Focus left the field while typing, after 3 of 6 characters", result["error"])
+        self.assertNotIn("482913", result["error"])
+
+    def test_type_into_a_select_chooses_the_option_as_fill_does(self):
+        result, sent, evaluated = self.type_once({"select": True}, "Blue")
+        self.assertEqual(result, {"ok": True, "completed": 1})
+        self.assertEqual(evaluated[2], 'window.__rakazoPageBrowser.fill("e1", "Blue")')
+        self.assertEqual(sent, [])
+
+    def test_type_presses_nothing_when_the_field_does_not_take_focus(self):
+        result, sent, _ = self.type_once({"focused": False, "multiline": False}, "x")
+        self.assertFalse(result["ok"])
+        self.assertIn("keyboard focus", result["error"])
+        self.assertEqual(sent, [])
+
     def test_reads_arguments_from_one_stdin_line_only(self):
         payload = b'{"actions": []}\nrest'
         with patch.object(helper.os, "read", side_effect=[payload[i:i + 1] for i in range(len(payload))]) as read:

@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr ""
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0}회 실행 · 토큰 {1}개"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -765,10 +759,6 @@ msgstr "보관됨"
 msgid "Archived"
 msgstr "보관됨"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "보관되었습니다. 대화, 기억, 파일은 유지됩니다."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "인자"
@@ -1016,6 +1006,10 @@ msgstr ""
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "호출"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1538,6 +1532,10 @@ msgstr "복사"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "비용"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2842,6 +2840,10 @@ msgstr ""
 msgid "Inherit default"
 msgstr "기본 설정 사용"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "입력"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "입력값"
@@ -3272,6 +3274,7 @@ msgstr "분"
 msgid "Missed call"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3297,10 +3300,6 @@ msgstr "모델 ID"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "모델 선택지"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "모델 사용 비용은 연결한 서비스의 API 키로 청구됩니다."
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3726,10 +3725,6 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 호환 서버 주소"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "대화가 만들어졌습니다."
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "채팅 여는 중…"
@@ -3766,6 +3761,10 @@ msgstr "원본 메시지를 사용할 수 없습니다"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "다른 모델 직접 입력…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "출력"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4147,10 +4146,6 @@ msgstr "작업 기술 {0} 삭제"
 msgid "Remove webhook"
 msgstr "웹훅 제거"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "대화, 컴퓨터, 기억과 함께 삭제되었습니다."
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
@@ -4334,6 +4329,10 @@ msgstr "자동 실행"
 msgid "Routines that run while you're away"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "묻지 않고 작업 실행"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "실행 시간"
@@ -4364,6 +4363,10 @@ msgstr "실행 중 · 중지"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "실행 중…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "실행"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -5111,6 +5114,10 @@ msgstr "받는 사람:"
 msgid "Today"
 msgstr "오늘"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "토큰"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr "도구 인수 (JSON)"
@@ -5289,7 +5296,6 @@ msgid "Urgent"
 msgstr ""
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "사용량"
