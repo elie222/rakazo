@@ -1,13 +1,17 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { encodeLoginSecret } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
+  loadLoginPasswordRedactions,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
   resolveRequestSecretDestination,
+  sameSecretDestination,
 } from "./bot-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
@@ -598,10 +602,7 @@ describe("credentialArgument", () => {
         origin: `https://user:${plantedSecret}@api.example.test/v1?token=${plantedSecret}#${plantedSecret}`,
       },
     });
-    expect(credential).toEqual({
-      ...destination,
-      origin: "https://api.example.test/path",
-    });
+    expect(credential).toEqual(destination);
     expect(JSON.stringify(credential)).not.toContain(plantedSecret);
 
     const secretName = "Planted.Secret";
@@ -621,13 +622,14 @@ describe("credentialArgument", () => {
         credential: { ...destination, name: secretName },
       }).error,
     ).toMatch(/Invalid credential destination — name:/);
-    expect(
-      resolveRequestSecretDestination({
-        label: "API key",
-        purpose: "api_key",
-        credential: { ...destination, origin: `https://api.example.test/${secretName}` },
-      }).error,
-    ).toMatch(/Invalid credential destination — origin:/);
+    // A page URL is saved under its site, and its path is never kept.
+    const fromPage = resolveRequestSecretDestination({
+      label: "API key",
+      purpose: "api_key",
+      credential: { ...destination, origin: `https://api.example.test/${secretName}` },
+    });
+    expect(fromPage).toEqual({ destination });
+    expect(JSON.stringify(fromPage)).not.toContain(secretName);
 
     expect(
       resolveRequestSecretDestination({
@@ -689,6 +691,79 @@ describe("normalizeSecretDestination", () => {
     ).toThrow(/name/);
   });
 
+  function requestedOrigin(origin: string, auth: object = { type: "login" }) {
+    const resolved = resolveRequestSecretDestination({
+      label: "Sign in",
+      purpose: "password",
+      credential: { name: "site_login", origin, auth },
+    });
+    return resolved.destination?.origin ?? resolved.error;
+  }
+
+  it("saves a credential requested with a page URL under that page's site", () => {
+    expect(requestedOrigin("https://www.example.test/some/login/page?x=1")).toBe(
+      "https://www.example.test",
+    );
+    expect(requestedOrigin("https://api.example.test/v1/users#top", { type: "bearer" })).toBe(
+      "https://api.example.test",
+    );
+    expect(requestedOrigin("https://WWW.Example.TEST:443/Login")).toBe("https://www.example.test");
+    expect(requestedOrigin("https://api.example.test:8443/v1")).toBe(
+      "https://api.example.test:8443",
+    );
+    // The host is kept as the browser reports it: punycode, and a trailing dot as its own site.
+    expect(requestedOrigin("https://bücher.example.test/login")).toBe(
+      "https://xn--bcher-kva.example.test",
+    );
+    expect(requestedOrigin("https://www.example.test./login")).toBe("https://www.example.test.");
+    // A long sign-in redirect URL is fine; only the site is kept.
+    expect(requestedOrigin(`https://www.example.test/sign-in?state=${"a".repeat(3000)}`)).toBe(
+      "https://www.example.test",
+    );
+  });
+
+  it("reuses a login saved by origin when it is asked for again by page URL", () => {
+    const saved: BotSecretDestination = {
+      name: "site_login",
+      origin: "https://www.example.test",
+      auth: { type: "login" },
+    };
+    const asked = (origin: string) =>
+      resolveRequestSecretDestination({
+        label: "Sign in",
+        purpose: "password",
+        credential: { ...saved, origin },
+      }).destination!;
+    expect(sameSecretDestination(saved, asked("https://www.example.test/account/login?x=1"))).toBe(
+      true,
+    );
+    expect(sameSecretDestination(saved, asked("https://example.test/account/login"))).toBe(false);
+  });
+
+  it("still turns down page URLs on sites a credential can't be saved for", () => {
+    for (const origin of [
+      "http://www.example.test/login",
+      "https://169.254.169.254/latest/meta-data",
+      "https://metadata.google.internal/x",
+      "blob:https://www.example.test/abc",
+      "data:text/html,https://www.example.test/",
+      "javascript:alert(1)",
+      "not a url",
+      `https://www.example.test/?state=${"a".repeat(8192)}`,
+    ]) {
+      const error = requestedOrigin(origin);
+      expect(error).toMatch(/^Invalid credential destination — origin: /);
+      expect(error).not.toContain("example.test/");
+    }
+    vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
+    expect(requestedOrigin("http://192.168.2.10:8080/api/v1", { type: "bearer" })).toBe(
+      "http://192.168.2.10:8080",
+    );
+    expect(requestedOrigin("http://192.168.2.10:8080/api/v1")).toMatch(
+      /Website logins require an HTTPS origin/,
+    );
+  });
+
   it("reports login-over-plain-HTTP as an origin problem", () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     expect(() =>
@@ -701,14 +776,36 @@ describe("normalizeSecretDestination", () => {
   });
 });
 
+/** Prisma's where for these tests: plain fields, a JSON path filter on auth, and take. */
+function matchingRows<T extends Record<string, unknown>>(
+  rows: T[],
+  { where, take }: { where: Record<string, unknown>; take?: number },
+) {
+  const matches = rows.filter((row) =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === "auth" && value && typeof value === "object" && "path" in value) {
+        const filter = value as { path: string[]; equals: unknown };
+        return (row.auth as Record<string, unknown>)[filter.path[0]!] === filter.equals;
+      }
+      return row[key] === value;
+    }),
+  );
+  return take === undefined ? matches : matches.slice(0, take);
+}
+
 describe("saved website logins", () => {
   const login = {
     name: "site_login",
     origin: "https://login.example.test",
     auth: { type: "login" },
   };
-  async function loginFixture(username: string, auth: object = login.auth, origin = login.origin) {
-    const plaintext = encodeLoginSecret({ username, password: "fake-password-1" });
+  async function loginFixture(
+    username: string,
+    auth: object = login.auth,
+    origin = login.origin,
+    password = "fake-password-1",
+  ) {
+    const plaintext = encodeLoginSecret({ username, password });
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -720,8 +817,93 @@ describe("saved website logins", () => {
         ? row
         : null,
     );
-    return { prisma: { botSecret: { findFirst } } as unknown as PrismaClient };
+    const findMany = vi.fn(async (query) => matchingRows([row], query));
+    return { prisma: { botSecret: { findFirst, findMany } } as unknown as PrismaClient };
   }
+
+  it("hides every saved password when the bot has more than 100 credentials", async () => {
+    const context = { operationId: "test", traceId: "test", signal: new AbortController().signal };
+    const rows: Record<string, unknown>[] = [];
+    // Other credentials are never decrypted for this, so their ciphertext doesn't matter.
+    for (let index = 0; index < 120; index += 1)
+      rows.push({ ...scope, name: `api_${index}`, auth: { type: "bearer" }, ciphertext: "unused" });
+    const password = "fake-late-password-1";
+    const encrypted = await secretStore.put(
+      encodeLoginSecret({ username: "fake-user@example.test", password }),
+      { ...scope, ...context },
+      { recordId: "login-late" },
+    );
+    rows.push({ ...scope, ...login, ...encrypted });
+    const prisma = {
+      botSecret: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+    } as unknown as PrismaClient;
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
+  });
+
+  it("hides a saved password in its plain, URL, form and base64 forms", async () => {
+    const username = "fake-user@example.test";
+    const password = "fake pass!word+1";
+    const { prisma } = await loginFixture(username, login.auth, login.origin, password);
+    const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+    const forms = [
+      password,
+      encodeURIComponent(password),
+      new URLSearchParams({ v: password }).toString().slice(2),
+      Buffer.from(password).toString("base64"),
+    ];
+    expect(forms).toContain("fake+pass%21word%2B1");
+    const redacted = redactSecrets([...forms, `Signed in as ${username}`].join("\n"), redactions);
+    for (const form of forms) expect(redacted).not.toContain(form);
+    // Only the run that fills a login hides its username.
+    expect(redacted).toContain(`Signed in as ${username}`);
+    expect(
+      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, botId: "bot-2" }),
+    ).toEqual([]);
+  });
+
+  it("leaves a short password to the run that fills it", async () => {
+    const { prisma } = await loginFixture(
+      "fake-user@example.test",
+      login.auth,
+      login.origin,
+      "abc",
+    );
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+    const fill = await resolveLoginFill({
+      prisma,
+      secretStore,
+      scope,
+      name: "site_login",
+      field: "password",
+    });
+    expect("redactions" in fill && fill.redactions).toContain("abc");
+  });
+
+  it("skips an unreadable login and logs only its id", async () => {
+    const row = { ...scope, ...login, id: "login-broken", ciphertext: "not-a-ciphertext" };
+    const prisma = { botSecret: { findMany: vi.fn(async () => [row]) } } as unknown as PrismaClient;
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { loginId: "login-broken" });
+      // The logger's own scrubbing keeps the id readable.
+      expect(Logging.redactBindings(warn.mock.calls[0]![1])).toEqual({ loginId: "login-broken" });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  it("decrypts nothing for a bot without saved logins", async () => {
+    const { prisma } = await loginFixture("fake-user@example.test", { type: "bearer" });
+    const load = vi.spyOn(secretStore, "load");
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      load.mockRestore();
+    }
+  });
 
   it("resolves one field bound to the saved origin with its redactions", async () => {
     const { prisma } = await loginFixture("fake-user@example.test");

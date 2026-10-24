@@ -29,6 +29,7 @@ export function ApprovalRulesSettings() {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const autoReviewId = useId();
+  const skipApprovalsId = useId();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [autoReview, setAutoReview] = useState<ActionAutoReviewSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,12 +96,12 @@ export function ApprovalRulesSettings() {
     }
   }
 
-  async function toggleAutoReview(enabled: boolean) {
+  async function saveAutoReview(input: { enabled?: boolean; skipApprovals?: boolean }) {
     if (loading || savingAutoReview) return;
     setSavingAutoReview(true);
     setError(null);
     try {
-      setAutoReview(await rpc.autoReview.set({ enabled }));
+      setAutoReview(await rpc.autoReview.set(input));
     } catch (err) {
       setError(errorText(err, t`Could not save Auto Review`));
     } finally {
@@ -110,6 +111,18 @@ export function ApprovalRulesSettings() {
 
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
+      <div className="mb-5 flex items-center gap-3">
+        <Switch
+          id={skipApprovalsId}
+          data-testid="skip-approvals-toggle"
+          checked={autoReview?.skipApprovals ?? false}
+          disabled={loading || savingAutoReview || !autoReview}
+          onCheckedChange={(checked) => void saveAutoReview({ skipApprovals: checked })}
+        />
+        <Label htmlFor={skipApprovalsId} className="text-[14px] font-normal text-foreground/75">
+          <Trans>Run actions without asking</Trans>
+        </Label>
+      </div>
       <div className="flex flex-col items-start gap-2">
         <Button
           variant="outline"
@@ -126,26 +139,28 @@ export function ApprovalRulesSettings() {
           <Trans>Ask before purchases</Trans>
         </Button>
       </div>
-      <div className="mt-5 flex items-start gap-3">
-        <Switch
-          id={autoReviewId}
-          data-testid="auto-review-toggle"
-          className="mt-0.5"
-          checked={autoReview?.enabled ?? false}
-          disabled={loading || savingAutoReview || !autoReview}
-          onCheckedChange={(checked) => void toggleAutoReview(checked)}
-        />
-        <div>
-          <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground/75">
-            <Trans>Flag unexpected actions</Trans>
-          </Label>
-          {autoReview?.enabled && !autoReview.checkerAvailable ? (
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              <Trans>Add a model in Settings to use this.</Trans>
-            </p>
-          ) : null}
+      {autoReview?.skipApprovals ? null : (
+        <div className="mt-5 flex items-start gap-3">
+          <Switch
+            id={autoReviewId}
+            data-testid="auto-review-toggle"
+            className="mt-0.5"
+            checked={autoReview?.enabled ?? false}
+            disabled={loading || savingAutoReview || !autoReview}
+            onCheckedChange={(checked) => void saveAutoReview({ enabled: checked })}
+          />
+          <div>
+            <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground/75">
+              <Trans>Flag unexpected actions</Trans>
+            </Label>
+            {autoReview?.enabled && !autoReview.checkerAvailable ? (
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                <Trans>Add a model in Settings to use this.</Trans>
+              </p>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
       {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
       {loading ? (
         <p className="mt-4 text-[13px] text-muted-foreground">

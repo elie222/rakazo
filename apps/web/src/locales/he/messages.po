@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "שעות סיכום של {0}"
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0} הרצות · {1} טוקנים"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -803,10 +797,6 @@ msgstr "בארכיון"
 msgid "Archived"
 msgstr "בארכיון"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "הועבר לארכיון. הצ׳אט, הזיכרון והקבצים נשמרו."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "ארגומנטים"
@@ -1061,6 +1051,10 @@ msgstr ""
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "קריאות"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1618,6 +1612,10 @@ msgstr "העתקת דוגמת .env"
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "העתקת ההנחיה"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "עלות"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2974,6 +2972,10 @@ msgstr ""
 msgid "Inherit default"
 msgstr "ירושה מברירת המחדל"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "קלט"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "קלטים"
@@ -3252,6 +3254,7 @@ msgstr "נמוך"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "אותיות לטיניות קטנות, ספרות, מקפים וקווים תחתונים, ובהתחלה אות."
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
 msgstr "ניהול"
@@ -3264,10 +3267,6 @@ msgstr "ניהול חיוב"
 #: src/pages/PluginsOverlay.tsx
 msgid "Manage MCP servers"
 msgstr "ניהול שרתי MCP"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Manage messaging settings"
-msgstr "ניהול הגדרות ההודעות"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Manage the bots it creates"
@@ -3464,6 +3463,7 @@ msgstr "דקות"
 msgid "Missed call"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3490,10 +3490,6 @@ msgstr "מזהה מודל"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "אפשרויות מודל"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "העלות של המודלים מחויבת דרך מפתחות הספק שלך."
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3967,10 +3963,6 @@ msgstr "כתובת URL של שרת תואם OpenAI"
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw או Hermes"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "השרשור שלו נפתח."
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "פותח צ׳אט…"
@@ -4007,6 +3999,10 @@ msgstr "ההודעה המקורית אינה זמינה"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "מודל אחר…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "פלט"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4144,6 +4140,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST אל"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Preferences"
+msgstr "העדפות"
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -4409,10 +4409,6 @@ msgstr "הסרת ה-webhook"
 msgid "Removed"
 msgstr "יוסר"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "הוסר יחד עם הצ׳אט, המחשב והזיכרון."
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "הוסר, אבל רענון הרשימה נכשל"
@@ -4601,6 +4597,10 @@ msgstr "רוטינות"
 msgid "Routines that run while you're away"
 msgstr "רוטינות שרצות גם כשלא נמצאים"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "להריץ פעולות בלי לשאול"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "הרצה ב-"
@@ -4630,6 +4630,10 @@ msgstr "פועל · עצירה"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "מריץ…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "הרצות"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -4762,6 +4766,10 @@ msgstr "חיפוש: {0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "מחפש…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Security"
+msgstr "אבטחה"
 
 #: src/pages/Shell.tsx
 msgid "Select a bot"
@@ -5422,6 +5430,10 @@ msgstr "אל:"
 msgid "Today"
 msgstr "היום"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "טוקנים"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr ""
@@ -5608,7 +5620,6 @@ msgid "Urgent"
 msgstr "דחוף"
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "שימוש"

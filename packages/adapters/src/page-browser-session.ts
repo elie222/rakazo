@@ -181,11 +181,10 @@ export class PageBrowserSession {
       const text = action.text;
       const formField = el instanceof win.HTMLInputElement || el instanceof win.HTMLTextAreaElement;
       if (formField) {
-        // Only a plain fill replaces a saved login; typing appends to it.
+        // Fill and type both replace the field, and with it any saved login.
         if (action.origin) this.loginFilled.add(el);
-        else if (action.kind === "fill") this.loginFilled.delete(el);
-        if (action.kind === "fill") el.value = text;
-        else el.value = `${el.value}${text}`;
+        else this.loginFilled.delete(el);
+        el.value = text;
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         el.dispatchEvent(new win.Event("change", { bubbles: true }));
         return;
@@ -197,8 +196,7 @@ export class PageBrowserSession {
         return;
       }
       if (el.getAttribute("contenteditable") === "true") {
-        if (action.kind === "fill") el.textContent = text;
-        else el.textContent = `${el.textContent ?? ""}${text}`;
+        el.textContent = text;
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
         return;
       }

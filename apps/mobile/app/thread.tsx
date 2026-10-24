@@ -1,5 +1,5 @@
 import type { MenuAction } from "@expo/ui/community/menu";
-import { ChatMarkdown, markdownCodeBlocks } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, markdownCodeBlocks, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { AgentSkillCatalogEntry, MessageBlock, MessageReaction } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_COUNT,
@@ -8,7 +8,7 @@ import {
   isAttachmentAudioMimeType,
   MESSAGE_REACTIONS,
 } from "@rakazo/contracts";
-import type { ReadBoundary, SlashActionId, ThreadItem } from "@rakazo/core";
+import type { ChildBotBlock, ReadBoundary, SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
   answerableAskMessageIds,
@@ -38,6 +38,7 @@ import {
   liveMessageComposing,
   openThreadWindow,
   plainTextFromMarkdown,
+  projectBotMentions,
   projectMessageReactions,
   reconcileThreadScrollState,
   replyAttachment,
@@ -118,6 +119,7 @@ import { AskActions } from "../components/AskActions";
 import { ActivityMark } from "../components/activity-mark";
 import { AudioAttachment } from "../components/audio-attachment";
 import { BotAvatar } from "../components/bot-avatar";
+import { BotMention, MessageMentions } from "../components/bot-mention";
 import { ChoiceCard } from "../components/ChoiceCard";
 import { ComputerCard } from "../components/ComputerCard";
 import { ComposerReplyPreview } from "../components/composer-reply-preview";
@@ -732,20 +734,23 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
     [snap?.messages],
   );
-  const reactionView = useMemo(
-    () =>
-      projectMessageReactions(
-        expandPeerReplies(peerTranscript, expandedPeerMarkers)
-          .map((message) => {
-            const dismissed = dismissedChoiceQuestions.get(message.id);
-            if (!dismissed) return message;
-            const blocks = applyLocalChoiceDismissals(message.blocks, dismissed);
-            return blocks === message.blocks ? message : { ...message, blocks: [...blocks] };
-          })
-          .filter((message) => hasVisibleMessagePresentation(message.blocks)),
-      ),
-    [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
-  );
+  const reactionView = useMemo(() => {
+    const mentionView = projectBotMentions(
+      expandPeerReplies(peerTranscript, expandedPeerMarkers)
+        .map((message) => {
+          const dismissed = dismissedChoiceQuestions.get(message.id);
+          if (!dismissed) return message;
+          const blocks = applyLocalChoiceDismissals(message.blocks, dismissed);
+          return blocks === message.blocks ? message : { ...message, blocks: [...blocks] };
+        })
+        .filter((message) => hasVisibleMessagePresentation(message.blocks)),
+    );
+    return {
+      ...projectMessageReactions(mentionView.visibleMessages),
+      mentions: mentionView.mentions,
+      foldedInto: mentionView.foldedInto,
+    };
+  }, [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript]);
   const visibleMessages = reactionView.visibleMessages;
   const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
   const latestMessageId = latestMessage?.id ?? null;
@@ -2388,7 +2393,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         params: { ...target, ...(groupId ? { groupId } : { botId }) },
       }),
     jump: (messageId) => {
-      void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
+      void applyMessageJump({
+        botId,
+        groupId,
+        messageId: reactionView.foldedInto.get(messageId) ?? messageId,
+      }).catch(() => undefined);
     },
     dismissChoice: (messageId, question) => {
       setDismissedChoiceQuestions((current) => {
@@ -2516,6 +2525,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               (run.status === "waiting_input" || run.status === "waiting_takeover"),
           )}
           messageReactions={messageReactions}
+          mentions={reactionView.mentions.get(message.id)}
           peerReplies={
             peerTranscript.folded.has(message.id)
               ? expandedPeerMarkers.has(message.id)
@@ -2542,7 +2552,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       snap?.run,
       mentionBots,
       displayName,
-      reactionView.reactions,
+      reactionView,
       peerTranscript,
       expandedPeerMarkers,
       inGroup,
@@ -3366,6 +3376,7 @@ type MessageRowProps = {
   replyFallbackText?: string;
   waitingForUser: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
+  mentions?: readonly ChildBotBlock[];
   /** Set on a received marker whose peer run has folded replies. */
   peerReplies?: "collapsed" | "expanded";
   activityBotId?: string;
@@ -3408,6 +3419,7 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
+  mentions,
   waitingForUser,
   peerReplies,
   activityBotId,
@@ -3731,6 +3743,7 @@ const MessageRow = memo(function MessageRow({
           >
             <ThreadReadOnlyContext.Provider value={readOnly}>
               <MessageBubble
+                mentions={mentions}
                 botId={bubbleBotId}
                 groupId={groupId}
                 message={message}
@@ -3799,9 +3812,36 @@ const MessageRow = memo(function MessageRow({
 // its row mounts again when the helper finishes. Remember open cards by agent id across that.
 const openHelpers = new Set<string>();
 
-const MessageBubble = memo(function MessageBubble(
-  props: ComponentProps<typeof MessageBubbleContent>,
-) {
+const MessageBubble = memo(function MessageBubble({
+  mentions,
+  ...props
+}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+  if (!mentions?.length) return <MessageBubbleBody {...props} />;
+  return (
+    <MessageMentions
+      mentions={mentions}
+      colorOf={(id) =>
+        props.bots.find((bot) => bot.id === id)?.color ??
+        props.members?.find((member) => member.botId === id)?.color
+      }
+      tokens={mobileTokens()}
+      onOpenBot={props.onOpenBot}
+    >
+      <MessageBubbleBody
+        {...props}
+        message={{
+          ...props.message,
+          blocks: withBlockMentions(
+            props.message.blocks,
+            mentions.map((bot) => ({ id: bot.botId, name: bot.name })),
+          ),
+        }}
+      />
+    </MessageMentions>
+  );
+});
+
+function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
   if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
 
@@ -3821,6 +3861,8 @@ const MessageBubble = memo(function MessageBubble(
         key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
         special={first}
         actionProps={props.actionProps}
+        bots={props.bots}
+        members={props.members}
         onOpenBot={props.onOpenBot}
         onHelperToggle={props.onHelperToggle}
         userBubble={props.userBubble}
@@ -3839,7 +3881,7 @@ const MessageBubble = memo(function MessageBubble(
   ) : (
     <View style={{ gap: 8, width: "100%" }}>{content}</View>
   );
-});
+}
 
 type SpecialMessageBlock = Extract<
   MessageBlock,
@@ -4441,7 +4483,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 
 type SpecialMessageCardProps = Pick<
   ComponentProps<typeof MessageBubbleContent>,
-  "actionProps" | "onOpenBot" | "onHelperToggle" | "userBubble"
+  "actionProps" | "bots" | "members" | "onOpenBot" | "onHelperToggle" | "userBubble"
 > & { special: SpecialMessageBlock };
 
 function HelperMessageCard({
@@ -4572,7 +4614,7 @@ function HelperMessageCard({
 }
 
 function SpecialMessageCard(props: SpecialMessageCardProps) {
-  const { special, actionProps, onOpenBot, userBubble } = props;
+  const { special, actionProps, bots, members, onOpenBot, userBubble } = props;
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
@@ -4636,50 +4678,31 @@ function SpecialMessageCard(props: SpecialMessageCardProps) {
     );
   }
   if (special.kind === "child_bot") {
-    const removed = special.status === "deleted" || special.status === "archived";
     return (
-      <Pressable
+      <Text
         {...actionProps}
-        onPress={
-          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
-        }
         style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          opacity: removed ? 0.6 : 1,
+          alignSelf: "flex-start",
+          paddingHorizontal: 4,
+          color: tokens.mutedForeground,
+          ...typeScale.body,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {special.name || t("Bot")}
-          </Text>
-          <Text
-            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
-          >
-            {special.status === "archived"
-              ? t("archived")
-              : special.status === "deleted"
-                ? t("deleted")
-                : t("bot")}
-          </Text>
-        </View>
-        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-          {removed
-            ? special.status === "archived"
-              ? t("Archived. Chat, memory, and files kept.")
-              : t("Removed with chat, computer, and memory.")
-            : special.title || t("Opened its thread.")}
-        </Text>
-      </Pressable>
+        <BotMention
+          block={special}
+          color={
+            bots.find((bot) => bot.id === special.botId)?.color ??
+            members?.find((member) => member.botId === special.botId)?.color
+          }
+          tokens={tokens}
+          onOpenBot={onOpenBot}
+        />
+        {special.status === "archived"
+          ? ` ${t("archived")}`
+          : special.status === "deleted"
+            ? ` ${t("deleted")}`
+            : null}
+      </Text>
     );
   }
   return null;

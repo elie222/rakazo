@@ -268,10 +268,51 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         ),
       );
       expect(await db.usageRecord.count({ where: { botId: bot.id } })).toBe(7);
-      const summary = await rpc<{ totalTokens: number; modelCalls: number; runs: number }>(
-        "usage/summary",
-      );
+      type Summary = {
+        totalTokens: number | null;
+        modelCalls: number;
+        runs: number;
+        costUsd: number | null;
+        models: {
+          model: string;
+          modelCalls: number;
+          totalTokens: number;
+          costUsd: number | null;
+        }[];
+      };
+      const summary = await rpc<Summary>("usage/summary");
       expect(summary).toMatchObject({ totalTokens: 910, modelCalls: 7, runs: 3 });
+      expect(summary.costUsd).toBeCloseTo(0.00084);
+      expect(summary.models).toHaveLength(1);
+      expect(summary.models[0]).toMatchObject({
+        model: delivered.model,
+        modelCalls: 7,
+        totalTokens: 910,
+      });
+      expect(summary.models[0]?.costUsd).toBeCloseTo(0.00084);
+      // A call without a price makes its model's cost and the overall cost unknown, not zero.
+      const unpriced = await db.usageRecord.create({
+        data: {
+          spaceId: delivered.spaceId,
+          userId: delivered.userId,
+          provider: "unpriced-provider",
+          model: "unpriced-model",
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+        },
+      });
+      const mixed = await rpc<Summary>("usage/summary");
+      expect(mixed).toMatchObject({ totalTokens: 912, modelCalls: 8, runs: 3, costUsd: null });
+      expect(
+        mixed.models.map(({ model, modelCalls, totalTokens }) => [model, modelCalls, totalTokens]),
+      ).toEqual([
+        [delivered.model, 7, 910],
+        ["unpriced-model", 1, 2],
+      ]);
+      expect(mixed.models[0]?.costUsd).toBeCloseTo(0.00084);
+      expect(mixed.models[1]?.costUsd).toBeNull();
+      await db.usageRecord.delete({ where: { id: unpriced.id } });
       for (const row of rows)
         expect(row).toMatchObject({
           inputTokens: 60,

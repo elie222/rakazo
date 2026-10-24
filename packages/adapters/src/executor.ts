@@ -95,6 +95,7 @@ import {
   nextFence,
   nextRoutineRunDateAcross,
   outboundSiteGate,
+  plainTextFromMarkdown,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -107,6 +108,7 @@ import {
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
   truncatedPlainText,
+  truncatePlainText,
   unattendedTriggerToolRequiresApproval,
   userTurnMessageForRun,
 } from "@rakazo/core";
@@ -141,6 +143,7 @@ import {
   reserveInstructionProposal,
   retireModelCredential,
   runAsSystem,
+  runSecretKind,
   SpaceLimitError,
   saveRunTurnCheckpoint,
   searchHistory,
@@ -214,6 +217,7 @@ import {
   forgetBotSecret,
   listBotSecrets,
   loadBotCommandEnvironment,
+  loadLoginPasswordRedactions,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
@@ -383,7 +387,6 @@ import {
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
-  runSecretKind,
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
@@ -3841,6 +3844,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           agentSkills,
           agentSecretRows,
           initialBotCommandEnvironment,
+          savedLoginPasswordRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -3883,6 +3887,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
           }),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
         ]);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
@@ -3899,6 +3904,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runSecrets.push(...Object.values(agentEnvironment));
         // Encoded forms too: read_file redacts with these values before any shell command runs.
         runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        // A login filled in an earlier run may still be on its page, and anything this run reads
+        // or is given may contain it, so every run hides its saved passwords before the model runs.
+        runSecrets.push(...savedLoginPasswordRedactions);
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction({
           ...agentEnvironment,
           ...initialBotCommandEnvironment,
@@ -4364,7 +4372,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             .then((rules) => rules as ActionApprovalRule[]);
           return approvalRulesPromise;
         };
-        let autoReviewPreferencePromise: Promise<boolean> | undefined;
+        let autoReviewPreferencePromise:
+          | Promise<{ enabled: boolean; skipApprovals: boolean }>
+          | undefined;
         const loadAutoReviewPreference = () => {
           autoReviewPreferencePromise ??= deps.prisma.actionAutoReviewPreference
             .findUnique({
@@ -4374,9 +4384,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   userId: run.userId,
                 },
               },
-              select: { enabled: true },
+              select: { enabled: true, skipApprovals: true },
             })
-            .then((row) => row?.enabled ?? deploymentAutoReviewDefault());
+            .then((row) => ({
+              enabled: row?.enabled ?? deploymentAutoReviewDefault(),
+              skipApprovals: row?.skipApprovals ?? false,
+            }));
           return autoReviewPreferencePromise;
         };
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -4719,8 +4732,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             visualActionKey,
           );
           unchangedVisualStreak = guard.streak;
+          // A browser window's title is the page title, which can echo a signed-in username.
+          const activeWindow = observation.activeWindow;
           const result = observationToolResult(
-            observation,
+            activeWindow?.title
+              ? {
+                  ...observation,
+                  activeWindow: {
+                    ...activeWindow,
+                    title: redactSecrets(activeWindow.title, runSecrets),
+                  },
+                }
+              : observation,
             note,
             lastComputerFrameId,
             visualActionKey ? { unchangedVisualCount: guard.streak.count } : undefined,
@@ -4808,6 +4831,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (IMAGE_RETURNING_COMPUTER_TOOLS.has(name) && !acceptsImages) {
             return { error: MODEL_CANNOT_SEE_MESSAGE };
           }
+          const registerRunSecrets = (values: string[]) => {
+            const additions = values.filter((value) => !runSecrets.includes(value));
+            if (additions.length === 0) return;
+            pendingProgress += progressRedactor.finish();
+            runSecrets.push(...additions);
+            progressRedactor = createStreamingRedactor(runSecrets);
+          };
           let connectorCall: ConnectorCall = {
             tool: name,
             args,
@@ -5141,11 +5171,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             siteGate === "new" ||
             connectorReadGated ||
             toolRequiresApproval(name, viaConnector, declaredReadOnly);
+          // An owner who skips approvals gets new spaces, and their bot's own instruction updates
+          // (with Undo on the card), without a card. An update still asks once outside content
+          // entered the run, since that content could have written it.
+          const ownerSkipsMandatoryApproval =
+            (name === "create_space" || name === "propose_instructions_update") &&
+            (await loadAutoReviewPreference()).skipApprovals &&
+            (name === "create_space" || !(await isRunTainted()));
           const requiresMandatoryApproval =
             commandWatch ||
             scheduleNamesNewSite ||
             requiresUnattendedApproval ||
-            toolRequiresExplicitApproval(name);
+            (toolRequiresExplicitApproval(name) && !ownerSkipsMandatoryApproval);
           const approvalResolved = requiresMandatoryApproval
             ? {
                 decision: "ask" as const,
@@ -5159,9 +5196,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 site: fetchSite,
                 rules: await loadApprovalRules(),
               });
-          const autoReviewPref = requiresMandatoryApproval
-            ? false
+          const preference = requiresMandatoryApproval
+            ? { enabled: false, skipApprovals: false }
             : await loadAutoReviewPreference();
+          const autoReviewPref = preference.enabled && !preference.skipApprovals;
           const injectedReview = requiresMandatoryApproval ? undefined : deps.autoReview;
           const checker = requiresMandatoryApproval ? undefined : resolveAutoReviewChecker();
           const checkerConfigured =
@@ -5186,6 +5224,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 autoReviewEnabled: autoReviewPref,
                 checkerConfigured,
                 newDestination: siteGate === "new",
+                skipApprovals: preference.skipApprovals,
               });
           let reviewReason: string | undefined;
           let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
@@ -5658,13 +5697,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               : Promise.resolve(true);
           const finish = async (result: unknown) =>
             (await persistEffectResult(result)) ? result : uncertainEffectResult(name, args);
-          const registerRunSecrets = (values: string[]) => {
-            const additions = values.filter((value) => !runSecrets.includes(value));
-            if (additions.length === 0) return;
-            pendingProgress += progressRedactor.finish();
-            runSecrets.push(...additions);
-            progressRedactor = createStreamingRedactor(runSecrets);
-          };
           const appendComputerCommand = (payload: ComputerCommand) =>
             deps.events
               .append({
@@ -5758,7 +5790,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               path: requestedPath,
               entries: entries.map((entry) => ({
                 ...entry,
-                path: displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+                // A file name can carry a value an earlier command or page wrote.
+                path: redactSecrets(
+                  displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+                  runSecrets,
+                ),
               })),
             };
           }
@@ -5928,7 +5964,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               return finish({ ok: true, path: outPath, attached });
             } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
+              const message = redactSecrets(
+                error instanceof Error ? error.message : String(error),
+                runSecrets,
+              );
               if (!checkingSpec)
                 getLogger().error(`render_plot failed for bot ${bot.id}: ${message}`);
               return finish({
@@ -7144,8 +7183,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${displayName(bot.name, "Bot")} needs a code`,
-              body: String(args.label ?? "Code"),
+              ...secretAskNotification(
+                displayName(bot.name, "Bot"),
+                String(args.label ?? "Code"),
+                runSecrets,
+              ),
               botId: bot.id,
               threadId: thread.id,
             });
@@ -7159,7 +7201,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             };
           }
           if (name === "propose_instructions_update") {
-            if (nextApprovedTool !== name || !claimedEffect) {
+            if ((nextApprovedTool !== name && !bypassApproval) || !claimedEffect) {
               return finish({ error: "Instruction updates require human approval." });
             }
             const committed = await deps.prisma.$transaction(async (tx) => {
@@ -9525,7 +9567,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "create_space",
-      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
+      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     ),
     spawnBotClause(parts.disabledBuiltinTools),
     offeredBuiltinClause(
@@ -9771,6 +9813,17 @@ const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
 export function completionNotificationPreview(text: string): string {
   return truncatedPlainText(text, COMPLETION_NOTIFICATION_MAX_CHARS);
+}
+
+/** A secret card can ask for a code or a login, so the title stays generic and the label short. */
+export function secretAskNotification(botName: string, label: string, runSecrets: string[]) {
+  // Strip and redact before shortening so no protected value is left half-shown.
+  const text = plainTextFromMarkdown(redactSecrets(label, runSecrets), { maxSource: Infinity });
+  const body = truncatePlainText(
+    redactSecrets(text, runSecrets),
+    COMPLETION_NOTIFICATION_MAX_CHARS,
+  );
+  return { title: `${botName} needs an answer`, body };
 }
 
 export function completionMarksUnread(

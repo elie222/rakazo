@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { SpaceMemoryConfig } from "@rakazo/contracts";
+import type { SpaceMemoryConfig, UsageSummary } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -88,12 +88,7 @@ export function SettingsOverlay({
   onSpaceChange?: (spaceId: string) => void;
   email?: string | null;
   name: string;
-  usage?: {
-    runs: number;
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens?: number | null;
-  } | null;
+  usage?: UsageSummary | null;
   onUsageOpen: () => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;

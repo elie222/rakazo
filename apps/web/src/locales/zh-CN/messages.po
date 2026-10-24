@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr ""
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0} 次运行 · {1} tokens"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -803,10 +797,6 @@ msgstr "已归档"
 msgid "Archived"
 msgstr "已归档"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "已归档。对话、记忆和文件保留。"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "参数"
@@ -1061,6 +1051,10 @@ msgstr ""
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "调用"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1618,6 +1612,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "复制提示词"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "费用"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2974,6 +2972,10 @@ msgstr ""
 msgid "Inherit default"
 msgstr "沿用默认"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "输入"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "输入"
@@ -3252,9 +3254,10 @@ msgstr ""
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
-msgstr ""
+msgstr "管理"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
@@ -3264,10 +3267,6 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manage MCP servers"
 msgstr "管理 MCP 服务器"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Manage messaging settings"
-msgstr "管理消息设置"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Manage the bots it creates"
@@ -3464,6 +3463,7 @@ msgstr "分钟"
 msgid "Missed call"
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3490,10 +3490,6 @@ msgstr "模型 ID"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "模型选项"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "模型费用使用你的提供方密钥。"
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3967,10 +3963,6 @@ msgstr "OpenAI 兼容服务器 URL"
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw 或 Hermes"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "已打开其对话。"
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "正在打开聊天…"
@@ -4007,6 +3999,10 @@ msgstr "原消息不可用"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "其他模型…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "输出"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4144,6 +4140,10 @@ msgstr "在聊天中发布“无变化”"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST 到"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Preferences"
+msgstr "偏好设置"
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -4409,10 +4409,6 @@ msgstr "移除 Webhook"
 msgid "Removed"
 msgstr "移除"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "已连同对话、电脑和记忆一起移除。"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "已移除，但列表刷新失败"
@@ -4601,6 +4597,10 @@ msgstr "例行任务"
 msgid "Routines that run while you're away"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "无需询问直接执行操作"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "运行时间"
@@ -4630,6 +4630,10 @@ msgstr "运行中 · 停止"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "正在运行…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "运行"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -4762,6 +4766,10 @@ msgstr ""
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "正在搜索…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Security"
+msgstr "安全"
 
 #: src/pages/Shell.tsx
 msgid "Select a bot"
@@ -5422,6 +5430,10 @@ msgstr "至:"
 msgid "Today"
 msgstr "今天"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "Token"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr "工具参数（JSON）"
@@ -5608,7 +5620,6 @@ msgid "Urgent"
 msgstr ""
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "用量"

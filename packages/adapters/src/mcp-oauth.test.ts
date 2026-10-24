@@ -328,7 +328,7 @@ describe("MCP OAuth", () => {
       rows.push(record);
       server.secretId = record.id;
     };
-    return { startProcess, stored, replaceStored, server, context, lockSettings };
+    return { startProcess, stored, replaceStored, server, context, lockSettings, tables };
   }
 
   /** A public-client authorization server: each refresh token works once. */
@@ -617,6 +617,180 @@ describe("MCP OAuth", () => {
 
     expect(await provider.tokens()).toMatchObject({ access_token: "old-access" });
     expect(await shared.stored()).toEqual(before);
+  });
+
+  it("stores a rotated grant when the first commit after the refresh fails", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let failures = 1;
+    shared.tables.mcpServer.update = async (args) => {
+      if (failures-- > 0) throw new Error("connection terminated unexpectedly");
+      return update(args);
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+  });
+
+  it("keeps a rotated grant for this run when every commit fails", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider } = await shared.startProcess(server.fetch);
+    shared.tables.mcpServer.update = async () => {
+      throw new Error("connection terminated unexpectedly");
+    };
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+  });
+
+  it("lets a disconnect that lands during a failed refresh commit win", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const { provider, broker } = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let failures = 1;
+    shared.tables.mcpServer.update = async (args) => {
+      if (failures-- > 0) {
+        await shared.replaceStored({ headers: { "X-Team": "blue" } });
+        throw new Error("connection terminated unexpectedly");
+      }
+      return update(args);
+    };
+
+    expect(await provider.tokens()).toBeUndefined();
+
+    expect(await shared.stored()).toEqual({ headers: { "X-Team": "blue" } });
+    expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it.each(["disconnect", "client changed", "server mismatch", "server gone", "endpoint changed"])(
+    "refuses a rotated grant after a failed commit when %s",
+    async (change) => {
+      const server = rotatingAuthServer();
+      const material = {
+        ...expiringMaterial(EXPIRED()),
+        oauthClient: { client_id: "client-1" },
+      };
+      const shared = sharedCredentials(material);
+      const { provider } = await shared.startProcess(server.fetch);
+      const replacement: OAuthMaterial =
+        change === "client changed"
+          ? { oauthClient: { client_id: "replacement-client" } }
+          : change === "server mismatch"
+            ? {
+                oauthClient: {
+                  client_id: "client-1",
+                  authorization_server: "https://other.example.test/",
+                },
+              }
+            : { headers: { "X-Team": "blue" } };
+      shared.tables.mcpServer.update = async () => {
+        await shared.replaceStored(replacement);
+        if (change === "server gone") shared.tables.mcpServer.findFirst = async () => null as never;
+        if (change === "endpoint changed")
+          shared.server.endpoint = "https://other.example.test/mcp";
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toBeUndefined();
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(replacement);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps an observed disconnect when the fallback commit also fails (pre-registered: %s)",
+    async (preRegistered) => {
+      const server = rotatingAuthServer();
+      const shared = sharedCredentials({
+        ...expiringMaterial(EXPIRED()),
+        ...(preRegistered ? { oauthClient: { client_id: "client-1" } } : {}),
+      });
+      const { provider } = await shared.startProcess(server.fetch);
+      let first = true;
+      const replacement = { headers: { "X-Team": "blue" } };
+      shared.tables.mcpServer.update = async () => {
+        if (first) {
+          first = false;
+          await shared.replaceStored(replacement);
+        }
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toBeUndefined();
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(replacement);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps the available grant when both commits fail transiently (newer stored grant: %s)",
+    async (newerStoredGrant) => {
+      const server = rotatingAuthServer();
+      const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+      const { provider } = await shared.startProcess(server.fetch);
+      const replacement = expiringMaterial(Date.now());
+      replacement.oauth.tokens.access_token = "newer-access";
+      replacement.oauth.tokens.refresh_token = "newer-refresh";
+      let commits = 0;
+      shared.tables.mcpServer.update = async () => {
+        if (commits++ === 0 && newerStoredGrant) await shared.replaceStored(replacement);
+        throw new Error("connection terminated unexpectedly");
+      };
+
+      expect(await provider.tokens()).toMatchObject({
+        access_token: newerStoredGrant ? "newer-access" : "access-1",
+      });
+      expect(commits).toBe(2);
+      expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+        "old-refresh",
+      ]);
+      expect(await shared.stored()).toEqual(
+        newerStoredGrant
+          ? replacement
+          : expect.objectContaining({
+              oauth: expect.objectContaining({
+                tokens: expect.objectContaining({ refresh_token: "old-refresh" }),
+              }),
+            }),
+      );
+    },
+  );
+
+  it("keeps a rotated grant over the clear a queued process stores after a failed commit", async () => {
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(expiringMaterial(EXPIRED()));
+    const api = await shared.startProcess(server.fetch);
+    const worker = await shared.startProcess(server.fetch);
+    const update = shared.tables.mcpServer.update;
+    let queued: Promise<unknown> | undefined;
+    shared.tables.mcpServer.update = async (args) => {
+      if (!queued) {
+        queued = worker.provider.tokens();
+        await vi.waitFor(() =>
+          expect(shared.lockSettings.filter((sql) => sql.includes("advisory"))).toHaveLength(2),
+        );
+        throw new Error("connection terminated unexpectedly");
+      }
+      return update(args);
+    };
+
+    expect(await api.provider.tokens()).toMatchObject({ access_token: "access-1" });
+    await queued;
+    expect(server.requests.map((request) => request.get("refresh_token"))).toEqual([
+      "old-refresh",
+      "old-refresh",
+    ]);
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+    expect(await api.broker.statusFor(shared.server, shared.context)).toBe("connected");
   });
 
   it("does not renew a token that is still inside its lifetime", async () => {

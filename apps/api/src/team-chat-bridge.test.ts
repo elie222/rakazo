@@ -2013,6 +2013,7 @@ describe("team chat bridge", () => {
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const runUpdateMany = vi.fn(async () => ({ count: 1 }));
     const taskUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const secretDeleteMany = vi.fn(async () => ({ count: 0 }));
     const sendUserMessage = vi.fn(async () => {
       await sendGate;
       return { messageId: "message-1", runId: "run-1", seq: 1, taskId: "task-1" };
@@ -2028,8 +2029,12 @@ describe("team chat bridge", () => {
           })),
         },
         message: { findUnique: messageFindUnique, findMany: vi.fn(async () => []) },
-        run: { updateMany: runUpdateMany },
+        run: {
+          updateMany: runUpdateMany,
+          findMany: vi.fn(async () => [{ id: "run-1", userId: "owner-1", spaceId: "space-1" }]),
+        },
         task: { updateMany: taskUpdateMany },
+        secret: { deleteMany: secretDeleteMany },
       } as unknown as PrismaClient,
       events: { sendUserMessage },
       jobs: { enqueue },
@@ -2116,6 +2121,9 @@ describe("team chat bridge", () => {
     expect(taskUpdateMany).toHaveBeenCalledWith({
       where: { id: "task-1" },
       data: { status: "cancelled" },
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({
+      where: { OR: [{ userId: "owner-1", spaceId: "space-1", kind: "run-secret:run-1" }] },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "external-atomic", status: "queueing", runId: null },

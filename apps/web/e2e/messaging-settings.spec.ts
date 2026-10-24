@@ -154,12 +154,9 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
   const settings = page.getByTestId("user-settings");
-  await settings
-    .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "Messaging", exact: true }) })
-    .scrollIntoViewIfNeeded();
+  await settings.getByText("Messaging", { exact: true }).scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "settings-messaging-summary");
-  await page.getByRole("button", { name: "Manage messaging settings" }).click();
+  await settings.getByRole("button", { name: "Manage", exact: true }).click();
 
   const messagingSettings = page.getByTestId("messaging-settings");
   await expect(messagingSettings).toBeVisible();
@@ -182,8 +179,8 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await page.getByRole("button", { name: "Settings" }).click();
   await settings.getByTestId("ui-locale-select").click();
   await page.getByRole("option", { name: "한국어", exact: true }).click();
-  await expect(settings.getByRole("heading", { name: "메시징", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "메시징 설정 관리" }).click();
+  await expect(settings.getByText("메시징", { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "관리", exact: true }).click();
 
   await expect(page.getByTestId("messaging-settings")).toBeVisible();
   await expect(

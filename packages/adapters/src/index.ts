@@ -16,6 +16,7 @@ export {
   getBotSecretMetadata,
   listBotSecretMetadata,
   normalizeSecretDestination,
+  pageUrlOrigin,
   storeBotSecret,
 } from "./bot-secrets.js";
 export * from "./browser-emulator.js";

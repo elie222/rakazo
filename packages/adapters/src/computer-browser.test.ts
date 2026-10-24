@@ -268,6 +268,35 @@ describe("page browser safety", () => {
     ).toMatchObject({ ok: false, uncertain: true, completed: 1 });
   });
 
+  it("shows the page as a stopped step left it", async () => {
+    const elements = [{ ref: "e1", role: "textbox", name: "Digit 1", value: "4" }];
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        url: "https://code.example.test/",
+        title: "Code",
+        elements,
+        error:
+          "Focus left the field while typing, after 1 of 6 characters, so the rest was not typed.",
+      }),
+    });
+    const result = await provider.act(
+      computer,
+      { actions: [{ kind: "type", ref: "e1", text: "482913" }] },
+      baseContext,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      uncertain: false,
+      completed: 0,
+      title: "Code",
+      elements,
+    });
+    expect(result.tree).toContain("Digit 1");
+  });
+
   it("propagates cancellation instead of suggesting another action", async () => {
     const signal = AbortSignal.abort();
     const driver = vi.fn(async () => ({ ok: true }));

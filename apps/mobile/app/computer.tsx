@@ -75,6 +75,8 @@ export default function Computer() {
   const [bootFailed, setBootFailed] = useState(false);
   const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
+  // The keyboard closes on the Release tap, not when the server answers.
+  const [releasing, setReleasing] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const screenWebViewRef = useRef<WebView>(null);
   const keyboardGate = useRef({
@@ -306,6 +308,7 @@ export default function Computer() {
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!botId || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
+    setReleasing(true);
     try {
       await rpc("computer/release", { botId, reason });
       if (!action.isActive()) return;
@@ -314,6 +317,7 @@ export default function Computer() {
     } catch {
       if (action.isActive()) setScreenError(t("Could not continue"));
     } finally {
+      setReleasing(false);
       action.finish();
     }
   }
@@ -353,10 +357,13 @@ export default function Computer() {
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
 
   return (
+    // The full window's Modal is a child of this scroll view. A tap there, on Close or on the
+    // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
     <ScrollView
       style={{ flex: 1, backgroundColor: tokens.background }}
       contentContainerStyle={{ padding: 24 }}
       contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="always"
     >
       {canRetry && computer?.state !== "running" ? (
         <View style={{ gap: 8, marginBottom: 16 }}>
@@ -609,6 +616,7 @@ export default function Computer() {
             </View>
             {hasControl ? (
               <ComputerKeyboardBar
+                active={computerOpen && !releasing}
                 onCommand={(command) => {
                   injectKeyboardCommands(keyboardGate.current.bridge.push(command));
                 }}

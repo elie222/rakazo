@@ -25,6 +25,7 @@ vi.mock("react-native", () => {
   function MockView(props: {
     children?: ReactNode;
     style?: { flexDirection?: string; flex?: number; alignSelf?: string; color?: string };
+    keyboardShouldPersistTaps?: string;
   }) {
     return createElement(
       "div",
@@ -33,6 +34,7 @@ vi.mock("react-native", () => {
         "data-direction": props.style?.flexDirection,
         "data-flex": props.style?.flex,
         "data-align-self": props.style?.alignSelf,
+        "data-persist-taps": props.keyboardShouldPersistTaps,
       },
       props.children,
     );
@@ -90,7 +92,8 @@ vi.mock("react-native-keyboard-controller", () => ({
     createElement(Fragment, null, children),
 }));
 vi.mock("../components/computer-keyboard-bar", () => ({
-  ComputerKeyboardBar: () => createElement("div", { "data-keyboard-bar": true }),
+  ComputerKeyboardBar: (props: { active: boolean }) =>
+    createElement("div", { "data-keyboard-bar": true, "data-active": String(props.active) }),
 }));
 
 vi.mock("react-native-webview", () => {
@@ -485,6 +488,49 @@ describe("computer screen", () => {
     expect(screens).toHaveLength(1);
     expect(screens[0]?.getAttribute("data-elements-hidden")).toBe("false");
     expect(screens[0]?.getAttribute("data-important")).toBe("auto");
+  });
+
+  it("lets the full window's buttons take a tap while the computer keyboard is up", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const close = view.querySelector('section [aria-label="Close computer"]');
+    const scroll = close?.closest("[data-persist-taps]");
+    expect(scroll?.getAttribute("data-persist-taps")).toBe("always");
+    expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
+  });
+
+  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+    const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
+    respond({ ...held, busyBotName: null });
+    let fail: (error: Error) => void = () => undefined;
+    const base = rpc.getMockImplementation();
+    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
+      method === "computer/release"
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : base?.(method, ...rest),
+    );
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const fullWindow = view.querySelector("section");
+    const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
+    expect(bar()?.dataset.active).toBe("true");
+    const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Release",
+    );
+    await act(async () => release?.click());
+    expect(calls("computer/release")).toHaveLength(1);
+    expect(bar()?.dataset.active).toBe("false");
+
+    await act(async () => fail(new Error("offline")));
+    await settle();
+    expect(bar()?.dataset.active).toBe("true");
   });
 
   it("loads the screen again when the app returns from the background", async () => {

@@ -105,12 +105,6 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr ""
 
-#. placeholder {0}: usage.runs
-#. placeholder {1}: usage.totalTokens ?? "—"
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "{0} runs · {1} tokens"
-msgstr "{0} Läufe · {1} Tokens"
-
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."
@@ -803,10 +797,6 @@ msgstr "archiviert"
 msgid "Archived"
 msgstr "Archiviert"
 
-#: src/pages/shell/message-view.tsx
-msgid "Archived. Chat, memory, and files kept."
-msgstr "Archiviert. Chat, Erinnerungen und Dateien bleiben erhalten."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Arguments"
 msgstr "Argumente"
@@ -1061,6 +1051,10 @@ msgstr "Ruft dich an…"
 #: src/components/call/CallCard.tsx
 msgid "Calling…"
 msgstr "Anruf läuft…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Calls"
+msgstr "Aufrufe"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Can edit and organise bots it creates"
@@ -1618,6 +1612,10 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "Prompt kopieren"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Cost"
+msgstr "Kosten"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not add"
@@ -2974,6 +2972,10 @@ msgstr "Eingehender Anruf"
 msgid "Inherit default"
 msgstr "Standard übernehmen"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Input"
+msgstr "Eingabe"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Inputs"
 msgstr "Eingaben"
@@ -3252,9 +3254,10 @@ msgstr ""
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
-msgstr ""
+msgstr "Verwalten"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
@@ -3264,10 +3267,6 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Manage MCP servers"
 msgstr "MCP-Server verwalten"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Manage messaging settings"
-msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Manage the bots it creates"
@@ -3464,6 +3463,7 @@ msgstr "Minuten"
 msgid "Missed call"
 msgstr "Verpasster Anruf"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3490,10 +3490,6 @@ msgstr "Modell-ID"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Model options"
 msgstr "Modelloptionen"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Model spend uses your provider keys."
-msgstr "Modellkosten werden über deine Anbieterschlüssel abgerechnet."
 
 #: src/pages/model-settings/use-model-settings.ts
 msgid "Model updated."
@@ -3967,10 +3963,6 @@ msgstr "URL eines OpenAI-kompatiblen Servers"
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw oder Hermes"
 
-#: src/pages/shell/message-view.tsx
-msgid "Opened its thread."
-msgstr "Thread geöffnet."
-
 #: src/pages/Onboarding.tsx
 msgid "Opening chat…"
 msgstr "Chat wird geöffnet…"
@@ -4007,6 +3999,10 @@ msgstr "Originalnachricht nicht verfügbar"
 #: src/pages/Onboarding.tsx
 msgid "Other model…"
 msgstr "Anderes Modell…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Output"
+msgstr "Ausgabe"
 
 #: src/lib/identity-display.ts
 #: src/pages/Board.tsx
@@ -4144,6 +4140,10 @@ msgstr "„Keine Änderungen“ im Chat posten"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Preferences"
+msgstr "Präferenzen"
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -4409,10 +4409,6 @@ msgstr ""
 msgid "Removed"
 msgstr "Entfernt"
 
-#: src/pages/shell/message-view.tsx
-msgid "Removed with chat, computer, and memory."
-msgstr "Zusammen mit Chat, Computer und Erinnerungen entfernt."
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "Entfernt, aber die Liste konnte nicht aktualisiert werden"
@@ -4601,6 +4597,10 @@ msgstr "Routinen"
 msgid "Routines that run while you're away"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Run actions without asking"
+msgstr "Aktionen ohne Nachfrage ausführen"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr ""
@@ -4630,6 +4630,10 @@ msgstr "Wird ausgeführt · Stoppen"
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
 msgstr "Wird ausgeführt…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Runs"
+msgstr "Ausführungen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Runs when this bot receives a verified message from this provider."
@@ -4762,6 +4766,10 @@ msgstr ""
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Suche…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Security"
+msgstr "Sicherheit"
 
 #: src/pages/Shell.tsx
 msgid "Select a bot"
@@ -5422,6 +5430,10 @@ msgstr "An:"
 msgid "Today"
 msgstr "Heute"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Tokens"
+msgstr "Token"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Tool arguments (JSON)"
 msgstr "Toolargumente (JSON)"
@@ -5608,7 +5620,6 @@ msgid "Urgent"
 msgstr ""
 
 #: src/components/SidebarFooter.tsx
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Usage"
 msgstr "Nutzung"

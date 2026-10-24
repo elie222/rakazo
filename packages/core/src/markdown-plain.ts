@@ -201,7 +201,11 @@ function stripUnderscoreEmphasis(text: string): string {
 
 /** Strip Markdown first so truncation cannot land inside a marker. */
 export function truncatedPlainText(markdown: string, maxChars: number): string {
-  const text = plainTextFromMarkdown(markdown);
+  return truncatePlainText(plainTextFromMarkdown(markdown), maxChars);
+}
+
+/** Shorten plain text without splitting a surrogate pair. */
+export function truncatePlainText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const end =
     maxChars > 0 && (text.charCodeAt(maxChars - 1) & 0xfc00) === 0xd800 ? maxChars - 1 : maxChars;

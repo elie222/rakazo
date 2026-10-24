@@ -8,6 +8,7 @@ import {
   isPeerReceiptBlocks,
   liveActivityLine,
   liveMessageComposing,
+  projectBotMentions,
   projectMessageReactions,
   timeSeparatorIds,
   unreadDividerMessageId,
@@ -162,7 +163,15 @@ export const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
-  const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
+  const mentionView = useMemo(() => projectBotMentions(messages), [messages]);
+  const jumpToMessage = useCallback(
+    (messageId: string) => onJumpToMessage(mentionView.foldedInto.get(messageId) ?? messageId),
+    [mentionView, onJumpToMessage],
+  );
+  const reactionView = useMemo(
+    () => projectMessageReactions(mentionView.visibleMessages),
+    [mentionView],
+  );
   const shownMessages = reactionView.visibleMessages.filter((message) =>
     messageHasVisibleBlocks(message.blocks, showToolActivity),
   );
@@ -408,7 +417,7 @@ export const Transcript = memo(function Transcript({
             following.current = false;
           }
         }}
-        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-[max(1.75rem,calc((100%_-_60rem)/2))] md:py-6"
+        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto scroll-pt-16 px-4 pt-20 pb-5 md:px-[max(1.75rem,calc((100%_-_60rem)/2))] md:pt-[84px] md:pb-6"
         style={
           userBubble
             ? ({
@@ -493,6 +502,7 @@ export const Transcript = memo(function Transcript({
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
+                      mentions={mentionView.mentions.get(message.id)}
                       canAnswer={answerableAskIds.has(message.id)}
                       canDismiss={dismissableAskIds.has(message.id)}
                       onOpenBot={onOpenBot}
@@ -520,7 +530,7 @@ export const Transcript = memo(function Transcript({
                           ? messageById.get(message.replyToMessageId)
                           : undefined
                       }
-                      onJumpToMessage={onJumpToMessage}
+                      onJumpToMessage={jumpToMessage}
                       onRefresh={onRefresh}
                       onBotChanged={onBotChanged}
                       onAddRoutine={onAddRoutine}

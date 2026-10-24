@@ -54,7 +54,7 @@ test("account settings appearance control switches to light mode", async ({ page
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await expect(settings.getByRole("heading", { name: "Appearance", exact: true })).toBeVisible();
+  await expect(settings.getByText("Appearance", { exact: true })).toBeVisible();
 
   const picker = settings.getByTestId("ui-appearance-select");
   await expect(picker).toBeVisible();

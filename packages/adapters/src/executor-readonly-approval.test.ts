@@ -64,6 +64,7 @@ function fixture({
   readOnly = true,
   rules = [] as ActionApprovalRule[],
   autoReview = false,
+  skipApprovals = false,
   trigger = "user",
   secrets = [] as string[],
   prompt = "Read the item",
@@ -108,6 +109,7 @@ function fixture({
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
   autoReview?: boolean;
+  skipApprovals?: boolean;
   trigger?: string;
   secrets?: string[];
   prompt?: string;
@@ -303,7 +305,9 @@ function fixture({
     scratchpadItem: { findMany: vi.fn(async () => []) },
     actionApprovalRule: { findMany: vi.fn(async () => rules) },
     routine: { findMany: vi.fn(async () => routines) },
-    actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: autoReview })) },
+    actionAutoReviewPreference: {
+      findUnique: vi.fn(async () => ({ enabled: autoReview, skipApprovals })),
+    },
     steeringMessage: {
       findFirst: vi.fn(async (_query: unknown) => (outsideSteering ? { id: "steer-1" } : null)),
     },
@@ -808,6 +812,43 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     });
 
+    it("runs a write without asking or review when the owner skips approvals", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        autoReview: true,
+        skipApprovals: true,
+      });
+      await f.run();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(reviewMock).not.toHaveBeenCalled();
+    });
+
+    it("still asks under the owner's own rule when approvals are skipped", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        skipApprovals: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_send_message" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    });
+
+    it("still asks for webhook-triggered writes when approvals are skipped", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        trigger: "webhook",
+        skipApprovals: true,
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    });
+
     it("forces owner approval for webhook-triggered writes despite an allow rule", async () => {
       const f = fixture({
         catalog,
@@ -924,6 +965,22 @@ describe("connector read-only metadata and approval enforcement", () => {
   });
 });
 
+describe("create_space", () => {
+  it("asks by default and skips the card when the owner skips approvals", async () => {
+    const asked = fixture({ name: "create_space", builtin: true, autoReview: true });
+    asked.setCalls([{ args: { name: "Support" }, executionId: "call-1" }]);
+    await asked.run();
+    expect(asked.pauseRunForInput).toHaveBeenCalledOnce();
+
+    const skipped = fixture({ name: "create_space", builtin: true, skipApprovals: true });
+    skipped.setCalls([{ args: { name: "Support" }, executionId: "call-1" }]);
+    // Past the gate, creation needs space tables this fixture does not mock.
+    await skipped.run(true);
+    expect(skipped.pauseRunForInput).not.toHaveBeenCalled();
+    expect(skipped.effects[0]?.status).not.toBe("intended");
+  });
+});
+
 describe("self instruction proposals", () => {
   const args = { instructions: "Draft only. Ask before sending.", reason: "Learned a preference" };
   it("asks even when general rules and auto review allow it, then applies the persisted approved text", async () => {
@@ -952,6 +1009,23 @@ describe("self instruction proposals", () => {
     expect(f.instructionState.instructionHistory).toHaveLength(1);
     expect(f.effects).toHaveLength(1);
     expect(f.effects[0]!.status).toBe("completed");
+  });
+  it("applies the update directly when the owner skips approvals", async () => {
+    const f = fixture({ name: "propose_instructions_update", builtin: true, skipApprovals: true });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(args.instructions);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.effects[0]?.status).toBe("completed");
+  });
+  it("still asks when approvals are skipped but outside content entered the run", async () => {
+    const f = fixture({ name: "propose_instructions_update", builtin: true, skipApprovals: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.instructionState.instructions).toBe("Draft only");
   });
   it("requires human approval even with the legacy self-update setting enabled", async () => {
     const f = fixture({

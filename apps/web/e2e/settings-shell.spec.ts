@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("changing language updates settings overflow without resizing", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -274,4 +281,24 @@ test("shell overlays open from the URL and keep it in sync", async ({ page }, te
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(apps).toBeVisible();
   await expect(page).toHaveURL((url) => url.searchParams.has("integrations"));
+});
+
+test("usage lists spend per model", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `usage-models-${stamp}@rakazo.test`, "password12", "Usage");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await rpc(page, "threads/send", { botId: activeBotId(page), text: "Plan my week" });
+  await expect
+    .poll(async () => (await rpc<{ modelCalls?: number }>(page, "usage/summary", {})).modelCalls, {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(0);
+
+  await openUserSettings(page, "usage");
+  const usage = page.getByTestId("usage-settings");
+  await expect(usage.getByRole("columnheader", { name: "Model" })).toBeVisible();
+  await expect(usage.locator("tbody tr")).not.toHaveCount(0);
+  await captureScreenshot(page, testInfo, "settings-usage-models");
 });

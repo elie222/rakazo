@@ -1,5 +1,3 @@
-export const COMPUTER_KEYBOARD_SEED = "_".repeat(99);
-
 export const NATIVE_COMPUTER_KEYBOARD_BOOT = "window.__rakazoNativeKeys=true;true;";
 
 export type ComputerKeyName =
@@ -18,83 +16,22 @@ export type ComputerKeyboardCommand =
   | { type: "key"; name: ComputerKeyName; control?: boolean }
   | { type: "char"; text: string; control?: boolean };
 
-/** Same edit shape as the in-viewer keyboard: insertions and deletions. */
+/**
+ * What one change of the hidden field means on the remote, whose caret is at the field's end:
+ * text added at the end is typed, text removed from the end is that many Backspaces.
+ * Counted in code points, as the remote receives them. Any other change means nothing.
+ */
 export function computerKeyboardChanges(
   oldValue: string,
   newValue: string,
-  selectionStart = newValue.length,
 ): { backspaces: number; text: string } {
-  const newLength = Math.max(selectionStart ?? newValue.length, newValue.length);
-  const oldLength = oldValue.length;
-  let inputCount = newLength - oldLength;
-  let backspaces = inputCount < 0 ? -inputCount : 0;
-
-  for (let index = 0; index < Math.min(oldLength, newLength); index += 1) {
-    if (newValue.charAt(index) !== oldValue.charAt(index)) {
-      inputCount = newLength - index;
-      backspaces = oldLength - index;
-      break;
-    }
+  if (newValue.startsWith(oldValue)) {
+    return { backspaces: 0, text: newValue.slice(oldValue.length) };
   }
-
-  return {
-    backspaces,
-    text: newValue.slice(newLength - inputCount, newLength),
-  };
-}
-
-export function nextComputerKeyboardDraft(next: string): string {
-  if (next.length < 1 || next.length > COMPUTER_KEYBOARD_SEED.length * 2) {
-    return COMPUTER_KEYBOARD_SEED;
-  }
-  return next;
-}
-
-/** One newline per Return so a later Backspace deletes that break before the text before it. */
-function withReturnBoundaries(value: string): string {
-  return value.replace(/\r\n|\r/g, "\n");
-}
-
-/** Leading seed characters that were never sent. An edit there is not the remote caret. */
-export function computerKeyboardPadding(draft: string): number {
-  const seed = COMPUTER_KEYBOARD_SEED;
-  if (draft.startsWith(seed)) return seed.length;
-  if (seed.startsWith(draft)) return draft.length;
-  let index = 0;
-  const limit = Math.min(draft.length, seed.length);
-  while (index < limit && draft.charAt(index) === seed.charAt(index)) index += 1;
-  return index;
-}
-
-/**
- * Appends and end deletions of sent text match a remote caret at the end of the draft.
- * A deletion that enters the unsent seed is rejected, as is any other change inside that padding.
- * A correction in the typed suffix is replayed from the first changed character through the end.
- */
-export function isRemoteAlignedKeyboardEdit(oldValue: string, newValue: string): boolean {
   if (oldValue.startsWith(newValue)) {
-    return newValue.length >= computerKeyboardPadding(oldValue);
+    return { backspaces: Array.from(oldValue.slice(newValue.length)).length, text: "" };
   }
-  if (newValue.startsWith(oldValue)) return true;
-  let index = 0;
-  const limit = Math.min(oldValue.length, newValue.length);
-  while (index < limit && oldValue.charAt(index) === newValue.charAt(index)) index += 1;
-  return index >= computerKeyboardPadding(oldValue);
-}
-
-export function normalizeComputerKeyboardEdit(
-  oldValue: string,
-  nextValue: string,
-): { changes: { backspaces: number; text: string }; draft: string; aligned: boolean } {
-  const next = withReturnBoundaries(nextValue);
-  if (!isRemoteAlignedKeyboardEdit(oldValue, next)) {
-    return { changes: { backspaces: 0, text: "" }, draft: oldValue, aligned: false };
-  }
-  return {
-    changes: computerKeyboardChanges(oldValue, next),
-    draft: nextComputerKeyboardDraft(next),
-    aligned: true,
-  };
+  return { backspaces: 0, text: "" };
 }
 
 export function commandsForKeyboardChange(
