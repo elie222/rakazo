@@ -157,6 +157,20 @@ describe("the request digest", () => {
   });
 });
 
+describe("an import that committed", () => {
+  it("is reported as imported even if its record is removed right after the commit", async () => {
+    // The seed commits with the bot that is returned; afterwards its record is gone from
+    // what the rest of the app reads (an Undo, say), here a store separate from the seed's.
+    const committed = services({
+      createBot: async (_actor, request) => {
+        await request.seed(fakeDb(), bot.id);
+        return bot;
+      },
+    });
+    await expect(createImportedBot(committed, actor, input)).resolves.toBe(bot);
+  });
+});
+
 describe("an import whose attempt did not commit", () => {
   it("is not reported as imported when a first bot made meanwhile wins", async () => {
     const afterModelKey = vi.fn();

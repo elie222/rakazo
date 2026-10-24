@@ -456,10 +456,11 @@ export async function createImportedBot<PreparedKey>(
   };
   const routineRows: Routine[] = [];
   const setup: AgentImportSetupItem[] = [];
-  // The import record the latest attempt wrote. An attempt can be rolled back (a
+  // The bot the latest attempt imported into. An attempt can be rolled back (a
   // serialization retry) and a later one may not run the import at all (a first bot made
-  // meanwhile), so success is read back from what committed, never from an earlier attempt.
-  let importId: string | null = null;
+  // meanwhile). The bot `createBot` returns is the one its committed transaction made, so the
+  // import committed exactly when that is the bot the last import attempt wrote into.
+  let importedInto: string | null = null;
   /** Every write of the import, in one transaction, into the new or the existing bot. */
   const write = async (tx: Prisma.TransactionClient, botId: string) => {
     // A serialization conflict runs this again: start each attempt clean.
@@ -667,7 +668,7 @@ export async function createImportedBot<PreparedKey>(
         select: { id: true, revision: true },
       });
     }
-    const saved = await tx.agentImport.create({
+    await tx.agentImport.create({
       data: {
         ...owner,
         botId,
@@ -676,15 +677,14 @@ export async function createImportedBot<PreparedKey>(
         requestDigest: digest,
         created: record as unknown as Prisma.InputJsonValue,
       },
-      select: { id: true },
     });
-    importId = saved.id;
+    importedInto = botId;
   };
   let bot: Bot;
   try {
     if (target) {
       await services.inTransaction(async (tx) => {
-        importId = null;
+        importedInto = null;
         // Writers take the thread before the bot row (see `commitBotUpdate`).
         if (target.threadId) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
@@ -704,20 +704,15 @@ export async function createImportedBot<PreparedKey>(
         modelId: model?.modelId ?? null,
         spawnKey: input.spawnKey,
         seed: async (tx, botId) => {
-          importId = null;
+          importedInto = null;
           await write(tx, botId);
         },
       });
     }
-    // Only an import record that committed with this bot counts. A spawn key already taken
-    // returns that bot without the import; an attempt rolled back left nothing.
-    const committed = importId
-      ? await services.prisma.agentImport.findFirst({
-          where: { ...owner, id: importId, botId: bot.id },
-          select: { id: true },
-        })
-      : null;
-    if (!committed) {
+    // A spawn key already taken returns that bot without the import, and a rolled-back
+    // attempt wrote into a bot that never committed: neither is this bot. What happens to the
+    // record after the commit (an Undo, say) does not change that this import committed.
+    if (importedInto !== bot.id) {
       throw new ORPCError("CONFLICT", { message: "Your first bot already exists." });
     }
   } catch (error) {

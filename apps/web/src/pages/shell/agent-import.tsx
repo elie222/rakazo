@@ -10,7 +10,6 @@ import type {
   ComputerMode,
 } from "@rakazo/contracts";
 import {
-  AGENT_IMPORT_MAX_FILE_LENGTH,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -46,6 +45,7 @@ import {
 import { ArrowLeft, ChevronDown, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
+import { readAgentDocument } from "../../lib/agent-document";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { ComputerModePicker } from "./bot-panel";
@@ -321,14 +321,14 @@ export function AgentImportForm({
   async function pickDocument(list: FileList | null) {
     const file = list?.[0];
     if (!file) return;
-    // Checked before reading: a document is one uploaded file, at most this many characters
-    // (up to four UTF-8 bytes each), so anything bigger is refused without reading it.
-    if (file.size > AGENT_IMPORT_MAX_FILE_LENGTH * 4) {
-      setError(t`These files are too large to import.`);
-      return;
-    }
     try {
-      await previewDocument(await file.text());
+      // Refused before it is read when it is larger than a document can be.
+      const text = await readAgentDocument(file);
+      if (text === null) {
+        setError(t`These files are too large to import.`);
+        return;
+      }
+      await previewDocument(text);
     } catch (err) {
       setError(readError(err));
     }

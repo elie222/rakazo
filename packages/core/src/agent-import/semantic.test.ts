@@ -41,6 +41,15 @@ describe("defaults the source wrote", () => {
     expect(isHermesDefault("You are Hermes Agent, built by Nous Research.")).toBe(false);
   });
 
+  it("normalises a byte order mark, trailing spaces, CRLF and CRLF front matter", () => {
+    const crlf = OPENCLAW_SOUL.replace(/\n/g, "\r\n");
+    expect(isOpenClawDefault("SOUL.md", `\uFEFF${OPENCLAW_SOUL}`)).toBe(true);
+    expect(isOpenClawDefault("SOUL.md", OPENCLAW_SOUL.replace(/\n/g, "  \t\n"))).toBe(true);
+    expect(isOpenClawDefault("SOUL.md", crlf)).toBe(true);
+    expect(isOpenClawDefault("SOUL.md", `\uFEFF---\r\ntitle: x\r\n---\r\n${crlf}`)).toBe(true);
+    expect(isHermesDefault(`\uFEFF${HERMES_SOUL}\r\n`)).toBe(true);
+  });
+
   it("treats one added line or sentence as the user's own", () => {
     const rule = "Always answer in Dutch.";
     for (const [path, text] of [
