@@ -14,6 +14,7 @@ let dnsPinInstalled = false;
 
 const CLOUD_METADATA_IPV4 = new Set([
   ipv4ToNumber("169.254.169.254"),
+  ipv4ToNumber("169.254.170.2"),
   ipv4ToNumber("100.100.100.200"),
 ]);
 const AWS_IMDS_IPV6 = 0xfd000ec2000000000000000000000254n;
