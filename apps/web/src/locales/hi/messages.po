@@ -398,6 +398,7 @@ msgstr "गतिविधि"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Add"
 msgstr "जोड़ें"
 
@@ -512,6 +513,10 @@ msgstr "सर्वर जोड़ें"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add server URL"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Add to an existing bot"
+msgstr "मौजूदा बॉट में जोड़ें"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
@@ -925,6 +930,7 @@ msgstr "बॉट"
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Bot"
@@ -1149,6 +1155,10 @@ msgstr "कनेक्शन जाँचा जा रहा है…"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose a bot"
+msgstr "बॉट चुनें"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -2957,6 +2967,14 @@ msgstr "इसके बॉट और समूह बने रहेंगे 
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "इसकी बातचीत, फ़ाइलें और रूटीन स्थायी रूप से डिलीट कर दिए जाएंगे। इसके बनाए बॉट आपकी सूची में बने रहेंगे।"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions changed since the import, so they stay."
+msgstr "इंपोर्ट के बाद इसके निर्देश बदले गए हैं, इसलिए वे बने रहेंगे।"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions go back to before the import."
+msgstr "इसके निर्देश इंपोर्ट से पहले जैसे हो जाएँगे।"
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "नवीनतम संदेश पर जाएँ"
@@ -2968,6 +2986,10 @@ msgstr "उत्तर दिए गए संदेश पर जाएँ: {e
 #: src/lib/relative-time.ts
 msgid "just now"
 msgstr "अभी-अभी"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Keep its instructions"
+msgstr "इसके निर्देश रखें"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -3485,6 +3507,7 @@ msgstr "ज़रूरी: {names}"
 msgid "New"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "नया बॉट"
@@ -4310,6 +4333,10 @@ msgstr "पुनः खोलें"
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "API कुंजी बदलें"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Replace its instructions"
+msgstr "इसके निर्देश बदलें"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
@@ -5593,6 +5620,10 @@ msgstr "आप कौन-सा परिणाम दिखाकर बता�
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "What the import added will be removed. The bot stays."
+msgstr "इंपोर्ट ने जो जोड़ा था वह हटा दिया जाएगा। बॉट बना रहेगा।"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "यह बॉट किस लिए है"
@@ -5628,6 +5659,10 @@ msgstr "कब उपयोग करें"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "बॉट कहां चलने चाहिए?"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Where to import"
+msgstr "कहाँ इंपोर्ट करें"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

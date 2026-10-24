@@ -398,6 +398,7 @@ msgstr "Actividad"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Add"
 msgstr "Agregar"
 
@@ -512,6 +513,10 @@ msgstr "Agregar servidor"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add server URL"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Add to an existing bot"
+msgstr "Añadir a un bot existente"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
@@ -925,6 +930,7 @@ msgstr "bot"
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Bot"
@@ -1149,6 +1155,10 @@ msgstr "Comprobando la conexión…"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Checking…"
 msgstr "Comprobando…"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose a bot"
+msgstr "Elige un bot"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -2957,6 +2967,14 @@ msgstr "Sus bots y grupos se conservan y salen de la sección."
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Su conversación, archivos y rutinas se eliminarán de forma permanente. Los bots que creó permanecerán en tu lista."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions changed since the import, so they stay."
+msgstr "Sus instrucciones cambiaron desde la importación, así que se mantienen."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions go back to before the import."
+msgstr "Sus instrucciones vuelven a como estaban antes de la importación."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "Ir al más reciente"
@@ -2968,6 +2986,10 @@ msgstr "Ir al mensaje respondido: {excerpt}"
 #: src/lib/relative-time.ts
 msgid "just now"
 msgstr "ahora mismo"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Keep its instructions"
+msgstr "Mantener sus instrucciones"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
@@ -3485,6 +3507,7 @@ msgstr "Necesita: {names}"
 msgid "New"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "New bot"
 msgstr "Nuevo bot"
@@ -4310,6 +4333,10 @@ msgstr "Reabrir"
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Replace API key"
 msgstr "Reemplazar clave de API"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Replace its instructions"
+msgstr "Reemplazar sus instrucciones"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
@@ -5593,6 +5620,10 @@ msgstr "¿Qué resultado demostrarás?"
 msgid "What should this routine do each time it runs?"
 msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "What the import added will be removed. The bot stays."
+msgstr "Se eliminará lo que añadió la importación. El bot se mantiene."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
@@ -5628,6 +5659,10 @@ msgstr "Cuándo usar"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "¿Dónde deben ejecutarse los bots?"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Where to import"
+msgstr "Dónde importar"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"

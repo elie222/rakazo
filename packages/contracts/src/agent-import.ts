@@ -234,6 +234,23 @@ export const AgentImportPreviewInput = z.strictObject({
   skillFiles,
 });
 
+/**
+ * Where an import goes: a new bot (the default), or a bot the user already has. An existing
+ * bot keeps its name, profile, model and instructions unless the user chooses to replace
+ * the instructions; the model changes only when it is ticked.
+ */
+export const AgentImportDestinationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("new") }),
+  z.strictObject({
+    kind: z.literal("existing"),
+    botId: z.string().min(1).max(100),
+    replaceInstructions: z.boolean().default(false),
+    /** The instructions the user saw, so a replace never overwrites an edit made since. */
+    expectedInstructions: z.string().optional(),
+  }),
+]);
+export type AgentImportDestination = z.infer<typeof AgentImportDestinationSchema>;
+
 export const AgentImportCreateInput = z.strictObject({
   /** Chosen by the client once per import, so a retried create returns the same bot. */
   importKey: z.string().trim().min(8).max(100).optional(),
@@ -242,7 +259,9 @@ export const AgentImportCreateInput = z.strictObject({
   files: AgentImportFilesSchema,
   includeSecrets,
   skillFiles,
-  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
+  destination: AgentImportDestinationSchema.default({ kind: "new" }),
+  /** The new bot's name; not used when adding to an existing bot. */
+  name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH).optional(),
   description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   computerMode: ComputerModeSchema.default("team"),
   selection: AgentImportSelectionSchema,
@@ -254,6 +273,9 @@ const importedNames = z.object({
   spaceMemory: z.array(z.string()),
   mcpServers: z.array(z.string()),
   apiKeys: z.array(z.string()),
+  /** For an import into an existing bot: its added memory documents and routines. */
+  botMemory: z.array(z.string()).default([]),
+  routines: z.array(z.string()).default([]),
 });
 
 /** What Undo would do for an imported bot: what it removes and what it keeps because it changed. */
@@ -262,5 +284,12 @@ export const AgentImportInfoSchema = z.object({
   createdAt: z.string(),
   remove: importedNames,
   keep: importedNames,
+  /** Added to a bot that existed before; Undo then never deletes the bot. */
+  existingBot: z.boolean().default(false),
+  /**
+   * When the import replaced the bot's instructions: whether Undo puts the previous ones
+   * back (`restore`) or keeps the current ones because they changed since (`keep`).
+   */
+  instructions: z.enum(["restore", "keep"]).nullable().default(null),
 });
 export type AgentImportInfo = z.infer<typeof AgentImportInfoSchema>;

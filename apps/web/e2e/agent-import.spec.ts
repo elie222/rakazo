@@ -610,3 +610,82 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await captureScreenshot(page, testInfo, "agent-import-defaults-hermes");
 });
+
+test("imports into an existing bot only when chosen, keeping its instructions unless replaced", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `agent-import-existing-${Date.now()}@rakazo.test`, "password12", "Existing");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const [chief] = await rpc<Bot[]>(page, "bots/list", {});
+  await rpc(page, "bots/update", { botId: chief!.id, instructions: "Chief's own instructions." });
+
+  const home = testInfo.outputPath("openclaw-existing");
+  writeFolder(home, {
+    "workspace/SOUL.md": "Calm and direct.\n",
+    "workspace/AGENTS.md": "Short replies.\n",
+    "workspace/MEMORY.md": "Project Alpha.\n",
+    "workspace/IDENTITY.md": "- **Name:** Pebble\n",
+  });
+  const panel = await openImport(page);
+  await panel.getByTestId("agent-import-folder").setInputFiles(home);
+  const preview = panel.getByTestId("agent-import-preview");
+  const destination = preview.getByTestId("agent-import-destination");
+  // A new bot is the default; an existing bot is never preselected.
+  await expect(destination.getByRole("button", { name: "New bot" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "agent-import-destination-new");
+  await destination.getByRole("button", { name: "Add to an existing bot" }).click();
+  const picker = destination.getByRole("combobox", { name: "Bot" });
+  await expect(picker).toHaveValue("");
+  await expect(preview.getByRole("button", { name: "Add", exact: true })).toBeDisabled();
+  await expect(preview.getByRole("textbox", { name: "Name" })).toHaveCount(0);
+  await picker.selectOption({ label: "Chief" });
+  const choice = destination.getByTestId("agent-import-instructions-choice");
+  await expect(choice.getByRole("button", { name: "Keep its instructions" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(preview.getByTestId("agent-import-instructions")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "agent-import-destination-existing");
+  await preview.getByRole("button", { name: "Add", exact: true }).click();
+  await page.waitForURL(new RegExp(`/app/${chief!.id}$`));
+  const kept = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
+  expect([kept.name, kept.instructions]).toEqual(["Chief", "Chief's own instructions."]);
+  const memory = await rpc<MemoryDocument[]>(page, "memory/list", { botId: chief!.id });
+  expect(memory.map((doc) => doc.path).sort()).toEqual(["MEMORY-2.md", "MEMORY.md"]);
+
+  // Replacing is its own explicit choice, recorded so it can be restored.
+  const again = await openImport(page);
+  await again.getByTestId("agent-import-folder").setInputFiles(home);
+  const second = again.getByTestId("agent-import-preview");
+  await second
+    .getByTestId("agent-import-destination")
+    .getByRole("button", { name: "Add to an existing bot" })
+    .click();
+  await second.getByRole("combobox", { name: "Bot" }).selectOption({ label: "Chief" });
+  await second.getByRole("button", { name: "Replace its instructions" }).click();
+  await expect(second.getByTestId("agent-import-instructions")).toBeVisible();
+  await captureScreenshot(page, testInfo, "agent-import-destination-replace");
+  await second.getByRole("button", { name: "Add", exact: true }).click();
+  await expect
+    .poll(async () => (await rpc<Bot>(page, "bots/get", { botId: chief!.id })).instructions)
+    .toBe("# Persona\n\nCalm and direct.\n\n# Working instructions\n\nShort replies.");
+
+  await page.getByTestId("bot-settings-trigger").click();
+  await expandAdvancedSection(page.getByTestId("bot-settings-advanced"));
+  await page.getByTestId("agent-import-undo").click();
+  const dialog = page.getByTestId("agent-import-undo-dialog");
+  await expect(dialog).toContainText("What the import added will be removed. The bot stays.");
+  await expect(dialog.getByTestId("agent-import-undo-instructions")).toHaveText(
+    "Its instructions go back to before the import.",
+  );
+  await captureScreenshot(page, testInfo, "agent-import-undo-existing");
+  await dialog.getByRole("button", { name: "Undo import", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const restored = await rpc<Bot>(page, "bots/get", { botId: chief!.id });
+  expect(restored.instructions).toBe("Chief's own instructions.");
+});

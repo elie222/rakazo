@@ -397,6 +397,14 @@ export function resolveAgentImportNames(
 
 const NAME_MAX_LENGTH = 80;
 
+/**
+ * A memory path that is not yet in `used` (lowercase): the first free `-2`, `-3`, ... before
+ * `.md`. Adds the result to `used`, so several imported documents never share a path.
+ */
+export function freeAgentImportMemoryPath(path: string, used: Set<string>): string {
+  return freeName(path, used, ".md");
+}
+
 function freeName(value: string, used: Set<string>, extension: string): string {
   const hasExtension = extension && value.toLowerCase().endsWith(extension);
   const base = hasExtension ? value.slice(0, -extension.length) : value;

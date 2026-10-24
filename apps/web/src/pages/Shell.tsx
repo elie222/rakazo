@@ -3773,9 +3773,15 @@ function SpaceShell() {
             ) : null}
             {panel === "create" && importingBot ? (
               <AgentImportForm
+                bots={bots.filter((bot) => !bot.archivedAt)}
                 onBack={() => setImportingBot(false)}
                 onCancel={() => setPanel(null)}
-                onCreated={openCreatedBot}
+                onCreated={(bot) => {
+                  openCreatedBot(bot);
+                  // An import into an existing bot changes it and its chat.
+                  void refreshBots().catch(() => undefined);
+                  if (bot.id === active?.id) void refreshActiveThread();
+                }}
               />
             ) : panel === "create" ? (
               <CreateBotForm
@@ -3822,6 +3828,8 @@ function SpaceShell() {
                 onUndoImport={() => {
                   setPanel(null);
                   void refreshBots(true);
+                  // An import into an existing bot is undone without removing the bot.
+                  void refreshActiveThread().catch(() => undefined);
                 }}
               />
             ) : null}

@@ -24,7 +24,13 @@ function fakeDb(): never {
             return method === "findFirstOrThrow" ? { id: `${name}-thread` } : null;
           }
           next += 1;
-          return { id: `${name}-${next}`, revision: 1, content: "", ...args?.data };
+          return {
+            id: `${name}-${next}`,
+            revision: 1,
+            content: "",
+            updatedAt: new Date(0),
+            ...args?.data,
+          };
         },
       },
     );
@@ -51,6 +57,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     insertMcpServer: async () => {
       throw new Error("not used");
     },
+    inTransaction: async (run) => run(db),
     findBot: async () => bot,
     assertRoutineSchedule: () => undefined,
     routineNextRunAt: () => null,

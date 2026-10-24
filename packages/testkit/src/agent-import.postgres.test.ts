@@ -668,6 +668,8 @@ describeIntegration("agent import", () => {
       spaceMemory: ["memory/2026-01-02.md"],
       mcpServers: ["docs"],
       apiKeys: [],
+      botMemory: [],
+      routines: [],
     });
     // Keys are account connections: Undo lists them as kept and never removes them.
     expect(info.keep).toEqual({
@@ -675,6 +677,8 @@ describeIntegration("agent import", () => {
       spaceMemory: ["USER.md"],
       mcpServers: [],
       apiKeys: ["anthropic", "openrouter"],
+      botMemory: [],
+      routines: [],
     });
 
     // Another user can neither see nor undo it.
@@ -1004,6 +1008,8 @@ describeIntegration("agent import", () => {
       spaceMemory: ["USER-2.md"],
       mcpServers: ["docs-2"],
       apiKeys: [],
+      botMemory: [],
+      routines: [],
     });
     await rpc(app, cookie, "bots/importUndo", { botId: second.id });
     expect(
@@ -1060,6 +1066,204 @@ describeIntegration("agent import", () => {
     });
     expect(await db.bot.count({ where: owner })).toBe(1);
     expect(await db.agentImport.count({ where: owner })).toBe(0);
+  });
+
+  describe("into an existing bot", () => {
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/workspace/AGENTS.md", content: "Short replies.\n" },
+      { path: ".openclaw/workspace/MEMORY.md", content: "Project Alpha.\n" },
+      { path: ".openclaw/workspace/IDENTITY.md", content: "- Name: Pebble\n- Vibe: calm\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content: '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp" } } } }',
+      },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+      {
+        path: ".openclaw/cron/jobs.json",
+        content: JSON.stringify({
+          jobs: [
+            {
+              name: "morning",
+              schedule: { kind: "cron", expr: "0 9 * * *" },
+              payload: { kind: "agentTurn", message: "Summarise my day" },
+            },
+          ],
+        }),
+      },
+    ];
+    const everything = (plan: AgentImportPlan) => ({
+      instructions: plan.instructions.map((item) => item.id),
+      memory: plan.memory.map((item) => ({ id: item.id, destination: "bot" })),
+      skills: plan.skills.map((item) => item.id),
+      mcpServers: plan.mcpServers.map((item) => item.id),
+      routines: plan.routines.map((item) => item.id),
+    });
+    const setUp = async (label: string) => {
+      const cookie = await signup(app, `import-existing-${label}-${stamp}@rakazo.test`, "Owner");
+      const chief = await rpc<Bot>(app, cookie, "bots/create", { name: "Chief" });
+      await rpc(app, cookie, "bots/update", {
+        botId: chief.id,
+        instructions: "Chief's own instructions.",
+        description: "Runs the team",
+      });
+      const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+      return { cookie, chief, plan };
+    };
+
+    it("adds to the bot and never touches its instructions, name or model unless chosen", async () => {
+      const { cookie, chief, plan } = await setUp("keep");
+      const before = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+      const result = await rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        destination: { kind: "existing", botId: chief.id },
+        selection: everything(plan),
+      });
+      expect(result.id).toBe(chief.id);
+      const after = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+      expect([after.name, after.description, after.instructions]).toEqual([
+        "Chief",
+        "Runs the team",
+        "Chief's own instructions.",
+      ]);
+      expect(after.instructionHistory).toEqual(before.instructionHistory);
+      expect([after.modelProvider, after.modelId]).toEqual([before.modelProvider, before.modelId]);
+      // Its memory is never overwritten: the imported MEMORY.md is saved next to it.
+      const memory = await db.memoryDocument.findMany({
+        where: { botId: chief.id },
+        orderBy: { path: "asc" },
+        select: { path: true, content: true },
+      });
+      expect(memory.map((doc) => doc.path)).toEqual(["MEMORY-2.md", "MEMORY.md"]);
+      expect(memory[0]!.content).toBe("Project Alpha.\n");
+      expect(
+        await db.routine.findMany({ where: { botId: chief.id }, select: { active: true } }),
+      ).toEqual([{ active: false }]);
+      const blocks = (
+        await db.message.findMany({
+          where: { thread: { botId: chief.id } },
+          select: { blocks: true },
+        })
+      ).flatMap((row) => row.blocks as { kind: string }[]);
+      expect(blocks.map((block) => block.kind)).toEqual(
+        expect.arrayContaining(["mcp_approval", "import_setup"]),
+      );
+      expect(await db.botMcpServer.count({ where: { botId: chief.id } })).toBe(0);
+
+      // Undo takes back what was added and keeps the bot.
+      const info = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", { botId: chief.id });
+      expect(info).toMatchObject({
+        existingBot: true,
+        instructions: null,
+        remove: {
+          skills: ["garden"],
+          mcpServers: ["docs"],
+          botMemory: ["MEMORY-2.md"],
+          routines: ["morning"],
+        },
+      });
+      await rpc(app, cookie, "bots/importUndo", { botId: chief.id });
+      const owner = { spaceId: after.spaceId, userId: after.userId };
+      expect(await db.bot.count({ where: { id: chief.id } })).toBe(1);
+      expect({
+        skills: await db.agentSkill.count({ where: owner }),
+        servers: await db.mcpServer.count({ where: owner }),
+        routines: await db.routine.count({ where: { botId: chief.id } }),
+        memory: (
+          await db.memoryDocument.findMany({ where: { botId: chief.id }, select: { path: true } })
+        ).map((doc) => doc.path),
+        imports: await db.agentImport.count({ where: { botId: chief.id } }),
+      }).toEqual({ skills: 0, servers: 0, routines: 0, memory: ["MEMORY.md"], imports: 0 });
+      expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
+        "Chief's own instructions.",
+      );
+    });
+
+    it("replaces the instructions only when chosen, as a recorded edit Undo can restore", async () => {
+      const { cookie, chief, plan } = await setUp("replace");
+      const stale = await raw(app, cookie, "bots/importCreate", {
+        files,
+        destination: {
+          kind: "existing",
+          botId: chief.id,
+          replaceInstructions: true,
+          expectedInstructions: "Something older.",
+        },
+        selection: everything(plan),
+      });
+      // An edit made since the preview is never overwritten, and nothing else is written.
+      expect(stale.status).toBe(409);
+      expect(await db.agentImport.count({ where: { botId: chief.id } })).toBe(0);
+      expect(await db.routine.count({ where: { botId: chief.id } })).toBe(0);
+
+      await rpc(app, cookie, "bots/importCreate", {
+        files,
+        destination: {
+          kind: "existing",
+          botId: chief.id,
+          replaceInstructions: true,
+          expectedInstructions: "Chief's own instructions.",
+        },
+        selection: everything(plan),
+      });
+      const replaced = await db.bot.findUniqueOrThrow({ where: { id: chief.id } });
+      expect(replaced.instructions).toBe(
+        "# Persona\n\nCalm.\n\n# Working instructions\n\nShort replies.",
+      );
+      expect(
+        (replaced.instructionHistory as { instructions: string; reason: string }[])[0],
+      ).toMatchObject({ instructions: "Chief's own instructions.", reason: "Agent import" });
+      expect(replaced.name).toBe("Chief");
+
+      expect(await rpc(app, cookie, "bots/importInfo", { botId: chief.id })).toMatchObject({
+        instructions: "restore",
+      });
+      const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
+        botId: chief.id,
+      });
+      expect(undone.instructions).toBe("restore");
+      expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
+        "Chief's own instructions.",
+      );
+    });
+
+    it("keeps replaced instructions the user edited since, and says so", async () => {
+      const { cookie, chief, plan } = await setUp("edited");
+      await rpc(app, cookie, "bots/importCreate", {
+        files,
+        destination: {
+          kind: "existing",
+          botId: chief.id,
+          replaceInstructions: true,
+          expectedInstructions: "Chief's own instructions.",
+        },
+        selection: everything(plan),
+      });
+      await rpc(app, cookie, "bots/update", { botId: chief.id, instructions: "Edited after." });
+      const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", {
+        botId: chief.id,
+      });
+      expect(undone.instructions).toBe("keep");
+      expect((await db.bot.findUniqueOrThrow({ where: { id: chief.id } })).instructions).toBe(
+        "Edited after.",
+      );
+      expect(await db.bot.count({ where: { id: chief.id } })).toBe(1);
+    });
+
+    it("refuses another user's bot as the target", async () => {
+      const { chief } = await setUp("victim");
+      const other = await signup(app, `import-existing-other-${stamp}@rakazo.test`, "Other");
+      const plan = await rpc<AgentImportPlan>(app, other, "bots/importPreview", { files });
+      const response = await raw(app, other, "bots/importCreate", {
+        files,
+        destination: { kind: "existing", botId: chief.id },
+        selection: everything(plan),
+      });
+      // The same answer as for a bot that does not exist.
+      expect(response.status).toBe(404);
+      expect(await db.agentImport.count({ where: { botId: chief.id } })).toBe(0);
+      expect(await db.routine.count({ where: { botId: chief.id } })).toBe(0);
+    });
   });
 
   it("keeps each import inside the actor's own space", async () => {

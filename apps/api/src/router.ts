@@ -1299,6 +1299,12 @@ export function createRouter(deps: RouterDeps) {
       (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(provider)),
     prepareMcpServer,
     insertMcpServer,
+    inTransaction: (run) =>
+      withSerializableRetry(() =>
+        deps.prisma.$transaction(run, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        }),
+      ),
     findBot: async (actor, botId) =>
       (await repos.listBots(actor)).find((bot) => bot.id === botId) ?? null,
     assertRoutineSchedule,

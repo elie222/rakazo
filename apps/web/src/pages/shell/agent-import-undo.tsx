@@ -19,7 +19,9 @@ type Names = AgentImportInfo["remove"];
 const flatten = (names: Names) => [
   ...names.skills,
   ...names.spaceMemory,
+  ...names.botMemory,
   ...names.mcpServers,
+  ...names.routines,
   ...names.apiKeys,
 ];
 
@@ -74,8 +76,24 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                 <Trans>Undo import?</Trans>
               </AlertDialogTitle>
               <AlertDialogDescription>
-                <Trans>The bot and what its import added will be removed.</Trans>
+                {info.existingBot ? (
+                  <Trans>What the import added will be removed. The bot stays.</Trans>
+                ) : (
+                  <Trans>The bot and what its import added will be removed.</Trans>
+                )}
               </AlertDialogDescription>
+              {info.instructions ? (
+                <p
+                  className="text-[13.5px] text-muted-foreground"
+                  data-testid="agent-import-undo-instructions"
+                >
+                  {info.instructions === "restore" ? (
+                    <Trans>Its instructions go back to before the import.</Trans>
+                  ) : (
+                    <Trans>Its instructions changed since the import, so they stay.</Trans>
+                  )}
+                </p>
+              ) : null}
             </AlertDialogHeader>
             {removed.length ? (
               <section aria-label={t`Removed`}>

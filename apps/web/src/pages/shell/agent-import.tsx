@@ -78,6 +78,7 @@ export function AgentImportForm({
   onCreated,
   createBot = (input) => rpc.bots.importCreate(input),
   layout = "panel",
+  bots = [],
 }: {
   onBack: () => void;
   onCancel: () => void;
@@ -86,6 +87,11 @@ export function AgentImportForm({
   createBot?: (input: AgentImportCreateRequest) => Promise<Bot>;
   /** `page` renders as an onboarding step; `panel` as the shell's side panel. */
   layout?: "panel" | "page";
+  /**
+   * Bots the import can be added to instead of making a new one. Empty (as in onboarding)
+   * hides the choice: the import always makes a new bot.
+   */
+  bots?: readonly Bot[];
 }) {
   const page = layout === "page";
   const { section: sectionClass, heading: headingClass } = page ? pageStyle : panelStyle;
@@ -109,9 +115,16 @@ export function AgentImportForm({
   const archiveInput = useRef<HTMLInputElement>(null);
   const [plan, setPlan] = useState<AgentImportPlan | null>(null);
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  // For an existing bot the model box starts unticked, whatever it was for a new bot.
+  const [modelPicked, setModelPicked] = useState(false);
   const [destinations, setDestinations] = useState<Record<string, AgentImportMemoryDestination>>(
     {},
   );
+  // Where the import goes. Always starts as a new bot; an existing bot must be picked.
+  const [target, setTarget] = useState<"new" | "existing">("new");
+  const [targetBotId, setTargetBotId] = useState("");
+  const [replaceInstructions, setReplaceInstructions] = useState(false);
+  const targetBot = target === "existing" ? bots.find((bot) => bot.id === targetBotId) : undefined;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
@@ -181,6 +194,7 @@ export function AgentImportForm({
         setDestinations({});
         setName(found.suggestedName);
         setDescription(found.suggestedDescription);
+        setModelPicked(false);
       }
       setPlan(found);
     } catch (err) {
@@ -315,8 +329,13 @@ export function AgentImportForm({
   const tooLong =
     combineImportedInstructions(selectedInstructions).length > BOT_INSTRUCTIONS_MAX_LENGTH;
 
+  const ready =
+    target === "new"
+      ? Boolean(name.trim())
+      : Boolean(targetBot) && !(replaceInstructions && tooLong);
+
   async function create() {
-    if (!plan || !name.trim() || tooLong || busy) return;
+    if (!plan || !ready || (target === "new" && tooLong) || busy) return;
     setError(null);
     setBusy(true);
     try {
@@ -325,8 +344,16 @@ export function AgentImportForm({
         files,
         includeSecrets,
         skillFiles,
-        name: name.trim(),
-        description: description.trim(),
+        ...(targetBot
+          ? {
+              destination: {
+                kind: "existing" as const,
+                botId: targetBot.id,
+                replaceInstructions,
+                expectedInstructions: targetBot.instructions,
+              },
+            }
+          : { name: name.trim(), description: description.trim() }),
         computerMode,
         selection: {
           instructions: selectedInstructions.map((item) => item.id),
@@ -336,7 +363,13 @@ export function AgentImportForm({
           skills: chosen(plan.skills)
             .filter((item) => item.status.kind !== "unsupported")
             .map((item) => item.id),
-          model: Boolean(plan.model && modelUsable && !unchecked.has(plan.model.id)),
+          // An existing bot's model changes only when the user ticks it here.
+          model: Boolean(
+            plan.model &&
+              modelUsable &&
+              !unchecked.has(plan.model.id) &&
+              (target === "new" || modelPicked),
+          ),
           mcpServers: chosen(plan.mcpServers)
             .filter((item) => item.status.kind !== "unsupported")
             .map((item) => item.id),
@@ -352,6 +385,7 @@ export function AgentImportForm({
   }
 
   function toggle(id: string, checked: boolean) {
+    if (id === plan?.model?.id) setModelPicked(checked);
     setUnchecked((current) => {
       const next = new Set(current);
       if (checked) next.delete(id);
@@ -374,7 +408,11 @@ export function AgentImportForm({
         <div className="flex min-h-9 items-center gap-3">
           <Checkbox
             aria-label={title}
-            checked={!disabled && !unchecked.has(id)}
+            checked={
+              !disabled &&
+              !unchecked.has(id) &&
+              (id !== plan?.model?.id || target === "new" || modelPicked)
+            }
             disabled={disabled}
             onCheckedChange={(checked) => toggle(id, checked)}
           />
@@ -481,7 +519,75 @@ export function AgentImportForm({
       ) : null}
       {plan ? (
         <div data-testid="agent-import-preview" className={page ? "mt-8" : undefined}>
-          {plan.instructions.length ? (
+          {bots.length ? (
+            <section data-testid="agent-import-destination">
+              <ToggleGroup
+                aria-label={t`Where to import`}
+                value={[target]}
+                onValueChange={([next]) => {
+                  if (next) setTarget(next as "new" | "existing");
+                }}
+                spacing={1}
+                className="grid w-full grid-cols-2 rounded-lg bg-muted p-1"
+              >
+                <ToggleGroupItem
+                  value="new"
+                  className="aria-pressed:bg-background aria-pressed:shadow-sm"
+                >
+                  <Trans>New bot</Trans>
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="existing"
+                  className="aria-pressed:bg-background aria-pressed:shadow-sm"
+                >
+                  <Trans>Add to an existing bot</Trans>
+                </ToggleGroupItem>
+              </ToggleGroup>
+              {target === "existing" ? (
+                <>
+                  <NativeSelect
+                    aria-label={t`Bot`}
+                    value={targetBotId}
+                    onChange={(event) => setTargetBotId(event.target.value)}
+                    className="mt-3 w-full"
+                  >
+                    <NativeSelectOption value="">{t`Choose a bot`}</NativeSelectOption>
+                    {bots.map((bot) => (
+                      <NativeSelectOption key={bot.id} value={bot.id}>
+                        {bot.name}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                  {targetBot ? (
+                    <ToggleGroup
+                      aria-label={t`Instructions`}
+                      value={[replaceInstructions ? "replace" : "keep"]}
+                      onValueChange={([next]) => {
+                        if (next) setReplaceInstructions(next === "replace");
+                      }}
+                      spacing={1}
+                      className="mt-3 grid w-full grid-cols-2 rounded-lg bg-muted p-1"
+                      data-testid="agent-import-instructions-choice"
+                    >
+                      <ToggleGroupItem
+                        value="keep"
+                        className="aria-pressed:bg-background aria-pressed:shadow-sm"
+                      >
+                        <Trans>Keep its instructions</Trans>
+                      </ToggleGroupItem>
+                      <ToggleGroupItem
+                        value="replace"
+                        className="aria-pressed:bg-background aria-pressed:shadow-sm"
+                      >
+                        <Trans>Replace its instructions</Trans>
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  ) : null}
+                </>
+              ) : null}
+            </section>
+          ) : null}
+          {plan.instructions.length && (target === "new" || replaceInstructions) ? (
             <section className={sectionClass} data-testid="agent-import-instructions">
               <h3 className={headingClass}>
                 <Trans>Instructions</Trans>
@@ -677,33 +783,46 @@ export function AgentImportForm({
               </CollapsibleContent>
             </Collapsible>
           ) : null}
-          <label htmlFor={`${ids}-name`} className={`mt-6 block ${headingClass}`}>
-            <Trans>Name</Trans>
-            <Input
-              id={`${ids}-name`}
-              value={name}
-              maxLength={BOT_NAME_MAX_LENGTH}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t`Name this bot`}
-              className="mt-2"
-            />
-          </label>
-          {plan.suggestedDescription ? (
-            <label htmlFor={`${ids}-description`} className={`mt-6 block ${headingClass}`}>
-              <Trans>Description</Trans>
-              <Input
-                id={`${ids}-description`}
-                value={description}
-                maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-                onChange={(event) => setDescription(event.target.value)}
-                className="mt-2"
-              />
-            </label>
+          {target === "new" ? (
+            <>
+              <label htmlFor={`${ids}-name`} className={`mt-6 block ${headingClass}`}>
+                <Trans>Name</Trans>
+                <Input
+                  id={`${ids}-name`}
+                  value={name}
+                  maxLength={BOT_NAME_MAX_LENGTH}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder={t`Name this bot`}
+                  className="mt-2"
+                />
+              </label>
+              {plan.suggestedDescription ? (
+                <label htmlFor={`${ids}-description`} className={`mt-6 block ${headingClass}`}>
+                  <Trans>Description</Trans>
+                  <Input
+                    id={`${ids}-description`}
+                    value={description}
+                    maxLength={BOT_DESCRIPTION_MAX_LENGTH}
+                    onChange={(event) => setDescription(event.target.value)}
+                    className="mt-2"
+                  />
+                </label>
+              ) : null}
+              <ComputerModePicker value={computerMode} onChange={setComputerMode} />
+            </>
           ) : null}
-          <ComputerModePicker value={computerMode} onChange={setComputerMode} />
           <div className={page ? "mt-8 flex gap-3" : "mt-5"}>
-            <Button disabled={!name.trim() || tooLong || busy} onClick={() => void create()}>
-              {busy ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
+            <Button
+              disabled={!ready || (target === "new" && tooLong) || busy}
+              onClick={() => void create()}
+            >
+              {busy ? (
+                <Trans>Creating…</Trans>
+              ) : target === "existing" ? (
+                <Trans>Add</Trans>
+              ) : (
+                <Trans>Create</Trans>
+              )}
             </Button>
             {page ? (
               <Button variant="outline" disabled={busy} onClick={() => setPlan(null)}>
