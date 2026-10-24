@@ -1391,6 +1391,7 @@ export function createRouter(deps: RouterDeps) {
     announceRoutine,
     destroyBot: removeBot,
     removeMcpServer: removeMcpServerInTransaction,
+    notifyThread: (threadId, seq) => deps.events.notify(threadId, seq),
   };
   const catalogForSpace = async (actor: Actor) => {
     const auth = await modelCredentialAuthKindsForSpace(

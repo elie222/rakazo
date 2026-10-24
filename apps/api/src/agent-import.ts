@@ -140,11 +140,14 @@ export type AgentImportServices<PreparedKey = unknown> = {
     },
   ) => Promise<void>;
   /** The writes of `mcp.servers.remove`. */
+  /** `mcp.servers.remove`'s writes; returns the chat events its closed cards appended. */
   removeMcpServer: (
     tx: Prisma.TransactionClient,
     actor: Actor,
     server: { id: string; secretId: string | null },
-  ) => Promise<unknown>;
+  ) => Promise<{ threadId: string; seq: number }[]>;
+  /** Tells open chats about an event, once its transaction committed. */
+  notifyThread: (threadId: string, seq: number) => Promise<void>;
 };
 
 /**
@@ -1035,6 +1038,13 @@ export async function undoAgentImport(
   if (!before) throw refused("NOT_FOUND", "not_imported", "This bot was not imported.");
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   let result = before.info;
+  // Chat events Undo appends (closed MCP cards, the retired checklist), sent once committed.
+  let changed: { threadId: string; seq: number }[] = [];
+  const announce = async () => {
+    for (const event of changed) {
+      await services.notifyThread(event.threadId, event.seq).catch(() => undefined);
+    }
+  };
   // Locks what Undo may remove, then decides again: an edit or assignment made meanwhile
   // either landed (and is seen) or waits for this transaction.
   const removeAdded = async (tx: Prisma.TransactionClient) => {
@@ -1089,11 +1099,13 @@ export async function undoAgentImport(
       });
       if (count) removed.routines.push(row.id);
     }
+    const events: { threadId: string; seq: number }[] = [];
     for (const server of plan.mcpServers.remove) {
-      await services.removeMcpServer(tx, actor, server);
+      // The same writes as removing it in settings: its approval cards are dismissed.
+      events.push(...(await services.removeMcpServer(tx, actor, server)));
       removed.mcpServers.push(server.id);
     }
-    return { plan, current, removed };
+    return { plan, current, removed, events };
   };
 
   if (before.plan.existingBot) {
@@ -1104,7 +1116,7 @@ export async function undoAgentImport(
       });
       if (thread) await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
-      const { plan, current, removed } = await removeAdded(tx);
+      const { plan, current, removed, events } = await removeAdded(tx);
       let instructions = plan.instructions;
       if (instructions === "restore" && plan.record.instructions) {
         // Through the recorded-edit path, so this restore can itself be undone.
@@ -1130,16 +1142,19 @@ export async function undoAgentImport(
       }
       // The bot stays, so does its chat: its checklist would link to what Undo removed.
       if (thread && plan.record.setupMessageId) {
-        await retireSetupMessage(
+        const retired = await retireSetupMessage(
           tx,
           actor,
           { botId, threadId: thread.id },
           plan.record.setupMessageId,
         );
+        if (retired) events.push(retired);
       }
       await tx.agentImport.delete({ where: { id: plan.found.id } });
       result = current.infoFor(removed, instructions);
+      changed = events;
     });
+    await announce();
     return result;
   }
 
@@ -1147,11 +1162,14 @@ export async function undoAgentImport(
     deleteMemories: false,
     // Runs after the bot row is locked: the rest is decided again under the locks.
     within: async (tx) => {
-      const { plan, current, removed } = await removeAdded(tx);
+      const { plan, current, removed, events } = await removeAdded(tx);
       result = current.infoFor(removed);
+      changed = events;
       return { deleteMemories: !plan.botMemoryChanged };
     },
   });
+  // Cards in other chats (a group) the removed servers closed.
+  await announce();
   return result;
 }
 
@@ -1170,7 +1188,7 @@ async function retireSetupMessage(
     select: { blocks: true },
   });
   const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
-  if (!parsed.success) return;
+  if (!parsed.success) return null;
   const blocks = parsed.data.map((block) =>
     block.kind === "import_setup" ? { ...block, undone: true } : block,
   );
@@ -1178,13 +1196,14 @@ async function retireSetupMessage(
     where: { id: messageId },
     data: { blocks: blocks as Prisma.InputJsonValue },
   });
-  await appendEventInTransaction(tx, {
+  const event = await appendEventInTransaction(tx, {
     spaceId: actor.spaceId,
     threadId: target.threadId,
     botId: target.botId,
     type: "thread.message.updated",
     payload: { messageId, role: "bot", blocks },
   });
+  return { threadId: target.threadId, seq: event.seq };
 }
 
 /** SHA-256 of a create request with object keys and lists in a fixed order. */

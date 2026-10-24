@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { EncryptedSecretStore } from "@rakazo/adapters";
+import { EncryptedSecretStore, InMemoryRealtimeFanout } from "@rakazo/adapters";
 import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -95,6 +95,15 @@ const settingsHome = [
   },
 ];
 
+/** Every change sent to open chats, as (topic, payload). */
+const published: [string, string][] = [];
+class RecordingRealtime extends InMemoryRealtimeFanout {
+  override async publish(topic: string, payload: string) {
+    published.push([topic, payload]);
+    await super.publish(topic, payload);
+  }
+}
+
 /** Runs once inside the next model key check: something the user does meanwhile. */
 const keyCheck: { during: (() => Promise<void>) | null; status?: number } = { during: null };
 
@@ -113,6 +122,7 @@ describeIntegration("agent import", () => {
       sandboxProvider: "fake",
       agentRuntime: "scripted",
       wakeupDriver: "memory",
+      realtime: new RecordingRealtime(),
       // Offline: key checks and MCP endpoint checks never leave the test.
       modelConnectionFetch: async () => {
         await keyCheck.during?.();
@@ -1486,6 +1496,80 @@ describeIntegration("agent import", () => {
         select: { payload: true },
       });
       expect(updated?.payload).toMatchObject({ messageId: checklist.id });
+    });
+
+    it("settles the cards of servers Undo removes, and tells open chats", async () => {
+      const cookie = await signup(app, `import-existing-cards-${stamp}@rakazo.test`, "Cards");
+      const chief = await rpc<Bot>(app, cookie, "bots/create", { name: "Chief" });
+      const twoServers = [
+        { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+        {
+          path: ".openclaw/openclaw.json",
+          content: `{ mcp: { servers: {
+            docs: { url: "https://mcp.example.com/docs" },
+            wiki: { url: "https://mcp.example.com/wiki" },
+          } } }`,
+        },
+      ];
+      const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+        files: twoServers,
+      });
+      await rpc<Bot>(app, cookie, "bots/importCreate", {
+        files: twoServers,
+        destination: { kind: "existing", botId: chief.id },
+        selection: { ...everything(plan), instructions: [] },
+      });
+      const owner = await db.bot.findUniqueOrThrow({
+        where: { id: chief.id },
+        select: { spaceId: true, userId: true },
+      });
+      const servers = await db.mcpServer.findMany({
+        where: { ...owner, slug: { in: ["docs", "wiki"] } },
+        select: { id: true, slug: true },
+      });
+      const wiki = servers.find((server) => server.slug === "wiki")!;
+      const docs = servers.find((server) => server.slug === "docs")!;
+      // Edited since the import: Undo keeps it.
+      await rpc(app, cookie, "mcp/servers/update", {
+        id: wiki.id,
+        config: {
+          slug: "wiki",
+          name: "Team wiki",
+          description: "",
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.com/wiki",
+          enabled: true,
+        },
+      });
+      const cards = async () =>
+        Object.fromEntries(
+          (
+            await db.message.findMany({
+              where: { thread: { botId: chief.id } },
+              select: { blocks: true },
+            })
+          )
+            .flatMap((row) => row.blocks as { kind: string; serverId?: string; status?: string }[])
+            .filter((block) => block.kind === "mcp_approval")
+            .map((block) => [block.serverId, block.status]),
+        );
+      expect(await cards()).toEqual({ [docs.id]: "pending", [wiki.id]: "pending" });
+      const thread = await db.thread.findFirstOrThrow({ where: { botId: chief.id } });
+      published.length = 0;
+
+      await rpc(app, cookie, "bots/importUndo", { botId: chief.id });
+      expect(await cards()).toEqual({ [docs.id]: "dismissed", [wiki.id]: "pending" });
+      expect(await db.mcpServer.count({ where: { id: { in: [docs.id, wiki.id] } } })).toBe(1);
+      // The repaint reached open chats once Undo committed.
+      const last = await db.event.findFirstOrThrow({
+        where: { threadId: thread.id },
+        orderBy: { seq: "desc" },
+        select: { seq: true },
+      });
+      const sent = published
+        .filter(([topic]) => topic.includes(thread.id))
+        .map(([, payload]) => (JSON.parse(payload) as { cursor: number }).cursor);
+      expect(sent).toContain(last.seq);
     });
 
     it("replaces the instructions only when chosen, as a recorded edit Undo can restore", async () => {
