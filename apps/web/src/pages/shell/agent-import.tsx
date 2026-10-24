@@ -401,6 +401,7 @@ export function AgentImportForm({
       unsupported_command: t`Not supported in Rakazo`,
       local_path: t`Uses paths on your computer`,
       dropped_settings: t`Some settings are not imported`,
+      changed_schedule: t`Timing may differ`,
     })[warning];
   /** The first reason an item may not work here, next to its title. */
   const warningNote = (warnings: AgentImportWarning[]) =>

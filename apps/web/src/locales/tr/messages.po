@@ -710,6 +710,10 @@ msgstr "API anahtarı üstbilgisi"
 msgid "API keys"
 msgstr "API anahtarları"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API anahtarları bağlı kalır."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Görünüm"
@@ -5140,6 +5144,10 @@ msgstr "Günün saati"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "Zamanlama farklı olabilir"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

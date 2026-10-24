@@ -103,6 +103,11 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                     </li>
                   ))}
                 </ul>
+                {info.keep.apiKeys.length ? (
+                  <p className="mt-1 text-[13px] text-muted-foreground">
+                    <Trans>API keys stay connected.</Trans>
+                  </p>
+                ) : null}
               </section>
             ) : null}
             {error ? (

@@ -1284,8 +1284,8 @@ export function createRouter(deps: RouterDeps) {
       };
     },
     writeModelKey: async (tx, actor, key) => {
-      const row = await writeModelCredential(tx, actor, key.credential, key.prepared);
-      return { id: row.id, secretId: row.secretId, provider: row.provider };
+      const row = await createImportedModelCredential(tx, actor, key.credential, key.prepared);
+      return row && { id: row.id, secretId: row.secretId, provider: row.provider };
     },
     afterModelKey: (provider) =>
       (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(provider)),
@@ -1298,7 +1298,6 @@ export function createRouter(deps: RouterDeps) {
     routineRowData,
     announceRoutine,
     destroyBot: removeBot,
-    removeModelConnection: removeModelConnectionInTransaction,
     removeMcpServer: removeMcpServerInTransaction,
   };
   const catalogForSpace = async (actor: Actor) => {
@@ -2131,7 +2130,38 @@ export function createRouter(deps: RouterDeps) {
         });
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
-            (tx) => removeModelConnectionInTransaction(tx, context.actor, input.provider),
+            async (tx) => {
+              await tx.spaceBackupModel.deleteMany({
+                where: {
+                  userId: context.actor.userId,
+                  provider: modelCredentialProviderFilter(input.provider),
+                },
+              });
+              const existing = await tx.userModelCredential.findMany({
+                where: {
+                  userId: context.actor.userId,
+                  provider: modelCredentialProviderFilter(input.provider),
+                },
+              });
+              if (existing.length === 0) return;
+              const ids = existing.map((row) => row.id);
+              // Credentials belong to the account, not the space — disconnecting
+              // removes them everywhere, matching voice.disconnect. Linked
+              // preferences in other spaces go with their credential.
+              await tx.spaceModelPreference.deleteMany({
+                where: { userId: context.actor.userId, credentialId: { in: ids } },
+              });
+              await tx.userModelCredential.deleteMany({
+                where: { userId: context.actor.userId, id: { in: ids } },
+              });
+              for (const row of existing) {
+                await deleteUnreferencedCredentialSecret(tx, {
+                  credentialKind: "model",
+                  credentialId: row.id,
+                  secretId: row.secretId,
+                });
+              }
+            },
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
@@ -7495,6 +7525,35 @@ async function prepareModelCredential(
 }
 
 /** Writes a prepared connection in the caller's transaction. */
+/** Serialises writes of one user's connection for one provider (connect and import). */
+async function lockModelCredentialProvider(
+  tx: Prisma.TransactionClient,
+  actor: Pick<Actor, "userId">,
+  provider: string,
+): Promise<void> {
+  const scope = `user:${actor.userId}|provider:${canonicalPiProviderId(provider)}`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('model-credential'), hashtext(${scope}))`;
+}
+
+/**
+ * An import's key: written only when the user has no connection for the provider, checked
+ * under the provider lock so a connection made since the preview is never replaced.
+ */
+async function createImportedModelCredential(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  input: ModelCredentialInput,
+  prepared: Awaited<ReturnType<typeof prepareModelCredential>>,
+) {
+  await lockModelCredentialProvider(tx, actor, input.provider);
+  const existing = await tx.userModelCredential.findFirst({
+    where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
+    select: { id: true },
+  });
+  if (existing) return null;
+  return writeModelCredential(tx, actor, input, prepared);
+}
+
 async function writeModelCredential(
   tx: Prisma.TransactionClient,
   actor: Actor,
@@ -7503,6 +7562,7 @@ async function writeModelCredential(
 ) {
   const { stored, defaultModel, allowedThinking } = prepared;
   throwIfAborted(input.signal);
+  await lockModelCredentialProvider(tx, actor, input.provider);
   const existing = await tx.userModelCredential.findFirst({
     where: { userId: actor.userId, provider: { in: storedPiProviderIds(input.provider) } },
     orderBy: newestModelCredentialOrder,
@@ -7600,44 +7660,6 @@ async function persistModelCredential(
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   return modelCredentialDto(cred, input.plaintext);
-}
-
-/** The writes of `models.disconnect`: the provider's connections, preferences and backups. */
-async function removeModelConnectionInTransaction(
-  tx: Prisma.TransactionClient,
-  actor: Actor,
-  provider: string,
-): Promise<void> {
-  await tx.spaceBackupModel.deleteMany({
-    where: {
-      userId: actor.userId,
-      provider: modelCredentialProviderFilter(provider),
-    },
-  });
-  const existing = await tx.userModelCredential.findMany({
-    where: {
-      userId: actor.userId,
-      provider: modelCredentialProviderFilter(provider),
-    },
-  });
-  if (existing.length === 0) return;
-  const ids = existing.map((row) => row.id);
-  // Credentials belong to the account, not the space — disconnecting
-  // removes them everywhere, matching voice.disconnect. Linked
-  // preferences in other spaces go with their credential.
-  await tx.spaceModelPreference.deleteMany({
-    where: { userId: actor.userId, credentialId: { in: ids } },
-  });
-  await tx.userModelCredential.deleteMany({
-    where: { userId: actor.userId, id: { in: ids } },
-  });
-  for (const row of existing) {
-    await deleteUnreferencedCredentialSecret(tx, {
-      credentialKind: "model",
-      credentialId: row.id,
-      secretId: row.secretId,
-    });
-  }
 }
 
 /** The `routines.create` schedule rules, shared with agent imports. */

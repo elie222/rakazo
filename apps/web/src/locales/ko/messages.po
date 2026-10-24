@@ -710,6 +710,10 @@ msgstr "API 키 헤더"
 msgid "API keys"
 msgstr "API 키"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API 키는 계속 연결되어 있습니다."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "모양"
@@ -5140,6 +5144,10 @@ msgstr "실행 시각"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "실행 시간이 달라질 수 있습니다"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

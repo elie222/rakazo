@@ -83,6 +83,11 @@ const openclawJobs = JSON.stringify({
       payload: { kind: "agentTurn", message: "Summarise my day", toolsAllow: ["web_search"] },
     },
     {
+      name: "evening",
+      schedule: { kind: "cron", expr: "0 18 * * *", tz: "Mars/Olympus" },
+      payload: { kind: "agentTurn", message: "Wrap up" },
+    },
+    {
       name: "odd",
       schedule: { kind: "every", everyMs: 7 * 60_000 },
       payload: { kind: "agentTurn", message: "Odd interval" },
@@ -276,7 +281,8 @@ describe("OpenClaw settings", () => {
         prompt: "Check the inbox",
         cron: "*/30 * * * *",
         timezone: null,
-        warnings: [],
+        // The interval's own start time is lost: it now runs on the half hour.
+        warnings: ["changed_schedule"],
       },
       {
         name: "morning",
@@ -284,6 +290,14 @@ describe("OpenClaw settings", () => {
         cron: "0 9 * * *",
         timezone: "Asia/Kolkata",
         warnings: ["dropped_settings"],
+      },
+      {
+        name: "evening",
+        prompt: "Wrap up",
+        cron: "0 18 * * *",
+        // An unknown time zone falls back to the space's, and says so.
+        timezone: null,
+        warnings: ["changed_schedule"],
       },
     ]);
     expect(settings.skipped.filter((item) => item.path.startsWith("cron"))).toEqual([

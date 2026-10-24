@@ -91,6 +91,9 @@ const settingsHome = [
   },
 ];
 
+/** Runs once inside the next model key check: something the user does meanwhile. */
+const keyCheck: { during: (() => Promise<void>) | null } = { during: null };
+
 describeIntegration("agent import", () => {
   let app: App;
   let db: PrismaClient;
@@ -107,7 +110,10 @@ describeIntegration("agent import", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       // Offline: key checks and MCP endpoint checks never leave the test.
-      modelConnectionFetch: async () => new Response("{}", { status: 200 }),
+      modelConnectionFetch: async () => {
+        await keyCheck.during?.();
+        return new Response("{}", { status: 200 });
+      },
       remoteConnectors: {
         fetch: async () => new Response("", { status: 503 }),
         resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
@@ -600,14 +606,14 @@ describeIntegration("agent import", () => {
       skills: ["notes"],
       spaceMemory: ["memory/2026-01-02.md"],
       mcpServers: ["docs"],
-      apiKeys: ["openrouter"],
+      apiKeys: [],
     });
-    // The first imported key became the space's default model, so it stays.
+    // Keys are account connections: Undo lists them as kept and never removes them.
     expect(info.keep).toEqual({
       skills: ["garden"],
       spaceMemory: ["USER.md"],
       mcpServers: [],
-      apiKeys: ["anthropic"],
+      apiKeys: ["anthropic", "openrouter"],
     });
 
     // Another user can neither see nor undo it.
@@ -618,7 +624,7 @@ describeIntegration("agent import", () => {
     expect(await db.bot.count({ where: { id: bot.id } })).toBe(1);
 
     const undone = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: bot.id });
-    expect(undone.remove).toEqual(info.remove);
+    expect(undone).toEqual(info);
     expect(await db.bot.count({ where: { id: bot.id } })).toBe(0);
     expect(await db.agentImport.count({ where: { botId: bot.id } })).toBe(0);
     expect(await db.routine.count({ where: { botId: bot.id } })).toBe(0);
@@ -637,11 +643,161 @@ describeIntegration("agent import", () => {
     ).toEqual([["USER.md", "Prefers coffee.\n"]]);
     expect(await db.mcpServer.count({ where: owner })).toBe(0);
     expect(
-      (await db.userModelCredential.findMany({ where: { userId: owner.userId } })).map(
-        (row) => row.provider,
-      ),
-    ).toEqual(["anthropic"]);
+      (
+        await db.userModelCredential.findMany({
+          where: { userId: owner.userId },
+          orderBy: { provider: "asc" },
+        })
+      ).map((row) => row.provider),
+    ).toEqual(["anthropic", "openrouter"]);
     expect(await db.secret.count({ where: { userId: owner.userId, kind: "mcp" } })).toBe(0);
+  });
+
+  it("decides Undo again after locking, keeping a server edited or assigned meanwhile", async () => {
+    const cookie = await signup(app, `import-undo-race-${stamp}@rakazo.test`, "Race User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      {
+        path: ".openclaw/openclaw.json",
+        content: '{ mcp: { servers: { docs: { url: "https://mcp.example.com/mcp" } } } }',
+      },
+    ];
+    const importOne = async (name: string) =>
+      rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        name,
+        selection: {
+          instructions: ["instructions:SOUL.md"],
+          memory: [],
+          skills: [],
+          mcpServers: ["mcp:docs"],
+        },
+      });
+    const other = await rpc<Bot>(app, cookie, "bots/create", { name: "Other" });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: other.id },
+      select: { spaceId: true, userId: true },
+    });
+    const serverOf = async (botId: string) => {
+      const record = await db.agentImport.findFirstOrThrow({ where: { botId } });
+      const id = (record.created as { mcpServers: { id: string }[] }).mcpServers[0]!.id;
+      return db.mcpServer.findUniqueOrThrow({ where: { id } });
+    };
+    // Holds a change uncommitted while Undo starts, so Undo's first read misses it; Undo
+    // must then wait on its row lock and see the change once it commits.
+    const whileUndoing = async (botId: string, change: (tx: never) => Promise<unknown>) => {
+      let undo: Promise<AgentImportInfo> | undefined;
+      await db.$transaction(
+        async (tx) => {
+          await change(tx as never);
+          undo = rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId });
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        },
+        { timeout: 20_000 },
+      );
+      return undo!;
+    };
+
+    const edited = await importOne("Edited");
+    const editedServer = await serverOf(edited.id);
+    const first = await whileUndoing(edited.id, (tx: never) =>
+      (tx as PrismaClient).mcpServer.update({
+        where: { id: editedServer.id },
+        data: { description: "Changed meanwhile", revision: { increment: 1 } },
+      }),
+    );
+    expect([first.remove.mcpServers, first.keep.mcpServers]).toEqual([[], [editedServer.slug]]);
+    expect(await db.mcpServer.count({ where: { id: editedServer.id } })).toBe(1);
+
+    const assigned = await importOne("Assigned");
+    const assignedServer = await serverOf(assigned.id);
+    const second = await whileUndoing(assigned.id, (tx: never) =>
+      (tx as PrismaClient).botMcpServer.create({
+        data: { ...owner, botId: other.id, serverId: assignedServer.id },
+      }),
+    );
+    expect([second.remove.mcpServers, second.keep.mcpServers]).toEqual([[], [assignedServer.slug]]);
+    expect(await db.mcpServer.count({ where: { id: assignedServer.id } })).toBe(1);
+
+    // Bot memory edited meanwhile is archived to space memory, not deleted.
+    const memoryFiles = [
+      ...files,
+      { path: ".openclaw/workspace/MEMORY.md", content: "Project Alpha.\n" },
+    ];
+    const remembered = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files: memoryFiles,
+      name: "Remembered",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [{ id: "memory:MEMORY.md", destination: "bot" }],
+        skills: [],
+      },
+    });
+    const memory = await db.memoryDocument.findFirstOrThrow({
+      where: { botId: remembered.id, path: "MEMORY.md" },
+    });
+    const kept = await whileUndoing(remembered.id, (tx: never) =>
+      (tx as PrismaClient).memoryDocument.update({
+        where: { id: memory.id },
+        data: { content: "Project Alpha ships in May.\n", revision: { increment: 1 } },
+      }),
+    );
+    expect(kept.keep.spaceMemory).toContain("MEMORY.md");
+    const archived = await db.memoryDocument.findMany({
+      where: { ...owner, scope: "user", path: { endsWith: `(${remembered.id})/MEMORY.md` } },
+      select: { content: true },
+    });
+    expect(archived.map((row) => row.content)).toEqual(["Project Alpha ships in May.\n"]);
+
+    // Unchanged, it goes, and the result says exactly that.
+    const plain = await importOne("Plain");
+    const plainServer = await serverOf(plain.id);
+    const third = await rpc<AgentImportInfo>(app, cookie, "bots/importUndo", { botId: plain.id });
+    expect([third.remove.mcpServers, third.keep.mcpServers]).toEqual([[plainServer.slug], []]);
+    expect(await db.mcpServer.count({ where: { id: plainServer.id } })).toBe(0);
+  });
+
+  it("never replaces a key connected after the import checked it", async () => {
+    const cookie = await signup(app, `import-key-race-${stamp}@rakazo.test`, "Key Race User");
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/.env", content: "OPENROUTER_API_KEY=placeholder-imported-key\n" },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+      files,
+      includeSecrets: true,
+    });
+    expect(plan.apiKeys.map((item) => item.provider)).toEqual(["openrouter"]);
+    // The user connects OpenRouter by hand while the import is checking its key.
+    keyCheck.during = async () => {
+      keyCheck.during = null;
+      await rpc(app, cookie, "models/connect", {
+        provider: "openrouter",
+        apiKey: "placeholder-manual-key",
+      });
+    };
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      includeSecrets: true,
+      name: "Imported",
+      selection: {
+        instructions: ["instructions:SOUL.md"],
+        memory: [],
+        skills: [],
+        apiKeys: ["key:openrouter"],
+      },
+    });
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      select: { spaceId: true, userId: true },
+    });
+    const credentials = await db.userModelCredential.findMany({ where: { userId: owner.userId } });
+    expect(credentials).toHaveLength(1);
+    const record = await db.agentImport.findFirstOrThrow({ where: { botId: bot.id } });
+    expect((record.created as { credentials: unknown[] }).credentials).toEqual([]);
+    expect(await db.secret.count({ where: { userId: owner.userId, kind: "model" } })).toBe(1);
+    const info = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", { botId: bot.id });
+    expect([info.remove.apiKeys, info.keep.apiKeys]).toEqual([[], []]);
   });
 
   it("returns the same bot for a retried create and refuses a reused key", async () => {

@@ -9,8 +9,8 @@ import {
   chooseAgentImportFiles,
   combineImportedInstructions,
   hasAgentImportSecrets,
-  hasInlineMcpCredential,
   isAgentImportCandidate,
+  mcpServerImportable,
   parseAgentImport,
   parseDotEnv,
   readAgentImportConfig,
@@ -768,53 +768,112 @@ describe("skill compatibility", () => {
   });
 });
 
-describe("credentials inside MCP URLs and arguments", () => {
+describe("which MCP servers an import keeps", () => {
   const config = `{
     mcp: {
       servers: {
         query: { url: "https://mcp.example.test/mcp?token=placeholder-query-token" },
+        unnamed: { url: "https://mcp.example.test/mcp?access_token_value=placeholder-query-value" },
+        fragment: { url: "https://mcp.example.test/mcp#placeholder-fragment" },
         userinfo: { url: "https://user:placeholder-password@mcp.example.test/mcp" },
         flag: { command: "npx", args: ["-y", "server", "--api-key=placeholder-flag-key"] },
         split: { command: "npx", args: ["server", "--token", "placeholder-split-token"] },
+        header: { command: "npx", args: ["server", "--header", "Authorization: Bearer placeholder-header-arg"] },
+        argurl: { command: "npx", args: ["server", "https://user:placeholder-arg-password@mcp.example.test/mcp"] },
         assignment: { command: "env", args: ["EXAMPLE_API_KEY=placeholder-env-arg", "server"] },
-        clean: { url: "https://mcp.example.test/mcp?region=eu", headers: { Authorization: "Bearer placeholder-header" } },
+        program: { command: "/usr/local/bin/placeholder-program", args: [] },
+        remote: { url: "https://mcp.example.test/mcp", headers: { Authorization: "Bearer placeholder-header" } },
+        local: { command: "npx", args: ["-y", "@scope/server@1.2.3", "./data"], env: { TOKEN: "placeholder-env" } },
       },
     },
   }`;
+  const kept = ["remote", "local"];
 
-  it("are detected", () => {
+  it("keeps only plain URLs and plain commands", () => {
     const parsed = readAgentImportConfig("openclaw.json", config)!;
     const servers = (parsed.mcp as { servers: Record<string, Record<string, unknown>> }).servers;
     expect(
-      Object.entries(servers).map(([name, entry]) => [name, hasInlineMcpCredential(entry)]),
-    ).toEqual([
-      ["query", true],
-      ["userinfo", true],
-      ["flag", true],
-      ["split", true],
-      ["assignment", true],
-      ["clean", false],
-    ]);
+      Object.entries(servers).flatMap(([name, entry]) =>
+        mcpServerImportable(entry) ? [name] : [],
+      ),
+    ).toEqual(kept);
   });
 
-  it("are never sent, with or without the opt-in", () => {
+  it("sends only the names of the others, with or without the opt-in", () => {
     for (const includeSecrets of [false, true]) {
       const upload = agentImportUpload(
         [{ path: "h/openclaw.json", home: "openclaw.json", content: config }],
         { includeSecrets },
       );
       const body = JSON.stringify(upload);
-      for (const secret of [
-        "placeholder-query-token",
-        "placeholder-password",
-        "placeholder-flag-key",
-        "placeholder-split-token",
-        "placeholder-env-arg",
-      ]) {
-        expect(body).not.toContain(secret);
-      }
-      expect(body).toContain("region=eu");
+      expect(body).not.toMatch(/placeholder-/);
+      expect(body).not.toContain("Bearer");
+      expect(body).toContain("@scope/server@1.2.3");
+      const sent = readAgentImportConfig("openclaw.json", upload[0]!.content)!;
+      const servers = (sent.mcp as { servers: Record<string, Record<string, unknown>> }).servers;
+      expect(Object.keys(servers)).toHaveLength(12);
+      expect(
+        Object.entries(servers).flatMap(([name, entry]) => (entry.skipped ? [] : [name])),
+      ).toEqual(kept);
     }
+  });
+
+  it("copies only named primitive fields, never source objects", () => {
+    const sentinel = "placeholder-sentinel";
+    const source = JSON.stringify({
+      agents: {
+        defaults: {
+          model: { primary: "openrouter/example", apiKey: sentinel, extra: { sentinel } },
+        },
+        list: [
+          {
+            id: "main",
+            model: { primary: "openrouter/example", nested: sentinel },
+            note: sentinel,
+          },
+        ],
+      },
+      models: {
+        providers: {
+          openrouter: { apiKey: { source: "env", id: "OPENROUTER_API_KEY", extra: sentinel } },
+          deepseek: { apiKey: { source: "file", path: sentinel } },
+        },
+      },
+      env: { vars: { OPENROUTER_API_KEY: { nested: sentinel } } },
+      mcp: {
+        servers: {
+          remote: {
+            url: "https://mcp.example.test/mcp",
+            toolFilter: { include: ["read"], extra: sentinel },
+            enabled: { sentinel },
+            metadata: { sentinel },
+          },
+        },
+      },
+    });
+    for (const includeSecrets of [false, true]) {
+      const upload = agentImportUpload(
+        [{ path: "h/openclaw.json", home: "openclaw.json", content: source }],
+        { includeSecrets },
+      );
+      expect(JSON.stringify(upload)).not.toContain(sentinel);
+    }
+    const yaml = [
+      "model:",
+      "  provider: openrouter",
+      "  default: { nested: placeholder-sentinel }",
+      "  api_key: { source: file, path: placeholder-sentinel }",
+      "providers:",
+      "  openrouter: { api_key: { source: env, id: OPENROUTER_API_KEY, extra: placeholder-sentinel } }",
+    ].join("\n");
+    const upload = agentImportUpload(
+      [{ path: "h/config.yaml", home: "config.yaml", content: yaml }],
+      {
+        includeSecrets: true,
+      },
+    );
+    expect(JSON.stringify(upload)).not.toContain(sentinel);
+    expect(JSON.stringify(upload)).toContain("OPENROUTER_API_KEY");
   });
 });
 

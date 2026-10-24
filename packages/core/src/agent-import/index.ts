@@ -38,8 +38,8 @@ export {
 export {
   AGENT_IMPORT_PROVIDER_KEYS,
   hasAgentImportSecrets,
-  hasInlineMcpCredential,
   isAgentImportSecretFile,
+  mcpServerImportable,
   normalizeImportProvider,
   parseDotEnv,
   prepareAgentImportFiles,

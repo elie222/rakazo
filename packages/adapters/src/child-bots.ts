@@ -378,8 +378,12 @@ export async function destroyBot(
   context: AdapterContext,
   options: {
     deleteMemories: boolean;
-    /** More removals that must commit or fail together with the bot's deletion. */
-    within?: (tx: Prisma.TransactionClient) => Promise<void>;
+    /**
+     * More removals that must commit or fail together with the bot's deletion. Runs right
+     * after the bot row is locked, before memories are archived, and may decide whether
+     * the bot's memories are deleted.
+     */
+    within?: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
   },
 ) {
   const [dedicated, activeRuns, routines] = await Promise.all([
@@ -426,6 +430,7 @@ export async function destroyBot(
         FOR UPDATE
       `;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
+      const deleteMemories = (await options.within?.(tx))?.deleteMemories ?? options.deleteMemories;
       const botArtifacts = await tx.artifact.findMany({
         where: { botId: bot.id, groupId: null, spaceId: bot.spaceId },
         select: { storageKey: true },
@@ -442,7 +447,7 @@ export async function destroyBot(
         },
         data: releasedComputerLease(),
       });
-      if (!options.deleteMemories) {
+      if (!deleteMemories) {
         const directory = archivedMemoryDirectory(bot.name, bot.id);
         await tx.$executeRaw`
           UPDATE "memory_documents"
@@ -459,10 +464,9 @@ export async function destroyBot(
           spaceId: bot.spaceId,
           name: bot.name,
           deletedByUserId: context.userId,
-          memoriesPreserved: !options.deleteMemories,
+          memoriesPreserved: !deleteMemories,
         },
       });
-      await options.within?.(tx);
       await tx.bot.delete({ where: { id: bot.id } });
       if (webhookSecretId) {
         await tx.secret.deleteMany({

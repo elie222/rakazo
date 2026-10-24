@@ -710,6 +710,10 @@ msgstr "API 密钥请求头"
 msgid "API keys"
 msgstr "API 密钥"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API 密钥保持连接。"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "外观"
@@ -5140,6 +5144,10 @@ msgstr "时间"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "运行时间可能不同"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

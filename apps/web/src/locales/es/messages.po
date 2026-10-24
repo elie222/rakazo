@@ -710,6 +710,10 @@ msgstr "Encabezado de clave de API"
 msgid "API keys"
 msgstr "Claves de API"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "Las claves de API siguen conectadas."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Apariencia"
@@ -5140,6 +5144,10 @@ msgstr "Hora del día"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "El horario puede variar"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

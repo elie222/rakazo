@@ -710,6 +710,10 @@ msgstr "header של מפתח API"
 msgid "API keys"
 msgstr "מפתחות API"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "מפתחות ה-API נשארים מחוברים."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "מראה"
@@ -5140,6 +5144,10 @@ msgstr "שעה ביום"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "התזמון עשוי להשתנות"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

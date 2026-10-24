@@ -59,6 +59,8 @@ export const AgentImportWarningSchema = z.enum([
   "unsupported_command",
   "local_path",
   "dropped_settings",
+  /** A routine's timing changes: an interval loses its start time, or a time zone is unknown. */
+  "changed_schedule",
 ]);
 export type AgentImportWarning = z.infer<typeof AgentImportWarningSchema>;
 const warnings = z.array(AgentImportWarningSchema).default([]);

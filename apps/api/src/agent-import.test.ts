@@ -2,7 +2,7 @@ import type { Actor, Bot } from "@rakazo/contracts";
 import { AgentImportCreateInput } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentImportServices } from "./agent-import.js";
-import { createImportedBot } from "./agent-import.js";
+import { createImportedBot, requestDigest } from "./agent-import.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -57,7 +57,6 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     routineRowData: (_actor, input) => ({ ...input }) as never,
     announceRoutine: async () => undefined,
     destroyBot: async () => undefined,
-    removeModelConnection: async () => undefined,
     removeMcpServer: async () => undefined,
     ...overrides,
   };
@@ -66,6 +65,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
 const input = AgentImportCreateInput.parse({
   files: [
     { path: ".hermes/SOUL.md", content: "Direct.\n" },
+    { path: ".hermes/.env", content: "OPENROUTER_API_KEY=placeholder-openrouter-key\n" },
     {
       path: ".hermes/cron/jobs.json",
       content: JSON.stringify({
@@ -81,11 +81,13 @@ const input = AgentImportCreateInput.parse({
     },
   ],
   name: "Imported",
+  includeSecrets: true,
   selection: {
     instructions: ["instructions:SOUL.md"],
     memory: [],
     skills: [],
     routines: ["routine:a"],
+    apiKeys: ["key:openrouter"],
   },
 });
 
@@ -101,5 +103,37 @@ describe("after the import commits", () => {
       createImportedBot(services({ announceRoutine, afterModelKey }), actor, input),
     ).resolves.toBe(bot);
     expect(announceRoutine).toHaveBeenCalledTimes(1);
+    expect(afterModelKey).toHaveBeenCalledWith("openrouter");
+  });
+
+  it("records only keys it created, leaving a connection made meanwhile alone", async () => {
+    const afterModelKey = vi.fn();
+    const writeModelKey = vi.fn(async () => null);
+    await expect(
+      createImportedBot(services({ afterModelKey, writeModelKey }), actor, input),
+    ).resolves.toBe(bot);
+    expect(writeModelKey).toHaveBeenCalledTimes(1);
+    expect(afterModelKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("the request digest", () => {
+  it("is the same for the same import in another order, and differs for other choices", () => {
+    const reordered = {
+      ...input,
+      files: [...input.files].reverse(),
+      selection: {
+        ...input.selection,
+        instructions: [...input.selection.instructions, "x"].reverse(),
+      },
+    };
+    const extended = {
+      ...input,
+      selection: { ...input.selection, instructions: [...input.selection.instructions, "x"] },
+    };
+    expect(requestDigest(reordered)).toBe(requestDigest(extended));
+    expect(requestDigest({ ...input, selection: { ...input.selection, routines: [] } })).not.toBe(
+      requestDigest(input),
+    );
   });
 });

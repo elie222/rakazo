@@ -1,3 +1,4 @@
+import { crc32 } from "node:zlib";
 import { deflateSync, gunzipSync, gzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import type { AgentImportArchiveErrorReason, AgentImportArchiveLimits } from "./index.js";
@@ -19,6 +20,8 @@ type ZipFile = {
   mode?: number;
   encrypted?: boolean;
   declaredSize?: number;
+  crc?: number;
+  localName?: string;
 };
 
 /** A minimal zip writer, so tests can craft entries real tools would never produce. */
@@ -28,23 +31,26 @@ function zip(files: ZipFile[], options: { zip64?: boolean } = {}): Uint8Array {
   let offset = 0;
   for (const file of files) {
     const name = text(file.name);
+    const localName = text(file.localName ?? file.name);
     const raw = text(file.content ?? "");
     const body = file.deflate ? deflateSync(raw) : raw;
-    const local = new Uint8Array(30 + name.length + body.length);
+    const local = new Uint8Array(30 + localName.length + body.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(6, file.encrypted ? 1 : 0, true);
     lv.setUint16(8, file.deflate ? 8 : 0, true);
+    lv.setUint32(14, file.crc ?? crc32(raw), true);
     lv.setUint32(18, body.length, true);
     lv.setUint32(22, file.declaredSize ?? raw.length, true);
-    lv.setUint16(26, name.length, true);
-    local.set(name, 30);
-    local.set(body, 30 + name.length);
+    lv.setUint16(26, localName.length, true);
+    local.set(localName, 30);
+    local.set(body, 30 + localName.length);
     const central = new Uint8Array(46 + name.length);
     const cv = new DataView(central.buffer);
     cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(8, file.encrypted ? 1 : 0, true);
     cv.setUint16(10, file.deflate ? 8 : 0, true);
+    cv.setUint32(16, file.crc ?? crc32(raw), true);
     cv.setUint32(20, body.length, true);
     cv.setUint32(24, file.declaredSize ?? raw.length, true);
     cv.setUint16(28, name.length, true);
@@ -352,9 +358,83 @@ describe("unsafe archives", () => {
     );
     // A zip entry claiming a size far past its compression ratio.
     const bomb = zip([{ name: "SOUL.md", content: "x".repeat(2 * 1024 * 1024), deflate: true }]);
-    fails(
+    await fails(
       () => read(bomb, { ...AGENT_IMPORT_ARCHIVE_LIMITS, fileBytes: 4 * 1024 * 1024, ratio: 2 }),
       "too_large",
     );
+  });
+
+  it("stops keeping tar data at the read budget, below the inflate and ratio caps", async () => {
+    // Many small files an import would read, varied so they barely compress.
+    const many = Array.from({ length: 40 }, (_, n) => ({
+      name: `memory/2026-01-${String(n).padStart(2, "0")}.md`,
+      content: Array.from(
+        { length: 64 },
+        (_, line) => `${n}-${line}-${(n * 7919 + line * 104729) % 1000003}`,
+      ).join("\n"),
+    }));
+    const archive = tarGz(many);
+    const budget = { ...AGENT_IMPORT_ARCHIVE_LIMITS, readBytes: 16 * 1024 };
+    expect(gunzipSync(archive).length).toBeLessThan(budget.inflatedBytes);
+    // Opening the archive is enough: the stream stops before buffering past the budget.
+    await fails(async () => openAgentImportArchive(archive, budget), "too_large");
+    // Files no import reads are listed, never kept, so they do not count.
+    const docs = tarGz(
+      many.map((file) => ({
+        ...file,
+        name: `skills/a/references/${file.name.replace("memory/", "notes-")}`,
+      })),
+    );
+    expect(() => openAgentImportArchive(docs, budget)).not.toThrow();
+  });
+});
+
+describe("malformed archives", () => {
+  const entry = { name: "SOUL.md", content: "Direct.\n" };
+
+  it("refuses a zip whose stored checksum, size or local name disagrees", async () => {
+    await fails(() => read(zip([{ ...entry, crc: 1 }])), "unreadable");
+    await fails(() => read(zip([{ ...entry, deflate: true, declaredSize: 3 }])), "unreadable");
+    await fails(() => read(zip([{ ...entry, localName: "USER.md" }])), "unreadable");
+  });
+
+  it("refuses a zip whose central directory, or a record in it, runs past its end", async () => {
+    const longer = zip([entry]);
+    const view = new DataView(longer.buffer, longer.byteOffset, longer.byteLength);
+    const end = longer.length - 22;
+    view.setUint32(end + 12, view.getUint32(end + 12, true) + 10, true);
+    await fails(async () => openAgentImportArchive(longer), "unreadable");
+
+    const record = zip([entry]);
+    const recordView = new DataView(record.buffer, record.byteOffset, record.byteLength);
+    const directory = recordView.getUint32(record.length - 22 + 16, true);
+    recordView.setUint16(directory + 32, 200, true);
+    await fails(async () => openAgentImportArchive(record), "unreadable");
+  });
+
+  it("refuses tar sizes that are not strict octal, bad pax records and a missing end", async () => {
+    const tar = (header: Uint8Array, body = "") =>
+      gzipSync(join([header, text(body.padEnd(512, "\0")), new Uint8Array(1024)]));
+    const header = tarHeader("SOUL.md", 7, "0");
+    header.set(text("0000000007x\0"), 124);
+    header.fill(32, 148, 156);
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.set(text(`${sum.toString(8).padStart(6, "0")}\0 `), 148);
+    await fails(() => read(tar(header, "Direct.")), "unreadable");
+
+    const pax = "99 path=SOUL.md\n";
+    await fails(
+      () =>
+        read(
+          tarGz([
+            { name: "PaxHeader", type: "x", content: pax },
+            { name: "x", content: "Direct.\n" },
+          ]),
+        ),
+      "unreadable",
+    );
+
+    const raw = gunzipSync(tarGz([entry]));
+    await fails(() => read(gzipSync(raw.subarray(0, raw.length - 1024))), "unreadable");
   });
 });

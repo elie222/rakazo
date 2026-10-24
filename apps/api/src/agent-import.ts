@@ -73,12 +73,15 @@ export type AgentImportServices<PreparedKey = unknown> = {
     input: { provider: string; apiKey: string; modelId?: string },
     signal?: AbortSignal,
   ) => Promise<PreparedKey>;
-  /** `models.connect`'s writes, keeping the space's existing default model. */
+  /**
+   * `models.connect`'s writes, keeping the space's existing default model. Create-only:
+   * null, and nothing written, when the provider is already connected.
+   */
   writeModelKey: (
     tx: Prisma.TransactionClient,
     actor: Actor,
     prepared: PreparedKey,
-  ) => Promise<{ id: string; secretId: string; provider: string }>;
+  ) => Promise<{ id: string; secretId: string; provider: string } | null>;
   afterModelKey: (provider: string) => void;
   prepareMcpServer: (actor: Actor, input: McpServerConfigInput) => Promise<Stored>;
   insertMcpServer: (
@@ -105,13 +108,10 @@ export type AgentImportServices<PreparedKey = unknown> = {
   destroyBot: (
     actor: Actor,
     botId: string,
-    options: { deleteMemories: boolean; within: (tx: Prisma.TransactionClient) => Promise<void> },
-  ) => Promise<void>;
-  /** The writes of `models.disconnect` for one provider. */
-  removeModelConnection: (
-    tx: Prisma.TransactionClient,
-    actor: Actor,
-    provider: string,
+    options: {
+      deleteMemories: boolean;
+      within: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
+    },
   ) => Promise<void>;
   /** The writes of `mcp.servers.remove`. */
   removeMcpServer: (
@@ -415,8 +415,9 @@ export async function createImportedBot<PreparedKey>(
     seed: async (tx, botId) => {
       seeded = true;
       for (const prepared of preparedKeys) {
+        // Only keys this import created are recorded; one connected meanwhile stays as is.
         const credential = await services.writeModelKey(tx, actor, prepared);
-        record.credentials.push(credential);
+        if (credential) record.credentials.push(credential);
       }
       // Names are checked again under the creation lock: the preview may be stale.
       const resolved = resolveAgentImportNames(plan, await takenNames(tx, actor));
@@ -582,6 +583,7 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
     db.mcpServer.findMany({ where: { ...owner, id: { in: ids(record.mcpServers) } } }),
     db.userModelCredential.findMany({
       where: { userId: actor.userId, id: { in: ids(record.credentials) } },
+      select: { label: true },
     }),
     db.memoryDocument.findMany({ where: { ...owner, scope: "bot", botId } }),
   ]);
@@ -592,30 +594,16 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       item.revision,
     ]),
   );
-  const secrets = new Map(record.credentials.map((item) => [item.id, item.secretId]));
   const split = <T>(rows: T[], changed: (row: T) => boolean) => ({
     remove: rows.filter((row) => !changed(row)),
     keep: rows.filter(changed),
   });
-  // Shared things stay when anything else now relies on them: another bot's assignment
-  // or model, or the space's default model.
-  const [assignedElsewhere, defaults, otherBots] = await Promise.all([
-    db.botMcpServer.findMany({
-      where: { ...owner, serverId: { in: ids(record.mcpServers) }, botId: { not: botId } },
-      select: { serverId: true },
-    }),
-    db.spaceModelPreference.findMany({
-      where: { ...owner, isDefault: true, credentialId: { in: ids(record.credentials) } },
-      select: { credentialId: true },
-    }),
-    db.bot.findMany({
-      where: { ...owner, id: { not: botId }, modelProvider: { not: null } },
-      select: { modelProvider: true },
-    }),
-  ]);
+  // A server stays when another bot now relies on it.
+  const assignedElsewhere = await db.botMcpServer.findMany({
+    where: { ...owner, serverId: { in: ids(record.mcpServers) }, botId: { not: botId } },
+    select: { serverId: true },
+  });
   const sharedServers = new Set(assignedElsewhere.map((row) => row.serverId));
-  const defaultCredentials = new Set(defaults.map((row) => row.credentialId));
-  const usedProviders = new Set(otherBots.map((row) => row.modelProvider));
   const plan = {
     skills: split(skills, (row) => contentHash(row.content) !== hashes.get(row.id)),
     spaceMemory: split(documents, (row) => row.revision !== revisions.get(row.id)),
@@ -623,35 +611,45 @@ async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Acto
       servers,
       (row) => row.revision !== revisions.get(row.id) || sharedServers.has(row.id),
     ),
-    credentials: split(
-      credentials,
-      (row) =>
-        row.secretId !== secrets.get(row.id) ||
-        defaultCredentials.has(row.id) ||
-        usedProviders.has(row.provider),
-    ),
     // Memory the bot wrote or edited after the import is archived to space memory, as
     // deleting a bot with "keep memories" does, instead of being deleted.
     botMemoryChanged: botMemory.some((row) => row.revision !== revisions.get(row.id)),
     botMemory,
   };
-  const names = (side: "remove" | "keep") => ({
-    skills: plan.skills[side].map((row) => row.name),
-    spaceMemory: [
-      ...plan.spaceMemory[side].map((row) => row.path),
-      ...(side === "keep" && plan.botMemoryChanged ? plan.botMemory.map((row) => row.path) : []),
-    ],
-    // Slugs, not display names: two imports can each bring a server named the same.
-    mcpServers: plan.mcpServers[side].map((row) => row.slug),
-    apiKeys: plan.credentials[side].map((row) => row.label),
-  });
-  const info: AgentImportInfo = {
-    source: found.source as AgentImportSource,
-    createdAt: found.createdAt.toISOString(),
-    remove: names("remove"),
-    keep: names("keep"),
+  const info = (removed: { skills: string[]; spaceMemory: string[]; mcpServers: string[] }) => {
+    const left = <T extends { id: string }>(rows: T[], gone: string[], label: (row: T) => string) =>
+      rows.filter((row) => !gone.includes(row.id)).map(label);
+    const gone = <T extends { id: string }>(rows: T[], ids: string[], label: (row: T) => string) =>
+      rows.filter((row) => ids.includes(row.id)).map(label);
+    const result: AgentImportInfo = {
+      source: found.source as AgentImportSource,
+      createdAt: found.createdAt.toISOString(),
+      remove: {
+        skills: gone(skills, removed.skills, (row) => row.name),
+        spaceMemory: gone(documents, removed.spaceMemory, (row) => row.path),
+        // Slugs, not display names: two imports can each bring a server named the same.
+        mcpServers: gone(servers, removed.mcpServers, (row) => row.slug),
+        apiKeys: [],
+      },
+      keep: {
+        skills: left(skills, removed.skills, (row) => row.name),
+        spaceMemory: [
+          ...left(documents, removed.spaceMemory, (row) => row.path),
+          ...(plan.botMemoryChanged ? botMemory.map((row) => row.path) : []),
+        ],
+        mcpServers: left(servers, removed.mcpServers, (row) => row.slug),
+        // Keys are account connections other bots and spaces use; Undo never removes them.
+        apiKeys: credentials.map((row) => row.label).sort(),
+      },
+    };
+    return result;
   };
-  return { info, plan };
+  const planned = {
+    skills: ids(plan.skills.remove),
+    spaceMemory: ids(plan.spaceMemory.remove),
+    mcpServers: ids(plan.mcpServers.remove),
+  };
+  return { record, plan, info: info(planned), infoFor: info };
 }
 
 export async function agentImportInfo(
@@ -664,7 +662,7 @@ export async function agentImportInfo(
 
 /**
  * Removes an imported bot and what its import created, in the bot deletion's transaction.
- * Anything the user changed since the import is kept and reported.
+ * Anything the user changed since the import is kept and reported; API keys always stay.
  */
 export async function undoAgentImport(
   services: AgentImportServices,
@@ -674,44 +672,68 @@ export async function undoAgentImport(
   const before = await undoPlan(services.prisma, actor, botId);
   if (!before) throw new ORPCError("NOT_FOUND", { message: "This bot was not imported." });
   let result = before.info;
-  let removedProviders: string[] = [];
+  const owner = { spaceId: actor.spaceId, userId: actor.userId };
   await services.destroyBot(actor, botId, {
-    deleteMemories: !before.plan.botMemoryChanged,
+    deleteMemories: false,
+    // Runs after the bot row is locked. The candidate rows are locked too, then everything
+    // is decided again: an edit or assignment made meanwhile either landed (and is seen
+    // here) or waits for this transaction.
     within: async (tx) => {
-      // Decided again inside the transaction: the user may have edited something since.
+      const { record } = before;
+      const ids = <T extends { id: string }>(items: T[]) => items.map((item) => item.id);
+      const skillIds = ids(record.skills);
+      const documentIds = [...ids(record.spaceMemory), ...ids(record.botMemory)];
+      const serverIds = ids(record.mcpServers);
+      await tx.$queryRaw`SELECT id FROM agent_skills WHERE id = ANY(${skillIds}) FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT id FROM memory_documents
+        WHERE id = ANY(${documentIds}) OR "botId" = ${botId}
+        FOR UPDATE
+      `;
+      await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ANY(${serverIds}) FOR UPDATE`;
       const current = await undoPlan(tx, actor, botId);
       if (!current) throw new ORPCError("NOT_FOUND", { message: "This bot was not imported." });
-      result = current.info;
       const { plan } = current;
-      const owner = { spaceId: actor.spaceId, userId: actor.userId };
-      // Each delete matches the state it was decided on, so a concurrent edit keeps the row.
+      // Each delete also matches the state it was decided on; the counts say what happened.
+      const removed = {
+        skills: [] as string[],
+        spaceMemory: [] as string[],
+        mcpServers: [] as string[],
+      };
       for (const row of plan.skills.remove) {
-        await tx.agentSkill.deleteMany({
+        const { count } = await tx.agentSkill.deleteMany({
           where: { ...owner, id: row.id, updatedAt: row.updatedAt },
         });
+        if (count) removed.skills.push(row.id);
       }
       for (const row of plan.spaceMemory.remove) {
-        await tx.memoryDocument.deleteMany({
+        const { count } = await tx.memoryDocument.deleteMany({
           where: { ...owner, id: row.id, revision: row.revision },
         });
+        if (count) removed.spaceMemory.push(row.id);
       }
-      for (const server of plan.mcpServers.remove)
+      for (const server of plan.mcpServers.remove) {
         await services.removeMcpServer(tx, actor, server);
-      removedProviders = plan.credentials.remove.map((row) => row.provider);
-      for (const provider of removedProviders) {
-        await services.removeModelConnection(tx, actor, provider);
+        removed.mcpServers.push(server.id);
       }
+      result = current.infoFor(removed);
+      return { deleteMemories: !plan.botMemoryChanged };
     },
   });
-  for (const provider of removedProviders) services.afterModelKey(provider);
   return result;
 }
 
-/** SHA-256 of a create request with object keys in a fixed order. */
-function requestDigest(request: unknown): string {
+/** SHA-256 of a create request with object keys and lists in a fixed order. */
+export function requestDigest(request: unknown): string {
+  // Every list in a create request is a set (files have unique paths; selections are ids;
+  // skill files are names), so lists are sorted too: the same import in another order
+  // is the same request.
   const canonical = (value: unknown): unknown =>
     Array.isArray(value)
-      ? value.map(canonical)
+      ? value
+          .map((item) => JSON.stringify(canonical(item)))
+          .sort()
+          .map((item) => JSON.parse(item) as unknown)
       : value && typeof value === "object"
         ? Object.fromEntries(
             Object.keys(value)

@@ -2,8 +2,8 @@ import { Gunzip, Inflate } from "fflate";
 import { AGENT_IMPORT_CONFIG_FILES } from "./config.js";
 
 /**
- * Reads an OpenClaw or Hermes backup in the browser, so secret files never leave the
- * device unless the user opts in. Only files an import might use are decompressed and read;
+ * Reads an OpenClaw or Hermes backup in the browser, so the upload can be reduced to what an
+ * import uses before anything is sent. Only files an import might use are decompressed and read;
  * every other entry is listed by name only (or, inside a gzip stream, skipped).
  */
 
@@ -98,11 +98,35 @@ export function safeArchivePath(raw: string): string | null {
   return segments.join("/");
 }
 
-/** Files an import might read; only these are kept while a gzip stream is inflated. */
+/** The Markdown files an import reads by name, besides skills and daily memory. */
+const READ_MARKDOWN = new Set([
+  "SOUL.md",
+  "AGENTS.md",
+  "IDENTITY.md",
+  "MEMORY.md",
+  "USER.md",
+  "TOOLS.md",
+  "HEARTBEAT.md",
+  "BOOTSTRAP.md",
+  "BOOT.md",
+  "HERMES.md",
+  ".hermes.md",
+]);
+const NOISE_FOLDERS = new Set(["node_modules", ".git", ".venv", "venv", "site-packages"]);
+
+/**
+ * Files an import might read; only these are kept while a gzip stream is inflated. Other
+ * Markdown (skill references, package docs) is listed by name only.
+ */
 function mayBeRead(path: string): boolean {
-  const name = path.split("/").at(-1) ?? "";
+  const segments = path.split("/");
+  const name = segments.at(-1) ?? "";
+  const folder = segments.at(-2) ?? "";
+  if (segments.some((segment) => NOISE_FOLDERS.has(segment))) return false;
   return (
-    name.toLowerCase().endsWith(".md") ||
+    name === "SKILL.md" ||
+    READ_MARKDOWN.has(name) ||
+    ((folder === "memory" || folder === "memories") && name.endsWith(".md")) ||
     name === "manifest.json" ||
     name === "jobs.json" ||
     name === ".bundled_manifest" ||
@@ -130,13 +154,21 @@ function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
   // ZIP64 archives mark these fields as saturated; they are refused rather than misread.
   if (count === 0xffff || size === 0xffffffff || offset === 0xffffffff) throw unreadable();
   if (count > limits.entries) throw tooLarge();
-  if (offset + size > data.length) throw unreadable();
-  type ZipEntry = Entry & { method: number; compressed: number; size: number; local: number };
+  if (offset + size > end) throw unreadable();
+  const directoryEnd = offset + size;
+  type ZipEntry = Entry & {
+    method: number;
+    compressed: number;
+    size: number;
+    local: number;
+    crc: number;
+    rawName: Uint8Array;
+  };
   const entries: ZipEntry[] = [];
   let at = offset;
   const decoder = new TextDecoder();
   for (let index = 0; index < count; index += 1) {
-    if (at + 46 > data.length || view.getUint32(at, true) !== 0x02014b50) throw unreadable();
+    if (at + 46 > directoryEnd || view.getUint32(at, true) !== 0x02014b50) throw unreadable();
     const flags = view.getUint16(at + 8, true);
     const method = view.getUint16(at + 10, true);
     const compressed = view.getUint32(at + 20, true);
@@ -144,10 +176,15 @@ function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
     const nameLength = view.getUint16(at + 28, true);
     const extraLength = view.getUint16(at + 30, true);
     const commentLength = view.getUint16(at + 32, true);
+    const crc = view.getUint32(at + 16, true);
     const external = view.getUint32(at + 38, true);
     const local = view.getUint32(at + 42, true);
-    const name = decoder.decode(data.subarray(at + 46, at + 46 + nameLength));
-    at += 46 + nameLength + extraLength + commentLength;
+    // Every record stays inside the central directory, and every file before it.
+    const next = at + 46 + nameLength + extraLength + commentLength;
+    if (next > directoryEnd || local + 30 > offset) throw unreadable();
+    const rawName = data.subarray(at + 46, at + 46 + nameLength);
+    const name = decoder.decode(rawName);
+    at = next;
     const path = safeArchivePath(name);
     const type = (external >>> 16) & 0o170000;
     // Directories, links, devices, encrypted entries and archives inside are never read.
@@ -155,36 +192,64 @@ function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
       continue;
     }
     if (method !== 0 && method !== 8) continue;
-    entries.push({ path, method, compressed, size: uncompressed, local });
+    entries.push({ path, method, compressed, size: uncompressed, local, crc, rawName });
   }
+  if (at !== directoryEnd) throw unreadable();
   const read = (path: string): Uint8Array | undefined => {
     const entry = entries.find((candidate) => candidate.path === path);
     if (!entry) return undefined;
     if (entry.size > limits.fileBytes) return undefined;
     if (entry.size > 1024 * 1024 && entry.size > entry.compressed * limits.ratio) throw tooLarge();
-    if (entry.local + 30 > data.length || view.getUint32(entry.local, true) !== 0x04034b50) {
+    if (view.getUint32(entry.local, true) !== 0x04034b50) throw unreadable();
+    // The local header must agree with the central directory on name and method.
+    const nameLength = view.getUint16(entry.local + 26, true);
+    const localName = data.subarray(entry.local + 30, entry.local + 30 + nameLength);
+    if (
+      view.getUint16(entry.local + 8, true) !== entry.method ||
+      !sameBytes(localName, entry.rawName)
+    ) {
       throw unreadable();
     }
-    const start =
-      entry.local +
-      30 +
-      view.getUint16(entry.local + 26, true) +
-      view.getUint16(entry.local + 28, true);
+    const start = entry.local + 30 + nameLength + view.getUint16(entry.local + 28, true);
+    if (start + entry.compressed > offset) throw unreadable();
     const body = data.subarray(start, start + entry.compressed);
-    if (body.length !== entry.compressed) throw unreadable();
-    if (entry.method === 0) return body.length > limits.fileBytes ? undefined : body;
-    return inflateCapped(body, Math.min(entry.size, limits.fileBytes));
+    const bytes = entry.method === 0 ? body : inflateCapped(body, entry.size);
+    // The declared size and checksum must match what was actually stored.
+    if (bytes.length !== entry.size || crc32(bytes) !== entry.crc) throw unreadable();
+    return bytes;
   };
   return { entries: entries as Entry[], read };
 }
 
-/** Raw DEFLATE, stopped as soon as the output passes the declared size. */
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+let crcTable: Uint32Array | undefined;
+
+function crc32(bytes: Uint8Array): number {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let index = 0; index < 256; index += 1) {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      }
+      crcTable[index] = value >>> 0;
+    }
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/** Raw DEFLATE, stopped as soon as the output passes the declared size (a false size). */
 function inflateCapped(body: Uint8Array, cap: number): Uint8Array {
   const parts: Uint8Array[] = [];
   let total = 0;
   const inflate = new Inflate((chunk) => {
     total += chunk.length;
-    if (total > cap) throw tooLarge();
+    if (total > cap) throw unreadable();
     parts.push(chunk);
   });
   feed(body, (chunk, final) => inflate.push(chunk, final));
@@ -233,6 +298,8 @@ class TarStream {
   private ended = false;
   private count = 0;
   private sawHeader = false;
+  /** Bytes kept so far; checked before an entry's data is buffered. */
+  private retained = 0;
 
   constructor(
     private readonly entries: Entry[],
@@ -271,8 +338,8 @@ class TarStream {
   }
 
   finish(): void {
-    // A stream that stops inside a header or an entry's data is truncated.
-    if (!this.sawHeader || this.remaining > 0 || this.headerFill > 0) throw unreadable();
+    // A stream without its end-of-archive block, or stopping inside an entry, is truncated.
+    if (!this.ended || this.remaining > 0 || this.headerFill > 0) throw unreadable();
   }
 
   private readHeader(): void {
@@ -310,6 +377,10 @@ class TarStream {
       const read = path !== null && !NESTED_ARCHIVE.test(path) && mayBeRead(path);
       this.current = { path, kind: "file" };
       this.keep = read && size <= this.limits.fileBytes;
+      if (this.keep) {
+        this.retained += size;
+        if (this.retained > this.limits.readBytes) throw tooLarge();
+      }
       if (path) this.entries.push({ path, size });
     } else {
       // Directories, links, devices, FIFOs, global headers and anything unknown.
@@ -339,7 +410,8 @@ function validChecksum(block: Uint8Array): boolean {
   for (let index = 0; index < 512; index += 1) {
     sum += index >= 148 && index < 156 ? 32 : (block[index] ?? 0);
   }
-  return Number.parseInt(ascii(block.subarray(148, 156)).trim() || "-1", 8) === sum;
+  const field = ascii(block.subarray(148, 156)).replace(/^ +| +$/g, "");
+  return /^[0-7]+$/.test(field) && Number.parseInt(field, 8) === sum;
 }
 
 function readSize(field: Uint8Array): number {
@@ -350,20 +422,39 @@ function readSize(field: Uint8Array): number {
     if (!Number.isSafeInteger(value)) throw tooLarge();
     return value;
   }
-  const text = ascii(field).trim();
-  const value = text ? Number.parseInt(text, 8) : 0;
-  if (!Number.isFinite(value) || value < 0) throw unreadable();
-  return value;
+  return octal(field);
 }
 
-/** The `path` record of a pax header (`<length> path=<value>\n`). */
+/** A tar octal field: digits 0-7 only, padded with spaces or NULs. */
+function octal(field: Uint8Array): number {
+  const text = ascii(field).replace(/^ +| +$/g, "");
+  if (text === "") return 0;
+  if (!/^[0-7]+$/.test(text)) throw unreadable();
+  return Number.parseInt(text, 8);
+}
+
+/**
+ * The `path` record of a pax header. Records are `<length> <key>=<value>\n`, where length
+ * counts the whole record in bytes; a record that disagrees with its length is unreadable.
+ */
 function paxPath(bytes: Uint8Array): string | null {
-  const text = new TextDecoder().decode(bytes);
-  for (const line of text.split("\n")) {
-    const match = /^\d+ path=(.*)$/.exec(line);
-    if (match) return match[1] ?? null;
+  const decoder = new TextDecoder();
+  let path: string | null = null;
+  let at = 0;
+  while (at < bytes.length) {
+    const space = bytes.indexOf(0x20, at);
+    if (space < 0) throw unreadable();
+    const lengthText = ascii(bytes.subarray(at, space));
+    if (!/^[1-9][0-9]*$/.test(lengthText)) throw unreadable();
+    const end = at + Number(lengthText);
+    if (end > bytes.length || bytes[end - 1] !== 0x0a) throw unreadable();
+    const record = decoder.decode(bytes.subarray(space + 1, end - 1));
+    const equals = record.indexOf("=");
+    if (equals <= 0) throw unreadable();
+    if (record.slice(0, equals) === "path") path = record.slice(equals + 1);
+    at = end;
   }
-  return null;
+  return path;
 }
 
 function ascii(bytes: Uint8Array): string {
@@ -377,9 +468,11 @@ function ascii(bytes: Uint8Array): string {
  * Where a backup keeps the agent's home, as a function from archive path to the path the
  * import reads (`.openclaw/...`, `.hermes/...`), or null for files outside it.
  *
- * OpenClaw backups hold `<name>/manifest.json` and `<name>/payload/posix/<original path>`:
- * the `state` asset is the home, and a `workspace` asset outside it becomes its workspace.
- * Hermes backups hold the home's files at the archive root.
+ * OpenClaw backups are `.tar.gz` files holding `<name>/manifest.json` and
+ * `<name>/payload/posix/<original path>`: the `state` asset is the home, and a `workspace`
+ * asset outside it becomes its workspace. The manifest is read and validated for tar
+ * backups only (its data is kept while streaming); a zip is mapped by its layout, as Hermes
+ * writes zips with the home's files at the archive root.
  */
 function archiveLayout(entries: Entry[]): (path: string) => string | null {
   const manifest = entries.find((entry) => /^[^/]+\/manifest\.json$/.test(entry.path));

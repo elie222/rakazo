@@ -710,6 +710,10 @@ msgstr "API-Schlüssel-Header"
 msgid "API keys"
 msgstr "API-Schlüssel"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API-Schlüssel bleiben verbunden."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Erscheinungsbild"
@@ -5140,6 +5144,10 @@ msgstr "Uhrzeit"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "Der Zeitplan kann abweichen"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

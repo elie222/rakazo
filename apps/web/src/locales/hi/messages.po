@@ -710,6 +710,10 @@ msgstr "API कुंजी हेडर"
 msgid "API keys"
 msgstr "API कुंजियाँ"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API कुंजियाँ जुड़ी रहती हैं।"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "रूप"
@@ -5140,6 +5144,10 @@ msgstr "दिन का समय"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "समय अलग हो सकता है"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx

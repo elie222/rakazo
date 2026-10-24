@@ -2,7 +2,7 @@ import type { AgentImportWarning, McpServerConfigInput } from "@rakazo/contracts
 import { isValidTimeZone, McpServerConfigInput as McpServerConfigSchema } from "@rakazo/contracts";
 import {
   AGENT_IMPORT_PROVIDER_KEYS,
-  hasInlineMcpCredential,
+  mcpServerImportable,
   nextCronDateAcrossStrict,
   normalizeImportProvider,
   parseDotEnv,
@@ -250,8 +250,8 @@ function mcpServer(
   stdioAllowed: (command: string) => boolean,
 ): Omit<ImportedMcpServer, "id"> | null {
   if (!isObject(entry)) return null;
-  // Credentials inside the URL or arguments would be stored in plain text.
-  if (entry.inlineCredential !== undefined || hasInlineMcpCredential(entry)) return null;
+  // The same conservative rule the projection applies before sending (see the core).
+  if (entry.skipped !== undefined || !mcpServerImportable(entry)) return null;
   // OAuth, client certificates and `$include` have no import equivalent.
   for (const key of ["auth", "oauth", "tls", "cert", "clientCert", "$include"]) {
     if (entry[key] !== undefined && entry[key] !== false) return null;
@@ -344,7 +344,7 @@ function openClawJob(job: Json): JobResult {
       : schedule.kind === "every" && typeof schedule.everyMs === "number"
         ? intervalCron(schedule.everyMs / 60_000)
         : null;
-  return routine(job, message, cron, text(schedule.tz), dropped);
+  return routine(job, message, cron, text(schedule.tz), dropped, schedule.kind === "every");
 }
 
 function hermesJob(job: Json): JobResult {
@@ -363,7 +363,7 @@ function hermesJob(job: Json): JobResult {
     Boolean(text(job.model) || text(job.provider) || text(job.base_url)) ||
     list(job.enabled_toolsets) ||
     Boolean(text(job.workdir));
-  return routine(job, text(job.prompt), cron, "", dropped);
+  return routine(job, text(job.prompt), cron, "", dropped, schedule.kind === "interval");
 }
 
 function routine(
@@ -372,17 +372,24 @@ function routine(
   cron: string | null,
   tz: string,
   droppedSettings: boolean,
+  interval: boolean,
 ): JobResult {
   const name = (text(job.name) || text(job.displayName) || "Routine").slice(0, 80);
   if (!prompt || !cron || !validCron(cron)) return { reason: "unsupported" };
   const timezone = tz && isValidTimeZone(tz) ? tz : null;
+  // An interval becomes clock-aligned cron (its start time is lost), and an unknown time
+  // zone falls back to the space's.
+  const changed = interval || (tz !== "" && timezone === null);
   return {
     title: name,
     name,
     prompt,
     cron,
     timezone,
-    warnings: droppedSettings ? ["dropped_settings"] : [],
+    warnings: [
+      ...(droppedSettings ? (["dropped_settings"] as const) : []),
+      ...(changed ? (["changed_schedule"] as const) : []),
+    ],
     content: `${cron}${timezone ? ` (${timezone})` : ""}\n\n${prompt}`,
   };
 }
