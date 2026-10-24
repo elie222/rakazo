@@ -255,10 +255,10 @@ describe("truncateQuoteExcerpt", () => {
   });
 
   it("leaves out an agent import's setup checklist, which only the web app draws", () => {
-    const checklist = {
+    const checklist: MessageBlock = {
       kind: "import_setup",
       items: [{ kind: "routine", routineId: "routine-1", name: "morning" }],
-    } as const;
+    };
     expect(hasVisibleMessagePresentation([checklist])).toBe(false);
     expect(messagePresentationSegments([checklist])).toEqual([]);
     expect(messagePresentationSegments([{ kind: "text", text: "Imported." }, checklist])).toEqual([
