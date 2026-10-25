@@ -9,6 +9,8 @@ import {
   nextCronDate,
   nextCronDateAcross,
   ONCE_ROUTINE_CRON,
+  unevenInterval,
+  wallClock,
   zonedDateTime,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -529,6 +531,7 @@ export async function updateScheduleFromTool(
   const active = input.active ?? existing.active;
   let crons = existing.crons;
   let nextRunAt = existing.nextRunAt;
+  let carried: Date | undefined;
   const oneShot = isOneShotRoutineCrons(existing.crons);
   if (retime) {
     let timing = input.schedule;
@@ -541,12 +544,26 @@ export async function updateScheduleFromTool(
             : "Give cron or every/unit along with startAt or timezone.",
         };
       }
-      timing = { ...input.schedule, cron: existing.crons[0] };
+      const cron = existing.crons[0] ?? "";
+      timing = { ...input.schedule, cron };
+      // A new timezone alone keeps the next run's local time, so a start set for later holds.
+      // In a timezone behind, the first run is the first one from when it was due, so none is
+      // skipped. An uneven step recurs from its last run: by its fixed gap, which no timezone
+      // moves, or by local days, so it keeps its local time either way.
+      const due = existing.nextRunAt;
+      if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
+        const local = zonedDateTime(wallClock(due, existing.timezone), timezone);
+        const step = unevenInterval(cron);
+        if (step && step.unit !== "days") carried = due;
+        else if (local && (step || local <= due)) {
+          if (local.getTime() > Date.now()) carried = local;
+        } else timing = { ...timing, startAt: due.toISOString() };
+      }
     }
     const resolved = resolveScheduleTiming(timing, timezone);
     if (!resolved.ok) return { error: resolved.error };
     crons = [resolved.cron];
-    nextRunAt = resolved.nextRunAt;
+    nextRunAt = carried ?? resolved.nextRunAt;
   } else if (active && !(existing.active && existing.nextRunAt)) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
     if (existing.watch != null) nextRunAt = new Date(Date.now() + 2_000);

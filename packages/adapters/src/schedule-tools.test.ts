@@ -926,6 +926,63 @@ describe("updateScheduleFromTool", () => {
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ availableAt: first }));
   });
 
+  it.each([
+    [
+      "0 10 * * 1",
+      "Europe/Berlin",
+      "2026-11-16T09:00:00.000Z",
+      "Europe/London",
+      "2026-11-16T10:00:00.000Z",
+    ],
+    [
+      "0 10 * * 1",
+      "Europe/London",
+      "2026-11-16T10:00:00.000Z",
+      "Europe/Berlin",
+      "2026-11-16T09:00:00.000Z",
+    ],
+    ["30 2 * * 0", "UTC", "2027-03-28T02:30:00.000Z", "Europe/Berlin", "2027-03-28T01:30:00.000Z"],
+    [
+      "0 * * * *",
+      "Asia/Kolkata",
+      "2026-11-02T00:30:00.000Z",
+      "Europe/Berlin",
+      "2026-11-02T01:00:00.000Z",
+    ],
+    [
+      "0 * * * *",
+      "Europe/Berlin",
+      "2026-11-02T01:00:00.000Z",
+      "Asia/Kolkata",
+      "2026-11-01T20:30:00.000Z",
+    ],
+    [
+      "0 */7 * * *",
+      "Europe/Berlin",
+      "2026-10-20T03:00:00.000Z",
+      "Europe/London",
+      "2026-10-20T03:00:00.000Z",
+    ],
+    [
+      "0 0 */3 * *",
+      "Europe/Berlin",
+      "2026-11-02T23:00:00.000Z",
+      "America/New_York",
+      "2026-11-03T05:00:00.000Z",
+    ],
+  ])(
+    "keeps the next run (%s) when only the timezone changes from %s",
+    async (cron, from, next, to, moved) => {
+      const { update } = setup({
+        ...weekly,
+        crons: [cron],
+        timezone: from,
+        nextRunAt: new Date(next),
+      });
+      await expect(update({ timezone: to })).resolves.toMatchObject({ ok: true, nextRunAt: moved });
+    },
+  );
+
   it("applies a timing change only if no run advanced the routine since the read", async () => {
     const { updateMany, enqueue, update } = setup();
     updateMany.mockResolvedValueOnce({ count: 0 });

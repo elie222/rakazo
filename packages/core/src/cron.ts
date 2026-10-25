@@ -275,11 +275,8 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   return next;
 }
 
-// Uneven interval steps recur from the scheduled fire instead of resetting at
-// cron field boundaries. Even steps keep cron's local wall-clock positions.
-// Creation/editing still uses nextCronDate for the initial anchor.
-export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
-  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+/** The preset of an interval step that recurs from the scheduled fire, or undefined. */
+export function unevenInterval(cron: string): CronPreset | undefined {
   const preset = presetFromCron(cron);
   if (
     cron.trim().split(/\s+/).length !== 5 ||
@@ -289,8 +286,18 @@ export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezo
     (preset.unit === "hours" && 24 % preset.n === 0) ||
     (preset.unit === "days" && preset.n === 1)
   ) {
-    return nextCronDate(cron, from, timezone);
+    return undefined;
   }
+  return preset;
+}
+
+// Uneven interval steps recur from the scheduled fire instead of resetting at
+// cron field boundaries. Even steps keep cron's local wall-clock positions.
+// Creation/editing still uses nextCronDate for the initial anchor.
+export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const preset = unevenInterval(cron);
+  if (!preset) return nextCronDate(cron, from, timezone);
   if (preset.unit !== "days") {
     const gap = preset.n * (preset.unit === "hours" ? 3_600_000 : 60_000);
     const steps = Math.floor((from.getTime() - anchor.getTime()) / gap) + 1;
@@ -427,6 +434,13 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
   local.ms = 0;
   // Keep any fraction so a time just after an occurrence does not include it.
   return new Date(local.getDate().getTime() + ms);
+}
+
+/** The local date and time of `instant` in `timezone`, as zonedDateTime reads it back. */
+export function wallClock(instant: Date, timezone = "UTC"): string {
+  const local = new CronDate(instant, validTimezoneOrUtc(timezone));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${local.year}-${pad(local.month + 1)}-${pad(local.day)}T${pad(local.hour)}:${pad(local.minute)}:${pad(local.second)}`;
 }
 
 function validTimezoneOrUtc(timezone: string): string {
