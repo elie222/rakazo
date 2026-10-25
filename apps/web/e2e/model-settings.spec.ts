@@ -23,6 +23,11 @@ const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const SECOND_MODEL_ID = "rakazo-e2e-second";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
 
+test.afterEach(async ({ page }) => {
+  // Finish intercepted responses before the browser context is disposed.
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("model settings cleanup frames", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const stamp = Date.now();
