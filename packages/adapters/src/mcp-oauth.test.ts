@@ -312,12 +312,14 @@ describe("MCP OAuth", () => {
     };
     const context = { spaceId: "workspace-1", userId: "user-1" };
     /** A process of its own: a broker with nothing in memory but the database. */
-    const startProcess = async (network: typeof fetch) => {
+    const startProcess = async (network: typeof fetch, allowPrivateEndpoint = false) => {
       await ready;
-      const broker = new McpOAuthBroker(prisma as never, secrets as never, {
-        fetch: network,
-        resolveHostname: TEST_NETWORK.resolveHostname,
-      });
+      const broker = new McpOAuthBroker(
+        prisma as never,
+        secrets as never,
+        { fetch: network, resolveHostname: TEST_NETWORK.resolveHostname },
+        allowPrivateEndpoint,
+      );
       const provider = await broker.providerFor(server, context);
       if (!(provider instanceof StoredMcpOAuthProvider)) throw new Error("expected a provider");
       return { broker, provider };
@@ -382,6 +384,19 @@ describe("MCP OAuth", () => {
     expect(await broker.statusFor(shared.server, shared.context)).toBe("connected");
     // Waiting for another process's refresh must not eat the budget for this one's write.
     expect(shared.lockSettings[0]).toContain("lock_timeout");
+  });
+
+  it("keeps a private-network HTTP resource through the broker and refresh when the instance opts in", async () => {
+    const resource = "http://192.0.2.10:8123/mcp";
+    const material = expiringMaterial(EXPIRED());
+    material.oauth.discoveryState.resourceMetadata.resource = resource;
+    const server = rotatingAuthServer();
+    const shared = sharedCredentials(material, resource);
+    const { provider } = await shared.startProcess(server.fetch, true);
+
+    expect(await provider.validateResourceURL(resource, resource)).toEqual(new URL(resource));
+    await provider.tokens();
+    expect(server.requests[0]?.get("resource")).toBe(resource);
   });
 
   it.each([
