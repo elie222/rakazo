@@ -378,6 +378,18 @@ describe("messaging.identities", () => {
     });
   });
 
+  it("keeps a workspace-installed identity in its installation's space", async () => {
+    const { handler, actor, prisma } = messagingDeps({
+      identity: { ...identity, installationId: "inst-1", spaceId: "ws-other" },
+    });
+    const response = await call(handler, actor, "messaging/identities/setBot", {
+      identityId: "mi-1",
+      botId: "bot-2",
+    });
+    expect(response.status).toBe(400);
+    expect(prisma.messagingIdentity.update).not.toHaveBeenCalled();
+  });
+
   it("unlinks only the caller's own identity", async () => {
     const { handler, actor, prisma } = messagingDeps();
     const response = await call(handler, actor, "messaging/identities/unlink", {

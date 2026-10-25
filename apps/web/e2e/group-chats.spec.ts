@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -285,4 +286,44 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await page.goto(`/app/g/${reviewGroup.id}`);
   await page.waitForURL(/\/app\/(?!g\/)[^/]+$/);
   await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
+});
+
+test("group names stop at the length limit when creating and renaming", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `group-limit-${stamp}@rakazo.test`, "password12", "Group E2E");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await createBot(page, "Researcher");
+  await createBot(page, "Research Writer");
+
+  await openNewGroup(page);
+  const panel = page.getByTestId("side-panel");
+  const nameInput = panel.getByRole("textbox", { name: "Name", exact: true });
+  const groupName = "Research team ".padEnd(GROUP_NAME_MAX_LENGTH, "x");
+  await nameInput.pressSequentially(`${groupName}overflow`);
+  await expect(nameInput).toHaveValue(groupName);
+  await panel.getByRole("checkbox", { name: "Add Researcher to the group" }).click();
+  await panel.getByRole("checkbox", { name: "Add Research Writer to the group" }).click();
+  await captureScreenshot(page, testInfo, "group-name-limit-create");
+  await panel.getByRole("button", { name: "Create group", exact: true }).click();
+  await page.waitForURL(/\/app\/g\/[^/]+$/);
+  const groupId = new URL(page.url()).pathname.split("/").at(-1)!;
+  const groups = await rpc<Array<{ id: string; name: string }>>(page, "groups/list", {});
+  expect(groups.find((group) => group.id === groupId)?.name).toBe(groupName);
+
+  await expect(page.getByRole("combobox", { name: `Message ${groupName}` })).toBeVisible();
+  await page.getByTestId("bot-settings-trigger").click();
+  const renamedName = "Renamed research team ".padEnd(GROUP_NAME_MAX_LENGTH, "x");
+  await nameInput.clear();
+  await nameInput.pressSequentially(`${renamedName}overflow`);
+  await expect(nameInput).toHaveValue(renamedName);
+  await captureScreenshot(page, testInfo, "group-name-limit-rename");
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(panel).not.toBeVisible();
+  await page.reload();
+  const renamedGroups = await rpc<Array<{ id: string; name: string }>>(page, "groups/list", {});
+  expect(renamedGroups.find((group) => group.id === groupId)?.name).toBe(renamedName);
 });

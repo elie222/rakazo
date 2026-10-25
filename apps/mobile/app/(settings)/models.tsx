@@ -5,11 +5,13 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
+import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api";
@@ -21,8 +23,12 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
+import { fetchFresh, queryClient, rpcQuery } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
+
+const noModels: MobileModel[] = [];
+const noCredentials: MobileModelCredential[] = [];
 
 /** The main and approval model lists; connecting a provider opens its own screen. */
 export default function Models() {
@@ -30,11 +36,17 @@ export default function Models() {
   const styles = useThemedStyles(createModelsStyles);
   const router = useRouter();
   const { t } = useI18n();
-  const [me, setMe] = useState<MobileMe | null>(null);
-  const [catalog, setCatalog] = useState<MobileModel[]>([]);
-  const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
-  const [loading, setLoading] = useState(true);
+  const me = useQuery({ ...rpcQuery<MobileMe>("me"), enabled: false }, queryClient).data ?? null;
+  const catalog =
+    useQuery({ ...rpcQuery<MobileModel[]>("models/list"), enabled: false }, queryClient).data ??
+    noModels;
+  const credentials =
+    useQuery(
+      { ...rpcQuery<MobileModelCredential[]>("models/credentials"), enabled: false },
+      queryClient,
+    ).data ?? noCredentials;
   const [error, setError] = useState<string | null>(null);
+  const openedRef = useRef(false);
   const pickerRequestRef = useRef<string | null>(null);
   const connectionRequestRef = useRef<string | null>(null);
   const returningFromPickerRef = useRef(false);
@@ -47,29 +59,32 @@ export default function Models() {
     [],
   );
 
-  const load = useCallback(async () => {
-    try {
-      const [nextMe, nextCatalog, nextCredentials] = await Promise.all([
-        rpc<MobileMe>("me"),
-        rpc<MobileModel[]>("models/list"),
-        rpc<MobileModelCredential[]>("models/credentials"),
-      ]);
-      setMe(nextMe);
-      setCatalog(nextCatalog);
-      setCredentials(nextCredentials);
-      setError(null);
-    } catch (err) {
-      setError(errorText(err, t("Could not load model settings")));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+  /** Opening shares a read already in flight; after a change, the answer must come from a new one. */
+  const load = useCallback(
+    async (reuse = false) => {
+      try {
+        await Promise.all([
+          fetchFresh(rpcQuery<MobileMe>("me"), { reuse }),
+          fetchFresh(rpcQuery<MobileModel[]>("models/list"), { reuse }),
+          fetchFresh(rpcQuery<MobileModelCredential[]>("models/credentials"), { reuse }),
+        ]);
+        setError(null);
+      } catch (err) {
+        // A newer read replaced this one and reports for both.
+        if (!isCancelledError(err)) setError(errorText(err, t("Could not load model settings")));
+      }
+    },
+    [t],
+  );
 
   useFocusEffect(
     useCallback(() => {
       // A picker pick saves through the list itself; only connections change what loads here.
       if (returningFromPickerRef.current) returningFromPickerRef.current = false;
-      else void load();
+      else {
+        void load(!openedRef.current);
+        openedRef.current = true;
+      }
     }, [load]),
   );
 
@@ -95,40 +110,94 @@ export default function Models() {
     return { pathname: "/model-connection", params: { requestId } };
   }
 
+  // Connecting from a picker always adds a connection.
   const connectRoute = (provider: ConnectableProvider, intent: ModelConnectIntent) =>
-    connectionRoute({ provider: provider.id, baseUrl: provider.baseUrl, ...intent });
-  const manage = (provider: string) =>
-    router.push(connectionRoute({ provider, makeDefault: false }));
+    connectionRoute({
+      provider: provider.id,
+      baseUrl: provider.baseUrl,
+      credentialId: null,
+      ...intent,
+    });
+  const manage = (credential: MobileModelCredential) =>
+    router.push(
+      connectionRoute({
+        provider: credential.provider,
+        credentialId: credential.id,
+        makeDefault: false,
+      }),
+    );
 
-  const providers = useMemo(() => {
-    const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    // Deployment-funded providers stay listed so people can still add their own key.
+  /** Every provider, popular first, plus the Ollama Cloud preset of the compatible one. */
+  const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
-      if (connected.has(canonicalPiProviderId(entry.provider)) || grouped.has(entry.provider))
-        continue;
+      if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
         name: entry.providerName ?? entry.provider,
       });
     }
-    const unconnected = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
-    const compatible = credentials.find(
-      (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
-    );
-    if (
-      catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID) &&
-      !isOllamaCloudBaseUrl(compatible?.baseUrl)
-    )
-      unconnected.push({
+    const all = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
+    if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
+      all.push({
         id: OPENAI_COMPATIBLE_PROVIDER_ID,
         name: t("Ollama Cloud"),
         baseUrl: OLLAMA_CLOUD_BASE_URL,
       });
-    return unconnected;
-  }, [catalog, credentials, t]);
+    return all;
+  }, [catalog, t]);
 
-  if (loading && !me) {
+  // Deployment-funded providers stay listed so people can still add their own key.
+  const providers = useMemo(() => {
+    const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
+    const ollama = credentials.some(
+      (entry) =>
+        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && isOllamaCloudBaseUrl(entry.baseUrl),
+    );
+    return allProviders.filter((provider) =>
+      provider.baseUrl ? !ollama : !connected.has(canonicalPiProviderId(provider.id)),
+    );
+  }, [allProviders, credentials]);
+
+  const providerKey = (provider: ConnectableProvider) =>
+    `connect:${provider.id}:${provider.baseUrl ?? ""}`;
+  /** Adds a connection, even for a provider that has one, without touching any list. */
+  function addProvider() {
+    pushModelPicker({
+      title: t("Add provider"),
+      selectedKey: "",
+      choices: allProviders.map((provider) => ({
+        key: providerKey(provider),
+        label: provider.name,
+        modelLabel: provider.name,
+      })),
+      onSelect: () => undefined,
+      continueTo: (choice) => {
+        const provider = allProviders.find((entry) => providerKey(entry) === choice.key);
+        return provider
+          ? connectionRoute({
+              provider: provider.id,
+              baseUrl: provider.baseUrl,
+              credentialId: null,
+              makeDefault: false,
+            })
+          : undefined;
+      },
+    });
+  }
+
+  async function changeConnection(action: () => Promise<unknown>, failure: string) {
+    try {
+      await action();
+      setError(null);
+    } catch (err) {
+      setError(errorText(err, failure));
+    }
+    await load();
+  }
+
+  // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
+  if (!me && !error) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
         <ActivityIndicator color={native.secondaryLabel} />
@@ -164,9 +233,7 @@ export default function Models() {
               spaceId={me.spaceId}
               modelRole="main"
               title={t("Main model")}
-              defaultLabel={
-                me.hostCredentialProvider ? t("Deployment default") : t("Choose a model")
-              }
+              defaultLabel={t("Choose a model")}
               onChanged={() => void load()}
             />
             <ModelRoleSettings
@@ -175,7 +242,29 @@ export default function Models() {
               spaceId={me.spaceId}
               modelRole="approval"
               title={t("Approval model")}
-              defaultLabel={t("Deployment default")}
+              defaultLabel={t("Choose a model")}
+            />
+            <ModelProviders
+              catalog={catalog}
+              credentials={credentials}
+              onManage={manage}
+              onAdd={addProvider}
+              onRename={(credential, label) =>
+                void changeConnection(
+                  () => rpc("models/rename", { credentialId: credential.id, label }),
+                  t("Could not update name"),
+                )
+              }
+              onDisconnect={(credential) =>
+                void changeConnection(
+                  () =>
+                    rpc("models/disconnect", {
+                      provider: credential.provider,
+                      credentialId: credential.id,
+                    }),
+                  t("Could not disconnect this provider"),
+                )
+              }
             />
           </>
         ) : null}

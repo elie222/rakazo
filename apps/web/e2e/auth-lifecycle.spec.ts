@@ -325,12 +325,37 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   const sentToUser = async () => {
     const response = await page.request.get(`${emailApi}/__e2e/emails`);
     expect(response.headers()["cache-control"]).toBe("no-store");
-    const messages = (await response.json()) as Array<{ to: string; text: string }>;
-    return messages.filter((message) => message.to === email);
+    const messages = (await response.json()) as Array<{
+      to: string;
+      subject: string;
+      text: string;
+      html: string;
+    }>;
+    return messages.filter(
+      (message) => message.to === email && message.subject === "Reset your Rakazo password",
+    );
   };
   await expect.poll(async () => (await sentToUser()).length).toBeGreaterThan(0);
-  const resetUrl = (await sentToUser()).at(-1)?.text.match(/https?:\/\/\S+/)?.[0];
+  const resetMessage = (await sentToUser()).at(-1)!;
+  const resetUrl = resetMessage.text.match(/https?:\/\/\S+/)?.[0];
   expect(resetUrl).toBeTruthy();
+
+  const emailPreview = await page.context().newPage();
+  try {
+    await emailPreview.setContent(resetMessage.html);
+    const resetLink = emailPreview.getByRole("link", { name: "Reset password", exact: true });
+    await expect(resetLink).toHaveAttribute("href", resetUrl!);
+    for (const width of [800, 390]) {
+      await emailPreview.setViewportSize({ width, height: 480 });
+      await expect(resetLink).toBeVisible();
+      expect(
+        await emailPreview.locator("body").evaluate((body) => body.scrollWidth),
+      ).toBeLessThanOrEqual(width);
+      await captureScreenshot(emailPreview, testInfo, `password-reset-email-${width}`);
+    }
+  } finally {
+    await emailPreview.close();
+  }
 
   await page.goto(resetUrl!);
   await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();

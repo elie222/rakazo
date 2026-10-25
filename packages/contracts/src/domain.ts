@@ -164,10 +164,11 @@ export function truncateReplyQuote(value: string): string {
 
 export const GROUP_MEMBER_MIN = 2;
 export const GROUP_MEMBER_MAX = 10;
+export const GROUP_NAME_MAX_LENGTH = 80;
 
 /** Preserve pick order and the group name limit without splitting a surrogate pair. */
 export function defaultGroupName(names: readonly string[]): string {
-  const value = names.join(", ").trim().slice(0, 80);
+  const value = names.join(", ").trim().slice(0, GROUP_NAME_MAX_LENGTH);
   const last = value.charCodeAt(value.length - 1);
   return (last >= 0xd800 && last <= 0xdbff ? value.slice(0, -1) : value).trim();
 }
@@ -195,14 +196,14 @@ const GroupBotIds = z
   .refine((ids) => new Set(ids).size === ids.length, { error: "botIds must be distinct" });
 
 export const CreateGroupInput = z.object({
-  name: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(GROUP_NAME_MAX_LENGTH),
   botIds: GroupBotIds,
 });
 export type CreateGroupInput = z.infer<typeof CreateGroupInput>;
 
 export const UpdateGroupInput = z.object({
   groupId: Id,
-  name: z.string().trim().min(1).max(80).optional(),
+  name: z.string().trim().min(1).max(GROUP_NAME_MAX_LENGTH).optional(),
   botIds: GroupBotIds.optional(),
   /** Reject a membership replacement when another client changed the active roster. */
   expectedBotIds: z.array(Id).max(GROUP_MEMBER_MAX).optional(),
@@ -339,6 +340,8 @@ export const SpaceSchema = z.object({
   canRename: z.boolean().optional(),
   /** True only when the current member may delete this non-default space. */
   canDelete: z.boolean().optional(),
+  /** Every bot deleting the space removes, archived and other members' included. */
+  botCount: z.number().int().nonnegative().optional(),
   bots: z.array(SpaceBotSchema),
   groups: z.array(SpaceGroupSchema),
   externalConversations: z.array(ExternalConversationSchema),
@@ -549,6 +552,7 @@ export const CreateRoutineInput = z
       });
     }
   });
+export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
 
 export const ScratchpadItemStatusSchema = z.enum(["open", "parked", "done"]);
 export type ScratchpadItemStatus = z.infer<typeof ScratchpadItemStatusSchema>;
@@ -1033,6 +1037,19 @@ export const MessagingLinkedIdentitySchema = z.object({
 });
 export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
 
+export const MessagingInstallationSummarySchema = z.object({
+  id: Id,
+  provider: z.string(),
+  workspaceName: z.string(),
+  botId: Id,
+});
+export type MessagingInstallationSummary = z.infer<typeof MessagingInstallationSummarySchema>;
+export const MessagingInstallationsStatusSchema = z.object({
+  available: z.boolean(),
+  installations: z.array(MessagingInstallationSummarySchema),
+});
+export type MessagingInstallationsStatus = z.infer<typeof MessagingInstallationsStatusSchema>;
+
 export const MessagingStatusSchema = z.object({
   enabled: z.boolean(),
   /** Messaging platforms mounted on this deployment (sendblue, slack, …). */
@@ -1223,7 +1240,9 @@ export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(ch
     .superRefine((choices, ctx) => {
       const seen = new Set<string>();
       for (const [index, choice] of choices.entries()) {
-        const key = JSON.stringify([choice.provider, choice.modelId]);
+        // The same model may run on two connections, so a pinned connection is part of it.
+        const credentialId = (choice as { credentialId?: string | null }).credentialId ?? null;
+        const key = JSON.stringify([choice.provider, choice.modelId, credentialId]);
         if (seen.has(key)) {
           ctx.addIssue({
             code: "custom",
@@ -1241,6 +1260,14 @@ export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
 export const MAX_ENABLED_MODEL_IDS = 500;
 
+/** An existing connection's id, null for a new one, or omitted for the provider's newest. */
+export const ModelConnectionTargetSchema = Id.nullable().optional();
+
+export const MAX_MODEL_CONNECTION_LABEL = 80;
+export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
+
+export const CONNECTION_LABEL_MAX_LENGTH = 80;
+
 export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
@@ -1251,6 +1278,11 @@ export const ModelConnectInputSchema = z
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
+    /**
+     * The connection this save updates; null adds another connection for the provider.
+     * Older apps omit it and update the provider's newest connection.
+     */
+    credentialId: ModelConnectionTargetSchema,
     modelId: z.string().optional(),
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -1363,6 +1395,8 @@ export const ModelCatalogEntrySchema = z.object({
   protocol: z.enum(["chat", "decisions"]).optional(),
   /** Preselected for a new connection when there is no saved model choice. */
   recommended: z.boolean().optional(),
+  /** The provider's connections that can run it, when not all of them can. */
+  credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
   provider: z.string(),

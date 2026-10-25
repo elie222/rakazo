@@ -19,7 +19,6 @@ function credential(provider: string, defaultModel: string | null) {
     secretId: `secret-${provider}`,
     createdAt: new Date(0),
     updatedAt: new Date(0),
-    isDefault: false,
     defaultModel,
     thinkingLevel: null,
   };
@@ -285,7 +284,6 @@ describe("model roles", () => {
         id: "preference-a",
         credential: connectionA,
         modelId: "model-a",
-        isDefault: true,
         thinkingLevel: null,
         updatedAt: new Date(0),
       },

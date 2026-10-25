@@ -1,10 +1,12 @@
 import { I18nProvider } from "@lingui/react";
 import type { Bot, Me, ModelCatalogEntry } from "@rakazo/contracts";
 import { defaultCronPreset } from "@rakazo/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AskCard } from "../../src/components/AskCard";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
+import { queryClient } from "../../src/lib/query";
 import type { RoutineDraftState } from "../../src/pages/RoutineEditor";
 import { RoutineEditor } from "../../src/pages/RoutineEditor";
 import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
@@ -332,6 +334,8 @@ void bootstrapI18n("en").then(() => {
       <CreateShot />
     );
   createRoot(document.getElementById("root")!).render(
-    <I18nProvider i18n={i18n}>{shot}</I18nProvider>,
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider i18n={i18n}>{shot}</I18nProvider>
+    </QueryClientProvider>,
   );
 });

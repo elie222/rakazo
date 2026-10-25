@@ -46,7 +46,6 @@ describe("consent grants", () => {
     vi.mocked(deps.prisma.spaceModelPreference.findMany).mockResolvedValue([
       {
         modelId: "helper-model",
-        isDefault: false,
         credential: { provider: "anthropic", secretId: "test-secret" },
       },
     ] as never);

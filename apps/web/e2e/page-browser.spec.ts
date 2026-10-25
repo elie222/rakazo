@@ -356,6 +356,28 @@ const CODE_FIELDS = `<!doctype html><title>Code</title>
     });
   </script>`;
 
+// An email code and a text-message code side by side in one element, both built from the same
+// "Digit 1" to "Digit 6" boxes that move on by themselves.
+const TWO_CODES = `<!doctype html><title>Two codes</title><style>input { width: 2em }</style>
+  <div id="codes"></div>
+  <script>
+    const boxes = [];
+    for (const label of ["Email", "Text message"]) {
+      document.getElementById("codes").append(label + " ");
+      for (let i = 0; i < 6; i++) {
+        const box = document.createElement("input");
+        box.maxLength = 1;
+        box.setAttribute("aria-label", "Digit " + (i + 1));
+        boxes.push(box);
+        box.addEventListener("input", () => {
+          if (box.value && i < 5) boxes[boxes.indexOf(box) + 1].focus();
+        });
+        document.getElementById("codes").append(box);
+      }
+    }
+    for (const box of boxes.slice(0, 6)) box.value = "1";
+  </script>`;
+
 test("live page helper types codes as real key presses into one-box-per-digit fields", async () => {
   test.setTimeout(240_000);
   const profile = await mkdtemp(path.join(os.tmpdir(), "page-browser-test-"));
@@ -395,9 +417,11 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
         contentType: "text/html",
         body: route.request().url().endsWith("/done")
           ? "<title>Signed in</title>"
-          : route.request().url().endsWith("/next")
-            ? '<title>Next</title><input aria-label="Next" autofocus>'
-            : CODE_FIELDS,
+          : route.request().url().endsWith("/two")
+            ? TWO_CODES
+            : route.request().url().endsWith("/next")
+              ? '<title>Next</title><input aria-label="Next" autofocus>'
+              : CODE_FIELDS,
       }),
     );
     const open = async () => {
@@ -575,6 +599,20 @@ test("live page helper types codes as real key presses into one-box-per-digit fi
     await refresh();
     expect(await type("Digit 1", "482913")).toMatchObject({ ok: false, completed: 0 });
     expect(await code("right")).toBe("777777");
+
+    // Typing into the second of two codes in one element leaves the first one as it was.
+    await page.goto("https://code.example.test/two");
+    await refresh();
+    const second = elements.filter((element) => element.name === "Digit 1")[1]?.ref;
+    expect(second).toBeTruthy();
+    const typed = await command("act", {
+      actions: [{ kind: "type", ref: second, text: "482913" }],
+    });
+    expect(typed).toMatchObject({ ok: true, completed: 1 });
+    const digits = await page
+      .locator("#codes input")
+      .evaluateAll((boxes) => boxes.map((box) => (box as HTMLInputElement).value).join(""));
+    expect(digits).toBe("111111482913");
 
     // A widget that submits on its last digit: the step is done and the result is the next page.
     await open();

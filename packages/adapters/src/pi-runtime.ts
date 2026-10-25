@@ -922,8 +922,8 @@ export class PiAgentRuntime implements AgentRuntime {
             fallbackState.backupOutcomes.size > 0 &&
             (request.fallbackModels ?? []).every(
               (choice) =>
-                (choice.provider === request.model.provider && choice.id === request.model.id) ||
-                fallbackState.backupOutcomes.has(JSON.stringify([choice.provider, choice.id])),
+                sameModelTarget(choice, request.model) ||
+                fallbackState.backupOutcomes.has(modelTargetKey(choice)),
             )
           ) {
             message = modelFallbackFailure(fallbackState.primaryFailure, [
@@ -2392,7 +2392,10 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     return Type.Array(jsonField(definition.items), arrayOptions) as never;
   }
   if (type === "object") return jsonSchemaParameters(definition, options) as never;
-  return Type.String(options);
+  return Type.String({
+    ...options,
+    ...(typeof definition.maxLength === "number" ? { maxLength: definition.maxLength } : {}),
+  });
 }
 
 export function serializeToolResult(
@@ -2925,12 +2928,8 @@ function fallbackAwareModelStream(
   };
   const signalAborted = () => signal.aborted;
   const recordFailure = (target: RuntimeModelTarget, error: string) => {
-    if (
-      target.config.provider === state.request.model.provider &&
-      target.config.id === state.request.model.id
-    )
-      return;
-    state.backupOutcomes.set(JSON.stringify([target.config.provider, target.config.id]), {
+    if (sameModelTarget(target.config, state.request.model)) return;
+    state.backupOutcomes.set(modelTargetKey(target.config), {
       provider: target.config.provider,
       modelId: target.config.id,
       status: "failed",
@@ -2975,10 +2974,10 @@ function fallbackAwareModelStream(
     while (state.nextIndex < choices.length && !signalAborted()) {
       const choice = choices[state.nextIndex++];
       if (!choice) continue;
-      const key = JSON.stringify([choice.provider, choice.id]);
+      const key = modelTargetKey(choice);
       if (state.attempted.has(key)) continue;
       state.attempted.add(key);
-      if (choice.provider === current.config.provider && choice.id === current.config.id) continue;
+      if (sameModelTarget(choice, current.config)) continue;
       const skip = (reason: string) =>
         state.backupOutcomes.set(key, {
           provider: choice.provider,
@@ -2988,7 +2987,11 @@ function fallbackAwareModelStream(
         });
       try {
         const config = state.request.resolveFallbackModel
-          ? await state.request.resolveFallbackModel(choice.provider, choice.id)
+          ? await state.request.resolveFallbackModel(
+              choice.provider,
+              choice.id,
+              choice.connectionId,
+            )
           : (choice as AgentRunRequest["model"]);
         if (signalAborted()) return undefined;
         if (config.provider !== choice.provider || config.id !== choice.id) {
@@ -3720,4 +3723,15 @@ export function reliableStreamOptions(
   }
 
   return next;
+}
+
+type ModelTarget = Pick<AgentRunRequest["model"], "provider" | "id" | "connectionId">;
+
+/** A model on one connection: the same model on another account is another backup. */
+function modelTargetKey(target: ModelTarget): string {
+  return JSON.stringify([target.provider, target.id, target.connectionId ?? null]);
+}
+
+function sameModelTarget(left: ModelTarget, right: ModelTarget): boolean {
+  return modelTargetKey(left) === modelTargetKey(right);
 }

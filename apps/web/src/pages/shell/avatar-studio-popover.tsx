@@ -66,7 +66,7 @@ export function BotLookPicker({
                 const next = defaultBotAvatarValue(value);
                 if (next !== value) onChange(next);
               }}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              className={`px-3 py-1 text-xs font-medium transition-colors ${
                 isDefaultLook
                   ? "bg-secondary text-foreground"
                   : "text-muted-foreground hover:text-foreground"

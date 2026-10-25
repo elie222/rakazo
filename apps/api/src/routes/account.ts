@@ -1,0 +1,377 @@
+import { ORPCError } from "@orpc/server";
+import {
+  deploymentAutoReviewDefault,
+  effectiveModelRole,
+  hasHostedModelCredits,
+  isAutoReviewCheckerConfigured,
+  PushSessionEndedError,
+} from "@rakazo/adapters";
+import type { ActionApprovalRule, Actor, Me } from "@rakazo/contracts";
+import {
+  findDefaultVoiceCredential,
+  findModelCredential,
+  findModelCredentialById,
+  newestVoiceCredentialOrder,
+  Prisma,
+  saveApprovalRule,
+  selectSpaceVoicePreference,
+} from "@rakazo/db";
+import { aiConsentStatus, allowAiConsent } from "../ai-consent.js";
+import type { BillingService } from "../billing.js";
+import type { RouterDeps } from "../router.js";
+import { withSerializableRetry } from "../serializable-retry.js";
+import {
+  disconnectVoiceCredential,
+  listVoiceCatalog,
+  loadDefaultVoiceCredential,
+  loadVoiceCredential,
+  persistVoiceCredential,
+  prepareVoice,
+  toVoiceCredential,
+  toVoiceStatus,
+  updateVoiceSpeechModel,
+  voiceContext,
+  voiceCredentialServer,
+  voiceProviderFor,
+} from "../voice.js";
+import type { RouterContext } from "./context.js";
+import { meDto } from "./shared.js";
+
+export function accountRoutes(ctx: RouterContext) {
+  const { deps, os, authed } = ctx;
+  return {
+    aiConsent: {
+      status: authed.aiConsent.status.handler(({ context, input }) =>
+        aiConsentStatus(deps, context.actor, input),
+      ),
+      allow: authed.aiConsent.allow.handler(({ context, input }) =>
+        allowAiConsent(deps, context.actor, input),
+      ),
+      revoke: authed.aiConsent.revoke.handler(async ({ context, input }) => {
+        await deps.prisma.aiDataConsent.deleteMany({
+          where: {
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            recipientKey: input.key ?? undefined,
+          },
+        });
+        return aiConsentStatus(deps, context.actor);
+      }),
+    },
+    analytics: {
+      screen: authed.analytics.screen.handler(async ({ context, input }) => {
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
+        return { ok: true as const };
+      }),
+    },
+    health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
+    me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    billing: {
+      selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) =>
+        requireBilling(deps).selectFunding(context.actor, input.funding),
+      ),
+      purchaseCredits: authed.billing.purchaseCredits.handler(async ({ context, input }) =>
+        requireBilling(deps).purchaseCredits(context.actor, input),
+      ),
+      setMonthlyCredits: authed.billing.setMonthlyCredits.handler(async ({ context, input }) =>
+        requireBilling(deps).setMonthlyCredits(context.actor, input.amountCents),
+      ),
+      status: authed.billing.status.handler(async ({ context }) =>
+        requireBilling(deps).status(context.actor),
+      ),
+      checkout: authed.billing.checkout.handler(async ({ context }) =>
+        requireBilling(deps).checkout(context.actor),
+      ),
+      portal: authed.billing.portal.handler(async ({ context }) =>
+        requireBilling(deps).portal(context.actor),
+      ),
+    },
+    preferences: {
+      update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
+        await deps.prisma.user.update({
+          where: { id: context.actor.userId },
+          // An avatar style from an older app is accepted and ignored: there is only one.
+          data: input.timezone === undefined ? {} : { timezone: input.timezone },
+        });
+        return meDto(deps, context.actor);
+      }),
+      adoptTimezone: authed.preferences.adoptTimezone.handler(
+        async ({ context, input }): Promise<Me> => {
+          // Conditional in one statement: a concurrent explicit save always wins.
+          await deps.prisma.user.updateMany({
+            where: { id: context.actor.userId, timezone: null },
+            data: { timezone: input.timezone },
+          });
+          return meDto(deps, context.actor);
+        },
+      ),
+    },
+    // Retain wire compatibility for older clients, but app accounts have no server authority.
+    deployment: {
+      get: authed.deployment.get.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+      update: authed.deployment.update.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+    },
+    security: {
+      events: authed.security.events.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+    },
+    updater: {
+      status: authed.updater.status.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+      check: authed.updater.check.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+      apply: authed.updater.apply.handler(() => {
+        throw new ORPCError("FORBIDDEN");
+      }),
+    },
+    approvalRules: {
+      list: authed.approvalRules.list.handler(async ({ context }) => {
+        const rows = await deps.prisma.actionApprovalRule.findMany({
+          where: {
+            spaceId: context.actor.spaceId,
+            createdByUserId: context.actor.userId,
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        return rows.map((row) => ({
+          id: row.id,
+          effect: row.effect as "always_allow" | "require_approval",
+          matchKind: row.matchKind as ActionApprovalRule["matchKind"],
+          matchValue: row.matchValue,
+          createdAt: row.createdAt.toISOString(),
+        }));
+      }),
+      set: authed.approvalRules.set.handler(async ({ context, input }) => {
+        const row = await deps.prisma.$transaction((tx) =>
+          saveApprovalRule(tx, {
+            spaceId: context.actor.spaceId,
+            createdByUserId: context.actor.userId,
+            effect: input.effect,
+            matchKind: input.matchKind,
+            matchValue: input.matchValue,
+          }),
+        );
+        return {
+          id: row.id,
+          effect: row.effect as "always_allow" | "require_approval",
+          matchKind: row.matchKind as ActionApprovalRule["matchKind"],
+          matchValue: row.matchValue,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+      remove: authed.approvalRules.remove.handler(async ({ context, input }) => {
+        await deps.prisma.actionApprovalRule.deleteMany({
+          where: {
+            id: input.id,
+            spaceId: context.actor.spaceId,
+            createdByUserId: context.actor.userId,
+          },
+        });
+        return { ok: true as const };
+      }),
+    },
+    autoReview: {
+      get: authed.autoReview.get.handler(async ({ context }) => {
+        return loadAutoReviewSettings(deps, context.actor);
+      }),
+      set: authed.autoReview.set.handler(async ({ context, input }) => {
+        await deps.prisma.actionAutoReviewPreference.upsert({
+          where: {
+            spaceId_userId: {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            },
+          },
+          create: {
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            enabled: input.enabled ?? deploymentAutoReviewDefault(process.env),
+            skipApprovals: input.skipApprovals ?? false,
+          },
+          update: { enabled: input.enabled, skipApprovals: input.skipApprovals },
+        });
+        return loadAutoReviewSettings(deps, context.actor);
+      }),
+    },
+    notifications: {
+      registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
+        const sessionId = context.sessionId;
+        if (!sessionId) throw new ORPCError("UNAUTHORIZED");
+        try {
+          await deps.pushTokens.save(context.actor.userId, input.token, sessionId);
+        } catch (error) {
+          if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+          throw error;
+        }
+        return { ok: true as const };
+      }),
+      unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
+        await deps.pushTokens.remove(context.actor.userId);
+        return { ok: true as const };
+      }),
+    },
+    voice: {
+      catalog: authed.voice.catalog.handler(async () =>
+        listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint }),
+      ),
+      status: authed.voice.status.handler(async ({ context }) => {
+        const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
+        return toVoiceStatus(cred);
+      }),
+      credentials: authed.voice.credentials.handler(async ({ context }) => {
+        const rows = await deps.prisma.userVoiceCredential.findMany({
+          where: { userId: context.actor.userId },
+          include: {
+            preferences: {
+              where: { userId: context.actor.userId, spaceId: context.actor.spaceId },
+            },
+          },
+          orderBy: newestVoiceCredentialOrder,
+        });
+        return Promise.all(
+          rows.map(async (row) => {
+            const preference = row.preferences[0];
+            return toVoiceCredential({
+              ...row,
+              isDefault: preference?.isDefault ?? false,
+              voiceId: preference?.voiceId ?? "",
+              speechModel: preference?.speechModel ?? "",
+              server: await voiceCredentialServer(deps, context.actor, row),
+            });
+          }),
+        );
+      }),
+      connect: authed.voice.connect.handler(async ({ context, input }) =>
+        persistVoiceCredential(deps, context.actor, {
+          provider: input.provider,
+          plaintext: input.apiKey,
+          voiceId: input.voiceId,
+          speechModel: input.speechModel,
+          baseUrl: input.baseUrl,
+          ttsModel: input.ttsModel,
+          sttModel: input.sttModel,
+          signal: context.signal,
+        }),
+      ),
+      disconnect: authed.voice.disconnect.handler(async ({ context, input }) =>
+        disconnectVoiceCredential(deps, context.actor, { provider: input.provider }),
+      ),
+      setVoice: authed.voice.setVoice.handler(async ({ context, input }) => {
+        const cred = await withSerializableRetry(() =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              const found = input.provider
+                ? await tx.userVoiceCredential.findFirst({
+                    where: { userId: context.actor.userId, provider: input.provider },
+                    orderBy: newestVoiceCredentialOrder,
+                  })
+                : (
+                    await tx.spaceVoicePreference.findFirst({
+                      where: {
+                        userId: context.actor.userId,
+                        spaceId: context.actor.spaceId,
+                        isDefault: true,
+                      },
+                      include: { credential: true },
+                      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+                    })
+                  )?.credential;
+              if (!found) {
+                throw new ORPCError("BAD_REQUEST", { message: "Connect a voice provider first." });
+              }
+              // Picking a voice also makes its provider the one speak/transcribe use.
+              await selectSpaceVoicePreference(tx, context.actor, found.id, input.voiceId);
+              return { ...found, voiceId: input.voiceId, isDefault: true };
+            },
+            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          ),
+        );
+        return toVoiceStatus(cred);
+      }),
+      setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
+        updateVoiceSpeechModel(deps, context.actor, input),
+      ),
+      voices: authed.voice.voices.handler(async ({ context, input }) => {
+        const loaded = await loadDefaultVoiceCredential(deps, context.actor);
+        if (!loaded) return [];
+        const providerId = input.provider ?? loaded.cred.provider;
+        const row =
+          providerId === loaded.cred.provider
+            ? loaded
+            : await loadVoiceCredential(deps, context.actor, providerId);
+        if (!row) return [];
+        return (await voiceProviderFor(deps, context.actor, row.cred.provider)).listVoices(
+          row.apiKey,
+          voiceContext(context.actor, context.signal),
+        );
+      }),
+      prepare: authed.voice.prepare.handler(async ({ context, input }) =>
+        prepareVoice(deps, context.actor, input),
+      ),
+    },
+  };
+}
+
+async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
+  const [role, preference] = await Promise.all([
+    effectiveModelRole(deps.prisma, actor, "approval", { env: process.env }),
+    deps.prisma.actionAutoReviewPreference.findUnique({
+      where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+      select: { enabled: true, skipApprovals: true },
+    }),
+  ]);
+  const settings = {
+    enabled: preference?.enabled ?? deploymentAutoReviewDefault(process.env),
+    skipApprovals: preference?.skipApprovals ?? false,
+  };
+  const deploymentChecker = role.primarySource === "deployment" ? role.primary : null;
+  const memberChoices = [
+    ...(deploymentChecker || !role.primary ? [] : [role.primary]),
+    ...role.backups,
+  ];
+  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  if (memberChoices.length === 0) {
+    // The deployment's checker runs on its own configuration or on the member's key for it.
+    const requiredUserProvider =
+      environmentAvailable || deploymentChecker?.provider === "scripted"
+        ? null
+        : deploymentChecker?.provider;
+    const credential = requiredUserProvider
+      ? await deps.prisma.userModelCredential.findFirst({
+          where: { userId: actor.userId, provider: requiredUserProvider },
+          select: { id: true },
+        })
+      : null;
+    return { ...settings, checkerAvailable: environmentAvailable || Boolean(credential) };
+  }
+  const connections = await Promise.all(
+    memberChoices.map((choice) =>
+      choice.credentialId
+        ? findModelCredentialById(deps.prisma, actor, choice.credentialId)
+        : findModelCredential(deps.prisma, actor, choice.provider, choice.modelId),
+    ),
+  );
+  const checkerAvailable =
+    connections.some(Boolean) ||
+    (deploymentChecker !== null && environmentAvailable) ||
+    (
+      await Promise.all(
+        [...new Set(memberChoices.map((choice) => choice.provider))].map((provider) =>
+          hasHostedModelCredits(deps.prisma, actor, provider),
+        ),
+      )
+    ).some(Boolean);
+  return { ...settings, checkerAvailable };
+}
+
+function requireBilling(deps: RouterDeps): BillingService {
+  if (!deps.billing) throw new ORPCError("NOT_FOUND", { message: "Billing is not enabled" });
+  return deps.billing;
+}

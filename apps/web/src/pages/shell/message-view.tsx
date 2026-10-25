@@ -3,7 +3,7 @@ import { ChatMarkdown, LinkifiedText, withBlockMentions } from "@rakazo/chat-ui/
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import type { ChildBotBlock } from "@rakazo/core";
 import { isPeerReceiptBlocks, isSecretAskBlock, isToolActivityBlock } from "@rakazo/core";
-import { BotAvatar, Button, resolvePersonaColorDef } from "@rakazo/ui-web";
+import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useMemo } from "react";
 import { ArtifactFileCard } from "../../components/ArtifactFileCard";
@@ -29,6 +29,8 @@ import {
 } from "../../lib/tool-activity-view";
 import { ReplyLine } from "./chat-context";
 import { FALLBACK_BOT_COLOR, previewMessageText } from "./chat-shared";
+import type { ImportSetupTarget } from "./import-setup-card";
+import { ImportSetupCard } from "./import-setup-card";
 import {
   AppConnectCard,
   ArtifactImage,
@@ -61,9 +63,12 @@ export const MessageView = memo(function MessageView({
   speaking,
   onSpeak,
   onOpenComputer,
+  onOpenImportSetup,
+  onOpenImport,
   showToolActivity,
   onReply,
   onMarkUnread,
+  markedUnread = false,
   onReact,
 }: {
   artifactTarget: ArtifactTarget;
@@ -95,9 +100,14 @@ export const MessageView = memo(function MessageView({
   speaking: boolean;
   onSpeak: () => void;
   onOpenComputer: (botId?: string) => void;
+  /** Opens where an imported item's setup is finished. */
+  onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  /** Opens the agent importer (from Chief's first-run focus card). */
+  onOpenImport?: () => void;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
+  markedUnread?: boolean;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
@@ -178,6 +188,7 @@ export const MessageView = memo(function MessageView({
       side={message.role === "user" ? "start" : "end"}
       onReply={onReply}
       onMarkUnread={onMarkUnread}
+      markedUnread={markedUnread}
       onReact={onReact}
     />
   );
@@ -239,14 +250,15 @@ export const MessageView = memo(function MessageView({
                 return null;
               })}
               {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-                <button
-                  type="button"
+                <Button
+                  variant="text"
+                  size="xs"
                   aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                   onClick={onSpeak}
-                  className="text-[12px] text-muted-foreground hover:text-foreground"
+                  className="font-normal"
                 >
                   {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
@@ -258,7 +270,7 @@ export const MessageView = memo(function MessageView({
   return (
     <>
       {messageContext}
-      <div className="relative flex flex-col gap-2">
+      <div className={cn("relative flex flex-col gap-2", message.role === "user" && "items-end")}>
         {blocks.map((block, i) => {
           if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
             return (
@@ -377,7 +389,15 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "choice") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
             if (!botId) return null;
-            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
+            return (
+              <ChoiceCard
+                key={i}
+                botId={botId}
+                block={block}
+                onBotChanged={onBotChanged}
+                onImportAgent={onOpenImport}
+              />
+            );
           }
           if (block.kind === "app_connect") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
@@ -397,6 +417,17 @@ export const MessageView = memo(function MessageView({
             return (
               <div key={i} className="flex justify-start">
                 <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+              </div>
+            );
+          }
+          if (block.kind === "import_setup") {
+            return (
+              <div key={i} className="flex justify-start">
+                <ImportSetupCard
+                  botId={"botId" in artifactTarget ? artifactTarget.botId : message.botId}
+                  block={block}
+                  onOpen={onOpenImportSetup}
+                />
               </div>
             );
           }
@@ -475,14 +506,15 @@ export const MessageView = memo(function MessageView({
                     <ChatMarkdown renderMention={renderMention}>{block.text}</ChatMarkdown>
                   </div>
                   {voiceReady ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="text"
+                      size="xs"
                       aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                       onClick={onSpeak}
-                      className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+                      className="mt-2 font-normal"
                     >
                       {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}

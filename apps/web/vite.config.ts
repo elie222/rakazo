@@ -117,7 +117,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       res.end("Invalid or expired screen capability");
       return;
     }
-    const forwarded = safeProxyHeaders(req.headers);
+    const forwarded = safeProxyHeaders(req.headers, target.headers);
     const headers = {
       // The storage shim rewrites the page, so ask for all of it, uncompressed.
       ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
@@ -315,7 +315,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
         `Host: ${target.hostname}:${target.port}`,
       ];
-      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers))) {
+      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers, target.headers))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);
       }
       upstream.write(`${headerLines.join("\r\n")}\r\n\r\n`);

@@ -55,6 +55,8 @@ model User {
 
   @@unique([email])
   @@map("user")
+  messagingInstallations MessagingInstallation[]
+  messagingInstallSessions MessagingInstallSession[]
 }
 
 /// A row with no answers means the user skipped the survey.
@@ -272,6 +274,7 @@ model Space {
   scratchpadItems             ScratchpadItem[]
   taughtSkills                TaughtSkill[]
   agentSkills                 AgentSkill[]
+  agentImports                AgentImport[]
   connections                 Connection[]
   capabilities                CapabilityInstall[]
   memoryDocuments             MemoryDocument[]
@@ -301,6 +304,8 @@ model Space {
   @@index([organizationId, createdAt])
   @@index([createdByUserId])
   @@map("spaces")
+  messagingInstallations MessagingInstallation[]
+  messagingInstallSessions MessagingInstallSession[]
 }
 
 /// A space's data encryption key, wrapped by a master key. There is no foreign key:
@@ -331,7 +336,6 @@ model SpaceMember {
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
-  backupModels SpaceBackupModel[]
   modelRoleChoices SpaceModelRoleChoice[]
 
   @@unique([spaceId, userId])
@@ -406,6 +410,7 @@ model UserModelCredential {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   preferences SpaceModelPreference[]
+  roleChoices SpaceModelRoleChoice[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -436,28 +441,13 @@ model SpaceModelPreference {
   credential   UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
   modelId      String?
   thinkingLevel String?
-  isDefault    Boolean             @default(false)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
   @@unique([spaceId, userId, credentialId])
-  @@index([spaceId, userId, isDefault, updatedAt])
   @@index([credentialId])
-  // Partial unique index space_model_preferences_default_key is created in SQL.
+  // The unused legacy isDefault column and its indexes stay in the table until the next release.
   @@map("space_model_preferences")
-}
-
-model SpaceBackupModel {
-  spaceId     String
-  userId      String
-  spaceMember SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
-  provider    String
-  modelId     String
-  position    Int
-
-  @@id([spaceId, userId, position])
-  @@unique([spaceId, userId, provider, modelId])
-  @@map("space_backup_models")
 }
 
 model SpaceVoicePreference {
@@ -534,6 +524,7 @@ model Bot {
   runs              Run[]
   steeringMessages  SteeringMessage[]
   mcpServers        BotMcpServer[]
+  agentImports      AgentImport[]
   groupMembers      ChatGroupMember[]
   botSecrets BotSecret[]
   assignedTickets   Ticket[]          @relation("TicketAssigneeBot")
@@ -548,6 +539,8 @@ model Bot {
   @@index([computerId])
   @@index([parentBotId])
   @@map("bots")
+  messagingInstallations MessagingInstallation[]
+  messagingInstallSessions MessagingInstallSession[]
 }
 
 model BotSection {
@@ -950,6 +943,27 @@ model TaughtSkill {
   @@map("taught_skills")
 }
 
+/// What an agent import created, so Undo can remove it.
+model AgentImport {
+  id            String   @id @default(cuid())
+  spaceId       String
+  space         Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  /// openclaw | hermes | document
+  source        String
+  created       Json
+  /// Idempotency: a retry with the same key and digest returns the same bot.
+  importKey     String?
+  requestDigest String?
+  createdAt     DateTime @default(now())
+
+  @@unique([spaceId, userId, importKey])
+  @@index([botId, createdAt])
+  @@map("agent_imports")
+}
+
 /// Claude Agent Skills: SKILL.md recipes shared across assistants (not per-bot).
 /// The Pi runtime already understands this format; we persist and inject them.
 /// Distinct from TaughtSkill (demo/record playbooks).
@@ -1348,6 +1362,8 @@ model MessagingIdentity {
   address              String
   /// Opaque provider thread id for the 1:1 conversation; learned on inbound.
   dmThreadId           String?
+  installationId       String?
+  installation         MessagingInstallation? @relation(fields: [installationId], references: [id], onDelete: Cascade)
   userId               String
   spaceId              String
   space                Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -1360,6 +1376,7 @@ model MessagingIdentity {
 
   @@unique([provider, address])
   @@index([userId])
+  @@index([installationId])
   @@map("messaging_identities")
 }
 
@@ -1692,7 +1709,6 @@ model ModelCreditLot {
   @@map("model_credit_lots")
 }
 
-/// Ordered models for each purpose. Position 0 is the purpose's own model; fallbacks follow.
 model SpaceModelRoleChoice {
   spaceId       String
   userId        String
@@ -1702,8 +1718,44 @@ model SpaceModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  credentialId  String?
+  credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
   @@id([spaceId, userId, role, position])
-  @@unique([spaceId, userId, role, provider, modelId])
+  @@index([credentialId, userId])
   @@map("space_model_role_choices")
+}
+
+model MessagingInstallation {
+  id String @id @default(cuid())
+  provider String
+  workspaceId String
+  workspaceName String
+  spaceId String
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId String
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  ciphertext String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([provider, workspaceId])
+  @@index([spaceId, userId])
+  identities MessagingIdentity[]
+  @@map("messaging_installations")
+}
+
+model MessagingInstallSession {
+  id String @id
+  provider String
+  spaceId String
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botId String
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  @@index([expiresAt])
+  @@map("messaging_install_sessions")
 }

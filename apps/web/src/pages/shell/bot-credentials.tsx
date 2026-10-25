@@ -8,10 +8,12 @@ import {
 } from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RotateCcw, X } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { InfoTooltip } from "../../components/InfoTooltip";
-import { rpc } from "../../lib/rpc";
+import { fetchFresh, useSpaceQueries, writeSaved } from "../../lib/query";
+import { useSpaceRpc } from "../../lib/space-rpc";
 import { errorText } from "../../lib/user-error";
 
 type ReadableCredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
@@ -32,8 +34,13 @@ function credentialDestination(name: string, origin: string, auth: ReadableCrede
 export function BotCredentialsSection({ botId }: { botId: string }) {
   const { t } = useLingui();
   const ids = useId();
-  const [secrets, setSecrets] = useState<BotSecretMetadata[] | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const rpc = useSpaceRpc();
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const list = queries.botSecrets.list.queryOptions({ input: { botId } });
+  const listQuery = useQuery({ ...list, refetchOnMount: "always" });
+  const secrets = listQuery.data;
+  const loadFailed = listQuery.isError;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -48,30 +55,11 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
   const [loginUsername, setLoginUsername] = useState("");
   const [value, setValue] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    rpc.botSecrets
-      .list({ botId })
-      .then((rows) => {
-        if (!active) return;
-        setSecrets(rows);
-        setLoadFailed(false);
-      })
-      .catch(() => {
-        if (active) setLoadFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [botId]);
-
   async function refresh() {
     try {
-      setSecrets(await rpc.botSecrets.list({ botId }));
-      setLoadFailed(false);
+      await fetchFresh(queryClient, list);
       return true;
     } catch {
-      setLoadFailed(true);
       return false;
     }
   }
@@ -161,7 +149,9 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
       await rpc.botSecrets.remove({ botId, name: secretName });
       setConfirmingRemove(null);
       if (!(await refresh())) {
-        setSecrets((prev) => prev?.filter((row) => row.name !== secretName) ?? null);
+        await writeSaved(queryClient, list.queryKey, (prev = []) =>
+          prev.filter((row) => row.name !== secretName),
+        );
         setError(t`Could not load credentials.`);
       }
     } catch (err) {

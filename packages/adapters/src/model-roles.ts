@@ -74,6 +74,7 @@ export async function resolveMemberMainModel(
     scope,
     primary.provider,
     primary.modelId,
+    { credentialId: primary.credentialId },
   );
   return { ...primary, credential };
 }

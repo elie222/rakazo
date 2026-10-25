@@ -29,6 +29,59 @@ const path = (url: string, interactive = false) =>
     ),
   ).pathname;
 describe("sealed screen capabilities", () => {
+  it("seals provider credentials for page, asset, and websocket requests", () => {
+    const upstream = "https://screen.example/vnc.html?path=websockify%3Ftoken%3Dfake-socket";
+    const headers = { cookie: "provider_auth=fake-private-token" };
+    const url = new URL(
+      sealScreenCapability(upstream, "secret", "https://app.example", scope, 100, headers),
+    );
+    expect(url.toString()).not.toContain("fake-private-token");
+    for (const resource of ["vnc.html", "app/ui.js", "websockify"]) {
+      const opened = openScreenCapability(
+        url.pathname.replace("vnc.html", resource),
+        "secret",
+        101,
+      );
+      expect(opened?.target.headers).toEqual(headers);
+      expect(opened?.target.path).toContain(
+        resource === "websockify" ? "token=fake-socket" : resource,
+      );
+      expect(
+        openScreenCapability(url.pathname.replace("vnc.html", resource), "wrong", 101),
+      ).toBeNull();
+    }
+  });
+  it("includes provider credentials in the remote capability cache identity", () => {
+    resetRemoteScreenCapabilityReuse();
+    const issue = (cookie: string) =>
+      issueScreenCapability(
+        "https://screen.example/vnc.html",
+        "secret",
+        "https://app.example",
+        scope,
+        100,
+        { cookie },
+      );
+    expect(issue("first")).toBe(issue("first"));
+    expect(issue("second")).not.toBe(issue("first"));
+  });
+  it.each<Record<string, string>>([
+    { cookie: "fake\r\nInjected: value" },
+    { host: "other.example" },
+    { connection: "upgrade" },
+  ])("rejects unsafe upstream headers %j", (headers) => {
+    expect(() =>
+      sealScreenCapability(
+        "https://screen.example/vnc.html",
+        "secret",
+        "https://app.example",
+        scope,
+        100,
+        headers,
+      ),
+    ).toThrow("Invalid screen authentication headers");
+  });
+
   it.each([false, true])(
     "connects the shipped embed through one capability prefix (control=%s)",
     (interactive) => {

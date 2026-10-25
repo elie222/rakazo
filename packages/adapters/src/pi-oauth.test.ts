@@ -12,6 +12,7 @@ import {
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   oauthCredentialAccountId,
+  oauthCredentialEmail,
   type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
@@ -807,6 +808,25 @@ describe("resolveModelAuth account-change guard", () => {
     );
 
     expect(deleteCredential).not.toHaveBeenCalled();
+  });
+});
+
+describe("oauthCredentialEmail", () => {
+  it("reads the signed-in account's email from the access token", () => {
+    expect(
+      oauthCredentialEmail(
+        oauthCred({
+          access: fakeJwt({ "https://api.openai.com/profile": { email: "me@example.com" } }),
+        }),
+      ),
+    ).toBe("me@example.com");
+    expect(oauthCredentialEmail(oauthCred({ access: fakeJwt({ email: "top@example.com" }) }))).toBe(
+      "top@example.com",
+    );
+    expect(oauthCredentialEmail(oauthCred())).toBeUndefined();
+    expect(oauthCredentialEmail(oauthCred({ access: fakeJwt({ email: "not an email" }) }))).toBe(
+      undefined,
+    );
   });
 });
 
@@ -1637,6 +1657,57 @@ describe("PiOAuthLogins", () => {
     expect(
       (await logins.complete(started.loginId, { userId: "owner", spaceId: "workspace" })).status,
     ).toBe("connected");
+  });
+
+  it("keeps a sign-in renewing one connection while another account signs in", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const renewing = await control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    const adding = await control.logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: null,
+    });
+    control.resolve(0);
+    control.resolve(1);
+    await flushMicrotasks();
+    expect(control.logins.complete(renewing.loginId, actor)).toMatchObject({
+      status: "connected",
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(adding.loginId, actor)).toMatchObject({
+      status: "connected",
+      credentialId: null,
+    });
+
+    // Disconnecting the renewed connection leaves the new account's sign-in running.
+    await control.logins.cancelProvider({
+      userId: actor.userId,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(renewing.loginId, actor).status).toBe("error");
+    expect(control.logins.complete(adding.loginId, actor).status).toBe("connected");
+    control.logins.abortAll();
+  });
+
+  it("retires a sign-in that named no connection when one connection is disconnected", async () => {
+    const actor = { userId: "owner", spaceId: "workspace" };
+    const control = createControlledOAuthLogins();
+    const legacy = await control.logins.begin({ ...actor, provider: CHATGPT_OAUTH_PROVIDER });
+    control.resolve(0);
+    await flushMicrotasks();
+    await control.logins.cancelProvider({
+      userId: actor.userId,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      credentialId: "personal",
+    });
+    expect(control.logins.complete(legacy.loginId, actor).status).toBe("error");
+    control.logins.abortAll();
   });
 
   it("waits for successful finalization before starting a replacement", async () => {

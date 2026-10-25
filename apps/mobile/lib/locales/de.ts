@@ -11,6 +11,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Main model": "Hauptmodell",
   "Add fallback": "Backup-Modell hinzufügen",
   "Manage {provider}": "{provider} verwalten",
+  "Add provider": "Anbieter hinzufügen",
   "Choose a model": "Modell auswählen",
   "Use 80 characters or fewer": "Höchstens 80 Zeichen verwenden",
   "Could not update name": "Name konnte nicht aktualisiert werden",
@@ -238,7 +239,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Searching…": "Suche…",
   "Space actions for {name}": "Space-Aktionen für {name}",
   "Tap + to create a bot": "Tippe auf +, um einen Bot zu erstellen",
-  "This removes the empty space for everyone.": "Das entfernt den leeren Space für alle.",
+  "This removes the space for everyone.": "Das entfernt den Space für alle.",
+  "Delete {name} and its bot?": "{name} und seinen Bot löschen?",
+  "Delete {name} and its {count} bots?": "{name} und seine {count} Bots löschen?",
   "notifications silenced": "Benachrichtigungen stumm",
   unread: "ungelesen",
   // app/thread.tsx
@@ -478,7 +481,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not reach this model server": "Modellserver konnte nicht erreicht werden",
   "Could not start sign-in": "Anmeldung konnte nicht gestartet werden",
   Default: "Standard",
-  "Deployment default": "Bereitstellungsstandard",
   "Enter a whole number from 1 to 1000 for the image limit.":
     "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein.",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
@@ -1022,4 +1024,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "How big is your team?": "Wie groß ist dein Team?",
   "How did you hear about us?": "Wie hast du von uns erfahren?",
   "Welcome to Rakazo": "Willkommen bei Rakazo",
+  "Choose a bot…": "Bot auswählen…",
+  "Connect Slack workspace": "Slack-Workspace verbinden",
+  "Link a chat app": "Chat-App verknüpfen",
+  Messaging: "Nachrichten",
+  "Send {code} to the chat app in a direct message within 10 minutes.":
+    "Sende {code} innerhalb von 10 Minuten in einer Direktnachricht an die Chat-App.",
+  Unlink: "Verknüpfung aufheben",
 };

@@ -682,6 +682,7 @@ export default function Account() {
               { title: t("Models"), href: "/models" },
               { title: t("Voice"), href: "/voice" },
               { title: t("Integrations"), href: "/integrations" },
+              { title: t("Messaging"), href: "/messaging" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
             ] as const
           ).map(({ title, href }) => (

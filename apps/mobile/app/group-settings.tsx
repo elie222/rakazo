@@ -1,4 +1,4 @@
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
@@ -86,6 +86,7 @@ export default function GroupSettingsScreen() {
         <TextInput
           value={name}
           onChangeText={setName}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           placeholder={t("Group name")}
           placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"

@@ -2,6 +2,7 @@
 
 import { i18n } from "@lingui/core";
 import type * as UiWeb from "@rakazo/ui-web";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -19,6 +20,7 @@ const models = vi.hoisted(() => ({
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  rename: vi.fn(),
   setDefault: vi.fn(),
   probeOpenAiCompatible: vi.fn(),
   beginOAuth: vi.fn(),
@@ -28,14 +30,19 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({
-  selectedSpaceId: () => "space-1",
-  rpc: {
+vi.mock("../lib/rpc", () => {
+  const rpc = {
     models,
     bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
-  },
-}));
+  };
+  return {
+    selectedSpaceId: () => "space-1",
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+  };
+});
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
@@ -271,15 +278,25 @@ async function manage() {
 }
 
 function titles(container: HTMLElement) {
-  return [...container.querySelectorAll("h2")].map((entry) => entry.textContent);
+  return [...container.querySelectorAll('[data-testid="model-connection-title"]')].map(
+    (entry) => entry.textContent,
+  );
 }
 
-async function renderSettings(embedded = true) {
+function testQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+async function renderSettings(embedded = true, queryClient = testQueryClient()) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
   });
   await act(async () => {
     await Promise.resolve();
@@ -342,6 +359,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("reopens on cached models without a spinner and refreshes them behind it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  expect(first.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+  await first.unmount();
+
+  const hold = new Promise<never>(() => undefined);
+  models.list.mockReturnValue(hold);
+  models.role.mockReturnValue(hold);
+  models.forRole.mockReturnValue(hold);
+  const listCalls = models.list.mock.calls.length;
+  const roleCalls = models.role.mock.calls.length;
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(view.container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+    expect(models.list.mock.calls.length).toBeGreaterThan(listCalls);
+    expect(models.role.mock.calls.length).toBeGreaterThan(roleCalls);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("shows a stored BYOK key when provider settings reopen", async () => {
   models.credentials.mockResolvedValue([deepseekCredential]);
 
@@ -379,7 +420,10 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     await click(buttons(view.container, "Disconnect")[0]);
     const confirm = buttons(view.container, "Disconnect");
     await click(confirm[confirm.length - 1]);
-    expect(models.disconnect).toHaveBeenCalledWith({ provider: "deepseek" });
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "cred-deepseek",
+    });
     expect(view.container.querySelector("#model-api-key")).toBeNull();
 
     await pick("Change Main model", "DeepSeek");
@@ -436,11 +480,11 @@ it("labels the empty main slot by what runs there", async () => {
   const view = await renderSettings();
   try {
     expect(section("main").querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
-      "1Choose a model",
+      "Choose a model",
     );
     expect(
       section("approval").querySelector('[data-testid="model-role-default"]')?.textContent,
-    ).toBe("1Deployment default");
+    ).toBe("Choose a model");
   } finally {
     await view.unmount();
   }
@@ -498,7 +542,9 @@ it("connects a provider from Add fallback without replacing the main model, then
       expect.objectContaining({
         role: "main",
         primary: { provider: "deepseek", modelId: "deepseek-chat" },
-        backups: [{ provider: "openrouter", modelId: openrouterEntry.id }],
+        backups: [
+          { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
+        ],
       }),
       expect.anything(),
     );
@@ -769,7 +815,11 @@ it("offers a saved compatible model in the main picker and uses it", async () =>
     expect(models.setRole).toHaveBeenCalledWith(
       expect.objectContaining({
         role: "main",
-        primary: { provider: "openai-compatible", modelId: "model-b" },
+        primary: {
+          provider: "openai-compatible",
+          modelId: "model-b",
+          credentialId: "cred-compatible",
+        },
         backups: [],
       }),
       expect.anything(),
@@ -1008,6 +1058,7 @@ it("offers a saved Ollama connection's models without the Ollama preset", async 
   models.credentials.mockResolvedValue([
     {
       id: "fixture",
+      label: "OpenAI-compatible",
       provider: "openai-compatible",
       modelId: "fixture-model",
       baseUrl: "https://ollama.com/",
@@ -1028,6 +1079,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   models.credentials.mockResolvedValue([
     {
       id: "fixture",
+      label: "OpenAI-compatible",
       provider: "openai-compatible",
       modelId: "fixture-model",
       baseUrl: "http://127.0.0.1:8000/v1",
@@ -1071,6 +1123,7 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
     models.credentials.mockResolvedValue([
       {
         id: "fixture",
+        label: "OpenAI-compatible",
         provider: "openai-compatible",
         modelId: "fixture-model",
         baseUrl: "https://ollama.com/v1",
@@ -1110,7 +1163,15 @@ it.each([undefined, "api_key", "oauth"])(
     ]);
     models.credentials.mockResolvedValue(
       authKind
-        ? [{ id: "fixture", provider: "openai-codex", modelId: "fixture-model", authKind }]
+        ? [
+            {
+              id: "fixture",
+              label: "ChatGPT",
+              provider: "openai-codex",
+              modelId: "fixture-model",
+              authKind,
+            },
+          ]
         : [],
     );
     const view = await renderSettings();
@@ -1140,6 +1201,7 @@ it("folds the key form behind Or paste an API key once a subscription is signed 
   models.credentials.mockResolvedValue([
     {
       id: "fixture",
+      label: "Anthropic",
       provider: "anthropic",
       modelId: "claude-fixture",
       hasKey: false,
@@ -1154,6 +1216,173 @@ it("folds the key form behind Or paste an API key once a subscription is signed 
     expect(keyField(view.container)).toBeTruthy();
     expect(buttons(view.container, "Connect API key")).toHaveLength(1);
     expect(view.container.textContent).not.toContain("Replace API key");
+  } finally {
+    await view.unmount();
+  }
+});
+
+function providersSection() {
+  const found = document.querySelector('[data-testid="model-providers"]');
+  if (!found) throw new Error("Missing Providers section");
+  return found as HTMLElement;
+}
+
+/** Opens a connection's page from the Providers list. */
+async function openProvider(name: string) {
+  await click(
+    [...providersSection().querySelectorAll("button")].find((entry) => entry.textContent === name),
+  );
+}
+
+const workCredential = {
+  ...deepseekCredential,
+  id: "cred-deepseek-work",
+  label: "Work",
+  isDefault: false,
+};
+
+it("lists every connection under Providers and adds another for a connected provider", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    expect(
+      [...providersSection().querySelectorAll('[data-testid^="model-provider-"]')].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["DeepSeek", "DeepSeek · Work"]);
+    await click(buttons(providersSection() as HTMLElement, "Add provider")[0]);
+    expect(pickerOptions()).toContain("DeepSeek");
+    await choose("DeepSeek");
+    expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
+    expect(keyField(view.container).placeholder).toBe("sk-…");
+    await typeInto(keyField(view.container), "sk-fixture-personal");
+    await click(buttons(view.container, "Connect API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepseek",
+        apiKey: "sk-fixture-personal",
+        credentialId: null,
+        makeDefault: false,
+      }),
+    );
+    expect(models.setRole).not.toHaveBeenCalled();
+    expect(titles(view.container)).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("replaces one connection's key and disconnects only that connection", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek · Work");
+    expect(titles(view.container)).toEqual(["DeepSeek · Work"]);
+    await typeInto(keyField(view.container), "sk-fixture-rotated");
+    await click(buttons(view.container, "Replace API key")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "deepseek",
+        apiKey: "sk-fixture-rotated",
+        credentialId: "cred-deepseek-work",
+      }),
+    );
+
+    await openProvider("DeepSeek · Work");
+    await click(buttons(view.container, "Disconnect")[0]);
+    const confirm = buttons(view.container, "Disconnect");
+    await click(confirm[confirm.length - 1]);
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "cred-deepseek-work",
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps another connection's form when an earlier save finishes", async () => {
+  models.list.mockResolvedValue([deepseekEntry, openrouterEntry]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  let finishSave!: (value: unknown) => void;
+  models.connect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+  );
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    await choose("OpenRouter");
+    await typeInto(keyField(view.container), "sk-fixture-router");
+    await click(buttons(view.container, "Connect API key")[0]);
+    // Fields wait for the save, so it cannot overwrite edits made meanwhile.
+    expect(keyField(view.container).closest("fieldset")?.disabled).toBe(true);
+    // The main model's connection opens while the first key still saves.
+    await manage();
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    await act(async () => {
+      finishSave({ ...deepseekCredential, id: "cred-openrouter", provider: "openrouter" });
+    });
+    expect(titles(view.container)).toEqual(["DeepSeek"]);
+    // The finished save's slot picker does not take over.
+    expect(pickerOptions()).toEqual([]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("renames a connection", async () => {
+  models.rename.mockResolvedValue({ ok: true });
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const view = await renderSettings();
+  try {
+    await openProvider("DeepSeek · Work");
+    const input = view.container.querySelector<HTMLInputElement>("input[maxlength]");
+    if (!input) throw new Error("Missing name field");
+    expect(input.value).toBe("Work");
+    await typeInto(input, "Client work");
+    await act(async () => {
+      input.form?.requestSubmit();
+    });
+    expect(models.rename).toHaveBeenCalledWith({
+      credentialId: "cred-deepseek-work",
+      label: "Client work",
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows what a disconnect left, not a read sent before it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  await first.unmount();
+
+  // The revisit's background read still lists Work when the disconnect lands.
+  let releaseStale: () => void = () => undefined;
+  models.credentials
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStale = () => resolve([deepseekCredential, workCredential]);
+        }),
+    )
+    .mockResolvedValue([deepseekCredential]);
+  const providerNames = () =>
+    [...providersSection().querySelectorAll("button")].map((entry) => entry.textContent);
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(providerNames()).toContain("DeepSeek · Work");
+    await openProvider("DeepSeek · Work");
+    await click(buttons(view.container, "Disconnect")[0]);
+    const confirm = buttons(view.container, "Disconnect");
+    await click(confirm[confirm.length - 1]);
+    await act(async () => releaseStale());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(providerNames()).not.toContain("DeepSeek · Work");
   } finally {
     await view.unmount();
   }

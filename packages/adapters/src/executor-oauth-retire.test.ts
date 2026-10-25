@@ -35,7 +35,6 @@ function oauthPrisma() {
         userId: SCOPE.userId,
         credentialId: "cred-codex",
         modelId: MODEL_ID,
-        isDefault: true,
         createdAt: stamp,
         updatedAt: stamp,
       },

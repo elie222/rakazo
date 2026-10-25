@@ -5,7 +5,7 @@ import {
   defaultModelCredentialCandidates,
   findModelCredential,
   newestModelCredentialOrder,
-  selectSpaceModelPreference,
+  saveSpaceModelPreference,
 } from "./model-credentials.js";
 
 describe("findModelCredential", () => {
@@ -22,7 +22,7 @@ describe("findModelCredential", () => {
     expect(preferenceFindFirst).toHaveBeenCalledWith({
       where: { userId: "user", spaceId: "space", credential: { provider: "xai" } },
       include: { credential: true },
-      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     });
     expect(credentialFindFirst).toHaveBeenCalledWith({
       where: { userId: "user", provider: "xai" },
@@ -41,7 +41,6 @@ describe("findModelCredential", () => {
         createdAt: new Date(0),
         updatedAt: new Date(0),
       },
-      isDefault: false,
       modelId: "other-model",
     };
     const preferenceFindFirst = vi.fn().mockResolvedValue(matching);
@@ -59,7 +58,6 @@ describe("findModelCredential", () => {
       ),
     ).resolves.toEqual({
       ...matching.credential,
-      isDefault: false,
       defaultModel: "other-model",
     });
     expect(preferenceFindFirst).toHaveBeenCalledWith({
@@ -70,7 +68,7 @@ describe("findModelCredential", () => {
         credential: { provider: "openai-compatible" },
       },
       include: { credential: true },
-      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     });
     expect(preferenceFindFirst).toHaveBeenCalledTimes(1);
   });
@@ -98,7 +96,6 @@ describe("findModelCredential", () => {
       id: "pref-spark",
       modelId: "gpt-5.3-codex-spark",
       thinkingLevel: null,
-      isDefault: false,
       updatedAt: new Date("2026-02-03T00:00:00.000Z"),
       credential: older,
     };
@@ -106,7 +103,6 @@ describe("findModelCredential", () => {
       id: "pref-default",
       modelId: "gpt-6-luna",
       thinkingLevel: null,
-      isDefault: true,
       updatedAt: new Date("2026-03-01T00:00:00.000Z"),
       credential: newer,
     };
@@ -126,7 +122,6 @@ describe("findModelCredential", () => {
       ),
     ).resolves.toEqual({
       ...older,
-      isDefault: false,
       defaultModel: "gpt-5.3-codex-spark",
       thinkingLevel: null,
     });
@@ -139,7 +134,6 @@ describe("findModelCredential", () => {
       ),
     ).resolves.toEqual({
       ...newer,
-      isDefault: true,
       defaultModel: "gpt-6-luna",
       thinkingLevel: null,
     });
@@ -169,7 +163,6 @@ describe("chooseModelCredential", () => {
           id: "pref-default",
           modelId: "gpt-6-luna",
           thinkingLevel: null,
-          isDefault: true,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
         },
@@ -177,7 +170,6 @@ describe("chooseModelCredential", () => {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
           thinkingLevel: null,
-          isDefault: false,
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
           credential: apiKey,
         },
@@ -201,7 +193,6 @@ describe("chooseModelCredential", () => {
           id: "pref-older",
           modelId: "gpt-5.4",
           thinkingLevel: null,
-          isDefault: true,
           updatedAt: new Date("2026-01-02T00:00:00.000Z"),
           credential: older,
         },
@@ -222,7 +213,6 @@ describe("chooseModelCredential", () => {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
           thinkingLevel: null,
-          isDefault: false,
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
           credential: apiKey,
         },
@@ -230,7 +220,6 @@ describe("chooseModelCredential", () => {
           id: "pref-luna",
           modelId: "gpt-6-luna",
           thinkingLevel: null,
-          isDefault: true,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
         },
@@ -240,7 +229,7 @@ describe("chooseModelCredential", () => {
     expect(candidates.map((item) => item.id)).toEqual(["api"]);
   });
 
-  it("lists the space preference before a credential that owns another model", () => {
+  it("lists the latest space preference before a credential that owns another model", () => {
     const apiKey = credential("api", "2026-01-01T00:00:00.000Z");
     const oauth = credential("oauth", "2026-03-01T00:00:00.000Z");
     const candidates = defaultModelCredentialCandidates({
@@ -251,15 +240,13 @@ describe("chooseModelCredential", () => {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
           thinkingLevel: null,
-          isDefault: true,
-          updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-03-03T00:00:00.000Z"),
           credential: apiKey,
         },
         {
           id: "pref-other",
           modelId: "gpt-5.4",
           thinkingLevel: null,
-          isDefault: false,
           updatedAt: new Date("2026-03-02T00:00:00.000Z"),
           credential: oauth,
         },
@@ -279,7 +266,6 @@ describe("chooseModelCredential", () => {
           id: "pref-spark",
           modelId: "gpt-5.3-codex-spark",
           thinkingLevel: null,
-          isDefault: true,
           updatedAt: apiKey.updatedAt,
           credential: apiKey,
         },
@@ -303,44 +289,14 @@ describe("chooseModelCredential", () => {
   });
 });
 
-describe("selectSpaceModelPreference", () => {
-  it("clears only a different active default before selecting the credential", async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const upsert = vi.fn().mockResolvedValue({ id: "preference" });
-    const prisma = { spaceModelPreference: { updateMany, upsert } } as unknown as PrismaClient;
-
-    await selectSpaceModelPreference(
-      prisma,
-      { userId: "user", spaceId: "space" },
-      "credential",
-      "model",
-    );
-
-    expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        userId: "user",
-        spaceId: "space",
-        isDefault: true,
-        credentialId: { not: "credential" },
-      },
-      data: { isDefault: false },
-    });
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ isDefault: true, modelId: "model" }),
-        update: { isDefault: true, modelId: "model", thinkingLevel: null },
-      }),
-    );
-  });
-
+describe("saveSpaceModelPreference", () => {
   it.each([null, undefined, "null", "undefined", "  null  ", ""])(
     "does not persist %j as a model id",
     async (modelId) => {
-      const updateMany = vi.fn().mockResolvedValue({ count: 0 });
       const upsert = vi.fn().mockResolvedValue({ id: "preference" });
-      const prisma = { spaceModelPreference: { updateMany, upsert } } as unknown as PrismaClient;
+      const prisma = { spaceModelPreference: { upsert } } as unknown as PrismaClient;
 
-      await selectSpaceModelPreference(
+      await saveSpaceModelPreference(
         prisma,
         { userId: "user", spaceId: "space" },
         "credential",
@@ -350,7 +306,7 @@ describe("selectSpaceModelPreference", () => {
       expect(upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({ modelId: null }),
-          update: { isDefault: true, modelId: null, thinkingLevel: null },
+          update: { modelId: null, thinkingLevel: null },
         }),
       );
     },
@@ -374,7 +330,6 @@ it.each([
     id: "pref-azure",
     modelId: "gpt-4o",
     thinkingLevel: null,
-    isDefault: true,
     updatedAt: new Date(0),
     credential,
   };

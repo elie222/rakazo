@@ -1,5 +1,13 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import {
+  AgentImportCreateInput,
+  AgentImportInfoSchema,
+  AgentImportPlanSchema,
+  AgentImportPreviewInput,
+  AgentImportUndoInput,
+} from "./agent-import.js";
+import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
@@ -40,6 +48,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
+  CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -64,12 +73,15 @@ import {
   MeSchema,
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
+  MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
   ModelBackupChoiceSchema,
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
+  ModelConnectionLabelSchema,
+  ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
@@ -112,7 +124,7 @@ import {
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
 import { ModelHeadersSchema } from "./model-headers.js";
-import { ModelRoleSchema, ModelRoleSettingsSchema, ModelRoleUpdateSchema } from "./model-roles.js";
+import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
@@ -271,10 +283,10 @@ export const appContract = {
       .output(z.array(ModelCatalogEntrySchema)),
     role: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
-      .output(ModelRoleSettingsSchema),
+      .output(ModelRoleViewSchema),
     setRole: oc
       .input(ModelRoleUpdateSchema.extend({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
-      .output(ModelRoleSettingsSchema),
+      .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelBackupChoiceSchema)),
@@ -303,6 +315,8 @@ export const appContract = {
         z.object({
           provider: z.string(),
           label: z.string().optional(),
+          /** Signs an existing connection in again; null adds another, as connect does. */
+          credentialId: ModelConnectionTargetSchema,
           modelId: z.string().optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
           makeDefault: z.boolean().optional(),
@@ -334,8 +348,12 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
+    rename: oc
+      .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
-      .input(z.object({ provider: z.string().trim().min(1) }))
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {
@@ -343,6 +361,11 @@ export const appContract = {
     listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
+    importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
+    importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
+    importInfo: oc.input(botId).output(AgentImportInfoSchema.nullable()),
+    importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
+    importUndo: oc.input(AgentImportUndoInput).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -899,7 +922,12 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     rename: oc
-      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .input(
+        z.object({
+          connectionId: Id,
+          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+        }),
+      )
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
@@ -914,6 +942,11 @@ export const appContract = {
   },
   /** External messaging surface: link state, group channels, agent connections. */
   messaging: {
+    installations: {
+      list: oc.output(MessagingInstallationsStatusSchema),
+      start: oc.input(z.object({ botId: Id })).output(z.object({ url: z.string() })),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */

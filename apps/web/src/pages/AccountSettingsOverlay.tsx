@@ -231,17 +231,12 @@ export function GeneralSettingsPanels({
               </p>
             ) : null}
             <div className="flex items-center gap-3">
-              <Button
-                type="submit"
-                className="rounded-full"
-                disabled={namePending || !nameDraft.trim()}
-              >
+              <Button type="submit" disabled={namePending || !nameDraft.trim()}>
                 <Trans>Save</Trans>
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                className="rounded-full"
                 disabled={namePending}
                 onClick={() => setEditingName(false)}
               >
@@ -263,7 +258,6 @@ export function GeneralSettingsPanels({
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-full"
                 onClick={() => {
                   setNameDraft(account.label === email ? "" : displayName(name, ""));
                   setNameError(null);
@@ -279,12 +273,7 @@ export function GeneralSettingsPanels({
           <SettingsRow
             label={<Trans>Messaging</Trans>}
             control={
-              <Button
-                variant="secondary"
-                size="sm"
-                className="rounded-full"
-                onClick={onOpenMessaging}
-              >
+              <Button variant="secondary" size="sm" onClick={onOpenMessaging}>
                 <Trans>Manage</Trans>
               </Button>
             }
@@ -666,7 +655,6 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
             <Button
               variant="secondary"
               size="sm"
-              className="rounded-full"
               onClick={() => {
                 setSaved(false);
                 setOpen(true);
@@ -729,20 +717,10 @@ function ChangePasswordRow({ email }: { email?: string | null }) {
             </p>
           ) : null}
           <div className="mt-4 flex items-center gap-3">
-            <Button
-              type="submit"
-              className="rounded-full"
-              disabled={pending || !currentPassword || !newPassword}
-            >
+            <Button type="submit" disabled={pending || !currentPassword || !newPassword}>
               {pending ? <Trans>Changing…</Trans> : <Trans>Save</Trans>}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="rounded-full"
-              disabled={pending}
-              onClick={close}
-            >
+            <Button type="button" variant="ghost" disabled={pending} onClick={close}>
               <Trans>Cancel</Trans>
             </Button>
           </div>

@@ -35,7 +35,8 @@ test("approval models reuse connections and persist independent fallbacks", asyn
   await openUserSettings(page, "models");
 
   const approval = page.getByTestId("model-role-approval");
-  await expect(approval.getByTestId("model-role-default")).toContainText("Deployment default");
+  // The empty first row names the deployment's own approval model.
+  await expect(approval.getByTestId("model-role-default")).toContainText("OpenRouter");
   await approval.getByRole("button", { name: "Change Approval model", exact: true }).click();
   await pickModel(page, "Jev 1.14", "Jev 1.14");
   await expect(approval.getByTestId("model-role-row-1")).toContainText("Jev 1.14");
@@ -74,4 +75,35 @@ test("approval models reuse connections and persist independent fallbacks", asyn
   await expect(page.getByTestId("model-role-main").getByTestId("model-role-row-2")).toContainText(
     fallback.label,
   );
+
+  // A second key for the same provider is its own connection, listed under Providers.
+  await rpc(page, "models/connect", {
+    provider: "openrouter",
+    apiKey: "fake-role-api-key-2",
+    modelId: main.id,
+    credentialId: null,
+    makeDefault: false,
+    label: "OpenRouter",
+  });
+  await page.reload();
+  const providers = page.getByTestId("model-providers");
+  await expect(providers.getByText("OpenRouter 2", { exact: true })).toBeVisible();
+  await providers.getByRole("button", { name: "OpenRouter 2", exact: true }).click();
+  const connection = page.getByTestId("model-connection");
+  await connection.getByRole("textbox", { name: "Name", exact: true }).fill("Work");
+  await connection.getByRole("button", { name: "Save", exact: true }).click();
+  // The renamed row collapses its form when clicked again.
+  await providers.getByRole("button", { name: "OpenRouter · Work", exact: true }).click();
+  await expect(connection).toBeHidden();
+  // Its models are offered as a group of their own.
+  await page
+    .getByTestId("model-role-main")
+    .getByRole("button", { name: "Add fallback", exact: true })
+    .click();
+  await expect(
+    page.getByRole("listbox", { name: "Model options" }).getByText("OpenRouter · Work"),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await providers.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "model-settings-providers");
 });

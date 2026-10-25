@@ -110,6 +110,7 @@ import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxSpace, InboxSpaceItem } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
+  deleteSpaceTitle,
   inboxHasNoChats,
   inboxNeedsCreateHint,
   removeInboxSpace,
@@ -708,6 +709,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         const refresh = async () => {
           spaceActionRef.current.recoveryId = null;
           setSpaceRecoveryId(null);
+          // A space seen before opens as it was saved; polling stays off until it is painted.
+          const saved = await loadSavedInbox().catch(() => null);
+          if (saved?.me.spaceId === spaceId) {
+            setBots(saved.bots);
+            setBotSections(saved.botSections);
+            setGroups(saved.groups);
+            setMe(saved.me);
+          }
           spaceActionRef.current.busy = false;
           await refreshBots();
           await loadActivity();
@@ -771,18 +780,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         spaceActionRef.current.recoveryId
       )
         return;
-      Alert.alert(
-        t("Delete {name}?", { name: space.name }),
-        t("This removes the empty space for everyone."),
-        [
-          { text: t("Cancel"), style: "cancel" },
-          {
-            text: t("Delete"),
-            style: "destructive",
-            onPress: () => void deleteInboxSpace(space),
-          },
-        ],
-      );
+      Alert.alert(deleteSpaceTitle(space), t("This removes the space for everyone."), [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Delete"),
+          style: "destructive",
+          onPress: () => void deleteInboxSpace(space),
+        },
+      ]);
     },
     [deleteInboxSpace, t],
   );

@@ -422,6 +422,24 @@ EVAL_HELPERS = r"""
       if (!near(rect.width, own.width) || !near(rect.height, own.height)) return false;
       return input.maxLength === 1 || (input.maxLength <= 2 && rect.width <= rect.height * 2);
     };
+    // Prefer human-facing label numbers, falling back to names; ids are generated identifiers.
+    const numberOf = (field) => {
+      const labelledBy = (field.getAttribute("aria-labelledby") || "").split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent || "").join(" ").trim();
+      const label = labelledBy || field.getAttribute("aria-label")
+        || Array.from(field.labels || [], (label) => label.textContent).join(" ");
+      const number = /\d+/.exec(label) || /\d+/.exec(field.name);
+      return number ? Number(number[0]) : null;
+    };
+    // A gap of more than two boxes separates codes; numbering can bridge it for runs up to eight boxes.
+    const follows = (a, b, numbered) => {
+      const previous = numberOf(a);
+      const next = numberOf(b);
+      if (numbered && previous !== null && next === previous + 1) return true;
+      const [ra, rb] = [a.getBoundingClientRect(), b.getBoundingClientRect()];
+      const sameRow = Math.abs(rb.top + rb.height / 2 - (ra.top + ra.height / 2)) < ra.height / 2;
+      return !sameRow || rb.left - ra.right <= 2 * ra.width;
+    };
     const whole = (boxes) => boxes.every((box) => box.maxLength === 1) || boxes.length >= 4;
     let boxes = [el];
     if (!isBox(el)) return boxes;
@@ -430,8 +448,29 @@ EVAL_HELPERS = r"""
       let from = fields.indexOf(el);
       let to = from;
       if (from < 0) break;
-      while (from > 0 && isBox(fields[from - 1])) from--;
-      while (to < fields.length - 1 && isBox(fields[to + 1])) to++;
+      let runFrom = from;
+      let runTo = to;
+      while (runFrom > 0 && isBox(fields[runFrom - 1])) runFrom--;
+      while (runTo < fields.length - 1 && isBox(fields[runTo + 1])) runTo++;
+      // Trust only a complete numbered sequence starting at 0 or 1, allowing restarts.
+      const runNumbers = fields.slice(runFrom, runTo + 1).map(numberOf);
+      const start = runNumbers[0];
+      const numbered = (start === 0 || start === 1) && runNumbers.every((number, i) => i === 0
+        || (number !== null && runNumbers[i - 1] !== null
+          && (number === runNumbers[i - 1] + 1 || (number === start && runNumbers[i - 1] > start))));
+      if (numbered) {
+        const sequenceFrom = runFrom;
+        for (let i = 1; i < runNumbers.length; i++) {
+          if (runNumbers[i] !== start) continue;
+          const boundary = sequenceFrom + i;
+          if (boundary <= from) runFrom = boundary;
+          else { runTo = boundary - 1; break; }
+        }
+      }
+      // Apply the eight-box limit to this code, after separating numbered restarts.
+      const bridgeGaps = numbered && runTo - runFrom + 1 <= 8;
+      while (from > runFrom && follows(fields[from - 1], fields[from], bridgeGaps)) from--;
+      while (to < runTo && follows(fields[to], fields[to + 1], bridgeGaps)) to++;
       if (to - from >= 12) break;
       boxes = fields.slice(from, to + 1);
       // A six-box or longer code stays in its container; smaller subgroups can grow.

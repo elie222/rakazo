@@ -118,7 +118,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-deferred",
         status: { in: ["deferred", "received", "observed"] },
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         status: "ignored",
@@ -1108,7 +1112,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-raced",
         status: { in: ["deferred", "received", "observed"] },
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         status: "ignored",
@@ -1141,7 +1149,11 @@ describe("team chat bridge", () => {
       where: {
         id: "external-deferred",
         status: "deferred",
-        externalConversation: { provider: "slack", botId: "bot-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: {
         nextAttemptAt: expect.any(Date),
@@ -1731,7 +1743,12 @@ describe("team chat bridge", () => {
           in: ["message_routine_routing", "message_routine_routing_rearmed"],
         },
         nextAttemptAt: { lte: expect.any(Date) },
-        externalConversation: { provider: "slack", botId: "bot-1", spaceId: "space-1" },
+        externalConversation: {
+          provider: "slack",
+          botId: "bot-1",
+          spaceId: "space-1",
+          conversationId: { not: { startsWith: "slack~" } },
+        },
       },
       data: { engagementReason: null, nextAttemptAt: expect.any(Date) },
     });

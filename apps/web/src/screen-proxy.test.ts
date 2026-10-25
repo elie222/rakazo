@@ -7,6 +7,20 @@ afterEach(() => {
 });
 
 describe("screen proxy", () => {
+  it("uses only server-provided provider credentials for both proxy transports", () => {
+    expect(
+      safeProxyHeaders(
+        {
+          cookie: "app_session=private",
+          authorization: "Bearer browser",
+          host: "app.example",
+          upgrade: "websocket",
+        },
+        { cookie: "provider_auth=fake-token" },
+      ),
+    ).toEqual({ upgrade: "websocket", cookie: "provider_auth=fake-token" });
+  });
+
   it("rejects legacy URLs without contacting the API", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

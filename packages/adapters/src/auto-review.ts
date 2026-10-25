@@ -38,6 +38,8 @@ export type AutoReviewChecker = {
   model: string;
   /** The effort saved with this approval choice; the model's default when unset. */
   thinkingLevel?: AgentRunModel["thinkingLevel"];
+  /** The connection the approval choice is pinned to. */
+  credentialId?: string;
 };
 
 export type AutoReviewJudgeResult = AutoReviewResult;

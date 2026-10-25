@@ -377,6 +377,191 @@ describe("live page helper code fields", () => {
     expect(domWindow.document.activeElement).toBe(groups[1]!.firstElementChild);
   });
 
+  it.each([
+    ["shared id prefix", (i: number) => `id="otp-1-${i}"`],
+    ["shared name prefix", (i: number) => `name="code1_digit${i}"`],
+    ["React ids", (i: number) => `id=":r${i + 1}:"`],
+    ["shared React id", (_: number) => 'id=":r1:"'],
+    ["React ids with suffix", (i: number) => `id=":r5:-input${i}"`],
+    ["generated ids", (i: number) => `id="input-${[17, 23, 19, 31, 28, 42][i]}"`],
+    ["labels with total", (i: number) => `aria-label="Digit ${i + 1} of 6"`],
+    ["labels with shared total first", (i: number) => `aria-label="6-digit code, digit ${i + 1}"`],
+  ])("keeps a single code together with %s", (_, attributes) => {
+    const { domWindow, browser } = installPageHelper(
+      "https://code.example.test/",
+      `<div>${Array.from(
+        { length: 6 },
+        (_, i) =>
+          `<input ${attributes(i)} maxlength="1" value="${i}" data-rect="${i * 20},0,10,10" />`,
+      ).join("")}</div>`,
+    );
+    browser.focusForKeys(browser.snapshot().elements[3]!.ref);
+    const inputs = Array.from(domWindow.document.querySelectorAll("input"));
+    expect(inputs.map((box) => box.value)).toEqual(Array(6).fill(""));
+    expect(domWindow.document.activeElement).toBe(inputs[0]);
+    for (const input of inputs) {
+      input.focus();
+      expect(browser.focusHolds()).toBe(true);
+    }
+  });
+
+  it("joins consecutively numbered boxes across a wide gap", () => {
+    const { domWindow, browser, values } = typeInto(
+      `<div>${Array.from(
+        { length: 6 },
+        (_, i) =>
+          `<input aria-label="Digit ${i + 1}" maxlength="1" value="${i}" data-rect="${i * 40 + (i >= 3 ? 96 : 0)},0,40,40" />`,
+      ).join("")}</div>`,
+      "Digit 4",
+    );
+    expect(values("Digit")).toBe("");
+    const inputs = Array.from(domWindow.document.querySelectorAll("input"));
+    expect(domWindow.document.activeElement).toBe(inputs[0]);
+    for (const input of inputs) {
+      input.focus();
+      expect(browser.focusHolds()).toBe(true);
+    }
+  });
+
+  it("joins name-only numbered boxes across a wide gap", () => {
+    const { domWindow, browser } = installPageHelper(
+      "https://code.example.test/",
+      `<div>${Array.from(
+        { length: 6 },
+        (_, i) =>
+          `<input name="otp-${i + 1}" maxlength="1" value="${i}" data-rect="${i * 40 + (i >= 3 ? 96 : 0)},0,40,40" />`,
+      ).join("")}</div>`,
+    );
+    browser.focusForKeys(browser.snapshot().elements[3]!.ref);
+    const inputs = Array.from(domWindow.document.querySelectorAll("input"));
+    expect(inputs.map((box) => box.value)).toEqual(Array(6).fill(""));
+    expect(domWindow.document.activeElement).toBe(inputs[0]);
+    for (const input of inputs) {
+      input.focus();
+      expect(browser.focusHolds()).toBe(true);
+    }
+  });
+
+  it.each([
+    ["labels", (i: number) => `aria-label="Digit ${(i % 6) + 1}"`],
+    ["names", (i: number) => `name="otp-${(i % 6) + 1}"`],
+  ] as const)("types both codes across wide gaps with restarting %s", (_, attributes) => {
+    const { domWindow, browser } = installPageHelper(
+      "https://code.example.test/",
+      `<div>${Array.from(
+        { length: 12 },
+        (_, i) =>
+          `<input ${attributes(i)} maxlength="1" value="${i % 6}" data-rect="${Math.floor(i / 6) * 400 + (i % 6) * 40 + (i % 6 >= 3 ? 96 : 0)},0,40,40" />`,
+      ).join("")}</div>`,
+    );
+    const inputs = Array.from(domWindow.document.querySelectorAll("input"));
+    const refs = browser.snapshot().elements.map((element) => element.ref);
+    const values = () => [
+      inputs
+        .slice(0, 6)
+        .map((box) => box.value)
+        .join(""),
+      inputs
+        .slice(6)
+        .map((box) => box.value)
+        .join(""),
+    ];
+    for (const offset of [6, 0]) {
+      const ref = refs[offset + 3]!;
+      expect(browser.focusForKeys(ref).focused).toBe(true);
+      expect(values()).toEqual(offset === 6 ? ["012345", ""] : ["", "482913"]);
+      expect(domWindow.document.activeElement).toBe(inputs[offset]);
+      for (const [i, digit] of Array.from("482913").entries()) {
+        const box = inputs[offset + i]!;
+        box.focus();
+        expect(browser.focusHolds()).toBe(true);
+        box.value = digit;
+        box.dispatchEvent(new domWindow.Event("input", { bubbles: true }));
+      }
+      expect(browser.typed(ref, "482913")).toBe(true);
+      expect(values()).toEqual(offset === 6 ? ["012345", "482913"] : ["482913", "482913"]);
+    }
+  });
+
+  it("keeps a code together across a dash with a two-box-wide separator", () => {
+    const boxes = Array.from(
+      { length: 6 },
+      (_, i) =>
+        `${i === 3 ? "<span>-</span>" : ""}<input maxlength="1" value="${i}" data-rect="${i * 20 + (i >= 3 ? 10 : 0)},0,10,10" />`,
+    ).join("");
+    const { domWindow, browser } = installPageHelper(
+      "https://code.example.test/",
+      `<div>${boxes}</div>`,
+    );
+    browser.focusForKeys(browser.snapshot().elements[4]!.ref);
+    expect(Array.from(domWindow.document.querySelectorAll("input"), (box) => box.value)).toEqual(
+      Array(6).fill(""),
+    );
+  });
+
+  it.each([
+    // Named "Digit 1" to "Digit 6" twice, side by side.
+    [
+      "box numbers start again",
+      `${row("Digit", 0)}${row("Digit", 0).replace(/data-rect="(\d+)/g, (_, x) => `data-rect="${Number(x) + 120}`)}`,
+    ],
+    [
+      "zero-based box numbers start again",
+      `${row("Digit", 0)}${row("Digit", 0).replace(/data-rect="(\d+)/g, (_, x) => `data-rect="${Number(x) + 120}`)}`.replace(
+        /aria-label="Digit (\d)"/g,
+        (_, digit) => `aria-label="Digit ${Number(digit) - 1}"`,
+      ),
+    ],
+    ...(
+      [
+        ["consecutive generated ids", (i: number) => `id="input-${i + 17}"`],
+        ["numbered names", (i: number) => `name="otp-${(i % 6) + 1}"`],
+        ["names continue across a wide gap", (i: number) => `name="otp-${i + 1}"`],
+        ["labels continue across a wide gap", (i: number) => `aria-label="Digit ${i + 1}"`],
+        ["labels starting above one", (i: number) => `aria-label="Digit ${i + 17}"`],
+      ] as const
+    ).map(([description, attributes]) => [
+      description,
+      Array.from(
+        { length: 12 },
+        (_, i) =>
+          `<input ${attributes(i)} maxlength="1" value="${i % 6}" data-rect="${i < 6 ? i * 20 : 300 + (i - 6) * 20},0,10,10" />`,
+      ).join(""),
+    ]),
+    // Unnamed, with a wide gap between the two codes.
+    [
+      "a wide gap follows",
+      Array.from(
+        { length: 12 },
+        (_, i) =>
+          `<input maxlength="1" value="${i % 6}" data-rect="${i < 6 ? i * 20 : 300 + (i - 6) * 20},0,10,10" />`,
+      ).join(""),
+    ],
+  ])("keeps two codes in one container apart where %s", (_, boxes) => {
+    const { domWindow, browser } = installPageHelper(
+      "https://code.example.test/",
+      `<div>${boxes}</div>`,
+    );
+    browser.focusForKeys(browser.snapshot().elements[6]!.ref);
+    const inputs = Array.from(domWindow.document.querySelectorAll("input"));
+    expect(inputs.map((box) => box.value).join("")).toBe("012345");
+    expect(domWindow.document.activeElement).toBe(inputs[6]);
+    inputs[6]!.value = "9";
+    inputs[6]!.dispatchEvent(new domWindow.Event("input", { bubbles: true }));
+    expect(
+      inputs
+        .slice(0, 6)
+        .map((box) => box.value)
+        .join(""),
+    ).toBe("012345");
+    expect(
+      inputs
+        .slice(6)
+        .map((box) => box.value)
+        .join(""),
+    ).toBe("9");
+  });
+
   it.each([false, true])(
     "stops when another widget replaces the target (same container: %s)",
     (sameContainer) => {

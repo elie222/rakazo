@@ -8,6 +8,7 @@ import {
   formatSkillsCatalogInstruction,
   mergeBuiltinSkills,
   parseSkillMd,
+  renameRoutineSkillMentions,
 } from "./agent-skill.js";
 
 describe("built-in skill merging", () => {
@@ -356,5 +357,17 @@ describe("SKILL.md quoted frontmatter values", () => {
       const md = buildSkillMd({ name: "s", description, body: "b" });
       expect(md).toContain(`description: ${description}\n`);
     }
+  });
+});
+
+describe("renameRoutineSkillMentions", () => {
+  it("renames only changed names and lets a longer name win over a renamed prefix", () => {
+    const renames = new Map([
+      ["garden", "garden-2"],
+      ["garden tools", "garden tools"],
+    ]);
+    expect(
+      renameRoutineSkillMentions("Use @garden tools, then @Garden. Email@garden stays.", renames),
+    ).toBe("Use @garden tools, then @garden-2. Email@garden stays.");
   });
 });

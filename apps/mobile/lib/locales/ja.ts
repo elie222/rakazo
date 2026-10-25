@@ -10,6 +10,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Main model": "メインモデル",
   "Add fallback": "バックアップモデルを追加",
   "Manage {provider}": "{provider} を管理",
+  "Add provider": "プロバイダーを追加",
   "Choose a model": "モデルを選択",
   "The model returned an unusable response. Try again.":
     "モデルが利用できない応答を返しました。もう一度お試しください。",
@@ -220,7 +221,9 @@ export const JA_MESSAGES: Record<string, string> = {
   "Searching…": "検索中…",
   "Space actions for {name}": "{name}のスペース操作",
   "Tap + to create a bot": "+をタップしてボットを作成",
-  "This removes the empty space for everyone.": "この空のスペースを全員に対して削除します。",
+  "This removes the space for everyone.": "このスペースを全員に対して削除します。",
+  "Delete {name} and its bot?": "{name} とそのボットを削除しますか？",
+  "Delete {name} and its {count} bots?": "{name} と {count} 個のボットを削除しますか？",
   "notifications silenced": "通知ミュート中",
   unread: "未読",
   "@{name}": "@{name}",
@@ -451,7 +454,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not reach this model server": "このモデルサーバーに接続できませんでした",
   "Could not start sign-in": "ログインを開始できませんでした",
   Default: "デフォルト",
-  "Deployment default": "デプロイのデフォルト",
   "Enter a whole number from 1 to 1000 for the image limit.":
     "画像の上限には1〜1000の整数を入力してください。",
   "Enter a whole number from 1 to {max} for maximum output tokens.":
@@ -1011,4 +1013,11 @@ export const JA_MESSAGES: Record<string, string> = {
   "Connect apps": "アプリを接続",
   "Bring your own key. ElevenLabs, OpenAI, Cartesia, and Fish Audio all plug into the same speak buttons.":
     "ご自身のキーを使用できます。ElevenLabs、OpenAI、Cartesia、Fish Audioはすべて同じ読み上げボタンで使えます。",
+  "Choose a bot…": "ボットを選択…",
+  "Connect Slack workspace": "Slackワークスペースを接続",
+  "Link a chat app": "チャットアプリを連携",
+  Messaging: "メッセージ",
+  "Send {code} to the chat app in a direct message within 10 minutes.":
+    "10分以内にチャットアプリへダイレクトメッセージで{code}を送信してください。",
+  Unlink: "連携解除",
 };

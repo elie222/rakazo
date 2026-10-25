@@ -230,6 +230,23 @@ export function oauthCredentialAccountId(credential: OAuthCredential): string | 
   return nonBlankString(claims?.chatgpt_account_id) ?? nonBlankString(payload.chatgpt_account_id);
 }
 
+/**
+ * The email an OAuth credential's access token names, for telling two signed-in accounts
+ * apart. Read from the stored token only; never logged.
+ */
+export function oauthCredentialEmail(credential: OAuthCredential): string | undefined {
+  const payload = decodeJwtPayload(credential.access);
+  if (!payload) return undefined;
+  const profile = payload["https://api.openai.com/profile"];
+  const email =
+    nonBlankString(
+      profile && typeof profile === "object"
+        ? (profile as Record<string, unknown>).email
+        : undefined,
+    ) ?? nonBlankString(payload.email);
+  return email?.includes("@") ? email.trim() : undefined;
+}
+
 const retiredCredentialErrors = new WeakSet<object>();
 
 /**
@@ -293,6 +310,8 @@ export type PiOAuthConnected = {
   status: "connected";
   credential: OAuthCredential;
   provider: string;
+  /** The connection this sign-in renews; null adds one; undefined is an older app's sign-in. */
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: string | null;
   makeDefault?: boolean;
@@ -329,6 +348,7 @@ type Session = {
   userId: string;
   spaceId: string;
   provider: string;
+  credentialId?: string | null;
   modelId?: string;
   thinkingLevel?: string | null;
   makeDefault?: boolean;
@@ -842,6 +862,7 @@ export class PiOAuthLogins {
     userId: string;
     spaceId: string;
     provider: string;
+    credentialId?: string | null;
     modelId?: string;
     thinkingLevel?: string | null;
     makeDefault?: boolean;
@@ -857,7 +878,7 @@ export class PiOAuthLogins {
       throw input.signal.reason ?? new Error("Sign-in cancelled.");
     }
 
-    const scope = oauthScopeKey(input.userId, input.spaceId, input.provider);
+    const scope = oauthScopeKey(input.userId, input.spaceId, input.provider, input.credentialId);
     const lockKey = oauthProviderKey(input.userId, input.provider);
     const prepared = await this.withReplacementLock(lockKey, input.signal, async () => {
       await this.retireActiveSession(scope, input.signal);
@@ -872,6 +893,7 @@ export class PiOAuthLogins {
         userId: input.userId,
         spaceId: input.spaceId,
         provider: input.provider,
+        credentialId: input.credentialId,
         modelId: input.modelId,
         thinkingLevel: input.thinkingLevel,
         makeDefault: input.makeDefault,
@@ -1048,6 +1070,7 @@ export class PiOAuthLogins {
         status: "connected",
         credential: session.credential,
         provider: session.provider,
+        credentialId: session.credentialId,
         modelId: session.modelId,
         thinkingLevel: session.thinkingLevel,
         makeDefault: session.makeDefault,
@@ -1167,8 +1190,14 @@ export class PiOAuthLogins {
 
   /** Retire every sign-in this user started for one provider, in any space —
    *  disconnect removes the account credential, so no space's session may
-   *  finish afterward. The shared provider lock orders this against begin. */
-  async cancelProvider(input: { userId: string; provider: string }): Promise<void> {
+   *  finish afterward. With `credentialId`, only sign-ins that may renew that
+   *  connection are retired; a sign-in adding another account carries on. The shared provider
+   *  lock orders this against begin. */
+  async cancelProvider(input: {
+    userId: string;
+    provider: string;
+    credentialId?: string;
+  }): Promise<void> {
     await this.withReplacementLock(
       oauthProviderKey(input.userId, input.provider),
       undefined,
@@ -1177,7 +1206,13 @@ export class PiOAuthLogins {
           ...new Set(
             [...this.pending.values()]
               .filter(
-                (session) => session.userId === input.userId && session.provider === input.provider,
+                (session) =>
+                  session.userId === input.userId &&
+                  session.provider === input.provider &&
+                  (!input.credentialId ||
+                    session.credentialId === input.credentialId ||
+                    // A sign-in that never named its connection may renew this one.
+                    session.credentialId === undefined),
               )
               .map((session) => session.scope),
           ),
@@ -1233,8 +1268,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function oauthScopeKey(userId: string, spaceId: string, provider: string): string {
-  return JSON.stringify([userId, spaceId, provider]);
+/** A new sign-in replaces a pending one for the same connection, or for a new connection. */
+function oauthScopeKey(
+  userId: string,
+  spaceId: string,
+  provider: string,
+  credentialId?: string | null,
+): string {
+  return JSON.stringify([userId, spaceId, provider, credentialId ?? null]);
 }
 
 // Begins and disconnect cancellation share one lock per user+provider so a

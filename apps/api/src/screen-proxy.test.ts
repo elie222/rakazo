@@ -18,6 +18,7 @@ const scope = {
 function fixture(
   interactive = false,
   upstream = `http://127.0.0.1:49152/embed.html?view_only=${!interactive}`,
+  headers?: Record<string, string>,
 ) {
   const computer = {
     screenGeneration: 0,
@@ -42,7 +43,14 @@ function fixture(
   );
   const app = new Hono();
   mountScreenTarget(app, { bot: { findFirst } } as unknown as PrismaClient, secret);
-  const url = addScreenProxyCapability(upstream, secret, "https://app.example", scope);
+  const url = addScreenProxyCapability(
+    upstream,
+    secret,
+    "https://app.example",
+    scope,
+    undefined,
+    headers,
+  );
   const path = new URL(url).pathname;
   const request = (value = path, credential = secret) =>
     app.request(SCREEN_TARGET_ENDPOINT, {
@@ -54,6 +62,16 @@ function fixture(
 }
 
 describe("screen capability lifecycle authorization", () => {
+  it("returns sealed provider headers only after lifecycle authorization", async () => {
+    const headers = { cookie: "provider_auth=fake-private-token" };
+    const { request, path, computer } = fixture(false, undefined, headers);
+    expect(path).not.toContain("fake-private-token");
+    expect(await (await request()).json()).toMatchObject({ headers });
+    expect((await request(path, "wrong")).status).toBe(403);
+    computer.state = "stopped";
+    expect((await request()).status).toBe(403);
+  });
+
   it("allows repeat assets and reconnects during the same active lifecycle", async () => {
     const { request, path } = fixture();
     expect((await request()).status).toBe(200);

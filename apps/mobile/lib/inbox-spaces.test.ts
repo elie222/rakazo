@@ -9,6 +9,7 @@ import {
 import { activateUiLocale } from "./i18n";
 import {
   canDeleteInboxSpace,
+  deleteSpaceTitle,
   type InboxSpace,
   inboxHasNoChats,
   inboxNeedsCreateHint,
@@ -303,12 +304,26 @@ describe("spaceInboxItems", () => {
     expect(canDeleteInboxSpace(space({ canDelete }))).toBe(false);
   });
 
-  it("offers deletion for an explicitly authorized empty non-default space", () => {
+  it("offers deletion for an explicitly authorized non-default space", () => {
     expect(canDeleteInboxSpace(space())).toBe(true);
   });
 
-  it("hides deletion while a space still has content", () => {
-    expect(canDeleteInboxSpace(space({ hasContent: true }))).toBe(false);
+  it("offers deletion for a space that still has bots, which go with it", () => {
+    expect(canDeleteInboxSpace(space({ hasContent: true, bots: [bot] }))).toBe(true);
+  });
+
+  it("names every bot deletion removes, not only the visible ones", () => {
+    expect(deleteSpaceTitle(space({ bots: [bot], botCount: 3 }))).toBe(
+      "Delete Work and its 3 bots?",
+    );
+    expect(deleteSpaceTitle(space({ bots: [], botCount: 1 }))).toBe("Delete Work and its bot?");
+    expect(deleteSpaceTitle(space({ bots: [bot], botCount: 0 }))).toBe("Delete Work?");
+    // Older servers send no count; fall back to the listed bots.
+    expect(deleteSpaceTitle(space({ bots: [bot] }))).toBe("Delete Work and its bot?");
+  });
+
+  it("never offers deletion for the default space", () => {
+    expect(canDeleteInboxSpace(space({ isDefault: true }))).toBe(false);
   });
 });
 

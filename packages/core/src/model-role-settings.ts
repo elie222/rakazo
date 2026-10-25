@@ -1,12 +1,12 @@
-import type { ModelCatalogEntry, ModelRoleSettings } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelRoleSettings, ModelRoleView } from "@rakazo/contracts";
 
 export interface ModelRoleTransport {
-  load(): Promise<ModelRoleSettings>;
+  load(): Promise<ModelRoleView>;
   catalog(): Promise<ModelCatalogEntry[]>;
-  save(patch: Partial<ModelRoleSettings>): Promise<ModelRoleSettings>;
+  save(patch: Partial<ModelRoleSettings>): Promise<ModelRoleView>;
 }
 export type ModelRoleState = {
-  settings: ModelRoleSettings | null;
+  settings: ModelRoleView | null;
   catalog: ModelCatalogEntry[];
   busy: boolean;
   /** The last load failed, so the shown settings may be outdated and cannot be edited. */
@@ -17,17 +17,24 @@ export type ModelRoleState = {
 type SaveQueue = { tail: Promise<void>; failures: number };
 const pendingWrites = new Map<string, SaveQueue>();
 
-/** Shared web/native lifecycle. Writes finish in their original scope; stale loads cannot win. */
-export function createModelRoleSettings(transport: ModelRoleTransport, scopeKey: string) {
+/**
+ * Shared web/native lifecycle. Writes finish in their original scope; stale loads cannot win.
+ * `initial` is what this scope showed last time, shown while the first load refreshes it.
+ */
+export function createModelRoleSettings(
+  transport: ModelRoleTransport,
+  scopeKey: string,
+  initial?: { settings: ModelRoleView; catalog: ModelCatalogEntry[] },
+) {
   let state: ModelRoleState = {
-    settings: null,
-    catalog: [],
-    busy: true,
+    settings: initial?.settings ?? null,
+    catalog: initial?.catalog ?? [],
+    busy: !initial,
     stale: false,
     error: null,
   };
   let generation = 0;
-  let confirmed: ModelRoleSettings | null = null;
+  let confirmed: ModelRoleView | null = initial?.settings ?? null;
   let loading: Promise<void> | null = null;
   const listeners = new Set<() => void>();
   const publish = (patch: Partial<ModelRoleState>) => {

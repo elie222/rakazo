@@ -39,9 +39,11 @@ export interface CreateBotDialogInput {
 export function CreateBotDialog({
   onCancel,
   onCreate,
+  onImport,
 }: {
   onCancel: () => void;
   onCreate: (input: CreateBotDialogInput) => Promise<void>;
+  onImport?: () => void;
 }) {
   const { t } = useLingui();
   const nameRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,18 @@ export function CreateBotDialog({
             }
           />
           <DialogFooter>
+            {onImport ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="sm:me-auto"
+                disabled={submitting}
+                data-testid="create-bot-import"
+                onClick={onImport}
+              >
+                <Trans>Import</Trans>
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" disabled={submitting} onClick={onCancel}>
               <Trans>Cancel</Trans>
             </Button>
