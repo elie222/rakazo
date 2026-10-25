@@ -11,6 +11,7 @@ for the sharing and persistence contract.
 | Local Docker computers | `SANDBOX_PROVIDER=docker` | `SANDBOX_SUPERVISOR_TOKEN`, computer image, Docker socket for supervisor |
 | UI only, no computers | `SANDBOX_PROVIDER=none` | No provider credential; published-images Compose still requires `SANDBOX_SUPERVISOR_TOKEN` |
 | Managed remote desktop | `e2b` / `daytona` / `boat` | `SANDBOX_SUPERVISOR_TOKEN` (published-images Compose), matching API key (and optional URL knobs for Daytona/Boat) |
+| One pod per computer on your own cluster | `SANDBOX_PROVIDER=kubernetes` | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -58,6 +59,51 @@ image is not on a registry, so start the stack with `bash install-images.sh --pu
 pulling the other images once. Brave's Rewards, Wallet, Leo, VPN and News are disabled by managed
 policy. Browser identity is only one input to bot-check challenges; the host's IP reputation usually
 matters more.
+
+## `kubernetes`
+
+Each computer is one pod in a namespace you choose, created from the published computer image.
+The API and worker talk to the Kubernetes API with their own service account (or the kubeconfig in
+`KUBECONFIG`), so they normally run in the same cluster. No supervisor or Docker socket is involved.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `KUBERNETES_SANDBOX_NAMESPACE` | `rakazo-sandboxes` | Namespace for computer pods; it must exist |
+| `KUBERNETES_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a digest in production |
+| `KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME` | unset | For example `kata` or `gvisor` for a VM or user-space kernel boundary |
+| `KUBERNETES_SANDBOX_CPU_LIMIT` / `_MEMORY_LIMIT` | unset | Container limits, such as `2` and `4Gi` |
+| `KUBERNETES_SANDBOX_POD_LABELS` / `_POD_ANNOTATIONS` | unset | JSON objects of strings, merged into every pod |
+| `KUBERNETES_SANDBOX_READY_TIMEOUT_MS` | `120000` | How long a new pod has to become ready |
+
+Each pod runs the image's own user (uid 1000) with no service account token and no service links,
+and is labelled `app.kubernetes.io/name=rakazo-computer` and `rakazo-bot-id=<bot id>`. Commands,
+file transfers and workspace save and restore go through `pods/exec`; save and restore stream the
+home as one tar archive. Screens use the image's desktop gateway on the pod IP, so the API, the
+worker and the web screen proxy must be able to reach pods in that namespace on port `6080` and the
+display ports from `6100` upward. Pods are ephemeral: the
+saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
+not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
+
+The API and worker service account needs this in the computer namespace:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rakazo-computers
+  namespace: rakazo-sandboxes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+```
+
+Bind it to the service account the API and worker run as with a `RoleBinding`. A NetworkPolicy
+that admits only the API, worker and web pods to the computer pods, and denies their egress to
+private ranges, is recommended.
 
 ## `none`
 

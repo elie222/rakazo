@@ -6,6 +6,7 @@ import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-san
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
+import { type KubernetesSandboxOptions, KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
@@ -28,6 +29,14 @@ export interface SandboxProviderOptions {
   railwaySandboxRegion?: string;
   boatApiKey?: string;
   boatApiUrl?: string;
+  kubernetesNamespace?: string;
+  kubernetesRuntimeClassName?: string;
+  kubernetesComputerImage?: string;
+  kubernetesCpuLimit?: string;
+  kubernetesMemoryLimit?: string;
+  kubernetesPodAnnotations?: KubernetesSandboxOptions["podAnnotations"];
+  kubernetesPodLabels?: KubernetesSandboxOptions["podLabels"];
+  kubernetesReadyTimeoutMs?: number;
   dataDir?: string;
 }
 
@@ -77,6 +86,17 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         maxWorkspaceFileBytes: opts.railwayMaxWorkspaceFileBytes,
         region: opts.railwaySandboxRegion,
       });
+    case "kubernetes":
+      return new KubernetesSandboxProvider({
+        namespace: opts.kubernetesNamespace,
+        runtimeClassName: opts.kubernetesRuntimeClassName,
+        computerImage: opts.kubernetesComputerImage,
+        cpuLimit: opts.kubernetesCpuLimit,
+        memoryLimit: opts.kubernetesMemoryLimit,
+        podAnnotations: opts.kubernetesPodAnnotations,
+        podLabels: opts.kubernetesPodLabels,
+        readyTimeoutMs: opts.kubernetesReadyTimeoutMs,
+      });
     case "docker":
       return new DockerSandboxProvider(
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
@@ -91,7 +111,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | kubernetes | desktop | fake.`,
       );
   }
 }

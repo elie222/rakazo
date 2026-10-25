@@ -63,6 +63,13 @@ describe("resolveSandboxProvider", () => {
     ).toBe("createos");
   });
 
+  it("keeps Kubernetes without any provider key", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kubernetes" })).toBe("kubernetes");
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "kubernetes", NODE_ENV: "production" })).toBe(
+      "kubernetes",
+    );
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     expect(
       resolveSandboxProvider({
@@ -110,5 +117,42 @@ describe("sandboxProviderOptionsFromEnv", () => {
     expect(
       sandboxProviderOptionsFromEnv({ RAILWAY_SANDBOX_REGION: region }).railwaySandboxRegion,
     ).toBeUndefined();
+  });
+
+  it("loads Kubernetes settings and parses labels, annotations and the ready timeout", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        KUBERNETES_SANDBOX_NAMESPACE: " rakazo-computers ",
+        KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME: "kata",
+        KUBERNETES_SANDBOX_COMPUTER_IMAGE: "ghcr.io/elie222/rakazo/computer@sha256:abc",
+        KUBERNETES_SANDBOX_CPU_LIMIT: "2",
+        KUBERNETES_SANDBOX_MEMORY_LIMIT: "4Gi",
+        KUBERNETES_SANDBOX_POD_LABELS: '{"team":"bots"}',
+        KUBERNETES_SANDBOX_POD_ANNOTATIONS: '{"example.test/owner":"rakazo"}',
+        KUBERNETES_SANDBOX_READY_TIMEOUT_MS: "90000",
+      }),
+    ).toMatchObject({
+      kubernetesNamespace: "rakazo-computers",
+      kubernetesRuntimeClassName: "kata",
+      kubernetesComputerImage: "ghcr.io/elie222/rakazo/computer@sha256:abc",
+      kubernetesCpuLimit: "2",
+      kubernetesMemoryLimit: "4Gi",
+      kubernetesPodLabels: { team: "bots" },
+      kubernetesPodAnnotations: { "example.test/owner": "rakazo" },
+      kubernetesReadyTimeoutMs: 90_000,
+    });
+    expect(sandboxProviderOptionsFromEnv({}).kubernetesNamespace).toBeUndefined();
+  });
+
+  it("rejects malformed Kubernetes label maps and timeouts", () => {
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_POD_LABELS: '["bots"]' }),
+    ).toThrow("KUBERNETES_SANDBOX_POD_LABELS must be a JSON object of string values");
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" }),
+    ).toThrow("KUBERNETES_SANDBOX_POD_ANNOTATIONS must be a JSON object of string values");
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_READY_TIMEOUT_MS: "0" }),
+    ).toThrow("KUBERNETES_SANDBOX_READY_TIMEOUT_MS must be a positive integer");
   });
 });
