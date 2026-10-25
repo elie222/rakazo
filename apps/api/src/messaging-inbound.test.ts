@@ -19,6 +19,7 @@ function createDeps(
     approvedMember?: unknown;
     sendResult?: { messageId: string; runId: string | null; seq: number };
     routines?: Array<{ id: string; name: string; prompt: string }>;
+    storeAttachment?: MessagingInboundDeps["storeAttachment"];
   } = {},
 ) {
   const identity =
@@ -280,6 +281,7 @@ function createDeps(
     openSignup: true,
     signupPolicy,
     acknowledge,
+    storeAttachment: overrides.storeAttachment,
     runs,
     botReplies,
     sendUserMessage,
@@ -353,6 +355,150 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
     );
+  });
+
+  it("stores a photo-only DM as an image artifact instead of dropping it", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-1",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 42,
+      }),
+    );
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          size: 42,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(storeAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spaceId: "ws-1",
+        userId: "user-1",
+        botId: "bot-1",
+        clientNonce: "messaging-attachment:sendblue:handle-1:0",
+      }),
+    );
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          { kind: "image", artifactId: "artifact-1", mimeType: "image/jpeg", name: "photo.jpg" },
+        ],
+        prompt: "See attached files.",
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+    );
+  });
+
+  it("delivers a caption alongside the stored attachment", async () => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-2",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 10,
+      }),
+    );
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "what is this?",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          size: 10,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          { kind: "text", text: "what is this?" },
+          {
+            kind: "file",
+            artifactId: "artifact-2",
+            mimeType: "audio/ogg",
+            name: "voice.oga",
+            size: 10,
+          },
+        ],
+        prompt: 'what is this?\n\nUser attached file "voice.oga" (audio/ogg, 10 bytes).',
+      }),
+    );
+  });
+
+  it("keeps a media-only DM deliverable when the download fails", async () => {
+    const storeAttachment = vi.fn(async () => {
+      throw new Error("download failed");
+    });
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "voice.oga",
+          mimeType: "audio/ogg",
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [{ kind: "text", text: "[file: voice.oga (unavailable)]" }],
+        prompt: "[file: voice.oga (unavailable)]",
+      }),
+    );
+  });
+
+  it("lists attachment names in the routine wake payload", async () => {
+    const deps = createDeps({
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Look at this" }],
+    });
+    const handle = createMessagingInboundHandler(deps);
+    await handle({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          size: 42,
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+
+    const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain('"files"');
+    expect(prompt).toContain('"photo.jpg"');
+  });
+
+  it("still ignores a truly empty DM", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "" });
+
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.enqueue).not.toHaveBeenCalled();
   });
 
   it("provisions on first contact and uses the new identity", async () => {
