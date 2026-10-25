@@ -505,6 +505,30 @@ function connectorTrustKey(
     : `kind:${connectorKind}`;
 }
 
+/**
+ * A Composio batch shares the wrapper kind, so trust is saved per wrapped toolkit: a Gmail
+ * batch must not make a later Slack read trusted. A slug outside every connected toolkit
+ * keys by itself, and an unreadable entry can never inherit another toolkit's trust.
+ */
+function connectorTrustKeys(
+  toolName: string,
+  args: unknown,
+  route: { connectorId?: string; resourceId?: string } | undefined,
+  connectorKind: string,
+  providers: string[],
+): string[] {
+  const nested = composioMultiExecuteSlugs(toolName, args);
+  if (!nested || nested.slugs.length === 0) return [connectorTrustKey(route, connectorKind)];
+  const toolkits = providers.map((provider) => provider.trim().toLowerCase()).filter(Boolean);
+  return nested.slugs.map((slug) => {
+    const key = slug.trim().toLowerCase();
+    const toolkit = toolkits
+      .filter((provider) => key.startsWith(`${provider}_`))
+      .sort((left, right) => right.length - left.length)[0];
+    return `kind:${connectorKind}:${toolkit ?? key}`;
+  });
+}
+
 /** Effects that got past the approval gate: approved, allowed by a rule or review, or run. */
 const PASSED_EFFECT_STATUSES = ["approved", "executing", "uncertain", "completed"];
 const READ_ONLY_AGENT_TOOLS = new Set([
@@ -4490,11 +4514,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 new Set(
                   rows
                     .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
-                    .map((row) =>
-                      connectorTrustKey(
+                    .flatMap((row) =>
+                      connectorTrustKeys(
+                        row.kind,
+                        row.request,
                         boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
                           catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
                         connectorKindFromToolName(row.kind, providers),
+                        providers,
                       ),
                     ),
                 ),
@@ -5181,7 +5208,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             args = { ...args, url: fetchUrl };
             effectRequest = args;
           }
-          const connectorTrust = connectorTrustKey(connectorCall.route, connectorKind);
+          const connectorTrusts = connectorTrustKeys(
+            name,
+            args,
+            connectorCall.route,
+            connectorKind,
+            connectorProviders,
+          );
           const siteGate =
             fetchUrl && fetchSite
               ? outboundSiteGate({
@@ -5191,16 +5224,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   rules: await loadApprovalRules(),
                 })
               : "allow";
-          const connectorReadGated =
+          let connectorReadGated = false;
+          if (
             viaConnector &&
             !unidentifiedAction &&
             approvalToolNames.every(
               (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
-            ) &&
-            connectorReadRequiresApproval({
+            )
+          ) {
+            const trusted = await loadTrustedConnectors();
+            connectorReadGated = connectorReadRequiresApproval({
               tainted: await isRunTainted(),
-              connectorTrusted: (await loadTrustedConnectors()).has(connectorTrust),
+              connectorTrusted: connectorTrusts.every((trust) => trusted.has(trust)),
             });
+          }
           // This schedules unattended shell execution; require a person to approve
           // the command once, rather than letting an allow rule or reviewer schedule it.
           const commandWatch =
@@ -5807,7 +5844,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Past the gate: this destination is now one the run was given. A search result's exact
           // URL trusts only that URL, never the rest of its site.
           if (fetchSite && siteGate === "new") (await loadTrustedSites()).add(fetchSite);
-          if (viaConnector) (await loadTrustedConnectors()).add(connectorTrust);
+          if (viaConnector)
+            for (const trust of connectorTrusts) (await loadTrustedConnectors()).add(trust);
           const persistEffectResult = (result: unknown) =>
             applied
               ? completeEffect(

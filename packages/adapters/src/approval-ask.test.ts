@@ -42,7 +42,10 @@ describe("buildApprovalAskBlock", () => {
       "COMPOSIO_MULTI_EXECUTE_TOOL",
       {
         tools: [
-          { tool_slug: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c", subject: "Hi" } },
+          {
+            tool_slug: "GMAIL_SEND_EMAIL",
+            arguments: { recipient_email: "a@b.c", cc: "c@d.e", subject: "Hi" },
+          },
           { tool_slug: "GMAIL_ARCHIVE_THREAD", arguments: { id: "t1" } },
           { arguments: {} },
         ],
@@ -59,7 +62,7 @@ describe("buildApprovalAskBlock", () => {
       ],
     });
     expect(block.kind === "ask" && block.detail).toBe(
-      "GMAIL_SEND_EMAIL\nto: a@b.c\nsubject: Hi\nGMAIL_ARCHIVE_THREAD\nunidentified action",
+      "GMAIL_SEND_EMAIL\nrecipient_email: a@b.c\ncc: c@d.e\nsubject: Hi\nGMAIL_ARCHIVE_THREAD\nunidentified action",
     );
   });
 

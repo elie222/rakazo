@@ -177,7 +177,9 @@ function formatApprovalDetail(
   }
   // A fetch carries data in its path and query, so the card shows the whole URL.
   const keys =
-    toolName === "web_fetch" ? ["url"] : ["collection", "title", "to", "subject", "amount", "body"];
+    toolName === "web_fetch"
+      ? ["url"]
+      : ["collection", "title", "to", "recipient_email", "cc", "bcc", "subject", "amount", "body"];
   const tools =
     toolName === COMPOSIO_MULTI_EXECUTE_TOOL && Array.isArray(args.tools) ? args.tools : undefined;
   if (tools) {

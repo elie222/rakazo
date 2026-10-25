@@ -89,10 +89,13 @@ function fixture({
   fleetManagement = false,
   fleetBots = [] as { id: string; name: string }[],
   secondResource = false,
+  connectedProviders = [] as string[],
   routines = [] as { name: string; prompt: string }[],
 }: {
   /** The bot's routines, as the owner wrote them. */
   routines?: { name: string; prompt: string }[];
+  /** Connected Composio toolkits, each exposed as a `composio:<provider>` connection row. */
+  connectedProviders?: string[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
   secondResource?: boolean;
   /** The switch as the run starts; `liveBot` is what a later read sees. */
@@ -294,7 +297,18 @@ function fixture({
       })),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
-    connection: { findMany: vi.fn(async () => []) },
+    connection: {
+      findMany: vi.fn(async () =>
+        connectedProviders.map((provider) => ({
+          id: `conn-${provider}`,
+          connectorId: "composio",
+          provider,
+          providerRef: null,
+          displayName: provider,
+          status: "connected",
+        })),
+      ),
+    },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: {
       findFirst: vi.fn(async () =>
@@ -1087,6 +1101,25 @@ describe("composio multi-execute approvals", () => {
       text: "Review before GMAIL_SEND_EMAIL",
       detail: "GMAIL_SEND_EMAIL\nto: a@b.c\nsubject: Hi",
     });
+  });
+
+  it("keeps read trust to the wrapped toolkit, not the shared wrapper", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      autoReview: true,
+      connectedProviders: ["gmail", "slack"],
+    });
+    f.setCalls([
+      { args: multiExecute(["GMAIL_LIST_THREADS"]), executionId: "call-1" },
+      { name: "web_search", args: { query: "news" }, executionId: "call-2" },
+      { args: multiExecute(["SLACK_LIST_CHANNELS"]), executionId: "call-3" },
+    ]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[2])).toBe(true);
   });
 });
 
