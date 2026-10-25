@@ -2560,6 +2560,13 @@ function SpaceShell() {
     if (!id) return;
     await refreshThreadRef.current(id);
   }, []);
+  // An import's setup checklist re-checks on each thread refresh, so refresh once setup closes.
+  const importSetupOpen = useRef(false);
+  useEffect(() => {
+    if (!importSetupOpen.current || overlay || searchParams.has("routine")) return;
+    importSetupOpen.current = false;
+    void refreshActiveThread();
+  }, [overlay, searchParams, refreshActiveThread]);
   // Teach chrome needs skills applied before this resolves — refreshThread only
   // kicks skills.list off in the background, so Stop teaching would never mount
   // if that background call failed or lagged behind local recovery.
@@ -3619,6 +3626,7 @@ function SpaceShell() {
                 setPanel("import-agent");
               }}
               onOpenImportSetup={(target) => {
+                importSetupOpen.current = true;
                 if (target.kind === "models") openSettings("models");
                 else if (target.kind === "mcp") setOverlay({ kind: "mcp" });
                 else {
