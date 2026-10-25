@@ -159,6 +159,10 @@ msgstr "il y a {days} j"
 msgid "{from}–{to} of {total} rows"
 msgstr "{from}–{to} sur {total} lignes"
 
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}, colonne {index}"
+
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
@@ -166,6 +170,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "il y a {hours} h"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}, vide"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -1400,6 +1408,10 @@ msgstr "Couleur"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "Couleur {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "colonne {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"

@@ -130,7 +130,9 @@ export const TableCard = memo(function TableCard({
     setSort(next);
     setPage(0);
     announce(
-      next ? copy.sortedBy(columnSortLabel(columns, column), next.direction) : copy.sortCleared,
+      next
+        ? copy.sortedBy(columnSortLabel(columns, column, copy), next.direction)
+        : copy.sortCleared,
     );
   };
 
@@ -336,7 +338,7 @@ function TableView({
   };
   // Sort labels need disambiguation: empty headers and duplicate names would
   // otherwise produce identical or blank "Sort by" announcements.
-  const sortLabel = (index: number) => columnSortLabel(columns, index);
+  const sortLabel = (index: number) => columnSortLabel(columns, index, copy);
   return (
     <table className="rk-table" aria-label={copy.markdownTable}>
       <thead>

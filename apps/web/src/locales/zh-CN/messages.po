@@ -159,6 +159,10 @@ msgstr "{days} 天前"
 msgid "{from}–{to} of {total} rows"
 msgstr "第 {from}–{to} 行，共 {total} 行"
 
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}，第 {index} 列"
+
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
@@ -166,6 +170,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours} 小时前"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}，空"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -1400,6 +1408,10 @@ msgstr "颜色"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "颜色 {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "第 {index} 列"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"

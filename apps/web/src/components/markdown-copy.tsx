@@ -25,8 +25,11 @@ export function MarkdownChrome({ children }: { children: ReactNode }) {
       closeTable: t`Close table`,
       sortCleared: t`Sort cleared`,
       pageOf: (page, count) => t`Page ${page} of ${count}`,
-      rowCount: (count) => plural(count, { one: "# row", other: "# rows" }),
+      rowCount: (count) => t`${plural(count, { one: "# row", other: "# rows" })}`,
       rowRange: (from, to, total) => t`${from}–${to} of ${total} rows`,
+      columnFallback: (index) => t`column ${index}`,
+      columnDuplicate: (header, index) => t`${header}, column ${index}`,
+      columnCollision: (label) => t`${label}, empty`,
       sortBy: (column) => t`Sort by ${column}`,
       sortedBy: (column, direction) =>
         direction === "asc"

@@ -24,6 +24,9 @@ export type MarkdownCopy = {
   pageOf: (page: number, count: number) => string;
   rowCount: (count: number) => string;
   rowRange: (from: number, to: number, total: number) => string;
+  columnFallback: (index: number) => string;
+  columnDuplicate: (header: string, index: number) => string;
+  columnCollision: (label: string) => string;
   sortBy: (column: string) => string;
   sortedBy: (column: string, direction: TableSortDirection) => string;
 };
@@ -46,6 +49,9 @@ export const defaultMarkdownCopy: MarkdownCopy = {
   pageOf: (page, count) => `Page ${page} of ${count}`,
   rowCount: (count) => `${count} ${count === 1 ? "row" : "rows"}`,
   rowRange: (from, to, total) => `${from}–${to} of ${total} rows`,
+  columnFallback: (index) => `column ${index}`,
+  columnDuplicate: (header, index) => `${header}, column ${index}`,
+  columnCollision: (label) => `${label}, empty`,
   sortBy: (column) => `Sort by ${column}`,
   sortedBy: (column, direction) =>
     `Sorted by ${column}, ${direction === "asc" ? "ascending" : "descending"}`,
