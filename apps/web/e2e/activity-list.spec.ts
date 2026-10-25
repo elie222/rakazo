@@ -119,6 +119,7 @@ test("sidebar Now and Recent surface active and terminal runs", async ({ page },
   await page.emulateMedia({ colorScheme: "light" });
   await runSearch.fill("Chief");
   await activityToggle.click();
+  await aside.getByTestId("sidebar-search-trigger").click();
   const normalSearch = aside.getByRole("textbox", { name: "Search", exact: true });
   await expect(normalSearch).toHaveValue("");
   await normalSearch.fill("Chief");

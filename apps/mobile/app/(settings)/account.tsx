@@ -87,12 +87,14 @@ import {
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
+import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
+  const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
@@ -461,6 +463,7 @@ export default function Account() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
+        style={sideInsets}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"

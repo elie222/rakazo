@@ -193,6 +193,7 @@ function fixture(runId = "run-1") {
     },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({

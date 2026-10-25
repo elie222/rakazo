@@ -181,6 +181,10 @@ msgstr "{name} falló"
 msgid "{name} finished"
 msgstr "{name} terminó"
 
+#: src/pages/ModelRoleSettings.tsx
+msgid "{name} options"
+msgstr "Opciones de {name}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
@@ -420,10 +424,6 @@ msgstr ""
 msgid "Active"
 msgstr "Activo"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Active model"
-msgstr "Modelo activo"
-
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Actividad"
@@ -485,10 +485,6 @@ msgstr "Agrega una URL de servidor HTTPS."
 msgid "Add another"
 msgstr ""
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Add backup model"
-msgstr "Añadir modelo de respaldo"
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Add credential"
 msgstr ""
@@ -500,6 +496,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
 msgstr "Agregar Executor"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Add fallback"
+msgstr "Añadir alternativo"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
@@ -574,8 +574,8 @@ msgstr "Agregando…"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -603,10 +603,6 @@ msgstr "Agentes:"
 #: src/pages/Artifacts.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "All bots"
-msgstr ""
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "All providers"
 msgstr ""
 
 #: src/pages/ActivityList.tsx
@@ -776,6 +772,10 @@ msgstr "Aplicar"
 msgid "Approval boundaries"
 msgstr "Límites de aprobación"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Approval model"
+msgstr "Modelo de aprobación"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -923,10 +923,6 @@ msgstr "Atrás"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Volver a iniciar sesión"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Backup models"
-msgstr "Modelos de respaldo"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -1119,6 +1115,14 @@ msgstr "Cancelado"
 msgid "Card view"
 msgstr ""
 
+#: src/pages/ModelRoleSettings.tsx
+msgid "Change {name}"
+msgstr "Cambiar {name}"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Change {title}"
+msgstr "Cambiar {title}"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Cambiar contraseña"
@@ -1222,6 +1226,10 @@ msgstr "Elige una forma y color del bot, o sube una imagen"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Choose a bot…"
 msgstr "Elige un bot…"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model"
+msgstr "Elige un modelo"
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1443,10 +1451,6 @@ msgstr "Las computadoras están apagadas. Configura SANDBOX_PROVIDER=docker con 
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Configured by deployment"
-msgstr "Configurado por el despliegue"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Configured servers"
 msgstr "Servidores configurados"
@@ -1473,9 +1477,14 @@ msgstr ""
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Conectar"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connect {selectedProviderName}"
+msgstr "Conectar {selectedProviderName}"
 
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
@@ -1516,7 +1525,6 @@ msgstr "Conectar Treg"
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/model-settings/provider-list.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1636,10 +1644,6 @@ msgstr "No se pudo autorizar esta app"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
 msgstr "No se pudo cambiar la contraseña"
-
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Could not change the default model"
-msgstr "No se pudo cambiar el modelo predeterminado"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1806,10 +1810,6 @@ msgstr "No se pudieron cargar las reglas de aprobación"
 msgid "Could not load artifacts."
 msgstr ""
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Could not load backup models"
-msgstr "No se pudieron cargar los modelos de respaldo."
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Could not load billing"
 msgstr ""
@@ -1951,10 +1951,6 @@ msgstr "No se pudo guardar"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "No se pudo guardar Auto Review"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Could not save backup models"
-msgstr "No se pudieron guardar los modelos de respaldo."
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2212,6 +2208,7 @@ msgid "Decline"
 msgstr "Rechazar"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
@@ -2222,12 +2219,6 @@ msgstr "Predeterminado"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Predeterminado ({0})"
-
-#. js-lingui-explicit-id
-#. placeholder {0}: thinkingLevelLabel("medium")
-#: src/pages/model-settings/catalog-model-fields.tsx
-msgid "Default ({0})"
-msgstr ""
 
 #: src/pages/shell/agent-import.tsx
 msgid "Default from Hermes"
@@ -2642,7 +2633,7 @@ msgstr "Extra alto"
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Extra high"
-msgstr ""
+msgstr "Extra alto"
 
 #: src/components/CloudAgentCard.tsx
 msgid "failed"
@@ -2866,7 +2857,7 @@ msgstr "Alto"
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "High"
-msgstr ""
+msgstr "Alto"
 
 #: src/components/composer/HoldToTalk.tsx
 msgid "Hold to talk"
@@ -3192,6 +3183,7 @@ msgstr "Cargando integraciones…"
 msgid "Loading memory settings…"
 msgstr "Cargando configuración de memoria…"
 
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Cargando catálogo de modelos…"
@@ -3248,16 +3240,25 @@ msgstr "Bajo"
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Low"
-msgstr ""
+msgstr "Bajo"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Main model"
+msgstr "Modelo principal"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
 msgstr "Gestionar"
+
+#. placeholder {0}: providerName(choice)
+#: src/pages/ModelRoleSettings.tsx
+msgid "Manage {0}"
+msgstr "Gestionar {0}"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
@@ -3300,7 +3301,7 @@ msgstr "Máx."
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Max"
-msgstr ""
+msgstr "Máx."
 
 #: src/pages/Artifacts.tsx
 msgid "Maximize"
@@ -3311,8 +3312,8 @@ msgstr ""
 msgid "Maximum images per request"
 msgstr "Máximo de imágenes por solicitud"
 
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Maximum output tokens"
 msgstr "Máximo de tokens de salida"
@@ -3335,7 +3336,7 @@ msgstr "Medio"
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Medium"
-msgstr ""
+msgstr "Medio"
 
 #: src/lib/identity-display.ts
 msgid "Member"
@@ -3436,7 +3437,7 @@ msgstr "Mínimo"
 #. js-lingui-explicit-id
 #: src/lib/model-catalog.ts
 msgid "Minimal"
-msgstr ""
+msgstr "Mínimo"
 
 #: src/pages/WindowChrome.tsx
 msgid "Minimize"
@@ -3464,7 +3465,6 @@ msgid "Missed call"
 msgstr "Llamada perdida"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
@@ -3488,12 +3488,9 @@ msgid "Model id"
 msgstr "ID del modelo"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Opciones del modelo"
-
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Model updated."
-msgstr "Modelo actualizado."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -3537,13 +3534,9 @@ msgstr ""
 msgid "More computer actions"
 msgstr "Más acciones de computadora"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Move {full} down"
-msgstr "Mover {full} hacia abajo"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Move {full} up"
-msgstr "Mover {full} hacia arriba"
+#: src/pages/ModelRoleSettings.tsx
+msgid "Move down"
+msgstr "Bajar"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
@@ -3552,6 +3545,10 @@ msgstr "Muévelas a tu memoria compartida."
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "Mover a"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Move up"
+msgstr "Subir"
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -3709,6 +3706,7 @@ msgid "No matching artifacts on this page."
 msgstr ""
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
 msgstr "No hay modelos coincidentes"
@@ -3740,10 +3738,6 @@ msgstr "No hay modelos en la lista."
 #: src/pages/shell/agent-import.tsx
 msgid "No OpenClaw, Hermes or agent document found."
 msgstr "No se encontraron archivos de OpenClaw, Hermes ni un documento de agente."
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "No providers found."
-msgstr "No se encontraron proveedores."
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -3790,10 +3784,6 @@ msgstr "No es una habilidad válida"
 msgid "Not checked yet"
 msgstr "Aún no comprobado"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Not connected"
-msgstr "No conectado"
-
 #: src/pages/shell/agent-import.tsx
 msgid "Not imported"
 msgstr "No importado"
@@ -3835,11 +3825,6 @@ msgstr "Notificaciones"
 msgid "Now"
 msgstr "Ahora"
 
-#. placeholder {0}: selected.label
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Now using {0}."
-msgstr "Ahora usando {0}."
-
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "Se canceló la autorización OAuth."
@@ -3871,7 +3856,7 @@ msgstr "OAuth expirado"
 msgid "Ollama API key"
 msgstr ""
 
-#: src/pages/model-settings/provider-list.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Ollama Cloud"
 msgstr ""
@@ -4184,10 +4169,6 @@ msgstr ""
 msgid "Provider"
 msgstr "Proveedor"
 
-#: src/pages/model-settings/provider-list.tsx
-msgid "Providers"
-msgstr "Proveedores"
-
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "Solicitud de incorporación"
@@ -4347,6 +4328,7 @@ msgstr "Recargar"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4362,10 +4344,6 @@ msgstr "Quitar {0}"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr ""
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Remove {full}"
-msgstr "Quitar {full}"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
@@ -4542,7 +4520,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
-#: src/pages/ModelBackupsSettings.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4648,6 +4626,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4696,6 +4675,7 @@ msgstr ""
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4715,11 +4695,13 @@ msgid "Scopes (optional)"
 msgstr "Ámbitos (opcional)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "Buscar"
 
@@ -4745,13 +4727,10 @@ msgid "Search integrations.sh"
 msgstr ""
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
 msgstr "Buscar modelos"
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "Search providers"
-msgstr "Buscar proveedores"
 
 #: src/pages/Shell.tsx
 msgid "Search runs"
@@ -5028,14 +5007,6 @@ msgstr "Algo que elegiste no funciona aquí. Desmárcalo y vuelve a intentarlo."
 msgid "Space"
 msgstr "Espacio"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Space changed. Reopen Models to load its backup list."
-msgstr "El espacio cambió. Vuelve a abrir Modelos para cargar la lista de respaldo."
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Space changed. Reopen Models to save its backup list."
-msgstr "El espacio cambió. Vuelve a abrir Modelos para guardar la lista de respaldo."
-
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "Predeterminado del Space"
@@ -5159,7 +5130,6 @@ msgstr ""
 msgid "Switch bot"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Cambiando…"
@@ -5265,15 +5235,16 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Pensando"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Thinking: {activeThinkingLabel}"
-msgstr ""
+#. placeholder {0}: thinkingLevelLabel(choice.thinkingLevel)
+#: src/pages/ModelRoleSettings.tsx
+msgid "Thinking: {0}"
+msgstr "Razonamiento: {0}"
 
 #: src/pages/shell/agent-import.tsx
 msgid "This backup could not be read."
@@ -5491,10 +5462,6 @@ msgstr ""
 msgid "Trial ends {day}"
 msgstr ""
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Tried in order if the active model fails."
-msgstr "Se prueban en orden si falla el modelo activo."
-
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
 msgid "Try again"
@@ -5676,17 +5643,9 @@ msgstr ""
 msgid "Use space default"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
-msgid "Use this model"
-msgstr "Usar este modelo"
-
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
 msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Use your own key"
-msgstr "Usar tu propia clave"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"

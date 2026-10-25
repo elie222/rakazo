@@ -38,8 +38,18 @@ export function loadRunHistoryMessages(
       replyToMessageId: true,
       replyQuote: true,
       replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+      clientNonce: true,
     },
   });
+}
+
+/** Marks the bot message that keeps the reply text of a run that failed partway through it. */
+export function partialReplyClientNonce(runId: string): string {
+  return `partial-reply:${runId}`;
+}
+
+export function isPartialReplyClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(clientNonce?.startsWith("partial-reply:"));
 }
 
 export interface CreateThreadMessageInput {

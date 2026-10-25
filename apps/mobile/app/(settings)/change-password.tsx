@@ -15,9 +15,11 @@ import { changePassword } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function ChangePassword() {
+  const sideInsets = useSideInsets();
   const router = useRouter();
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
@@ -72,6 +74,7 @@ export default function ChangePassword() {
         style={styles.screen}
       >
         <ScrollView
+          style={sideInsets}
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.content}

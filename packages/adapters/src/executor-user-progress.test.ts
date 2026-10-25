@@ -4,9 +4,11 @@ import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  partialReplyClientNonce,
   RunHistoryWriteError,
 } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -44,9 +46,11 @@ async function runTurn(
     priorProgressText?: string;
     runtimeEvents?: AgentRuntimeEvent[];
     runtimeFailure?: boolean;
+    runtimeError?: Error;
     runtimeCancel?: boolean;
     failHelperId?: string;
     failMessageOnce?: boolean;
+    history?: Array<{ id: string; seq: number; role: string; text: string; clientNonce?: string }>;
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -79,7 +83,9 @@ async function runTurn(
         run.status = "cancelled";
         yield { type: "done" as const };
       }
-      if (options.runtimeFailure) throw new Error("fixture runtime failure");
+      if (options.runtimeFailure) {
+        throw options.runtimeError ?? new Error("fixture runtime failure");
+      }
       return;
     }
     const narrations = Array.isArray(narration) ? narration : [narration];
@@ -166,14 +172,27 @@ async function runTurn(
         return { ...data, id: `message-${messages.length}` };
       }),
       findMany: vi.fn(async ({ where }: { where: { runId?: string } }) =>
-        where.runId === run.id && options.priorProgressText
-          ? [
-              {
-                blocks: [{ kind: "text", text: options.priorProgressText }],
-                clientNonce: userProgressClientNonce(run.id),
-              },
-            ]
-          : [],
+        !where.runId && options.history
+          ? options.history.toReversed().map((message) => ({
+              ...message,
+              threadId: run.threadId,
+              botId: message.role === "bot" ? run.botId : null,
+              runId: null,
+              blocks: [{ kind: "text", text: message.text }],
+              createdAt: new Date("2026-10-24T08:00:00.000Z"),
+              replyToMessageId: null,
+              replyQuote: null,
+              replyTo: null,
+              clientNonce: message.clientNonce ?? null,
+            }))
+          : where.runId === run.id && options.priorProgressText
+            ? [
+                {
+                  blocks: [{ kind: "text", text: options.priorProgressText }],
+                  clientNonce: userProgressClientNonce(run.id),
+                },
+              ]
+            : [],
       ),
       findUnique: vi.fn(async () =>
         run.trigger === "messaging"
@@ -197,7 +216,7 @@ async function runTurn(
     },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: { findMany: vi.fn(async () => []) },
+    spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -260,7 +279,7 @@ async function runTurn(
   expect(runtimeRun).toHaveBeenCalled();
   if (!options.runtimeFailure)
     expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
-  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma };
+  return { finalizeRun, append, pauseRunForInput, messages, savedEvents, prisma, runtimeRun };
 }
 
 describe.each(["routine", "reaction", "bot_message", "messaging"])(
@@ -723,5 +742,109 @@ describe("helper cleanup recovery", () => {
           (event.payload as { status: string }).status === "failed",
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("a run that fails partway through its reply", () => {
+  const cut: AgentRuntimeEvent[] = [
+    { type: "text", text: "Part one. " },
+    { type: "text", text: "Part tw" },
+  ];
+
+  it("keeps the reply text the user saw as one message above the error", async () => {
+    const { finalizeRun } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: cut,
+      runtimeFailure: true,
+    });
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error: "fixture runtime failure",
+        partialReply: [{ kind: "text", text: "Part one. Part tw" }],
+      }),
+    );
+  });
+
+  it("keeps the text with secrets redacted", async () => {
+    const { finalizeRun } = await runTurn("", false, "", ["canary-secret-4471"], "fyi", {
+      runtimeEvents: [{ type: "text", text: "The key is canary-secret-4471 and the" }],
+      runtimeFailure: true,
+    });
+    const [input] = finalizeRun.mock.calls[0] as unknown as [{ partialReply: MessageBlock[] }];
+    expect(JSON.stringify(input.partialReply)).not.toContain("canary-secret-4471");
+    expect(input.partialReply).toEqual([
+      expect.objectContaining({ kind: "text", text: expect.stringContaining("The key is") }),
+    ]);
+  });
+
+  it.each(["routine", "bot_message"])(
+    "keeps nothing on a %s run, which shows no reply live",
+    async (trigger) => {
+      const { finalizeRun } = await runTurn("", false, "", [], "fyi", {
+        trigger,
+        runtimeEvents: cut,
+        runtimeFailure: true,
+      });
+      expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+        expect.not.objectContaining({ partialReply: expect.anything() }),
+      );
+    },
+  );
+
+  it("keeps nothing when no reply text streamed", async () => {
+    const { finalizeRun } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [],
+      runtimeFailure: true,
+    });
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.not.objectContaining({ partialReply: expect.anything() }),
+    );
+  });
+
+  it("shows no database text, server path or stack in the run error", async () => {
+    const database = Object.assign(
+      new Error(
+        [
+          "",
+          "Invalid `tx.run.findUnique()` invocation in",
+          "/app/packages/db/src/events.ts:1604:40",
+          "",
+          "  1603 const run = await tx.run.findUnique({",
+          "Transaction API error: Transaction already closed.",
+        ].join("\n"),
+      ),
+      { name: "PrismaClientKnownRequestError" },
+    );
+    const { finalizeRun } = await runTurn("", false, "", [], "fyi", {
+      runtimeEvents: [],
+      runtimeFailure: true,
+      runtimeError: database,
+    });
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "failed", error: "Internal server error" }),
+    );
+  });
+});
+
+describe("a kept partial reply in later history", () => {
+  it("tells the model that reply was cut off, without changing other replies", async () => {
+    const { runtimeRun } = await runTurn("Done.", false, [], [], "fyi", {
+      history: [
+        { id: "m1", seq: 1, role: "user", text: "Write the plan" },
+        {
+          id: "m2",
+          seq: 2,
+          role: "bot",
+          text: "Part one. Part tw",
+          clientNonce: partialReplyClientNonce("run-0"),
+        },
+        { id: "m3", seq: 3, role: "user", text: "continue" },
+        { id: "m4", seq: 4, role: "bot", text: "A whole reply." },
+      ],
+    });
+    const history = runtimeRun.mock.calls[0]?.[0].history ?? [];
+    const content = (id: string) => history.find((entry) => entry.id === id)?.content;
+    expect(content("m2")).toBe(`Part one. Part tw\n\n${PARTIAL_REPLY_NOTE}`);
+    expect(content("m4")).toBe("A whole reply.");
   });
 });

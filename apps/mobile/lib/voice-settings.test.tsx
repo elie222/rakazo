@@ -8,6 +8,7 @@ import VoiceSettings from "../app/(settings)/voice";
 
 const state = vi.hoisted(() => ({ rpc: vi.fn(), load: vi.fn(), save: vi.fn() }));
 const t = (text: string) => text;
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
 }));

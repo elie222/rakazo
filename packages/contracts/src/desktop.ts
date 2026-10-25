@@ -48,6 +48,11 @@ export interface RakazoDesktop {
     revokeAccess: () => Promise<void>;
     onConfigure: (listener: () => void) => () => void;
   };
+  /** Optional for compatibility with older desktop releases. */
+  passkeys?: {
+    /** Relying parties this build is associated with for system passkeys (macOS); others fail. */
+    rpIds: () => Promise<string[]>;
+  };
   platform: string;
   window: {
     close: () => Promise<void>;

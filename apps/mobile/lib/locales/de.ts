@@ -1,4 +1,9 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Approval model": "Freigabemodell",
+  "Main model": "Hauptmodell",
+  "Add fallback": "Backup-Modell hinzufügen",
+  "Manage {provider}": "{provider} verwalten",
+  "Choose a model": "Modell auswählen",
   "Use 80 characters or fewer": "Höchstens 80 Zeichen verwenden",
   "Could not update name": "Name konnte nicht aktualisiert werden",
   "{summary} Your backup models also failed.":
@@ -30,8 +35,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Not sent · No model": "Nicht gesendet · Kein Modell",
   "Update required": "Update erforderlich",
   Update: "Aktualisieren",
-  Provider: "Anbieter",
-  "No matching providers": "Keine passenden Anbieter",
   "To:": "An:",
   Next: "Weiter",
   "Ex: Project Falcon": "Z. B. Projekt Falcon",
@@ -459,11 +462,9 @@ export const DE_MESSAGES: Record<string, string> = {
     "Verwendet die eigenen {source}-Zugangsdaten dieses Servers für den Zugriff auf {provider}.",
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
-  "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
   "Connected. Its tools are available from your next message.":
     "Verbunden. Seine Tools sind ab deiner nächsten Nachricht verfügbar.",
   "Context limit": "Kontextlimit",
-  "Could not change the default model": "Standardmodell konnte nicht geändert werden",
   "Could not connect this provider": "Anbieter konnte nicht verbunden werden",
   "Could not finish sign-in": "Anmeldung konnte nicht abgeschlossen werden",
   "Could not reach this model server": "Modellserver konnte nicht erreicht werden",
@@ -485,11 +486,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Maximum images per request": "Maximale Bilder pro Anfrage",
   "Maximum output tokens": "Maximale Ausgabetokens",
   "Model id": "Modell-ID",
-  "Model updated.": "Modell aktualisiert.",
   "No matching models": "Keine passenden Modelle",
-  "Not connected": "Nicht verbunden",
   "Not now": "Nicht jetzt",
-  "Now using {label}.": "{label} ist jetzt aktiv.",
   "OpenAI-compatible server URL": "URL eines OpenAI-kompatiblen Servers",
   Optional: "Optional",
   "Or connect an API key": "Oder einen API-Schlüssel verbinden",
@@ -509,19 +507,16 @@ export const DE_MESSAGES: Record<string, string> = {
   Submit: "Absenden",
   "Supports images": "Unterstützt Bilder",
   "Supports thinking": "Unterstützt Denkmodus",
-  "Switching…": "Wird gewechselt…",
   "The final page may not load. Paste its URL or code here.":
     "Die letzte Seite lädt womöglich nicht. Füge ihre URL oder ihren Code hier ein.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
     "Diese Abonnementanmeldung ist in Rakazo noch nicht verfügbar. Verwende Zugangsdaten der Bereitstellung oder wähle einen anderen Anbieter.",
   "Use a found model": "Gefundenes Modell verwenden",
-  "Use this model": "Dieses Modell verwenden",
   "Waiting for sign-in…": "Warten auf Anmeldung…",
   "exact-model-id": "exact-model-id",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
   "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
-  "this model": "dieses Modell",
   // app/(settings)/integrations.tsx
   "1 tool": "1 Tool",
   "Account label": "Kontobezeichnung",
@@ -826,12 +821,10 @@ export const DE_MESSAGES: Record<string, string> = {
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/(settings)/models.tsx
-  "Add backup model": "Backup-Modell hinzufügen",
   "Move down": "Nach unten",
   "Move up": "Nach oben",
   "Tried in order if the active model fails.":
     "Werden der Reihe nach versucht, wenn das aktive Modell ausfällt.",
-  "Backup models": "Backup-Modelle",
   "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
   "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
   "Space changed. Reload Models to refresh backup models.":
@@ -840,7 +833,6 @@ export const DE_MESSAGES: Record<string, string> = {
     "Der Space wurde gewechselt. Lade Modelle neu, bevor du Backups speicherst.",
   "A sign-in page opened — enter this code there:":
     "Eine Anmeldeseite wurde geöffnet — gib dort diesen Code ein:",
-  "All providers": "Alle Anbieter",
   Copied: "Kopiert",
   "Copy code": "Code kopieren",
   "Could not disconnect this provider": "Anbieter konnte nicht getrennt werden",

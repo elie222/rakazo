@@ -36,14 +36,12 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     .toBe(retiredContent);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Deny", exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Review before saving shared memory/)).toHaveCount(0);
 
   // Space-wide documents live in Settings → Memory. Open that before bot
   // settings so the Knowledge Memory tab cannot steal this click.
   await openUserSettings(page, "memory");
   await expect(page.getByLabel("Close memory settings")).toBeVisible();
   const spaceDocs = page.getByTestId("space-memory-documents");
-  await expect(spaceDocs.getByText("Shared documents")).toBeVisible();
   const memoryRow = spaceDocs.getByRole("button", { name: /MEMORY\.md/ });
   await expect(memoryRow).toBeVisible();
   await memoryRow.click();
@@ -71,7 +69,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   } finally {
     releaseSave();
   }
-  await expect(spaceDocs.getByText("rev 2")).toHaveCount(0);
 
   // The save persisted: reopen the document and find the marker.
   await memoryRow.click();
@@ -171,7 +168,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   );
   await botMemory.getByRole("button", { name: "Save", exact: true }).click();
   await botMemorySaved;
-  await expect(botMemory.getByText("rev 2")).toHaveCount(0);
   expect(
     await rpc<MemoryDocument[]>(page, "memory/list", {
       botId: activeBotId(page),

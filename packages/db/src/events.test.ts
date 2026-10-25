@@ -26,7 +26,7 @@ import {
   sendUserMessage,
   settleReleasedTakeoverCards,
 } from "./events.js";
-import { RunHistoryWriteError } from "./messages.js";
+import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import { installSecurityEventStore } from "./security-events.js";
 
 class TestFanout implements RealtimeFanout {
@@ -151,6 +151,125 @@ describe("finalizeRun", () => {
       });
     },
   );
+
+  it("saves the reply a failure cut short before the error, as no answer to steering", async () => {
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({ status: "failed", startedAt: null })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 1, nextMessageSeq: 5 })) },
+      secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { type: string } }) => ({
+          ...data,
+          threadId: "thread-1",
+          seq: 0,
+          createdAt: new Date(),
+        })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        findMany: vi.fn(async () => []),
+      },
+      steeringMessage: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
+      message: {
+        findFirst: vi.fn(async () => null),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          ...data,
+          id: "message-partial",
+        })),
+      },
+      bot: { update: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const partialReply = [{ kind: "text" as const, text: "Part one. Part tw" }];
+
+    await finalizeRun(prisma, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      runId: "run-1",
+      taskId: "task-1",
+      attemptId: "attempt-1",
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      outcome: "failed",
+      error: "terminated",
+      partialReply,
+    });
+
+    expect(tx.message.create).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        role: "bot",
+        blocks: partialReply,
+        runId: "run-1",
+        clientNonce: partialReplyClientNonce("run-1"),
+      }),
+    });
+    expect(tx.event.create.mock.calls.map(([{ data }]) => data.type)).toEqual([
+      "thread.message.created",
+      "run.failed",
+    ]);
+    // Steering is settled before the kept reply exists, so the reply cannot count as its answer.
+    expect(tx.message.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.message.create.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("saves no message for a failure without a partial reply", async () => {
+    const create = vi.fn();
+    const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findUnique: vi.fn(async () => ({ status: "failed", startedAt: null })),
+        findUniqueOrThrow: vi.fn(async () => ({ sourceMessage: null })),
+        findFirst: vi.fn(async () => null),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 1 })) },
+      secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      event: {
+        create: vi.fn(async () => ({ threadId: "thread-1", seq: 0 })),
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
+      steeringMessage: {
+        findMany: vi.fn(async () => []),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
+      message: { findFirst: vi.fn(async () => null), create },
+      bot: { update: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await finalizeRun(prisma, {
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      runId: "run-1",
+      taskId: "task-1",
+      attemptId: "attempt-1",
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      outcome: "failed",
+      error: "terminated",
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
 
   it("resumes a held messaging inbound as a messaging run", async () => {
     const tx = {

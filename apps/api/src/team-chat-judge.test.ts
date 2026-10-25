@@ -1,10 +1,17 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { withMainRole } from "../../../packages/adapters/src/testing/model-roles.js";
 import {
-  ModelTeamChatEngagementJudge,
+  ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
   renderTeamChatEngagementPrompt,
 } from "./team-chat-judge.js";
+
+class ModelTeamChatEngagementJudge extends Judge {
+  constructor(deps: ConstructorParameters<typeof Judge>[0]) {
+    super({ ...deps, prisma: withMainRole(deps.prisma) });
+  }
+}
 
 describe("team chat engagement judge", () => {
   it("renders untrusted messages without treating them as instructions", () => {

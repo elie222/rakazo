@@ -11,9 +11,11 @@ import { Alert, AppState, Linking, ScrollView } from "react-native";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { useSideInsets } from "../../lib/side-insets";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 export default function BillingScreen() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const router = useRouter();
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -70,7 +72,7 @@ export default function BillingScreen() {
     status?.monthlyAmountCents && !["none", "canceled", "incomplete"].includes(status.state),
   );
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={sideInsets} contentInsetAdjustmentBehavior="automatic">
       <SettingsGroup label={t("Credits")}>
         <SettingsRow
           title={t("Available credits")}

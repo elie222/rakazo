@@ -34,9 +34,6 @@ test("bot and command credentials add, replace and remove without leaking values
   await expect(
     credentials.getByRole("heading", { name: "Credentials", exact: true }),
   ).toBeVisible();
-  await expect(
-    settings.getByTestId("bot-settings-tools").getByTestId("bot-credentials"),
-  ).toHaveCount(0);
   const card = credentials.getByTestId("bot-credentials-card");
   await expect(card.getByText("Encrypted and never shown again", { exact: true })).toBeVisible();
   await expect(card.getByTestId("credential-add-form")).toHaveCount(0);

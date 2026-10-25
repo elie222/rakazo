@@ -50,6 +50,7 @@ function deferredSave() {
   return { promise, resolve, reject };
 }
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./bot-voices", () => ({
   voiceLabel: (voice: { language: string; name: string }) => `${voice.language} · ${voice.name}`,
   deviceVoices: mocks.deviceVoices,

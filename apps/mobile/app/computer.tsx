@@ -49,18 +49,23 @@ import {
   NATIVE_COMPUTER_KEYBOARD_BOOT,
 } from "../lib/computer-keyboard";
 import { createComputerRefresh } from "../lib/computer-refresh";
+import { tabletopLayout } from "../lib/fold-layout";
+import { useFoldRegions } from "../lib/fold-regions";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
-import { holdFreeRotation } from "../lib/orientation";
+import { useSideInsets } from "../lib/side-insets";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { computerBootErrorDetail, errorText } from "../lib/user-error";
 
 export default function Computer() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const navigation = useNavigation();
-  const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
+  const windowSize = useWindowDimensions();
+  const stacked = stacksAtTextScale(windowSize.fontScale);
+  const folds = useFoldRegions();
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const name = displayName(nameParam, t("Bot"));
   const foreground = useAppForeground();
@@ -93,6 +98,8 @@ export default function Computer() {
   useEffect(() => setScreenError(null), [embeddedScreenUrl]);
 
   const hasControl = computer?.controlHolder === "user" && computer.controlBotId === botId;
+  // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
+  const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =
     computerOpen && computer?.state === "running" && Boolean(embeddedScreenUrl) && !screenError;
   const loadedScreenUrl = nextLoadedScreenUrl(
@@ -272,9 +279,6 @@ export default function Computer() {
     return () => subscription.remove();
   }, [computerOpen, reloadScreen]);
 
-  // Let the full-screen desktop rotate to landscape; phone-sized windows elsewhere stay portrait.
-  useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
-
   useEffect(() => {
     if (!botId || !foreground || computer?.state !== "running") return;
     // A refused heartbeat (403, 404, 426...) stops until the computer's state changes.
@@ -350,6 +354,14 @@ export default function Computer() {
     }
   }
 
+  const keyboardBar = hasControl ? (
+    <ComputerKeyboardBar
+      active={computerOpen && !releasing}
+      onCommand={(command) => {
+        injectKeyboardCommands(keyboardGate.current.bridge.push(command));
+      }}
+    />
+  ) : null;
   const placeholder =
     screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
@@ -360,7 +372,7 @@ export default function Computer() {
     // The full window's Modal is a child of this scroll view. A tap there, on Close or on the
     // native keyboard bar, must never just dismiss the computer keyboard; only the bar closes it.
     <ScrollView
-      style={{ flex: 1, backgroundColor: tokens.background }}
+      style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
       contentContainerStyle={{ padding: 24 }}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="always"
@@ -503,6 +515,7 @@ export default function Computer() {
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <KeyboardAvoidingView
             behavior="height"
+            enabled={!tabletop}
             style={{ flex: 1, backgroundColor: tokens.background }}
           >
             <SafeAreaView
@@ -614,14 +627,19 @@ export default function Computer() {
                 </View>
               )}
             </View>
-            {hasControl ? (
-              <ComputerKeyboardBar
-                active={computerOpen && !releasing}
-                onCommand={(command) => {
-                  injectKeyboardCommands(keyboardGate.current.bridge.push(command));
-                }}
-              />
-            ) : null}
+            {tabletop ? (
+              // A fixed lower half, so the keyboard lifts the bar without pushing the desktop.
+              <View style={{ height: windowSize.height - tabletop.top, paddingTop: tabletop.gap }}>
+                <KeyboardAvoidingView
+                  behavior="height"
+                  style={{ flex: 1, justifyContent: "flex-end" }}
+                >
+                  {keyboardBar}
+                </KeyboardAvoidingView>
+              </View>
+            ) : (
+              keyboardBar
+            )}
           </KeyboardAvoidingView>
         </SafeAreaProvider>
       </Modal>

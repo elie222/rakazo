@@ -92,6 +92,64 @@ test("live page helper preserves identity, masks passwords, and reports partial 
     await page.goto("http://insecure.test/");
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
     expect(await command("snapshot")).toMatchObject({ ok: true, title: "Insecure fixture" });
+
+    // Saved passwords go only into password fields. A site can still reveal them normally.
+    await page.route("https://login.example.test/", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: `<title>Sign in</title><input aria-label="Email">
+          <input id="password" aria-label="Password" type="password">
+          <button onclick="const field = document.getElementById('password'); field.type = 'text';
+            requestAnimationFrame(() => { window.drawn = field.value; })">Show</button>`,
+      }),
+    );
+    await page.goto("https://login.example.test/");
+    const login = {
+      text: "fake-test-password",
+      origin: "https://login.example.test",
+      field: "password",
+    };
+    const signIn = await command("snapshot");
+    const refused = await command("act", {
+      actions: [{ kind: "fill", ref: ref(signIn, "Email"), ...login }],
+    });
+    expect(refused).toEqual({
+      ok: false,
+      completed: 0,
+      uncertain: false,
+      error: "A saved password can only be typed into a password field.",
+    });
+    await expect(page.getByLabel("Email")).toHaveValue("");
+    const filled = await command("act", {
+      actions: [
+        {
+          kind: "fill",
+          ref: ref(await command("snapshot"), "Password"),
+          ...login,
+        },
+      ],
+    });
+    expect(filled).toMatchObject({ ok: true, completed: 1 });
+    await expect(page.locator("#password")).toHaveValue(login.text);
+    const shown = await command("act", {
+      actions: [{ kind: "click", ref: ref(filled, "Show") }],
+    });
+    expect(shown).toMatchObject({ ok: true, completed: 1 });
+    await expect
+      .poll(() => page.evaluate(() => (window as { drawn?: string }).drawn))
+      .toBe(login.text);
+    await expect(page.locator("#password")).toHaveAttribute("type", "text");
+    await expect(page.locator("#password")).toHaveValue(login.text);
+    expect(JSON.stringify([refused, filled, shown])).not.toContain(login.text);
+    await page.goto(`http://127.0.0.1:${address.port}`);
+    const elsewhere = await command("act", {
+      actions: [{ kind: "fill", ref: ref(await command("snapshot"), "Name"), ...login }],
+    });
+    expect(elsewhere).toMatchObject({ ok: false, completed: 0, uncertain: false });
+    expect(elsewhere.error).toMatch(
+      /^Website logins can only be filled on HTTPS\. Open the saved site/,
+    );
+    expect(elsewhere).not.toHaveProperty("fallback");
     await page.goto(`http://127.0.0.1:${address.port}`);
     const other = await context.newPage();
     await other.setContent("<title>Other tab</title><button>Other action</button>");

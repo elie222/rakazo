@@ -586,7 +586,7 @@ export function ComputerSettingsPanel({
       data-testid="computers-setup-settings"
       className="rounded-xl border border-border px-4 py-4"
     >
-      <h3 className="text-[15px] font-medium text-foreground">
+      <h3 className="text-heading3 font-medium text-foreground">
         <Trans>Computers</Trans>
       </h3>
       <ComputersUnavailableHint

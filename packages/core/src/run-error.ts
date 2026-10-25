@@ -29,6 +29,41 @@ export function isModelRequiredSendError(error: unknown): boolean {
   return typeof message === "string" && message.trim() === MODEL_REQUIRED_SEND_ERROR;
 }
 
+/** What the API itself answers for an unexpected failure. */
+const INTERNAL_RUN_ERROR = "Internal server error";
+// A database client error quotes the query, the server file that ran it and a source excerpt;
+// a lost or refused database connection names the database host or the pool.
+const DATABASE_ERROR =
+  /Invalid `[^`]*` invocation|Transaction API error|Transaction already closed|\b(?:Prisma\w*|DriverAdapter)Error\b|\bDatabaseNotReachable\b|Can't reach database server|timeout exceeded when trying to connect|^Connection terminated(?: unexpectedly| due to connection timeout)?\.?$/m;
+// An indented "at …" line that ends in a source location, as a JavaScript stack frame does.
+const STACK_FRAME = /^\s+at\s.*(?::\d+:\d+\)?|\((?:<anonymous>|native|index \d+)\))\s*$/;
+// A file on the server, never the path part of a web URL: no word character, dot or slash
+// before it.
+const SERVER_FILE_PATH =
+  /file:\/\/\S+|(?<![\w.:/-])\/(?:[\w.@+-]+\/)+[\w@+-]+\.[a-z]{1,5}\b(?::\d+){0,2}/gi;
+
+/**
+ * The run error saved for the user's Details view and failure push. Provider messages pass
+ * through; a server fault loses its stack frames and file paths, and a database error says
+ * nothing of the query.
+ */
+export function userRunError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    (error instanceof Error && /^(?:Prisma|DriverAdapter)/.test(error.name)) ||
+    DATABASE_ERROR.test(message)
+  ) {
+    return INTERNAL_RUN_ERROR;
+  }
+  const cleaned = message
+    .split("\n")
+    .filter((line) => !STACK_FRAME.test(line))
+    .join("\n")
+    .replace(SERVER_FILE_PATH, "[path]")
+    .trim();
+  return cleaned || INTERNAL_RUN_ERROR;
+}
+
 const MODEL_OUTPUT_RUN_ERRORS = new Set([
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   APPROVED_ACTION_NOT_RUN_ERROR,

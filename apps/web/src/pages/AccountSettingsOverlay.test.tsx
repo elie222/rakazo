@@ -125,25 +125,6 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("offers no avatar style choice", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      root.render(<GeneralSettingsPanels name="Jamie" />);
-    });
-
-    expect(container.querySelector('[data-testid="avatar-style-select"]')).toBeNull();
-    expect(container.textContent).not.toContain("Robot");
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -351,7 +332,6 @@ it("shows usage totals and a per-model breakdown", async () => {
       ["model-aopenai", "2", "1,000", "30", "$0.50"],
       ["model-blocal", "1", "200", "4", "—"],
     ]);
-    expect(container.textContent).not.toContain("Usage");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

@@ -24,8 +24,13 @@ const INTERACTIVE_SELECTOR = [
   "[contenteditable='true']",
 ].join(",");
 
-/** Saved logins are typed only into these input types. Textareas stay out: a username is an input. */
-const LOGIN_FILL_INPUT_TYPES = new Set(["text", "email", "password", "tel"]);
+const REOPEN_SAVED_SITE = "Open the saved site with browser_navigate, then fill again.";
+
+/** Saved usernames are typed only into these input types. Textareas stay out: a username is an input. */
+const USERNAME_INPUT_TYPES = new Set(["text", "email", "tel"]);
+
+/** A saved-login fill declined before the page changed; reported as settled, not uncertain. */
+class FillRefused extends Error {}
 
 type DomWindow = JSDOM["window"];
 type DomElement = InstanceType<DomWindow["Element"]>;
@@ -104,7 +109,9 @@ export class PageBrowserSession {
           tree: snap.tree,
           elements: snap.elements,
           error: error instanceof Error ? error.message : String(error),
-          fallback: "computer_act",
+          ...(error instanceof FillRefused
+            ? { uncertain: false }
+            : { fallback: "computer_act" as const }),
         };
       }
       completed += 1;
@@ -162,19 +169,25 @@ export class PageBrowserSession {
         try {
           saved = new URL(action.origin);
         } catch {
-          throw new Error("Website logins can only be filled on HTTPS.");
+          throw new FillRefused(`Website logins can only be filled on HTTPS. ${REOPEN_SAVED_SITE}`);
         }
         // Private-LAN HTTP never qualifies, even when the page origin matches.
         if (saved.protocol !== "https:" || page.protocol !== "https:") {
-          throw new Error("Website logins can only be filled on HTTPS.");
+          throw new FillRefused(`Website logins can only be filled on HTTPS. ${REOPEN_SAVED_SITE}`);
         }
         if (page.origin !== saved.origin) {
-          throw new Error("The page is not on the site this login was saved for.");
+          throw new FillRefused(
+            `The page is not on the site this login was saved for. ${REOPEN_SAVED_SITE}`,
+          );
         }
         const inputType = el instanceof win.HTMLInputElement ? el.type : "";
-        if (!LOGIN_FILL_INPUT_TYPES.has(inputType)) {
-          throw new Error(
-            "A saved login can only be typed into a text, email, password, or telephone field.",
+        // A password goes only into a password field, which never displays it.
+        if (action.field !== "username" && inputType !== "password") {
+          throw new FillRefused("A saved password can only be typed into a password field.");
+        }
+        if (action.field === "username" && !USERNAME_INPUT_TYPES.has(inputType)) {
+          throw new FillRefused(
+            "A saved username can only be typed into a text, email, or telephone field.",
           );
         }
       }

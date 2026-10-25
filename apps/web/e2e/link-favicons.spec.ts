@@ -30,7 +30,6 @@ test("links in a bot reply show the site icon the API resolved", async ({ page }
   await signup(page, `link-favicons-${Date.now()}@rakazo.test`, "password12", "Link Icons");
   await completeOnboarding(page);
   const composer = page.getByRole("combobox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
   await composer.fill(reply);
   await composer.press("Enter");
   const bubble = page.getByTestId("message-bot-bubble").last();

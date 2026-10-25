@@ -3,6 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { selectConfiguredModel } from "./model-roles.js";
 import {
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
@@ -15,7 +16,6 @@ import {
   readStoredModelAuth,
   routineRunModelPin,
   runModelChoice,
-  selectConfiguredModel,
   selectDefaultCredentialId,
   validateBotModelChange,
   validateConnectedModelChoice,
@@ -25,13 +25,7 @@ import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
 import { providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
 
-type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
-
-function credential(
-  provider: string,
-  defaultModel: string | null,
-  thinkingLevel: string | null = null,
-) {
+function credential(provider: string, defaultModel: string | null) {
   return {
     id: `credential-${provider}`,
     userId: "user-1",
@@ -42,174 +36,11 @@ function credential(
     updatedAt: new Date(0),
     isDefault: false,
     defaultModel,
-    thinkingLevel,
+    thinkingLevel: null,
   };
 }
 
-const spaceCredential = credential("space-provider", "space-model");
-const overrideCredential = credential("bot-provider", "stored-model");
 const bot = { modelProvider: "bot-provider", modelId: "bot-model", thinkingLevel: "high" };
-const defaults: SelectionInput = {
-  override: null,
-  overrideCredential: null,
-  defaultCredential: spaceCredential,
-  settings: { defaultModelProvider: "settings-provider", defaultModelId: "settings-model" },
-  deployment: { provider: "deployment-provider", model: "deployment-model" },
-};
-
-describe("configured model selection", () => {
-  it.each<{
-    name: string;
-    input: Partial<SelectionInput>;
-    expected: ReturnType<typeof selectConfiguredModel>;
-  }>([
-    {
-      name: "uses the bot's model with its own credential",
-      input: { override: bot, overrideCredential },
-      expected: {
-        provider: "bot-provider",
-        id: "bot-model",
-        credential: overrideCredential,
-        thinkingLevel: "high",
-      },
-    },
-    {
-      name: "drops override thinking when its provider has no credential",
-      input: { override: bot },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: spaceCredential,
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "keeps bot thinking with the Space default",
-      input: { override: { modelProvider: null, modelId: null, thinkingLevel: "high" } },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: spaceCredential,
-        thinkingLevel: "high",
-      },
-    },
-    {
-      name: "does not select an incomplete bot override",
-      input: { override: { ...bot, modelId: null }, overrideCredential },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: spaceCredential,
-        thinkingLevel: "high",
-      },
-    },
-    {
-      name: "uses settings before deployment defaults without inventing a credential",
-      input: { defaultCredential: null },
-      expected: {
-        provider: "settings-provider",
-        id: "settings-model",
-        credential: null,
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "uses deployment defaults when no stored configuration exists",
-      input: { defaultCredential: null, settings: null },
-      expected: {
-        provider: "deployment-provider",
-        id: "deployment-model",
-        credential: null,
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "leaves missing configuration for the caller's runtime fallback or failure path",
-      input: { defaultCredential: null, settings: null, deployment: null },
-      expected: {
-        provider: undefined,
-        id: null,
-        credential: null,
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "skips a literal null model id and uses the provider catalog instead",
-      input: {
-        defaultCredential: credential("anthropic", "null"),
-        settings: null,
-        deployment: null,
-      },
-      expected: {
-        provider: "anthropic",
-        id: defaultCatalogModelId("anthropic"),
-        credential: credential("anthropic", "null"),
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "applies the preference thinking level to the space default model",
-      input: { defaultCredential: credential("space-provider", "space-model", "low") },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: credential("space-provider", "space-model", "low"),
-        thinkingLevel: "low",
-      },
-    },
-    {
-      name: "bot override thinking beats the preference level",
-      input: {
-        override: { modelProvider: null, modelId: null, thinkingLevel: "high" },
-        defaultCredential: credential("space-provider", "space-model", "low"),
-      },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: credential("space-provider", "space-model", "low"),
-        thinkingLevel: "high",
-      },
-    },
-    {
-      name: "does not leak a preference level onto a different override model",
-      input: {
-        override: { modelProvider: "bot-provider", modelId: "other-model", thinkingLevel: null },
-        overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
-      },
-      expected: {
-        provider: "bot-provider",
-        id: "other-model",
-        credential: credential("bot-provider", "stored-model", "xhigh"),
-        thinkingLevel: null,
-      },
-    },
-    {
-      name: "does not treat a sentinel bot override as a selected model",
-      input: { override: { ...bot, modelId: "null" }, overrideCredential },
-      expected: {
-        provider: "space-provider",
-        id: "space-model",
-        credential: spaceCredential,
-        thinkingLevel: "high",
-      },
-    },
-    {
-      name: "inherits the preference level when the override names its model",
-      input: {
-        override: { modelProvider: "bot-provider", modelId: "stored-model", thinkingLevel: null },
-        overrideCredential: credential("bot-provider", "stored-model", "xhigh"),
-      },
-      expected: {
-        provider: "bot-provider",
-        id: "stored-model",
-        credential: credential("bot-provider", "stored-model", "xhigh"),
-        thinkingLevel: "xhigh",
-      },
-    },
-  ])("$name", ({ input, expected }) => {
-    expect(selectConfiguredModel({ ...defaults, ...input })).toEqual(expected);
-  });
-});
 
 describe("routine model pin", () => {
   const routine = {
@@ -241,7 +72,8 @@ describe("routine model pin", () => {
     expect(choice).toEqual(routine);
     expect(
       selectConfiguredModel({
-        ...defaults,
+        main: null,
+        defaults: {},
         override: choice,
         overrideCredential: credential("routine-provider", "stored-model"),
       }),
@@ -1550,7 +1382,7 @@ describe("live-only catalog validation", () => {
     const prisma = {
       bot: { findMany: savedBots },
       routine: { findMany: async () => [] },
-      spaceBackupModel: { findMany: async () => [] },
+      spaceModelRoleChoice: { findMany: async () => [] },
       deploymentSettings: { findFirst: async () => null },
       spaceModelPreference: { findFirst: async () => null, findMany: async () => [] },
       userModelCredential: { findMany: async () => [selected], findFirst: async () => selected },

@@ -215,6 +215,81 @@ export async function openUserSettings(
   return settings;
 }
 
+/** The connection dialog for a provider, titled "Connect X" until it is connected and "X" after. */
+export function modelConnectionDialog(page: Page, provider: string) {
+  const name = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return page
+    .getByRole("dialog")
+    .filter({ has: page.getByRole("heading", { name: new RegExp(`^(Connect )?${name}$`) }) });
+}
+
+/** A picker option that connects a provider, listed after the connected models with a "Connect" shortcut. */
+export function modelConnectOption(page: Page, provider: string) {
+  return page
+    .locator('[role="option"][data-value^="connect:"]')
+    .filter({ has: page.getByText(provider, { exact: true }) });
+}
+
+/**
+ * Opens a model list's picker on the Models settings page and chooses a provider that still
+ * needs connecting. The "main" slot is the list's first row, so connecting there sets the
+ * role's primary model; "fallback" appends through "Add fallback".
+ */
+export async function openModelConnection(
+  page: Page,
+  provider: string,
+  {
+    slot = "main",
+    role = "main",
+    search = provider,
+  }: { slot?: "main" | "fallback"; role?: "main" | "approval"; search?: string } = {},
+) {
+  const section = page.getByTestId(`model-role-${role}`);
+  await (slot === "main"
+    ? section.getByRole("button", { name: /^Change / }).first()
+    : section.getByRole("button", { name: "Add fallback", exact: true })
+  ).click();
+  await page.getByRole("combobox", { name: "Search models" }).fill(search);
+  await modelConnectOption(page, provider).click();
+  const dialog = modelConnectionDialog(page, provider);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/**
+ * After a connection the slot's picker reopens on that provider's models. Picks `model`
+ * there, or closes the picker when the test keeps whatever the connection placed.
+ */
+export async function pickReopenedModel(page: Page, model?: string) {
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeVisible();
+  if (model === undefined) await search.press("Escape");
+  else
+    await page
+      .getByRole("listbox", { name: "Model options" })
+      .getByRole("option", { name: model, exact: true })
+      .first()
+      .click();
+  await expect(search).toBeHidden();
+}
+
+/** Opens "Manage X" from a model row's options menu and returns the connection dialog. */
+export async function manageModelConnection(
+  page: Page,
+  provider: string,
+  { role = "main", row = 1 }: { role?: "main" | "approval"; row?: number } = {},
+) {
+  await page
+    .getByTestId(`model-role-${role}`)
+    .getByTestId(`model-role-row-${row}`)
+    .getByRole("button", { name: / options$/ })
+    .click();
+  await page.getByRole("menuitem", { name: `Manage ${provider}`, exact: true }).click();
+  const dialog = modelConnectionDialog(page, provider);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 /** Create a named bot via RPC for test setup (skips the + picker). */
 export async function createNamedBot(
   page: Page,

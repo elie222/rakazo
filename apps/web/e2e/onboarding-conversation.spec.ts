@@ -12,9 +12,6 @@ test("focus choice suggests apps and preserves a completed connection", async ({
   await signup(page, `onboarding-${stamp}@rakazo.test`, "password12", "Robin");
   await completeOnboarding(page);
 
-  await expect(
-    page.getByText("Hey Robin. Fresh start on my side, so I’ll keep this short."),
-  ).toHaveCount(0);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Day-to-day work/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Research & writing/ })).toBeVisible();

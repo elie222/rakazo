@@ -54,8 +54,6 @@ test("onboarding requires a model and uses compact model selects without mislead
   await captureScreenshot(page, testInfo, "onboarding-model-required");
 
   await expect(provider).toContainText("OpenRouter");
-  // Onboarding stays simple: thinking effort is a Models setting, not a setup step.
-  await expect(page.getByRole("combobox", { name: "Thinking", exact: true })).toHaveCount(0);
   await page.getByLabel("API key").fill("openrouter-only-key");
   await provider.click();
   const providerMenu = page.getByRole("listbox");

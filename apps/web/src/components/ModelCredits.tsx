@@ -118,7 +118,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
       >
         <Trans>Log out</Trans>
       </Button>
-      <h1 className="text-3xl font-medium tracking-tight">
+      <h1 className="text-heading1 font-medium">
         <Trans>Choose how to use Rakazo</Trans>
       </h1>
       <div className="grid gap-4 min-[480px]:grid-cols-2">

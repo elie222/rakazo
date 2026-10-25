@@ -472,14 +472,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const foreground = useAppForeground();
   const router = useRouter();
   // Beside the chat list on a wide window, the chat has only the width the list leaves.
-  const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
+  const { split, inboxHidden, inboxShown, foldActive, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
   const headerClearance = threadHeaderClearance(headerHeight);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
-    left: split && !inboxHidden ? 0 : insets.left,
+    left: inboxShown ? 0 : insets.left,
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
@@ -1032,7 +1032,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             </Pressable>
           </View>
         ),
-      ...(split
+      ...(split && !foldActive
         ? {
             headerBackVisible: false,
             ...(iosAtLeast(26)
@@ -1063,9 +1063,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               </Pressable>
             ),
           }
-        : // Folding back takes the list away, so the chat gets its back button again.
+        : // Folding back takes the list away, so the chat gets its back button again. Folded like
+          // a book, the list stays beside the chat, so it needs neither.
           {
-            headerBackVisible: true,
+            headerBackVisible: !split,
             headerLeft: undefined,
             ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
           }),
@@ -1075,6 +1076,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     });
   }, [
     split,
+    foldActive,
     inboxHidden,
     readOnly,
     restoring,

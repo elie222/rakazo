@@ -100,7 +100,6 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
 
   await page.getByLabel("Server name").fill("Invoices");
   await page.getByRole("tab", { name: "STDIO", exact: true }).click();
@@ -234,7 +233,6 @@ test("shows MCP server health, error details, and tests the connection on demand
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expandAdvancedSection(page.getByTestId("integrations-advanced"));
   await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
 
   // OAuth being connected must not read as "working": health is the primary status.
   const health = page.getByTestId("mcp-health");

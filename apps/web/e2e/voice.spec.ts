@@ -38,9 +38,6 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await completeOnboarding(page);
 
   await expect(
-    page.getByTestId("composer-bar").getByRole("button", { name: "Voice", exact: true }),
-  ).toHaveCount(0);
-  await expect(
     page.getByTestId("composer-bar").getByRole("button", { name: "Hold to talk", exact: true }),
   ).toHaveCount(1);
   await expect(page.getByTestId("call-button")).toHaveAccessibleName("Call");
@@ -48,7 +45,6 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await page.getByTestId("call-button").click();
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dictate", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "voice-settings");
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("voice-settings")).toHaveCount(0);

@@ -132,6 +132,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "UsageRecord",
   "ScratchpadItem",
   "ActionApprovalRule",
+  "SpaceModelRoleChoice",
   "SecurityEvent",
 ]);
 

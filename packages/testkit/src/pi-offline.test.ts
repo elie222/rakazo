@@ -554,7 +554,11 @@ describe("real Pi against an offline model HTTP endpoint", () => {
 
   it("rejects an interrupted SSE response without emitting successful completion", async () => {
     const server = await startModelEmulator({
-      steps: [{ expect() {}, response: { type: "disconnect", text: "Working" } }],
+      // The cut reply is continued once; a continuation that is cut too fails the run.
+      steps: [
+        { expect() {}, response: { type: "disconnect", text: "Working" } },
+        { expect() {}, response: { type: "disconnect", text: " on it" } },
+      ],
     });
     cleanups.push(() => server.close());
     const events: AgentRuntimeEvent[] = [];

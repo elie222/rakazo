@@ -21,7 +21,7 @@ export function connectedBackupOptions(
   const options: ConnectedBackupOption[] = [];
   for (const entry of catalog) {
     if (
-      !connected.has(canonicalPiProviderId(entry.provider)) ||
+      (!entry.managed && !connected.has(canonicalPiProviderId(entry.provider))) ||
       entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
       entry.placeholder
     ) {

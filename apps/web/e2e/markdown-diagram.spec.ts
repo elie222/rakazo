@@ -80,17 +80,17 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
 
   // Diagram text is drawn in the theme's foreground token.
-  expect(await diagramMarkup(page)).toContain("fill:#FFFFFF");
+  expect(await diagramMarkup(page)).toContain("fill:#F5F5F5");
   await page.goto(`${fixture}?theme=light`);
   await expectDrawn(page);
-  expect(await diagramMarkup(page)).toContain("fill:#000000");
+  expect(await diagramMarkup(page)).toContain("fill:#1C1C1C");
   await captureScreenshot(page, testInfo, "markdown-diagram-light");
 
   // Switching theme with the message open redraws it.
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
   });
-  await expect.poll(() => diagramMarkup(page)).toContain("fill:#FFFFFF");
+  await expect.poll(() => diagramMarkup(page)).toContain("fill:#F5F5F5");
 });
 
 test("a wide diagram scrolls on a phone instead of shrinking its text away", async ({

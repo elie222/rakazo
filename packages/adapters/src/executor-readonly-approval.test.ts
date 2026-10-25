@@ -5,6 +5,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import type { ModelRoleSettings } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -64,6 +65,9 @@ function fixture({
   readOnly = true,
   rules = [] as ActionApprovalRule[],
   autoReview = false,
+  approvalRole,
+  nativeReview = false,
+  checkerConnected = true,
   skipApprovals = false,
   trigger = "user",
   secrets = [] as string[],
@@ -109,6 +113,9 @@ function fixture({
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
   autoReview?: boolean;
+  approvalRole?: ModelRoleSettings;
+  nativeReview?: boolean;
+  checkerConnected?: boolean;
   skipApprovals?: boolean;
   trigger?: string;
   secrets?: string[];
@@ -289,7 +296,34 @@ function fixture({
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: {
+      findFirst: vi.fn(async () =>
+        approvalRole && checkerConnected
+          ? {
+              id: "review-key",
+              userId: "user-1",
+              provider: "openrouter",
+              label: "Fixture",
+              secretId: "review-secret",
+              createdAt: new Date(0),
+              updatedAt: new Date(0),
+            }
+          : null,
+      ),
+    },
+    spaceModelRoleChoice: {
+      findMany: vi.fn(async () =>
+        approvalRole
+          ? [
+              ...(approvalRole.primary ? [{ ...approvalRole.primary, position: 0 }] : []),
+              ...approvalRole.backups.map((backup, index) => ({ ...backup, position: index + 1 })),
+            ]
+          : [],
+      ),
+    },
+    secret: { findFirst: vi.fn(async () => ({ id: "review-secret", ciphertext: "fake-cipher" })) },
+    usageRecord: { createMany: vi.fn(async () => ({ count: 1 })) },
+    modelCreditEntry: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -428,11 +462,13 @@ function fixture({
     },
     jobs: { enqueue },
     secrets,
-    autoReview: autoReviewProvider,
+    autoReview: nativeReview ? undefined : autoReviewProvider,
+    secretStore: { load: async () => "fake-review-api-key" },
     shutdownSignal,
     web,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
+    prisma: transactionalPrisma,
     effects,
     web,
     fetchedUrls,
@@ -1913,4 +1949,155 @@ describe("Auto Review of new sites", () => {
       });
     });
   });
+});
+
+describe("selected approval decision model execution", () => {
+  it.each(["pass", "ask"] as const)(
+    "uses the shared connection and honors a %s without replacing the main model",
+    async (choice) => {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: "fake-decision-request",
+            model: "typesafe/jev-1.14",
+            answers: { decision: { type: "choice", choice, confidence: 0.99 } },
+            usage: { input_tokens: 50, output_tokens: 5, cost: 0.0000021 },
+          }),
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      try {
+        const f = fixture({
+          name: "demo_send_message",
+          readOnly: false,
+          autoReview: true,
+          nativeReview: true,
+          approvalRole: {
+            primary: { provider: "openrouter", modelId: "typesafe/jev-1.14" },
+            backups: [],
+          },
+        });
+        await f.run();
+        expect(fetchMock).toHaveBeenCalledWith(
+          "https://openrouter.ai/api/alpha/decisions",
+          expect.objectContaining({
+            headers: expect.objectContaining({ Authorization: "Bearer fake-review-api-key" }),
+          }),
+        );
+        expect(f.effects).toContainEqual(
+          expect.objectContaining({
+            reviewDecision: choice,
+            reviewModel: "openrouter/typesafe/jev-1.14",
+          }),
+        );
+        expect(f.prisma.usageRecord.createMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: [
+              expect.objectContaining({
+                operationId: "auto-review:run-1",
+                model: "typesafe/jev-1.14",
+                costUsd: 0.0000021,
+              }),
+            ],
+          }),
+        );
+        expect(f.execute).toHaveBeenCalledTimes(choice === "pass" ? 1 : 0);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+});
+
+it("tries a connected approval backup when the deployment checker is unavailable", async () => {
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "missing-provider");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "missing-model");
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        answers: { decision: { type: "choice", choice: "pass", confidence: 0.99 } },
+      }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      nativeReview: true,
+      approvalRole: {
+        primary: null,
+        backups: [{ provider: "openrouter", modelId: "typesafe/jev-1.14" }],
+      },
+    });
+    await f.run();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
+});
+
+it("asks instead of using deployment credentials after a selected approval connection disappears", async () => {
+  const fetchMock = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      nativeReview: true,
+      checkerConnected: false,
+      approvalRole: {
+        primary: { provider: "openrouter", modelId: "typesafe/jev-1.14" },
+        backups: [],
+      },
+    });
+    await f.run();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects).toContainEqual(expect.objectContaining({ reviewDecision: "error" }));
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("uses the OpenRouter environment key for a decision checker on another deployment provider", async () => {
+  vi.stubEnv("PI_DEFAULT_PROVIDER", "anthropic");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "openrouter");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "typesafe/jev-1.14");
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-environment-review-key");
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        answers: { decision: { type: "choice", choice: "pass", confidence: 0.99 } },
+      }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const f = fixture({
+      name: "demo_send_message",
+      readOnly: false,
+      autoReview: true,
+      nativeReview: true,
+      checkerConnected: false,
+    });
+    await f.run();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://openrouter.ai/api/alpha/decisions",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer fake-environment-review-key",
+        }),
+      }),
+    );
+    expect(f.execute).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  }
 });

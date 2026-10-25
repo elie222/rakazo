@@ -29,7 +29,7 @@ test("created bots appear as regular bots and reorder across their creator", asy
   const inset = (row: ReturnType<typeof rosterRow>) =>
     row.evaluate((element) => getComputedStyle(element).paddingInlineStart);
   expect(await inset(scout)).toEqual(await inset(chief));
-  await sidebar.getByPlaceholder("Search").hover();
+  await page.mouse.move(1, 1);
   await captureScreenshot(page, testInfo, "sidebar-created-bots");
 
   await page.reload();

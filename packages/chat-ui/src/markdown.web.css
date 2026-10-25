@@ -135,11 +135,11 @@
 .rk-chat-markdown code {
   border: 1px solid var(--border);
   border-radius: 0.35em;
-  background: var(--muted);
+  background: var(--secondary);
   color: var(--foreground);
   padding: 0.08em 0.32em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.88em;
+  font-family: var(--font-mono);
+  font-size: var(--text-body2);
   direction: ltr;
   unicode-bidi: isolate;
 }
@@ -159,7 +159,8 @@
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: 0.84em;
+  font-size: var(--text-body2);
+  line-height: var(--text-body2--line-height);
   white-space: pre;
 }
 
@@ -347,6 +348,11 @@ a.rk-chat-link .rk-chat-link-tile > svg {
 /* In a user bubble the link is the bubble's text colour, so its underline is what marks it. */
 a.rk-chat-link-in-bubble .rk-chat-link-label {
   text-decoration-color: currentColor;
+}
+
+/* The user bubble is filled with ink, so the fallback globe follows the bubble's text instead. */
+a.rk-chat-link-in-bubble .rk-chat-link-tile {
+  color: currentColor;
 }
 
 a.rk-chat-link:hover .rk-chat-link-label {

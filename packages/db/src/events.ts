@@ -38,6 +38,7 @@ import {
   assertRunCanWriteHistory,
   assertRunIsCancelled,
   createThreadMessageInTransaction,
+  partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
 import { deleteRunSecretsInTransaction } from "./run-secrets.js";
@@ -151,7 +152,12 @@ export type FinalizeRunInput = FinalizeRunBase &
         blocks: MessageBlock[];
         markUnread?: boolean;
       }
-    | { outcome: "failed"; error: string }
+    | {
+        outcome: "failed";
+        error: string;
+        /** Reply text the user saw streaming before the failure, kept as a bot message. */
+        partialReply?: MessageBlock[];
+      }
   );
 
 export interface PauseRunForInput {
@@ -1649,28 +1655,49 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
+    if (input.outcome === "failed") {
+      // Before the partial reply below is saved: a reply the failure cut short answers no
+      // steering, so the steering it was answering still gets a run of its own.
+      await discardAnsweredSteering(tx, input);
+      const { sourceMessage } = await tx.run.findUniqueOrThrow({
+        where: { id: input.runId },
+        select: { sourceMessage: { select: { seq: true } } },
+      });
+      // A continuation's source is the newest steering it was created for. Only newer
+      // messages justify another run after failure, even if setup failed before claiming.
+      await tx.steeringMessage.updateMany({
+        where: {
+          runId: input.runId,
+          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
+        },
+        data: { runId: null },
+      });
+    }
     let firstResponse = false;
-    if (input.outcome === "completed") {
-      const completedBlocks = completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now);
-      if (completedBlocks.length > 0) {
-        const message = await createThreadMessageInTransaction(tx, {
-          threadId: input.threadId,
-          role: "bot",
-          blocks: completedBlocks,
-          botId: input.botId,
-          runId: input.runId,
-          markUnread: input.markUnread,
-        });
-        const response = await appendEventInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: input.threadId,
-          botId: input.botId,
-          type: "thread.message.created",
-          runId: input.runId,
-          payload: { messageId: message.id, role: "bot", blocks: completedBlocks },
-        });
-        firstResponse = response.firstResponse;
-      }
+    const replyBlocks =
+      input.outcome === "completed"
+        ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
+        : (input.partialReply ?? []);
+    if (replyBlocks.length > 0) {
+      const message = await createThreadMessageInTransaction(tx, {
+        threadId: input.threadId,
+        role: "bot",
+        blocks: replyBlocks,
+        botId: input.botId,
+        runId: input.runId,
+        ...(input.outcome === "completed"
+          ? { markUnread: input.markUnread }
+          : { clientNonce: partialReplyClientNonce(input.runId) }),
+      });
+      const response = await appendEventInTransaction(tx, {
+        spaceId: input.spaceId,
+        threadId: input.threadId,
+        botId: input.botId,
+        type: "thread.message.created",
+        runId: input.runId,
+        payload: { messageId: message.id, role: "bot", blocks: replyBlocks },
+      });
+      firstResponse = response.firstResponse;
     }
     const lastEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -1692,21 +1719,6 @@ async function finalizeRunOnce(
       });
       await tx.steeringMessage.updateMany({
         where: { runId: input.runId },
-        data: { runId: null },
-      });
-    } else {
-      await discardAnsweredSteering(tx, input);
-      const { sourceMessage } = await tx.run.findUniqueOrThrow({
-        where: { id: input.runId },
-        select: { sourceMessage: { select: { seq: true } } },
-      });
-      // A continuation's source is the newest steering it was created for. Only newer
-      // messages justify another run after failure, even if setup failed before claiming.
-      await tx.steeringMessage.updateMany({
-        where: {
-          runId: input.runId,
-          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
-        },
         data: { runId: null },
       });
     }

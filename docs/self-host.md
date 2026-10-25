@@ -40,8 +40,17 @@ IRSA or EC2 instance role, opt in with `PI_DEFAULT_CREDENTIALS=host` and set
 `PI_DEFAULT_PROVIDER=amazon-bedrock`, `PI_DEFAULT_MODEL` and `AWS_REGION`. With an instance
 role, keep [restricted computer egress](#restricted-computer-egress) on so bot computers
 cannot read the role's credentials from the metadata endpoint.
-Auto Review uses that LLM checker by default. To use TypeSafe Jev instead, set
-`RAKAZO_AUTO_REVIEW_PROVIDER=jev` and `TYPESAFE_API_KEY`. Core still runs with neither.
+Auto Review is opt-in. In **Settings → Models → Approval model**, each user can select a model
+from an existing connection and add ordered backups, independently of their main model. Personal
+connections use their own credentials; hosted calls follow the same Rakazo credit rules as chat.
+Backups are tried only when a checker fails. An explicit ask, including an uncertain decision,
+still requires a person.
+
+The deployment checker remains the default when no approval model is selected. For OpenRouter
+Jev, set `RAKAZO_AUTO_REVIEW_PROVIDER=openrouter` and
+`RAKAZO_AUTO_REVIEW_MODEL=typesafe/jev-1.14`; it uses `OPENROUTER_API_KEY` and the Decisions API.
+TypeSafe direct remains available through `RAKAZO_AUTO_REVIEW_PROVIDER=jev` and
+`TYPESAFE_API_KEY`. Core runs without either hosted service.
 
 The example defaults to `edge` (main builds). Every publish is multi-arch (`amd64` + `arm64`), so
 arm64 hosts need no special tag. Do not assume `latest` is present until a stable release exists.
@@ -1944,16 +1953,18 @@ Plain `http://` is accepted only for a private IP, `localhost`, or a `.local` na
 Passkeys are on whenever `WEB_ORIGIN` is an HTTPS domain (or `localhost` in development); the
 relying party is that origin's host, so existing passkeys keep working only while `WEB_ORIGIN`
 stays on the same domain. They are off when password sign-in is disabled for SSO-only
-deployments. On web, a browser offers them where it has a platform authenticator; the macOS
-desktop app does not, so it hides them.
+deployments. On web, a browser offers them where it has a platform authenticator. The macOS
+desktop app uses the system passkey sheet, which only serves the domain the release is
+associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
 built for that domain (the app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
 time). To let a build use this server's passkeys, set:
 
 ```bash
-# iOS: <Apple Team ID>.<bundle id>, comma-separated. Served as /.well-known/apple-app-site-association.
-PASSKEY_APPLE_APP_IDS=ABCDE12345.com.rakazo.app
+# iOS and the macOS desktop app (dev.rakazo.desktop): <Apple Team ID>.<bundle id>, comma-separated.
+# Served as /.well-known/apple-app-site-association.
+PASSKEY_APPLE_APP_IDS=ABCDE12345.com.rakazo.app,ABCDE12345.dev.rakazo.desktop
 # Android: SHA-256 fingerprints of the app signing certificates, comma-separated.
 # Served as /.well-known/assetlinks.json and accepted as passkey origins.
 PASSKEY_ANDROID_CERT_SHA256=AA:BB:...:FF

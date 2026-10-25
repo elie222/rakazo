@@ -1,4 +1,4 @@
-import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import {
@@ -6,7 +6,7 @@ import {
   selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
-import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { modelCredentialDto } from "./model-connect.js";
@@ -25,7 +25,7 @@ import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
-type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
+export type ModelCredential = Awaited<ReturnType<typeof findModelCredential>>;
 
 export function isCatalogModelChoice(provider: string, modelId: string) {
   return [...listPiCatalog(), scriptedCatalogEntry].some(
@@ -812,50 +812,6 @@ export function pinnedModelCredentialError(
     return "Unknown model for that provider";
   }
   return undefined;
-}
-
-/** Select configuration without loading secrets or applying a runtime-specific fallback. */
-export function selectConfiguredModel(input: {
-  /** The bot's or the run's own model; null follows the space default. */
-  override: ModelChoice | null;
-  hostedProvider?: string;
-  overrideCredential: ModelCredential;
-  defaultCredential: ModelCredential;
-  settings: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
-  deployment: { provider: string; model: string } | null;
-}) {
-  const { override: bot, overrideCredential, defaultCredential, settings, deployment } = input;
-  const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
-  // The override provider, model and credential must win together.
-  const useOverride = Boolean(
-    hasOverride && (overrideCredential || bot?.modelProvider === input.hostedProvider),
-  );
-  const credential = useOverride ? overrideCredential : defaultCredential;
-  const id =
-    usableModelId(useOverride ? bot!.modelId : null) ??
-    usableModelId(credential?.defaultModel) ??
-    (credential ? defaultCatalogModelId(credential.provider) : null) ??
-    usableModelId(settings?.defaultModelId) ??
-    usableModelId(deployment?.model);
-  // A preference's thinking level is bound to its stored modelId, so it only applies
-  // when that model is the one being run.
-  const credentialThinkingLevel =
-    credential && id && credential.defaultModel === id ? credential.thinkingLevel : null;
-  return {
-    provider:
-      (useOverride ? bot!.modelProvider : null) ??
-      credential?.provider ??
-      settings?.defaultModelProvider ??
-      deployment?.provider,
-    id,
-    credential,
-    // Preserve bot thinking for the Space default; drop it for an unavailable override.
-    thinkingLevel:
-      hasOverride && !useOverride
-        ? null
-        : (((bot?.thinkingLevel ??
-            credentialThinkingLevel) as AgentRunRequest["model"]["thinkingLevel"]) ?? null),
-  };
 }
 
 /** A server key is available only to the funded organization and only for its configured provider. */

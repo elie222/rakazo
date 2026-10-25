@@ -1,6 +1,12 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openModelConnection,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 const probePath = "**/rpc/models/probeOpenAiCompatible";
 
@@ -34,10 +40,8 @@ for (const surface of ["settings", "onboarding"] as const) {
       if (surface === "settings") {
         await completeOnboarding(page);
         await openUserSettings(page, "models");
-        await page.getByPlaceholder("Search providers").fill("openai-compatible");
-        await page.getByRole("button", { name: /OpenAI-compatible/ }).click();
+        await openModelConnection(page, "OpenAI-compatible");
       } else {
-        await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
         await page.getByRole("combobox", { name: "Provider", exact: true }).click();
         await page.getByRole("option", { name: "OpenAI-compatible", exact: true }).click();
       }

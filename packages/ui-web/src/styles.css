@@ -6,6 +6,37 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Web type: the system font and a 14/20 base scale. Mobile sets its own type natively. */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  --text-caption: 11px;
+  --text-caption--line-height: 16px;
+  --text-caption--letter-spacing: 0.005em;
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-body2: 13px;
+  --text-body2--line-height: 18px;
+  --text-body1: 14px;
+  --text-body1--line-height: 20px;
+  --text-heading3: 17px;
+  --text-heading3--line-height: 24px;
+  --text-heading3--letter-spacing: -0.008em;
+  --text-heading2: 22px;
+  --text-heading2--line-height: 28px;
+  --text-heading2--letter-spacing: -0.012em;
+  --text-heading1: 26px;
+  --text-heading1--line-height: 32px;
+  --text-heading1--letter-spacing: -0.015em;
+}
+
+/* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
+:root[data-os="mac"] {
+  --font-weight-normal: 420;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-dialog: var(--dialog);
@@ -16,12 +47,15 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-disabled: var(--primary-disabled);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-chat-user: var(--chat-user);
   --color-chat-user-foreground: var(--chat-user-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-faint-foreground: var(--faint-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);

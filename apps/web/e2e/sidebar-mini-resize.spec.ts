@@ -34,6 +34,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await expect(handle).toHaveAttribute("aria-valuenow", String(preferredWidth));
   await captureScreenshot(page, testInfo, "sidebar-resized-expanded");
 
+  await sidebar.getByTestId("sidebar-search-trigger").click();
   await sidebar.getByRole("textbox", { name: "Search", exact: true }).fill("no roster matches");
   await expect(row).toHaveCount(0);
   await page.getByTestId("minimize-bots-sidebar").click();
@@ -51,6 +52,17 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await expect(page).toHaveURL(new RegExp(`/app/${bot.id}$`));
   await expect(row).toHaveAttribute("aria-current", "page");
   await expect(sidebar.locator("[data-roster-preview]")).toHaveCount(0);
+  await page.mouse.move(700, 450);
+  await row.hover();
+  const tooltip = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Research" });
+  await expect(tooltip).toBeVisible();
+  await expect
+    .poll(async () => {
+      const label = await tooltip.boundingBox();
+      const icon = await row.boundingBox();
+      return label && icon ? label.x >= icon.x + icon.width : false;
+    })
+    .toBe(true);
   await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail");
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
@@ -78,11 +90,12 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(sidebar).toHaveCSS("width", "316px");
-  await expect(sidebar.getByRole("textbox", { name: "Search", exact: true })).toBeVisible();
+  await expect(sidebar.getByTestId("sidebar-search-trigger")).toBeVisible();
+  await expect(sidebar.getByRole("textbox", { name: "Search", exact: true })).toHaveCount(0);
   await expect(row.locator("[data-roster-bot-name]")).toBeVisible();
 });
 
-test("sidebar resize follows RTL and reduced motion", async ({ page }) => {
+test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await signup(page, `sidebar-rtl-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
   await completeOnboarding(page);
@@ -99,6 +112,18 @@ test("sidebar resize follows RTL and reduced motion", async ({ page }) => {
   await expect(sidebar).toHaveCSS("width", "348px");
   await handle.press("Home");
   await expect(sidebar).toHaveCSS("width", "72px");
+  const row = sidebar.locator("[data-roster-bot-id]").first();
+  await row.hover();
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(tooltip).toBeVisible();
+  await expect
+    .poll(async () => {
+      const label = await tooltip.boundingBox();
+      const icon = await row.boundingBox();
+      return label && icon ? label.x + label.width <= icon.x : false;
+    })
+    .toBe(true);
+  await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail-rtl");
   await handle.press("ArrowLeft");
   await expect(sidebar).toHaveCSS("width", "240px");
   const box = (await sidebar.boundingBox())!;
@@ -154,7 +179,7 @@ test("sidebar snaps its layout during a held drag in both directions", async ({
     await testInfo.attach(name, { contentType: "image/png", path });
   };
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
-  const search = sidebar.getByRole("textbox", { name: "Search", exact: true });
+  const minimize = page.getByTestId("minimize-bots-sidebar");
   await page.getByTestId("minimize-bots-sidebar").click();
   await expect(sidebar).toHaveCSS("width", "72px");
   await captureFrame("sidebar-mini-tight-spacing");
@@ -171,8 +196,8 @@ test("sidebar snaps its layout during a held drag in both directions", async ({
     await page.mouse.move(origin + distance, edge.y + 300);
     await expect(sidebar).toHaveCSS("width", `${width}px`);
     await expect(sidebar).toHaveAttribute("data-collapsed", String(mini));
-    if (mini) await expect(search).toHaveCount(0);
-    else await expect(search).toBeVisible();
+    if (mini) await expect(minimize).toHaveCount(0);
+    else await expect(minimize).toBeVisible();
     await captureFrame(`sidebar-drag-${frame}`);
   }
   await page.mouse.up();

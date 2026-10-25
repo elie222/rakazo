@@ -120,7 +120,6 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const parentText = `hover-parent-${stamp}`;
   const replyText = `hover-reply-${stamp}`;
   const composer = page.getByRole("combobox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
   await sendComposerMessage(page, composer, parentText);
 
   const parentRow = transcript.locator(`[data-message-id]`).filter({ hasText: parentText }).first();
@@ -348,7 +347,6 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
   const parentText = `page-parent-${stamp}`;
   const replyText = `page-reply-${stamp}`;
   const composer = page.getByRole("combobox", { name: /^Message/ });
-  await expect(composer).toBeVisible();
   await sendComposerMessage(page, composer, parentText);
 
   const transcript = page.getByTestId("transcript");

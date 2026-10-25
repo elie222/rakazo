@@ -127,11 +127,15 @@ async function failRun(scenario: Scenario) {
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    spaceModelRoleChoice: {
+      findMany: vi.fn(async ({ where }: { where: { role: string } }) =>
+        where.role === "main" && scenario.switchToBackup
+          ? [{ ...scenario.switchToBackup, position: 1, thinkingLevel: null }]
+          : [],
+      ),
+    },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: {
-      findMany: vi.fn(async () => (scenario.switchToBackup ? [scenario.switchToBackup] : [])),
-    },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

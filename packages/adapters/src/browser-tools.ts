@@ -110,7 +110,13 @@ export async function browserActFromTool(
         ? await options.resolveSecretFill(step)
         : { error: "Saved logins are unavailable here." };
       if ("error" in resolved) return { ok: false, completed: 0, error: resolved.error };
-      actions.push({ kind: "fill", ref: step.ref, text: resolved.text, origin: resolved.origin });
+      actions.push({
+        kind: "fill",
+        ref: step.ref,
+        text: resolved.text,
+        origin: resolved.origin,
+        field: step.field,
+      });
     }
     const result = await browser.act(computer, { actions, signal: context.signal }, context);
     return redactConnectorPayload(

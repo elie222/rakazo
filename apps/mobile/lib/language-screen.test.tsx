@@ -11,6 +11,7 @@ import * as i18n from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
 import { UI_LOCALE_LABELS, UI_LOCALE_STORAGE_KEY, UI_LOCALES } from "./ui-locale";
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://rakazo.test",
   loadSessionToken: async () => "token",

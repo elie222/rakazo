@@ -1080,9 +1080,13 @@ describe("deliverMessagingOutbound conversation order", () => {
   const part = (letter: string) => letter.repeat(3000);
   const longReply = [part("a"), part("b"), part("c")].join("\n\n");
 
-  it("queues a long WhatsApp reply as one row per message-sized part", async () => {
+  it.each([
+    whatsapp,
+    { provider: "telegram", address: "123", dmThreadId: "telegram:123" },
+    { provider: "telegram-work", address: "123", dmThreadId: "telegram-work:123" },
+  ])("queues a long $provider reply as one row per message-sized part", async (identity) => {
     const deps = createDeps({
-      identity: whatsapp,
+      identity,
       messages: [{ id: "m-1", blocks: [{ kind: "text", text: longReply }] }],
     });
     await deliverMessagingOutbound(deps, { runId: "run-1" }, context);

@@ -18,6 +18,7 @@ const { rpc, back, push, replace, announce, hardwareBack, nativeHeader } = vi.ho
   hardwareBack: { current: undefined as (() => boolean) | undefined },
   nativeHeader: { current: false },
 }));
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("expo-router/react-navigation", () => ({ useHeaderHeight: () => 56 }));
 vi.mock("expo-router", () => ({

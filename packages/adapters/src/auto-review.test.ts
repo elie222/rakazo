@@ -346,6 +346,19 @@ describe("runAutoReviewJudge instructions", () => {
     expect(captured?.instructions).toContain("Current date and time");
     expect(captured?.instructions).toContain("fast safety checker");
     expect(captured?.model?.callObserver).toBe(callObserver);
+    expect(captured?.model?.thinkingLevel).toBeNull();
+
+    await runAutoReviewJudge({
+      runtime: runtime as never,
+      checker: { provider: "openrouter", model: "x", thinkingLevel: "low" },
+      prompt: "test",
+      runId: "run",
+      spaceId: "ws",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+    });
+    expect(captured?.model?.thinkingLevel).toBe("low");
   });
 });
 

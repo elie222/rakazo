@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import { isOllamaCloudBaseUrl } from "@rakazo/contracts";
-import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -435,66 +434,6 @@ export function CompatibleKeyControls({
         onClick={() => void connectKey()}
       >
         {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-      </Button>
-    </div>
-  ) : null;
-}
-
-export function SaveModelButton({
-  busy,
-  cloudflareRoutingReady,
-  connectKey,
-  credential,
-  isActive,
-  isOpenAiCompatible,
-  modelId,
-  pending,
-  setModelDefault,
-  settingsDirty,
-  thinkingDirty,
-  usingServerCredentials,
-}: Pick<
-  ModelSettingsState,
-  | "busy"
-  | "cloudflareRoutingReady"
-  | "connectKey"
-  | "credential"
-  | "isActive"
-  | "isOpenAiCompatible"
-  | "modelId"
-  | "pending"
-  | "setModelDefault"
-  | "settingsDirty"
-  | "thinkingDirty"
-  | "usingServerCredentials"
->) {
-  return credential && (!isActive || thinkingDirty || usingServerCredentials || settingsDirty) ? (
-    <div className="mt-6">
-      <Button
-        type="button"
-        variant="secondary"
-        className="rounded-full"
-        size="sm"
-        disabled={
-          busy ||
-          !cloudflareRoutingReady ||
-          (isOpenAiCompatible &&
-            (!modelId.trim() ||
-              !canUseCompatibleModelAsDefault(credential.enabledModelIds, modelId.trim())))
-        }
-        onClick={() =>
-          void (settingsDirty ? connectKey({ settingsOnly: true }) : setModelDefault())
-        }
-      >
-        {pending === "default" ? (
-          <Trans>Switching…</Trans>
-        ) : pending === "settings" ? (
-          <Trans>Saving…</Trans>
-        ) : isActive && !usingServerCredentials ? (
-          <Trans>Save</Trans>
-        ) : (
-          <Trans>Use this model</Trans>
-        )}
       </Button>
     </div>
   ) : null;
