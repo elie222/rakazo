@@ -1,0 +1,112 @@
+name: Weekly dependency updates
+
+on:
+  schedule:
+    - cron: "43 6 * * 2"
+  workflow_dispatch:
+
+# Configure OPENAI_API_KEY and DEPENDENCY_UPDATE_TOKEN repository secrets.
+# The latter is a repository-scoped token with contents and pull-request write
+# permissions, so the resulting PR's CI starts without manual approval.
+permissions: {}
+
+concurrency:
+  group: weekly-dependencies
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+      changed: ${{ steps.patch.outputs.changed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Record base and check for an existing update PR
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          count=$(gh pr list --base main --state open --limit 1000 --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("deps/weekly-dependencies-"))] | length')
+          echo "existing=$count" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: steps.base.outputs.existing == '0'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.base.outputs.existing == '0'
+        with:
+          node-version: 22
+      - name: Prepare validation tools
+        if: steps.base.outputs.existing == '0'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+          mkdir -p "$RUNNER_TEMP/dependency-update"
+          echo "VALIDATION_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      - name: Run Codex CLI
+        if: steps.base.outputs.existing == '0'
+        uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/prompts/weekly-dependencies.md
+          output-file: ${{ runner.temp }}/dependency-update/pr-body.md
+          codex-version: 0.162.0
+          sandbox: danger-full-access
+          safety-strategy: drop-sudo
+      - name: Collect proposed changes
+        if: steps.base.outputs.existing == '0'
+        id: patch
+        run: |
+          git add -N .
+          git diff --binary HEAD > "$RUNNER_TEMP/dependency-update/update.patch"
+          if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: dependency-update
+          path: ${{ runner.temp }}/dependency-update/
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.update.outputs.base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dependency-update
+          path: ${{ runner.temp }}/dependency-update
+      # This job applies the diff but never installs or executes the proposed code.
+      - name: Apply patch
+        run: git apply --index "$RUNNER_TEMP/dependency-update/update.patch"
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="deps/weekly-dependencies-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git commit -m "chore(deps): weekly patch updates"
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(deps): weekly patch updates" \
+            --body-file "$RUNNER_TEMP/dependency-update/pr-body.md"
