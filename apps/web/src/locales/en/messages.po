@@ -3224,9 +3224,9 @@ msgstr "Loading rules…"
 msgid "Loading voice providers…"
 msgstr "Loading voice providers…"
 
+#: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3966,14 +3966,6 @@ msgstr "OpenAI-compatible server URL"
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw or Hermes"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "Opening chat…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "Opening your Space…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

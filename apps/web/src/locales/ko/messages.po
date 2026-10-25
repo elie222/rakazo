@@ -3224,9 +3224,9 @@ msgstr "확인 규칙을 불러오는 중…"
 msgid "Loading voice providers…"
 msgstr "음성 서비스를 불러오는 중…"
 
+#: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3966,14 +3966,6 @@ msgstr "OpenAI 호환 서버 주소"
 #: src/pages/shell/agent-import.tsx
 msgid "OpenClaw or Hermes"
 msgstr "OpenClaw 또는 Hermes"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "채팅 여는 중…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "작업공간을 여는 중…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

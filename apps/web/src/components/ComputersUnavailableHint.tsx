@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button } from "@rakazo/ui-web";
+import { Button, Spinner } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAvailabilityPhase } from "../lib/computer-sandbox";
 import {
@@ -101,9 +101,7 @@ export function ComputersUnavailableHint({
       role={phase === "failure" ? "alert" : undefined}
     >
       {phase === "loading" ? (
-        <p className="text-[13px] text-muted-foreground" role="status">
-          <Trans>Checking computer setup…</Trans>
-        </p>
+        <Spinner className="text-muted-foreground" aria-label={t`Checking computer setup…`} />
       ) : null}
 
       {phase === "recovered" ? (
