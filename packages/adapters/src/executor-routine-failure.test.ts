@@ -87,6 +87,7 @@ async function failRun(scenario: Scenario) {
             : scenario.nextRunAt,
       })),
     },
+    chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
@@ -126,8 +127,9 @@ async function failRun(scenario: Scenario) {
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
-    spaceModelPreference: { findFirst: vi.fn(async () => null) },
-    spaceModelRoleChoice: {
+    userModelPreference: { findFirst: vi.fn(async () => null) },
+    spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) =>
         where.role === "main" && scenario.switchToBackup
           ? [{ ...scenario.switchToBackup, position: 1, thinkingLevel: null }]

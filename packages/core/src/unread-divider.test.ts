@@ -29,8 +29,9 @@ describe("unreadDividerMessageId", () => {
     expect(unreadDividerMessageId(thread.slice(0, 3), 0, null)).toBeNull();
   });
 
-  it("marks a chat never read from its first bot message", () => {
-    expect(unreadDividerMessageId(thread, -1, null)).toBe("m0");
+  it("shows nothing above the start of a chat never read", () => {
+    expect(unreadDividerMessageId(thread, -1, null)).toBeNull();
+    expect(unreadDividerMessageId(thread.slice(1), -1, null)).toBe("m3");
   });
 
   it("ignores rows without a seq, such as live progress", () => {
@@ -43,7 +44,7 @@ describe("unreadDividerMessageId", () => {
     const latestPage = thread.slice(3);
     expect(unreadDividerMessageId(latestPage, 0, 3)).toBeNull();
     expect(unreadDividerMessageId(latestPage, 2, 3)).toBe("m3");
-    expect(unreadDividerMessageId(latestPage, 0, null)).toBe("m3");
+    expect(unreadDividerMessageId(latestPage, 2, null)).toBeNull();
   });
 
   it("doesn't wait when the loaded page starts with a hidden message right after the cursor", () => {

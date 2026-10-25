@@ -1,4 +1,5 @@
 export * from "./action-approval.js";
+export * from "./agent-import/index.js";
 export * from "./agent-skill.js";
 export * from "./ai-consent.js";
 export * from "./answerable-ask.js";
@@ -61,6 +62,7 @@ export * from "./prompt-data.js";
 export * from "./remote-images.js";
 export * from "./response-bytes.js";
 export * from "./retry-policy.js";
+export * from "./room-settings.js";
 export * from "./run-error.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";

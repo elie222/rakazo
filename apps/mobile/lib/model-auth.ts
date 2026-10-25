@@ -8,9 +8,10 @@ type CompleteOAuthResult =
   | { status: "ready" }
   | { status: "error"; error: string };
 
-export async function waitForModelOAuth(loginId: string, signal?: AbortSignal) {
+/** Polls with the caller's calls, which go to the Space that began the sign-in. */
+export async function waitForModelOAuth(loginId: string, signal?: AbortSignal, call = rpc) {
   return waitForModelOAuthCompletion(
-    () => rpc<CompleteOAuthResult>("models/completeOAuth", { loginId }, { signal }),
+    () => call<CompleteOAuthResult>("models/completeOAuth", { loginId }, { signal }),
     { signal },
   );
 }

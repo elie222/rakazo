@@ -1,8 +1,13 @@
 import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
-import type { ModelRole, ModelRoleChoice, ModelRoleSettings } from "@rakazo/contracts";
+import type {
+  ModelRole,
+  ModelRoleChoice,
+  ModelRoleSettings,
+  SettingsScope,
+} from "@rakazo/contracts";
 import { backupChoiceKey, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { getModelRole } from "@rakazo/db";
+import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "./auto-review.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
@@ -41,12 +46,16 @@ export type EffectiveModelRole = ModelRoleSettings & {
 
 /** The member's ordered models for a purpose, with the deployment's filling what they left empty. */
 export async function effectiveModelRole(
-  prisma: Pick<PrismaClient, "spaceModelRoleChoice">,
+  prisma: Pick<
+    PrismaClient,
+    "spaceModelRoleChoice" | "userModelRoleChoice" | "spaceSettingOverride"
+  >,
   scope: { userId: string; spaceId: string },
   role: ModelRole,
   defaults: DeploymentModelDefaults,
+  requested?: SettingsScope,
 ): Promise<EffectiveModelRole> {
-  const own = await getModelRole(prisma, scope, role);
+  const own = await appliedModelRole(prisma, scope, role, requested);
   if (own.primary) return { ...own, primarySource: "member" };
   const deployment = deploymentModelRole(role, defaults);
   return {
@@ -66,7 +75,7 @@ export async function resolveMemberMainModel(
   deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
   scope: { userId: string; spaceId: string },
 ): Promise<MemberMainModel | null> {
-  const { primary } = await getModelRole(deps.prisma, scope, "main");
+  const { primary } = await appliedModelRole(deps.prisma, scope, "main");
   if (!primary) return null;
   const credential = await findConnectedModelCredential(
     deps.prisma,

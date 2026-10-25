@@ -24,6 +24,8 @@ export interface ScreenProxyTarget {
   port: number;
   path: string;
   interactive: boolean;
+  /** Sealed provider authentication; only the server proxy receives it. */
+  headers?: Record<string, string>;
 }
 
 export function isScreenProxyTarget(value: unknown): value is ScreenProxyTarget {
@@ -38,10 +40,30 @@ export function isScreenProxyTarget(value: unknown): value is ScreenProxyTarget 
     Number.isInteger(target.port) &&
     target.port > 0 &&
     target.port <= 65535 &&
+    isScreenProxyHeaders(target.headers) &&
     typeof target.path === "string" &&
     target.path.startsWith("/") &&
     !/[\r\n]/.test(target.path) &&
     typeof target.interactive === "boolean"
+  );
+}
+
+/** Authentication headers are trusted only after the capability has been decrypted. */
+function isScreenProxyHeaders(value: unknown): value is Record<string, string> | undefined {
+  return (
+    value === undefined ||
+    (value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.entries(value).every(
+        ([name, header]) =>
+          /^[a-zA-Z0-9!#$%&'*+.^_`|~-]+$/.test(name) &&
+          !/^(host|connection|upgrade|transfer-encoding|content-length|proxy-authorization)$/i.test(
+            name,
+          ) &&
+          typeof header === "string" &&
+          /^[\t\x20-\x7e]*$/.test(header),
+      ))
   );
 }
 
@@ -51,7 +73,9 @@ export function sealScreenCapability(
   origin: string,
   scope: ScreenCapabilityScope,
   now = Date.now(),
+  headers?: Record<string, string>,
 ) {
+  if (!isScreenProxyHeaders(headers)) throw new Error("Invalid screen authentication headers");
   const target = new URL(url);
   if (target.protocol !== "https:" && target.protocol !== "http:")
     throw new Error("Invalid screen protocol");
@@ -63,7 +87,7 @@ export function sealScreenCapability(
   });
   cipher.setAAD(Buffer.from(`${policy}:${expiresAt}`));
   const ciphertext = Buffer.concat([
-    cipher.update(JSON.stringify({ url, scope }), "utf8"),
+    cipher.update(JSON.stringify({ url, scope, headers }), "utf8"),
     cipher.final(),
   ]);
   const token = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
@@ -106,14 +130,16 @@ export function issueScreenCapability(
   origin: string,
   scope: ScreenCapabilityScope,
   now = Date.now(),
+  headers?: Record<string, string>,
 ) {
-  if (isLoopbackScreenTarget(url)) return sealScreenCapability(url, secret, origin, scope, now);
-  const key = remoteScreenSealKey(url, secret, origin, scope);
+  if (isLoopbackScreenTarget(url))
+    return sealScreenCapability(url, secret, origin, scope, now, headers);
+  const key = remoteScreenSealKey(url, secret, origin, scope, headers);
   const cached = remoteScreenSeals.get(key);
   if (cached && cached.expiresAt - now > REMOTE_SCREEN_CAPABILITY_MIN_REMAINING_MS) {
     return cached.sealed;
   }
-  const sealed = sealScreenCapability(url, secret, origin, scope, now);
+  const sealed = sealScreenCapability(url, secret, origin, scope, now, headers);
   for (const [cachedKey, entry] of remoteScreenSeals) {
     if (entry.expiresAt <= now) remoteScreenSeals.delete(cachedKey);
   }
@@ -126,11 +152,13 @@ function remoteScreenSealKey(
   secret: string,
   origin: string,
   scope: ScreenCapabilityScope,
+  headers?: Record<string, string>,
 ) {
   return [
     createHash("sha256").update(secret).digest("base64url"),
     new URL(origin).origin,
     url,
+    JSON.stringify(Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b))),
     scope.botId,
     scope.computerId,
     String(scope.botGeneration),
@@ -164,6 +192,7 @@ export function openScreenCapability(
     const payload = JSON.parse(
       Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]).toString("utf8"),
     );
+    if (!isScreenProxyHeaders(payload.headers)) return null;
     const scope = payload.scope as ScreenCapabilityScope;
     if (
       !scope ||
@@ -193,6 +222,7 @@ export function openScreenCapability(
         port,
         path: screenPolicyPath(remoteTargetPath(target, requestedPath), interactive),
         interactive,
+        ...(payload.headers ? { headers: payload.headers } : {}),
       },
     };
   } catch {

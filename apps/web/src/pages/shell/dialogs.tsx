@@ -1,6 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection } from "@rakazo/contracts";
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +20,7 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@rakazo/ui-web";
-import { Lock, Users } from "lucide-react";
+import { Lock } from "lucide-react";
 import { useId, useState } from "react";
 import { errorText } from "../../lib/user-error";
 
@@ -95,56 +94,6 @@ export function NewSpaceDialog({
             {saving ? <Trans>Creating…</Trans> : <Trans>Create space</Trans>}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function PickerInfoDialog({
-  topic,
-  onClose,
-}: {
-  topic: "group" | "space";
-  onClose: () => void;
-}) {
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent data-testid="picker-info-dialog">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2.5">
-            {topic === "group" ? (
-              <Users
-                size={17}
-                strokeWidth={1.8}
-                className="text-muted-foreground"
-                aria-hidden="true"
-              />
-            ) : (
-              <Lock
-                size={17}
-                strokeWidth={1.8}
-                className="text-muted-foreground"
-                aria-hidden="true"
-              />
-            )}
-            {topic === "group" ? <Trans>Groups</Trans> : <Trans>Spaces</Trans>}
-          </DialogTitle>
-          <DialogDescription>
-            {topic === "group" ? (
-              <Trans>
-                Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the
-                same thread.
-              </Trans>
-            ) : (
-              <Trans>Private workspace with its own bots and groups.</Trans>
-            )}
-          </DialogDescription>
-        </DialogHeader>
       </DialogContent>
     </Dialog>
   );

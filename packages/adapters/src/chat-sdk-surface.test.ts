@@ -683,18 +683,25 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["slack", "whatsapp", "lark", "sendblue"])(
-    "keeps %s replies as strings",
-    async (provider) => {
-      const { surface, adapter } = createSurface({ provider });
-      const body = "**bold** and [link](https://example.test)";
-      const threadId = `${provider}:C1:9`;
+  it.each(["whatsapp", "lark"])("posts %s replies as Markdown", async (provider) => {
+    const { surface, adapter } = createSurface({ provider });
+    const body = "**bold** and [link](https://example.test)";
+    const threadId = `${provider}:C1:9`;
 
-      await surface.sendToThread({ threadId, body }, context);
+    await surface.sendToThread({ threadId, body }, context);
 
-      expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
-    },
-  );
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, { markdown: body });
+  });
+
+  it.each(["slack", "sendblue"])("keeps %s replies as strings", async (provider) => {
+    const { surface, adapter } = createSurface({ provider });
+    const body = "**bold** and [link](https://example.test)";
+    const threadId = `${provider}:C1:9`;
+
+    await surface.sendToThread({ threadId, body }, context);
+
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+  });
 
   it("posts a Telegram image attachment as a photo", async () => {
     const { surface, adapter } = createSurface({ provider: "telegram" });
@@ -925,6 +932,8 @@ describe("ChatSdkMessagingSurface shape", () => {
     ]);
     expect(surface.describe().capabilities).toEqual({ providers: ["mock"] });
     expect(providerOfThreadId("mock:C1:9")).toBe("mock");
+    expect(providerOfThreadId("slack~installation-a:C1:9")).toBe("slack");
+    expect(providerOfThreadId("telegram-work:42")).toBe("telegram-work");
   });
 
   it("retries initialize after a failure and stops polling on shutdown", async () => {

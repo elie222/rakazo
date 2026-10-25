@@ -26,10 +26,19 @@ async function routeScreen(page: Page) {
   );
 }
 
-test("a booting computer can be closed and keeps booting", async ({ page }, testInfo) => {
+test("a retrying computer can be closed and keeps booting without a stale error label", async ({
+  page,
+}, testInfo) => {
   await signup(page, `boot-leave-${Date.now()}@rakazo.test`, "password12", "Boot Leave");
   await completeOnboarding(page);
   await routeScreen(page);
+  let staleError = true;
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json?: { computer?: { state?: string } } };
+    if (staleError && body.json?.computer) body.json.computer.state = "error";
+    await route.fulfill({ response, json: body });
+  });
   const held: Route[] = [];
   await page.route("**/rpc/computer/boot", (route) => {
     held.push(route);
@@ -37,7 +46,10 @@ test("a booting computer can be closed and keeps booting", async ({ page }, test
 
   await page.getByRole("button", { name: "Agent computer", exact: true }).click();
   const preview = page.getByTestId("computer-preview");
-  await expect(preview).toContainText("Computer is stopped");
+  await expect(preview).toContainText("Computer failed to boot");
+  await expect(page.getByText("error", { exact: true })).toHaveCount(0);
+  await preview.getByRole("button", { name: "Retry screen" }).click();
+  await expect(preview).toContainText("Booting live desktop…");
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();
   await expect.poll(() => held.length).toBe(1);
@@ -52,6 +64,8 @@ test("a booting computer can be closed and keeps booting", async ({ page }, test
   await page.keyboard.press("Escape");
   await expect(close).toHaveCount(0);
   await expect(preview).toContainText("Booting live desktop…");
+  await expect(page.getByText("error", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "computer-panel-retrying-boot");
 
   // Reopening shows the same boot without starting another one.
   await preview.hover();
@@ -61,6 +75,7 @@ test("a booting computer can be closed and keeps booting", async ({ page }, test
   await expect(close).toHaveCount(0);
   expect(held).toHaveLength(1);
 
+  staleError = false;
   const response = await held[0]!.fetch();
   await held[0]!.fulfill({ response });
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);

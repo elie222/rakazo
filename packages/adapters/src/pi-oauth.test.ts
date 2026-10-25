@@ -1253,6 +1253,24 @@ describe("PiOAuthLogins", () => {
     if (done.status === "connected") expect(done.credential.access).toBe("claude-access");
   });
 
+  it("passes the client's code-page choice to the provider login", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const logins = new PiOAuthLogins(async (_provider, _type, interaction, options) => {
+      seen.push(options?.codePage);
+      interaction.notify({
+        type: "auth_url",
+        url: "https://claude.ai/oauth/authorize?code=true",
+        instructions: "open",
+      });
+      await interaction.prompt({ type: "manual_code", message: "paste" });
+      return oauthCred();
+    });
+    const desktop = await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic" });
+    await logins.cancel(desktop.loginId, { userId: "u", spaceId: "w" });
+    await logins.begin({ userId: "u", spaceId: "w", provider: "anthropic", codePage: true });
+    expect(seen).toEqual([undefined, true]);
+  });
+
   it("rejects submit for a login that is not waiting for a code", async () => {
     const logins = new PiOAuthLogins(async (_provider, _type, interaction) => {
       await interaction.prompt({

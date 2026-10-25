@@ -1,4 +1,4 @@
-import { Plural } from "@lingui/react/macro";
+import { Plural, Trans } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
 import {
   Collapsible,
@@ -76,6 +76,7 @@ export function ToolActivityDisclosure({
   children: ReactNode;
 }) {
   const duration = formatToolActivityDuration(durationMs);
+  const toolCount = stepCount;
   return (
     <Collapsible
       key={live ? "working" : "actions"}
@@ -95,14 +96,13 @@ export function ToolActivityDisclosure({
           strokeWidth={1.8}
           className="transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
         />
-        {live ? (
-          <Plural value={stepCount} one="Working… · # tool" other="Working… · # tools" />
-        ) : (
-          <>
-            <Plural value={stepCount} one="Done · # tool" other="Done · # tools" />
-            {duration ? ` · ${duration}` : null}
-          </>
-        )}
+        <span className="flex items-center gap-2">
+          <span>{live ? <Trans>Working…</Trans> : <Trans>Done</Trans>}</span>
+          <span>
+            <Plural value={toolCount} one="# tool" other="# tools" />
+          </span>
+          {!live && duration ? <span>{duration}</span> : null}
+        </span>
       </CollapsibleTrigger>
       <CollapsibleContent hiddenUntilFound>
         <div className="ms-[7px] mt-0.5 border-s border-border ps-3">{children}</div>

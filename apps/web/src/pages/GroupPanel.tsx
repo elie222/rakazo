@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { BotAvatar, Button, Checkbox, Input } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -193,6 +193,7 @@ export function CreateGroupForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           className="mt-2"
         />
       </label>
@@ -236,6 +237,17 @@ export function GroupSettings({
   const nameId = useId();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
+  // The panel can open on a cached group. A refreshed one replaces whatever was not edited, so a
+  // save does not send the cached name or members back as a change.
+  const [shownGroup, setShownGroup] = useState(group);
+  if (group !== shownGroup) {
+    setShownGroup(group);
+    if (name === shownGroup.name) setName(group.name);
+    const shownMembers = shownGroup.members.map((member) => member.botId);
+    if (sameMembers(selected, shownMembers)) {
+      setSelected(group.members.map((member) => member.botId));
+    }
+  }
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +327,7 @@ export function GroupSettings({
           id={nameId}
           value={name}
           onChange={(e) => setName(e.target.value)}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           className="mt-2"
         />
       </label>

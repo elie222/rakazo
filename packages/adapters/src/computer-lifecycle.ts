@@ -13,6 +13,8 @@ import {
   expireComputerExecutionLeases,
   type PrismaClient,
   parseComputerMode,
+  recordComputerRunEnd,
+  recordComputerRunStart,
   type ThreadEvents,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -26,6 +28,7 @@ import {
 import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
+  deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
@@ -184,6 +187,7 @@ export async function provisionComputer(
     const ref = toComputerRef(existing);
     if (await deps.sandbox.isRunning(ref, context)) {
       context.signal.throwIfAborted();
+      const runningSince = existing.runningSince ?? new Date();
       const retained = await deps.prisma.computer.updateMany({
         where: {
           id: computerId,
@@ -195,12 +199,10 @@ export async function provisionComputer(
           ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
         },
         // A row activated by an older release has no clock yet; start it now.
-        data: {
-          updatedAt: new Date(),
-          ...(existing.runningSince ? {} : { runningSince: new Date() }),
-        },
+        data: { updatedAt: new Date(), runningSince },
       });
       if (retained.count !== 1) throw new ComputerBusyError();
+      await recordComputerRunStart(deps.prisma, existing, runningSince);
       await deps.sandbox.prepare(ref, context);
       await ensureComputerWorkspaceLayout(
         deps.sandbox,
@@ -377,6 +379,10 @@ export async function provisionComputer(
       });
     }
     const activeControl = hasActiveComputerControl(existing);
+    // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+    const continued =
+      existing.state === "running" && existing.runningSince && !ref.started && !replacement;
+    const runningSince = continued ? existing.runningSince! : new Date();
     const activated = await deps.prisma.computer.updateMany({
       where: {
         id: computerId,
@@ -390,11 +396,7 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
-        // A reconnect to a computer that stayed up continues its stretch; any start begins one.
-        runningSince:
-          existing.state === "running" && existing.runningSince && !ref.started && !replacement
-            ? existing.runningSince
-            : new Date(),
+        runningSince,
         ...(!reconnecting
           ? {
               controlHolder: activeControl ? "user" : controlHolder,
@@ -413,6 +415,14 @@ export async function provisionComputer(
     if (activated.count !== 1) {
       throw new ComputerBusyError();
     }
+    // A computer we believed running that the provider had to resume or replace was stopped
+    // or lost at the provider without us.
+    await recordComputerRunStart(
+      deps.prisma,
+      { ...existing, kind: ref.kind, providerRef: ref.providerRef },
+      runningSince,
+      existing.state === "running" ? "gone" : "reconciled",
+    );
     log.info("computer.provisioned", {
       provider: ref.kind,
       operation: replacement ? "create" : ref.started ? "resume" : "reuse",
@@ -971,6 +981,7 @@ export async function replaceComputer(
           existing.homeKey,
           oldRef,
           context,
+          () => deletedTeamBotFolders(deps.prisma, existing),
         );
         const recorded = await deps.prisma.computer.updateMany({
           where: { id: computerId, state: "suspending", updatedAt: claimStamp },
@@ -1015,6 +1026,7 @@ export async function replaceComputer(
       },
     });
     if (stopped.count !== 1) throw new ComputerBusyError();
+    await recordComputerRunEnd(deps.prisma, existing, "replaced");
     return provisionComputer(deps, computerId, context, controlHolder, onProgress);
   } catch (error) {
     await deps.prisma.computer

@@ -1,3 +1,5 @@
+export * from "./agent-import.js";
+export * from "./agent-import-setup.js";
 export * from "./ai-consent.js";
 export * from "./analytics.js";
 export * from "./attachments.js";
@@ -30,5 +32,6 @@ export * from "./rpc.js";
 export * from "./runs.js";
 export * from "./search.js";
 export * from "./security-events.js";
+export * from "./settings-scope.js";
 export * from "./terminal.js";
 export * from "./voice-errors.js";

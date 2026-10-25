@@ -64,6 +64,15 @@ describe("createMessagingReceipts", () => {
     ).toEqual([["slack:C1:1700000000.000200", "1700000000.000200"]]);
   });
 
+  it("keeps delayed reactions on workspace-scoped Slack messages", async () => {
+    const messaging = fakeMessaging();
+    const threadId = "slack~installation-a:C1:1700000000.000100";
+    const handle = "Ta:1700000000.000100";
+    createMessagingReceipts(messaging).acknowledge(threadId, handle, unhandled);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(messaging.acknowledge).toHaveBeenCalledWith(threadId, handle, expect.anything());
+  });
+
   it("sends nothing once stopped", async () => {
     const messaging = fakeMessaging();
     const receipts = createMessagingReceipts(messaging);

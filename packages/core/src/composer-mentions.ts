@@ -139,9 +139,9 @@ export function appendConnectorIntent(text: string, names: readonly string[]): s
 }
 
 export function routineScheduleSubtitle(crons: readonly string[], botName?: string): string {
-  const schedule = crons.map((cron) => formatCron(cron)).join(" · ");
+  const schedule = crons.map((cron) => formatCron(cron)).join(", ");
   const name = displayName(botName, "");
-  if (name) return `${schedule} · ${name}`;
+  if (name) return `${schedule} (${name})`;
   return schedule;
 }
 

@@ -106,6 +106,11 @@ describe("mobile API authentication", () => {
       [502, "<html>Bad gateway</html>", "Could not reach the server"],
       [504, "{}", "Could not reach the server"],
       [403, '{"code":"PASSWORD_AUTH_DISABLED"}', "Password sign-in is turned off on this server"],
+      [
+        400,
+        '{"code":"PASSWORD_TOO_LONG","message":"Password too long"}',
+        "Password must be 128 characters or fewer",
+      ],
       [403, '{"message":"Registration is closed"}', "Registration is closed"],
       [
         422,
@@ -3563,7 +3568,7 @@ describe("mobile thread event reduction", () => {
           },
         ]),
       ),
-    ).toBe("SMS · Alex: Hello from the group");
+    ).toBe("Alex (SMS): Hello from the group");
     expect(
       blockText(
         mobileMessage("channel-2", [
@@ -3577,7 +3582,7 @@ describe("mobile thread event reduction", () => {
           },
         ]),
       ),
-    ).toBe("Slack · Alex: Hello from the group");
+    ).toBe("Alex (Slack): Hello from the group");
   });
 
   it("deduplicates durable messages and replaces matching transient subagent state", () => {
@@ -4103,7 +4108,7 @@ describe("mobile clipboard text", () => {
           { kind: "card", lines: [] },
         ],
       }),
-    ).toBe("Hello\nSMS · Sender: Reply");
+    ).toBe("Hello\nSender (SMS): Reply");
   });
 
   it("keeps leading whitespace for selection while copying trims it", async () => {

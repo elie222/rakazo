@@ -217,7 +217,7 @@ it("debounces typing, renders server hits and preserves the message jump destina
   await act(async () => vi.advanceTimersByTime(1));
   expect(state.search).toHaveBeenCalledWith("matching");
   expect(container.querySelectorAll('button[aria-label="Found note, Message"]')).toHaveLength(1);
-  expect(row("Found note, Message").textContent).toContain("Scout · A matching line");
+  expect(row("Found note, Message").textContent).toContain("Scout: A matching line");
   await act(async () => row("Found note, Message").click());
   expect(state.selectSpace).toHaveBeenCalledWith("space-a");
   expect(state.dismiss).toHaveBeenCalledOnce();

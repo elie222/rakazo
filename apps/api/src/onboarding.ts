@@ -154,6 +154,12 @@ export async function promptFocus(
       select: { id: true },
     });
     if (intro) return null;
+    // An imported agent already has a role.
+    const imported = await tx.agentImport.findFirst({
+      where: { botId: bot.id },
+      select: { id: true },
+    });
+    if (imported) return null;
     const message = await createThreadMessageInTransaction(tx, {
       threadId: target.threadId,
       role: "bot",

@@ -89,6 +89,47 @@ takeover restarts the idle timer, and on providers that do not bill while runnin
 also holds the computer for 30 minutes after asking, so the user can answer the push on
 the same open page.
 
+### Computer run time
+
+Each stretch a computer runs at its provider is a row in `computer_runs`, attributed to the
+computer's owner and space. A run starts when the computer becomes ready (boot time is not
+counted) and ends when it stops. `endReason` says how: `stopped`, `idle`, `active_limit`,
+`replaced` (update, recovery, or reset), `gone` (the provider had already stopped or lost
+the sandbox), `deleted`, or `reconciled` (the end was never seen; the worker found the
+computer no longer running). For `gone` and `reconciled`, `endedAt` is when Rakazo
+noticed, so the true end may be earlier. The worker also opens the run of a running
+computer whose start was not recorded. An open run whose computer still reads as running
+is a computer that may be left on. Deleting a user or space keeps their runs with
+`userId` and `spaceId` cleared. This-Mac computers are not recorded.
+
+The table has row-level security, so query it as the database owner. Timestamps are UTC.
+Run hours per user over the last 7 days, counting runs still open up to now:
+
+```sql
+WITH now_utc AS (SELECT now() AT TIME ZONE 'UTC' AS at)
+SELECT r."userId", u.email,
+       round(sum(extract(epoch FROM
+         coalesce(r."endedAt", n.at) - greatest(r."startedAt", n.at - interval '7 days')
+       )) / 3600, 1) AS hours
+FROM computer_runs r
+CROSS JOIN now_utc n
+LEFT JOIN "user" u ON u.id = r."userId"
+WHERE coalesce(r."endedAt", n.at) > n.at - interval '7 days'
+GROUP BY r."userId", u.email
+ORDER BY hours DESC;
+```
+
+Runs open longer than 6 hours:
+
+```sql
+SELECT r."computerId", r."userId", r."spaceId", r.kind, r."startedAt",
+       round(extract(epoch FROM (now() AT TIME ZONE 'UTC') - r."startedAt") / 3600, 1) AS hours_open
+FROM computer_runs r
+WHERE r."endedAt" IS NULL
+  AND r."startedAt" < (now() AT TIME ZONE 'UTC') - interval '6 hours'
+ORDER BY r."startedAt";
+```
+
 ### Linux background-work inspection
 
 The fallback background-work probe and cancellation commands require Bash,

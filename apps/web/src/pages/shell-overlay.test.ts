@@ -37,6 +37,7 @@ describe("readShellOverlay", () => {
   it("reads flag overlays with or without a value", () => {
     expect(read("?integrations")).toEqual({ kind: "integrations" });
     expect(read("?mcp=")).toEqual({ kind: "mcp" });
+    expect(read("?mcp=srv_1")).toEqual({ kind: "mcp", serverId: "srv_1" });
     expect(read("?messaging=1")).toEqual({ kind: "messaging" });
   });
 });
@@ -51,6 +52,7 @@ describe("withShellOverlay", () => {
 
   it("replaces the open overlay instead of stacking another", () => {
     expect(write("?integrations&routine=r_1", { kind: "mcp" })).toBe("?routine=r_1&mcp");
+    expect(write("", { kind: "mcp", serverId: "srv_1" })).toBe("?mcp=srv_1");
     expect(write("?settings=models&space=sp_1", { kind: "messaging" })).toBe("?messaging");
   });
 

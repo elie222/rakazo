@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
@@ -33,6 +33,7 @@ interface ComputerRow {
   homeStorageId: string | null;
   homeStorageKey: string | null;
   homeStorageRevision: string | null;
+  updatedAt: Date;
 }
 
 /** The slice of `prisma.computer` the records use, over an array of rows. */
@@ -40,6 +41,8 @@ function fakeComputers(rows: ComputerRow[]) {
   const matches = (row: ComputerRow, where: Record<string, unknown>) =>
     Object.entries(where).every(([field, value]) => {
       const actual = row[field as keyof ComputerRow];
+      if (value instanceof Date)
+        return actual instanceof Date && actual.getTime() === value.getTime();
       if (value && typeof value === "object" && "in" in value)
         return (value.in as unknown[]).includes(actual);
       return actual === value;
@@ -75,7 +78,8 @@ function fakeComputers(rows: ComputerRow[]) {
         data: Partial<ComputerRow>;
       }) => {
         const updated = rows.filter((row) => matches(row, where));
-        for (const row of updated) Object.assign(row, data);
+        // Like Prisma's @updatedAt: bumped on every write that doesn't set it.
+        for (const row of updated) Object.assign(row, { updatedAt: new Date() }, data);
         return { count: updated.length };
       },
     },
@@ -107,6 +111,7 @@ async function setup(homeKeys = ["bot-1"]) {
     homeStorageId: null,
     homeStorageKey: null,
     homeStorageRevision: null,
+    updatedAt: new Date(0),
   }));
   const storage = new MemoryObjectStorage();
   const records = new PrismaAgentHomeRecords(fakeComputers(rows), memoryRing());
@@ -159,6 +164,42 @@ describe("ObjectAgentHomeStore", () => {
     expect(object!.bytes.includes(Buffer.from("todo.txt"))).toBe(false);
     expect(rows[0]!.homeStorageRevision).toBe(revision);
     expect(rows[0]!.homeStorageKey).toMatch(/^rkz1:/);
+  });
+
+  it("saves without moving the computer's updatedAt, which lifecycle claims fence on", async () => {
+    const { store, rows } = await setup();
+    const claimedAt = new Date("2026-01-01T00:00:00Z");
+    rows[0]!.updatedAt = claimedAt;
+
+    await store.commit("bot-1", await staged({ "a.txt": "one" }), context);
+    await store.commit("bot-1", await staged({ "a.txt": "two" }), context);
+
+    expect(rows[0]!.homeStorageRevision).not.toBeNull();
+    expect(rows[0]!.updatedAt.getTime()).toBe(claimedAt.getTime());
+  });
+
+  it("retries a save when a lifecycle claim lands between its read and write", async () => {
+    const { rows } = await setup();
+    const claimedAt = new Date("2026-01-01T00:00:00Z");
+    const computers = fakeComputers(rows);
+    const updateMany = computers.computer.updateMany;
+    let claims = 0;
+    computers.computer.updateMany = ((args: { where: { updatedAt?: Date } }) => {
+      if (args.where.updatedAt && claims < 2) {
+        claims += 1;
+        rows[0]!.updatedAt = new Date(claimedAt.getTime() + claims);
+      }
+      return updateMany(args as Parameters<typeof updateMany>[0]);
+    }) as unknown as typeof updateMany;
+    const records = new PrismaAgentHomeRecords(computers, memoryRing());
+
+    const stored = await records.create("bot-1");
+    expect(await records.advance("bot-1", stored!.storageId, null, "rev-1")).toBe(true);
+
+    expect(claims).toBe(2);
+    expect(rows[0]!.homeStorageRevision).toBe("rev-1");
+    expect(rows[0]!.updatedAt.getTime()).toBe(claimedAt.getTime() + 2);
+    expect(await records.advance("bot-1", stored!.storageId, null, "rev-2")).toBe(false);
   });
 
   it("restores a home on a host whose cache is empty", async () => {
@@ -322,6 +363,77 @@ describe("ObjectAgentHomeStore", () => {
 
     expect(await store.sweep()).toBe(2);
     expect([...storage.objects.keys()].sort()).toEqual([kept, inProgress].sort());
+  });
+
+  it("removes folders from the stored copy, so another host never gets them back", async () => {
+    const { store, otherHost } = await setup(["team-1"]);
+    await store.commit(
+      "team-1",
+      await staged({
+        "bots/gone/notes.txt": "deleted bot",
+        "bots/kept/notes.txt": "other bot",
+        ".browser-profiles/chromium-bot-gone/Cookies": "session",
+        "shared/plan.txt": "shared",
+      }),
+      context,
+    );
+
+    await expect(store.removeFolders("team-1", "bots", ["gone", "missing"])).resolves.toBe(true);
+    await store.removeFolders("team-1", ".browser-profiles", ["chromium-bot-gone"]);
+    // Nothing left to remove does not save a new revision.
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(false);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({
+      "bots/kept/notes.txt": "other bot",
+      "shared/plan.txt": "shared",
+    });
+  });
+
+  it("leaves the folders to a retry when the stored copy cannot be saved", async () => {
+    const { store, storage, otherHost } = await setup(["team-1"]);
+    await store.commit("team-1", await staged({ "bots/gone/notes.txt": "deleted bot" }), context);
+    const put = storage.put.bind(storage);
+    storage.put = async () => {
+      throw new Error("bucket unavailable");
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "bucket unavailable",
+    );
+    storage.put = put;
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).resolves.toBe(true);
+
+    expect(await exported(await otherHost(), "team-1")).toEqual({});
+  });
+
+  it("keeps the rest of a home never stored when its first save fails", async () => {
+    const { store, storage } = await setup(["team-1"]);
+    await mkdir(path.join(store.pathFor("team-1"), "bots/gone"), { recursive: true });
+    await mkdir(path.join(store.pathFor("team-1"), "bots/kept"), { recursive: true });
+    await writeFile(path.join(store.pathFor("team-1"), "bots/kept/work.txt"), "other bot");
+    storage.put = async () => {
+      throw new Error("bucket unavailable");
+    };
+
+    await expect(store.removeFolders("team-1", "bots", ["gone"])).rejects.toThrow(
+      "bucket unavailable",
+    );
+
+    await expect(readdir(path.join(store.pathFor("team-1"), "bots"))).resolves.toEqual(["kept"]);
+  });
+
+  it("removes a deleted home's cache, previous copy and revision marker", async () => {
+    const { root, store } = await setup(["team-1", "team-2"]);
+    await store.commit("team-1", await staged({ "a.txt": "gone" }), context);
+    await store.commit("team-2", await staged({ "a.txt": "kept" }), context);
+    await mkdir(`${store.pathFor("team-1")}.previous`, { recursive: true });
+    await writeFile(path.join(`${store.pathFor("team-1")}.previous`, "a.txt"), "gone");
+
+    await store.remove("team-1");
+    await store.remove("team-1");
+
+    await expect(readdir(path.join(root, "homes"))).resolves.toEqual(["team-2"]);
+    await expect(readdir(path.join(root, "home-revisions"))).resolves.toEqual(["team-2.txt"]);
   });
 
   it("deletes nothing when the database knows none of the stored homes", async () => {

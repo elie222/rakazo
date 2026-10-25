@@ -6,6 +6,16 @@ import type {
   ExternalConversation,
   ExternalConversationPolicy,
 } from "@rakazo/contracts";
+import type { ListenMode } from "@rakazo/core";
+import {
+  AUTOMATED_SENDER_MODES,
+  ambientValue,
+  listenMode,
+  roomAutomatedSenders,
+  senderPolicy,
+  withRollupHours,
+  withSenderMode,
+} from "@rakazo/core";
 import {
   Button,
   Input,
@@ -20,16 +30,6 @@ import { useId, useMemo, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
 import { IconTooltip } from "../components/IconTooltip";
 import { errorText } from "../lib/user-error";
-
-type ListenMode = "inherit" | "listen" | "mentions";
-
-function listenMode(value: boolean | null): ListenMode {
-  return value === null ? "inherit" : value ? "listen" : "mentions";
-}
-
-function ambientValue(mode: ListenMode): boolean | null {
-  return mode === "inherit" ? null : mode === "listen";
-}
 
 export function ExternalConversationSettings({
   conversation,
@@ -53,39 +53,20 @@ export function ExternalConversationSettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const senders = useMemo(
-    () =>
-      [
-        ...new Map([
-          ...Object.entries(policies).map(
-            ([id, policy]) => [id, { id, name: policy.name }] as const,
-          ),
-          ...conversation.automatedSenders.map((sender) => [sender.id, sender] as const),
-        ]).values(),
-      ].sort((left, right) => left.name.localeCompare(right.name)),
+    () => roomAutomatedSenders(policies, conversation.automatedSenders),
     [conversation.automatedSenders, policies],
   );
   const effectiveListening = ambientValue(mode) ?? bot.teamChatAmbientEnabled;
-  const senderModes: Array<{ value: AutomatedSenderPolicyMode; label: string }> = [
-    { value: "ignore", label: t`Ignore` },
-    { value: "rollup", label: t`Group updates` },
-    { value: "action", label: t`Always act` },
-    { value: "user", label: t`Treat like a person` },
-  ];
+  const senderModeLabels: Record<AutomatedSenderPolicyMode, string> = {
+    ignore: t`Ignore`,
+    rollup: t`Group updates`,
+    action: t`Always act`,
+    user: t`Treat like a person`,
+  };
 
-  function setSenderMode(
-    senderId: string,
-    senderName: string,
-    nextMode: AutomatedSenderPolicyMode,
-  ) {
+  function updatePolicies(update: (current: AutomatedSenderPolicies) => AutomatedSenderPolicies) {
     setSaved(false);
-    setPolicies((current) => ({
-      ...current,
-      [senderId]: {
-        name: senderName,
-        mode: nextMode,
-        ...(nextMode === "rollup" ? { rollupHours: current[senderId]?.rollupHours ?? 6 } : {}),
-      },
-    }));
+    setPolicies(update);
   }
 
   return (
@@ -181,10 +162,7 @@ export function ExternalConversationSettings({
         {senders.length > 0 ? (
           <div className="mt-2 divide-y divide-border">
             {senders.map((sender) => {
-              const policy = policies[sender.id] ?? {
-                name: sender.name,
-                mode: "ignore" as const,
-              };
+              const policy = senderPolicy(policies, sender);
               return (
                 <div key={sender.id} className="py-3">
                   <div className="flex items-center justify-between gap-3">
@@ -196,17 +174,19 @@ export function ExternalConversationSettings({
                       aria-label={t`${sender.name} handling`}
                       value={policy.mode}
                       onChange={(event) =>
-                        setSenderMode(
-                          sender.id,
-                          sender.name,
-                          event.target.value as AutomatedSenderPolicyMode,
+                        updatePolicies((current) =>
+                          withSenderMode(
+                            current,
+                            sender,
+                            event.target.value as AutomatedSenderPolicyMode,
+                          ),
                         )
                       }
                       className="max-w-[165px]"
                     >
-                      {senderModes.map((option) => (
-                        <NativeSelectOption key={option.value} value={option.value}>
-                          {option.label}
+                      {AUTOMATED_SENDER_MODES.map((value) => (
+                        <NativeSelectOption key={value} value={value}>
+                          {senderModeLabels[value]}
                         </NativeSelectOption>
                       ))}
                     </NativeSelect>
@@ -224,17 +204,11 @@ export function ExternalConversationSettings({
                         min={1}
                         max={720}
                         value={policy.rollupHours ?? 6}
-                        onChange={(event) => {
-                          const rollupHours = Math.max(
-                            1,
-                            Math.min(720, Number(event.target.value)),
-                          );
-                          setPolicies((current) => ({
-                            ...current,
-                            [sender.id]: { name: sender.name, mode: "rollup", rollupHours },
-                          }));
-                          setSaved(false);
-                        }}
+                        onChange={(event) =>
+                          updatePolicies((current) =>
+                            withRollupHours(current, sender, Number(event.target.value)),
+                          )
+                        }
                         className="h-7 w-16 px-2 text-end"
                       />
                       <Trans>hours</Trans>

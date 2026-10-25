@@ -600,6 +600,7 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
     message: {
       create: vi.fn(async () => ({ id: "message-expired", seq: 1 })),
       findFirst: vi.fn(async () => null),
+      findMany: vi.fn(async () => []),
     },
     event: {
       findMany: vi.fn(async () => []),

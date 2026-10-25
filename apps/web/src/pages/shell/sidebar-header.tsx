@@ -10,8 +10,28 @@ import { WindowChrome } from "../WindowChrome";
 import { BotCreatePicker } from "./bot-picker";
 import { isCreateMenuHotkey } from "./command-palette-hotkey";
 
+/**
+ * Whether the create menu is open, opened by Cmd/Ctrl-N. The shell holds it from its first render,
+ * so the shortcut is not lost while the sidebar is still waiting for its first data.
+ */
+export function useCreateMenu() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isCreateMenuHotkey(event)) return;
+      event.preventDefault();
+      setOpen(true);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return [open, setOpen] as const;
+}
+
 export function SidebarHeader({
   mini = false,
+  createMenuOpen,
+  setCreateMenuOpen,
   activityMode,
   toggleActivityMode,
   searchOpen = false,
@@ -23,9 +43,10 @@ export function SidebarHeader({
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
-  setPickerInfoTopic,
 }: {
   mini?: boolean;
+  createMenuOpen: boolean;
+  setCreateMenuOpen: (open: boolean) => void;
   activityMode: boolean;
   toggleActivityMode: () => void;
   searchOpen?: boolean;
@@ -37,20 +58,9 @@ export function SidebarHeader({
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
-  setPickerInfoTopic: (topic: "group" | "space") => void;
 }) {
   const { t } = useLingui();
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const hasWindowChrome = Boolean(desktopBridge());
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (!isCreateMenuHotkey(event)) return;
-      event.preventDefault();
-      setCreateMenuOpen(true);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   return (
     <div
@@ -148,16 +158,6 @@ export function SidebarHeader({
                   setCreateMenuOpen(false);
                   setMobileSidebarOpen(false);
                   setNewSpaceOpen(true);
-                }}
-                onShowGroupInfo={() => {
-                  setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
-                  setPickerInfoTopic("group");
-                }}
-                onShowSpaceInfo={() => {
-                  setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
-                  setPickerInfoTopic("space");
                 }}
               />
             </PopoverContent>

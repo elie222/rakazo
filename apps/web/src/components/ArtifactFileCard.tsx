@@ -69,8 +69,9 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           className="rounded-2xl border border-border bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
-          <div className="mt-1 text-muted-foreground">
-            {props.mimeType} · {formatBytes(props.size)}
+          <div className="mt-1 flex gap-2 text-muted-foreground">
+            <span>{props.mimeType}</span>
+            <span>{formatBytes(props.size)}</span>
           </div>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}

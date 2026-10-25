@@ -17,10 +17,13 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
+  onImportAgent,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
+  /** Offered on the first-run focus card while it is unanswered. */
+  onImportAgent?: () => void;
 }) {
   const { t } = useLingui();
   const [pending, setPending] = useState(false);
@@ -106,14 +109,25 @@ export function ChoiceCard({
             ))}
         </div>
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
+        {onImportAgent && !block.answerId && block.question === FOCUS_QUESTION ? (
+          <Button
+            variant="link"
+            className="mt-2 h-auto px-0 text-muted-foreground"
+            onClick={onImportAgent}
+          >
+            <Trans>Import an agent</Trans>
+          </Button>
+        ) : null}
       </div>
     </div>
   );
 }
 
+const FOCUS_QUESTION = "What do you want me on first?";
+
 /** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
 function OnboardingFocusQuestion({ question }: { question: string }) {
-  if (question === "What do you want me on first?") {
+  if (question === FOCUS_QUESTION) {
     return <Trans>What do you want me on first?</Trans>;
   }
   return question;
@@ -128,7 +142,7 @@ function OnboardingFocusOptionLabel({
   label: string;
   question: string;
 }) {
-  if (question !== "What do you want me on first?") return label;
+  if (question !== FOCUS_QUESTION) return label;
   switch (id) {
     case "day":
       return <Trans>Day-to-day work</Trans>;
@@ -398,7 +412,7 @@ export function McpApprovalCard({
     }
   }
 
-  const summary = endpoint ?? `stdio · ${transport}`;
+  const summary = endpoint ?? `stdio (${transport})`;
   return (
     <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
       <div className="flex items-center gap-2">
@@ -434,7 +448,7 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected`} />
         </div>
       ) : null}
       {state === "dismissed" ? (

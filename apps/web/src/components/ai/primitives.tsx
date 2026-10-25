@@ -124,10 +124,5 @@ export function SuccessPop({ label }: { label: string }) {
 
 /** Card shell. */
 export function BuiCard({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  return (
-    <div
-      {...props}
-      className={cn("rounded-2xl border border-border bg-card shadow-sm", className)}
-    />
-  );
+  return <div {...props} className={cn("rounded-2xl bg-card", className)} />;
 }

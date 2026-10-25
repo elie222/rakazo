@@ -174,12 +174,21 @@ describe("Lark messaging conformance", () => {
         }),
       ]);
       const threadId = await surface.openDirectThread("lark", "ou-test", context);
-      expect(await surface.sendToThread({ threadId, body: "reply" }, context)).toEqual({
+      expect(
+        await surface.sendToThread({ threadId, body: "## Plan\n\n**Bold** step" }, context),
+      ).toEqual({
         handle: "om-reply",
       });
       expect(request).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ receive_id: "oc-test" }),
+          method: "POST",
+          data: {
+            receive_id: "oc-test",
+            msg_type: "post",
+            content: JSON.stringify({
+              zh_cn: { content: [[{ tag: "md", text: "## Plan\n\n**Bold** step" }]] },
+            }),
+          },
         }),
       );
     },
@@ -282,7 +291,7 @@ describe("Lark messaging conformance", () => {
     expect(() => decodeThreadId("lark:")).toThrow("missing chatId");
   });
 
-  it("edits and deletes text messages through the SDK", async () => {
+  it("edits Markdown as rich text and deletes messages through the SDK", async () => {
     const { surface, adapter } = createSurface();
     await surface.handleWebhook("lark", webhook(message()));
     const threadId = encodeThreadId({ chatId: "oc-test" });
@@ -292,11 +301,46 @@ describe("Lark messaging conformance", () => {
     expect(request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "PUT",
-        data: { msg_type: "text", content: JSON.stringify({ text: "**edited**" }) },
+        url: expect.stringMatching(/\/im\/v1\/messages\/om-reply$/),
+        data: {
+          msg_type: "post",
+          content: JSON.stringify({
+            zh_cn: { content: [[{ tag: "md", text: "**edited**" }]] },
+          }),
+        },
       }),
     );
     await adapter.deleteMessage(threadId, "om-reply");
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("posts plain strings as text through the SDK", async () => {
+    const { adapter } = createSurface();
+    const threadId = encodeThreadId({ chatId: "oc-test" });
+    expect(await adapter.postMessage(threadId, "hello")).toMatchObject({
+      id: "om-reply",
+      threadId,
+    });
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        url: expect.stringMatching(/\/im\/v1\/messages$/),
+        params: { receive_id_type: "chat_id" },
+        data: {
+          receive_id: "oc-test",
+          msg_type: "text",
+          content: JSON.stringify({ text: "hello" }),
+        },
+      }),
+    );
+  });
+
+  it("rejects an empty postable before sending a message", async () => {
+    const { adapter } = createSurface();
+    await expect(
+      adapter.postMessage(encodeThreadId({ chatId: "oc-test" }), { raw: "" }),
+    ).rejects.toThrow(/empty or unsupported/);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("fails outbound delivery on API errors", async () => {

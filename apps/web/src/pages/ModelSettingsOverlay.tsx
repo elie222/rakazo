@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { SettingsScope } from "@rakazo/contracts";
 import {
   compatibleConnectionName,
   connectionDisplayName,
@@ -40,13 +41,19 @@ import { useModelSettings } from "./model-settings/use-model-settings";
 export function ModelSettingsOverlay({
   onClose,
   embedded = false,
+  scope,
 }: {
   onClose: () => void;
-  /** Render panel body only for the shared Settings shell. */
+  /** Render the content only, inside the shared Settings shell's scroller. */
   embedded?: boolean;
+  /**
+   * The account's models, or the bound Space's own when it overrides them. Connections are
+   * account-wide, so a Space shows only its role lists.
+   */
+  scope: SettingsScope;
 }) {
   const { t } = useLingui();
-  const model = useModelSettings(onClose);
+  const model = useModelSettings(onClose, scope);
   const {
     baseUrl,
     busy,
@@ -270,105 +277,91 @@ export function ModelSettingsOverlay({
     </div>
   );
 
-  const body = (
+  const content = (
     <>
-      {!embedded ? (
-        <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
-          <DialogTitle className="text-heading2 font-medium text-foreground">
-            <Trans>Models</Trans>
-          </DialogTitle>
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
-          >
-            <X />
-          </DialogClose>
-        </DialogHeader>
+      {error && !connectionAt ? (
+        <p className="mb-4 text-sm text-destructive" role="alert">
+          {error}
+        </p>
       ) : null}
-
-      <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-        <div className="max-w-[600px]">
-          {error && !connectionAt ? (
-            <p className="mb-4 text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {notice && !connectionAt ? (
-            <p className="mb-4 text-sm text-success" role="status">
-              {notice}
-            </p>
-          ) : null}
-          {me ? (
-            <>
-              <ModelRoleSettings
-                userId={me.userId}
-                spaceId={me.spaceId}
-                credentials={credentials}
-                title={t`Main model`}
-                defaultLabel={t`Choose a model`}
-                providers={providers}
-                providerLabel={providerLabel}
-                onConnect={(next, intent) => openConnection(next, intent, null, "main")}
-                onManage={(id, credentialId) =>
-                  openConnection({ id, name: id }, null, credentialId, "main")
-                }
-                panel={connectionAt === "main" ? panelFor(true) : null}
-                thinking
-                onChanged={() => void refresh()}
-              />
-              {me.needsModel ? null : (
-                <SpaceBotsModelNotice
-                  refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
-                />
-              )}
-              <ModelRoleSettings
-                userId={me.userId}
-                spaceId={me.spaceId}
-                credentials={credentials}
-                modelRole="approval"
-                title={t`Approval model`}
-                defaultLabel={t`Choose a model`}
-                providers={providers}
-                providerLabel={providerLabel}
-                onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
-                onManage={(id, credentialId) =>
-                  openConnection({ id, name: id }, null, credentialId, "approval")
-                }
-                panel={connectionAt === "approval" ? panelFor(true) : null}
-              />
-              <ProvidersSection
-                credentials={credentials}
-                providers={allProviders}
-                name={connectionName}
-                disabled={busy}
-                onAdd={(next) => openConnection(next, null, null, "providers:add")}
-                onOpen={(entry) =>
-                  connectionAt === `providers:${entry.id}`
-                    ? closeConnection()
-                    : openConnection(
-                        { id: entry.provider, name: entry.provider },
-                        null,
-                        entry.id,
-                        `providers:${entry.id}`,
-                      )
-                }
-                panel={
-                  connectionAt?.startsWith("providers:")
-                    ? panelFor(connectionAt === "providers:add")
-                    : null
-                }
-                panelAt={connectionAt?.slice("providers:".length) ?? null}
-              />
-            </>
-          ) : loading ? (
-            <Spinner aria-label={t`Loading model catalog…`} />
-          ) : catalog.length ? null : (
-            <p className="text-[13px] leading-[1.5] text-muted-foreground">
-              <Trans>No model catalog is available.</Trans>
-            </p>
+      {notice && !connectionAt ? (
+        <p className="mb-4 text-sm text-success" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {me ? (
+        <>
+          <ModelRoleSettings
+            userId={me.userId}
+            spaceId={me.spaceId}
+            scope={scope}
+            credentials={credentials}
+            title={t`Main model`}
+            defaultLabel={t`Choose a model`}
+            providers={providers}
+            providerLabel={providerLabel}
+            onConnect={(next, intent) => openConnection(next, intent, null, "main")}
+            onManage={(id, credentialId) =>
+              openConnection({ id, name: id }, null, credentialId, "main")
+            }
+            panel={connectionAt === "main" ? panelFor(true) : null}
+            thinking
+            onChanged={() => void refresh()}
+          />
+          {me.needsModel ? null : (
+            <SpaceBotsModelNotice
+              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+            />
           )}
-        </div>
-      </div>
-
+          <ModelRoleSettings
+            userId={me.userId}
+            spaceId={me.spaceId}
+            scope={scope}
+            credentials={credentials}
+            modelRole="approval"
+            title={t`Approval model`}
+            defaultLabel={t`Choose a model`}
+            providers={providers}
+            providerLabel={providerLabel}
+            onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
+            onManage={(id, credentialId) =>
+              openConnection({ id, name: id }, null, credentialId, "approval")
+            }
+            panel={connectionAt === "approval" ? panelFor(true) : null}
+          />
+          {scope === "space" ? null : (
+            <ProvidersSection
+              credentials={credentials}
+              providers={allProviders}
+              name={connectionName}
+              disabled={busy}
+              onAdd={(next) => openConnection(next, null, null, "providers:add")}
+              onOpen={(entry) =>
+                connectionAt === `providers:${entry.id}`
+                  ? closeConnection()
+                  : openConnection(
+                      { id: entry.provider, name: entry.provider },
+                      null,
+                      entry.id,
+                      `providers:${entry.id}`,
+                    )
+              }
+              panel={
+                connectionAt?.startsWith("providers:")
+                  ? panelFor(connectionAt === "providers:add")
+                  : null
+              }
+              panelAt={connectionAt?.slice("providers:".length) ?? null}
+            />
+          )}
+        </>
+      ) : loading ? (
+        <Spinner aria-label={t`Loading model catalog…`} />
+      ) : catalog.length ? null : (
+        <p className="text-[13px] leading-[1.5] text-muted-foreground">
+          <Trans>No model catalog is available.</Trans>
+        </p>
+      )}
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -403,8 +396,8 @@ export function ModelSettingsOverlay({
 
   if (embedded) {
     return (
-      <div data-testid="model-settings" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {body}
+      <div data-testid="model-settings" className="max-w-[600px]">
+        {content}
       </div>
     );
   }
@@ -420,7 +413,19 @@ export function ModelSettingsOverlay({
         showCloseButton={false}
         className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
       >
-        {body}
+        <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
+          <DialogTitle className="text-heading2 font-medium text-foreground">
+            <Trans>Models</Trans>
+          </DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
+          >
+            <X />
+          </DialogClose>
+        </DialogHeader>
+        <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+          <div className="max-w-[600px]">{content}</div>
+        </div>
       </DialogContent>
     </Dialog>
   );

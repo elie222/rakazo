@@ -42,8 +42,11 @@ export function SpaceSearchResults({
               {hit.kind}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[13px] text-muted-foreground" dir="auto">
-            {hit.groupName ?? hit.botName} · {hit.snippet}
+          <div className="mt-0.5 flex min-w-0 gap-2 text-[13px] text-muted-foreground" dir="auto">
+            <span className="max-w-[40%] shrink-0 truncate text-foreground/75">
+              {hit.groupName ?? hit.botName}
+            </span>
+            <span className="truncate">{hit.snippet}</span>
           </div>
         </button>
       ))}

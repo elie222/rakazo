@@ -257,7 +257,7 @@ test("shows MCP server health, error details, and tests the connection on demand
   await testButton.click();
   await expect(page.getByRole("button", { name: "Testing…", exact: true })).toBeDisabled();
   await expect(health).toHaveAttribute("data-status", "ok");
-  await expect(health).toContainText("Running · 3 tools");
+  await expect(health).toContainText(/Running\s*3 tools/);
   await expect(page.getByTestId("mcp-health-details")).toHaveCount(0);
   await expect(page.getByText("Gmail is running")).toBeVisible();
   await expect(testButton).toBeEnabled();
@@ -304,7 +304,7 @@ test("polls the server list while a stdio package is installing", async ({ page 
   installing = false;
   await expect(health).toHaveAttribute("data-status", "ok", { timeout: 15_000 });
   expect(listCalls).toBeGreaterThan(beforePoll);
-  await expect(health).toContainText("Running · 1 tool");
+  await expect(health).toContainText(/Running\s*1 tool/);
 
   // Polling stops once nothing is installing.
   const settled = listCalls;
