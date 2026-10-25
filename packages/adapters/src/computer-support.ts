@@ -83,8 +83,10 @@ export function teamBotWorkspaceDirectory(botId: string): string {
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
-  requestedPath: string,
+  rawPath: string,
 ): string {
+  // The workspace root is the computer's $HOME, so a leading ~ is the root, like a leading /.
+  const requestedPath = rawPath.replace(/^~([\\/]|$)/, (_, separator: string) => separator || "/");
   if (scope !== "team") return requestedPath;
   const explicitRootPath = stripVirtualWorkspaceRoot(requestedPath);
   const normalized = normalizeWorkspacePath(explicitRootPath ?? requestedPath);
