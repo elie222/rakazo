@@ -4,7 +4,7 @@ import type { SandboxProviderOptions } from "./sandbox-factory.js";
 export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env): string {
   const configured = source.SANDBOX_PROVIDER;
   if (configured !== undefined && !configured.trim()) return "none";
-  const requested = legacyProvider(configured?.trim() || "docker");
+  const requested = configured?.trim() || "docker";
   if (requested === "none") return "none";
   if (requested === "e2b" && !optional(source.E2B_API_KEY)) return "none";
   if (requested === "daytona" && !optional(source.DAYTONA_API_KEY)) return "none";
@@ -73,17 +73,10 @@ function optional(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-/** Box was renamed to Boat; keep deployments with the old settings booting. */
-function legacyProvider(provider: string): string {
-  return provider === "box" ? "boat" : provider;
-}
-
 export function boatApiKeyFromEnv(source: NodeJS.ProcessEnv): string | undefined {
-  return optional(source.BOAT_API_KEY) ?? optional(source.BOX_API_KEY);
+  return optional(source.BOAT_API_KEY);
 }
 
 export function boatApiUrlFromEnv(source: NodeJS.ProcessEnv): string | undefined {
-  return (
-    optional(source.BOAT_API_URL) ?? optional(source.BOX_API_URL) ?? optional(source.BOX_BASE_URL)
-  );
+  return optional(source.BOAT_API_URL);
 }

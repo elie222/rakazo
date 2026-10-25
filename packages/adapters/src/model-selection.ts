@@ -151,13 +151,11 @@ export async function modelCredentialAuthKindsForSpace(
         createdAt: true,
       },
     }),
-    prisma.spaceModelPreference.findMany({
-      where: { userId: scope.userId, spaceId: scope.spaceId },
+    prisma.userModelPreference.findMany({
+      where: { userId: scope.userId },
       select: {
-        id: true,
         modelId: true,
         thinkingLevel: true,
-        isDefault: true,
         updatedAt: true,
         credential: {
           select: {
@@ -507,7 +505,7 @@ export async function findConnectedModelCredential(
     if (credential.id === selected.id) continue;
     const candidate = await readSecret(credential);
     candidates.push({
-      credential: { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null },
+      credential: { ...credential, defaultModel: null, thinkingLevel: null },
       defaultModel: null,
       enabledModelIds: candidate?.kind === "openai_compatible" ? candidate.enabledModelIds : [],
     });
@@ -757,15 +755,14 @@ export async function validateConnectedModelChoice(
       ? undefined
       : "Unknown model for that provider";
   }
-  const savedChoice = await prisma.spaceModelPreference.findFirst({
+  const savedChoice = await prisma.userModelPreference.findFirst({
     where: {
-      spaceId: actor.spaceId,
       userId: actor.userId,
       modelId,
       credential: { userId: actor.userId, provider },
       ...(resolution.credentialId ? { credentialId: resolution.credentialId } : {}),
     },
-    select: { id: true },
+    select: { credentialId: true },
   });
   if (savedChoice) return undefined;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);

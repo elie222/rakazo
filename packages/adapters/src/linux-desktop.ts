@@ -205,12 +205,22 @@ export class LinuxDesktop {
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext) {
     const env = await this.host.environment(computer);
+    const key = screenSessionKey(context);
+    if (context.keepScreenWarm && !context.cancelRunWork && !context.signal.aborted) {
+      // Revoke the run's control and keep the display and browser for this bot's next run.
+      // A stale fence (75) is already someone else's screen. If revocation is uncertain,
+      // fall through to full teardown rather than retaining control.
+      const control = await this.host
+        .run(computer, desktopControlCommand(key, context.screenLeaseId, env, false), context)
+        .catch(() => undefined);
+      if (control?.code === 0 || control?.code === 75) return;
+    }
     // A stale release is a successful no-op. A failed stop must retain the slot
     // for retry. Once the browser has stopped, a later slot-cleanup error must
     // not look like Chromium is still running.
     const result = await this.host.run(
       computer,
-      releaseDesktopCommand(screenSessionKey(context), context.screenLeaseId, env),
+      releaseDesktopCommand(key, context.screenLeaseId, env),
       context,
     );
     if (result.stdout.includes("RAKAZO_DESKTOP_RELEASED=")) {
@@ -350,13 +360,49 @@ const FIND_MISSING_DESKTOP_TOOLS = [
   'if [ ! -d /usr/share/novnc ] && [ ! -d /opt/noVNC ]; then missing="$missing novnc"; fi',
 ];
 
+/**
+ * Same as infra/sandboxes/computer/browser-policy.json. Rakazo keeps credentials itself, so
+ * the browser's save-password, address, and card prompts only cover the page.
+ */
+export const BROWSER_POLICY = JSON.stringify({
+  PasswordManagerEnabled: false,
+  AutofillAddressEnabled: false,
+  AutofillCreditCardEnabled: false,
+});
+
+/** Managed policy directories for Chromium, Ubuntu's Chromium, Google Chrome, and Brave. */
+const BROWSER_POLICY_DIRS = [
+  "/etc/chromium/policies/managed",
+  "/etc/chromium-browser/policies/managed",
+  "/etc/opt/chrome/policies/managed",
+  "/etc/brave/policies/managed",
+];
+
 export const PREPARE_LINUX_DESKTOP = [
   "set -eu",
   ...FIND_MISSING_DESKTOP_TOOLS,
+  'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
   'if [ -n "$missing" ]; then',
-  '  if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
-  "  $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $missing",
+  // Separate commands: set -e ignores a failure on the left of &&.
+  "  $root apt-get update -qq",
+  "  if ! $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing; then",
+  // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
+  // solve those without specifying the desktop packages, and never remove existing tools.
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --fix-broken --no-remove",
+  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing",
+  "  fi",
   "fi",
+  // Bots read pages visually; without a color emoji font every emoji is an empty box. The
+  // desktop works without it, so an image whose package manager is broken still runs.
+  "if [ ! -e /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf ]; then",
+  '  { $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2',
+  "fi",
+  `policy=${shellQuote(BROWSER_POLICY)}`,
+  `for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
+  '  [ "$(cat "$dir/rakazo-browser.json" 2>/dev/null)" = "$policy" ] && continue',
+  // A sandbox without root keeps working; its browser just shows the prompts.
+  '  printf \'%s\\n\' "$policy" | $root sh -c \'mkdir -p "$1" && cat > "$1/rakazo-browser.json"\' sh "$dir" || echo "could not set browser policy in $dir" >&2',
+  "done",
 ].join("\n");
 
 /** Fails unless every desktop tool is installed and a virtual display answers. */

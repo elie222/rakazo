@@ -1,12 +1,6 @@
 import type { Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import {
-  captureScreenshot,
-  completeOnboarding,
-  showPasswordForm,
-  signup,
-  signupThroughForm,
-} from "./helpers";
+import { captureScreenshot, completeOnboarding, signup, signupThroughForm } from "./helpers";
 
 test("sign-up stays blank until session and sign-in options are ready", async ({
   page,
@@ -136,7 +130,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await page.goto("/sign-up");
   await expect(page.getByLabel("Name")).toHaveAttribute("autocomplete", "name");
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
-  await showPasswordForm(page);
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
     "new-password",
@@ -197,7 +190,6 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
-  await showPasswordForm(page);
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
     "autocomplete",
     "current-password",
@@ -206,7 +198,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
 
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByPlaceholder("Password").fill("wrong-password12");
-  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
     page
       .locator("form")
@@ -216,7 +208,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await captureScreenshot(page, testInfo, "39-invalid-credentials");
 
   await page.getByPlaceholder("Password").fill(password);
-  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL((url) => url.pathname === protectedBotPath, {
     timeout: 20_000,
   });
@@ -309,7 +301,6 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
 
   await page.getByRole("button", { name: new RegExp(userName, "i") }).click();
   await page.getByRole("button", { name: "Log out" }).click();
-  await showPasswordForm(page);
   await expect(page.getByRole("link", { name: "Forgot password?" })).toBeVisible();
   await page.getByRole("link", { name: "Forgot password?" }).click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
@@ -325,12 +316,37 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   const sentToUser = async () => {
     const response = await page.request.get(`${emailApi}/__e2e/emails`);
     expect(response.headers()["cache-control"]).toBe("no-store");
-    const messages = (await response.json()) as Array<{ to: string; text: string }>;
-    return messages.filter((message) => message.to === email);
+    const messages = (await response.json()) as Array<{
+      to: string;
+      subject: string;
+      text: string;
+      html: string;
+    }>;
+    return messages.filter(
+      (message) => message.to === email && message.subject === "Reset your Rakazo password",
+    );
   };
   await expect.poll(async () => (await sentToUser()).length).toBeGreaterThan(0);
-  const resetUrl = (await sentToUser()).at(-1)?.text.match(/https?:\/\/\S+/)?.[0];
+  const resetMessage = (await sentToUser()).at(-1)!;
+  const resetUrl = resetMessage.text.match(/https?:\/\/\S+/)?.[0];
   expect(resetUrl).toBeTruthy();
+
+  const emailPreview = await page.context().newPage();
+  try {
+    await emailPreview.setContent(resetMessage.html);
+    const resetLink = emailPreview.getByRole("link", { name: "Reset password", exact: true });
+    await expect(resetLink).toHaveAttribute("href", resetUrl!);
+    for (const width of [800, 390]) {
+      await emailPreview.setViewportSize({ width, height: 480 });
+      await expect(resetLink).toBeVisible();
+      expect(
+        await emailPreview.locator("body").evaluate((body) => body.scrollWidth),
+      ).toBeLessThanOrEqual(width);
+      await captureScreenshot(emailPreview, testInfo, `password-reset-email-${width}`);
+    }
+  } finally {
+    await emailPreview.close();
+  }
 
   await page.goto(resetUrl!);
   await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
@@ -340,9 +356,8 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await expect(page.getByText("Password updated")).toBeVisible();
   await page.getByRole("link", { name: "Sign in" }).click();
   await page.getByLabel("Email").fill(email);
-  await showPasswordForm(page);
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
-  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/);
 });
 

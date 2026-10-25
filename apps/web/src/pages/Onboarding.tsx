@@ -38,7 +38,6 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-  Spinner,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -48,6 +47,7 @@ import {
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
+import { PageLoading } from "../components/PageLoading";
 import { SignupSurvey } from "../components/SignupSurvey";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
@@ -63,6 +63,7 @@ import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { CompatibleKeyField } from "./model-settings/compatible-key-field";
+import { OnboardingImport } from "./onboarding-import";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 /** A provider whose catalog entry offers both sign-in and a key appears once per way to connect. */
@@ -172,6 +173,14 @@ export function OnboardingPage() {
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const createStartedRef = useRef(false);
+  // An imported agent replaces Chief as the first bot.
+  const [importing, setImporting] = useState(false);
+  const importedBotRef = useRef<{ id: string } | null>(null);
+  // Mirrors importedBotRef for rendering; the ref serves the async flow.
+  const [importedBotId, setImportedBotId] = useState<string | null>(null);
+  const noModelStep = afterSurvey === "bot";
+  // Another tab or device made the first bot before the import could.
+  const [notImported, setNotImported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
@@ -517,14 +526,16 @@ export function OnboardingPage() {
     createStartedRef.current = true;
     setError(null);
     try {
-      const bot = await ensureFirstBot();
+      const imported = importedBotRef.current;
+      const bot = imported ?? (await ensureFirstBot());
       // Onboarding continues conversationally in the thread: greeting first,
-      // then the focus choice (immediate for the first bot).
+      // then the focus choice (immediate for the first bot), which an imported
+      // bot already answered.
       const started = await rpc.onboarding
         .start({ botId: bot.id })
         .then(() => true)
         .catch(() => false);
-      if (started) {
+      if (started && !imported) {
         await rpc.onboarding.promptFocus({ botId: bot.id }).catch(() => undefined);
       }
       navigate(`/app/${bot.id}`);
@@ -535,20 +546,87 @@ export function OnboardingPage() {
   }
 
   useEffect(() => {
-    if (step !== "bot") return;
+    if (step !== "bot" || notImported) return;
     void createFirstBot();
   }, [step]);
+
+  // Loading, and creating the first bot, both wait on one spinner until the chat opens.
+  if (step === "loading" || (step === "bot" && !error)) return <PageLoading />;
 
   return (
     <div className="min-h-full bg-background px-6 py-12">
       <div className="mx-auto w-full max-w-[560px]">
-        {step === "loading" ? (
-          <p className="text-muted-foreground">
-            <Spinner aria-label={t`Loading…`} />
-          </p>
+        {step === "survey" && !importing ? (
+          <>
+            <SignupSurvey
+              onDone={() => {
+                setNotImported(false);
+                setSurveyDone(true);
+              }}
+            />
+            {noModelStep && !importedBotId ? (
+              <Button
+                variant="link"
+                className="mt-6 h-auto px-0 text-muted-foreground"
+                onClick={() => setImporting(true)}
+              >
+                <Trans>Import an agent</Trans>
+              </Button>
+            ) : null}
+          </>
         ) : null}
-        {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
-        {step === "model" ? (
+        {(step === "model" || step === "survey") && importing ? (
+          <OnboardingImport
+            firstBot={{
+              lock: withFirstBotLock,
+              existing: async () => findFirstBot(await rpc.bots.list()),
+              spawnKey: FIRST_BOT_SPAWN_KEY,
+            }}
+            onBack={() => setImporting(false)}
+            onDone={(bot, imported) => {
+              setImporting(false);
+              if (!imported) {
+                setNotImported(true);
+                return;
+              }
+              importedBotRef.current = bot;
+              setImportedBotId(bot.id);
+              // The survey's own Continue then opens the imported bot.
+              if (step === "survey") return;
+              // The import may have brought a usable model connection.
+              void rpc
+                .me()
+                .then((me) => {
+                  if (!me.needsModel) goTo("bot");
+                })
+                .catch(() => undefined);
+            }}
+          />
+        ) : null}
+        {notImported ? (
+          <div className="mb-8" data-testid="onboarding-not-imported">
+            <p role="alert" className="text-sm text-destructive">
+              <Trans>Your first bot already existed, so the agent was not imported.</Trans>
+            </p>
+            {step === "survey" ? null : (
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  setNotImported(false);
+                  void rpc
+                    .me()
+                    .then((me) => {
+                      if (!me.needsModel) goTo("bot");
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                <Trans>Continue</Trans>
+              </Button>
+            )}
+          </div>
+        ) : null}
+        {step === "model" && !importing && !notImported ? (
           <div>
             <h1 className="text-[32px] font-medium text-foreground">
               <Trans>Connect a model</Trans>
@@ -1030,22 +1108,23 @@ export function OnboardingPage() {
                 </Button>
               ) : null}
             </div>
+            {importedBotId ? null : (
+              <Button
+                variant="link"
+                className="mt-6 h-auto px-0 text-muted-foreground"
+                onClick={() => setImporting(true)}
+              >
+                <Trans>Import an agent</Trans>
+              </Button>
+            )}
           </div>
         ) : null}
         {step === "bot" ? (
           <div>
-            {error ? (
-              <div>
-                <p className="text-sm text-destructive">{error}</p>
-                <Button className="mt-4" onClick={() => void createFirstBot()}>
-                  <Trans>Try again</Trans>
-                </Button>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">
-                <Trans>Opening chat…</Trans>
-              </p>
-            )}
+            <p className="text-sm text-destructive">{error}</p>
+            <Button className="mt-4" onClick={() => void createFirstBot()}>
+              <Trans>Try again</Trans>
+            </Button>
           </div>
         ) : null}
       </div>

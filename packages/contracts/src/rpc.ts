@@ -1,5 +1,13 @@
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
+import {
+  AgentImportCreateInput,
+  AgentImportInfoSchema,
+  AgentImportPlanSchema,
+  AgentImportPreviewInput,
+  AgentImportUndoInput,
+} from "./agent-import.js";
+import { AgentImportSetupStateInput, AgentImportSetupStateSchema } from "./agent-import-setup.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsScreenInput } from "./analytics.js";
 import {
@@ -40,6 +48,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
+  CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -64,6 +73,7 @@ import {
   MeSchema,
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
+  MessagingInstallationsStatusSchema,
   MessagingLinkedIdentitySchema,
   MessagingStatusSchema,
   ModelBackupChoiceSchema,
@@ -120,6 +130,7 @@ import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
+import { SettingsScopeSchema, SpaceSettingSchema, settingsScopeInput } from "./settings-scope.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -192,6 +203,8 @@ export const appContract = {
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
+          /** The settings copy the reviewed recipients came from, as in `status`. */
+          settingsScope: SettingsScopeSchema.optional(),
         }),
       )
       .output(AiConsentStatusSchema),
@@ -271,10 +284,22 @@ export const appContract = {
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),
     role: oc
-      .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
+      .input(
+        z.object({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
       .output(ModelRoleViewSchema),
     setRole: oc
-      .input(ModelRoleUpdateSchema.extend({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
+      .input(
+        ModelRoleUpdateSchema.extend({
+          role: ModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
       .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
@@ -309,6 +334,7 @@ export const appContract = {
           modelId: z.string().optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
           makeDefault: z.boolean().optional(),
+          scope: SettingsScopeSchema.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
@@ -350,6 +376,11 @@ export const appContract = {
     listArchived: oc.output(z.array(BotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
+    importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
+    importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
+    importInfo: oc.input(botId).output(AgentImportInfoSchema.nullable()),
+    importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
+    importUndo: oc.input(AgentImportUndoInput).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
@@ -906,7 +937,12 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     rename: oc
-      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .input(
+        z.object({
+          connectionId: Id,
+          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+        }),
+      )
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
@@ -921,6 +957,11 @@ export const appContract = {
   },
   /** External messaging surface: link state, group channels, agent connections. */
   messaging: {
+    installations: {
+      list: oc.output(MessagingInstallationsStatusSchema),
+      start: oc.input(z.object({ botId: Id })).output(z.object({ url: z.string() })),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     status: oc.output(MessagingStatusSchema),
     link: {
       /** Issue a short-lived code the user sends to the line from a chat app. */
@@ -952,23 +993,38 @@ export const appContract = {
     },
   },
   approvalRules: {
-    list: oc.output(z.array(ActionApprovalRuleSchema)),
+    list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
     set: oc
       .input(
-        z.object({
+        settingsScopeInput.extend({
           effect: z.enum(["always_allow", "require_approval"]),
           matchKind: z.enum(["tool", "connector", "category"]),
           matchValue: z.string().min(1),
         }),
       )
       .output(ActionApprovalRuleSchema),
-    remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    remove: oc
+      .input(settingsScopeInput.extend({ id: Id }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   autoReview: {
-    get: oc.output(ActionAutoReviewSettingsSchema),
+    get: oc.input(settingsScopeInput.optional()).output(ActionAutoReviewSettingsSchema),
     set: oc
-      .input(z.object({ enabled: z.boolean().optional(), skipApprovals: z.boolean().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          enabled: z.boolean().optional(),
+          skipApprovals: z.boolean().optional(),
+        }),
+      )
       .output(ActionAutoReviewSettingsSchema),
+  },
+  /** Which account settings the bound Space overrides for the member. */
+  spaceSettings: {
+    overrides: oc.output(z.array(SpaceSettingSchema)),
+    /** Customizing copies the account's settings into the Space; ending it drops the copy. */
+    setOverride: oc
+      .input(z.object({ setting: SpaceSettingSchema, enabled: z.boolean() }))
+      .output(z.array(SpaceSettingSchema)),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),
@@ -1037,8 +1093,8 @@ export const appContract = {
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
-    status: oc.output(VoiceStatusSchema),
-    credentials: oc.output(z.array(VoiceCredentialSchema)),
+    status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
         z
@@ -1052,6 +1108,8 @@ export const appContract = {
             baseUrl: z.string().max(2048).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
+            /** Where the connection becomes the default voice. */
+            scope: SettingsScopeSchema.optional(),
           })
           .superRefine((input, ctx) => {
             if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1068,13 +1126,23 @@ export const appContract = {
       .input(z.object({ provider: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) })),
     setVoice: oc
-      .input(z.object({ voiceId: z.string().min(1).max(120), provider: z.string().optional() }))
+      .input(
+        settingsScopeInput.extend({
+          voiceId: z.string().min(1).max(120),
+          provider: z.string().optional(),
+        }),
+      )
       .output(VoiceStatusSchema),
     setSpeechModel: oc
-      .input(z.object({ provider: z.string().min(1), speechModel: z.string().max(64) }))
+      .input(
+        settingsScopeInput.extend({
+          provider: z.string().min(1),
+          speechModel: z.string().max(64),
+        }),
+      )
       .output(VoiceCredentialSchema),
     voices: oc
-      .input(z.object({ provider: z.string().optional() }))
+      .input(settingsScopeInput.extend({ provider: z.string().optional() }))
       .output(z.array(VoiceInfoSchema)),
     prepare: oc
       .input(
@@ -1082,6 +1150,7 @@ export const appContract = {
           text: z.string().max(20000),
           voiceId: z.string().max(120).optional(),
           botId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),

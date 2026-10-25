@@ -318,3 +318,18 @@ it("keeps a filename in file-only previews for older clients", () => {
   expect(messageReplyPreview([file], "user").text).toBe("notes.txt");
   expect(messageReplyPreview([file, ...textBlock("Caption")], "user").text).toBe("Caption");
 });
+
+describe("a retired import checklist", () => {
+  it("gives no reply excerpt", () => {
+    const item = { kind: "routine" as const, routineId: "routine-1", name: "morning" };
+    for (const block of [
+      { kind: "import_setup", items: [], undone: true },
+      { kind: "import_setup", items: [item], undone: true },
+    ] satisfies MessageBlock[]) {
+      expect(messageReplyExcerpt([block], "bot")).toBe("");
+      expect(messageReplyPreview([block], "bot").text).toBe("");
+    }
+    // A live one is still quoted by its items.
+    expect(messageReplyExcerpt([{ kind: "import_setup", items: [item] }], "bot")).toBe("morning");
+  });
+});

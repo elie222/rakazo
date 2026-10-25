@@ -232,7 +232,7 @@ export function routineTriggerSummary(routine: Routine): string {
   else if (routine.messageProvider) parts.push(t`Message event`);
   for (const cron of routine.crons) parts.push(formatCron(cron));
   if (routine.watch) parts.push(t`When something changes`);
-  return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
+  return parts.length > 0 ? parts.join(", ") : t`No trigger`;
 }
 
 export function RoutineListHeader({ onCreate }: { onCreate: () => void }) {
@@ -285,20 +285,27 @@ export function RoutineListRow({
           <span className="block truncate text-[14.5px] font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="block truncate text-[12.5px] text-muted-foreground/80">
-            {routineTriggerSummary(routine)}
-            {routine.modelProvider && routine.modelId ? ` · ${routine.modelId}` : ""}
+          <span className="flex min-w-0 gap-2 text-[12.5px] text-muted-foreground/80">
+            <span className="truncate">{routineTriggerSummary(routine)}</span>
+            {routine.modelProvider && routine.modelId ? (
+              <span className="truncate">{routine.modelId}</span>
+            ) : null}
           </span>
         </span>
       </button>
       {running ? (
-        <Button
-          size="xs"
-          onClick={onStop}
-          className="shrink-0 rounded-full bg-warning/15 text-warning hover:bg-warning/25"
-        >
-          <Trans>Running · Stop</Trans>
-        </Button>
+        <>
+          <span className="shrink-0 text-[12.5px] text-warning">
+            <Trans>Running</Trans>
+          </span>
+          <Button
+            size="xs"
+            onClick={onStop}
+            className="shrink-0 bg-warning/15 text-warning hover:bg-warning/25"
+          >
+            <Trans>Stop</Trans>
+          </Button>
+        </>
       ) : null}
     </div>
   );

@@ -269,7 +269,8 @@ export function modelCredentialDto(
     id: string;
     provider: string;
     label: string;
-    isDefault: boolean;
+    /** Whether this connection runs the member's main model. */
+    isDefault?: boolean;
     defaultModel?: string | null;
     thinkingLevel?: string | null;
     supportsImages?: boolean;
@@ -281,7 +282,7 @@ export function modelCredentialDto(
     provider: canonicalPiProviderId(row.provider),
     label: row.label,
     hasKey: storedModelSecretHasApiKey(plaintext),
-    isDefault: row.isDefault,
+    isDefault: row.isDefault ?? false,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
     // Space-scoped effort stored beside the preference's modelId; the
     // openai-compatible secret may still contribute below when unset.

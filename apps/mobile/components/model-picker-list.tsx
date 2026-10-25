@@ -1,3 +1,4 @@
+import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices } from "@rakazo/core";
 import { useNavigation } from "expo-router";
@@ -99,8 +100,8 @@ export function ModelPickerList({
       heading:
         providerLabel && section.heading === providerLabel
           ? undefined
-          : providerLabel && section.heading?.startsWith(`${providerLabel} · `)
-            ? section.heading.slice(providerLabel.length + 3)
+          : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
+            ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
             : section.heading,
     }));
     const connect = groupModelChoices(

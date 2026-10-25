@@ -1,12 +1,19 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
-import { Button, Label, Spinner, Switch } from "@rakazo/ui-web";
+import type {
+  ActionApprovalRule,
+  ActionAutoReviewSettings,
+  SettingsScope,
+} from "@rakazo/contracts";
+import { Button, Label, Switch } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { useSpaceQueries, writeSaved } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
+import { SettingsGroup, SettingsRow } from "./SettingsRows";
+
+type Preset = "email" | "purchase";
 
 function describeRule(rule: ActionApprovalRule): string {
   if (rule.effect === "require_approval") {
@@ -27,56 +34,68 @@ function describeRule(rule: ActionApprovalRule): string {
   return t`Allow ${rule.matchValue} without asking`;
 }
 
-export function ApprovalRulesSettings() {
+/** Confirmations for the account, or for the bound Space when it overrides them. */
+export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const autoReviewId = useId();
   const skipApprovalsId = useId();
+  const emailPresetId = useId();
+  const purchasePresetId = useId();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
-  const rulesQuery = useQuery(queries.approvalRules.list.queryOptions());
-  const autoReviewQuery = useQuery(queries.autoReview.get.queryOptions());
+  const input = { scope };
+  const rulesQuery = useQuery(queries.approvalRules.list.queryOptions({ input }));
+  const autoReviewQuery = useQuery(queries.autoReview.get.queryOptions({ input }));
   const rules = rulesQuery.data ?? [];
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
-  const [savingPreset, setSavingPreset] = useState<"email" | "purchase" | null>(null);
+  const [savingPreset, setSavingPreset] = useState<Preset | null>(null);
   const [savingAutoReview, setSavingAutoReview] = useState(false);
   const [actionError, setError] = useState<string | null>(null);
   const error =
     actionError ?? (loadFailed ? errorText(loadFailed, t`Could not load approval rules`) : null);
+  const presetRule = (preset: Preset) =>
+    rules.find(
+      (rule) =>
+        rule.effect === "require_approval" &&
+        rule.matchKind === "category" &&
+        rule.matchValue === preset,
+    );
+  const otherRules = rules.filter(
+    (rule) => rule !== presetRule("email") && rule !== presetRule("purchase"),
+  );
 
   function setRules(update: (current: ActionApprovalRule[]) => ActionApprovalRule[]) {
-    return writeSaved(queryClient, queries.approvalRules.list.queryKey(), (current) =>
+    return writeSaved(queryClient, queries.approvalRules.list.queryKey({ input }), (current) =>
       update(current ?? []),
     );
   }
 
   function setAutoReview(next: ActionAutoReviewSettings) {
-    return writeSaved(queryClient, queries.autoReview.get.queryKey(), () => next);
+    return writeSaved(queryClient, queries.autoReview.get.queryKey({ input }), () => next);
   }
 
-  async function setPreset(matchValue: "email" | "purchase") {
+  async function setPreset(preset: Preset, on: boolean) {
     if (loading || savingPreset) return;
-    if (
-      rules.some(
-        (rule) =>
-          rule.effect === "require_approval" &&
-          rule.matchKind === "category" &&
-          rule.matchValue === matchValue,
-      )
-    ) {
-      return;
-    }
-    setSavingPreset(matchValue);
+    const existing = presetRule(preset);
+    if (on === Boolean(existing)) return;
+    setSavingPreset(preset);
     setError(null);
     try {
-      const saved = await rpc.approvalRules.set({
-        effect: "require_approval",
-        matchKind: "category",
-        matchValue,
-      });
-      await setRules((current) => [...current, saved]);
+      if (existing) {
+        await rpc.approvalRules.remove({ scope, id: existing.id });
+        await setRules((current) => current.filter((rule) => rule.id !== existing.id));
+      } else {
+        const saved = await rpc.approvalRules.set({
+          scope,
+          effect: "require_approval",
+          matchKind: "category",
+          matchValue: preset,
+        });
+        await setRules((current) => [...current, saved]);
+      }
     } catch (err) {
       setError(errorText(err, t`Could not save rule`));
     } finally {
@@ -87,19 +106,19 @@ export function ApprovalRulesSettings() {
   async function removeRule(id: string) {
     setError(null);
     try {
-      await rpc.approvalRules.remove({ id });
+      await rpc.approvalRules.remove({ scope, id });
       await setRules((current) => current.filter((rule) => rule.id !== id));
     } catch (err) {
       setError(errorText(err, t`Could not remove rule`));
     }
   }
 
-  async function saveAutoReview(input: { enabled?: boolean; skipApprovals?: boolean }) {
+  async function saveAutoReview(change: { enabled?: boolean; skipApprovals?: boolean }) {
     if (loading || savingAutoReview) return;
     setSavingAutoReview(true);
     setError(null);
     try {
-      await setAutoReview(await rpc.autoReview.set(input));
+      await setAutoReview(await rpc.autoReview.set({ ...change, scope }));
     } catch (err) {
       setError(errorText(err, t`Could not save Auto Review`));
     } finally {
@@ -108,82 +127,102 @@ export function ApprovalRulesSettings() {
   }
 
   return (
-    <div data-testid="action-confirmation-settings" className="pt-5">
-      <div className="mb-5 flex items-center gap-3">
-        <Switch
-          id={skipApprovalsId}
-          data-testid="skip-approvals-toggle"
-          checked={autoReview?.skipApprovals ?? false}
-          disabled={loading || savingAutoReview || !autoReview}
-          onCheckedChange={(checked) => void saveAutoReview({ skipApprovals: checked })}
-        />
-        <Label htmlFor={skipApprovalsId} className="text-[14px] font-normal text-foreground/75">
-          <Trans>Run actions without asking</Trans>
-        </Label>
-      </div>
-      <div className="flex flex-col items-start gap-2">
-        <Button
-          variant="outline"
-          disabled={loading || savingPreset !== null}
-          onClick={() => void setPreset("email")}
-        >
-          <Trans>Ask before sending external email</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          disabled={loading || savingPreset !== null}
-          onClick={() => void setPreset("purchase")}
-        >
-          <Trans>Ask before purchases</Trans>
-        </Button>
-      </div>
-      {autoReview?.skipApprovals ? null : (
-        <div className="mt-5 flex items-start gap-3">
-          <Switch
-            id={autoReviewId}
-            data-testid="auto-review-toggle"
-            className="mt-0.5"
-            checked={autoReview?.enabled ?? false}
-            disabled={loading || savingAutoReview || !autoReview}
-            onCheckedChange={(checked) => void saveAutoReview({ enabled: checked })}
-          />
-          <div>
-            <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground/75">
-              <Trans>Flag unexpected actions</Trans>
+    <div data-testid="action-confirmation-settings" className="space-y-8">
+      <SettingsGroup>
+        <SettingsRow
+          label={
+            <Label htmlFor={skipApprovalsId} className="text-[14px] font-normal text-foreground">
+              <Trans>Run actions without asking</Trans>
             </Label>
+          }
+          control={
+            <Switch
+              id={skipApprovalsId}
+              data-testid="skip-approvals-toggle"
+              checked={autoReview?.skipApprovals ?? false}
+              disabled={loading || savingAutoReview || !autoReview}
+              onCheckedChange={(checked) => void saveAutoReview({ skipApprovals: checked })}
+            />
+          }
+        />
+        {autoReview?.skipApprovals ? null : (
+          <SettingsRow
+            label={
+              <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground">
+                <Trans>Flag unexpected actions</Trans>
+              </Label>
+            }
+            control={
+              <Switch
+                id={autoReviewId}
+                data-testid="auto-review-toggle"
+                checked={autoReview?.enabled ?? false}
+                disabled={loading || savingAutoReview || !autoReview}
+                onCheckedChange={(checked) => void saveAutoReview({ enabled: checked })}
+              />
+            }
+          >
             {autoReview?.enabled && !autoReview.checkerAvailable ? (
               <p className="mt-1 text-[13px] text-muted-foreground">
                 <Trans>Add a model in Settings to use this.</Trans>
               </p>
             ) : null}
-          </div>
-        </div>
-      )}
-      {error ? <p className="mt-3 text-[13px] text-destructive">{error}</p> : null}
-      {loading ? (
-        <p className="mt-4 text-[13px] text-muted-foreground">
-          <Spinner aria-label={t`Loading rules…`} />
-        </p>
-      ) : rules.length > 0 ? (
-        <ul className="mt-4 space-y-2">
-          {rules.map((rule) => (
-            <li
+          </SettingsRow>
+        )}
+        <SettingsRow
+          label={
+            <Label htmlFor={emailPresetId} className="text-[14px] font-normal text-foreground">
+              <Trans>Ask before sending external email</Trans>
+            </Label>
+          }
+          control={
+            <Switch
+              id={emailPresetId}
+              data-testid="ask-before-email-toggle"
+              checked={Boolean(presetRule("email"))}
+              disabled={loading || savingPreset !== null}
+              onCheckedChange={(checked) => void setPreset("email", checked)}
+            />
+          }
+        />
+        <SettingsRow
+          label={
+            <Label htmlFor={purchasePresetId} className="text-[14px] font-normal text-foreground">
+              <Trans>Ask before purchases</Trans>
+            </Label>
+          }
+          control={
+            <Switch
+              id={purchasePresetId}
+              data-testid="ask-before-purchase-toggle"
+              checked={Boolean(presetRule("purchase"))}
+              disabled={loading || savingPreset !== null}
+              onCheckedChange={(checked) => void setPreset("purchase", checked)}
+            />
+          }
+        />
+      </SettingsGroup>
+      {otherRules.length > 0 ? (
+        <SettingsGroup>
+          {otherRules.map((rule) => (
+            <SettingsRow
               key={rule.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2"
-            >
-              <span className="text-[13.5px] text-foreground/75">{describeRule(rule)}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => void removeRule(rule.id)}
-              >
-                <Trans>Remove</Trans>
-              </Button>
-            </li>
+              label={describeRule(rule)}
+              control={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => void removeRule(rule.id)}
+                >
+                  <Trans>Remove</Trans>
+                </Button>
+              }
+            />
           ))}
-        </ul>
+        </SettingsGroup>
       ) : null}
+      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
     </div>
   );
 }

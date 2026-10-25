@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
 import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
-import type { ComposerMention, SlashActionId } from "@rakazo/core";
+import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
@@ -20,6 +20,7 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
+import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
@@ -35,7 +36,12 @@ import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
 import { ComposerError } from "./composer-error";
-import { MentionChipIcon, MentionOptionIcon, slashActionLabel } from "./composer-mentions";
+import {
+  ComposerChip,
+  MentionChipIcon,
+  MentionOptionIcon,
+  slashActionLabel,
+} from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
@@ -70,6 +76,7 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
+  onImportAgent,
 }: {
   activeName?: string;
   running: boolean;
@@ -84,7 +91,7 @@ export const Composer = memo(function Composer({
   onDismissError: () => void;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onAttachmentPick: (files: FileList | null) => boolean;
+  onAttachmentPick: (files: FileList | readonly File[] | null) => boolean;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
   onStop: () => Promise<void>;
@@ -102,6 +109,8 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
+  /** When set, a dropped OpenClaw or Hermes folder or backup offers Import or Attach. */
+  onImportAgent?: (agent: AgentImportReader) => void;
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
@@ -130,6 +139,10 @@ export const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
+  const [agentDrop, setAgentDrop] = useState<{
+    agent: AgentImportReader;
+    files: readonly File[];
+  } | null>(null);
   useEffect(
     () =>
       subscribeComposerDraftAccepted(draftKey, (text) => {
@@ -207,7 +220,18 @@ export const Composer = memo(function Composer({
     retryNonce.current = null;
   }
 
-  function pickAttachments(files: FileList | null) {
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => setAgentDrop(null), [draftKey]);
+
+  function pickAttachments(files: FileList | readonly File[] | null) {
     if (!files?.length) return;
     if (onAttachmentPick(files)) markEdited();
   }
@@ -390,7 +414,27 @@ export const Composer = memo(function Composer({
     event.preventDefault();
     dragDepth.current = 0;
     setDraggingFiles(false);
-    if (!disabled) pickAttachments(dataTransfer.files);
+    if (disabled) return;
+    const drop = onImportAgent ? captureDrop(dataTransfer) : null;
+    if (!drop || !mightBeAgent(drop)) {
+      pickAttachments(dataTransfer.files);
+      return;
+    }
+    // The event's file list is emptied once this handler returns.
+    const files = drop.files;
+    // Reading a large archive takes a while; drop nothing into a chat the user has left.
+    const target = draftKey;
+    const stillHere = () => mountedRef.current && draftKeyRef.current === target;
+    void droppedAgent(drop).then(
+      (agent) => {
+        if (!stillHere()) return;
+        if (agent) setAgentDrop({ agent, files });
+        else pickAttachments(files);
+      },
+      () => {
+        if (stillHere()) pickAttachments(files);
+      },
+    );
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -493,6 +537,37 @@ export const Composer = memo(function Composer({
             textareaRef.current?.focus();
           }}
         />
+      ) : null}
+      {agentDrop ? (
+        <div
+          data-testid="agent-drop-choice"
+          className="mb-3 flex items-center gap-3 rounded-[14px] border border-border bg-card px-4 py-2"
+        >
+          <span className="min-w-0 flex-1 text-[13.5px] text-foreground">
+            {t`Import this agent as a bot?`}
+          </span>
+          <Button
+            size="sm"
+            onClick={() => {
+              const { agent } = agentDrop;
+              setAgentDrop(null);
+              onImportAgent?.(agent);
+            }}
+          >
+            {t`Import`}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const { files } = agentDrop;
+              setAgentDrop(null);
+              pickAttachments(files);
+            }}
+          >
+            {t`Attach`}
+          </Button>
+        </div>
       ) : null}
       {attachmentNotice ? (
         <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
@@ -653,54 +728,36 @@ export const Composer = memo(function Composer({
           }`}
         >
           {selectedSkill ? (
-            <span
+            <ComposerChip
               data-testid="skill-chip"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
-            >
-              <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
-              <span dir="auto" className="truncate">
-                {selectedSkill.name}
-              </span>
-              <button
-                type="button"
-                aria-label={t`Remove skill ${selectedSkill.name}`}
-                onClick={() => {
-                  markEdited();
-                  setSelectedSkill(null);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
-            </span>
+              icon={
+                <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
+              }
+              label={selectedSkill.name}
+              removeLabel={t`Remove skill ${selectedSkill.name}`}
+              onRemove={() => {
+                markEdited();
+                setSelectedSkill(null);
+              }}
+            />
           ) : null}
           {selectedMentions.map((mention) => (
-            <span
+            <ComposerChip
               key={mentionChipKey(mention)}
               data-testid="mention-chip"
               data-mention-kind={mention.kind}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
-            >
-              <MentionChipIcon mention={mention} />
-              <span dir="auto" className="truncate">
-                {mention.name}
-              </span>
-              <button
-                type="button"
-                aria-label={t`Remove mention ${mention.name}`}
-                onClick={() => {
-                  markEdited();
-                  setSelectedMentions((current) =>
-                    current.filter(
-                      (selected) => mentionChipKey(selected) !== mentionChipKey(mention),
-                    ),
-                  );
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
-            </span>
+              icon={<MentionChipIcon mention={mention} />}
+              label={mention.name}
+              removeLabel={t`Remove mention ${mention.name}`}
+              onRemove={() => {
+                markEdited();
+                setSelectedMentions((current) =>
+                  current.filter(
+                    (selected) => mentionChipKey(selected) !== mentionChipKey(mention),
+                  ),
+                );
+              }}
+            />
           ))}
           <HoldToTalkStrip talk={talk} />
           <textarea

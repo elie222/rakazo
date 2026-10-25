@@ -26,6 +26,7 @@ import {
 import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
+  deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
@@ -971,6 +972,7 @@ export async function replaceComputer(
           existing.homeKey,
           oldRef,
           context,
+          () => deletedTeamBotFolders(deps.prisma, existing),
         );
         const recorded = await deps.prisma.computer.updateMany({
           where: { id: computerId, state: "suspending", updatedAt: claimStamp },

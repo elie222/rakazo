@@ -69,8 +69,9 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
           className="rounded-2xl border border-border bg-card px-4 py-3 text-left text-[14px] text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
-          <div className="mt-1 text-muted-foreground">
-            {props.mimeType} · {formatBytes(props.size)}
+          <div className="mt-1 flex gap-2 text-muted-foreground">
+            <span>{props.mimeType}</span>
+            <span>{formatBytes(props.size)}</span>
           </div>
         </button>
         {downloadError ? <DownloadError message={downloadError} /> : null}
@@ -304,14 +305,15 @@ function AudioArtifactPreview({
           </Button>
         ) : null}
         <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{name}</span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-lg"
           aria-label={t`Download ${name}`}
           onClick={() => void onDownload()}
-          className="shrink-0 p-2 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground"
         >
-          <Download size={19} strokeWidth={1.8} />
-        </button>
+          <Download strokeWidth={1.8} className="size-[19px]" />
+        </Button>
       </div>
       {state.status === "loading" ? (
         <span className="text-sm text-muted-foreground">

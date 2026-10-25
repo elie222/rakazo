@@ -1,10 +1,6 @@
 import { expo } from "@better-auth/expo";
 import { passkey } from "@better-auth/passkey";
-import type {
-  ProductAnalytics,
-  TransactionalEmail,
-  TransactionalEmailProvider,
-} from "@rakazo/adapter-kit";
+import type { ProductAnalytics, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import {
   displayName,
   emailAllowed,
@@ -14,7 +10,7 @@ import {
   signupPolicyFromEnv,
 } from "@rakazo/core";
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
-import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
+import { bootstrapUserSpace, personalOrganizationIds, recordSecurityEvent } from "@rakazo/db";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -33,12 +29,14 @@ import {
   signedBearer,
 } from "./account-security.js";
 import { breachedPasswordCheck } from "./breached-password.js";
+import { passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
 import type { OidcConfig } from "./oidc.js";
 import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 import { passkeyRelyingParty } from "./passkey.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
+export { passwordResetEmail, signInCodeEmail, verificationEmail } from "./email.js";
 export type { OidcConfig } from "./oidc.js";
 export { passkeyRelyingParty } from "./passkey.js";
 
@@ -182,7 +180,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             // Keep the response timing generic. Production providers track and retry the promise,
             // while the composition root drains accepted delivery during graceful shutdown.
             void env.email
-              ?.send(passwordResetEmail(user, url))
+              ?.send(await passwordResetEmail(user, url))
               .catch((error) => env.onEmailError?.(error));
           }
         : undefined,
@@ -199,7 +197,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               "callbackURL",
               new URL("/sign-in", env.webOrigin).href,
             );
-            await env.email!.send(verificationEmail(user.email, verificationUrl.href));
+            await env.email!.send(await verificationEmail(user.email, verificationUrl.href));
           }
         : undefined,
     },
@@ -240,18 +238,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         enabled: true,
         beforeDelete: async (user) => {
           await env.beforeDeleteUser?.(user.id);
-          const memberships = await prisma.member.findMany({
-            where: { userId: user.id },
-            select: {
-              organizationId: true,
-              organization: { select: { members: { select: { userId: true } } } },
-            },
-          });
-          const personalOrganizationIds = memberships
-            .filter(({ organization }) =>
-              organization.members.every((member) => member.userId === user.id),
-            )
-            .map(({ organizationId }) => organizationId);
+          const organizationIds = await personalOrganizationIds(prisma, user.id);
 
           await prisma.$transaction(async (tx) => {
             // Messaging identities are deliberately FK-free, so clear them
@@ -261,7 +248,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             });
             await tx.passkey.deleteMany({ where: { userId: user.id } });
             await tx.organization.deleteMany({
-              where: { id: { in: personalOrganizationIds } },
+              where: { id: { in: organizationIds } },
             });
           });
         },
@@ -286,7 +273,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 // Like password reset, do not wait on delivery: a refused address
                 // answers at once, so waiting would reveal which addresses are admitted.
                 void env.email
-                  ?.send(signInCodeEmail(email, otp))
+                  ?.send(await signInCodeEmail(email, otp))
                   .catch((error) => env.onEmailError?.(error));
               },
             }),
@@ -610,54 +597,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     passkeyRpId: relyingParty?.rpID ?? null,
     disposeOidcDiscovery: () => discovery?.dispose(),
   });
-}
-
-export function verificationEmail(email: string, url: string): TransactionalEmail {
-  return {
-    to: email,
-    subject: "Verify your Rakazo email",
-    text: `Verify your email, then return to Rakazo to sign in:\n\n${url}\n\nThis link expires in one hour. If you did not register, ignore this email.`,
-    html: `<p><a href="${escapeHtml(url)}">Verify email</a>, then return to Rakazo to sign in.</p><p>This link expires in one hour. If you did not register, ignore this email.</p>`,
-  };
-}
-
-export function signInCodeEmail(email: string, code: string): TransactionalEmail {
-  return {
-    to: email,
-    subject: "Your Rakazo sign-in code",
-    text: `Enter this code to sign in to Rakazo:\n\n${code}\n\nThis code expires in ten minutes. If you did not request it, ignore this email.`,
-    html: `<p>Enter this code to sign in to Rakazo:</p><p><strong>${escapeHtml(code)}</strong></p><p>This code expires in ten minutes. If you did not request it, ignore this email.</p>`,
-  };
-}
-
-export function passwordResetEmail(
-  user: { id: string; email: string; name: string },
-  resetUrl: string,
-): TransactionalEmail {
-  const name = displayName(user.name, "there");
-  const safeName = escapeHtml(name);
-  const safeUrl = escapeHtml(resetUrl);
-  return {
-    to: user.email,
-    subject: "Reset your Rakazo password",
-    text: [
-      `Hi ${name},`,
-      "",
-      "Reset your Rakazo password using this link:",
-      resetUrl,
-      "",
-      "This link expires in one hour. If you did not request this, you can ignore this email.",
-    ].join("\n"),
-    html: `<p>Hi ${safeName},</p><p>Reset your Rakazo password:</p><p><a href="${safeUrl}">Reset password</a></p><p>This link expires in one hour. If you did not request this, you can ignore this email.</p>`,
-  };
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
-  );
 }
 
 export type Auth = ReturnType<typeof createAuth>;

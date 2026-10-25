@@ -33,20 +33,20 @@ describe("routineStatusLine", () => {
       routineStatusLine(
         routine({ watch: { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false } }),
       ),
-    ).toBe("Active · When something changes · UTC");
+    ).toBe("Active, When something changes (UTC)");
   });
 
   it("shows readable schedules instead of cron expressions", () => {
     expect(routineStatusLine(routine({ crons: ["0 6 * * *"] }))).toBe(
-      "Active · Every day at 6:00 AM · UTC",
+      "Active, Every day at 6:00 AM (UTC)",
     );
     expect(routineStatusLine(routine({ crons: ["0 6 * * 0"] }))).toBe(
-      "Active · Every Sunday at 6:00 AM · UTC",
+      "Active, Every Sunday at 6:00 AM (UTC)",
     );
     expect(routineStatusLine(routine({ crons: ["30 8 * * 1-5"] }))).toBe(
-      "Active · Weekdays at 8:30 AM · UTC",
+      "Active, Weekdays at 8:30 AM (UTC)",
     );
-    expect(routineStatusLine(routine({ crons: ["0 * * * *"] }))).toBe("Active · Every hour · UTC");
+    expect(routineStatusLine(routine({ crons: ["0 * * * *"] }))).toBe("Active, Every hour (UTC)");
   });
 
   it("keeps the routine's time zone and other triggers", () => {
@@ -59,11 +59,11 @@ describe("routineStatusLine", () => {
           webhookEnabled: true,
         }),
       ),
-    ).toBe("Paused · Every Monday at 9:00 AM, Webhook · Europe/Berlin");
+    ).toBe("Paused, Every Monday at 9:00 AM, Webhook (Europe/Berlin)");
   });
 
   it("omits the trigger segment when there are no triggers", () => {
-    expect(routineStatusLine(routine({}))).toBe("Active · UTC");
+    expect(routineStatusLine(routine({}))).toBe("Active, UTC");
   });
 });
 
@@ -84,21 +84,21 @@ describe("routineRowDetail", () => {
         }),
         "America/New_York",
       ),
-    ).toBe("Every day at 6:00 AM, Every Monday at 9:00 AM, Webhook · Europe/Berlin");
+    ).toBe("Every day at 6:00 AM, Every Monday at 9:00 AM, Webhook (Europe/Berlin)");
   });
 
   it("ends with Paused only when paused", () => {
     expect(routineRowDetail(routine({ active: false, crons: ["0 * * * *"] }), "UTC")).toBe(
-      "Every hour · Paused",
+      "Every hour, Paused",
     );
     expect(routineRowDetail(routine({ active: false, timezone: "Asia/Tokyo" }), "UTC")).toBe(
-      "Asia/Tokyo · Paused",
+      "Asia/Tokyo, Paused",
     );
   });
 
   it("keeps the time zone when the device's is unknown", () => {
     expect(routineRowDetail(routine({ crons: ["0 6 * * *"] }), undefined)).toBe(
-      "Every day at 6:00 AM · UTC",
+      "Every day at 6:00 AM (UTC)",
     );
   });
 });

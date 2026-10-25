@@ -44,6 +44,11 @@ export function computerHomeKey(input: ComputerKeyInput) {
   return input.botId;
 }
 
+/** The home of a space's one Team Computer from before each person got their own. */
+export function legacyTeamHomeKey(spaceId: string) {
+  return `team-${spaceId}`;
+}
+
 type ComputerDb = Pick<PrismaClient, "computer">;
 type ComputerTx = Pick<Prisma.TransactionClient, "computer" | "$queryRaw">;
 type ComputerClient = ComputerDb & Partial<Pick<PrismaClient, "$transaction" | "$queryRaw">>;

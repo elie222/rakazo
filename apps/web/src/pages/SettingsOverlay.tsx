@@ -17,6 +17,7 @@ import {
   Cpu,
   CreditCard,
   Gauge,
+  Lock,
   Monitor,
   Settings,
   ShieldCheck,
@@ -40,16 +41,16 @@ import {
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
+import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
-/** Sections whose settings belong to a space; only these show the space picker. */
-const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
-  "models",
-  "memory",
-  "voice",
-  "confirmations",
-]);
+/**
+ * Sections whose settings belong to a space; only these show the space picker. Models, voice,
+ * and confirmations are the account's, and a space customizes them from its Space section.
+ */
+const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set(["space", "memory"]);
 
 type NavItem = {
   id: SettingsSection;
@@ -62,6 +63,8 @@ export function SettingsOverlay({
   spaces = [],
   currentSpaceId,
   onSpaceChange,
+  onRenameSpace,
+  onDeleteSpace,
   email,
   name,
   usage,
@@ -82,11 +85,13 @@ export function SettingsOverlay({
   onVoiceStatusMaybeChanged,
 }: {
   /** The space the per-space sections act on; it need not be the selected space. */
-  space?: { id: string; name: string } | null;
+  space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   /** The space the app is showing; its memory config comes from the shell. */
   currentSpaceId?: string | null;
   onSpaceChange?: (spaceId: string) => void;
+  onRenameSpace?: (spaceId: string, name: string) => Promise<void>;
+  onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
   usage?: UsageSummary | null;
@@ -172,9 +177,10 @@ export function SettingsOverlay({
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },
     { id: "models", label: t`Models`, icon: Cpu },
-    { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
     { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
+    { id: "space", label: t`Space`, icon: Lock },
+    { id: "memory", label: t`Memory`, icon: Brain },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(billingEnabled ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
@@ -359,7 +365,7 @@ export function SettingsOverlay({
                 key={spaceId ?? "selected"}
                 data-testid="settings-scroll"
                 className={`min-h-0 flex-1 ${
-                  section === "models" || section === "voice" || section === "memory"
+                  section === "memory"
                     ? "flex flex-col overflow-hidden"
                     : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
                 }`}
@@ -377,7 +383,17 @@ export function SettingsOverlay({
                     }
                   />
                 ) : null}
-                {section === "confirmations" ? <ApprovalRulesSettings /> : null}
+                {section === "space" && space ? (
+                  <SpaceSettingsPanel
+                    key={space.id}
+                    space={space}
+                    onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
+                    onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
+                    onClose={requestClose}
+                    onBusyChange={setVoiceBusy}
+                  />
+                ) : null}
+                {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                 {section === "usage" ? (
                   <UsageSettingsPanel usage={usage} panelRef={usageRef} />
                 ) : null}
@@ -394,7 +410,7 @@ export function SettingsOverlay({
                 {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
                 {section === "updates" && showUpdates ? <UpdatesSettingsPanel /> : null}
                 {section === "models" ? (
-                  <ModelSettingsOverlay embedded onClose={requestClose} />
+                  <ModelSettingsOverlay embedded scope="account" onClose={requestClose} />
                 ) : null}
                 {section === "memory" && otherSpace && otherMemoryError ? (
                   <div className="px-6 py-6 sm:px-8">
@@ -415,6 +431,7 @@ export function SettingsOverlay({
                 {section === "voice" ? (
                   <VoiceSettingsOverlay
                     embedded
+                    scope="account"
                     onClose={requestClose}
                     onBusyChange={setVoiceBusy}
                   />

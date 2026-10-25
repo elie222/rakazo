@@ -15,7 +15,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
-import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
@@ -405,6 +405,7 @@ export async function sleepComputerIfIdle(
       computer.homeKey,
       ref,
       ctx,
+      () => deletedTeamBotFolders(deps.prisma, computer),
     );
     const saved = await deps.prisma.computer.updateMany({
       where: suspensionClaim,
@@ -549,6 +550,7 @@ function loadComputer(prisma: PrismaClient, computerId: string) {
       homeKey: true,
       providerRef: true,
       kind: true,
+      scope: true,
       state: true,
       spaceId: true,
       userId: true,

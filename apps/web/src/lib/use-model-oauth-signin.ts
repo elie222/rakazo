@@ -1,4 +1,4 @@
-import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelOAuthBegin, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
@@ -13,6 +13,8 @@ export type ModelOAuthSignInBegin = {
   modelId?: string;
   thinkingLevel?: ThinkingLevel | null;
   makeDefault?: boolean;
+  /** Where makeDefault sets the main model. */
+  scope?: SettingsScope;
   label?: string;
 };
 
@@ -141,6 +143,7 @@ export function useModelOAuthSignIn(options: {
           modelId: begin.modelId,
           thinkingLevel: begin.thinkingLevel,
           makeDefault: begin.makeDefault,
+          ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
         },
         { signal: controller.signal },

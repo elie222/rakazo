@@ -19,16 +19,12 @@ export function BotCreatePicker({
   onOpenBot,
   onCreateGroup,
   onCreateSpace,
-  onShowGroupInfo,
-  onShowSpaceInfo,
 }: {
   bots: Bot[];
   onCreateBot: () => void;
   onOpenBot: (botId: string) => void;
   onCreateGroup: () => void;
   onCreateSpace: () => void;
-  onShowGroupInfo: () => void;
-  onShowSpaceInfo: () => void;
 }) {
   const { t } = useLingui();
   const [query, setQuery] = useState("");
@@ -41,8 +37,8 @@ export function BotCreatePicker({
   }, [bots, needle]);
   const showCreate =
     !needle ||
-    "create new bot".includes(needle) ||
-    needle.split(/\s+/).every((part) => "create new bot".includes(part));
+    "new bot".includes(needle) ||
+    needle.split(/\s+/).every((part) => "new bot".includes(part));
 
   return (
     <div data-testid="bot-create-picker" className="w-[min(320px,calc(100vw-2rem))]">
@@ -77,7 +73,7 @@ export function BotCreatePicker({
                 <span className="flex size-[22px] shrink-0 items-center justify-center">
                   <Plus size={16} strokeWidth={1.8} aria-hidden="true" />
                 </span>
-                <Trans>Create new Bot</Trans>
+                <Trans>New bot</Trans>
               </CommandItem>
             ) : null}
             <CommandItem
@@ -89,27 +85,7 @@ export function BotCreatePicker({
               <span className="flex size-[22px] shrink-0 items-center justify-center">
                 <Users size={16} strokeWidth={1.8} aria-hidden="true" />
               </span>
-              <span className="min-w-0 flex-1 truncate">
-                <Trans>Create new Group</Trans>
-              </span>
-              <IconTooltip label={t`About groups`}>
-                <button
-                  type="button"
-                  data-testid="picker-info-group"
-                  aria-label={t`About groups`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    onShowGroupInfo();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </IconTooltip>
+              <Trans>New group chat</Trans>
             </CommandItem>
             <CommandItem
               value="create-space"
@@ -121,26 +97,12 @@ export function BotCreatePicker({
                 <Lock size={16} strokeWidth={1.8} aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1 truncate">
-                <Trans>Create new Space</Trans>
+                <Trans>New private space</Trans>
               </span>
-              <IconTooltip label={t`About spaces`}>
-                <button
-                  type="button"
-                  data-testid="picker-info-space"
-                  aria-label={t`About spaces`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    onShowSpaceInfo();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </IconTooltip>
+              <PickerInfo
+                testId="picker-info-space"
+                label={t`Private workspace with its own bots and groups.`}
+              />
             </CommandItem>
           </CommandGroup>
           <CommandSeparator className="shrink-0" />
@@ -161,5 +123,28 @@ export function BotCreatePicker({
         </CommandList>
       </Command>
     </div>
+  );
+}
+
+/** Explains a command row on hover without selecting the row. */
+function PickerInfo({ testId, label }: { testId: string; label: string }) {
+  return (
+    <IconTooltip label={label} side="right">
+      <button
+        type="button"
+        data-testid={testId}
+        aria-label={label}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+        }}
+        onKeyDown={(event) => event.stopPropagation()}
+        className="-mr-2 shrink-0 cursor-default rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    </IconTooltip>
   );
 }

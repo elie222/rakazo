@@ -68,14 +68,16 @@ describePostgres("PostgresRealtimeFanout (PostgreSQL contract)", () => {
       await realtime.publish("thread:contract", "durable-event-available");
       await vi.waitFor(() => expect(seen).toEqual(["notified-event"]), { timeout: 5_000 });
 
+      // Commit without a notification before the drop, so only the reconnect's
+      // catch-up signal can surface the row, however fast the listener returns.
+      await pool.query(`INSERT INTO ${table} (body) VALUES ($1)`, ["missed-notification"]);
       await pool.query("SELECT pg_terminate_backend($1)", [listenerPid]);
-      await pool.query(`INSERT INTO ${table} (body) VALUES ($1)`, ["missed-while-disconnected"]);
 
       await vi.waitFor(
         () => {
           expect(listenerClients.length).toBeGreaterThanOrEqual(2);
           expect(signals.filter((signal) => signal === "")).toHaveLength(2);
-          expect(seen).toEqual(["notified-event", "missed-while-disconnected"]);
+          expect(seen).toEqual(["notified-event", "missed-notification"]);
         },
         { timeout: 10_000, interval: 25 },
       );

@@ -384,6 +384,51 @@ export function nextCronDateAcrossStrict(
   return earliest;
 }
 
+const OFFSET_SUFFIX = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/;
+
+/**
+ * An ISO date or datetime as an instant. One with an offset (or Z) is taken as written; a date
+ * or wall-clock time without one is read in `timezone`, so "2026-11-02T10:00" is 10:00 there.
+ * A time skipped by a daylight-saving change moves forward by the gap. Null when invalid.
+ */
+export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
+  const text = value.trim();
+  const wall = WALL_CLOCK.exec(text);
+  if (!wall) {
+    if (!OFFSET_SUFFIX.test(text) || !/\d{2}:\d{2}/.test(text)) return null;
+    const instant = new Date(text);
+    return Number.isFinite(instant.getTime()) ? instant : null;
+  }
+  const [year, month, day, hour, minute, second] = wall
+    .slice(1, 7)
+    .map((part) => (part === undefined ? 0 : Number(part)));
+  const ms = wall[7] ? Math.floor(Number(`0.${wall[7]}`) * 1000) : 0;
+  const check = new Date(
+    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, second ?? 0),
+  );
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== (month ?? 1) - 1 ||
+    check.getUTCDate() !== day ||
+    check.getUTCHours() !== hour ||
+    check.getUTCMinutes() !== minute ||
+    check.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+  const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
+  local.year = check.getUTCFullYear();
+  local.month = check.getUTCMonth();
+  local.day = check.getUTCDate();
+  local.hour = check.getUTCHours();
+  local.minute = check.getUTCMinutes();
+  local.second = check.getUTCSeconds();
+  local.ms = 0;
+  // Keep any fraction so a time just after an occurrence does not include it.
+  return new Date(local.getDate().getTime() + ms);
+}
+
 function validTimezoneOrUtc(timezone: string): string {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();

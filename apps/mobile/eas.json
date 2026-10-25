@@ -25,6 +25,10 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "diagnostic": {
+      "extends": "production",
+      "channel": "diagnostic"
     }
   },
   "submit": {

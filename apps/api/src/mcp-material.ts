@@ -44,7 +44,7 @@ export type McpMaterialUpdate =
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,
-  options: { clearOAuth?: boolean } = {},
+  options: { clearOAuth?: boolean; endpointChanged?: boolean } = {},
 ): McpMaterialUpdate {
   const client = nextOAuthClient(
     existing.oauthClient,
@@ -70,10 +70,23 @@ export function buildMcpUpdateMaterial(
     };
   }
   const secret = "secret" in config && config.secret ? config.secret : undefined;
-  const env = "env" in config ? config.env : undefined;
-  const headers = "headers" in config ? config.headers : undefined;
+  // Clients never read stored values back, so a blank one keeps what is stored under its
+  // name, unless that would send it to a different endpoint.
+  const keepBlank = (next: Record<string, string>, stored: Record<string, string> = {}) =>
+    options.endpointChanged
+      ? next
+      : Object.fromEntries(
+          Object.entries(next).map(([name, value]) => [name, value || (stored[name] ?? "")]),
+        );
+  const env = "env" in config ? keepBlank(config.env, material.env) : undefined;
+  const headers = "headers" in config ? keepBlank(config.headers, material.headers) : undefined;
   const { files: storedFiles, ...withoutFiles } = material;
-  const files = config.transport === "stdio" ? (config.files ?? storedFiles) : undefined;
+  const files =
+    config.transport === "stdio"
+      ? config.files
+        ? keepBlank(config.files, storedFiles)
+        : storedFiles
+      : undefined;
   const hasFiles = files !== undefined && Object.keys(files).length > 0;
   const existingHasMaterial = Boolean(
     material.secret ||

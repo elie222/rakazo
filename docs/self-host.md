@@ -4,7 +4,7 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 ## Local (source checkout)
 
-Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173) (or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. The managed API gets a Docker-assigned loopback port; all desktop traffic uses the web origin.
+Same as the README quick start: `.env` from `.env.example`, `pnpm sandbox:build`, `pnpm dev`, then the URL it prints ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default, or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. The managed API gets a Docker-assigned loopback port; all desktop traffic uses the web origin.
 
 For source development in WSL, keep the checkout and `data` directory in the Linux filesystem (for example, `~/rakazo`), and run `pnpm dev` as your normal user. The host-run supervisor matches bot container UID/GID to that user. If Docker Desktop container IPs are unreachable, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` in `.env`; this publishes the token-protected control service on a random loopback port. Leave this unset for the Compose-hosted supervisor.
 
@@ -371,15 +371,34 @@ error that names `EXPO_ACCESS_TOKEN`; the token itself is never logged.
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
 appears on sign-in only when a transactional email provider is available. Rakazo uses a
-provider-neutral contract and ships an SMTP adapter, so Amazon SES, Resend, and self-hosted SMTP
-servers use the same configuration:
+provider-neutral contract with Resend API and SMTP adapters. Templates render locally with React
+Email into HTML and plain text, independent of the sending provider.
+
+To use the Resend HTTP API, verify a sending domain and create a sending-only API key restricted
+to that domain, then configure:
+
+```env
+EMAIL_PROVIDER=resend
+EMAIL_API_KEY=replace-with-sending-api-key
+EMAIL_FROM=Rakazo <hello@mail.example.com>
+```
+
+Disable click and open tracking for account email in the provider's domain settings. Resend delivery
+has a ten-second deadline and bounded retries with the same idempotency key, including when a
+response is lost. Errors omit provider response bodies and credentials.
+
+For Amazon SES or another SMTP server, use:
 
 ```env
 SMTP_URL=smtps://smtp-user:replace-with-password@smtp.example.com:465
 EMAIL_FROM=Rakazo <no-reply@example.com>
 ```
 
-For Resend, use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
+`EMAIL_PROVIDER=smtp` is optional: an existing `SMTP_URL` continues to select SMTP when no provider
+is specified. `EMAIL_PROVIDER=none` disables external sending. Explicit provider settings take
+precedence over an old `SMTP_URL`; incomplete or unknown provider configurations fail at startup.
+
+Resend also supports SMTP: use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
 SES, use the regional SMTP endpoint and SES SMTP credentials; these are different from ordinary AWS
 access keys. Verify the sender/domain with the provider before testing delivery. Keep credentials in
 `.env`, never in tracked files. `smtps://` uses implicit TLS; `smtp://` is also supported but requires
@@ -942,7 +961,46 @@ support. Existing token limits still apply; effort is not a separate reasoning-t
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
-Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
+Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking stays iMessage-only; Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
+
+For Slack workspace installations, set `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and
+`SLACK_SIGNING_SECRET` on the API and worker. Register the OAuth redirect URL
+`https://app.example.com/api/v1/messaging/install/slack/callback` using your public
+API origin (`API_URL`). Enable distribution in the Slack app's Manage Distribution
+settings so other workspaces can install it. Enable Slack Events API delivery to
+`https://app.example.com/api/v1/messaging/webhook/slack`, with `app_mention`,
+`message.im`, `message.channels`, `message.groups`, `message.mpim`, and
+`app_uninstalled`. Enable the app's Messages tab. The install flow requests the
+message/history, channel/user lookup, file read and write, and reaction-write scopes it uses;
+reinstall the Slack app after changing scopes. Socket Mode is not used.
+
+In Messaging settings, choose the bot for shared channel conversations and select
+**Connect Slack workspace**. Each Slack workspace belongs to one Rakazo space and
+one installation owner; installing it from another space is rejected. DMs stay
+personal: choose a personal bot, select **Link a chat app**, and send the code in a
+DM to the Slack app. Link codes must belong to the installation's Rakazo space.
+Invite the Slack app to channels and mention it to receive replies there. The
+bot's external conversations offer **Mentions only**, **Listen**, and room guidance.
+Workspace setup and personal linking are available on web, desktop and mobile.
+Mobile opens Slack authorization in the system browser; return to the app when it
+finishes. Channel listening settings currently live in the web/desktop interface.
+
+Tokens are encrypted with the configured secret store. Workers resolve the
+installation for every outbound operation, including queued replies; disconnecting
+an installation stops further delivery and unlinks its personal DMs. Slack's signed
+`app_uninstalled` event also removes the installation. Disconnect removes Rakazo's
+local credentials; remove the app in Slack to revoke Slack's installation itself.
+The installation owner must retain space membership and an active bot. Workspace
+installations require a workspace-level bot token without Slack token rotation;
+Enterprise Grid org-wide installs and rotating tokens are rejected explicitly.
+
+The older `SLACK_BOT_TOKEN` plus `SLACK_SIGNING_SECRET` configuration still supports
+a single workspace. OAuth mode takes precedence when configured; existing static
+Slack identities/conversations must be relinked before using workspace installs.
+`TEAM_CHAT_BOT_ID` only selects a channel bot for the static configuration. It does
+not override workspace installations or personal DMs. Slack tools authorized from
+the Integrations screen are a separate connection from this messaging surface.
+
 
 ### Settings with names you choose
 
@@ -1391,6 +1449,16 @@ before moving anything. Switching the tree alone does not roll back the database
 Plaintext snapshots use `cat` in place of `age -d` and the filenames `rakazo.dump` and
 `appdata.tgz`. Use the same clean-directory procedure.
 
+To restore into a new stack, create the `rakazo_app` role before the procedure above. The dump
+grants to it, and on a new stack only the migration step would create it, so `pg_restore`
+stops without it. Do not run the migrations first: tables newer than the snapshot would block
+the restore. The procedure's final start applies them.
+
+```bash
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait postgres"
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE exec -T postgres sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"CREATE ROLE rakazo_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE\"'"
+```
+
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
 (mode `0600`). The service reads this optional file on each run; the script uses the selected
@@ -1743,8 +1811,13 @@ your CI cannot publish into someone else's.
 
 Every publish, including `edge` from main merges, is multi-arch (`amd64` + `arm64`): each
 architecture builds natively, on Depot when the `DEPOT_PROJECT_ID` repository variable names a
-project and on GitHub's runners otherwise, and one manifest is assembled per image. Before any tag
-points at a new app image, CI fails the publish if it holds a `.env` file, a `.git` directory or a
+project and on GitHub's runners otherwise, and one manifest is assembled per image. Depot builds
+publish and attest each image in the same job; native GitHub builds combine their architecture
+artifacts in a separate publication job. Main CI revisions validate independently. Publication
+locks are per image, and a superseded main build keeps its commit tag without moving `edge`.
+Image and release queues retain pending jobs so a slower older run cannot displace a newer one.
+Production deployment remains serialized and deploys the exact revision that passed its checks.
+Before any tag points at a new app image, CI fails the publish if it holds a `.env` file, a `.git` directory or a
 private key (`infra/compose/check-image.sh`). Until a
 stable `vX.Y.Z` has been published, GHCR may only have `edge` and `sha-*` tags; do not pin
 `latest` unless that tag exists in the registry.

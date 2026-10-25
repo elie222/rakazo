@@ -89,7 +89,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await chip.press("Enter");
   const view = page.getByTestId("peer-conversation-view");
   await expect(view).toBeVisible();
-  await expect(view.getByRole("heading", { name: /Chief · Researcher/ })).toBeVisible();
+  await expect(view.getByRole("heading", { name: /Chief\s*Researcher/ })).toBeVisible();
   await expect(view.getByText("This chat is view-only")).toBeVisible();
   await expect(view.getByRole("button", { name: "Close" })).toHaveCount(1);
   await expect(view.getByText("peer-exchange-alpha").first()).toBeVisible({
@@ -199,7 +199,7 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   // Researcher's "Messaged Chief" receipt also matches; jump to the folded reply itself.
   await page
     .getByRole("button")
-    .filter({ hasText: `Researcher · ${foldedReplyText} and come back with a result` })
+    .filter({ hasText: new RegExp(`Researcher\\s*${foldedReplyText} and come back with a result`) })
     .first()
     .click();
   await expect(collapse).toHaveAttribute("aria-expanded", "true");

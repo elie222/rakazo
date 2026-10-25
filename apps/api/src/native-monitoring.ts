@@ -84,6 +84,8 @@ export function sanitizeNativeEvent(
     (tags["mobile.platform"] === "ios" || tags["mobile.platform"] === "android")
   )
     safeTags["mobile.platform"] = tags["mobile.platform"];
+  if (surface === "mobile" && tags["startup.previous_launch"] === "true")
+    safeTags["startup.previous_launch"] = "true";
   for (const key of [...CORRELATION_TAG_KEYS, "operation"]) {
     const value = tags[key];
     if (typeof value === "string" && value.length <= 200 && /^[a-zA-Z0-9_.:-]+$/.test(value))
@@ -117,7 +119,9 @@ export function sanitizeNativeEvent(
   const userId = object(input.user).id;
   return sanitizeMonitoringEvent(
     event,
-    (input.platform === "javascript" || input.platform === "node") && isMonitoringUserId(userId)
+    tags["startup.previous_launch"] !== "true" &&
+      (input.platform === "javascript" || input.platform === "node") &&
+      isMonitoringUserId(userId)
       ? userId
       : undefined,
   );

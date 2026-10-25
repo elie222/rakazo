@@ -82,10 +82,9 @@ describeIntegration("reusable credential lifecycle", () => {
       try {
         const seeded = await seedRun(`reusable-${requireApproval}`, "Save the API credential");
         if (requireApproval) {
-          await db.actionApprovalRule.create({
+          await db.userActionApprovalRule.create({
             data: {
-              spaceId: seeded.me.spaceId,
-              createdByUserId: seeded.me.userId,
+              userId: seeded.me.userId,
               effect: "require_approval",
               matchKind: "tool",
               matchValue: "request_secret",

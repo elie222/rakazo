@@ -507,10 +507,27 @@ export class BoatSandboxProvider implements SandboxProvider {
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
+    return this.authenticatedScreen(await this.desktops.connectScreen(computer, request, context));
   }
   async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
+    return this.authenticatedScreen(
+      await this.desktops.connectTerminal(computer, request, context),
+    );
+  }
+  /** Boat's query token bootstraps a browser cookie through a redirect. Keep it server-side. */
+  private authenticatedScreen<T extends { url: string | null }>(
+    session: T,
+  ): T & { headers?: Record<string, string> } {
+    if (!session.url) return session;
+    const url = new URL(session.url);
+    const token = url.searchParams.get("_token");
+    if (!token || !/^[a-zA-Z0-9_-]+$/.test(token))
+      throw new Error("Boat desktop URL is not protected");
+    url.searchParams.delete("_token");
+    const socket = new URL(url.searchParams.get("path")!, url);
+    socket.searchParams.delete("_token");
+    url.searchParams.set("path", `${socket.pathname}${socket.search}`);
+    return { ...session, url: url.toString(), headers: { cookie: `_port_auth=${token}` } };
   }
   async setScreenControl(
     computer: ComputerRef,

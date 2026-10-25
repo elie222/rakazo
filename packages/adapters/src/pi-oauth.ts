@@ -15,6 +15,7 @@ import type {
   ModelContextLimits,
   ModelOAuthBegin,
   ModelOAuthSignInMode,
+  SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -315,6 +316,8 @@ export type PiOAuthConnected = {
   modelId?: string;
   thinkingLevel?: string | null;
   makeDefault?: boolean;
+  /** Which copy of the member's models makeDefault sets; omitted means the one that applies. */
+  settingsScope?: SettingsScope;
   label?: string;
   signal: AbortSignal;
 };
@@ -352,6 +355,7 @@ type Session = {
   modelId?: string;
   thinkingLevel?: string | null;
   makeDefault?: boolean;
+  settingsScope?: SettingsScope;
   label?: string;
   abort: AbortController;
   state: SessionState;
@@ -866,6 +870,7 @@ export class PiOAuthLogins {
     modelId?: string;
     thinkingLevel?: string | null;
     makeDefault?: boolean;
+    settingsScope?: SettingsScope;
     label?: string;
     signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
@@ -897,6 +902,7 @@ export class PiOAuthLogins {
         modelId: input.modelId,
         thinkingLevel: input.thinkingLevel,
         makeDefault: input.makeDefault,
+        settingsScope: input.settingsScope,
         label: input.label,
         abort,
         state: "pending",
@@ -1074,6 +1080,7 @@ export class PiOAuthLogins {
         modelId: session.modelId,
         thinkingLevel: session.thinkingLevel,
         makeDefault: session.makeDefault,
+        settingsScope: session.settingsScope,
         label: session.label,
         signal: session.abort.signal,
       };

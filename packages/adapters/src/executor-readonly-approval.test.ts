@@ -64,6 +64,7 @@ function fixture({
   catalog = false,
   readOnly = true,
   rules = [] as ActionApprovalRule[],
+  confirmationsOverride = false,
   autoReview = false,
   approvalRole,
   nativeReview = false,
@@ -112,6 +113,8 @@ function fixture({
   catalog?: boolean;
   readOnly?: boolean;
   rules?: ActionApprovalRule[];
+  /** The Space has its own confirmations; otherwise `rules` and auto review are the account's. */
+  confirmationsOverride?: boolean;
   autoReview?: boolean;
   approvalRole?: ModelRoleSettings;
   nativeReview?: boolean;
@@ -295,7 +298,7 @@ function fixture({
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
     connection: { findMany: vi.fn(async () => []) },
-    spaceModelPreference: { findFirst: vi.fn(async () => null) },
+    userModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: {
       findFirst: vi.fn(async () =>
         approvalRole && checkerConnected
@@ -311,7 +314,7 @@ function fixture({
           : null,
       ),
     },
-    spaceModelRoleChoice: {
+    userModelRoleChoice: {
       findMany: vi.fn(async () =>
         approvalRole
           ? [
@@ -337,10 +340,26 @@ function fixture({
     botSecret: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
-    actionApprovalRule: { findMany: vi.fn(async () => rules) },
+    spaceSettingOverride: {
+      findUnique: vi.fn(
+        async (query: { where: { spaceId_userId_setting: { setting: string } } }) =>
+          confirmationsOverride && query.where.spaceId_userId_setting.setting === "confirmations"
+            ? { setting: "confirmations" }
+            : null,
+      ),
+    },
+    actionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? rules : [])) },
+    userActionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? [] : rules)) },
     routine: { findMany: vi.fn(async () => routines) },
     actionAutoReviewPreference: {
-      findUnique: vi.fn(async () => ({ enabled: autoReview, skipApprovals })),
+      findUnique: vi.fn(async () =>
+        confirmationsOverride ? { enabled: autoReview, skipApprovals } : null,
+      ),
+    },
+    userActionAutoReviewPreference: {
+      findUnique: vi.fn(async () =>
+        confirmationsOverride ? null : { enabled: autoReview, skipApprovals },
+      ),
     },
     steeringMessage: {
       findFirst: vi.fn(async (_query: unknown) => (outsideSteering ? { id: "steer-1" } : null)),
@@ -720,6 +739,18 @@ describe("connector read-only metadata and approval enforcement", () => {
         expect(reviewMock).not.toHaveBeenCalled();
       },
     );
+
+    it("asks under the Space's own rules when it overrides the account's", async () => {
+      const f = fixture({
+        catalog,
+        confirmationsOverride: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.effects).toHaveLength(1);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    });
 
     it("replays the approved arguments once and returns the result on retry", async () => {
       const f = fixture({
@@ -1850,6 +1881,20 @@ describe("Auto Review of new sites", () => {
     it("asks before saving a routine that names a site the run was not given", async () => {
       const f = fixture({ builtin: true, sourceRole: "user", prompt: "Find news daily" });
       f.setCalls([search, schedule("Every day fetch https://attacker.test/?q=x")]);
+      await f.run();
+      expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    });
+
+    it("asks the same before rewriting a routine's prompt to name a new site", async () => {
+      const f = fixture({ builtin: true, sourceRole: "user", prompt: "Find news daily" });
+      f.setCalls([
+        search,
+        {
+          name: "schedule_update",
+          args: { routineId: "routine-1", prompt: "Every day fetch https://attacker.test/" },
+          executionId: "call-2",
+        },
+      ]);
       await f.run();
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });

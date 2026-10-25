@@ -53,7 +53,7 @@ export function McpApprovalCard({
     );
   }, [block.status]);
   const status = block.status && block.status !== "pending" ? block.status : localStatus;
-  const summary = block.endpoint ?? `stdio · ${block.transport}`;
+  const summary = block.endpoint ?? `stdio (${block.transport})`;
 
   async function submit(action: "approve" | "dismiss") {
     if (readOnly || status !== "pending" || pendingAction !== null) return;

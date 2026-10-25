@@ -270,6 +270,17 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, NODE_ENV: "development" }).nodeEnv).toBe("development");
   });
 
+  it("loads generic email API connection settings", () => {
+    expect(
+      loadEnv({ ...base, EMAIL_PROVIDER: " resend ", EMAIL_API_KEY: " fake-key " }),
+    ).toMatchObject({
+      emailProvider: "resend",
+      emailApiKey: "fake-key",
+    });
+    expect(loadEnv(base).emailProvider).toBeUndefined();
+    expect(loadEnv(base).emailApiKey).toBeUndefined();
+  });
+
   it("defaults the remote MCP private-endpoint escape to off", () => {
     expect(loadEnv(base).mcpAllowPrivateEndpoint).toBe(false);
     expect(loadEnv({ ...base, MCP_ALLOW_PRIVATE_ENDPOINT: "true" }).mcpAllowPrivateEndpoint).toBe(

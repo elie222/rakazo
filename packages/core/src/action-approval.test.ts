@@ -618,6 +618,15 @@ describe("toolResultTaintsRun", () => {
   });
 });
 
+it("classifies schedule_update like schedule_create", () => {
+  for (const name of ["schedule_create", "schedule_update"]) {
+    expect(toolRequiresApproval(name, false)).toBe(false);
+    expect(toolRequiresExplicitApproval(name)).toBe(false);
+    expect(toolResultTaintsRun(name)).toBe(false);
+    expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(true);
+  }
+});
+
 it("requires human confirmation to approve an agent connection", () => {
   expect(toolRequiresExplicitApproval("respond_agent_connection")).toBe(true);
   expect(toolRequiresApproval("respond_agent_connection", false)).toBe(true);

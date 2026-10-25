@@ -150,11 +150,12 @@ test("preload recovery keeps Settings bound to another space", async ({ page }, 
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
   await reloaded;
   const settings = page.getByTestId("user-settings");
-  await expect(settings).toHaveAttribute("data-settings-section", "models");
+  // A space's Settings opens its own Space section.
+  await expect(settings).toHaveAttribute("data-settings-section", "space");
   await expect(page).toHaveURL(
     (url) =>
       url.pathname === new URL(originalUrl).pathname &&
-      url.searchParams.get("settings") === "models" &&
+      url.searchParams.get("settings") === "space" &&
       url.searchParams.has("space"),
   );
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);

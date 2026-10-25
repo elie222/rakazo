@@ -18,23 +18,6 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "boat" })).toBe("none");
   });
 
-  it("keeps deployments configured with the old Box name on Boat", () => {
-    const env = {
-      SANDBOX_PROVIDER: "box",
-      BOX_API_KEY: "test-box-key",
-      BOX_API_URL: "https://box.test/api/v1",
-    };
-    expect(resolveSandboxProvider(env)).toBe("boat");
-    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
-      boatApiKey: "test-box-key",
-      boatApiUrl: "https://box.test/api/v1",
-    });
-    expect(
-      sandboxProviderOptionsFromEnv({ BOX_BASE_URL: "https://box.test/api/v1" }).boatApiUrl,
-    ).toBe("https://box.test/api/v1");
-    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "box" })).toBe("none");
-  });
-
   it("requires both Railway credentials and an environment", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "railway" })).toBe("none");
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "railway", RAILWAY_API_TOKEN: "test" })).toBe(

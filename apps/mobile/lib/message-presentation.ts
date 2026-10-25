@@ -31,15 +31,24 @@ function isCardBlock(block: MessageBlock): boolean {
   return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
 }
 
+/** The import setup checklist links to web settings, so mobile leaves it out. */
+function isWebOnlyBlock(block: MessageBlock): boolean {
+  return block.kind === "import_setup";
+}
+
 export function messagePresentationSegments(
   blocks: readonly MessageBlock[],
 ): MessagePresentationSegment[] {
-  const content = blocks.filter((block) => !isCardBlock(block) && !isToolActivityBlock(block));
+  const content = blocks.filter(
+    (block) => !isCardBlock(block) && !isToolActivityBlock(block) && !isWebOnlyBlock(block),
+  );
   return content.length > 0 ? [{ kind: "content", blocks: content }] : [];
 }
 
 export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
-  return blocks.some((block) => !isToolActivityBlock(block) && !isDismissedChoice(block));
+  return blocks.some(
+    (block) => !isToolActivityBlock(block) && !isDismissedChoice(block) && !isWebOnlyBlock(block),
+  );
 }
 
 type ChoiceBlock = Extract<MessageBlock, { kind: "choice" }>;

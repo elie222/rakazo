@@ -302,12 +302,36 @@ async function listTeamBotEntries(
   return stdout.split("\n").filter(Boolean);
 }
 
+/**
+ * Folders of the space's deleted bots, as `bots/<id>` and `.browser-profiles/<name>`. A Team
+ * Computer that has not removed them yet must not save them back into its stored home.
+ */
+export async function deletedTeamBotFolders(
+  prisma: Pick<PrismaClient, "botDeletion">,
+  computer: { scope: string; spaceId: string },
+): Promise<Set<string> | undefined> {
+  if (computer.scope !== "team") return undefined;
+  const deleted = await prisma.botDeletion.findMany({
+    where: { spaceId: computer.spaceId },
+    select: { id: true },
+  });
+  const folders = new Set<string>();
+  for (const { id } of deleted) {
+    if (isTeamBotFolderName(id)) folders.add(`bots/${id}`);
+    const profile = teamBrowserProfileName(id);
+    if (profile) folders.add(`.browser-profiles/${profile}`);
+  }
+  return folders;
+}
+
 export async function checkpointComputerWorkspace(
   home: AgentHomeStore,
   sandbox: SandboxProvider,
   homeKey: string,
   computer: ComputerRef,
   context: AdapterContext,
+  /** Read after the export, just before saving, so a deletion during the export still counts. */
+  excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
 ): Promise<string> {
   if (computer.kind === "docker" && home instanceof LocalAgentHomeStore) {
     return home.revise(homeKey);
@@ -316,6 +340,9 @@ export async function checkpointComputerWorkspace(
   try {
     for await (const file of sandbox.exportWorkspace(computer, context)) {
       await writePortableFile(staging, file);
+    }
+    for (const folder of (await excludedFolders?.()) ?? []) {
+      await rm(path.join(staging, folder), { recursive: true, force: true });
     }
     return await home.commit(homeKey, staging, context);
   } finally {
@@ -326,7 +353,7 @@ export async function checkpointComputerWorkspace(
 /** Remote exports quiesce browsers, so a run must not checkpoint while peers are driving them. */
 export async function checkpointRunComputerWorkspace(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
-  computerRecord: { id: string; homeKey: string; scope: string },
+  computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string | undefined> {
@@ -370,7 +397,7 @@ export async function checkpointRunComputerWorkspace(
 
 export async function checkpointAndRecordComputerWorkspace(
   deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
-  computerRecord: { id: string; homeKey: string },
+  computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
   computer: ComputerRef,
   context: AdapterContext,
 ): Promise<string> {
@@ -381,6 +408,7 @@ export async function checkpointAndRecordComputerWorkspace(
     computerRecord.homeKey,
     computer,
     context,
+    () => deletedTeamBotFolders(deps.prisma, computerRecord),
   );
   await deps.prisma.computer.updateMany({
     where: { id: computerRecord.id },

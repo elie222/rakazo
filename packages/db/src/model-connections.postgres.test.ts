@@ -38,7 +38,8 @@ describePostgres("model connections (PostgreSQL)", () => {
   const personal = `model-connections-personal-${suffix}`;
   const work = `model-connections-work-${suffix}`;
   const azure = `model-connections-azure-${suffix}`;
-  const scope = { userId, spaceId };
+  // A Space's own copy; the account's shares the same code path.
+  const scope = { userId, spaceId, scope: "space" as const };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
 
@@ -90,7 +91,6 @@ describePostgres("model connections (PostgreSQL)", () => {
   beforeEach(async () => {
     await prisma.spaceModelRoleChoice.deleteMany({ where: { userId } });
     await prisma.spaceModelPreference.deleteMany({ where: { userId } });
-    await prisma.spaceBackupModel.deleteMany({ where: { userId } });
     await prisma.userModelCredential.deleteMany({ where: { userId } });
     await prisma.secret.deleteMany({ where: { userId } });
     await connect(personal, "openai-codex");
@@ -150,14 +150,6 @@ describePostgres("model connections (PostgreSQL)", () => {
       primary: { provider: "openai-codex", modelId: "gpt-5", credentialId: personal },
       backups: [{ provider: "openai-codex", modelId: "gpt-5", credentialId: work }],
     });
-    // The previous release runs the primary on its connection and lists each model once.
-    expect(
-      await prisma.spaceModelPreference.findMany({
-        where: { userId, spaceId, isDefault: true },
-        select: { credentialId: true, modelId: true },
-      }),
-    ).toEqual([{ credentialId: personal, modelId: "gpt-5" }]);
-    expect(await prisma.spaceBackupModel.findMany({ where: { userId, spaceId } })).toEqual([]);
   });
 
   it("keeps a model once per connection, including rows that name none", async () => {

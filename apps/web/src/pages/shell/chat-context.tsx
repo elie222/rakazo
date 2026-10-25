@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ReplyPreview, ThreadMessage } from "@rakazo/contracts";
 import { formatTimeSeparator, isPeerReceiptBlocks, replyLabel } from "@rakazo/core";
+import { cn } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -159,7 +160,10 @@ export function ReplyLine({
     return (
       <div
         data-testid="reply-parent-preview"
-        className="mb-1 truncate text-xs text-muted-foreground"
+        className={cn(
+          "mb-1 truncate text-xs text-muted-foreground",
+          message.role === "user" && "text-end",
+        )}
       >{t`Original message unavailable`}</div>
     );
   const attachment = message.replyPreview?.attachment;
@@ -170,24 +174,27 @@ export function ReplyLine({
     { photo: t`Photo`, attachment: t`Attachment` },
   );
   const excerpt = text.replace(/\s+/gu, " ").slice(0, 120);
+  // The wrapper aligns in the frame's direction; the quote keeps its own text direction.
   return (
-    <button
-      type="button"
-      data-testid="reply-parent-preview"
-      aria-label={t`Jump to replied message: ${excerpt}`}
-      onClick={() => {
-        if (message.replyToMessageId) onJump?.(message.replyToMessageId);
-      }}
-      className="mb-1 flex max-w-full items-center gap-1 text-start text-xs text-muted-foreground hover:text-foreground"
-      dir="auto"
-    >
-      <span aria-hidden="true">↩ </span>
-      {attachment?.kind === "image" && target ? (
-        <ReplyThumbnail attachment={attachment} target={target} lazy />
-      ) : null}
-      <span className="min-w-0 truncate">
-        {author}: {text}
-      </span>
-    </button>
+    <div className={cn("flex", message.role === "user" && "justify-end")}>
+      <button
+        type="button"
+        data-testid="reply-parent-preview"
+        aria-label={t`Jump to replied message: ${excerpt}`}
+        onClick={() => {
+          if (message.replyToMessageId) onJump?.(message.replyToMessageId);
+        }}
+        className="mb-1 flex min-w-0 max-w-full items-center gap-1 text-start text-xs text-muted-foreground hover:text-foreground"
+        dir="auto"
+      >
+        <span aria-hidden="true">↩ </span>
+        {attachment?.kind === "image" && target ? (
+          <ReplyThumbnail attachment={attachment} target={target} lazy />
+        ) : null}
+        <span className="min-w-0 truncate">
+          {author}: {text}
+        </span>
+      </button>
+    </div>
   );
 }

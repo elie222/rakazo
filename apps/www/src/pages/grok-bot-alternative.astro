@@ -5,7 +5,7 @@ import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import RichText from "../components/RichText.astro";
 import VsCard from "../components/VsCard.astro";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import {
   COMPARE_NOTE,
   COMPARE_ROWS,
@@ -32,8 +32,7 @@ import { ogPublicPath } from "../og-pages";
 import { DOCS_URL, GITHUB_URL, SITE_URL } from "../site";
 import { vsCard } from "../vs-points";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 const pageUrl = new URL(Astro.url.pathname, SITE_URL).toString();
 const structuredData = grokAlternativeStructuredData(pageUrl);
 const card = vsCard("grok-bot-alternative");

@@ -1,4 +1,9 @@
-import type { ModelRole, ModelRoleChoice, ModelRoleSettings } from "@rakazo/contracts";
+import type {
+  ModelRole,
+  ModelRoleChoice,
+  ModelRoleSettings,
+  SettingsScope,
+} from "@rakazo/contracts";
 import {
   backupChoiceKey,
   canonicalPiProviderId,
@@ -7,76 +12,150 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
-import { writeSpaceBackupModels } from "./model-backups.js";
-import { selectSpaceModelPreference } from "./model-credentials.js";
+import { lockSpaceSettings, settingsTarget } from "./space-settings.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type Scope = { userId: string; spaceId: string };
-type RoleClient = Pick<PrismaClient, "spaceModelRoleChoice">;
-type RoleWriteClient = Pick<
-  PrismaClient,
-  "spaceModelRoleChoice" | "spaceModelPreference" | "spaceBackupModel"
->;
-
-export type ModelRoleWriteOptions = {
-  /**
-   * The connection serving a newly written main model that names none, or null for a
-   * deployment-managed one. The previous release reads the main model from that
-   * connection's default preference.
-   */
-  primaryCredentialId?: string | null;
+/** Which copy of a member's model roles a call acts on: the account's or the Space's override. */
+export type ModelRoleTarget = Scope & { scope: SettingsScope };
+type RoleClient = Pick<PrismaClient, "spaceModelRoleChoice" | "userModelRoleChoice">;
+type StoredChoice = {
+  role: string;
+  position: number;
+  provider: string;
+  modelId: string;
+  thinkingLevel: string | null;
+  credentialId: string | null;
 };
+type RoleOwner = { userId: string; spaceId?: string };
+/** The columns both copies share; the Space's rows are also keyed by its id. */
+type RoleRows = {
+  findMany(args: {
+    where: RoleOwner & { role?: string };
+    orderBy: Array<{ role: "asc" } | { position: "asc" }>;
+    select: Record<keyof StoredChoice, true>;
+  }): Promise<StoredChoice[]>;
+  deleteMany(args: { where: RoleOwner & { role: string } }): Promise<unknown>;
+  createMany(args: { data: Array<StoredChoice & RoleOwner> }): Promise<unknown>;
+};
+const storedChoice = {
+  role: true,
+  position: true,
+  provider: true,
+  modelId: true,
+  thinkingLevel: true,
+  credentialId: true,
+} as const;
+
+function roleChoice(row: StoredChoice): ModelRoleChoice {
+  const thinkingLevel = ThinkingLevelSchema.safeParse(row.thinkingLevel);
+  return {
+    provider: row.provider,
+    modelId: row.modelId,
+    ...(thinkingLevel.success ? { thinkingLevel: thinkingLevel.data } : {}),
+    ...(row.credentialId ? { credentialId: row.credentialId } : {}),
+  };
+}
+
+function roleRows(prisma: RoleClient, target: ModelRoleTarget) {
+  return target.scope === "space"
+    ? {
+        table: prisma.spaceModelRoleChoice as unknown as RoleRows,
+        owner: { userId: target.userId, spaceId: target.spaceId },
+      }
+    : {
+        table: prisma.userModelRoleChoice as unknown as RoleRows,
+        owner: { userId: target.userId },
+      };
+}
+
+/**
+ * The copy of the member's models a call acts on: the one `requested` names, else the
+ * Space's own when it overrides them, else the account's.
+ */
+export async function modelRoleTarget(
+  prisma: Pick<PrismaClient, "spaceSettingOverride">,
+  scope: Scope,
+  requested?: SettingsScope,
+): Promise<ModelRoleTarget> {
+  return {
+    userId: scope.userId,
+    spaceId: scope.spaceId,
+    scope: await settingsTarget(prisma, scope, "models", requested),
+  };
+}
+
+/** The member's ordered models for a purpose as they apply in the Space, or in `requested`. */
+export async function appliedModelRole(
+  prisma: RoleClient & Pick<PrismaClient, "spaceSettingOverride">,
+  scope: Scope,
+  role: ModelRole,
+  requested?: SettingsScope,
+): Promise<ModelRoleSettings> {
+  return getModelRole(prisma, await modelRoleTarget(prisma, scope, requested), role);
+}
 
 /** The member's own ordered models for a purpose; empty when the deployment's defaults apply. */
 export async function getModelRole(
   prisma: RoleClient,
-  scope: Scope,
+  target: ModelRoleTarget,
   role: ModelRole,
 ): Promise<ModelRoleSettings> {
-  const rows = await prisma.spaceModelRoleChoice.findMany({
-    where: { userId: scope.userId, spaceId: scope.spaceId, role },
-    orderBy: { position: "asc" },
-    select: {
-      position: true,
-      provider: true,
-      modelId: true,
-      thinkingLevel: true,
-      credentialId: true,
-    },
+  const { table, owner } = roleRows(prisma, target);
+  const rows = await table.findMany({
+    where: { ...owner, role },
+    orderBy: [{ position: "asc" }],
+    select: storedChoice,
   });
-  const choice = (row: (typeof rows)[number]): ModelRoleChoice => {
-    const thinkingLevel = ThinkingLevelSchema.safeParse(row.thinkingLevel);
-    return {
-      provider: row.provider,
-      modelId: row.modelId,
-      ...(thinkingLevel.success ? { thinkingLevel: thinkingLevel.data } : {}),
-      ...(row.credentialId ? { credentialId: row.credentialId } : {}),
-    };
-  };
   const primary = rows.find((row) => row.position === 0);
   return {
-    primary: primary ? choice(primary) : null,
-    backups: rows.filter((row) => row.position > 0).map(choice),
+    primary: primary ? roleChoice(primary) : null,
+    backups: rows.filter((row) => row.position > 0).map(roleChoice),
   };
 }
 
+/** Every purpose's models in one copy, each purpose's in order. */
+export async function listModelRoleChoices(
+  prisma: RoleClient,
+  target: ModelRoleTarget,
+): Promise<Array<ModelRoleChoice & { role: string; position: number }>> {
+  const { table, owner } = roleRows(prisma, target);
+  const rows = await table.findMany({
+    where: owner,
+    orderBy: [{ role: "asc" }, { position: "asc" }],
+    select: storedChoice,
+  });
+  return rows.map((row) => ({ ...roleChoice(row), role: row.role, position: row.position }));
+}
+
+/**
+ * Saves a purpose's list to the copy `target.scope` names, or, when it names none, to the
+ * copy that applies in the Space at the moment of the save.
+ */
 export async function updateModelRole(
   prisma: PrismaClient,
-  scope: Scope,
+  target: Scope & { scope?: SettingsScope },
   role: ModelRole,
   patch: Partial<ModelRoleSettings>,
-  options: ModelRoleWriteOptions = {},
 ): Promise<ModelRoleSettings> {
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        // Lock a row that exists even when the list is empty. At ReadCommitted, the
-        // rewrite after this lock observes the previous writer's committed list.
-        const members = await tx.$queryRaw<Array<{ locked: number }>>`
-          SELECT 1 AS locked FROM "space_members" WHERE "spaceId" = ${scope.spaceId} AND "userId" = ${scope.userId} FOR UPDATE
-        `;
-        if (members.length !== 1) throw new Error("Space membership not found");
-        return writeModelRole(tx, scope, role, patch, options);
+        await lockSpaceSettings(tx, target);
+        const resolved = await modelRoleTarget(
+          tx,
+          { userId: target.userId, spaceId: target.spaceId },
+          target.scope,
+        );
+        // The account's list is shared by every Space, so its saves also queue on the user.
+        // At ReadCommitted, the rewrite after these locks observes the previous writer's list.
+        if (resolved.scope === "account") {
+          const users = await tx.$queryRaw<Array<{ locked: number }>>`
+            SELECT 1 AS locked FROM "user" WHERE "id" = ${target.userId} FOR UPDATE
+          `;
+          if (users.length !== 1) throw new Error("Model settings owner not found");
+        }
+        return writeModelRole(tx, resolved, role, patch);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     ),
@@ -88,14 +167,13 @@ export async function updateModelRole(
  * thinking level keeps the one its model already had, so reordering never resets effort.
  */
 export async function writeModelRole(
-  tx: RoleWriteClient,
-  scope: Scope,
+  tx: RoleClient,
+  target: ModelRoleTarget,
   role: ModelRole,
   patch: Partial<ModelRoleSettings>,
-  options: ModelRoleWriteOptions = {},
 ): Promise<ModelRoleSettings> {
-  const scoped = { userId: scope.userId, spaceId: scope.spaceId };
-  const current = await getModelRole(tx, scope, role);
+  const { table, owner } = roleRows(tx, target);
+  const current = await getModelRole(tx, target, role);
   const saved = [...(current.primary ? [current.primary] : []), ...current.backups];
   // The same row first, then the same model on another connection.
   const savedThinking = (choice: ModelRoleChoice) =>
@@ -130,13 +208,13 @@ export async function writeModelRole(
         (!primary || modelRoleChoiceKey(backup) !== modelRoleChoiceKey(primary)) &&
         list.findIndex((item) => modelRoleChoiceKey(item) === modelRoleChoiceKey(backup)) === index,
     );
-  await tx.spaceModelRoleChoice.deleteMany({ where: { ...scoped, role } });
-  await tx.spaceModelRoleChoice.createMany({
+  await table.deleteMany({ where: { ...owner, role } });
+  await table.createMany({
     data: [
       ...(primary ? [{ ...primary, position: 0 }] : []),
       ...backups.map((backup, index) => ({ ...backup, position: index + 1 })),
     ].map((row) => ({
-      ...scoped,
+      ...owner,
       role,
       position: row.position,
       provider: row.provider,
@@ -145,50 +223,5 @@ export async function writeModelRole(
       credentialId: row.credentialId ?? null,
     })),
   });
-  if (role === "main") {
-    await mirrorPreviousMainModel(
-      tx,
-      scope,
-      {
-        primary: patch.primary === undefined ? undefined : primary,
-        // The previous release lists each model once, whichever connection runs it.
-        backups: backups.filter(
-          (backup, index) =>
-            (!primary || backupChoiceKey(backup) !== backupChoiceKey(primary)) &&
-            backups.findIndex((item) => backupChoiceKey(item) === backupChoiceKey(backup)) ===
-              index,
-        ),
-      },
-      primary?.credentialId ?? options.primaryCredentialId ?? null,
-    );
-  }
-  return getModelRole(tx, scope, role);
-}
-
-/** Keeps the default preference and space_backup_models the previous release reads. */
-async function mirrorPreviousMainModel(
-  tx: RoleWriteClient,
-  scope: Scope,
-  main: { primary: ModelRoleChoice | null | undefined; backups: ModelRoleChoice[] },
-  credentialId: string | null,
-) {
-  if (main.primary && credentialId) {
-    await selectSpaceModelPreference(
-      tx,
-      scope,
-      credentialId,
-      main.primary.modelId,
-      main.primary.thinkingLevel ?? null,
-    );
-  } else if (main.primary !== undefined) {
-    await tx.spaceModelPreference.updateMany({
-      where: { userId: scope.userId, spaceId: scope.spaceId, isDefault: true },
-      data: { isDefault: false },
-    });
-  }
-  await writeSpaceBackupModels(
-    tx,
-    scope,
-    main.backups.map(({ provider, modelId }) => ({ provider, modelId })),
-  );
+  return getModelRole(tx, target, role);
 }

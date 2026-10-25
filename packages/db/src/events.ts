@@ -27,6 +27,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
+import { saveApprovalRule } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -891,18 +892,16 @@ async function commitAnswerRunInput(
     // "Always" on a fetch card allows that site, never every site the tool can reach.
     const site = alwaysAllowedSite(approvalEffect!);
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
-      const rule = {
-        spaceId: input.spaceId,
-        createdByUserId: approvalUserId!,
-        effect: "always_allow",
-        matchKind: site ? "site" : "tool",
-        matchValue: site ?? approvalEffect!.kind,
-      };
-      await tx.actionApprovalRule.upsert({
-        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
-        create: rule,
-        update: {},
-      });
+      // Saved where the member's confirmations apply in this Space: the account or its override.
+      await saveApprovalRule(
+        tx,
+        { userId: approvalUserId!, spaceId: input.spaceId },
+        {
+          effect: "always_allow",
+          matchKind: site ? "site" : "tool",
+          matchValue: site ?? approvalEffect!.kind,
+        },
+      );
     }
   } else if (dismissed) {
     // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed

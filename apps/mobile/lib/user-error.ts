@@ -4,6 +4,7 @@ import {
   authErrorMessage,
   isServerUnreachable,
   isUnreachableStatus,
+  MAX_PASSWORD_LENGTH,
   userErrorMessage,
 } from "@rakazo/core";
 import { t } from "./i18n";
@@ -43,6 +44,8 @@ export function authErrorText(body: unknown, fallback: string): string {
     return t("Email verification required");
   if (code === "REAUTHENTICATION_REQUIRED") return t("Sign in again");
   if (code === "PASSWORD_AUTH_DISABLED") return t("Password sign-in is turned off on this server");
+  if (code === "PASSWORD_TOO_LONG")
+    return t("Password must be {max} characters or fewer", { max: MAX_PASSWORD_LENGTH });
   if (code === "EMAIL_DELETION_UNAVAILABLE") return t("Could not continue");
   if (code === "INVALID_OTP") return t("Invalid code");
   if (code === "OTP_EXPIRED" || code === "TOO_MANY_ATTEMPTS") return t("Request a new code");

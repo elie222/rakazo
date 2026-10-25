@@ -95,8 +95,36 @@ vi.mock("./MemorySettingsOverlay", () => ({
     return null;
   },
 }));
-vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: () => null }));
-vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: () => null }));
+vi.mock("./SpaceSettingsPanel", () => ({
+  SpaceSettingsPanel: ({
+    space,
+    onDelete,
+  }: {
+    space: { name: string };
+    onDelete: () => Promise<void>;
+  }) => (
+    <button type="button" data-testid="space-settings" onClick={() => void onDelete()}>
+      {space.name}
+    </button>
+  ),
+}));
+const { scopes, recordScope } = vi.hoisted(() => {
+  const scopes: string[] = [];
+  return {
+    scopes,
+    recordScope:
+      (name: string) =>
+      ({ scope }: { scope: string }) => {
+        scopes.push(`${name}:${scope}`);
+        return null;
+      },
+  };
+});
+vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: recordScope("models") }));
+vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: recordScope("voice") }));
+vi.mock("../components/ApprovalRulesSettings", () => ({
+  ApprovalRulesSettings: recordScope("confirmations"),
+}));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -150,7 +178,7 @@ it("names the space a space-scoped section acts on and switches it in place", as
     space: acme,
     spaces,
     onSpaceChange,
-    section: "models",
+    section: "memory",
   });
   try {
     const trigger = container.querySelector<HTMLButtonElement>('[data-testid="settings-space"]');
@@ -164,6 +192,38 @@ it("names the space a space-scoped section acts on and switches it in place", as
     await act(async () => options[1]?.click());
 
     await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b"));
+  } finally {
+    await cleanup();
+  }
+});
+
+it("opens the Space section for the space it acts on, with the space picker", async () => {
+  const onDeleteSpace = vi.fn(async () => undefined);
+  const { container, cleanup } = await render({
+    space: { ...acme, canDelete: true },
+    spaces,
+    onSpaceChange: vi.fn(),
+    onDeleteSpace,
+    section: "space",
+  });
+  try {
+    const nav = [...container.querySelectorAll('[data-testid^="settings-nav-"]')].map((item) =>
+      item.getAttribute("data-testid"),
+    );
+    // The account's sections come first; the per-space ones sit together under the picker.
+    expect(nav.slice(0, 6)).toEqual([
+      "settings-nav-general",
+      "settings-nav-models",
+      "settings-nav-voice",
+      "settings-nav-confirmations",
+      "settings-nav-space",
+      "settings-nav-memory",
+    ]);
+    expect(container.querySelector('[data-testid="settings-space"]')?.textContent).toBe("Acme");
+    const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
+    expect(panel?.textContent).toBe("Acme");
+    await act(async () => panel?.click());
+    expect(onDeleteSpace).toHaveBeenCalledWith("space-a");
   } finally {
     await cleanup();
   }
@@ -203,7 +263,7 @@ it("shows no space label or switcher when there is only one space", async () => 
     space: acme,
     spaces: [acme],
     onSpaceChange: vi.fn(),
-    section: "models",
+    section: "space",
   });
   try {
     expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
@@ -221,6 +281,23 @@ it("shows no space picker on sections that are not per space", async () => {
   });
   try {
     expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("edits the account's models, voice, and confirmations with no space picker", async () => {
+  scopes.length = 0;
+  const props = { space: acme, spaces, onSpaceChange: vi.fn() };
+  const { container, rerender, cleanup } = await render({ ...props, section: "models" });
+  try {
+    for (const section of ["models", "voice", "confirmations"] as const) {
+      await rerender({ ...props, section });
+      expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
+    }
+    expect(new Set(scopes)).toEqual(
+      new Set(["models:account", "voice:account", "confirmations:account"]),
+    );
   } finally {
     await cleanup();
   }

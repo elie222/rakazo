@@ -105,7 +105,6 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
           <Button
             variant="secondary"
             size="sm"
-            className="rounded-full"
             disabled={pending}
             onClick={() => void run(() => authClient.passkey.addPasskey())}
           >

@@ -1,8 +1,7 @@
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { t } from "./i18n";
+import { DEFAULT_API, LOCAL_API } from "./server-config";
 
-const LOCAL_API = "http://127.0.0.1:3100";
-const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL ?? LOCAL_API;
 export const API_PROBE_TIMEOUT_MS = 8_000;
 export const MAX_API_PROBE_RESPONSE_BYTES = 64 * 1024;
 

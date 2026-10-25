@@ -12,7 +12,7 @@ export function secretDestinationLabel(credential: {
   auth: { type: string };
 }): string {
   if (credential.auth.type === "command") {
-    return `${t("Command variable")} · $${commandVariableName(credential.name)}`;
+    return `${t("Command variable")} $${commandVariableName(credential.name)}`;
   }
   if (credential.auth.type === "login") {
     try {

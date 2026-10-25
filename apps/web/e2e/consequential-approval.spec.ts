@@ -8,7 +8,7 @@ import {
   signup,
 } from "./helpers";
 
-test("actions run by default while optional confirmations live in space settings", async ({
+test("actions run by default while optional confirmations live in settings", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -32,8 +32,10 @@ test("actions run by default while optional confirmations live in space settings
   await expect(settings.getByTestId("auto-review-toggle")).toBeVisible();
   await expect(settings.getByTestId("auto-review-toggle")).not.toBeChecked();
   await expect(settings.getByText("Flag unexpected actions")).toBeVisible();
-  await settings.getByRole("button", { name: "Ask before sending external email" }).click();
-  await expect(settings.getByText("Ask before email actions", { exact: true })).toBeVisible();
+  const askBeforeEmail = settings.getByTestId("ask-before-email-toggle");
+  await expect(askBeforeEmail).not.toBeChecked();
+  await askBeforeEmail.click();
+  await expect(askBeforeEmail).toBeChecked();
   await captureScreenshot(page, testInfo, "52-advanced-action-confirmations");
   const skipApprovals = settings.getByTestId("skip-approvals-toggle");
   await expect(skipApprovals).not.toBeChecked();

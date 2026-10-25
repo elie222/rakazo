@@ -8,12 +8,22 @@ import {
   selectConfiguredModel,
   toStringRecord,
 } from "@rakazo/adapters";
-import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
+import type {
+  Actor,
+  AiConsentQuery,
+  AiConsentStatus,
+  AiRecipient,
+  SettingsScope,
+} from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
 import {
   findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
+  listModelRoleChoices,
+  listVoicePreferences,
+  modelRoleTarget,
+  voicePreferenceTarget,
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
@@ -36,16 +46,15 @@ export async function aiConsentStatus(
   const [preferences, roleChoices, main, bots, routines, voices, memory, settings, consents] =
     await Promise.all([
       modelsEnabled
-        ? deps.prisma.spaceModelPreference.findMany({
-            where: { userId: actor.userId, spaceId: actor.spaceId },
+        ? deps.prisma.userModelPreference.findMany({
+            where: { userId: actor.userId },
             include: { credential: true },
           })
         : [],
       modelsEnabled
-        ? deps.prisma.spaceModelRoleChoice.findMany({
-            where: { userId: actor.userId, spaceId: actor.spaceId },
-            orderBy: [{ role: "asc" }, { position: "asc" }],
-          })
+        ? modelRoleTarget(deps.prisma, actor).then((roles) =>
+            listModelRoleChoices(deps.prisma, roles),
+          )
         : [],
       modelsEnabled
         ? resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor)
@@ -82,13 +91,12 @@ export async function aiConsentStatus(
         : [],
       uses.includes("voice")
         ? query.uses
-          ? findDefaultVoiceCredential(deps.prisma, actor).then((credential) =>
-              credential ? [{ credential }] : [],
+          ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
+              (credential) => (credential ? [{ credential }] : []),
             )
-          : deps.prisma.spaceVoicePreference.findMany({
-              where: { userId: actor.userId, spaceId: actor.spaceId },
-              include: { credential: true },
-            })
+          : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
+              listVoicePreferences(deps.prisma, target),
+            )
         : [],
       uses.includes("memory")
         ? deps.prisma.spaceMemoryConfig.findUnique({ where: { spaceId: actor.spaceId } })
@@ -137,7 +145,6 @@ export async function aiConsentStatus(
         id: preference.modelId ?? "",
         credential: {
           ...preference.credential,
-          isDefault: preference.isDefault,
           defaultModel: preference.modelId,
           thinkingLevel: preference.thinkingLevel,
         },
@@ -253,9 +260,14 @@ export async function aiConsentStatus(
 export async function allowAiConsent(
   deps: RouterDeps,
   actor: Actor,
-  input: { scope: string; version: string; keys: string[] },
+  input: { scope: string; version: string; keys: string[]; settingsScope?: SettingsScope },
 ) {
-  const current = await aiConsentStatus(deps, actor);
+  // Checked against the same settings copy the member reviewed.
+  const current = await aiConsentStatus(
+    deps,
+    actor,
+    input.settingsScope ? { settingsScope: input.settingsScope } : {},
+  );
   const known = new Set(current.recipients.map((recipient) => recipient.key));
   if (
     input.scope !== current.scope ||

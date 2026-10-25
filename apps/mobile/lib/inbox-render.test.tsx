@@ -11,7 +11,7 @@ import { expect, it, vi } from "vitest";
 import type { MobileBot } from "./api";
 import { botTag, formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
-import { spaceInboxItems } from "./inbox-spaces";
+import { canDeleteInboxSpace, spaceInboxItems } from "./inbox-spaces";
 import { inboxRowActionList } from "./inbox-swipe";
 
 // Section headings use the real item builder; its space actions stay unused here.
@@ -91,6 +91,7 @@ function measure(before: boolean) {
     organizeBot: action,
     organizeGroup: action,
     spaceBusy: false,
+    router: { push: action },
     spaceRecoveryId: null,
     styles: {},
     t: action,
@@ -219,6 +220,7 @@ it.each(["midnight", "focus", "foreground"])(
       organizeBot: action,
       organizeGroup: action,
       spaceBusy: false,
+      router: { push: action },
       spaceRecoveryId: null,
       styles: {},
       t: action,
@@ -463,6 +465,7 @@ it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scr
     organizeFromMenu: action,
     organizeGroup: action,
     spaceBusy: false,
+    router: { push: action },
     spaceRecoveryId: null,
     styles: {},
     t: action,
@@ -558,6 +561,7 @@ it("collapses a section from its heading and keeps the choice for the account", 
     organizeFromMenu: action,
     organizeGroup: action,
     spaceBusy: false,
+    router: { push: action },
     spaceRecoveryId: null,
     // The heading's own style, so its tap target is checked against the real value.
     styles: new Function(
@@ -778,6 +782,7 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
     organizeBot: action,
     organizeGroup: action,
     spaceBusy: false,
+    router: { push: action },
     spaceRecoveryId: null,
     styles: {},
     t: action,
@@ -816,6 +821,96 @@ it("gives the long-press menu, and with it Delete, only to chats in the current 
   try {
     act(() => root.render(<List items={items} />));
     expect(withMenu).toEqual(["bot:current-bot", "group:current-group"]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers every space heading's Settings, and Delete only where the member may delete it", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const push = vi.fn();
+  const confirmDeleteSpace = vi.fn();
+  type Menu = {
+    actions: { id: string; title: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+  };
+  const menus: Menu[] = [];
+  const action = vi.fn();
+  const scope = {
+    React,
+    useCallback,
+    canDeleteInboxSpace,
+    View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+    Pressable: ({ children }: { children?: ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    MenuView: (props: Menu & { children?: ReactNode }) => {
+      menus.push(props);
+      return props.children;
+    },
+    NativeSymbol: () => null,
+    appearance: "light",
+    botAction: action,
+    botSections: [],
+    chooseInboxSpace: action,
+    confirmDeleteSpace,
+    deleteSection: action,
+    day: 0,
+    editSectionFromMenu: action,
+    groupAction: action,
+    me: { spaceId: "space-home" },
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeFromMenu: action,
+    organizeGroup: action,
+    router: { push },
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    styles: {},
+    t: (text: string) => text,
+    toggleCollapsed: action,
+  };
+  const listSource = source.slice(
+    source.indexOf("  const renderItem = useCallback("),
+    source.indexOf("  if (!ready) {"),
+  );
+  const compiled = ts.transpileModule(
+    `return function List({ items }) {\n${listSource}
+      return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
+    };`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const heading = (id: string, name: string, canDelete: boolean) => ({
+    type: "heading",
+    key: id,
+    title: name,
+    space: { id, name, isDefault: !canDelete, canDelete, bots: [], groups: [], botSections: [] },
+  });
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() =>
+      root.render(
+        <List
+          items={[heading("space-home", "Home", false), heading("space-work", "Work", true)]}
+        />,
+      ),
+    );
+    expect(menus.map((menu) => menu.actions.map((entry) => entry.id))).toEqual([
+      ["settings"],
+      ["settings", "delete"],
+    ]);
+    // Settings open the Space's own page, which edits that Space even when another is selected.
+    act(() => menus[1]!.onPressAction({ nativeEvent: { event: "settings" } }));
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/space",
+      params: { spaceId: "space-work", name: "Work" },
+    });
+    act(() => menus[1]!.onPressAction({ nativeEvent: { event: "delete" } }));
+    expect(confirmDeleteSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "space-work" }));
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();
