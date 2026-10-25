@@ -78,6 +78,7 @@ function services(overrides: Partial<AgentImportServices>): AgentImportServices 
     announceRoutine: async () => undefined,
     destroyBot: async () => undefined,
     removeMcpServer: async () => undefined,
+    notifyThread: async () => undefined,
     ...overrides,
   };
 }

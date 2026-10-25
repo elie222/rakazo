@@ -22,6 +22,7 @@ import type {
   Bot,
   CreateRoutineInput as CreateRoutineInputType,
   McpServerConfigInput,
+  MessageBlock,
 } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -508,6 +509,24 @@ export async function createImportedBot<PreparedKey>(
   // meanwhile). The bot `createBot` returns is the one its committed transaction made, so the
   // import committed exactly when that is the bot the last import attempt wrote into.
   let importedInto: string | null = null;
+  // Each chat message the import adds, as an event open chats are told of once committed.
+  let added: { threadId: string; seq: number }[] = [];
+  const announceAdded = async (
+    tx: Prisma.TransactionClient,
+    botId: string,
+    message: { id: string },
+    threadId: string,
+    blocks: MessageBlock[],
+  ) => {
+    const event = await appendEventInTransaction(tx, {
+      spaceId: actor.spaceId,
+      threadId,
+      botId,
+      type: "thread.message.created",
+      payload: { messageId: message.id, role: "bot", blocks },
+    });
+    added.push({ threadId, seq: event.seq });
+  };
   /** Every write of the import, in one transaction, into the new or the existing bot. */
   const write = async (tx: Prisma.TransactionClient, botId: string) => {
     // A serialization conflict runs this again: start each attempt clean.
@@ -652,21 +671,23 @@ export async function createImportedBot<PreparedKey>(
       const row = await services
         .insertMcpServer(tx, actor, config, prepared.stored)
         .catch(conflict("An MCP server with that name was just added. Try again."));
-      await createThreadMessageInTransaction(tx, {
+      const card: MessageBlock[] = [
+        {
+          kind: "mcp_approval",
+          name: row.name,
+          serverId: row.id,
+          transport: config.transport,
+          endpoint: row.endpoint,
+          needsOAuth: false,
+          status: "pending",
+        },
+      ];
+      const cardMessage = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,
         role: "bot",
-        blocks: [
-          {
-            kind: "mcp_approval",
-            name: row.name,
-            serverId: row.id,
-            transport: config.transport,
-            endpoint: row.endpoint,
-            needsOAuth: false,
-            status: "pending",
-          },
-        ],
+        blocks: card,
       });
+      await announceAdded(tx, botId, cardMessage, thread.id, card);
       const status = plan.mcpServers.find((item) => item.id === prepared.id)?.status;
       const named = (kind: "credentials" | "env") =>
         status?.kind === "needs_setup"
@@ -705,11 +726,13 @@ export async function createImportedBot<PreparedKey>(
     }
     // One checklist of what is left to set up, in the same transaction; none if nothing is.
     if (setup.length) {
+      const checklist: MessageBlock[] = [{ kind: "import_setup", items: setup }];
       const message = await createThreadMessageInTransaction(tx, {
         threadId: thread.id,
         role: "bot",
-        blocks: [{ kind: "import_setup", items: setup }],
+        blocks: checklist,
       });
+      await announceAdded(tx, botId, message, thread.id, checklist);
       record.setupMessageId = message.id;
     }
     // A new bot's memory is all from the import (and its starting index).
@@ -736,10 +759,16 @@ export async function createImportedBot<PreparedKey>(
     if (target) {
       await services.inTransaction(async (tx) => {
         importedInto = null;
+        added = [];
         // Writers take the thread before the bot row (see `commitBotUpdate`).
         if (target.threadId) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
         }
+        // Archived meanwhile (an Undo deleting it reserves it so): as for any other bot.
+        const live = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM bots WHERE id = ${target.id} AND "archivedAt" IS NULL FOR UPDATE
+        `;
+        if (!live.length) throw new IsolationError();
         await write(tx, target.id);
       });
       bot = (await services.findBot(actor, target.id)) ?? target;
@@ -756,6 +785,7 @@ export async function createImportedBot<PreparedKey>(
         spawnKey: input.spawnKey,
         seed: async (tx, botId) => {
           importedInto = null;
+          added = [];
           await write(tx, botId);
         },
       });
@@ -787,6 +817,9 @@ export async function createImportedBot<PreparedKey>(
     } catch (error) {
       settle("imported key catalog refresh")(error);
     }
+  }
+  for (const event of added) {
+    await services.notifyThread(event.threadId, event.seq).catch(settle("imported card notice"));
   }
   const thread = bot.threadId ? { id: bot.threadId } : null;
   for (const row of routineRows) {
@@ -1168,16 +1201,44 @@ export async function undoAgentImport(
     return result;
   }
 
-  await services.destroyBot(actor, botId, {
-    deleteMemories: false,
-    // Runs after the bot row is locked: the rest is decided again under the locks.
-    within: async (tx) => {
-      const { plan, current, removed, events } = await removeAdded(tx);
-      result = current.infoFor(removed);
-      changed = events;
-      return { deleteMemories: !plan.botMemoryChanged };
-    },
+  // `destroyBot` cancels runs, destroys the computer and removes saved sessions before its
+  // transaction, and none of that rolls back. So the confirmed import is checked and reserved
+  // first: an archived bot takes no imports, so none can commit before the deletion.
+  const reservedAt = await services.prisma.$transaction(async (tx) => {
+    const thread = await tx.thread.findFirst({ where: { ...owner, botId }, select: { id: true } });
+    if (thread) await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+    const [bot] = await tx.$queryRaw<{ archivedAt: Date | null }[]>`
+      SELECT "archivedAt" FROM bots WHERE id = ${botId} FOR UPDATE
+    `;
+    const current = bot ? await undoPlan(tx, actor, botId) : null;
+    if (!current || current.plan.found.id !== input.importId) {
+      throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
+    }
+    if (bot!.archivedAt) return null;
+    const at = new Date();
+    await tx.bot.update({ where: { id: botId }, data: { archivedAt: at } });
+    return at;
   });
+  try {
+    await services.destroyBot(actor, botId, {
+      deleteMemories: false,
+      // Runs after the bot row is locked: the rest is decided again under the locks.
+      within: async (tx) => {
+        const { plan, current, removed, events } = await removeAdded(tx);
+        result = current.infoFor(removed);
+        changed = events;
+        return { deleteMemories: !plan.botMemoryChanged };
+      },
+    });
+  } catch (error) {
+    // The bot was not deleted: give it back as it was.
+    if (reservedAt) {
+      await services.prisma.bot
+        .updateMany({ where: { id: botId, archivedAt: reservedAt }, data: { archivedAt: null } })
+        .catch(() => undefined);
+    }
+    throw error;
+  }
   // Cards in other chats (a group) the removed servers closed.
   await announce();
   return result;

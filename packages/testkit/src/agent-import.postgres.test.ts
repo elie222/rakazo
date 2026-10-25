@@ -1,7 +1,12 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { EncryptedSecretStore, InMemoryRealtimeFanout } from "@rakazo/adapters";
+import {
+  EncryptedSecretStore,
+  InMemoryRealtimeFanout,
+  piSessionBotRoot,
+  piSessionsRoot,
+} from "@rakazo/adapters";
 import type { AgentImportInfo, AgentImportPlan, Bot, MemoryDocument } from "@rakazo/contracts";
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -1390,6 +1395,33 @@ describeIntegration("agent import", () => {
     expect(await db.agentImport.count({ where: owner })).toBe(0);
   });
 
+  it("does not ask an imported bot what it is for", async () => {
+    const cookie = await signup(app, `import-focus-${stamp}@rakazo.test`, "Focus User");
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+      files: workspace,
+    });
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files: workspace,
+      name: "Pebble",
+      selection: {
+        instructions: plan.instructions.map((item) => item.id),
+        memory: [],
+        skills: [],
+      },
+    });
+    // What onboarding asks after a reload, when it no longer remembers the import.
+    await rpc(app, cookie, "onboarding/promptFocus", { botId: bot.id });
+    const thread = await db.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const messages = await db.message.findMany({
+      where: { threadId: thread.id },
+      select: { blocks: true },
+    });
+    const kinds = messages.flatMap((message) =>
+      (message.blocks as { kind: string }[]).map((block) => block.kind),
+    );
+    expect(kinds).not.toContain("choice");
+  });
+
   describe("into an existing bot", () => {
     const files = [
       { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
@@ -1750,6 +1782,115 @@ describeIntegration("agent import", () => {
       expect(await stale.text()).toContain('"reason":"import_changed"');
       expect(await db.bot.count({ where: { id: made.id } })).toBe(1);
       expect(await db.agentImport.count({ where: { botId: made.id } })).toBe(1);
+    });
+
+    it("refuses an Undo another import overtook before removing anything", async () => {
+      const { cookie, plan } = await setUp("overtaken");
+      const made = await rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        name: "Pebble",
+        selection: everything(plan),
+      });
+      const shown = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", {
+        botId: made.id,
+      });
+      const owner = await db.bot.findUniqueOrThrow({
+        where: { id: made.id },
+        select: { spaceId: true, userId: true },
+      });
+      const thread = await db.thread.findFirstOrThrow({ where: { botId: made.id } });
+      // Deleting the bot removes its saved sessions before the deletion transaction.
+      const sessions = piSessionBotRoot(piSessionsRoot(dataDir), owner.userId, made.id);
+      mkdirSync(sessions, { recursive: true });
+      writeFileSync(path.join(sessions, "session.jsonl"), "{}\n");
+      // Another import into the bot, holding its chat as imports do, commits as Undo starts.
+      let undo: Promise<Response> | undefined;
+      await db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+          await tx.agentImport.create({
+            data: {
+              ...owner,
+              botId: made.id,
+              source: "openclaw",
+              created: {
+                existingBot: true,
+                skills: [],
+                spaceMemory: [],
+                botMemory: [],
+                mcpServers: [],
+                routines: [],
+                credentials: [],
+              },
+            },
+          });
+          undo = raw(app, cookie, "bots/importUndo", { botId: made.id, importId: shown.id });
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        },
+        { timeout: 20_000 },
+      );
+      const response = await undo!;
+      expect(response.status).toBe(409);
+      expect(await response.text()).toContain('"reason":"import_changed"');
+      expect(existsSync(sessions)).toBe(true);
+      expect(
+        await db.bot.findUniqueOrThrow({ where: { id: made.id }, select: { archivedAt: true } }),
+      ).toEqual({ archivedAt: null });
+    });
+
+    it("refuses an import into a bot archived while it was checked", async () => {
+      const { cookie, chief, plan } = await setUp("archived-meanwhile");
+      const thread = await db.thread.findFirstOrThrow({ where: { botId: chief.id } });
+      // What an Undo deleting the bot does first: archive it, holding its chat.
+      let created: Promise<Response> | undefined;
+      await db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
+          created = raw(app, cookie, "bots/importCreate", {
+            files,
+            destination: { kind: "existing", botId: chief.id },
+            selection: { ...everything(plan), instructions: [] },
+          });
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+          await tx.bot.update({ where: { id: chief.id }, data: { archivedAt: new Date() } });
+        },
+        { timeout: 20_000 },
+      );
+      expect((await created!).status).toBe(404);
+      expect(await db.agentImport.count({ where: { botId: chief.id } })).toBe(0);
+    });
+
+    it("tells open chats about the cards and checklist it adds", async () => {
+      const { cookie, chief, plan } = await setUp("announce");
+      const thread = await db.thread.findFirstOrThrow({ where: { botId: chief.id } });
+      published.length = 0;
+      await rpc(app, cookie, "bots/importCreate", {
+        files,
+        destination: { kind: "existing", botId: chief.id },
+        selection: { ...everything(plan), instructions: [] },
+      });
+      const messages = await db.message.findMany({
+        where: { threadId: thread.id, role: "bot" },
+        select: { id: true, blocks: true },
+      });
+      const added = messages.filter((message) =>
+        (message.blocks as { kind: string }[]).some(
+          (block) => block.kind === "mcp_approval" || block.kind === "import_setup",
+        ),
+      );
+      expect(added).toHaveLength(2);
+      const events = await db.event.findMany({
+        where: { threadId: thread.id, type: "thread.message.created" },
+        select: { seq: true, payload: true },
+      });
+      const announced = events.filter((event) =>
+        added.some((message) => (event.payload as { messageId?: string }).messageId === message.id),
+      );
+      expect(announced).toHaveLength(2);
+      const sent = published
+        .filter(([topic]) => topic.includes(thread.id))
+        .map(([, payload]) => (JSON.parse(payload) as { cursor: number }).cursor);
+      expect(sent).toContain(Math.max(...announced.map((event) => event.seq)));
     });
   });
 
