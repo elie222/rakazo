@@ -317,6 +317,52 @@ describe("sandbox idle", () => {
     expect(harness.home.commit).not.toHaveBeenCalled();
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith({
+      where: {
+        computerId: harness.computer.id,
+        endedAt: null,
+        startedAt: { lte: expect.any(Date) },
+      },
+      data: { endedAt: expect.any(Date), endReason: "gone" },
+    });
+  });
+
+  it("ends the computer's run when idle shutdown suspends it", async () => {
+    const harness = idleHarness();
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledOnce();
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ computerId: harness.computer.id, endedAt: null }),
+        data: expect.objectContaining({ endReason: "idle" }),
+      }),
+    );
+  });
+
+  it("still suspends when the usage write fails", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", level: "debug", sinks: [sink] }));
+    const harness = idleHarness();
+    harness.prisma.computerRun.updateMany.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.computer.state).toBe("suspended");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "error", message: "computer.run_record_failed" }),
+    );
+  });
+
+  it("leaves the run open when a stop is called off", async () => {
+    const harness = idleHarness();
+    harness.prisma.run.findFirst.mockResolvedValueOnce({ id: "run" });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.computerRun.updateMany).not.toHaveBeenCalled();
   });
 
   it("stops a computer whose sandbox is gone before the background-work probe", async () => {
@@ -486,6 +532,9 @@ describe("maximum active lifetime", () => {
     );
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endReason: "active_limit" }) }),
+    );
   });
 
   it("keeps a viewed computer alive within the limit", async () => {
@@ -1083,6 +1132,7 @@ function idleHarness(
       ),
     },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),
     },

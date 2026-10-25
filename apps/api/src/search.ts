@@ -1,4 +1,5 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   displayName,
   escapeJsonSearchWildcards,
@@ -139,10 +140,28 @@ export async function querySpaceSearch(
     );
   }
 
+  // Only groups that can actually be opened: not archived, and still holding
+  // enough active-member bots (archiving bots can empty a group below the
+  // minimum — those land on the Archived list instead of opening).
+  const openableGroups = await prisma.$queryRaw<Array<{ id: string }>>(
+    Prisma.sql`
+      SELECT g.id FROM chat_groups g
+      WHERE g."spaceId" = ${actor.spaceId}
+        AND g."userId" = ${actor.userId}
+        AND g."archivedAt" IS NULL
+        AND (
+          SELECT COUNT(*) FROM chat_group_members gm
+          INNER JOIN bots gb ON gb.id = gm."botId"
+          WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
+        ) >= ${GROUP_MEMBER_MIN}
+    `,
+  );
+  const openableGroupIds = openableGroups.map(({ id }) => id);
   const groups = await prisma.chatGroup.findMany({
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
+      id: { in: openableGroupIds },
       name: { contains: likeQuery, mode: "insensitive" },
     },
     take: CONVERSATION_HIT_LIMIT,
@@ -194,7 +213,7 @@ export async function querySpaceSearch(
         botId: artifact.botId,
         botName: artifact.bot.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -207,7 +226,7 @@ export async function querySpaceSearch(
     where: {
       spaceId: actor.spaceId,
       userId: actor.userId,
-      groupId: { not: null },
+      groupId: { in: openableGroupIds },
       name: { contains: likeQuery, mode: "insensitive" },
     },
     include: { group: { select: { name: true } } },
@@ -232,7 +251,7 @@ export async function querySpaceSearch(
         groupId: artifact.groupId,
         groupName: artifact.group.name,
         title: artifact.name,
-        snippet: `${artifact.mimeType} · ${artifact.size} bytes`,
+        snippet: `${artifact.mimeType}, ${artifact.size} bytes`,
         artifactId: artifact.id,
         messageId: message.id,
         seq: message.seq,
@@ -329,6 +348,7 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."groupId" IS NOT NULL
+        AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}

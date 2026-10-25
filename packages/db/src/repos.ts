@@ -13,7 +13,7 @@ import {
   userVisibleMessages,
 } from "@rakazo/core";
 import { chooseBotAvatar } from "./bot-avatar-choice.js";
-import type { PrismaClient } from "./client.js";
+import type { Prisma, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
 import { createThreadMessageInTransaction } from "./messages.js";
@@ -517,6 +517,9 @@ export function createRepos(
           blocks: MessageBlock[];
           runId?: string;
         };
+        /** Adds content in the creation transaction, after the bot and its MEMORY.md exist. */
+        seed?: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
+        isolationLevel?: Prisma.TransactionIsolationLevel;
       },
     ): Promise<Bot> {
       let modelProvider = input.modelProvider ?? null;
@@ -545,8 +548,12 @@ export function createRepos(
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
       const kind =
         envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
+      const inTransaction = <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) =>
+        input.isolationLevel
+          ? prisma.$transaction(run, { isolationLevel: input.isolationLevel })
+          : prisma.$transaction(run);
       const insertBot = () =>
-        prisma.$transaction(async (tx) => {
+        inTransaction(async (tx) => {
           await lockSpaceForContentCreation(tx, {
             spaceId: actor.spaceId,
             userId: actor.userId,
@@ -633,6 +640,7 @@ export function createRepos(
               content: initialBotMemory(input.name),
             },
           });
+          await input.seed?.(tx, created.id);
           return tx.bot.findFirstOrThrow({
             where: { id: created.id },
             include: { thread: true, computer: true },

@@ -128,10 +128,9 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           modelId: model.model.id,
         });
         const storedBot = await db.bot.findUniqueOrThrow({ where: { id: bot.id } });
-        await db.actionApprovalRule.create({
+        await db.userActionApprovalRule.create({
           data: {
-            spaceId: storedBot.spaceId,
-            createdByUserId: storedBot.userId,
+            userId: storedBot.userId,
             effect: "require_approval",
             matchKind: "tool",
             matchValue: "computer_act",

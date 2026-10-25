@@ -271,6 +271,7 @@ function messagingDeps(
     messaging: {
       enabled: overrides.enabled ?? true,
       providers: ["sendblue"],
+      addresses: { sendblue: "+15550001111" },
       openSignup: false,
     },
     dataDir: "/tmp/rakazo-router-test",
@@ -304,7 +305,7 @@ async function call(handler: RPCHandler<never>, actor: Actor, path: string, body
 }
 
 describe("messaging.status", () => {
-  it("reports enablement, providers, and the caller's linked identities", async () => {
+  it("reports enablement, providers, line addresses, and the caller's linked identities", async () => {
     const { handler, actor } = messagingDeps({ enabled: true });
     const response = await call(handler, actor, "messaging/status");
     expect(response.status).toBe(200);
@@ -312,6 +313,7 @@ describe("messaging.status", () => {
       json: {
         enabled: true,
         providers: ["sendblue"],
+        addresses: { sendblue: "+15550001111" },
         openSignup: false,
         identities: [
           {
@@ -330,7 +332,13 @@ describe("messaging.status", () => {
     const { handler, actor } = messagingDeps({ identity: null });
     const response = await call(handler, actor, "messaging/status");
     await expect(response.json()).resolves.toEqual({
-      json: { enabled: true, providers: ["sendblue"], openSignup: false, identities: [] },
+      json: {
+        enabled: true,
+        providers: ["sendblue"],
+        addresses: { sendblue: "+15550001111" },
+        openSignup: false,
+        identities: [],
+      },
     });
   });
 });
@@ -376,6 +384,18 @@ describe("messaging.identities", () => {
         botName: "Assistant",
       },
     });
+  });
+
+  it("keeps a workspace-installed identity in its installation's space", async () => {
+    const { handler, actor, prisma } = messagingDeps({
+      identity: { ...identity, installationId: "inst-1", spaceId: "ws-other" },
+    });
+    const response = await call(handler, actor, "messaging/identities/setBot", {
+      identityId: "mi-1",
+      botId: "bot-2",
+    });
+    expect(response.status).toBe(400);
+    expect(prisma.messagingIdentity.update).not.toHaveBeenCalled();
   });
 
   it("unlinks only the caller's own identity", async () => {

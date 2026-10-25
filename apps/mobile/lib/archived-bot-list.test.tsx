@@ -9,6 +9,7 @@ import type { MobileBot, MobileGroup } from "./api";
 const swift = vi.hoisted(() => ({
   buttons: [] as Array<{
     label?: string;
+    role?: string;
     onPress?: () => void;
     modifiers?: Array<{ name: string; value: unknown }>;
   }>,
@@ -41,6 +42,7 @@ vi.mock("@expo/ui/swift-ui", () => {
   return {
     Button: (props: {
       label?: string;
+      role?: string;
       onPress?: () => void;
       modifiers?: Array<{ name: string; value: unknown }>;
       children?: ReactNode;
@@ -164,6 +166,25 @@ it("fills the swipe buttons so their white labels show in dark mode too", () => 
     [],
     [{ name: "tint", value: { semantic: ["systemRed"] } }],
   ]);
+});
+
+it("keeps a cancelled swipe Delete from hiding the row", () => {
+  swift.buttons.length = 0;
+  renderToStaticMarkup(
+    <ArchivedBotList
+      bots={[{ id: "b", name: "Ada" } as MobileBot]}
+      groups={[]}
+      pending={false}
+      onOpen={vi.fn()}
+      onRestore={vi.fn()}
+      onDelete={vi.fn()}
+      onRestoreGroup={vi.fn()}
+    />,
+  );
+  // SwiftUI drops a row when a destructive swipe button is tapped, before the confirmation;
+  // only the menu's Delete keeps the role.
+  const deletes = swift.buttons.filter((button) => button.label === "Delete");
+  expect(deletes.map((button) => button.role)).toEqual(["destructive", undefined]);
 });
 
 it("starts the list below the floating header from its measured height, not the host's safe area", () => {

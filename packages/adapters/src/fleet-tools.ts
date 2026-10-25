@@ -41,6 +41,7 @@ import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
   compactScheduleInput,
   createScheduleFromTool,
+  isScheduleValueProvided,
   resolveScheduleTiming,
   userTimeZone,
 } from "./schedule-tools.js";
@@ -340,6 +341,7 @@ async function prepareChildRoutine(
       runAt: args.runAt,
       delayMinutes: args.delayMinutes,
       delaySeconds: args.delaySeconds,
+      startAt: args.startAt,
     }),
     timezone,
   );
@@ -359,10 +361,16 @@ async function prepareChildRoutine(
       name,
       prompt,
       timezone,
-      // A one-shot keeps its absolute time so a delay is not measured again at approval.
+      // A one-shot keeps its absolute time so a delay is not measured again at approval,
+      // and a delayed repeat keeps its first run.
       schedule: resolved.oneShot
         ? { runAt: resolved.nextRunAt.toISOString() }
-        : { cron: resolved.cron },
+        : {
+            cron: resolved.cron,
+            ...(isScheduleValueProvided(args.startAt)
+              ? { startAt: resolved.nextRunAt.toISOString() }
+              : {}),
+          },
     },
     summary: {
       title: `Schedule “${cardName(name)}” for ${cardName(child.name)}?`,

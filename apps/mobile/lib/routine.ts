@@ -20,21 +20,26 @@ function routineTriggers(routine: Routine): string {
   ].join(", ");
 }
 
+/** Triggers with their zone in parentheses, or whichever of the two exists. */
+function routineSchedule(routine: Routine, zone: string | undefined): string {
+  const triggers = routineTriggers(routine);
+  return triggers && zone ? `${triggers} (${zone})` : triggers || zone || "";
+}
+
 export function routineStatusLine(routine: Routine): string {
-  return [routine.active ? t("Active") : t("Paused"), routineTriggers(routine), routine.timezone]
+  return [routine.active ? t("Active") : t("Paused"), routineSchedule(routine, routine.timezone)]
     .filter(Boolean)
-    .join(" · ");
+    .join(", ");
 }
 
 /** A list row: the schedule, its zone only when it isn't the device's, and "Paused" only when paused. */
 export function routineRowDetail(routine: Routine, deviceTimeZone: string | undefined): string {
   return [
-    routineTriggers(routine),
-    routine.timezone === deviceTimeZone ? "" : routine.timezone,
+    routineSchedule(routine, routine.timezone === deviceTimeZone ? undefined : routine.timezone),
     routine.active ? "" : t("Paused"),
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(", ");
 }
 
 /** Soonest next run first, routines without one last; ties keep the oldest first. */

@@ -22,11 +22,6 @@ msgstr " (ungelesen)"
 msgid "{0, plural, one {# bot has its own model:} other {# bots have their own model:}}"
 msgstr ""
 
-#. placeholder {0}: health.toolCount
-#: src/components/McpServerHealthLine.tsx
-msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
-msgstr "{0, plural, one {Läuft · # Tool} other {Läuft · # Tools}}"
-
 #. placeholder {0}: pinned.length
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "{0, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
@@ -294,8 +289,8 @@ msgid "{provider} took too long to respond. Try again."
 msgstr "{provider} hat zu lange zum Antworten gebraucht. Versuche es erneut."
 
 #: src/components/teach/TeachRecordingChrome.tsx
-msgid "{remaining} left · bot is watching, not acting"
-msgstr "Noch {remaining} · Bot beobachtet nur"
+msgid "{remaining} left"
+msgstr "Noch {remaining}"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -304,14 +299,6 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "{size} B"
 msgstr "{size} B"
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Done · # tool} other {Done · # tools}}"
-msgstr ""
-
-#: src/components/ToolActivityDisclosure.tsx
-msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
-msgstr ""
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -337,9 +324,15 @@ msgstr "{summary} Auch deine Ersatzmodelle sind fehlgeschlagen."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "{title}, saved as {savedAs}"
+msgstr "{title}, gespeichert als {savedAs}"
+
+#: src/components/McpServerHealthLine.tsx
+#: src/components/ToolActivityDisclosure.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
-msgstr ""
+msgstr "{toolCount, plural, one {# Tool} other {# Tools}}"
 
 #. placeholder {0}: mention.name
 #: src/pages/shell/composer.tsx
@@ -377,14 +370,6 @@ msgstr "Zugangsdaten für das Abonnement sind sicher gespeichert."
 #: src/components/InfoTooltip.tsx
 msgid "About {label}"
 msgstr "Über {label}"
-
-#: src/pages/shell/bot-picker.tsx
-msgid "About groups"
-msgstr ""
-
-#: src/pages/shell/bot-picker.tsx
-msgid "About spaces"
-msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Access token (optional)"
@@ -435,6 +420,7 @@ msgstr "Aktivität"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Add"
 msgstr "Hinzufügen"
 
@@ -554,6 +540,10 @@ msgstr "Server hinzufügen"
 msgid "Add server URL"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Add to an existing bot"
+msgstr "Zu einem bestehenden Bot hinzufügen"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "Zur Routine hinzufügen"
@@ -595,15 +585,12 @@ msgstr ""
 msgid "Agent computer"
 msgstr "Agent-Computer"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Agent connections"
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "Agents:"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "All bots"
 msgstr ""
 
@@ -615,36 +602,17 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "{0}-Aktionen ohne Nachfrage erlauben"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "{0}-Connector ohne Nachfrage erlauben"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "{0} ohne Nachfrage erlauben"
+msgid "Allow"
+msgstr "Erlauben"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Kommunikation zwischen Bots in verschiedenen Spaces erlauben"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "E-Mail-Aktionen ohne Nachfrage erlauben"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Einmal erlauben"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Kaufaktionen ohne Nachfrage erlauben"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -653,6 +621,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Allowed once"
 msgstr "Einmal erlaubt"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Already connected"
+msgstr "Bereits verbunden"
 
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
@@ -682,6 +654,14 @@ msgstr "Für diesen Anbieter ist ein API-Schlüssel gespeichert, keine Anmeldung
 msgid "An existing Honcho peer to read from. Rakazo never writes to it."
 msgstr "Ein bestehender Honcho-Peer, aus dem gelesen wird. Rakazo schreibt niemals in diesen Peer."
 
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be checked. Try again."
+msgstr "Ein importierter API-Schlüssel konnte nicht geprüft werden. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be used. Untick it and try again."
+msgstr "Ein importierter API-Schlüssel konnte nicht verwendet werden. Entferne das Häkchen und versuche es erneut."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Ein Integrationstool"
@@ -689,6 +669,10 @@ msgstr "Ein Integrationstool"
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
 msgstr "Ein anderer Agent"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Another assistant"
+msgstr "Anderer Assistent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -730,9 +714,21 @@ msgstr ""
 msgid "API key"
 msgstr "API-Schlüssel"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "API-Schlüssel für {provider}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API-Schlüssel-Header"
+
+#: src/pages/shell/agent-import.tsx
+msgid "API keys"
+msgstr "API-Schlüssel"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API-Schlüssel bleiben verbunden."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -749,6 +745,11 @@ msgstr "Bestätigungsgrenzen"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Approval model"
 msgstr "Freigabemodell"
+
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Freigaben"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -780,36 +781,9 @@ msgstr "Argumente"
 msgid "Artifacts"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "Vor {0} nachfragen"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "Vor {0}-Aktionen nachfragen"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "Vor {0}-Connector nachfragen"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "Vor E-Mail-Aktionen nachfragen"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Vor Kaufaktionen nachfragen"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Vor Käufen nachfragen"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Vor dem Senden externer E-Mails nachfragen"
+msgid "Ask"
+msgstr "Fragen"
 
 #. placeholder {0}: preset.time
 #: src/lib/cron.ts
@@ -819,6 +793,10 @@ msgstr "um {0}"
 #: src/pages/RoutineSchedule.tsx
 msgid "at {timeSelect}"
 msgstr "um {timeSelect}"
+
+#: src/pages/shell/composer.tsx
+msgid "Attach"
+msgstr "Anhängen"
 
 #: src/pages/shell/composer.tsx
 msgid "Attach file"
@@ -835,8 +813,8 @@ msgstr "Authentifizierung fehlgeschlagen."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Autorisierungscode oder Callback-URL"
+msgid "Authorization code"
+msgstr "Autorisierungscode"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -857,6 +835,10 @@ msgstr "Autorisieren"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Autorisiere diesen Server, damit Agents seine Tools nutzen können. Ein Pop-up öffnet sich."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Auto"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -886,6 +868,7 @@ msgstr "Avatar-Studio"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "Zurück"
 
@@ -915,6 +898,10 @@ msgstr "Bearer-Token"
 msgid "Billing"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Blockieren"
+
 #: src/lib/ticket-status.ts
 msgid "Blocked"
 msgstr ""
@@ -935,7 +922,9 @@ msgstr "Bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Bot"
@@ -945,6 +934,10 @@ msgstr "Bot"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "Bot"
+
+#: src/components/teach/TeachRecordingChrome.tsx
+msgid "Bot is watching, not acting"
+msgstr "Bot beobachtet nur"
 
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Bot models"
@@ -957,10 +950,6 @@ msgstr "Bot-Bildschirm"
 #: src/pages/shell/computer-panel.tsx
 msgid "Bot screen preview"
 msgstr "Bot-Bildschirmvorschau"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Bot to link"
-msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -991,6 +980,7 @@ msgid "Browse MCP servers"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "Integriert"
 
@@ -1041,17 +1031,23 @@ msgstr "Kann keine Bilder lesen"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "Abbrechen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Cancel new bot"
+msgstr "Neuen Bot abbrechen"
 
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
@@ -1094,17 +1090,9 @@ msgstr "Passwort ändern"
 msgid "Changing…"
 msgstr "Wird geändert…"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Channels"
-msgstr ""
-
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "Diagramm konnte nicht angezeigt werden: {error}"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Chat apps"
-msgstr ""
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1152,6 +1140,10 @@ msgstr "Prüfe den API-Schlüssel oder die Anmeldung und teste erneut."
 msgid "Check the server URL and network, then test again."
 msgstr "Prüfe die Server-URL und das Netzwerk und teste erneut."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "Bitte selbst prüfen"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "Prüfe deine E-Mails"
@@ -1174,13 +1166,13 @@ msgstr "Verbindung wird geprüft…"
 msgid "Checking…"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Choose a bot"
+msgstr "Bot auswählen"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
 msgstr "Wähle eine Bot-Form und Farbe oder lade ein Bild hoch"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Choose a bot…"
-msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose a model"
@@ -1194,9 +1186,18 @@ msgstr "Wähle ein neues Passwort"
 msgid "Choose a provider"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "Backup wählen"
+
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Datei wählen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose folder"
+msgstr "Ordner wählen"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1308,7 +1309,7 @@ msgctxt "email sign-in"
 msgid "Code"
 msgstr "Code"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Collapse {0}"
 msgstr ""
@@ -1378,6 +1379,7 @@ msgstr "Computer ist im Ruhezustand"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Computer ist gestoppt"
@@ -1416,10 +1418,6 @@ msgstr "Passwort bestätigen"
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Prüfe, ob die URL aus dieser Browsersitzung erreichbar ist, und teste erneut."
 
-#: src/pages/SettingsOverlay.tsx
-msgid "Confirmations"
-msgstr ""
-
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1432,6 +1430,10 @@ msgstr "Verbinden"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect {selectedProviderName}"
 msgstr "{selectedProviderName} verbinden"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect a chat app"
+msgstr ""
 
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
@@ -1465,6 +1467,14 @@ msgstr ""
 msgid "Connect OAuth"
 msgstr "OAuth verbinden"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect Slack"
+msgstr "Slack verbinden"
+
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "Verbinde zuerst den Anbieter dieses Modells."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg verbinden"
@@ -1481,10 +1491,6 @@ msgstr "Verbunden"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} verbunden."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Verbunden. Die Tools sind ab deiner nächsten Nachricht verfügbar."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1508,6 +1514,11 @@ msgstr "Verbindungstest fehlgeschlagen."
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "Die Verbindung zu {0} steht noch aus. Du kannst dieses Fenster schließen und später erneut nachsehen."
 
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
+msgid "Contains code to run"
+msgstr "Enthält ausführbaren Code"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Context limit"
@@ -1517,6 +1528,7 @@ msgstr "Kontextlimit"
 #: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Continue"
 msgstr "Weiter"
 
@@ -1537,13 +1549,14 @@ msgstr "Mit {0} fortfahren"
 msgid "Continue with credits"
 msgstr ""
 
-#: src/pages/Auth.tsx
-msgid "Continue with email"
-msgstr "Mit E-Mail fortfahren"
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Conversations"
+msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1556,6 +1569,10 @@ msgstr "Kopieren"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Copy prompt"
+msgstr "Prompt kopieren"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -1638,6 +1655,7 @@ msgstr ""
 msgid "Could not continue"
 msgstr "Fortfahren fehlgeschlagen"
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "Bot konnte nicht erstellt werden"
@@ -1827,6 +1845,10 @@ msgstr "Der Modellserver war nicht erreichbar."
 msgid "Could not reach the server"
 msgstr "Server konnte nicht erreicht werden"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Could not read these files"
+msgstr "Diese Dateien konnten nicht gelesen werden"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1875,6 +1897,7 @@ msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
@@ -1961,6 +1984,10 @@ msgstr "Kontrolle konnte nicht übernommen werden"
 msgid "Could not test MCP server"
 msgstr "MCP-Server konnte nicht getestet werden"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "Der Import konnte nicht rückgängig gemacht werden"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "Aktualisierung fehlgeschlagen"
@@ -2006,6 +2033,7 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2025,20 +2053,6 @@ msgstr "Konto erstellen"
 msgid "Create group"
 msgstr "Gruppe erstellen"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/bot-picker.tsx
-#: src/pages/shell/create-bot-dialog.tsx
-msgid "Create new Bot"
-msgstr "Neuen Bot erstellen"
-
-#: src/pages/shell/bot-picker.tsx
-msgid "Create new Group"
-msgstr "Neue Gruppe erstellen"
-
-#: src/pages/shell/bot-picker.tsx
-msgid "Create new Space"
-msgstr "Neuen Space erstellen"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
 msgstr ""
@@ -2057,6 +2071,7 @@ msgid "Created"
 msgstr ""
 
 #: src/pages/GroupPanel.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "Wird erstellt…"
@@ -2077,6 +2092,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "Zugangsdaten werden verschlüsselt und dem Modell nie gesendet."
+
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "Zugangsdaten: {names}"
 
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
@@ -2102,6 +2121,14 @@ msgstr ""
 #: src/pages/shell/dialogs.tsx
 msgid "Customer support"
 msgstr ""
+
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Customize"
+msgstr "Anpassen"
+
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Customize {label}"
+msgstr "{label} anpassen"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Customize bot avatar"
@@ -2142,6 +2169,14 @@ msgstr "Standard"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Standard ({0})"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "Standard von Hermes"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "Standard von OpenClaw"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
@@ -2223,6 +2258,7 @@ msgid "Deny"
 msgstr "Ablehnen"
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Beschreibung"
@@ -2254,6 +2290,7 @@ msgstr "Aufnahme verwerfen"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2325,9 +2362,11 @@ msgstr "Das Dokument wurde geändert. Öffne es erneut, um die neueste Version z
 msgid "Don’t have an account?"
 msgstr "Du hast noch kein Konto?"
 
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "Fertig"
 
@@ -2371,6 +2410,7 @@ msgstr "Jeder Name kann nur einmal verwendet werden."
 
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "Bearbeiten"
@@ -2455,6 +2495,10 @@ msgstr "Gib vor dem Test einen API-Schlüssel ein."
 msgid "Environment variables"
 msgstr "Umgebungsvariablen"
 
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "Umgebungsvariablen: {names}"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
@@ -2527,7 +2571,7 @@ msgstr "Executor-Token"
 msgid "Expand"
 msgstr "Erweitern"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Expand {0}"
 msgstr ""
@@ -2632,11 +2676,9 @@ msgstr "Modelle suchen"
 msgid "Finding…"
 msgstr "Suche läuft…"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "Schließe die Anmeldung unter <0>{0}</0> ab. Die letzte Seite wird möglicherweise nicht geladen; füge ihre URL oder den Code hier ein."
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "Einrichtung abschließen"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
@@ -2654,10 +2696,6 @@ msgstr "Fertig."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP-Verbindung wird abgeschlossen…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2718,10 +2756,6 @@ msgstr "Gruppeneinstellungen"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Group updates"
-msgstr ""
-
-#: src/pages/shell/dialogs.tsx
-msgid "Groups"
 msgstr ""
 
 #: src/components/call/CallCard.tsx
@@ -2844,9 +2878,24 @@ msgstr ""
 msgid "Image upload area"
 msgstr "Bild-Upload-Bereich"
 
+#: src/pages/shell/composer.tsx
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Import"
+msgstr "Importieren"
+
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-cards.tsx
+msgid "Import an agent"
+msgstr "Agent importieren"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI-JSON importieren"
+
+#: src/pages/shell/composer.tsx
+msgid "Import this agent as a bot?"
+msgstr "Diesen Agenten als Bot importieren?"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
@@ -2863,6 +2912,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Include API keys"
+msgstr "API-Schlüssel einbeziehen"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -2902,8 +2955,18 @@ msgstr "Anweisungsverlauf"
 
 #: src/components/AskCard.tsx
 #: src/components/InstructionSettings.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Instructions"
 msgstr "Anweisungen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions {position}"
+msgstr "Anweisungen {position}"
+
+#: src/lib/agent-import-errors.ts
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions are too long. Untick some files."
+msgstr "Die Anweisungen sind zu lang. Wähle einige Dateien ab."
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -2951,6 +3014,26 @@ msgstr "Seine Bots und Gruppen bleiben erhalten und verlassen den Abschnitt."
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Seine Unterhaltung, Dateien und Routinen werden dauerhaft gelöscht. Von ihm erstellte Bots bleiben in deiner Liste."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions changed since the import, so they stay."
+msgstr "Die Anweisungen wurden seit dem Import geändert und bleiben daher."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "Die Anweisungen wurden geändert. Prüfe sie und versuche es erneut."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions go back to before the import."
+msgstr "Die Anweisungen werden auf den Stand vor dem Import zurückgesetzt."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "Das Modell wurde seit dem Import geändert und bleibt daher."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "Das Modell wird auf den Stand vor dem Import zurückgesetzt."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "Zur neuesten Nachricht springen"
@@ -2963,9 +3046,17 @@ msgstr "Zur beantworteten Nachricht springen: {excerpt}"
 msgid "just now"
 msgstr "gerade eben"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Keep its instructions"
+msgstr "Anweisungen behalten"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
 msgstr "Erinnerungen behalten"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "Behalten"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
@@ -3006,8 +3097,8 @@ msgid "Linear issue"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link a chat app"
-msgstr ""
+msgid "Link DMs"
+msgstr "DMs verknüpfen"
 
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
@@ -3067,10 +3158,6 @@ msgstr "Modellkatalog wird geladen…"
 msgid "Loading preview…"
 msgstr "Vorschau wird geladen…"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Loading rules…"
-msgstr "Regeln werden geladen…"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "Stimmanbieter werden geladen…"
@@ -3097,6 +3184,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "Abmelden"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "Scheint einen Schlüssel zu enthalten"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3191,6 +3282,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP-Server"
 
@@ -3216,8 +3308,17 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "Erinnerungen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory {position}"
+msgstr "Erinnerungen {position}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory for {title}"
+msgstr "Erinnerungen für {title}"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3230,6 +3331,14 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "Erwähnt OpenClaw-Funktionen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "Erwähnt: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
@@ -3313,11 +3422,16 @@ msgstr "Minuten"
 msgid "Missed call"
 msgstr "Verpasster Anruf"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Modus"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "Modell"
@@ -3342,6 +3456,7 @@ msgstr "Modelloptionen"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
 msgid "Models"
 msgstr "Modelle"
 
@@ -3417,6 +3532,7 @@ msgstr "Stummgeschaltet"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
@@ -3424,6 +3540,11 @@ msgstr "Stummgeschaltet"
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "Name"
+
+#: src/lib/agent-import-errors.ts
+#: src/pages/shell/agent-import.tsx
+msgid "Name this bot"
+msgstr "Bot benennen"
 
 #: src/pages/GroupPanel.tsx
 msgid "Name this group"
@@ -3454,13 +3575,32 @@ msgstr "Übernahme erforderlich"
 msgid "Needs you"
 msgstr ""
 
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "Benötigt: {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "Nie fragen"
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "Neu"
 
+#: src/pages/Shell.tsx
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/bot-picker.tsx
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "New bot"
+msgstr "Neuer Bot"
+
 #: src/pages/GroupPanel.tsx
 msgid "New group"
 msgstr "Neue Gruppe"
+
+#: src/pages/shell/bot-picker.tsx
+msgid "New group chat"
+msgstr "Neuer Gruppenchat"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New messages"
@@ -3474,6 +3614,10 @@ msgstr "Neuer offener Arbeitspunkt"
 #: src/pages/Auth.tsx
 msgid "New password"
 msgstr "Neues Passwort"
+
+#: src/pages/shell/bot-picker.tsx
+msgid "New private space"
+msgstr "Neuer privater Space"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3494,10 +3638,6 @@ msgstr ""
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
-msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No agent connections yet."
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
@@ -3523,14 +3663,6 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
-msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No chat apps linked yet."
-msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No group chats yet."
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -3575,6 +3707,10 @@ msgstr "Kein Modellkatalog verfügbar."
 msgid "No models listed."
 msgstr "Keine Modelle aufgelistet."
 
+#: src/pages/shell/agent-import.tsx
+msgid "No OpenClaw, Hermes or agent document found."
+msgstr "Keine OpenClaw-, Hermes- oder Agent-Dateien gefunden."
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr ""
@@ -3597,10 +3733,6 @@ msgstr ""
 msgid "No skills yet"
 msgstr "Noch keine Skills"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No team conversations yet."
-msgstr ""
-
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr ""
@@ -3613,9 +3745,21 @@ msgstr ""
 msgid "Normal"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not a valid skill"
+msgstr "Kein gültiger Skill"
+
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "Noch nicht geprüft"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not imported"
+msgstr "Nicht importiert"
+
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Nicht im Katalog von Rakazo"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3624,6 +3768,15 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Jetzt nicht"
+
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
+msgid "Not supported in Rakazo"
+msgstr "In Rakazo nicht unterstützt"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not used by Rakazo"
+msgstr "Wird von Rakazo nicht verwendet"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3700,25 +3853,24 @@ msgstr ""
 
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "Öffnen"
 
-#. placeholder {0}: group.title
+#. placeholder {0}: headerName(group)
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr ""
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "{name} öffnen"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> and enter this code:"
-msgstr ""
-
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -3758,6 +3910,10 @@ msgstr ""
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "URL eines OpenAI-kompatiblen Servers"
+
+#: src/pages/shell/agent-import.tsx
+msgid "OpenClaw or Hermes"
+msgstr "OpenClaw oder Hermes"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -3816,6 +3972,10 @@ msgstr "Passkeys"
 msgid "Password"
 msgstr "Passwort"
 
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr "Das Passwort darf höchstens {MAX_PASSWORD_LENGTH} Zeichen lang sein"
+
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Die Passwortwiederherstellung ist für diesen Server nicht konfiguriert"
@@ -3847,6 +4007,10 @@ msgstr "Ersatzschlüssel einfügen"
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "Füge die OpenAI-kompatible Adresse deines Servers ein. Rakazo ergänzt /v1 bei Bedarf."
 
+#: src/pages/shell/agent-import.tsx
+msgid "Paste the reply"
+msgstr "Antwort einfügen"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "Füge deinen API-Schlüssel ein"
@@ -3856,12 +4020,21 @@ msgid "Paste your API key, then test again."
 msgstr "Füge deinen API-Schlüssel ein und teste erneut."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
+msgstr ""
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Pending"
 msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "Berechtigungen"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "Persona"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -3945,9 +4118,13 @@ msgstr ""
 msgid "Private"
 msgstr "Privat"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/shell/bot-picker.tsx
 msgid "Private workspace with its own bots and groups."
 msgstr ""
+
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "Programm: {name}"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -3972,6 +4149,7 @@ msgid "Queued"
 msgstr "In Warteschlange"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
 
@@ -3990,6 +4168,10 @@ msgstr "Reaktionen"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "Antworten vorlesen"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "Bereit"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -4169,6 +4351,10 @@ msgstr "Skill {0} entfernen"
 msgid "Remove webhook"
 msgstr ""
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "Entfernt"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "Entfernt, aber die Liste konnte nicht aktualisiert werden"
@@ -4203,6 +4389,10 @@ msgstr "Erneut öffnen"
 msgid "Replace API key"
 msgstr "API-Schlüssel ersetzen"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Replace its instructions"
+msgstr "Anweisungen ersetzen"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "Schlüssel ersetzen"
@@ -4228,6 +4418,10 @@ msgstr ""
 #: src/lib/user-error.ts
 msgid "Request a new code"
 msgstr "Fordere einen neuen Code an"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Requests"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
@@ -4301,6 +4495,7 @@ msgstr ""
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "Erneut versuchen"
 
@@ -4345,16 +4540,13 @@ msgid "Routine"
 msgstr "Routine"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Routines"
 msgstr "Routinen"
 
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr ""
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Aktionen ohne Nachfrage ausführen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
@@ -4375,12 +4567,9 @@ msgstr "läuft"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Running"
 msgstr "Läuft"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Running · Stop"
-msgstr "Wird ausgeführt · Stoppen"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Running…"
@@ -4406,6 +4595,7 @@ msgstr "Samstag"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -4457,6 +4647,7 @@ msgstr ""
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -4548,7 +4739,11 @@ msgid "Send"
 msgstr "Senden"
 
 #: src/pages/MessagingSettingsOverlay.tsx
-msgid "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes. You'll get a confirmation reply once linked."
+msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
+msgstr ""
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
 
 #: src/components/AskCard.tsx
@@ -4615,6 +4810,10 @@ msgstr "Einstellungen: Allgemein"
 msgid "Settings: Usage"
 msgstr "Einstellungen: Nutzung"
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "Einrichtung abgeschlossen"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "Einrichtungshilfe"
@@ -4632,10 +4831,6 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "Shared"
 msgstr "Geteilt"
-
-#: src/pages/shell/dialogs.tsx
-msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
-msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -4702,6 +4897,12 @@ msgstr "Anmelden"
 msgid "Sign in again"
 msgstr "Erneut anmelden"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "Melde dich bei <0>{0}</0> an und füge dann den Code hier ein."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Bei Rakazo anmelden"
@@ -4732,9 +4933,18 @@ msgstr ""
 msgid "Skill {0}"
 msgstr "Skill {0}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skill {position}"
+msgstr "Skill {position}"
+
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "Skills"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "Skills kommen in die Bibliothek, die alle deine Bots teilen."
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
@@ -4761,10 +4971,22 @@ msgstr ""
 msgid "Slide up to lock"
 msgstr "Zum Sperren nach oben schieben"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "Einige Einstellungen werden nicht importiert"
+
 #: src/App.tsx
 #: src/lib/user-error.ts
 msgid "Something went wrong. Try again."
 msgstr "Etwas ist schiefgelaufen. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "Gerade wurde etwas mit demselben Namen hinzugefügt. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "Etwas Ausgewähltes funktioniert hier nicht. Entferne das Häkchen und versuche es erneut."
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -4774,10 +4996,6 @@ msgstr "Bereich"
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "Space-Standard"
-
-#: src/pages/shell/dialogs.tsx
-msgid "Spaces"
-msgstr ""
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -4802,6 +5020,10 @@ msgstr "Sprachmodell"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO ist vorübergehend nicht verfügbar. Versuche es erneut."
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4831,6 +5053,7 @@ msgstr ""
 msgid "Steps"
 msgstr "Schritte"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/composer.tsx
 #: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/message-view.tsx
@@ -4926,10 +5149,6 @@ msgstr "Team"
 msgid "Team Computer"
 msgstr "Team-Computer"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Team conversations"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr ""
@@ -4960,6 +5179,10 @@ msgstr ""
 msgid "Testing…"
 msgstr "Wird getestet…"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "Der Bot und alles, was sein Import hinzugefügt hat, werden entfernt."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Zeitüberschreitung der Verbindung."
@@ -4986,6 +5209,14 @@ msgstr "Der ausgewählte Erinnerungsanbieter ist in diesem Build nicht verfügba
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "Diese Dateien sind zu groß für den Import."
+
+#: src/lib/agent-import-errors.ts
+msgid "These files or choices no longer match. Choose the files again."
+msgstr "Diese Dateien oder die Auswahl passen nicht mehr. Wähle die Dateien erneut aus."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -5002,9 +5233,21 @@ msgstr "Denkmodus"
 msgid "Thinking: {0}"
 msgstr "Denken: {0}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "Dieses Backup konnte nicht gelesen werden."
+
+#: src/pages/shell/agent-import.tsx
+msgid "This bot"
+msgstr "Dieser Bot"
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Dieser Bot wird auf diesem Computer und nicht auf einem Linux-Desktop ausgeführt. Shell und Dateien verwenden deinen persönlichen Ordner."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "Dieser Bot wurde nicht importiert."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -5040,6 +5283,14 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "Dieser Import hat sich geändert. Versuche es erneut."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "Dieser Import wurde bereits verwendet. Wähle die Dateien erneut aus."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5109,6 +5360,10 @@ msgstr "Uhrzeit"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "Der Zeitplan kann abweichen"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5232,6 +5487,14 @@ msgstr "Nicht zugewiesen"
 msgid "Undo"
 msgstr "Rückgängig"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "Import rückgängig machen"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "Import rückgängig machen?"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -5350,24 +5613,23 @@ msgstr "Nutze Verbinden, um den Schlüssel zu prüfen."
 msgid "Use default guidance"
 msgstr ""
 
-#: src/pages/Auth.tsx
-msgid "Use email code"
-msgstr "E-Mail-Code verwenden"
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Use defaults"
+msgstr "Standards verwenden"
+
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Use defaults for {label}"
+msgstr "Standards für {label} verwenden"
 
 #: src/components/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr ""
-
-#: src/pages/Auth.tsx
-msgid "Use password"
-msgstr "Passwort verwenden"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr ""
 
@@ -5387,6 +5649,14 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/shell/import-status.ts
+msgid "Uses files that are not imported"
+msgstr "Nutzt Dateien, die nicht importiert werden"
+
+#: src/pages/shell/import-status.ts
+msgid "Uses paths on your computer"
+msgstr "Nutzt Pfade auf deinem Computer"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
@@ -5419,6 +5689,7 @@ msgstr "Chat anzeigen"
 
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/SpaceSettingOverrides.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "Stimme"
@@ -5493,6 +5764,10 @@ msgstr "Welches Ergebnis wirst du vorführen?"
 msgid "What should this routine do each time it runs?"
 msgstr ""
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "What the import added will be removed. The bot stays."
+msgstr "Was der Import hinzugefügt hat, wird entfernt. Der Bot bleibt."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "Wofür dieser Bot gedacht ist"
@@ -5529,6 +5804,10 @@ msgstr "Einsatzzeitpunkt"
 msgid "Where should bots run?"
 msgstr "Wo sollen Bots ausgeführt werden?"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Where to import"
+msgstr "Wohin importieren"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr ""
@@ -5537,6 +5816,11 @@ msgstr ""
 msgid "Work"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "Arbeitsanweisungen"
+
+#: src/components/ToolActivityDisclosure.tsx
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
 #: src/pages/shell/transcript.tsx
@@ -5584,9 +5868,21 @@ msgstr "Du hast die Kontrolle"
 msgid "Your Anthropic"
 msgstr "Dein Anthropic"
 
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Your defaults"
+msgstr "Deine Standards"
+
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Deine E-Mail-Adresse"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "Dein erster Bot existierte bereits, daher wurde der Agent nicht importiert."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "Dein erster Bot existiert bereits."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

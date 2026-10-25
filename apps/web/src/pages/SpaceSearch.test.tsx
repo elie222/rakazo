@@ -36,7 +36,7 @@ function file(artifactId: string): SearchHit {
     botId: "bot-1",
     botName: "Scout",
     title: `${artifactId}.png`,
-    snippet: "image/png · 10 bytes",
+    snippet: "image/png, 10 bytes",
     messageId: "message-1",
     seq: 4,
     artifactId,

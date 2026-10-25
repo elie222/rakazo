@@ -143,7 +143,9 @@ describe("tickRoutineWatch", () => {
       prisma: {
         routine: { updateMany },
         connection: { findMany: vi.fn(async () => []) },
+        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
         actionApprovalRule: { findMany: vi.fn(async () => []) },
+        userActionApprovalRule: { findMany: vi.fn(async () => []) },
         bot: {
           findUnique: vi.fn(async () => ({
             id: "bot-1",
@@ -308,11 +310,28 @@ describe("tickRoutineWatch", () => {
       call,
       tool: { name: "actual_read", readOnly: true, description: "Read", inputSchema: {} },
     }));
-    vi.mocked(deps.prisma.actionApprovalRule.findMany).mockResolvedValue([
+    vi.mocked(deps.prisma.userActionApprovalRule.findMany).mockResolvedValue([
       { effect: "require_approval", matchKind: "tool", matchValue: "actual_read" },
     ] as never);
     await expect(checkRoutineWatch(deps, routine)).rejects.toThrow("needs approval");
     expect(deps.connector!.execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses under the Space's own rules when it overrides the account's", async () => {
+    const { deps, routine } = setup({ data: "ok" });
+    vi.mocked(deps.connector!.discoverTools).mockResolvedValue([]);
+    deps.connector!.resolveCall = vi.fn(async (call) => ({
+      call,
+      tool: { name: "actual_read", readOnly: true, description: "Read", inputSchema: {} },
+    }));
+    vi.mocked(deps.prisma.spaceSettingOverride.findUnique).mockResolvedValue({
+      setting: "confirmations",
+    } as never);
+    vi.mocked(deps.prisma.actionApprovalRule.findMany).mockResolvedValue([
+      { effect: "require_approval", matchKind: "tool", matchValue: "actual_read" },
+    ] as never);
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow("needs approval");
+    expect(deps.prisma.userActionApprovalRule.findMany).not.toHaveBeenCalled();
   });
 
   it("keeps sub-second modification times in file signatures", async () => {
@@ -370,7 +389,9 @@ describe("tool results", () => {
     const deps = {
       prisma: {
         connection: { findMany: vi.fn(async () => []) },
+        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
         actionApprovalRule: { findMany: vi.fn(async () => []) },
+        userActionApprovalRule: { findMany: vi.fn(async () => []) },
       },
       connector: {
         discoverTools: vi.fn(async () => [
@@ -828,7 +849,9 @@ describe("watch tool guard", () => {
     const deps = {
       prisma: {
         connection: { findMany: vi.fn(async () => []) },
-        actionApprovalRule: { findMany: vi.fn(async () => rules) },
+        spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+        actionApprovalRule: { findMany: vi.fn(async () => []) },
+        userActionApprovalRule: { findMany: vi.fn(async () => rules) },
       },
       connector: {
         discoverTools: vi.fn(async () => [{ ...tool, route: { connectorId: "installed" } }]),
@@ -947,7 +970,9 @@ it("loads authorized connection context for discovery, creation validation and c
           { ...connection, id: "revoked", status: "revoked" },
         ]),
       },
-      actionApprovalRule: { findMany: vi.fn(async () => rules) },
+      spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+      actionApprovalRule: { findMany: vi.fn(async () => []) },
+      userActionApprovalRule: { findMany: vi.fn(async () => rules) },
     },
     connector: { discoverTools, execute },
   } as unknown as RoutineWatchTickDeps;

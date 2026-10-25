@@ -1,4 +1,9 @@
-import { defaultGroupName, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import {
+  defaultGroupName,
+  GROUP_MEMBER_MAX,
+  GROUP_MEMBER_MIN,
+  GROUP_NAME_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useEffect, useRef, useState } from "react";
@@ -79,7 +84,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen
         options={{
-          title: t("New group"),
+          title: t("New group chat"),
           headerTransparent: true,
           headerStyle: { backgroundColor: "transparent" },
           headerBackVisible: false,
@@ -166,7 +171,7 @@ export default function NewGroup() {
                 autoFocus
                 value={name}
                 onChangeText={setName}
-                maxLength={80}
+                maxLength={GROUP_NAME_MAX_LENGTH}
                 autoCapitalize="words"
                 autoCorrect={false}
                 autoComplete="off"

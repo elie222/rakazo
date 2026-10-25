@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createConsoleSink } from "./console-sink.js";
 import { createLogger } from "./logger.js";
+import { sanitizedError } from "./monitoring.js";
 import { serializeError } from "./serialize-error.js";
 import { createTestSink } from "./test-sink.js";
 
@@ -145,5 +147,39 @@ describe("error serialization", () => {
     logger.error("render_plot failed: Bearer supersecret for person@example.com");
     expect(JSON.stringify(sink.events[0])).not.toContain("supersecret");
     expect(JSON.stringify(sink.events[0])).not.toContain("person@example.com");
+  });
+});
+
+describe("pretty console errors", () => {
+  it("keeps a database error's code and meta after a long message", () => {
+    const error = Object.assign(
+      new Error(
+        `\nInvalid \`tx.steeringMessage.updateMany()\` invocation in\n/app/events.ts:1719:32\n\n${"  context line\n".repeat(20)}Transaction API error: A query cannot be executed on an expired transaction.`,
+      ),
+      {
+        name: "PrismaClientKnownRequestError",
+        code: "P2028",
+        meta: { modelName: "SteeringMessage", timeout: 5000, timeTaken: 5998 },
+      },
+    );
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    try {
+      createLogger({
+        service: "rakazo-api",
+        sinks: [createConsoleSink({ format: "pretty" })],
+      }).error("run.failed", sanitizedError(error));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines[0]).toContain(
+      "error=PrismaClientKnownRequestError: P2028 steeringMessage.updateMany:",
+    );
+    expect(lines[0]).toContain("expired transaction");
+    expect(lines[0]).toContain(
+      'meta={"modelName":"SteeringMessage","timeout":5000,"timeTaken":5998}',
+    );
   });
 });

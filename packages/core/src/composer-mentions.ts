@@ -144,9 +144,9 @@ export function routineScheduleSubtitle(
   botName?: string,
   labels: CronLabels = ENGLISH_CRON_LABELS,
 ): string {
-  const schedule = crons.map((cron) => formatCron(cron, labels)).join(" · ");
+  const schedule = crons.map((cron) => formatCron(cron, labels)).join(", ");
   const name = displayName(botName, "");
-  if (name) return `${schedule} · ${name}`;
+  if (name) return `${schedule} (${name})`;
   return schedule;
 }
 

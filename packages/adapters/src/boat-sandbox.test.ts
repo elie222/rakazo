@@ -1214,10 +1214,9 @@ describe("BoatSandboxProvider", () => {
       { view: "stream", interactive: false },
       context,
     );
-    expect(new URL(screen.url!).searchParams.get("path")).toMatch(
-      /^websockify\?_token=secret&token=view-/,
-    );
-    expect(screen.url).toContain("_token=secret");
+    expect(new URL(screen.url!).searchParams.get("path")).toMatch(/^\/websockify\?token=view-/);
+    expect(screen.url).not.toContain("_token");
+    expect(screen.headers).toEqual({ cookie: "_port_auth=secret" });
     expect(
       command.mock.calls.some(
         ([request]) =>
@@ -1243,6 +1242,26 @@ describe("BoatSandboxProvider", () => {
       { width: 1280 },
     );
     expect(provider.describe().capabilities.multiScreen).toBe(true);
+  });
+
+  it("authenticates takeover and terminal streams without a browser cookie bootstrap", async () => {
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    const control = await provider.connectScreen(
+      computer,
+      { view: "stream", interactive: true, controlToken: "fake-control" },
+      context,
+    );
+    const terminal = await provider.connectTerminal(
+      computer,
+      { controlToken: "fake-control" },
+      context,
+    );
+    for (const session of [control, terminal]) {
+      expect(session.headers).toEqual({ cookie: "_port_auth=secret" });
+      expect(session.url).not.toContain("_token");
+      expect(new URL(session.url!).searchParams.get("path")).toContain("token=");
+    }
   });
 
   it("refuses a desktop URL that is not served over HTTPS", async () => {

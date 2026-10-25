@@ -232,7 +232,7 @@ describe("Pi model catalog", () => {
       expect(entry).toMatchObject({
         providerName: "OpenAI Codex",
         auth: "oauth",
-        oauthLabel: "Sign in with ChatGPT Plus/Pro",
+        oauthLabel: "Sign in with ChatGPT",
         subscription: true,
         signIn: "device-code",
       });
@@ -309,7 +309,7 @@ describe("Pi model catalog", () => {
     expect(claude).toMatchObject({
       signIn: "auth-url",
       authHint: "Claude Pro/Max / key",
-      oauthLabel: "Sign in with Claude Pro/Max",
+      oauthLabel: "Sign in with Claude",
       billing: "",
     });
     expect(scriptedCatalogEntry.provider).toBe("scripted");

@@ -16,8 +16,14 @@ test("a chat opens with a New divider above replies that arrived while away", as
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
-  await expect(page.getByTestId("unread-divider")).toHaveCount(0);
   const chiefId = activeBotId(page);
+  // A brand-new chat is all new, so there is nothing read above to divide from.
+  await expect(page.locator("[data-message-id]").first()).toBeVisible();
+  await expect(page.locator(`[data-roster-bot-id="${chiefId}"]`)).not.toHaveAttribute(
+    "data-roster-unread",
+    "true",
+  );
+  await expect(page.getByTestId("unread-divider")).toHaveCount(0);
   const otherId = await createNamedBot(page, "Elsewhere");
 
   // Chief answers while the user is in another chat.
@@ -55,6 +61,28 @@ test("a chat opens with a New divider above replies that arrived while away", as
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await captureScreenshot(page, testInfo, "chat-unread-divider-dark");
   await page.emulateMedia({ colorScheme: "light" });
+
+  // Writing in the chat means the user has caught up.
+  const followUp = `Thanks ${stamp}`;
+  await page.getByPlaceholder("Message Chief").fill(followUp);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("message-user-bubble").filter({ hasText: followUp })).toBeVisible();
+  await expect(divider).toHaveCount(0);
+  // Let Chief answer here so its reply is read before leaving.
+  await expect
+    .poll(
+      async () => {
+        const bots = await rpc<Array<{ id: string; unread: boolean; status: string }>>(
+          page,
+          "bots/list",
+          {},
+        );
+        const chief = bots.find((bot) => bot.id === chiefId);
+        return chief?.unread === false && !["queued", "leased", "running"].includes(chief.status);
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
 
   // Once read, the next visit has no divider.
   await page.goto(`/app/${otherId}`);

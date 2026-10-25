@@ -121,7 +121,9 @@ test("bot and command credentials add, replace and remove without leaking values
 
   await expect(row).toHaveCount(1);
   await expect(row).toContainText(COMMAND_CREDENTIAL_NAME);
-  await expect(row).toContainText(`Command variable · ${COMMAND_VARIABLE_NAME}`);
+  await expect(row).toContainText(
+    new RegExp(`Command variable\\s*${COMMAND_VARIABLE_NAME.replace("$", "\\$")}`),
+  );
   await expect(commandForm).toHaveCount(0);
 
   // The API returns metadata only: the type, an empty origin, and no value.

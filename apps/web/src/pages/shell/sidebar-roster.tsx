@@ -155,7 +155,7 @@ export function SidebarRoster({
                       render={
                         group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />
                       }
-                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full pe-8" : "flex-1"}`}
+                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
                       onClick={() => {
                         if (group.emptySpaceId) {
                           openSpaceChat(group.emptySpaceId, "/onboarding");
@@ -177,17 +177,24 @@ export function SidebarRoster({
                       }
                       aria-label={
                         group.emptySpaceId
-                          ? t`Open ${group.title}`
+                          ? t`Open ${headerName(group)}`
                           : collapsed
-                            ? t`Expand ${group.title}`
-                            : t`Collapse ${group.title}`
+                            ? t`Expand ${headerName(group)}`
+                            : t`Collapse ${headerName(group)}`
                       }
                     >
-                      <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      <span
+                        className={`flex min-w-0 items-center gap-1.5 truncate ${hasSpaceActions ? "pe-7" : ""}`}
+                      >
                         {group.showLock ? (
                           <Lock size={11} strokeWidth={2} aria-hidden="true" />
                         ) : null}
                         <span className="truncate">{group.title}</span>
+                        {group.subtitle ? (
+                          <span className="ms-0.5 truncate text-muted-foreground">
+                            {group.subtitle}
+                          </span>
+                        ) : null}
                       </span>
                       {group.emptySpaceId ? null : (
                         <ChevronDown
@@ -232,7 +239,7 @@ export function SidebarRoster({
                     size="icon-sm"
                     className={
                       group.title
-                        ? "col-start-1 row-start-1 justify-self-end self-center"
+                        ? `col-start-1 row-start-1 justify-self-end self-center ${group.emptySpaceId ? "" : "me-6"}`
                         : undefined
                     }
                     aria-label={t`Actions for ${group.spaceName}`}
@@ -564,6 +571,11 @@ export function SidebarRoster({
       })}
     </>
   );
+}
+
+/** A space section header's name as one phrase, for accessible labels. */
+function headerName(group: { title?: string | null; subtitle?: string }): string {
+  return group.subtitle ? `${group.title}, ${group.subtitle}` : (group.title ?? "");
 }
 
 function formatRosterTime(isoDate?: string | null): string {

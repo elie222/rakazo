@@ -1,22 +1,29 @@
 // @vitest-environment jsdom
 
 import type { Bot } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../lib/rpc", () => ({
-  rpc: {
+vi.mock("../../lib/rpc", () => {
+  const rpc = {
     voice: { voices: vi.fn(async () => []) },
     models: {
       credentials: vi.fn(async () => []),
       list: vi.fn(async () => []),
     },
     me: vi.fn(async () => ({})),
-  },
-}));
+  };
+  return {
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+    selectedSpaceId: () => null,
+  };
+});
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
@@ -100,10 +107,11 @@ const bot = {
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 
 async function flush() {
   await act(async () => {
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -111,12 +119,14 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 afterEach(() => {
   act(() => {
     root.unmount();
   });
+  queryClient.clear();
   container.remove();
 });
 
@@ -144,15 +154,16 @@ async function submitToolName(input: HTMLSelectElement, value: string) {
 async function renderSettings(onSave: (patch: SavePatch) => Promise<void>, currentBot = bot) {
   await act(async () => {
     root.render(
-      <BotSettings
-        focusModel={1}
-        bot={currentBot}
-        memoryProviderConfigured={false}
-        onSkillsChange={() => undefined}
-        onSave={onSave}
-        onExport={async () => undefined}
-        onClear={() => undefined}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          focusModel={1}
+          bot={currentBot}
+          memoryProviderConfigured={false}
+          onSave={onSave}
+          onExport={async () => undefined}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
     );
   });
   await flush();

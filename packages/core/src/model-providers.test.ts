@@ -170,8 +170,8 @@ describe("connected model choices", () => {
       expect(choice.modelId).not.toMatch(/DeepSeek/);
     }
     expect(choices.map((choice) => choice.label)).toEqual([
-      "DeepSeek · DeepSeek V4.1 Flash",
-      "DeepSeek · DeepSeek V4 Pro",
+      "DeepSeek V4.1 Flash (DeepSeek)",
+      "DeepSeek V4 Pro (DeepSeek)",
     ]);
   });
 
@@ -240,7 +240,7 @@ describe("connected model choices", () => {
         key: "deepseek::my-finetune",
         provider: "deepseek",
         modelId: "my-finetune",
-        label: "DeepSeek · my-finetune",
+        label: "my-finetune (DeepSeek)",
         providerLabel: "DeepSeek",
         modelLabel: "my-finetune",
       },
@@ -264,7 +264,7 @@ describe("connected model choices", () => {
         key: `openai-compatible::${id}`,
         provider: "openai-compatible",
         modelId: id,
-        label: `Local server · ${id}`,
+        label: `${id} (Local server)`,
         providerLabel: "Local server",
         modelLabel: id,
       })),
@@ -401,13 +401,13 @@ describe("chat model choices", () => {
       key: "openrouter::anthropic/claude-sonnet",
       provider: "openrouter",
       modelId: "anthropic/claude-sonnet",
-      label: "OpenRouter · Claude Sonnet",
+      label: "Claude Sonnet (OpenRouter)",
     },
     {
       key: "openrouter::openai/gpt-mini",
       provider: "openrouter",
       modelId: "openai/gpt-mini",
-      label: "OpenRouter · GPT Mini",
+      label: "GPT Mini (OpenRouter)",
     },
   ];
 
@@ -555,15 +555,15 @@ describe("groupModelChoices", () => {
     const sections = groupModelChoices(choices, "");
     expect(sections.map((section) => section.heading)).toEqual([
       undefined,
-      "OpenRouter · Anthropic",
-      "OpenRouter · Google",
+      "Anthropic (OpenRouter)",
+      "Google (OpenRouter)",
     ]);
     expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["", "retired::saved"]);
     expect(sections[1]?.data.map((choice) => choice.title)).toEqual([
       "Claude Opus",
       "Claude Sonnet",
     ]);
-    expect(sections[1]?.data[0]?.label).toBe("OpenRouter · Anthropic: Claude Opus");
+    expect(sections[1]?.data[0]?.label).toBe("Anthropic: Claude Opus (OpenRouter)");
   });
 
   it("matches the original full labels and ids and removes empty sections", () => {
@@ -575,7 +575,7 @@ describe("groupModelChoices", () => {
       ).toEqual(filterModelChoices(choices, query).map((choice) => choice.key));
     }
     expect(groupModelChoices(choices, "Sonnet").map((section) => section.heading)).toEqual([
-      "OpenRouter · Anthropic",
+      "Anthropic (OpenRouter)",
     ]);
   });
 });

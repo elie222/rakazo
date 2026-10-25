@@ -7,8 +7,10 @@ on:
 permissions:
   contents: read
 
+# Superseded PR checks cancel together; main revisions validate independently.
+# Only the production switch and mobile publication retain release locks below.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -99,6 +101,10 @@ jobs:
       - run: pnpm test
       - name: Host operations safety tests
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Codex subscription auth safety tests
+        run: python3 .github/scripts/codex-subscription-auth.test.py
+      - name: Dependency update patch safety tests
+        run: python3 .github/scripts/dependency-update-patch.test.py
 
   native-computer:
     name: Native computer (${{ matrix.os }})
@@ -131,7 +137,7 @@ jobs:
   test-integration:
     name: Postgres journeys
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
@@ -181,6 +187,7 @@ jobs:
     concurrency:
       group: mobile-production-update
       cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -337,22 +344,45 @@ jobs:
       - name: Publish production update
         if: steps.ota.outputs.publish == 'true'
         working-directory: apps/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ secrets.SENTRY_URL }}
         run: |
           set -euo pipefail
-          head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ -z "$head" ]]; then
-            echo "Could not resolve the current main head before publishing." >&2
+          check_current_main() {
+            local head
+            head="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+            if [[ -z "$head" ]]; then
+              echo "Could not resolve the current main head before publishing." >&2
+              exit 1
+            fi
+            if [[ "$GITHUB_SHA" != "$head" ]]; then
+              {
+                echo "### Mobile OTA skipped"
+                echo
+                echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          }
+          check_current_main
+          if [[ -n "$SENTRY_AUTH_TOKEN" && ( -z "$SENTRY_ORG" || -z "$SENTRY_PROJECT" ) ]]; then
+            echo "Sentry uploads require SENTRY_ORG and SENTRY_PROJECT." >&2
             exit 1
           fi
-          if [[ "$GITHUB_SHA" != "$head" ]]; then
-            {
-              echo "### Mobile OTA skipped"
-              echo
-              echo "This run is for \`$GITHUB_SHA\`, but \`main\` is now \`$head\`. Skipping so an older revision cannot overwrite a newer production update."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          eas env:exec production 'pnpm exec expo export --platform ios --platform android --clear --source-maps --dump-assetmap' --non-interactive
+          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+            # The SDK uploader only warns when there are no source maps; fail instead.
+            if [[ -z "$(find dist -type f -name '*.map' -print -quit)" ]]; then
+              echo "The mobile export has no source maps to upload." >&2
+              exit 1
+            fi
+            SENTRY_URL="${SENTRY_URL:-https://sentry.io/}" pnpm exec sentry-expo-upload-sourcemaps dist
           fi
-          eas update --platform all --channel production --environment production --message "$GITHUB_SHA" --non-interactive
+          check_current_main
+          eas update --platform all --channel production --environment production --skip-bundler --input-dir dist --upload-source-maps --message "$GITHUB_SHA" --non-interactive
 
   deploy-production:
     if: >-
@@ -367,6 +397,7 @@ jobs:
     concurrency:
       group: production
       cancel-in-progress: false
+      queue: max
     environment:
       name: production
       url: https://app.rakazo.com

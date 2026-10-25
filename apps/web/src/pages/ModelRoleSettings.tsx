@@ -5,6 +5,7 @@ import type {
   ModelRole,
   ModelRoleChoice,
   ModelRoleSettings as ModelRoleSettingsValue,
+  SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -47,6 +48,8 @@ export type ModelRoleConnectIntent = {
 type Props = {
   userId: string;
   spaceId: string;
+  /** The account's list, or the Space's own when it overrides models. */
+  scope: SettingsScope;
   credentials: ModelCredential[];
   modelRole?: ModelRole;
   title: string;
@@ -78,6 +81,7 @@ const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
 export function ModelRoleSettings({
   userId,
   spaceId,
+  scope,
   credentials,
   modelRole: role = "main",
   title,
@@ -94,11 +98,13 @@ export function ModelRoleSettings({
   const queryClient = useQueryClient();
   const { t } = useLingui();
   const controller = useMemo(() => {
-    // The last load is cached per user, space, and role, so a revisit shows it while refreshing.
+    // The last load is cached per user, space, scope, and role, so a revisit shows it while
+    // refreshing. Which models a role can use does not depend on the scope.
     const queries = spaceQueries(userId, spaceId);
-    const input = { role, expectedUserId: userId };
+    const catalogInput = { role, expectedUserId: userId };
+    const input = { ...catalogInput, scope };
     const settingsKey = queries.models.role.queryKey({ input });
-    const catalogKey = queries.models.forRole.queryKey({ input });
+    const catalogKey = queries.models.forRole.queryKey({ input: catalogInput });
     const settings = queryClient.getQueryData(settingsKey);
     const catalog = queryClient.getQueryData(catalogKey);
     return createModelRoleSettings(
@@ -112,7 +118,7 @@ export function ModelRoleSettings({
         catalog: () =>
           queryClient.fetchQuery({
             queryKey: catalogKey,
-            queryFn: () => rpc.models.forRole(input, { context: { spaceId } }),
+            queryFn: () => rpc.models.forRole(catalogInput, { context: { spaceId } }),
             staleTime: 0,
           }),
         save: async (patch) => {
@@ -121,10 +127,10 @@ export function ModelRoleSettings({
           return saved;
         },
       },
-      JSON.stringify([window.location.origin, userId, spaceId, role]),
+      JSON.stringify([window.location.origin, userId, spaceId, scope, role]),
       settings && catalog ? { settings, catalog } : undefined,
     );
-  }, [queryClient, rpc, userId, spaceId, role]);
+  }, [queryClient, rpc, userId, spaceId, scope, role]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   const [dragging, setDragging] = useState<number | null>(null);
   // After a connection the slot's picker reopens on that provider's models.
@@ -252,10 +258,10 @@ export function ModelRoleSettings({
   const pickerTrigger = (label: string, sub?: string) => (
     <button
       type="button"
-      className="flex min-w-0 flex-1 items-baseline gap-1.5 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <span className="truncate text-[15px] text-foreground">{label}</span>
-      {sub ? <span className="truncate text-[13px] text-muted-foreground">· {sub}</span> : null}
+      {sub ? <span className="truncate text-[13px] text-muted-foreground">{sub}</span> : null}
     </button>
   );
 

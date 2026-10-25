@@ -177,6 +177,9 @@ describeVoice("voice credentials and speech HTTP", () => {
     await expect(
       prisma.spaceVoicePreference.count({ where: { credentialId: stored.id } }),
     ).resolves.toBe(0);
+    await expect(
+      prisma.userVoicePreference.count({ where: { credentialId: stored.id } }),
+    ).resolves.toBe(0);
     await expect(prisma.secret.findUnique({ where: { id: stored.secretId } })).resolves.toBeNull();
 
     const prepared = await rpc<{ ready: boolean }>(app, cookie, "voice/prepare", {

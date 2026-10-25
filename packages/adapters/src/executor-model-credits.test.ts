@@ -40,7 +40,7 @@ describe("funding selects credentials without deleting saved connections", () =>
               deploymentSettings: {
                 findUnique: async () => ({ modelCreditsEnabled: billingEnabled }),
               },
-              spaceModelPreference: {
+              userModelPreference: {
                 findFirst: async () =>
                   personal
                     ? {

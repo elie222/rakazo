@@ -26,6 +26,7 @@ import {
 } from "../evals/silence.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
+import { runApprovalSuite } from "./approval-eval.js";
 
 async function main() {
   const { values } = parseArgs({
@@ -56,13 +57,19 @@ async function main() {
       output: { type: "string", default: "test-report/evals/report.json" },
     },
   });
+  if (values.suite === "approval")
+    return runApprovalSuite(values, {
+      codeRevision: codeRevision(),
+      workingDiffHash: workingDiffHash(),
+      readConnection,
+    });
   const suites = {
     product: { cases: EVAL_CASES, fixtureVersion: "product-v1" },
     history: { cases: HISTORY_EVAL_CASES, fixtureVersion: HISTORY_FIXTURE_VERSION },
     silence: { cases: SILENCE_EVAL_CASES, fixtureVersion: SILENCE_FIXTURE_VERSION },
   };
   if (!Object.hasOwn(suites, values.suite!))
-    throw new Error("Unknown suite; use product, history, or silence");
+    throw new Error("Unknown suite; use product, history, silence, or approval");
   const { cases, fixtureVersion } = suites[values.suite as keyof typeof suites];
   if (values["wire-diagnostics"] && values.suite !== "history")
     throw new Error("Synthetic wire diagnostics require the history suite");

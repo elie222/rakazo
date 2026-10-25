@@ -17,7 +17,7 @@ import {
   SOURCE_CHECKOUT,
   SOURCE_DEV,
 } from "../guide";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
 import {
@@ -30,8 +30,7 @@ import {
   SETUP_PROMPT_URL,
 } from "../site";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
 ---
 

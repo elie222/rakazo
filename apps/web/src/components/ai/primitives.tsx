@@ -122,12 +122,7 @@ export function SuccessPop({ label }: { label: string }) {
   );
 }
 
-/** Card shell. */
+/** Card shell for every card in the chat. */
 export function BuiCard({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  return (
-    <div
-      {...props}
-      className={cn("rounded-2xl border border-border bg-card shadow-sm", className)}
-    />
-  );
+  return <div {...props} className={cn("rounded-[20px] bg-card", className)} />;
 }

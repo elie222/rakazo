@@ -566,7 +566,7 @@ export default function BotSettingsScreen() {
                     value=""
                     choices={bot.instructionHistory.map((version) => ({
                       key: version.id,
-                      label: `${new Date(version.createdAt).toLocaleString()} · ${version.reason}`,
+                      label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
                     }))}
                     onChange={(versionId) => {
                       if (pending || instructions !== bot.instructions) return;

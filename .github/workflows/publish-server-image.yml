@@ -7,7 +7,7 @@ name: publish-server-image
 # receiving package-publish authority.
 #
 # Published builds run on Depot when the DEPOT_PROJECT_ID repository variable names a project, and
-# on GitHub's runners otherwise (forks). Pull requests never use Depot.
+# on GitHub's runners otherwise (forks) or when a Depot build fails. Pull requests never use Depot.
 on:
   push:
     tags: ["v*"]
@@ -16,6 +16,7 @@ on:
     paths:
       - ".dockerignore"
       - ".github/workflows/publish-server-image.yml"
+      - ".github/actions/publish-image/**"
       - "apps/**"
       - "infra/compose/**"
       - "infra/sandboxes/computer/**"
@@ -34,8 +35,8 @@ env:
   DOCKER_METADATA_SHORT_SHA_LENGTH: 40
 
 concurrency:
-  group: publish-server-image-${{ github.ref }}
-  cancel-in-progress: false
+  group: publish-server-image-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   installer-smoke:
@@ -89,14 +90,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
-          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-from: |
+            type=gha,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
+            type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}
           provenance: false
           sbom: false
 
   build:
     name: Build ${{ matrix.name }} ${{ matrix.arch }}
-    if: github.event_name != 'pull_request' && vars.DEPOT_PROJECT_ID == ''
+    # A Depot outage must not block deploys, so any failed Depot build rebuilds every image here.
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' &&
+      (vars.DEPOT_PROJECT_ID == '' || contains(needs.build-depot.outputs.*, 'failed'))
+    needs: [build-depot]
     # Each architecture builds natively on its own runner and pushes by digest only.
     # No QEMU: GitHub hosts native arm64 runners, and emulated arm64 took hours for the
     # desktop-sized computer image. See docs/self-host.md (Published images and tags).
@@ -140,7 +147,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # Labels only; the tagged manifest is assembled in the publish job.
+          # Labels only; publication applies tags after validation.
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: type=sha,prefix=sha-
       - id: build
@@ -182,8 +189,8 @@ jobs:
   build-depot:
     name: Build ${{ matrix.name }} on Depot
     if: github.event_name != 'pull_request' && vars.DEPOT_PROJECT_ID != ''
-    # One multi-platform build per image on Depot's native amd64 and arm64 builders, pushed by
-    # digest like the job above so the publish job tags it the same way.
+    # Each Depot image is checked, tagged, and attested in this job without a second runner.
+    # Per-image locks bound builds and protect moving tags while other CI runs independently.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -191,6 +198,16 @@ jobs:
       packages: write
       # Depot authenticates the build with the workflow's OIDC token; no Depot secret exists.
       id-token: write
+      attestations: write
+    # Each image reports its own key; the fallback build reads them all.
+    outputs:
+      app: ${{ steps.depot.outputs.app }}
+      updater: ${{ steps.depot.outputs.updater }}
+      computer: ${{ steps.depot.outputs.computer }}
+    concurrency:
+      group: publish-image-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: false
+      queue: max
     strategy:
       fail-fast: false
       matrix:
@@ -218,11 +235,12 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          # Labels only; the tagged manifest is assembled in the publish job.
+          # Labels only; publication applies tags after validation.
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: type=sha,prefix=sha-
       - id: build
         uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1.18.0
+        continue-on-error: true
         with:
           project: ${{ vars.DEPOT_PROJECT_ID }}
           context: ${{ matrix.context }}
@@ -234,8 +252,15 @@ jobs:
           build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
           provenance: mode=max
           sbom: true
+      - id: depot
+        env:
+          IMAGE: ${{ matrix.name }}
+          OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          [[ "$OUTCOME" == success ]] || echo "::warning::Depot could not build ${IMAGE}; building on GitHub's runners instead."
+          echo "${IMAGE}=$([[ "$OUTCOME" == success ]] && echo built || echo failed)" >> "$GITHUB_OUTPUT"
       - name: Check the app image ships no credentials
-        if: matrix.name == 'app'
+        if: matrix.name == 'app' && steps.build.outcome == 'success'
         env:
           IMAGE: ghcr.io/${{ github.repository }}/app@${{ steps.build.outputs.digest }}
         # Exporting a filesystem needs no emulation, so one runner checks both platforms.
@@ -245,6 +270,7 @@ jobs:
             bash infra/compose/check-image.sh "$IMAGE" "$platform"
           done
       - name: Record the image digest
+        if: steps.build.outcome == 'success'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           BUILD_ID: ${{ steps.build.outputs.build-id }}
@@ -255,20 +281,18 @@ jobs:
           mkdir -p /tmp/digests
           touch "/tmp/digests/${DIGEST#sha256:}"
           echo "Built ${IMAGE} on Depot (build ${BUILD_ID}): ${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - if: steps.build.outcome == 'success'
+        uses: ./.github/actions/publish-image
         with:
-          name: digest-${{ matrix.name }}-multi
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
+          image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          digests-directory: /tmp/digests
 
   publish:
     name: Publish ${{ matrix.name }} image
-    # Exactly one of the build jobs runs; the other is skipped.
+    # Native GitHub builds still need to combine their two architecture artifacts.
     if: >-
-      !cancelled() && github.event_name != 'pull_request' &&
-      (needs.build.result == 'success' || needs.build-depot.result == 'success')
-    needs: [build, build-depot]
+      !cancelled() && github.event_name != 'pull_request' && needs.build.result == 'success'
+    needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -276,6 +300,10 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    concurrency:
+      group: publish-image-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: false
+      queue: max
     strategy:
       fail-fast: false
       matrix:
@@ -284,64 +312,20 @@ jobs:
           - name: updater
           - name: computer
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: digest-${{ matrix.name }}-*
           path: /tmp/digests
           merge-multiple: true
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+      - uses: ./.github/actions/publish-image
         with:
-          # A fork can publish only to its own namespace; no credential can redirect this value.
-          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          tags: |
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=sha,prefix=sha-
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
-            # Stable releases only: a hyphen marks a prerelease (v1.0.0-rc.1) that must not move latest.
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
-      - name: Assemble and verify the multi-arch manifest
-        id: manifest
-        working-directory: /tmp/digests
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          set -euo pipefail
-          tag_args=()
-          while IFS= read -r tag; do
-            [[ -n "$tag" ]] && tag_args+=(-t "$tag")
-          done <<< "$TAGS"
-          sources=()
-          for digest in *; do
-            sources+=("${IMAGE}@sha256:${digest}")
-          done
-          # Two single-architecture digests from GitHub's runners or one multi-platform digest
-          # from Depot; the platform check below proves both architectures made it in.
-          if [[ "${#sources[@]}" -lt 1 || "${#sources[@]}" -gt 2 ]]; then
-            echo "Expected one or two image digests, found ${#sources[@]}." >&2
-            exit 1
-          fi
-          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
-
-          first_tag="$(head -n 1 <<< "$TAGS")"
-          platforms="$(docker buildx imagetools inspect "$first_tag" \
-            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}{{"\n"}}{{end}}')"
-          for want in linux/amd64 linux/arm64; do
-            grep -Fqx "$want" <<< "$platforms" || { echo "$first_tag is missing $want" >&2; exit 1; }
-          done
-          echo "digest=$(docker buildx imagetools inspect "$first_tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
-      - name: Attest the published image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
-          push-to-registry: true
+          image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          digests-directory: /tmp/digests

@@ -144,7 +144,7 @@ function fakeFleet(input: {
           })),
       ),
     },
-    spaceModelPreference: { findMany: vi.fn(async () => input.credentials ?? []) },
+    userModelPreference: { findMany: vi.fn(async () => input.credentials ?? []) },
     userModelCredential: { findMany: vi.fn(async () => []) },
   };
   const deps: FleetPrepareDeps = {
@@ -1598,7 +1598,7 @@ describe("createChildRoutine", () => {
         ...canonical,
         schedule: { runAt: "2026-10-18T07:00:00.000Z" },
       }),
-    ).toEqual({ error: "One-shot schedules must run in the future." });
+    ).toEqual({ error: expect.stringMatching(/^One-shot schedules must run in the future\. /) });
     expect(prisma.routine.create).not.toHaveBeenCalled();
   });
 });

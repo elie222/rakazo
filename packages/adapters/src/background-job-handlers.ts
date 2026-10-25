@@ -127,6 +127,19 @@ export function createBackgroundJobHandlers(deps: {
         });
       }
     }),
+    "messaging.credential-cleanup": async ({ installationId, ref }) => {
+      await runAsSystem("clean up a retired messaging credential", async () => {
+        const installation = await deps.prisma.messagingInstallation.findUnique({
+          where: { id: installationId },
+          select: { ciphertext: true },
+        });
+        if (installation?.ciphertext === ref) return;
+        await deps.secretStore.delete(ref, {
+          recordId: installationId,
+          signal: AbortSignal.timeout(10_000),
+        });
+      });
+    },
     "messaging.deliver": async ({ runId }) => {
       if (runId && messagingDeps) {
         await asOwner(run, () => mirrorMessagingOutbound(messagingDeps, runId))({ runId });

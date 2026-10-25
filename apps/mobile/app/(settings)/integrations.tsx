@@ -4,6 +4,7 @@ import type {
   ConnectionCatalogItem,
   McpServer,
 } from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -667,6 +668,7 @@ export default function Integrations() {
             <View key={row.id} style={styles.accountRow}>
               <TextInput
                 value={labelDrafts[row.id] ?? row.displayName}
+                maxLength={CONNECTION_LABEL_MAX_LENGTH}
                 onChangeText={(value) =>
                   setLabelDrafts((current) => ({ ...current, [row.id]: value }))
                 }
@@ -1020,8 +1022,9 @@ export default function Integrations() {
                   <View key={source.id} style={styles.row}>
                     <View style={styles.grow}>
                       <Text style={styles.title}>{source.name}</Text>
+                      <Text style={styles.secondary}>{source.kind.toUpperCase()}</Text>
                       <Text numberOfLines={1} style={styles.secondary}>
-                        {source.kind.toUpperCase()} · {source.source}
+                        {source.source}
                       </Text>
                     </View>
                     <NativeActionButton

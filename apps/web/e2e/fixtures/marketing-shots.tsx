@@ -242,7 +242,7 @@ const subscriptionCatalog: ModelCatalogEntry[] = [
     label: "Claude Sonnet 5.5",
     billing: "",
     auth: "both",
-    oauthLabel: "Sign in with Claude Pro/Max",
+    oauthLabel: "Sign in with Claude",
     authHint: "Claude Pro/Max / key",
     subscription: true,
     signIn: "auth-url",
@@ -257,7 +257,7 @@ const subscriptionCatalog: ModelCatalogEntry[] = [
     billing:
       "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
     auth: "oauth",
-    oauthLabel: "Sign in with ChatGPT Plus/Pro",
+    oauthLabel: "Sign in with ChatGPT",
     authHint: "ChatGPT Plus/Pro",
     subscription: true,
     signIn: "device-code",
@@ -285,7 +285,7 @@ function SubscriptionShot() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const text = document.body.textContent ?? "";
-      if (text.includes("Sign in with Claude Pro/Max") && text.includes("Claude Sonnet 5.5")) {
+      if (text.includes("Sign in with Claude") && text.includes("Claude Sonnet 5.5")) {
         setReady(true);
         window.clearInterval(timer);
       }

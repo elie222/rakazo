@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { Artifact, ArtifactVersion, Bot } from "@rakazo/contracts";
+import type { Artifact, Bot } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import {
   AlertDialog,
@@ -22,6 +22,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { skipToken, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   Download,
@@ -42,6 +43,7 @@ import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { desktopBridge } from "../lib/desktop";
+import { useSpaceQueries, writeSaved } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useObjectUrl } from "../lib/use-object-url";
@@ -54,6 +56,8 @@ const VIEW_MODE_STORAGE_KEY = "rakazo:artifacts-view-mode";
 const LIST_PAGE_SIZE = 60;
 
 type ArtifactSummary = Artifact & { versionCount: number };
+
+const NO_BOTS: Bot[] = [];
 
 function readViewMode(): ViewMode {
   try {
@@ -88,13 +92,6 @@ export function ArtifactsPage() {
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
   const { t } = useLingui();
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [items, setItems] = useState<ArtifactSummary[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const loadingMoreRef = useRef(false);
-  const listingGenerationRef = useRef(0);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(readViewMode);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -105,58 +102,42 @@ export function ArtifactsPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void takeInitialBootstrap().then((bootstrap) => setBots(bootstrap.bots));
-  }, []);
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  // The space's bootstrap is where the shell keeps what it last loaded, bots included.
+  const bots =
+    useQuery({
+      queryKey: queries.bootstrap.queryKey({ input: {} }),
+      queryFn: () => takeInitialBootstrap(),
+      select: (bootstrap) => bootstrap.bots,
+    }).data ?? NO_BOTS;
+  const listingOptions = queries.artifacts.listSpace.infiniteOptions({
+    input: (cursor: string | undefined) => ({
+      botId: activeBotId ?? undefined,
+      ...(cursor ? { cursor } : {}),
+      limit: LIST_PAGE_SIZE,
+    }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  const listing = useInfiniteQuery(listingOptions);
+  const items = useMemo(
+    () => listing.data?.pages.flatMap((page) => page.items) ?? null,
+    [listing.data],
+  );
+  const nextCursor = listing.data?.pages.at(-1)?.nextCursor ?? null;
+  const loadingMore = listing.isFetchingNextPage;
+  const loadError =
+    listing.error && !listing.data ? errorText(listing.error, t`Could not load artifacts.`) : null;
+  // A failed refresh over the cached list is still said; a failed next page keeps Load more.
+  const refreshError =
+    listing.data && listing.isRefetchError
+      ? errorText(listing.error, t`Could not load artifacts.`)
+      : null;
 
-  useEffect(() => {
-    let cancelled = false;
-    listingGenerationRef.current += 1;
-    loadingMoreRef.current = false;
-    setLoadingMore(false);
-    setItems(null);
-    setLoadError(null);
-    setNextCursor(null);
-    void rpc.artifacts
-      .listSpace({ botId: activeBotId ?? undefined, limit: LIST_PAGE_SIZE })
-      .then((page) => {
-        if (cancelled) return;
-        setItems(page.items);
-        setNextCursor(page.nextCursor);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setLoadError(errorText(error, t`Could not load artifacts.`));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeBotId, t]);
-
-  async function loadMore() {
-    if (!nextCursor || loadingMoreRef.current) return;
-    const generation = listingGenerationRef.current;
-    const listingChanged = () => generation !== listingGenerationRef.current;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    try {
-      const page = await rpc.artifacts.listSpace({
-        botId: activeBotId ?? undefined,
-        cursor: nextCursor,
-        limit: LIST_PAGE_SIZE,
-      });
-      if (listingChanged()) return;
-      setItems((current) => (current ?? []).concat(page.items));
-      setNextCursor(page.nextCursor);
-    } catch {
-      // Keep the current page so Load more can be retried.
-    } finally {
-      if (!listingChanged()) {
-        loadingMoreRef.current = false;
-        setLoadingMore(false);
-      }
-    }
+  function loadMore() {
+    // A failed page keeps what is shown so Load more can be retried.
+    if (nextCursor && !listing.isFetchingNextPage) void listing.fetchNextPage();
   }
 
   useEffect(() => {
@@ -206,7 +187,18 @@ export function ArtifactsPage() {
     setDeleteError(null);
     try {
       await rpc.artifacts.remove({ artifactId: pendingDelete.id });
-      setItems((current) => current?.filter((item) => item.id !== pendingDelete.id) ?? current);
+      await writeSaved(queryClient, listingOptions.queryKey, (current) => ({
+        pages: (current?.pages ?? []).map((page) => ({
+          ...page,
+          items: page.items.filter((item) => item.id !== pendingDelete.id),
+        })),
+        pageParams: current?.pageParams ?? [],
+      }));
+      // Listings for other bots may hold it too; they refresh when next shown.
+      void queryClient.invalidateQueries({
+        queryKey: queries.artifacts.listSpace.key(),
+        refetchType: "none",
+      });
       if (artifactId === pendingDelete.id) navigate("/app/artifacts");
       setPendingDelete(null);
     } catch (error) {
@@ -320,6 +312,11 @@ export function ArtifactsPage() {
         ) : null}
       </header>
 
+      {refreshError ? (
+        <p role="alert" className="px-6 py-2 text-sm text-destructive">
+          {refreshError}
+        </p>
+      ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {artifactId ? (
           <>
@@ -332,7 +329,7 @@ export function ArtifactsPage() {
                 onRequestDelete={setPendingDelete}
                 nextCursor={nextCursor}
                 loadingMore={loadingMore}
-                onLoadMore={() => void loadMore()}
+                onLoadMore={loadMore}
               />
             ) : null}
             <PreviewPane
@@ -351,7 +348,7 @@ export function ArtifactsPage() {
             onRequestDelete={setPendingDelete}
             nextCursor={nextCursor}
             loadingMore={loadingMore}
-            onLoadMore={() => void loadMore()}
+            onLoadMore={loadMore}
           />
         )}
       </div>
@@ -729,8 +726,7 @@ function ArtifactRow({
           {bot ? (
             <>
               <BotAvatar color={bot.color} identity={bot.id} size={14} status={bot.status} />
-              <span className="max-w-[140px] truncate">{bot.name}</span>
-              <span aria-hidden="true">·</span>
+              <span className="me-1 max-w-[140px] truncate">{bot.name}</span>
             </>
           ) : null}
           <span>{formatRelativeTime(artifact.createdAt)}</span>
@@ -801,60 +797,38 @@ function PreviewPane({
   onToggleMaximize: () => void;
 }) {
   const { t } = useLingui();
-  const [versions, setVersions] = useState<ArtifactVersion[] | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [state, setState] = useState<
+  const queries = useSpaceQueries();
+  const versionsQuery = useQuery(
+    queries.artifacts.listVersions.queryOptions({
+      input: { familyId: artifactId },
+    }),
+  );
+  const versions = versionsQuery.data ?? null;
+  const [pickedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const selectedVersionId =
+    pickedVersionId ??
+    (versions ? (versions[0]?.id ?? artifactId) : versionsQuery.isError ? artifactId : null);
+  const artifactQuery = useQuery(
+    queries.artifacts.getById.queryOptions({
+      input: selectedVersionId ? { artifactId: selectedVersionId } : skipToken,
+    }),
+  );
+  const bytes = useMemo(
+    () => (artifactQuery.data ? decodeArtifactBase64(artifactQuery.data.contentBase64) : null),
+    [artifactQuery.data],
+  );
+  const state:
     | { status: "loading" }
     | { status: "ready"; artifact: Artifact; bytes: Uint8Array }
-    | { status: "error"; message: string }
-  >({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    setVersions(null);
-    setSelectedVersionId(null);
-    void rpc.artifacts
-      .listVersions({ familyId: artifactId })
-      .then((list) => {
-        if (cancelled) return;
-        setVersions(list);
-        setSelectedVersionId(list[0]?.id ?? artifactId);
-      })
-      .catch(() => {
-        if (!cancelled) setSelectedVersionId(artifactId);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [artifactId]);
-
-  useEffect(() => {
-    if (!selectedVersionId) return;
-    let cancelled = false;
-    setState({ status: "loading" });
-    void rpc.artifacts
-      .getById({ artifactId: selectedVersionId })
-      .then((artifact) => {
-        if (!cancelled) {
-          setState({
-            status: "ready",
-            artifact,
-            bytes: decodeArtifactBase64(artifact.contentBase64),
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setState({
+    | { status: "error"; message: string } =
+    artifactQuery.data && bytes
+      ? { status: "ready", artifact: artifactQuery.data, bytes }
+      : artifactQuery.error
+        ? {
             status: "error",
-            message: errorText(error, t`Could not load this artifact.`),
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedVersionId, t]);
+            message: errorText(artifactQuery.error, t`Could not load this artifact.`),
+          }
+        : { status: "loading" };
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -878,7 +852,7 @@ function PreviewPane({
           >
             {versions.map((entry) => (
               <NativeSelectOption key={entry.id} value={entry.id}>
-                {`v${entry.version} · ${formatRelativeTime(entry.createdAt)}`}
+                {`v${entry.version} (${formatRelativeTime(entry.createdAt)})`}
               </NativeSelectOption>
             ))}
           </NativeSelect>
