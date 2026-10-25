@@ -126,6 +126,7 @@ async function failRun(scenario: Scenario) {
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Sweep the inbox" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
+    chatGroup: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     spaceModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) =>

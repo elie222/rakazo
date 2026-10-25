@@ -72,6 +72,7 @@ function deps(
         ),
     },
     message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
+    chatGroup: { findMany: vi.fn().mockResolvedValue([]) },
     run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
       transactionAttempts += 1;

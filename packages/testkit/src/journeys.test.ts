@@ -11,6 +11,7 @@ import {
   FakeSandboxProvider,
   handoffToGroupBot,
   listPiCatalog,
+  messageBot,
   organizeBot,
   toComputerRef,
 } from "@rakazo/adapters";
@@ -2580,6 +2581,203 @@ describeJourneys("required product journeys", () => {
       ]),
     );
     expect(remainingBotIds).not.toContain(artifactOwnerId);
+  });
+
+  it("54b: bots that share exactly one group coordinate in that group", async () => {
+    const cookie = await signup(app, `group-coord-${stamp}@rakazo.test`, "Group Coordinator");
+    const me = await rpc<Me>(app, cookie, "me");
+    const chief = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch desk",
+      botIds: [chief.id, researcher.id],
+    });
+    const threadOf = async (botId: string) =>
+      (await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } })).id;
+    const chiefThreadId = await threadOf(chief.id);
+    const researcherThreadId = await threadOf(researcher.id);
+    const blocksOf = (message: { blocks: unknown }) => message.blocks as MessageBlock[];
+    const terminal = (status: string) => ["completed", "failed", "cancelled"].includes(status);
+    const settled = async () =>
+      (await prisma.run.count({
+        where: {
+          botId: { in: [chief.id, researcher.id] },
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+      })) === 0;
+
+    await sendAndWait(app, cookie, chief.id, "message the bot named Researcher saying find venues");
+    const echoes = (
+      await prisma.message.findMany({ where: { threadId: chiefThreadId, botId: chief.id } })
+    ).filter((message) => blocksOf(message).some((block) => block.kind === "bot_message_sent"));
+    expect(echoes).toHaveLength(1);
+    const echo = echoes[0]!;
+    expect(blocksOf(echo)).toEqual([
+      expect.objectContaining({ kind: "bot_message_sent", toBotId: researcher.id }),
+    ]);
+    const posted = await prisma.message.findFirstOrThrow({
+      where: { threadId: group.threadId, botId: chief.id },
+      include: { sourceRuns: { select: { id: true, botId: true, trigger: true, threadId: true } } },
+    });
+    expect(posted.role).toBe("bot");
+    expect(posted.runId).toBeNull();
+    expect(blocksOf(posted)).toEqual([
+      expect.objectContaining({
+        kind: "handoff",
+        fromBotId: chief.id,
+        fromBotName: "Chief",
+        toBotId: researcher.id,
+        text: "find venues",
+        intent: "request",
+        returnToMessageId: echo.id,
+      }),
+    ]);
+    expect(posted.sourceRuns).toEqual([
+      {
+        id: expect.any(String),
+        botId: researcher.id,
+        trigger: "bot_message",
+        threadId: group.threadId,
+      },
+    ]);
+    const groupRunId = posted.sourceRuns[0]!.id;
+    expect(
+      await prisma.message.count({
+        where: { threadId: researcherThreadId, role: "user" },
+      }),
+    ).toBe(0);
+
+    await waitForDatabase(async () =>
+      terminal((await prisma.run.findUniqueOrThrow({ where: { id: groupRunId } })).status),
+    );
+    const groupReply = await prisma.message.findFirst({
+      where: { threadId: group.threadId, runId: groupRunId, botId: researcher.id },
+    });
+    expect(blocksOf(groupReply!).some((block) => block.kind === "text")).toBe(true);
+    // The result goes back to Chief's own chat, threaded under its echo.
+    let returned: { id: string; replyToMessageId: string | null; blocks: unknown } | null = null;
+    await waitForDatabase(async () => {
+      returned = await prisma.message.findFirst({
+        where: { threadId: chiefThreadId, role: "user", replyToMessageId: echo.id },
+        select: { id: true, replyToMessageId: true, blocks: true },
+      });
+      return Boolean(returned);
+    });
+    expect(blocksOf(returned!)).toEqual([
+      expect.objectContaining({
+        kind: "bot_message_received",
+        fromBotId: researcher.id,
+        intent: "result",
+        returnToMessageId: expect.any(String),
+      }),
+    ]);
+    await waitForDatabase(settled);
+
+    // A bot answering the bot that delegated to it keeps replying in that bot's own chat.
+    const delegatedEcho = await createThreadMessage(prisma, {
+      threadId: chiefThreadId,
+      role: "bot",
+      botId: chief.id,
+      blocks: [
+        {
+          kind: "bot_message_sent",
+          toBotId: researcher.id,
+          toBotName: "Researcher",
+          text: "find venues",
+          intent: "request",
+        },
+      ],
+    });
+    const delegated = await createThreadMessage(prisma, {
+      threadId: researcherThreadId,
+      role: "user",
+      blocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: chief.id,
+          fromBotName: "Chief",
+          text: "find venues",
+          intent: "request",
+          hop: 1,
+          returnToMessageId: delegatedEcho.id,
+        },
+      ],
+    });
+    const workingTask = await prisma.task.create({
+      data: {
+        spaceId: researcher.spaceId,
+        botId: researcher.id,
+        threadId: researcherThreadId,
+        userId: me.userId,
+        prompt: "find venues",
+        status: "running",
+      },
+    });
+    const working = await prisma.run.create({
+      data: {
+        spaceId: researcher.spaceId,
+        botId: researcher.id,
+        threadId: researcherThreadId,
+        taskId: workingTask.id,
+        userId: me.userId,
+        status: "running",
+        trigger: "bot_message",
+        sourceMessageId: delegated.id,
+      },
+    });
+    const groupMessages = await prisma.message.count({ where: { threadId: group.threadId } });
+    const sent = await runAsSystem("background job run.continue", () =>
+      messageBot(
+        { prisma: appPrisma, events: createThreadEvents(appPrisma), jobs },
+        { ...working, sourceMessageId: delegated.id },
+        { id: researcher.id, name: "Researcher" },
+        { bot_id: chief.id, message: "halfway through the venues", intent: "status" },
+      ),
+    );
+    expect(sent).toMatchObject({ ok: true, botId: chief.id });
+    const statusUpdate = await prisma.message.findFirstOrThrow({
+      where: { threadId: chiefThreadId, role: "user" },
+      orderBy: { seq: "desc" },
+    });
+    expect(statusUpdate.replyToMessageId).toBe(delegatedEcho.id);
+    expect(statusUpdate.blocks as MessageBlock[]).toEqual([
+      expect.objectContaining({ kind: "bot_message_received", text: "halfway through the venues" }),
+    ]);
+    expect(await prisma.message.count({ where: { threadId: group.threadId } })).toBe(groupMessages);
+    await prisma.run.update({ where: { id: working.id }, data: { status: "cancelled" } });
+    await waitForDatabase(settled);
+
+    // With two shared groups there is no single place to post, so it stays 1:1.
+    const second = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Second desk",
+      botIds: [chief.id, researcher.id],
+    });
+    await sendAndWait(app, cookie, chief.id, "message the bot named Researcher saying find hotels");
+    const direct = await prisma.message.findFirstOrThrow({
+      where: { threadId: researcherThreadId, role: "user" },
+      orderBy: { seq: "desc" },
+    });
+    expect(blocksOf(direct)).toEqual([
+      expect.objectContaining({ kind: "bot_message_received", text: "find hotels" }),
+    ]);
+    expect(
+      await prisma.message.count({
+        where: { threadId: { in: [group.threadId, second.threadId] }, botId: chief.id },
+      }),
+    ).toBe(1);
+    await waitForDatabase(settled);
   });
 
   it("17: teach a task end to end", async () => {

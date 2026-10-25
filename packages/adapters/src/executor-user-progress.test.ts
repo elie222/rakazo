@@ -54,7 +54,6 @@ async function runTurn(
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
-    kind: "bot_message_received",
     fromBotId: "caller",
     fromBotName: "Caller",
     text: "Look again",
@@ -209,6 +208,7 @@ async function runTurn(
     },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
+    chatGroup: { findMany: vi.fn(async () => []) },
     spaceModelPreference: {
       findFirst: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
         async () => null,

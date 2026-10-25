@@ -192,6 +192,7 @@ function fixture(runId = "run-1") {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Update shared state" })),
     },
     connection: { findMany: vi.fn(async () => []) },
+    chatGroup: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null) },

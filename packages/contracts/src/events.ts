@@ -280,6 +280,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
     /** Links ownership transfers in one user-started group turn. */
     hop: z.number().int().positive().optional(),
+    /** Set when a teammate's message was posted in the group instead of a 1:1 chat. */
+    fromBotName: z.string().optional(),
+    intent: BotMessageIntent.optional(),
+    /** Sender-thread echo the target's result returns to. */
+    returnToMessageId: Id.optional(),
   }),
   z.object({
     /** A group-chat message delivered into a member bot's own thread. */

@@ -66,6 +66,7 @@ import {
   appendToolCallSegment,
   applyJudgeDecision,
   assertTransition,
+  BOT_GROUPS_NOTE_LIMIT,
   blocksToAgentHistoryText,
   botMessageAllowsSilence,
   CALL_CLIENT_NONCE_PREFIX,
@@ -101,6 +102,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  renderBotGroupsNote,
   resolveActionApprovalDetail,
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
@@ -7939,6 +7941,37 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 description: peer.description,
               })),
             );
+        const botGroupsNote = thread.groupId
+          ? undefined
+          : renderBotGroupsNote(
+              await deps.prisma.chatGroup
+                .findMany({
+                  where: {
+                    spaceId: run.spaceId,
+                    userId: run.userId,
+                    archivedAt: null,
+                    thread: { isNot: null },
+                    members: { some: { botId: bot.id } },
+                  },
+                  select: {
+                    name: true,
+                    members: {
+                      where: { bot: { archivedAt: null } },
+                      select: { bot: { select: { id: true, name: true } } },
+                      orderBy: { createdAt: "asc" },
+                      take: BOT_DIRECTORY_LIMIT,
+                    },
+                  },
+                  orderBy: { createdAt: "asc" },
+                  take: BOT_GROUPS_NOTE_LIMIT,
+                })
+                .then((groups) =>
+                  groups.map((group) => ({
+                    name: group.name,
+                    members: group.members.map((member) => member.bot),
+                  })),
+                ),
+            );
 
         if (heldForTakeover) {
           const releasedCheckpoint = takeoverCheckpointOf(
@@ -8050,6 +8083,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 workspaceInstruction,
                 agentEnvironmentInstruction,
                 botDirectory,
+                botGroupsNote,
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
@@ -9679,6 +9713,7 @@ export function userTurnInstructions(parts: {
   workspaceInstruction: string;
   agentEnvironmentInstruction: string | undefined;
   botDirectory: string | undefined;
+  botGroupsNote?: string | undefined;
   pluginLine: string | undefined;
   agentSkillsLine: string | undefined;
   taughtSkillsLine: string | undefined;
@@ -9716,6 +9751,7 @@ export function userTurnInstructions(parts: {
       "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
     ),
     parts.botDirectory,
+    parts.botGroupsNote,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "archive_bot",

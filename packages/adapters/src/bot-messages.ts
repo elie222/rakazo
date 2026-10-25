@@ -12,7 +12,10 @@ import {
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  IsolationError,
+  lockOwnedGroup,
   type PrismaClient,
+  touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -123,10 +126,19 @@ export async function messageBot(
   }
 
   const targetThreadId = target.thread.id;
+  // Teammates that share exactly one group coordinate there, where the user can
+  // see it. A result returned to the delegating bot still goes back to its chat.
+  const group =
+    options?.allowTerminalSource || sourceContext?.fromBotId === target.id
+      ? undefined
+      : await sharedGroup(deps.prisma, run, sender.id, target.id);
+  const deliveryThreadId = group?.threadId ?? targetThreadId;
 
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
   // replayable: without this the recipient is messaged twice and woken twice.
   const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
+  // The group can change between attempts, so a replay looks in both chats.
+  const replayThreadIds = [...new Set([targetThreadId, deliveryThreadId])];
   const replayed = () =>
     ({
       ok: true as const,
@@ -137,7 +149,12 @@ export async function messageBot(
       note: `Already sent to ${target.name} in this turn; it was not sent again.`,
     }) as const;
 
-  const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message, intent });
+  const wakePrompt = buildBotMessageWakePrompt({
+    from: sender,
+    text: message,
+    intent,
+    groupName: group?.name,
+  });
   const outboundBlock: MessageBlock = {
     kind: "bot_message_sent",
     toBotId: target.id,
@@ -164,17 +181,23 @@ export async function messageBot(
   try {
     committed = await withTransactionRetry(() =>
       deps.prisma.$transaction(async (tx) => {
-        for (const threadId of [run.threadId, targetThreadId].sort()) {
+        if (group) {
+          try {
+            await lockOwnedGroup(tx, run, group.id);
+          } catch (error) {
+            if (error instanceof IsolationError)
+              return { ok: false as const, error: "group is no longer available; try again" };
+            throw error;
+          }
+        }
+        for (const threadId of [...new Set([run.threadId, ...replayThreadIds])].sort()) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
         // Claim the delivery key inside the transaction so a concurrent retry
         // either sees the winner or loses on the unique (threadId, clientNonce).
         if (deliveryKey) {
-          const already = await tx.message.findUnique({
-            where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-            select: { id: true },
-          });
-          if (already) return { ok: true as const, replayed: true as const };
+          if (await findDelivery(tx, replayThreadIds, deliveryKey))
+            return { ok: true as const, replayed: true as const };
         }
 
         const senderStillRunning = await tx.run.findFirst({
@@ -206,6 +229,8 @@ export async function messageBot(
         });
         if (!stillAddressable)
           return { ok: false as const, error: `${target.name} is no longer available` };
+        if (group && !(await sharesGroup(tx, run, group.id, sender.id, target.id)))
+          return { ok: false as const, error: "group members changed; try again" };
 
         // Echo into the sender's chat in the same transaction so a failed notify
         // cannot leave one side delivered and the other blank.
@@ -218,31 +243,45 @@ export async function messageBot(
           markUnread: options?.forceUnread === true,
           allowCancelledRun: options?.allowTerminalSource === true,
         });
-        const inboundBlock: MessageBlock = {
-          kind: "bot_message_received",
-          fromBotId: sender.id,
-          fromBotName: sender.name,
-          text: message,
-          hop,
-          intent,
-          returnToMessageId: outbound.id,
-        };
+        // In a group the message is the sender's visible handoff line. It is not
+        // tied to the sender's run, which lives in another chat.
+        const inboundBlock: MessageBlock = group
+          ? {
+              kind: "handoff",
+              fromBotId: sender.id,
+              toBotId: target.id,
+              text: message,
+              hop,
+              fromBotName: sender.name,
+              intent,
+              returnToMessageId: outbound.id,
+            }
+          : {
+              kind: "bot_message_received",
+              fromBotId: sender.id,
+              fromBotName: sender.name,
+              text: message,
+              hop,
+              intent,
+              returnToMessageId: outbound.id,
+            };
         const inbound = await createThreadMessageInTransaction(tx, {
-          threadId: targetThreadId,
-          role: "user",
+          threadId: deliveryThreadId,
+          role: group ? "bot" : "user",
           blocks: [inboundBlock],
+          botId: group ? sender.id : undefined,
           replyToMessageId:
             sourceContext?.fromBotId === target.id && intent !== "fyi"
               ? sourceContext.returnToMessageId
               : undefined,
           clientNonce: deliveryKey,
-          markUnread: options?.forceUnread === true,
+          markUnread: group ? undefined : options?.forceUnread === true,
         });
         const task = await tx.task.create({
           data: {
             spaceId: run.spaceId,
             botId: target.id,
-            threadId: targetThreadId,
+            threadId: deliveryThreadId,
             userId: run.userId,
             prompt: wakePrompt,
             status: "queued",
@@ -252,7 +291,7 @@ export async function messageBot(
           data: {
             spaceId: run.spaceId,
             botId: target.id,
-            threadId: targetThreadId,
+            threadId: deliveryThreadId,
             taskId: task.id,
             userId: run.userId,
             status: "queued",
@@ -261,15 +300,18 @@ export async function messageBot(
           },
           select: { id: true },
         });
-        await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
+        if (!group) {
+          await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
+        }
         const inboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
-          threadId: targetThreadId,
-          botId: target.id,
+          threadId: deliveryThreadId,
+          botId: group ? sender.id : target.id,
           type: "thread.message.created",
-          runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock] },
+          runId: group ? undefined : nextRun.id,
+          payload: { messageId: inbound.id, role: inbound.role, blocks: [inboundBlock] },
         });
+        if (group) await touchGroupUpdatedAt(tx, group.id);
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: run.spaceId,
           threadId: run.threadId,
@@ -291,18 +333,14 @@ export async function messageBot(
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
     if (deliveryKey && isUniqueConstraintError(error)) {
-      const winner = await deps.prisma.message.findUnique({
-        where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-        select: { id: true },
-      });
-      if (winner) return replayed();
+      if (await findDelivery(deps.prisma, replayThreadIds, deliveryKey)) return replayed();
     }
     throw error;
   }
   if ("replayed" in committed) return replayed();
   if (!committed.ok) return committed;
 
-  await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
+  await deps.events.notify(deliveryThreadId, committed.targetEventSeq).catch((error) => {
     getLogger().error("bot message realtime notification", error);
   });
   await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
@@ -317,8 +355,74 @@ export async function messageBot(
     botId: target.id,
     name: target.name,
     delivered: message,
-    note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
+    note: group
+      ? `Posted to ${target.name} in the group chat "${group.name}", where the user can see it. Delivery is async; the reply comes back here and wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`
+      : `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
   };
+}
+
+async function findDelivery(
+  prisma: Pick<PrismaClient, "message">,
+  threadIds: readonly string[],
+  clientNonce: string,
+) {
+  for (const threadId of threadIds) {
+    const found = await prisma.message.findUnique({
+      where: { threadId_clientNonce: { threadId, clientNonce } },
+      select: { id: true },
+    });
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function sharedGroupsWhere(
+  run: { spaceId: string; userId: string },
+  senderId: string,
+  targetId: string,
+) {
+  return {
+    spaceId: run.spaceId,
+    userId: run.userId,
+    archivedAt: null,
+    thread: { isNot: null },
+    AND: [senderId, targetId].map((botId) => ({
+      members: { some: { botId, bot: { archivedAt: null } } },
+    })),
+  };
+}
+
+/** The one active group both bots belong to; none when they share zero or several. */
+async function sharedGroup(
+  prisma: PrismaClient,
+  run: { spaceId: string; userId: string },
+  senderId: string,
+  targetId: string,
+) {
+  const groups = await prisma.chatGroup.findMany({
+    where: sharedGroupsWhere(run, senderId, targetId),
+    select: { id: true, name: true, thread: { select: { id: true } } },
+    take: 2,
+  });
+  const [group] = groups;
+  return groups.length === 1 && group?.thread
+    ? { id: group.id, name: group.name, threadId: group.thread.id }
+    : undefined;
+}
+
+async function sharesGroup(
+  tx: Pick<PrismaClient, "chatGroup">,
+  run: { spaceId: string; userId: string },
+  groupId: string,
+  senderId: string,
+  targetId: string,
+) {
+  const groups = await tx.chatGroup.findMany({
+    where: sharedGroupsWhere(run, senderId, targetId),
+    select: { id: true },
+    take: 2,
+  });
+  return groups.length === 1 && groups[0]?.id === groupId;
 }
 
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */

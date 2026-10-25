@@ -72,6 +72,7 @@ function executorFixture(
       }),
     },
     connection: { findMany: async () => [] },
+    chatGroup: { findMany: async () => [] },
     spaceModelPreference: { findFirst: async () => null },
     spaceModelRoleChoice: { findMany: async () => [] },
     userModelCredential: { findFirst: async () => null },
