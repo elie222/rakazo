@@ -167,6 +167,30 @@ Docker, and `firewall-backend: nftables` are unsupported. The
 `SANDBOX_SCREEN_NETWORK=internal` topology shares one network instead of per-bot bridges,
 so the mode does not apply there.
 
+Where Docker Engine runs in a Linux VM, as with OrbStack on macOS, the rules belong in the VM,
+which `sudo` on the host cannot reach. Apply them from a container on the VM's host network
+instead, and keep it running: the VM does not persist the rules, so a loop puts them back after
+a restart. The installer does not download the script on macOS, so save
+`restrict-computer-egress.sh` from the repository's `infra/compose/` directory, and next to it
+a separate Compose file such as `egress.yml`, started with `docker compose -f egress.yml up -d`:
+
+```yaml
+services:
+  computer-egress:
+    image: alpine:3
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    restart: unless-stopped
+    volumes:
+      - ./restrict-computer-egress.sh:/restrict-computer-egress.sh:ro
+    command: >-
+      sh -c "apk add --no-cache bash iptables ip6tables &&
+      while true; do bash /restrict-computer-egress.sh --apply; sleep 60; done"
+```
+
+Then change `SANDBOX_COMPUTER_EGRESS` from `open` to `restricted` in `.env` and recreate the
+supervisor. Docker Desktop has not been tested this way.
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` (`openssl rand -hex 16` each), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
