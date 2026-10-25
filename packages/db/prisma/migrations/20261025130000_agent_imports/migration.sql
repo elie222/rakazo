@@ -1,5 +1,3 @@
--- What an agent import created, so it can be undone. A new table only: the previous
--- release never reads it, so it needs no previous-release policy.
 CREATE TABLE "agent_imports" (
     "id" TEXT NOT NULL,
     "spaceId" TEXT NOT NULL,
@@ -15,7 +13,6 @@ CREATE TABLE "agent_imports" (
 );
 
 CREATE INDEX "agent_imports_botId_createdAt_idx" ON "agent_imports"("botId", "createdAt");
-CREATE INDEX "agent_imports_spaceId_userId_idx" ON "agent_imports"("spaceId", "userId");
 CREATE UNIQUE INDEX "agent_imports_spaceId_userId_importKey_key" ON "agent_imports"("spaceId", "userId", "importKey");
 
 ALTER TABLE "agent_imports" ADD CONSTRAINT "agent_imports_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "spaces"("id") ON DELETE CASCADE ON UPDATE CASCADE;

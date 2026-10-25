@@ -953,7 +953,7 @@ model TaughtSkill {
   @@map("taught_skills")
 }
 
-/// What an agent import created, so the import can be undone. One per imported bot.
+/// What an agent import created, so the import can be undone.
 model AgentImport {
   id            String   @id @default(cuid())
   spaceId       String
@@ -974,7 +974,6 @@ model AgentImport {
   createdAt     DateTime @default(now())
 
   @@unique([spaceId, userId, importKey])
-  @@index([spaceId, userId])
   @@index([botId, createdAt])
   @@map("agent_imports")
 }
