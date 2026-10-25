@@ -1,4 +1,5 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import {
   displayName,
   escapeJsonSearchWildcards,
@@ -139,14 +140,24 @@ export async function querySpaceSearch(
     );
   }
 
-  const groups = await prisma.chatGroup.findMany({
-    where: {
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      name: { contains: likeQuery, mode: "insensitive" },
-    },
-    take: CONVERSATION_HIT_LIMIT,
-  });
+  // Only groups that can actually be opened: not archived, and still holding
+  // enough active-member bots (archiving bots can empty a group below the
+  // minimum — those land on the Archived list instead of opening).
+  const openableGroupMembers = {
+    _count: { select: { members: { where: { bot: { archivedAt: null } } } } },
+  } as const;
+  const groups = (
+    await prisma.chatGroup.findMany({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        archivedAt: null,
+        name: { contains: likeQuery, mode: "insensitive" },
+      },
+      include: openableGroupMembers,
+      take: CONVERSATION_HIT_LIMIT,
+    })
+  ).filter((group) => group._count.members >= GROUP_MEMBER_MIN);
   for (const group of groups) {
     pushInto(
       conversationHits,
@@ -203,16 +214,26 @@ export async function querySpaceSearch(
     );
   }
 
-  const groupArtifacts = await prisma.artifact.findMany({
-    where: {
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      groupId: { not: null },
-      name: { contains: likeQuery, mode: "insensitive" },
-    },
-    include: { group: { select: { name: true } } },
-    take: SEARCH_LIMIT,
-  });
+  const groupArtifacts = (
+    await prisma.artifact.findMany({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        groupId: { not: null },
+        group: { archivedAt: null },
+        name: { contains: likeQuery, mode: "insensitive" },
+      },
+      include: {
+        group: {
+          select: {
+            name: true,
+            _count: { select: { members: { where: { bot: { archivedAt: null } } } } },
+          },
+        },
+      },
+      take: SEARCH_LIMIT,
+    })
+  ).filter((artifact) => (artifact.group?._count.members ?? 0) >= GROUP_MEMBER_MIN);
   const groupArtifactMessages = await findArtifactMessages(
     prisma,
     actor,
@@ -329,6 +350,12 @@ export async function querySpaceSearch(
       WHERE t."spaceId" = ${actor.spaceId}
         AND t."userId" = ${actor.userId}
         AND t."groupId" IS NOT NULL
+        AND g."archivedAt" IS NULL
+        AND (
+          SELECT COUNT(*) FROM chat_group_members gm
+          INNER JOIN bots gb ON gb.id = gm."botId"
+          WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
+        ) >= ${GROUP_MEMBER_MIN}
         AND ${match.sql}
       ORDER BY m."createdAt" DESC, m.id DESC
       LIMIT ${match.limit} OFFSET ${page * match.limit}

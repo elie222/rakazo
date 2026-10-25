@@ -20,7 +20,7 @@ function fixture(count: number) {
     botId: null,
     bot: null,
     groupId: "group-test",
-    group: { name: "Group" },
+    group: { name: "Group", _count: { members: 2 } },
   }));
   const prisma = {
     bot: { findMany: vi.fn().mockResolvedValue([]) },
@@ -74,6 +74,31 @@ describe("artifact search batching", () => {
   });
 });
 
+it("leaves out groups that cannot be opened, like archived bots already are", async () => {
+  const { prisma } = fixture(0);
+  prisma.chatGroup.findMany.mockResolvedValue([
+    { id: "group-open", name: "Launch plan", _count: { members: 2 } },
+    { id: "group-empty", name: "Launch plan old", _count: { members: 1 } },
+  ] as never);
+  prisma.$queryRaw.mockResolvedValue([]);
+
+  const hits = await querySpaceSearch(prisma as never, actor, "Launch");
+
+  const where = prisma.chatGroup.findMany.mock.calls[0]?.[0]?.where;
+  expect(where?.archivedAt).toBeNull();
+  expect(hits.map((hit) => hit.groupId)).toEqual(["group-open"]);
+
+  const artifactWhere = prisma.artifact.findMany.mock.calls[1]?.[0]?.where;
+  expect(artifactWhere?.group?.archivedAt).toBeNull();
+
+  const sqlTexts = prisma.$queryRaw.mock.calls.flatMap((call) => {
+    const [strings] = call;
+    return Array.isArray(strings) ? [strings.join("?")] : [];
+  });
+  const groupMessageQuery = sqlTexts.find((text) => text.includes("chat_groups"));
+  expect(groupMessageQuery).toContain('g."archivedAt" IS NULL');
+});
+
 it("searches for the characters the user typed, not SQL wildcards", async () => {
   const { prisma } = fixture(0);
   await querySpaceSearch(prisma as unknown as PrismaClient, actor, "50%_off");
@@ -114,7 +139,9 @@ it("guards name-derived snippets while preserving descriptions", async () => {
     { id: "bot-1", name: "__TestTok1__", title: "", description: "" },
     { id: "bot-2", name: "__TestTok2__", title: "", description: "Keep __TestTok2__ literal" },
   ] as never);
-  prisma.chatGroup.findMany.mockResolvedValue([{ id: "group-1", name: "__TestTok1__" }] as never);
+  prisma.chatGroup.findMany.mockResolvedValue([
+    { id: "group-1", name: "__TestTok1__", _count: { members: 2 } },
+  ] as never);
   const hits = await querySpaceSearch(prisma as never, actor, "TestTok");
   expect(
     hits
