@@ -204,6 +204,7 @@ test("This computer installs and starts the stack, then opens the app", async ()
   expect(await readLog()).toEqual([
     `${stackDir} | ${IMAGE_TAG} | compose version --short`,
     `${stackDir} | ${IMAGE_TAG} | info --format {{.ServerVersion}}`,
+    `${stackDir} | ${IMAGE_TAG} | ${compose} config --images`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} pull`,
     `${stackDir} | ${IMAGE_TAG} | ${compose} up -d --wait --wait-timeout 300`,
   ]);
