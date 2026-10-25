@@ -953,23 +953,19 @@ model TaughtSkill {
   @@map("taught_skills")
 }
 
-/// What an agent import created, so the import can be undone.
+/// What an agent import created, so Undo can remove it.
 model AgentImport {
   id            String   @id @default(cuid())
   spaceId       String
   space         Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   userId        String
-  /// The bot it created, or the existing bot it added to (which can have several imports).
   botId         String
   bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
   /// openclaw | hermes | document
   source        String
-  /// Rows the import created and their state then (skills, space memory, MCP servers,
-  /// routines, model credentials), so Undo can keep what the user changed since.
   created       Json
-  /// Chosen by the client per import, so a retried create returns the same bot.
+  /// Idempotency: a retry with the same key and digest returns the same bot.
   importKey     String?
-  /// SHA-256 of the create request, so a reused key with a different request is refused.
   requestDigest String?
   createdAt     DateTime @default(now())
 
