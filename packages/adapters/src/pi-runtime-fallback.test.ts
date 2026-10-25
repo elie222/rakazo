@@ -2597,3 +2597,81 @@ describe("Pi runtime account request ceilings", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Ready" }));
   });
 });
+
+describe("Pi runtime fallback error classes and mid-run switches", () => {
+  const providers = (): string[] =>
+    providerState.stream.mock.calls.map(
+      ([target]) => (target as Model<"openai-completions">).provider,
+    );
+  const backups = () => [{ provider: backupA.provider, id: backupA.id, apiKey: "fake-backup-a" }];
+
+  it.each([
+    ["429 rate limit", "429 rate_limit_error: Number of request tokens has exceeded your limit"],
+    ["500 server error", "500 Internal server error"],
+    ["503 unavailable", "503 service unavailable"],
+    ["529 overloaded", "529 overloaded_error: Overloaded"],
+    ["timeout", "Request timed out."],
+  ])("switches to the backup on %s", async (_name, error) => {
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", error))
+        : stream(target, message(target, [{ type: "text", text: "from backup" }], "stop")),
+    );
+
+    const events = await run(request(backups()));
+
+    expect(providers()).toEqual([primary.provider, backupA.provider]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "text", text: "from backup" }));
+  });
+
+  it.each([["403 forbidden", "403 Forbidden"]])(
+    "does not switch to the backup on %s",
+    async (_name, error) => {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", error)),
+      );
+
+      await expect(run(request(backups()))).rejects.toThrow();
+
+      expect(providers()).toEqual([primary.provider]);
+    },
+  );
+
+  it("runs the backup's own tool call after a primary tool call, never replaying the first", async () => {
+    const input = request(backups());
+    const executeTool = vi.mocked(input.executeTool!);
+    const call = (id: string, value: string) => ({
+      type: "toolCall" as const,
+      id,
+      name: "write_effect",
+      arguments: { value },
+    });
+    let primaryCalls = 0;
+    let backupCalls = 0;
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) => {
+      if (target.provider === primary.provider) {
+        primaryCalls += 1;
+        return primaryCalls === 1
+          ? stream(target, message(target, [call("first", "one")], "toolUse"))
+          : stream(target, message(target, [], "error", "529 overloaded_error"));
+      }
+      backupCalls += 1;
+      return backupCalls === 1
+        ? stream(target, message(target, [call("second", "two")], "toolUse"))
+        : stream(target, message(target, [{ type: "text", text: "done" }], "stop"));
+    });
+
+    await run(input);
+
+    expect(executeTool.mock.calls.map(([, args]) => args)).toEqual([
+      { value: "one" },
+      { value: "two" },
+    ]);
+    expect(providers()).toEqual([
+      primary.provider,
+      primary.provider,
+      backupA.provider,
+      backupA.provider,
+    ]);
+  });
+});
