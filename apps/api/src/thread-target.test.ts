@@ -52,10 +52,7 @@ describe("threadHead", () => {
 describe("queued run supersession", () => {
   it("only cancels queued runs started by user messages or reactions", async () => {
     const tx = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       run: {
         findMany: vi
           .fn()
@@ -63,6 +60,7 @@ describe("queued run supersession", () => {
           .mockResolvedValueOnce([{ id: "run-old", userId: "user-1", spaceId: "space-1" }]),
         updateMany: vi.fn(),
       },
+      message: { findMany: vi.fn(async () => []) },
       task: { updateMany: vi.fn() },
       secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     };
@@ -1608,10 +1606,7 @@ describe("sendThreadMessage", () => {
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
     };
     const tx = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       thread: {
         update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
@@ -1799,10 +1794,7 @@ describe("sendThreadMessage", () => {
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
     };
     const tx = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       thread: {
         update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
@@ -1939,10 +1931,7 @@ describe("sendThreadMessage", () => {
           ],
         };
         const tx = {
-          externalEffect: {
-            deleteMany: vi.fn(async () => ({ count: 0 })),
-            updateMany: vi.fn(async () => ({ count: 0 })),
-          },
+          externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
           $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
           thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 4, nextEventSeq: 5 }) },
           message: {
@@ -3707,14 +3696,12 @@ describe("stopThreadRuns", () => {
     });
     let nextEventSeq = 0;
     const transaction = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(),
       thread: {
         update: vi.fn(async () => ({ nextEventSeq: ++nextEventSeq })),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
         findMany: vi.fn().mockResolvedValue([]),
         updateManyAndReturn: vi.fn().mockResolvedValue([
@@ -3852,14 +3839,12 @@ describe("stopThreadRuns", () => {
       yield { type: "exit", code: 0 };
     });
     const transaction = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(),
       thread: {
         update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
         findMany: vi.fn().mockResolvedValue([]),
         updateManyAndReturn: vi.fn().mockResolvedValue([{ id: "run-a", botId: "bot-a" }]),
@@ -3965,14 +3950,12 @@ describe("stopThreadRuns", () => {
     const writes: string[] = [];
     const created: Array<Record<string, unknown>> = [];
     const transaction = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(),
       thread: {
         update: vi.fn(async () => ({ nextEventSeq: ++nextEventSeq })),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
         findMany: vi.fn().mockResolvedValue([
           { id: "run-a", userId: "user-1", spaceId: "workspace-1" },
@@ -4074,10 +4057,7 @@ describe("stopThreadRuns", () => {
 
   it("emits no event and skips the wake when nothing was running", async () => {
     const transaction = {
-      externalEffect: {
-        deleteMany: vi.fn(async () => ({ count: 0 })),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-      },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn(),
       thread: { update: vi.fn() },
       run: {

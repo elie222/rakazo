@@ -1,3 +1,4 @@
+import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "./client.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
 
@@ -32,15 +33,29 @@ export async function deleteRunSecretsInTransaction(
  * by id read each run's user and space here for the secrets index.
  */
 export async function clearEndedRunState(
-  prisma: Pick<PrismaClient, "run" | "externalEffect" | "secret">,
+  prisma: Pick<PrismaClient, "run" | "externalEffect" | "secret" | "message">,
   runIds: readonly string[],
 ): Promise<void> {
   if (runIds.length === 0) return;
   await clearRunTurnCheckpoints(prisma, runIds);
-  await prisma.externalEffect.updateMany({
-    where: { runId: { in: [...runIds] }, status: "intended" },
-    data: { status: "denied" },
+  // Only effects behind an unanswered card: a tool that needs no approval also runs as intended.
+  const messages = await prisma.message.findMany({
+    where: { runId: { in: [...runIds] }, role: "bot" },
+    select: { blocks: true },
   });
+  const openCards = messages.flatMap(({ blocks }) =>
+    (MessageBlockSchema.array().safeParse(blocks).data ?? []).flatMap((block) =>
+      block.kind === "ask" && block.status !== "answered" && block.approvalEffectId
+        ? [block.approvalEffectId]
+        : [],
+    ),
+  );
+  if (openCards.length > 0) {
+    await prisma.externalEffect.updateMany({
+      where: { id: { in: openCards }, runId: { in: [...runIds] }, status: "intended" },
+      data: { status: "denied" },
+    });
+  }
   const runs = await prisma.run.findMany({
     where: { id: { in: [...runIds] } },
     select: { id: true, userId: true, spaceId: true },
