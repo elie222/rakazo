@@ -27,6 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          ref: main
           persist-credentials: false
       - name: Record base and check for an existing update PR
         id: base
@@ -94,8 +95,23 @@ jobs:
           name: dependency-update
           path: ${{ runner.temp }}/dependency-update
       # This job applies the diff but never installs or executes the proposed code.
-      - name: Apply patch
-        run: git apply --index "$RUNNER_TEMP/dependency-update/update.patch"
+      - name: Validate and apply patch
+        run: |
+          # Inspect a temporary index before changing the publishing checkout.
+          export GIT_INDEX_FILE="$RUNNER_TEMP/dependency-update.index"
+          git read-tree HEAD
+          git apply --cached "$RUNNER_TEMP/dependency-update/update.patch"
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              .github|.github/*|.agents|.agents/*|.codex|.codex/*|.claude|.claude/*|\
+              AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|SKILL.md|*/SKILL.md|.env*|*/.env*)
+                echo "::error::Dependency patch touches workflows, instructions, or environment files."
+                exit 1
+                ;;
+            esac
+          done < <(git diff --cached --name-only --no-renames -z)
+          unset GIT_INDEX_FILE
+          git apply --index "$RUNNER_TEMP/dependency-update/update.patch"
       - name: Open pull request
         env:
           GH_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
