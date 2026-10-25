@@ -9,6 +9,7 @@ import {
   CreateGroupInput,
   CreateRoutineInput,
   canReactToThreadMessage,
+  GROUP_NAME_MAX_LENGTH,
   McpServerConfigInput,
   MessageBlock,
   ModelConnectInputSchema,
@@ -344,6 +345,16 @@ describe("contracts", () => {
     expect(
       UpdateGroupInput.safeParse({ groupId: "group-1", botIds: ["bot-1", "bot-1"] }).success,
     ).toBe(false);
+  });
+
+  it("caps group names at GROUP_NAME_MAX_LENGTH", () => {
+    const botIds = ["bot-1", "bot-2"];
+    const atLimit = "a".repeat(GROUP_NAME_MAX_LENGTH);
+    const overLimit = "a".repeat(GROUP_NAME_MAX_LENGTH + 1);
+    expect(CreateGroupInput.safeParse({ name: atLimit, botIds }).success).toBe(true);
+    expect(CreateGroupInput.safeParse({ name: overLimit, botIds }).success).toBe(false);
+    expect(UpdateGroupInput.safeParse({ groupId: "group-1", name: atLimit }).success).toBe(true);
+    expect(UpdateGroupInput.safeParse({ groupId: "group-1", name: overLimit }).success).toBe(false);
   });
 
   it.each([1, 2, 10, 11])("enforces group member bounds for %i bots", (count) => {

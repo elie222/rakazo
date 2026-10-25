@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Bot, Group } from "@rakazo/contracts";
+import { GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -186,6 +187,12 @@ describe("GroupSettings", () => {
     const { onClose } = await render();
     await click("Close panel");
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("stops the name input at the API limit", async () => {
+    await render();
+    const input = container.querySelector<HTMLInputElement>("input[type=text], input:not([type])");
+    expect(input?.maxLength).toBe(GROUP_NAME_MAX_LENGTH);
   });
 
   it("closes on Escape", async () => {

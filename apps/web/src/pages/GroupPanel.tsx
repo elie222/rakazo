@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
-import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { BotAvatar, Button, Checkbox, Input } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -191,6 +191,7 @@ export function CreateGroupForm({
         <Input
           id={nameId}
           value={name}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
           className="mt-2"
@@ -314,6 +315,7 @@ export function GroupSettings({
         <Input
           id={nameId}
           value={name}
+          maxLength={GROUP_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
           className="mt-2"
         />
