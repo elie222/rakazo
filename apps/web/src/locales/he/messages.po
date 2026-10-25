@@ -56,7 +56,7 @@ msgid "{0} (over {1})"
 msgstr "{0} (מעל {1})"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -150,6 +150,10 @@ msgstr "{count} שנים"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "לפני {days} ימים"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "מ-{fromName} עד {toName}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -808,7 +812,7 @@ msgid "Ask before sending external email"
 msgstr "לשאול לפני שליחת אימייל חיצוני"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "בשעה {0}"
 
@@ -2078,7 +2082,7 @@ msgstr "פרטי הגישה מוצפנים ולעולם לא נשלחים למו
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2108,7 +2112,7 @@ msgid "Dark"
 msgstr "כהה"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "יום"
 
@@ -2116,7 +2120,7 @@ msgstr "יום"
 msgid "Day-to-day work"
 msgstr "עבודה יומיומית"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "ימים"
 
@@ -2460,10 +2464,21 @@ msgstr "שגיאה"
 msgid "Error details"
 msgstr "פרטי השגיאה"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "כל"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "כל {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "כל {0} ו-{1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2473,17 +2488,24 @@ msgstr "כל {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "כל יום"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "כל שעה"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "כל שעה בדקה {0}"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "כל יום שני"
 
@@ -2646,6 +2668,10 @@ msgstr "שכחת סיסמה?"
 msgid "Free"
 msgstr "חינם"
 
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "יום שישי"
+
 #: src/pages/ActivityList.tsx
 msgid "From"
 msgstr "מתאריך"
@@ -2769,12 +2795,12 @@ msgstr ""
 msgid "Hold to talk, release to send"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "שעה"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "שעות"
 
@@ -3274,12 +3300,12 @@ msgstr "מזעור הבוטים"
 msgid "Minimize call"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "דקה"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "דקות"
 
@@ -3332,11 +3358,15 @@ msgstr "מודלים מהשרת"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "רשימת המודלים תקינה. {modelCount, plural, one {מודל אחד זמין} other {# מודלים זמינים}}. הצ׳אט לא נבדק."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "יום שני"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr "חודש"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
 
@@ -3651,10 +3681,18 @@ msgstr ""
 msgid "On a schedule"
 msgstr "לפי תזמון"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "ביום {day} בשעה {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "ב-1 לחודש בשעה {0}"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "חד-פעמי"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4356,6 +4394,10 @@ msgstr "הרצות"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק הזה."
 
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "שבת"
+
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4834,6 +4876,10 @@ msgstr "הרשמה למנוי"
 msgid "Subscription required"
 msgstr "נדרש מנוי"
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "יום ראשון"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5052,6 +5098,10 @@ msgstr "התחברות עם המנוי הזה עדיין לא זמינה ב-Raka
 msgid "This week"
 msgstr "השבוע"
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "יום חמישי"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "שעה ביום"
@@ -5156,6 +5206,10 @@ msgstr "לנסות שוב"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "אפשר לנסות את הבדיקה שוב."
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "יום שלישי"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5397,14 +5451,23 @@ msgstr "Webhook"
 msgid "Website login"
 msgstr "התחברות לאתר"
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "יום רביעי"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr "שבוע"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "שני עד שישי"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "סופי שבוע"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

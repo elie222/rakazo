@@ -188,6 +188,7 @@ import { retainUnchangedBotRoster } from "../lib/bot-roster";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { chatSettingsRoute } from "../lib/chat-settings-route";
+import { cronLabels } from "../lib/cron";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { canDoubleTapReact } from "../lib/double-tap";
@@ -782,8 +783,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           botName: routine.botName,
         })),
         connectors: mentionConnectors,
+        cronLabels: cronLabels(locale),
       }),
-    [groupId, inGroup, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
+    [groupId, inGroup, locale, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
   const displayName = safeDisplayName(currentBot?.name ?? name, inGroup ? t("Group") : t("Bot"));

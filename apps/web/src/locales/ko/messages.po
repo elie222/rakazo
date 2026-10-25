@@ -56,7 +56,7 @@ msgid "{0} (over {1})"
 msgstr "{0} ({1} 초과)"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -150,6 +150,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}일 전"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName}~{toName}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -808,7 +812,7 @@ msgid "Ask before sending external email"
 msgstr "외부 이메일을 보내기 전에 확인"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "{0}에"
 
@@ -2078,7 +2082,7 @@ msgstr "인증 정보는 암호화되며 모델에 전송되지 않습니다."
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2108,7 +2112,7 @@ msgid "Dark"
 msgstr "다크"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "일"
 
@@ -2116,7 +2120,7 @@ msgstr "일"
 msgid "Day-to-day work"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "일"
 
@@ -2460,10 +2464,21 @@ msgstr ""
 msgid "Error details"
 msgstr "오류 세부정보"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "매"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "매주 {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "매주 {0} 및 {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2473,17 +2488,24 @@ msgstr "{intervalAmountSelect} {intervalUnitSelect}마다"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "이 공간의 모든 봇이 이 메모를 읽고 최신 상태로 유지합니다."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "매일"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "매시간"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "매시간 {0}분"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "매주 월요일"
 
@@ -2646,6 +2668,10 @@ msgstr "비밀번호를 잊으셨나요?"
 msgid "Free"
 msgstr "무료"
 
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "금요일"
+
 #: src/pages/ActivityList.tsx
 msgid "From"
 msgstr ""
@@ -2769,12 +2795,12 @@ msgstr ""
 msgid "Hold to talk, release to send"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "시간"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "시간"
 
@@ -3274,12 +3300,12 @@ msgstr ""
 msgid "Minimize call"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "분"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "분"
 
@@ -3332,11 +3358,15 @@ msgstr "서버에서 찾은 모델"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "모델 목록이 정상입니다. {modelCount, plural, one {모델 #개} other {모델 #개}}를 사용할 수 있습니다. 채팅은 테스트하지 않았습니다."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "월요일"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "매월"
 
@@ -3651,10 +3681,18 @@ msgstr ""
 msgid "On a schedule"
 msgstr "일정에 따라"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "{day}일 {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
-msgstr "매월 1일 {0}에"
+msgstr "1일 {0}에"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "한 번"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4356,6 +4394,10 @@ msgstr "실행"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "토요일"
+
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4834,6 +4876,10 @@ msgstr ""
 msgid "Subscription required"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "일요일"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5052,6 +5098,10 @@ msgstr "이 구독 로그인 방식은 아직 Rakazo에서 지원되지 않습�
 msgid "This week"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "목요일"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "실행 시각"
@@ -5156,6 +5206,10 @@ msgstr "다시 시도"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "테스트를 다시 시도하세요."
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "화요일"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5397,14 +5451,23 @@ msgstr "웹훅"
 msgid "Website login"
 msgstr ""
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "수요일"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr ""
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "주중"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "주말"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

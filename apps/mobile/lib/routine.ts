@@ -1,10 +1,12 @@
 import type { Routine } from "@rakazo/contracts";
 import { formatCron } from "@rakazo/core";
+import { cronLabels } from "./cron";
 import { t } from "./i18n";
 
 function routineTriggers(routine: Routine): string {
+  const labels = cronLabels();
   return [
-    ...routine.crons.map(formatCron),
+    ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...(routine.webhookEnabled ? [t("Webhook")] : []),
     ...(routine.githubEnabled ? [t("Git event")] : []),
     ...(routine.messageProvider === "slack"

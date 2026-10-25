@@ -56,7 +56,7 @@ msgid "{0} (over {1})"
 msgstr "{0} (meer dan {1})"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -150,6 +150,10 @@ msgstr "{count} jaar"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}d geleden"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName} tot {toName}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -808,7 +812,7 @@ msgid "Ask before sending external email"
 msgstr "Vragen voor het versturen van externe e-mail"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "om {0}"
 
@@ -2078,7 +2082,7 @@ msgstr "Gegevens worden versleuteld en nooit naar het model gestuurd."
 msgid "Credit amount"
 msgstr ""
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2108,7 +2112,7 @@ msgid "Dark"
 msgstr "Donker"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "dag"
 
@@ -2116,7 +2120,7 @@ msgstr "dag"
 msgid "Day-to-day work"
 msgstr "Dagelijkse taken"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "dagen"
 
@@ -2460,10 +2464,21 @@ msgstr "Fout"
 msgid "Error details"
 msgstr "Foutdetails"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "Elke"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "Elke {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "Elke {0} en {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2473,17 +2488,24 @@ msgstr "elke {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Alle bots in deze space lezen deze notities en houden ze bij."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Elke dag"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Elk uur"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "Elk uur om :{0}"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Elke maandag"
 
@@ -2646,6 +2668,10 @@ msgstr "Wachtwoord vergeten?"
 msgid "Free"
 msgstr "Gratis"
 
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "vrijdag"
+
 #: src/pages/ActivityList.tsx
 msgid "From"
 msgstr "Van"
@@ -2769,12 +2795,12 @@ msgstr "Houd ingedrukt om te praten"
 msgid "Hold to talk, release to send"
 msgstr "Houd ingedrukt om te praten, laat los om te versturen"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "uur"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "uren"
 
@@ -3274,12 +3300,12 @@ msgstr "Bots minimaliseren"
 msgid "Minimize call"
 msgstr "Gesprek minimaliseren"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "minuut"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "minuten"
 
@@ -3332,11 +3358,15 @@ msgstr "Modellen van de server"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "Modellenlijst is in orde. {modelCount, plural, one {# model} other {# modellen}} beschikbaar. Chat is niet getest."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "maandag"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr "maand"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Maandelijks"
 
@@ -3651,10 +3681,18 @@ msgstr ""
 msgid "On a schedule"
 msgstr "Op een schema"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "op dag {day} om {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "op de 1e om {0}"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "Eenmalig"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4356,6 +4394,10 @@ msgstr "Uitvoeringen"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontvangt."
 
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "zaterdag"
+
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4834,6 +4876,10 @@ msgstr "Abonneren"
 msgid "Subscription required"
 msgstr "Abonnement vereist"
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "zondag"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5052,6 +5098,10 @@ msgstr "Deze abonnementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik ee
 msgid "This week"
 msgstr "Deze week"
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "donderdag"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "Tijdstip van de dag"
@@ -5156,6 +5206,10 @@ msgstr "Opnieuw proberen"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "Probeer de test opnieuw."
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "dinsdag"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5397,14 +5451,23 @@ msgstr "Webhook"
 msgid "Website login"
 msgstr "Websiteaanmelding"
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "woensdag"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr "week"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Werkdagen"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "Weekenden"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

@@ -56,7 +56,7 @@ msgid "{0} (over {1})"
 msgstr "{0}（{1}を超えています）"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0}{unitLabel}"
 
@@ -150,6 +150,10 @@ msgstr "{count}年"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}日前"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName}〜{toName}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -808,7 +812,7 @@ msgid "Ask before sending external email"
 msgstr "外部へのメール送信の前に確認"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "{0}に"
 
@@ -2078,7 +2082,7 @@ msgstr "認証情報は暗号化され、モデルに送信されることはあ
 msgid "Credit amount"
 msgstr "クレジット額"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2108,7 +2112,7 @@ msgid "Dark"
 msgstr "ダーク"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "日"
 
@@ -2116,7 +2120,7 @@ msgstr "日"
 msgid "Day-to-day work"
 msgstr "日々の業務"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "日"
 
@@ -2460,10 +2464,21 @@ msgstr "エラー"
 msgid "Error details"
 msgstr "エラーの詳細"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "間隔"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "毎週{0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "毎週{0}と{1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2473,17 +2488,24 @@ msgstr "{intervalAmountSelect}{intervalUnitSelect}ごと"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "このスペースのすべてのボットがこのメモを読み、最新の状態に保ちます。"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "毎日"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "毎時"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "毎時{0}分"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "毎週月曜日"
 
@@ -2646,6 +2668,10 @@ msgstr "パスワードをお忘れですか？"
 msgid "Free"
 msgstr "無料"
 
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "金曜日"
+
 #: src/pages/ActivityList.tsx
 msgid "From"
 msgstr "開始日"
@@ -2769,12 +2795,12 @@ msgstr "長押しで話す"
 msgid "Hold to talk, release to send"
 msgstr "長押しで話し、離すと送信"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "時間"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "時間"
 
@@ -3274,12 +3300,12 @@ msgstr "ボットを最小化"
 msgid "Minimize call"
 msgstr "通話を最小化"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "分"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "分"
 
@@ -3332,11 +3358,15 @@ msgstr "サーバーのモデル"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "モデル一覧は正常です。{modelCount, plural, one {#個のモデル} other {#個のモデル}}が利用可能です。チャットはテストされていません。"
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "月曜日"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr "月"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "毎月"
 
@@ -3651,10 +3681,18 @@ msgstr "Ollama Cloud"
 msgid "On a schedule"
 msgstr "スケジュール"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "{day}日 {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
-msgstr "毎月1日 {0}"
+msgstr "1日 {0}"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "1回のみ"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4356,6 +4394,10 @@ msgstr "実行"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "このボットがこのプロバイダーから検証済みのメッセージを受信したときに実行されます。"
 
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "土曜日"
+
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4834,6 +4876,10 @@ msgstr "申し込む"
 msgid "Subscription required"
 msgstr "サブスクリプションが必要です"
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "日曜日"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5052,6 +5098,10 @@ msgstr "このサブスクリプションでのログインはRakazoではまだ
 msgid "This week"
 msgstr "今週"
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "木曜日"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "時刻"
@@ -5156,6 +5206,10 @@ msgstr "再試行"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "もう一度テストしてください。"
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "火曜日"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5397,14 +5451,23 @@ msgstr "Webhook"
 msgid "Website login"
 msgstr "Webサイトのログイン"
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "水曜日"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr "週"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "平日"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "週末"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

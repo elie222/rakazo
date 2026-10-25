@@ -56,7 +56,7 @@ msgid "{0} (over {1})"
 msgstr "{0} (over {1})"
 
 #. placeholder {0}: preset.n
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
@@ -150,6 +150,10 @@ msgstr "{count} years"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}d ago"
+
+#: src/lib/cron.ts
+msgid "{fromName} to {toName}"
+msgstr "{fromName} to {toName}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -808,7 +812,7 @@ msgid "Ask before sending external email"
 msgstr "Ask before sending external email"
 
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "at {0}"
 msgstr "at {0}"
 
@@ -2078,7 +2082,7 @@ msgstr "Credentials are encrypted and never sent to the model."
 msgid "Credit amount"
 msgstr "Credit amount"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -2108,7 +2112,7 @@ msgid "Dark"
 msgstr "Dark"
 
 #: src/lib/billing.ts
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "day"
 msgstr "day"
 
@@ -2116,7 +2120,7 @@ msgstr "day"
 msgid "Day-to-day work"
 msgstr "Day-to-day work"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "days"
 msgstr "days"
 
@@ -2460,10 +2464,21 @@ msgstr "Error"
 msgid "Error details"
 msgstr "Error details"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "Every"
 msgstr "Every"
+
+#. placeholder {0}: names[0] ?? ""
+#: src/lib/cron.ts
+msgid "Every {0}"
+msgstr "Every {0}"
+
+#. placeholder {0}: names.slice(0, -1).join(", ")
+#. placeholder {1}: names.at(-1) ?? ""
+#: src/lib/cron.ts
+msgid "Every {0} and {1}"
+msgstr "Every {0} and {1}"
 
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
@@ -2473,17 +2488,24 @@ msgstr "every {intervalAmountSelect} {intervalUnitSelect}"
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Every bot in this space reads these notes and keeps them up to date."
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every day"
 msgstr "Every day"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every hour"
 msgstr "Every hour"
 
-#: src/pages/RoutineSchedule.tsx
+#. placeholder {0}: String(minute).padStart(2, "0")
+#: src/lib/cron.ts
+msgid "Every hour at :{0}"
+msgstr "Every hour at :{0}"
+
+#: src/lib/cron.ts
 msgid "Every Monday"
 msgstr "Every Monday"
 
@@ -2646,6 +2668,10 @@ msgstr "Forgot password?"
 msgid "Free"
 msgstr "Free"
 
+#: src/lib/cron.ts
+msgid "Friday"
+msgstr "Friday"
+
 #: src/pages/ActivityList.tsx
 msgid "From"
 msgstr "From"
@@ -2769,12 +2795,12 @@ msgstr "Hold to talk"
 msgid "Hold to talk, release to send"
 msgstr "Hold to talk, release to send"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "hour"
 msgstr "hour"
 
+#: src/lib/cron.ts
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "hours"
 msgstr "hours"
 
@@ -3274,12 +3300,12 @@ msgstr "Minimize bots"
 msgid "Minimize call"
 msgstr "Minimize call"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "minute"
 msgstr "minute"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
-#: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "minutes"
 
@@ -3332,11 +3358,15 @@ msgstr "Models from server"
 msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 msgstr "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
 
+#: src/lib/cron.ts
+msgid "Monday"
+msgstr "Monday"
+
 #: src/lib/billing.ts
 msgid "month"
 msgstr "month"
 
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "Monthly"
 msgstr "Monthly"
 
@@ -3651,10 +3681,18 @@ msgstr "Ollama Cloud"
 msgid "On a schedule"
 msgstr "On a schedule"
 
+#: src/lib/cron.ts
+msgid "on day {day} at {time}"
+msgstr "on day {day} at {time}"
+
 #. placeholder {0}: preset.time
-#: src/pages/RoutineSchedule.tsx
+#: src/lib/cron.ts
 msgid "on the 1st at {0}"
 msgstr "on the 1st at {0}"
+
+#: src/lib/cron.ts
+msgid "One-time"
+msgstr "One-time"
 
 #: src/components/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
@@ -4356,6 +4394,10 @@ msgstr "Runs"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "Runs when this bot receives a verified message from this provider."
 
+#: src/lib/cron.ts
+msgid "Saturday"
+msgstr "Saturday"
+
 #: src/components/AskCard.tsx
 #: src/components/PasskeySettings.tsx
 #: src/components/teach/SkillDraftCard.tsx
@@ -4834,6 +4876,10 @@ msgstr "Subscribe"
 msgid "Subscription required"
 msgstr "Subscription required"
 
+#: src/lib/cron.ts
+msgid "Sunday"
+msgstr "Sunday"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Supports images"
@@ -5052,6 +5098,10 @@ msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployme
 msgid "This week"
 msgstr "This week"
 
+#: src/lib/cron.ts
+msgid "Thursday"
+msgstr "Thursday"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "Time of day"
@@ -5156,6 +5206,10 @@ msgstr "Try again"
 #: src/lib/model-connection-preflight.ts
 msgid "Try the test again."
 msgstr "Try the test again."
+
+#: src/lib/cron.ts
+msgid "Tuesday"
+msgstr "Tuesday"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
@@ -5397,14 +5451,23 @@ msgstr "Webhook"
 msgid "Website login"
 msgstr "Website login"
 
+#: src/lib/cron.ts
+msgid "Wednesday"
+msgstr "Wednesday"
+
 #: src/lib/billing.ts
 msgid "week"
 msgstr "week"
 
+#: src/lib/cron.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
 msgstr "Weekdays"
+
+#: src/lib/cron.ts
+msgid "Weekends"
+msgstr "Weekends"
 
 #: src/components/SignupSurvey.tsx
 msgid "Welcome to Rakazo"

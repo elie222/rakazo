@@ -10,10 +10,12 @@ import type {
 import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   type CronFreq,
+  type CronLabels,
   type CronPreset,
   credentialForModel,
   cronFromPreset,
   defaultCronPreset,
+  ENGLISH_CRON_LABELS,
   formatCron,
   isOneShotRoutineCrons,
   presetFromCron,
@@ -49,6 +51,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { cronLabels } from "../lib/cron";
 import {
   connectedModelOptions,
   modelOptionKey,
@@ -222,7 +225,10 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
   };
 }
 
-export function routineTriggerSummary(routine: Routine): string {
+export function routineTriggerSummary(
+  routine: Routine,
+  labels: CronLabels = ENGLISH_CRON_LABELS,
+): string {
   if (!routine.active) return t`Paused`;
   const parts: string[] = [];
   if (routine.webhookEnabled) parts.push(t`When a webhook fires`);
@@ -230,7 +236,7 @@ export function routineTriggerSummary(routine: Routine): string {
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
-  for (const cron of routine.crons) parts.push(formatCron(cron));
+  for (const cron of routine.crons) parts.push(formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
 }
@@ -267,6 +273,8 @@ export function RoutineListRow({
   onOpen: () => void;
   onStop: () => void;
 }) {
+  const { i18n } = useLingui();
+  const scheduleLabels = cronLabels(i18n.locale);
   return (
     <div className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 hover:bg-accent">
       <button
@@ -286,7 +294,7 @@ export function RoutineListRow({
             {routine.name}
           </span>
           <span className="block truncate text-[12.5px] text-muted-foreground/80">
-            {routineTriggerSummary(routine)}
+            {routineTriggerSummary(routine, scheduleLabels)}
             {routine.modelProvider && routine.modelId ? ` · ${routine.modelId}` : ""}
           </span>
         </span>

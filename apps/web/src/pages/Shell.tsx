@@ -148,6 +148,7 @@ import {
   screenFrameStarted,
 } from "../lib/computer-screen";
 import { connectedAppMarks } from "../lib/connected-apps";
+import { cronLabels } from "../lib/cron";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
 import {
@@ -300,7 +301,7 @@ export function ShellPage() {
 }
 
 function SpaceShell() {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const { botId, groupId } = useParams();
   const [shellSpaceId] = useState(selectedSpaceId);
   const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
@@ -2144,8 +2145,9 @@ function SpaceShell() {
           botName: routine.botName,
         })),
         connectors: mentionConnectors,
+        cronLabels: cronLabels(i18n.locale),
       }),
-    [bots, groupId, groups, inGroup, mentionConnectors, mentionRoutines],
+    [bots, groupId, groups, i18n.locale, inGroup, mentionConnectors, mentionRoutines],
   );
   const shellReady =
     initialBotsLoaded &&
