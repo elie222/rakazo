@@ -2848,9 +2848,14 @@ describeJourneys("required product journeys", () => {
     const rule = { matchKind: "tool", matchValue: "destination.write" };
     const effects = async () =>
       (await rpc<Array<{ effect: string; matchValue: string }>>(app, cookie, "approvalRules/list"))
-        .filter((row) => row.matchValue === rule.matchValue)
+        .filter((row) => row.matchValue.toLowerCase() === rule.matchValue)
         .map((row) => row.effect);
-    await rpc(app, cookie, "approvalRules/set", { effect: "require_approval", ...rule });
+    // Rules match tool names whatever their case, so the replacement must too.
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "Destination.Write",
+    });
 
     const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
@@ -2877,6 +2882,20 @@ describeJourneys("required product journeys", () => {
 
     await rpc(app, cookie, "approvalRules/set", { effect: "require_approval", ...rule });
     expect(await effects()).toEqual(["require_approval"]);
+  });
+
+  it("20c: opposite rules saved at once leave one rule per match", async () => {
+    const cookie = await signup(app, `rule-race-j-${stamp}@rakazo.test`, "Rule Race");
+    const values = Array.from({ length: 8 }, (_, index) => `race.tool.${index}`);
+    await Promise.all(
+      values.flatMap((matchValue) =>
+        ["always_allow", "require_approval"].map((effect) =>
+          rpc(app, cookie, "approvalRules/set", { effect, matchKind: "tool", matchValue }),
+        ),
+      ),
+    );
+    const rows = await rpc<Array<{ matchValue: string }>>(app, cookie, "approvalRules/list");
+    expect(rows.map((row) => row.matchValue).sort()).toEqual(values);
   });
 
   it("21: routine destination writes pause on the same approval card", async () => {

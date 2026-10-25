@@ -2280,7 +2280,7 @@ describe("answerRunInput", () => {
           createdByUserId: "user-1",
           effect: "require_approval",
           matchKind,
-          matchValue,
+          matchValue: { equals: matchValue, mode: "insensitive" },
         },
       });
       expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({

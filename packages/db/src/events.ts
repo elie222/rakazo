@@ -27,6 +27,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
+import { saveApprovalRule } from "./approval-rules.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -891,19 +892,12 @@ async function commitAnswerRunInput(
     // "Always" on a fetch card allows that site, never every site the tool can reach.
     const site = alwaysAllowedSite(approvalEffect!);
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
-      const rule = {
+      await saveApprovalRule(tx, {
         spaceId: input.spaceId,
         createdByUserId: approvalUserId!,
         effect: "always_allow",
         matchKind: site ? "site" : "tool",
         matchValue: site ?? approvalEffect!.kind,
-      };
-      // A match has one effect, so "Always" replaces a require-approval rule on the same tool.
-      await tx.actionApprovalRule.deleteMany({ where: { ...rule, effect: "require_approval" } });
-      await tx.actionApprovalRule.upsert({
-        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
-        create: rule,
-        update: {},
       });
     }
   } else if (dismissed) {
