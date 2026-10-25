@@ -49,6 +49,10 @@ describe("Team Computer bot folders", () => {
     );
   });
 
+  it("keeps root paths for a listing requested under ~", () => {
+    expect(displayBotWorkspacePath("team", "bot-1", "~/bots", "bots/bot-1")).toBe("bots/bot-1");
+  });
+
   it("presents the current bot folder as its home without hiding Team paths", () => {
     expect(displayBotWorkspacePath("team", "bot-1", "notes", "bots/bot-1/notes/result.txt")).toBe(
       "notes/result.txt",
