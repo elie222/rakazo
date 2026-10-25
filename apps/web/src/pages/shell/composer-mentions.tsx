@@ -1,7 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { ComposerMention, SlashActionId } from "@rakazo/core";
 import { BotAvatar } from "@rakazo/ui-web";
-import { Clock, Puzzle } from "lucide-react";
+import { Clock, Puzzle, X } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
 
 export function slashActionLabel(id: SlashActionId) {
@@ -54,4 +55,38 @@ export function MentionChipIcon({ mention }: { mention: ComposerMention }) {
     );
   }
   return <BotAvatar color={mention.color ?? FALLBACK_BOT_COLOR} identity={mention.id} size={16} />;
+}
+
+/** An inline skill or mention token in the composer field. */
+export function ComposerChip({
+  icon,
+  label,
+  removeLabel,
+  onRemove,
+  ...props
+}: {
+  icon: ReactNode;
+  label: string;
+  removeLabel: string;
+  onRemove: () => void;
+} & ComponentProps<"span">) {
+  return (
+    <span
+      {...props}
+      className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
+    >
+      {icon}
+      <span dir="auto" className="truncate">
+        {label}
+      </span>
+      <button
+        type="button"
+        aria-label={removeLabel}
+        onClick={onRemove}
+        className="text-muted-foreground hover:text-foreground"
+      >
+        <X size={12} strokeWidth={2} />
+      </button>
+    </span>
+  );
 }

@@ -3404,20 +3404,21 @@ function SpaceShell() {
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
             <div className="flex items-center">
-              <button
-                type="button"
+              <Button
+                variant="floating"
+                size="icon-lg"
                 aria-label={t`Open navigation`}
                 onClick={() => setMobileSidebarOpen(true)}
-                className="app-no-drag grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-border bg-muted/90 backdrop-blur text-foreground/75 hover:bg-accent md:hidden"
+                className="app-no-drag md:hidden"
               >
-                <Menu size={19} strokeWidth={1.7} />
-              </button>
+                <Menu strokeWidth={1.7} className="size-[19px]" />
+              </Button>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="floating"
               data-testid="bot-settings-trigger"
               onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="app-no-drag flex min-w-0 items-center gap-2 rounded-full border border-border bg-muted/90 backdrop-blur py-1 ps-1 pe-3.5 hover:bg-accent"
+              className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
             >
               {inGroup ? (
                 <GroupAvatar
@@ -3439,12 +3440,13 @@ function SpaceShell() {
                     : (active?.name ?? t`Select a bot`)}
                 </span>
               </span>
-            </button>
+            </Button>
             <div className="flex items-center justify-self-end gap-2">
               {bootstrapMe?.phoneCallsEnabled && !inGroup && active ? (
                 <IconTooltip label={call?.botId === active.id ? t`Open call` : t`Call`}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="floating"
+                    size="icon-lg"
                     data-testid="call-button"
                     aria-label={call?.botId === active.id ? t`Open call` : t`Call`}
                     onClick={() => {
@@ -3455,16 +3457,17 @@ function SpaceShell() {
                       callBot(active);
                     }}
                     data-active={call?.botId === active.id ? "" : undefined}
-                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                    className="app-no-drag"
                   >
-                    <Phone size={17} strokeWidth={1.6} className="text-foreground/75" />
-                  </button>
+                    <Phone strokeWidth={1.6} className="size-[17px]" />
+                  </Button>
                 </IconTooltip>
               ) : null}
               {!inGroup && active ? (
                 <IconTooltip label={t`Agent computer`}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="floating"
+                    size="icon-lg"
                     aria-label={t`Agent computer`}
                     aria-pressed={panel === "computer"}
                     onClick={() => {
@@ -3475,11 +3478,10 @@ function SpaceShell() {
                         void refreshThread(active.id).catch(() => undefined);
                       }
                     }}
-                    data-active={panel === "computer" ? "" : undefined}
-                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                    className="app-no-drag"
                   >
-                    <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
-                  </button>
+                    <Monitor strokeWidth={1.6} className="size-[18px]" />
+                  </Button>
                 </IconTooltip>
               ) : null}
             </div>

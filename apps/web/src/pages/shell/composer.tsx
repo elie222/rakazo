@@ -35,7 +35,12 @@ import { ComposerReplyPreview } from "./chat-context";
 import type { PendingAttachment } from "./chat-shared";
 import { previewMessageText } from "./chat-shared";
 import { ComposerError } from "./composer-error";
-import { MentionChipIcon, MentionOptionIcon, slashActionLabel } from "./composer-mentions";
+import {
+  ComposerChip,
+  MentionChipIcon,
+  MentionOptionIcon,
+  slashActionLabel,
+} from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
 const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
@@ -623,54 +628,36 @@ export const Composer = memo(function Composer({
           }`}
         >
           {selectedSkill ? (
-            <span
+            <ComposerChip
               data-testid="skill-chip"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
-            >
-              <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
-              <span dir="auto" className="truncate">
-                {selectedSkill.name}
-              </span>
-              <button
-                type="button"
-                aria-label={t`Remove skill ${selectedSkill.name}`}
-                onClick={() => {
-                  markEdited();
-                  setSelectedSkill(null);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
-            </span>
+              icon={
+                <Box size={13} strokeWidth={1.7} className="shrink-0 text-muted-foreground/70" />
+              }
+              label={selectedSkill.name}
+              removeLabel={t`Remove skill ${selectedSkill.name}`}
+              onRemove={() => {
+                markEdited();
+                setSelectedSkill(null);
+              }}
+            />
           ) : null}
           {selectedMentions.map((mention) => (
-            <span
+            <ComposerChip
               key={mentionChipKey(mention)}
               data-testid="mention-chip"
               data-mention-kind={mention.kind}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[13px] text-foreground"
-            >
-              <MentionChipIcon mention={mention} />
-              <span dir="auto" className="truncate">
-                {mention.name}
-              </span>
-              <button
-                type="button"
-                aria-label={t`Remove mention ${mention.name}`}
-                onClick={() => {
-                  markEdited();
-                  setSelectedMentions((current) =>
-                    current.filter(
-                      (selected) => mentionChipKey(selected) !== mentionChipKey(mention),
-                    ),
-                  );
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
-            </span>
+              icon={<MentionChipIcon mention={mention} />}
+              label={mention.name}
+              removeLabel={t`Remove mention ${mention.name}`}
+              onRemove={() => {
+                markEdited();
+                setSelectedMentions((current) =>
+                  current.filter(
+                    (selected) => mentionChipKey(selected) !== mentionChipKey(mention),
+                  ),
+                );
+              }}
+            />
           ))}
           <HoldToTalkStrip talk={talk} />
           <textarea

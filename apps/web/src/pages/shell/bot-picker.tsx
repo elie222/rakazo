@@ -92,24 +92,11 @@ export function BotCreatePicker({
               <span className="min-w-0 flex-1 truncate">
                 <Trans>Create new Group</Trans>
               </span>
-              <IconTooltip label={t`About groups`}>
-                <button
-                  type="button"
-                  data-testid="picker-info-group"
-                  aria-label={t`About groups`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    onShowGroupInfo();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </IconTooltip>
+              <PickerInfoButton
+                testId="picker-info-group"
+                label={t`About groups`}
+                onClick={onShowGroupInfo}
+              />
             </CommandItem>
             <CommandItem
               value="create-space"
@@ -123,24 +110,11 @@ export function BotCreatePicker({
               <span className="min-w-0 flex-1 truncate">
                 <Trans>Create new Space</Trans>
               </span>
-              <IconTooltip label={t`About spaces`}>
-                <button
-                  type="button"
-                  data-testid="picker-info-space"
-                  aria-label={t`About spaces`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    onShowSpaceInfo();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <Info size={14} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </IconTooltip>
+              <PickerInfoButton
+                testId="picker-info-space"
+                label={t`About spaces`}
+                onClick={onShowSpaceInfo}
+              />
             </CommandItem>
           </CommandGroup>
           <CommandSeparator className="shrink-0" />
@@ -161,5 +135,37 @@ export function BotCreatePicker({
         </CommandList>
       </Command>
     </div>
+  );
+}
+
+/** Opens an explainer from inside a command row without selecting the row. */
+function PickerInfoButton({
+  testId,
+  label,
+  onClick,
+}: {
+  testId: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <IconTooltip label={label}>
+      <button
+        type="button"
+        data-testid={testId}
+        aria-label={label}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          onClick();
+        }}
+        onKeyDown={(event) => event.stopPropagation()}
+        className="-mr-2 shrink-0 rounded p-1 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-focus-within/command-item:opacity-100 group-hover/command-item:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <Info size={14} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    </IconTooltip>
   );
 }

@@ -68,15 +68,15 @@ function MemberPicker({
         <span className="text-sm text-muted-foreground">
           <Trans>Members ({selected.length})</Trans>
         </span>
-        <button
-          type="button"
+        <Button
+          variant="text"
           aria-expanded={expanded}
           aria-controls={listId}
           onClick={() => setExpanded((value) => !value)}
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="font-normal"
         >
           {expanded ? <Trans>Show selected</Trans> : <Trans>Show all</Trans>}
-        </button>
+        </Button>
       </div>
       {expanded ? (
         <>

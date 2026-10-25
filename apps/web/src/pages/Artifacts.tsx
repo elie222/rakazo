@@ -236,19 +236,15 @@ export function ArtifactsPage() {
             </h1>
           </div>
           <div className="app-no-drag flex shrink-0 items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant={filtersOpen ? "default" : "outline"}
+              size="sm"
               aria-pressed={filtersOpen}
               onClick={() => setFiltersOpen((open) => !open)}
-              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                filtersOpen
-                  ? "border-transparent bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              }`}
             >
-              <Filter size={14} strokeWidth={1.9} />
+              <Filter strokeWidth={1.9} />
               <Trans>Filters</Trans>
-            </button>
+            </Button>
             {!artifactId ? (
               <ToggleGroup
                 value={[viewMode]}
@@ -584,17 +580,14 @@ function FilterChip({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant={active ? "default" : "outline"}
+      size="sm"
+      aria-pressed={active}
       onClick={onClick}
-      className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "border border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-      }`}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -617,19 +610,17 @@ function BotFilterChip({
 }) {
   const hex = useBotColorHex(bot);
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="sm"
+      aria-pressed={active}
       onClick={onClick}
       style={{ backgroundColor: active ? `${hex}26` : undefined, borderColor: `${hex}66` }}
-      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[13px] font-medium transition-colors ${
-        active
-          ? "text-foreground"
-          : "text-muted-foreground hover:bg-accent/40 hover:text-accent-foreground"
-      }`}
+      className={active ? "text-foreground" : "text-muted-foreground"}
     >
       <BotAvatar color={bot.color} identity={bot.id} size={16} status={bot.status} />
       <span className="max-w-[120px] truncate">{bot.name}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -685,18 +676,19 @@ function ArtifactCard({
         </div>
       </Link>
       <IconTooltip label={t`Delete ${artifact.name}`}>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           aria-label={t`Delete ${artifact.name}`}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
             onRequestDelete(artifact);
           }}
-          className="absolute bottom-3 end-3 grid h-7 w-7 place-items-center rounded-lg bg-card text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+          className="absolute bottom-3 end-3 bg-card text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
         >
-          <Trash2 size={14} strokeWidth={1.9} />
-        </button>
+          <Trash2 strokeWidth={1.9} />
+        </Button>
       </IconTooltip>
     </div>
   );
@@ -745,18 +737,19 @@ function ArtifactRow({
         </div>
       </Link>
       <IconTooltip label={t`Delete ${artifact.name}`}>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           aria-label={t`Delete ${artifact.name}`}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
             onRequestDelete(artifact);
           }}
-          className="absolute end-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+          className="absolute inset-y-0 end-2 my-auto text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
         >
-          <Trash2 size={14} strokeWidth={1.9} />
-        </button>
+          <Trash2 strokeWidth={1.9} />
+        </Button>
       </IconTooltip>
     </div>
   );
@@ -903,18 +896,19 @@ function PreviewPane({
               <Trans>Download</Trans>
             </Button>
             <IconTooltip label={maximized ? t`Show list` : t`Maximize`}>
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="icon"
                 aria-label={maximized ? t`Show list` : t`Maximize`}
                 onClick={onToggleMaximize}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent"
+                className="text-muted-foreground"
               >
                 {maximized ? (
                   <Minimize2 size={15} strokeWidth={1.9} />
                 ) : (
                   <Maximize2 size={15} strokeWidth={1.9} />
                 )}
-              </button>
+              </Button>
             </IconTooltip>
           </>
         ) : null}
