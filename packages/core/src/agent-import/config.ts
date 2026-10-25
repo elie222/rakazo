@@ -11,7 +11,7 @@ export const AGENT_IMPORT_CONFIG_FILES = new Set([
   "skills/.bundled_manifest",
 ]);
 
-/** Files that hold nothing but credentials; read only when the user opts in. */
+/** Read only when the user opts in. */
 const SECRET_FILES = new Set([".env", "auth.json"]);
 
 export function isAgentImportSecretFile(path: string): boolean {
@@ -24,10 +24,8 @@ const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Parses a settings file: `openclaw.json` and the JSON job lists are JSON5 (comments and
- * trailing commas allowed), `config.yaml` is YAML. Null when it is not a plain object, when
- * it nests too deeply, or when it names a prototype key; YAML aliases are capped and only
- * the core schema is understood.
+ * `openclaw.json` and job lists are JSON5, `config.yaml` is YAML (aliases capped, core
+ * schema only). Null unless a plain object without prototype keys or deep nesting.
  */
 export function readAgentImportConfig(path: string, content: string): Json | null {
   try {
@@ -70,6 +68,17 @@ export const AGENT_IMPORT_PROVIDER_KEYS: Readonly<Record<string, string>> = {
 };
 const KEY_PROVIDERS = new Set(Object.values(AGENT_IMPORT_PROVIDER_KEYS));
 
+// A key for a proxy or gateway must never be checked against, or sent to, the provider itself.
+const hasCustomEndpoint = (entry: Json) =>
+  [entry.base_url, entry.baseUrl].some((url) => typeof url === "string" && url.trim() !== "");
+
+/** Provider-key variables, minus any whose `*_BASE_URL` sends them to another host. */
+function providerKeyVars<T>(vars: Record<string, T>): [string, T][] {
+  return Object.entries(vars).filter(
+    ([name]) => name in AGENT_IMPORT_PROVIDER_KEYS && !vars[name.replace(/_API_KEY$/, "_BASE_URL")],
+  );
+}
+
 /** Provider names the source tools use for Rakazo's catalog providers. */
 const PROVIDER_ALIASES: Readonly<Record<string, string>> = {
   gemini: "google",
@@ -88,7 +97,6 @@ export function normalizeImportProvider(provider: string): string {
   return PROVIDER_ALIASES[id] ?? id;
 }
 
-/** `KEY=value` lines, with optional `export` and quotes; comments and blanks ignored. */
 export function parseDotEnv(content: string): Record<string, string> {
   const values: Record<string, string> = {};
   for (const line of content.split(/\r?\n/)) {
@@ -104,17 +112,12 @@ export function parseDotEnv(content: string): Record<string, string> {
 }
 
 /**
- * The files an upload may carry, from a home's files by path. Applied in the browser before
- * anything is sent, and again on the server, so both agree on one rule.
+ * Applied in the browser before anything is sent, and again on the server, so both agree.
  *
- * Without the API key opt-in, settings keep only what an import reads, with credential
- * values blanked, and `.env`/`auth.json` are not sent at all. With it, the same projection
- * also keeps model-provider keys on the allowlist (and `.env` names those keys refer to),
- * and `.env`/`auth.json` keep only those entries, re-written. MCP header and env values,
- * gateway and channel tokens, OAuth grants and other settings are not copied, in either
- * mode, and MCP servers outside a conservative rule are reduced to their names. This limits
- * what is sent; it cannot recognise every secret a source puts in an unexpected place.
- * Files that cannot be parsed become empty.
+ * Settings keep only what an import reads. Without the API key opt-in `.env`/`auth.json`
+ * are not sent; with it, only allowlisted model-provider keys (and the `.env` names they
+ * refer to) are kept. MCP header/env values, gateway and channel tokens and OAuth grants are
+ * never copied. This limits what is sent; it cannot recognise every misplaced secret.
  */
 export function prepareAgentImportFiles(
   files: ReadonlyMap<string, string>,
@@ -134,8 +137,10 @@ export function prepareAgentImportFiles(
   if (!options.includeSecrets) return out;
   const env = files.get(".env");
   if (env !== undefined) {
-    const lines = Object.entries(parseDotEnv(env))
-      .filter(([name]) => name in AGENT_IMPORT_PROVIDER_KEYS || referenced.has(name))
+    const values = parseDotEnv(env);
+    const keys = new Set(providerKeyVars(values).map(([name]) => name));
+    const lines = Object.entries(values)
+      .filter(([name]) => keys.has(name) || referenced.has(name))
       .map(([name, value]) => `${name}="${value}"`);
     out.set(".env", lines.length ? `${lines.join("\n")}\n` : "");
   }
@@ -144,7 +149,6 @@ export function prepareAgentImportFiles(
   return out;
 }
 
-/** The single-file form of the rule without the opt-in. */
 export function stripAgentImportSecrets(path: string, content: string): string {
   return (
     prepareAgentImportFiles(new Map([[path, content]]), { includeSecrets: false }).get(path) ?? ""
@@ -158,20 +162,27 @@ function projectConfig(
   referenced: Set<string>,
 ): string {
   const keyed = (name: string) => KEY_PROVIDERS.has(normalizeImportProvider(name));
-  // MCP header and env values are not copied: only their names.
-  const servers = (value: unknown) => mcpServers(value);
   if (path === "config.yaml") {
     const model = isObject(config.model) ? config.model : {};
-    const keepModelKey = secrets && keyed(String(model.provider ?? ""));
+    const keepModelKey =
+      secrets && keyed(String(model.provider ?? "")) && !hasCustomEndpoint(model);
     const providers = Object.entries(isObject(config.providers) ? config.providers : {}).flatMap(
       ([name, entry]) =>
-        secrets && keyed(name) && isObject(entry) && entry.api_key !== undefined
+        secrets &&
+        keyed(name) &&
+        isObject(entry) &&
+        !hasCustomEndpoint(entry) &&
+        entry.api_key !== undefined
           ? [[name, { api_key: noteReferences(entry.api_key, referenced) }]]
           : [],
     );
     const custom = (Array.isArray(config.custom_providers) ? config.custom_providers : []).flatMap(
       (entry) =>
-        secrets && isObject(entry) && keyed(String(entry.name ?? "")) && entry.api_key !== undefined
+        secrets &&
+        isObject(entry) &&
+        keyed(String(entry.name ?? "")) &&
+        !hasCustomEndpoint(entry) &&
+        entry.api_key !== undefined
           ? [{ name: String(entry.name), api_key: noteReferences(entry.api_key, referenced) }]
           : [],
     );
@@ -184,7 +195,7 @@ function projectConfig(
       },
       ...(providers.length ? { providers: Object.fromEntries(providers) } : {}),
       ...(custom.length ? { custom_providers: custom } : {}),
-      mcp_servers: servers(config.mcp_servers),
+      mcp_servers: mcpServers(config.mcp_servers),
     });
   }
   const agents = isObject(config.agents) ? config.agents : {};
@@ -209,13 +220,13 @@ function projectConfig(
       ),
       list: Array.isArray(agents.list) ? agents.list.map(agent) : [],
     },
-    mcp: { servers: servers(mcp.servers) },
+    mcp: { servers: mcpServers(mcp.servers) },
   };
   if (secrets) {
     const models = isObject(config.models) ? config.models : {};
     const providers = Object.entries(isObject(models.providers) ? models.providers : {}).flatMap(
       ([id, entry]) =>
-        keyed(id) && isObject(entry) && entry.apiKey !== undefined
+        keyed(id) && isObject(entry) && !hasCustomEndpoint(entry) && entry.apiKey !== undefined
           ? [[id, { apiKey: noteReferences(entry.apiKey, referenced) }]]
           : [],
     );
@@ -224,18 +235,18 @@ function projectConfig(
       ...env,
       ...(isObject(env.vars) ? env.vars : {}),
     };
-    const allowed = Object.entries(vars).filter(
-      ([name, value]) => name in AGENT_IMPORT_PROVIDER_KEYS && typeof value === "string",
-    );
+    const allowed = providerKeyVars(vars).filter(([, value]) => typeof value === "string");
     if (providers.length) projected.models = { providers: Object.fromEntries(providers) };
     if (allowed.length) projected.env = { vars: Object.fromEntries(allowed) };
   }
   return JSON.stringify(projected, null, 2);
 }
 
-/** Records the `.env` names a value refers to (`${NAME}` or an env SecretRef). */
+/**
+ * Records the `.env` names a value refers to. Only a plain string or an env SecretRef
+ * `{ source: "env", id }` is copied.
+ */
 function noteReferences(value: unknown, referenced: Set<string>): unknown {
-  // Only a plain string or an env SecretRef `{ source: "env", id }`; nothing else is copied.
   if (isObject(value)) {
     if (value.source !== "env" || typeof value.id !== "string") return undefined;
     referenced.add(value.id);
@@ -267,7 +278,6 @@ function manualKeys(content: string): Json {
   return { credential_pool: Object.fromEntries(kept) };
 }
 
-/** True when a settings file holds a model-provider key the API key opt-in would add. */
 export function hasAgentImportSecrets(path: string, content: string): boolean {
   if (SECRET_FILES.has(path)) return content.trim() !== "";
   if (path !== "openclaw.json" && path !== "config.yaml") return false;
@@ -296,7 +306,6 @@ export function hasAgentImportSecrets(path: string, content: string): boolean {
   );
 }
 
-/** A flag whose name suggests it carries a credential or a header (`--api-key`, `--header`). */
 const CREDENTIAL_FLAG = /(?:key|token|secret|pass|auth|header|credential|bearer|cookie|sig)/i;
 const BARE_FLAG = /^--?[A-Za-z][A-Za-z0-9-]*$/;
 const PACKAGE_SPEC = /^(?:@[A-Za-z0-9][\w.-]*\/)?[A-Za-z0-9][\w.-]*(?:@[\w.^~*-]+)?$/;
@@ -305,11 +314,9 @@ const BARE_PROGRAM = /^[A-Za-z0-9][\w.-]*$/;
 const VARIABLE_NAME = /^[A-Za-z_][\w-]*$/;
 
 /**
- * Whether an MCP server is plain enough to import. Rakazo stores URLs and arguments in plain
- * text, so this is deliberately conservative rather than a search for secrets: a remote URL
- * with no user info, query or fragment; or a bare program name whose every argument is a bare
- * flag, a package name or a plain path; headers and env by name only. Anything else is skipped
- * and only its name is kept.
+ * Rakazo stores URLs and arguments in plain text, so this is deliberately conservative
+ * rather than a search for secrets: a URL without user info, query or fragment, or a bare
+ * program with plain arguments. Anything else keeps only its name.
  */
 export function mcpServerImportable(entry: Record<string, unknown>): boolean {
   const names = (record: unknown) =>
@@ -336,7 +343,7 @@ export function mcpServerImportable(entry: Record<string, unknown>): boolean {
   );
 }
 
-/** MCP servers as an import reads them: named fields only, header and env names only. */
+/** Named fields only; header and env by name only. */
 function mcpServers(value: unknown): Json {
   if (!isObject(value)) return {};
   return Object.fromEntries(
@@ -375,7 +382,7 @@ function mcpServers(value: unknown): Json {
   );
 }
 
-/** Only the named fields that hold strings: nested objects are never copied. */
+/** Nested objects are never copied. */
 function strings(source: Json, keys: readonly string[]): Json {
   return Object.fromEntries(
     keys.filter((key) => typeof source[key] === "string").map((key) => [key, source[key]]),

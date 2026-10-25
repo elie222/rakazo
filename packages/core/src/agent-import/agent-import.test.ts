@@ -661,6 +661,58 @@ describe("secret stripping", () => {
     expect(opted.files.get("openclaw.json")).not.toContain("placeholder-gateway-token");
   });
 
+  it("with the opt-in, leaves keys for a custom endpoint behind", () => {
+    const openclaw = JSON.stringify({
+      models: {
+        providers: {
+          openai: { baseUrl: "https://gateway.example.com/v1", apiKey: "placeholder-gateway-key" },
+          anthropic: { apiKey: "placeholder-anthropic-key" },
+        },
+      },
+    });
+    const hermes = [
+      "model:",
+      "  provider: openai",
+      "  base_url: https://proxy.example.com/v1",
+      "  api_key: placeholder-model-key",
+      "custom_providers:",
+      "  - name: openai",
+      "    base_url: https://proxy.example.com/v1",
+      "    api_key: placeholder-custom-key",
+      "providers:",
+      "  gemini:",
+      "    api_key: placeholder-gemini-key",
+    ].join("\n");
+    const env = [
+      "OPENAI_API_KEY=placeholder-proxied-key",
+      "OPENAI_BASE_URL=https://proxy.example.com/v1",
+      "GROQ_API_KEY=placeholder-groq-key",
+    ].join("\n");
+    const body = JSON.stringify([
+      agentImportUpload(
+        [
+          { path: ".openclaw/openclaw.json", home: "openclaw.json", content: openclaw },
+          { path: ".openclaw/.env", home: ".env", content: env },
+        ],
+        { includeSecrets: true },
+      ),
+      agentImportUpload([{ path: ".hermes/config.yaml", home: "config.yaml", content: hermes }], {
+        includeSecrets: true,
+      }),
+    ]);
+    for (const secret of [
+      "placeholder-gateway-key",
+      "placeholder-model-key",
+      "placeholder-custom-key",
+      "placeholder-proxied-key",
+    ]) {
+      expect(body).not.toContain(secret);
+    }
+    expect(body).toContain("placeholder-anthropic-key");
+    expect(body).toContain("placeholder-groq-key");
+    expect(body).toContain("placeholder-gemini-key");
+  });
+
   it("with the opt-in, sends only model-provider keys", () => {
     const env = [
       "# Hermes environment (shaped like the real file)",
