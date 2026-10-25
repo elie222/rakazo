@@ -5141,8 +5141,10 @@ export function createRouter(deps: RouterDeps) {
             if (config.transport === "stdio") {
               await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
             }
+            const endpointChanged = existing.endpoint !== nextEndpoint;
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
-              clearOAuth: existing.endpoint !== nextEndpoint,
+              clearOAuth: endpointChanged,
+              endpointChanged,
             });
             if (update.action === "store" && config.transport === "stdio") {
               await assertMcpRemoteEndpoint(
