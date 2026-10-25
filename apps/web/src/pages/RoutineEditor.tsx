@@ -8,9 +8,9 @@ import type {
   RoutineWatchInput,
 } from "@rakazo/contracts";
 import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
+import type { CronLabels } from "@rakazo/core";
 import {
   type CronFreq,
-  type CronLabels,
   type CronPreset,
   credentialForModel,
   cronFromPreset,

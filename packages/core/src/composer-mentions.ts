@@ -1,4 +1,5 @@
-import { type CronLabels, ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
+import type { CronLabels } from "./cron.js";
+import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
 import { hasMentionToken } from "./group-mentions.js";
 

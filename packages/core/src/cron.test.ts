@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { CronPreset } from "./cron.js";
+import type { CronPreset, CronUnit } from "./cron.js";
 import {
   CRON_INTERVAL_MAX,
-  type CronUnit,
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,

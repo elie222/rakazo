@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
-import { type CronLabels, type CronUnit, ENGLISH_CRON_LABELS, russianInterval } from "@rakazo/core";
+import type { CronLabels, CronUnit } from "@rakazo/core";
+import { ENGLISH_CRON_LABELS, russianInterval } from "@rakazo/core";
 
 /** Translate a cron interval unit in its plural form. */
 export function cronUnitLabel(unit: CronUnit): string {
