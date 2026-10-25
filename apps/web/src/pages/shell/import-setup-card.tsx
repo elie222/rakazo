@@ -11,7 +11,7 @@ import { useImportStatusText } from "./import-status";
 /** Where a setup item is finished: model connections, MCP servers, or the routine itself. */
 export type ImportSetupTarget =
   | { kind: "models" }
-  | { kind: "mcp" }
+  | { kind: "mcp"; serverId: string }
   | { kind: "routine"; routineId: string };
 
 /**
@@ -108,7 +108,7 @@ export function ImportSetupCard({
             item.kind === "model"
               ? { kind: "models" }
               : item.kind === "mcp"
-                ? { kind: "mcp" }
+                ? { kind: "mcp", serverId: item.serverId }
                 : item.kind === "routine"
                   ? { kind: "routine", routineId: item.routineId }
                   : null;

@@ -3628,7 +3628,8 @@ function SpaceShell() {
               onOpenImportSetup={(target) => {
                 importSetupOpen.current = true;
                 if (target.kind === "models") openSettings("models");
-                else if (target.kind === "mcp") setOverlay({ kind: "mcp" });
+                else if (target.kind === "mcp")
+                  setOverlay({ kind: "mcp", serverId: target.serverId });
                 else {
                   const next = new URLSearchParams(searchParams);
                   next.set("routine", target.routineId);
@@ -4179,7 +4180,9 @@ function SpaceShell() {
             onOpenMcp={() => setOverlay({ kind: "mcp" })}
           />
         ) : null}
-        {overlay?.kind === "mcp" ? <McpServersOverlay onClose={() => setOverlay(null)} /> : null}
+        {overlay?.kind === "mcp" ? (
+          <McpServersOverlay editServerId={overlay.serverId} onClose={() => setOverlay(null)} />
+        ) : null}
         {overlay?.kind === "messaging" ? (
           <MessagingSettingsOverlay onClose={() => setOverlay(null)} />
         ) : null}

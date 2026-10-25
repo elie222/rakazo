@@ -569,8 +569,22 @@ test("an imported bot asks before using MCP servers, and its import can be undon
     "morningPausedOpen",
   ]);
   await captureScreenshot(page, testInfo, "agent-import-setup-checklist");
+  // Open goes straight to the imported server's form; saving keeps the same server.
   await setup.getByRole("button", { name: "Open docs" }).click();
-  await expect(page.getByRole("dialog").getByText("MCP servers", { exact: true })).toBeVisible();
+  const mcpDialog = page.getByRole("dialog");
+  await expect(mcpDialog.getByText("MCP servers", { exact: true })).toBeVisible();
+  await expect(mcpDialog.getByLabel("Server name")).toHaveValue("docs");
+  await mcpDialog.getByText("Advanced", { exact: true }).click();
+  await expect(mcpDialog.getByLabel("Header name", { exact: true })).toHaveValue("Authorization");
+  await mcpDialog.getByLabel("Header value", { exact: true }).fill("Bearer placeholder-new-token");
+  await captureScreenshot(page, testInfo, "agent-import-mcp-edit");
+  await clickAndWaitForRpc(
+    page,
+    mcpDialog.getByRole("button", { name: "Save", exact: true }),
+    "mcp/servers/update",
+  );
+  const servers = await rpc<{ id: string; name: string }[]>(page, "mcp/servers/list", {});
+  expect(servers.filter((server) => server.name === "docs")).toHaveLength(1);
   await page.getByRole("button", { name: "Close MCP servers" }).click();
 
   await page.getByTestId("bot-settings-trigger").click();
@@ -579,8 +593,11 @@ test("an imported bot asks before using MCP servers, and its import can be undon
   const dialog = page.getByTestId("agent-import-undo-dialog");
   await expect(dialog.getByRole("region", { name: "Removed" }).getByRole("listitem")).toHaveText([
     "inbox-triage",
-    "docs",
   ]);
+  // Its credentials were entered since, so the server stays.
+  await expect(
+    dialog.getByRole("region", { name: "Kept" }).getByText("docs", { exact: true }),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-undo");
   await clickAndWaitForRpc(
     page,

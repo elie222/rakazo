@@ -87,7 +87,7 @@ describe("the import setup checklist", () => {
     for (const button of buttons) act(() => button.click());
     expect(onOpen.mock.calls.map(([target]) => target)).toEqual([
       { kind: "models" },
-      { kind: "mcp" },
+      { kind: "mcp", serverId: "server-1" },
       { kind: "routine", routineId: "routine-1" },
     ]);
   });
