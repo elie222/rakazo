@@ -409,6 +409,63 @@ describe("Hermes settings", () => {
   });
 });
 
+describe("keys with a base URL", () => {
+  it("are offered for the provider's own URL and left behind for a proxy", () => {
+    const hermesKeys = readAgentImportSettings(
+      {
+        source: "hermes",
+        root: ".hermes",
+        files: new Map([
+          [
+            "config.yaml",
+            [
+              "model:",
+              "  provider: openrouter",
+              "  base_url: https://openrouter.ai/api/v1/",
+              "  api_key: placeholder-openrouter-key",
+              "custom_providers:",
+              "  - name: openai",
+              "    base_url: https://proxy.example.com/v1",
+              "    api_key: placeholder-proxied-key",
+            ].join("\n"),
+          ],
+          [
+            ".env",
+            "GROQ_API_KEY=placeholder-groq-key\nGROQ_BASE_URL=https://gateway.example.com/v1",
+          ],
+        ]),
+      },
+      { includeSecrets: true },
+    );
+    expect(Object.fromEntries(hermesKeys.keyValues)).toEqual({
+      openrouter: "placeholder-openrouter-key",
+    });
+    const openclawKeys = readAgentImportSettings(
+      {
+        source: "openclaw",
+        root: "workspace",
+        files: new Map([
+          [
+            "openclaw.json",
+            JSON.stringify({
+              models: {
+                providers: {
+                  openai: { baseUrl: "https://gateway.example.com/v1", apiKey: "placeholder-gw" },
+                  anthropic: { apiKey: "placeholder-anthropic-key" },
+                },
+              },
+            }),
+          ],
+        ]),
+      },
+      { includeSecrets: true },
+    );
+    expect(Object.fromEntries(openclawKeys.keyValues)).toEqual({
+      anthropic: "placeholder-anthropic-key",
+    });
+  });
+});
+
 describe("helpers", () => {
   it("converts intervals only when a cron fires at exactly that interval", () => {
     expect([1, 15, 30, 60, 120, 180, 360, 1440].map(intervalCron)).toEqual([

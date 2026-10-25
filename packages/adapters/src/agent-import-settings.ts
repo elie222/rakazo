@@ -13,7 +13,7 @@ import {
   parseDotEnv,
   readAgentImportConfig,
 } from "@rakazo/core";
-import { listPiCatalog } from "./pi-models.js";
+import { isCatalogProviderBaseUrl, listPiCatalog } from "./pi-models.js";
 
 /**
  * Translates OpenClaw and Hermes settings (model, MCP servers, scheduled jobs, API keys)
@@ -124,15 +124,17 @@ export function readAgentImportSettings(
   const apiKeys: ImportedApiKey[] = [];
   if (options.includeSecrets) {
     const providers = new Map(listPiCatalog().map((entry) => [entry.provider, entry.providerName]));
-    const offer = (provider: string, value: unknown, source: string) => {
+    const offer = (provider: string, value: unknown, source: string, baseUrl?: unknown) => {
       const id = normalizeImportProvider(provider);
       const key = resolve(value);
       if (!key || !providers.has(id) || keyValues.has(id)) return;
+      // A key for a proxy or gateway must never be checked against, or sent to, the provider.
+      if (text(baseUrl) && !isCatalogProviderBaseUrl(id, text(baseUrl))) return;
       keyValues.set(id, key);
       apiKeys.push({ id: `key:${id}`, provider: id, title: providers.get(id) ?? id, source });
     };
     for (const [provider, entry] of Object.entries(providerConfigs(folder.source, config))) {
-      offer(provider, entry, configPath);
+      offer(provider, entry.key, configPath, entry.baseUrl);
     }
     if (folder.source === "hermes") {
       const auth = readAgentImportConfig("auth.json", folder.files.get("auth.json") ?? "") ?? {};
@@ -147,9 +149,11 @@ export function readAgentImportSettings(
       }
     }
     const envVars = folder.source === "openclaw" ? openClawEnv(config) : {};
-    for (const [name, value] of [...Object.entries(envVars), ...Object.entries(env)]) {
-      const provider = AGENT_IMPORT_PROVIDER_KEYS[name];
-      if (provider) offer(provider, value, name);
+    for (const vars of [envVars, env] as Record<string, unknown>[]) {
+      for (const [name, value] of Object.entries(vars)) {
+        const provider = AGENT_IMPORT_PROVIDER_KEYS[name];
+        if (provider) offer(provider, value, name, vars[name.replace(/_API_KEY$/, "_BASE_URL")]);
+      }
     }
   }
 
@@ -174,26 +178,31 @@ function resolveSecret(value: unknown, env: Record<string, string>): string | nu
   return missing || !resolved.trim() ? null : resolved;
 }
 
-function providerConfigs(source: "openclaw" | "hermes", config: Json): Record<string, unknown> {
+type ProviderKey = { key: unknown; baseUrl?: unknown };
+
+function providerConfigs(source: "openclaw" | "hermes", config: Json): Record<string, ProviderKey> {
   if (source === "openclaw") {
     const models = isObject(config.models) ? config.models : {};
     const providers = isObject(models.providers) ? models.providers : {};
     return Object.fromEntries(
       Object.entries(providers).flatMap(([id, entry]) =>
-        isObject(entry) && entry.apiKey !== undefined ? [[id, entry.apiKey]] : [],
+        isObject(entry) && entry.apiKey !== undefined
+          ? [[id, { key: entry.apiKey, baseUrl: entry.baseUrl }]]
+          : [],
       ),
     );
   }
-  const keys: Record<string, unknown> = {};
+  const keys: Record<string, ProviderKey> = {};
   const model = isObject(config.model) ? config.model : {};
   if (text(model.provider) && model.api_key !== undefined)
-    keys[text(model.provider)] = model.api_key;
+    keys[text(model.provider)] = { key: model.api_key, baseUrl: model.base_url };
   for (const [name, entry] of Object.entries(isObject(config.providers) ? config.providers : {})) {
-    if (isObject(entry) && entry.api_key !== undefined) keys[name] ??= entry.api_key;
+    if (isObject(entry) && entry.api_key !== undefined)
+      keys[name] ??= { key: entry.api_key, baseUrl: entry.base_url };
   }
   for (const entry of Array.isArray(config.custom_providers) ? config.custom_providers : []) {
     if (isObject(entry) && text(entry.name) && entry.api_key !== undefined) {
-      keys[text(entry.name)] ??= entry.api_key;
+      keys[text(entry.name)] ??= { key: entry.api_key, baseUrl: entry.base_url };
     }
   }
   return keys;

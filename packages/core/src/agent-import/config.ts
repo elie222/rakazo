@@ -69,14 +69,15 @@ export const AGENT_IMPORT_PROVIDER_KEYS: Readonly<Record<string, string>> = {
 const KEY_PROVIDERS = new Set(Object.values(AGENT_IMPORT_PROVIDER_KEYS));
 
 // A key for a proxy or gateway must never be checked against, or sent to, the provider itself.
-const hasCustomEndpoint = (entry: Json) =>
-  [entry.base_url, entry.baseUrl].some((url) => typeof url === "string" && url.trim() !== "");
+/** The base URL kept with a key, so the server can tell the provider's own from a proxy's. */
+const baseUrlOf = (entry: Json, field: "base_url" | "baseUrl") =>
+  typeof entry[field] === "string" && entry[field].trim() ? { [field]: entry[field] } : {};
 
-/** Provider-key variables, minus any whose `*_BASE_URL` sends them to another host. */
+/** Provider-key variables, each with its `*_BASE_URL` when one is set. */
 function providerKeyVars<T>(vars: Record<string, T>): [string, T][] {
-  return Object.entries(vars).filter(
-    ([name]) => name in AGENT_IMPORT_PROVIDER_KEYS && !vars[name.replace(/_API_KEY$/, "_BASE_URL")],
-  );
+  const keys = Object.keys(vars).filter((name) => name in AGENT_IMPORT_PROVIDER_KEYS);
+  const urls = keys.map((name) => name.replace(/_API_KEY$/, "_BASE_URL"));
+  return Object.entries(vars).filter(([name]) => keys.includes(name) || urls.includes(name));
 }
 
 /** Provider names the source tools use for Rakazo's catalog providers. */
@@ -164,33 +165,38 @@ function projectConfig(
   const keyed = (name: string) => KEY_PROVIDERS.has(normalizeImportProvider(name));
   if (path === "config.yaml") {
     const model = isObject(config.model) ? config.model : {};
-    const keepModelKey =
-      secrets && keyed(String(model.provider ?? "")) && !hasCustomEndpoint(model);
+    const keepModelKey = secrets && keyed(String(model.provider ?? ""));
     const providers = Object.entries(isObject(config.providers) ? config.providers : {}).flatMap(
       ([name, entry]) =>
-        secrets &&
-        keyed(name) &&
-        isObject(entry) &&
-        !hasCustomEndpoint(entry) &&
-        entry.api_key !== undefined
-          ? [[name, { api_key: noteReferences(entry.api_key, referenced) }]]
+        secrets && keyed(name) && isObject(entry) && entry.api_key !== undefined
+          ? [
+              [
+                name,
+                {
+                  api_key: noteReferences(entry.api_key, referenced),
+                  ...baseUrlOf(entry, "base_url"),
+                },
+              ],
+            ]
           : [],
     );
     const custom = (Array.isArray(config.custom_providers) ? config.custom_providers : []).flatMap(
       (entry) =>
-        secrets &&
-        isObject(entry) &&
-        keyed(String(entry.name ?? "")) &&
-        !hasCustomEndpoint(entry) &&
-        entry.api_key !== undefined
-          ? [{ name: String(entry.name), api_key: noteReferences(entry.api_key, referenced) }]
+        secrets && isObject(entry) && keyed(String(entry.name ?? "")) && entry.api_key !== undefined
+          ? [
+              {
+                name: String(entry.name),
+                api_key: noteReferences(entry.api_key, referenced),
+                ...baseUrlOf(entry, "base_url"),
+              },
+            ]
           : [],
     );
     return stringifyYaml({
       model: {
         ...strings(model, ["default", "model", "provider"]),
         ...(keepModelKey && model.api_key !== undefined
-          ? { api_key: noteReferences(model.api_key, referenced) }
+          ? { api_key: noteReferences(model.api_key, referenced), ...baseUrlOf(model, "base_url") }
           : {}),
       },
       ...(providers.length ? { providers: Object.fromEntries(providers) } : {}),
@@ -226,8 +232,16 @@ function projectConfig(
     const models = isObject(config.models) ? config.models : {};
     const providers = Object.entries(isObject(models.providers) ? models.providers : {}).flatMap(
       ([id, entry]) =>
-        keyed(id) && isObject(entry) && !hasCustomEndpoint(entry) && entry.apiKey !== undefined
-          ? [[id, { apiKey: noteReferences(entry.apiKey, referenced) }]]
+        keyed(id) && isObject(entry) && entry.apiKey !== undefined
+          ? [
+              [
+                id,
+                {
+                  apiKey: noteReferences(entry.apiKey, referenced),
+                  ...baseUrlOf(entry, "baseUrl"),
+                },
+              ],
+            ]
           : [],
     );
     const env = isObject(config.env) ? config.env : {};

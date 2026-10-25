@@ -49,6 +49,15 @@ export function isRecommendedCatalogModel(provider: string, id: string): boolean
 }
 
 const catalogProbeBaseUrls = new Map<string, string>();
+const catalogBaseUrls = new Map<string, Set<string>>();
+
+const trimBaseUrl = (url: string) => url.trim().replace(/\/+$/, "");
+
+/** Whether `url` is one the model registry itself uses for this catalog provider. */
+export function isCatalogProviderBaseUrl(provider: string, url: string): boolean {
+  listPiCatalog();
+  return catalogBaseUrls.get(canonicalPiProviderId(provider))?.has(trimBaseUrl(url)) ?? false;
+}
 
 /** Pinned models-list URL for a catalog provider, taken from the model registry. */
 export function catalogProviderProbeBaseUrl(provider: string): string | null {
@@ -190,6 +199,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
+  catalogBaseUrls.clear();
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
@@ -210,6 +220,12 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const providerModels = provider.getModels();
     const probeBaseUrl = pinnedCatalogProbeBaseUrl(provider.id, providerModels);
     if (probeBaseUrl) catalogProbeBaseUrls.set(provider.id, probeBaseUrl);
+    catalogBaseUrls.set(
+      provider.id,
+      new Set(
+        providerModels.flatMap((model) => (model.baseUrl ? [trimBaseUrl(model.baseUrl)] : [])),
+      ),
+    );
     const modelIds = providerModels.map((model) => model.id);
     for (const model of providerModels) {
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
