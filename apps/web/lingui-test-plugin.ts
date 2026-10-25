@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { transformAsync } from "@babel/core";
 import { getConfig } from "@lingui/conf";
 import { lingui } from "@lingui/vite-plugin";
@@ -5,7 +6,7 @@ import type { PluginOption } from "vite";
 
 /** Exercise real markdown macros and catalogs while retaining other tests' macro mocks. */
 export function markdownLinguiTestPlugins(): PluginOption[] {
-  const configPath = new URL("./lingui.config.ts", import.meta.url).pathname;
+  const configPath = fileURLToPath(new URL("./lingui.config.ts", import.meta.url));
   const linguiConfig = getConfig({ configPath });
   return [
     {
