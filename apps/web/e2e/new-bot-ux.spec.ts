@@ -12,6 +12,7 @@ test("create opens dialog, then empty chat; picker lists bots; sidebar collapses
   await page.waitForURL(/\/app\/[^/]+$/);
 
   const picker = page.getByTestId("bot-create-picker");
+  await expect(page.getByTestId("create-menu-trigger")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+n");
   await expect(picker.getByPlaceholder("Search")).toBeFocused();
   await page.keyboard.press("Escape");

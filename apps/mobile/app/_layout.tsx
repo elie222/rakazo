@@ -56,6 +56,7 @@ import {
 } from "../lib/live-notifications";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
+import { clearQueries } from "../lib/query";
 import {
   getCachedRemoteImagesEnabled,
   loadRemoteImagesPreference,
@@ -86,6 +87,7 @@ import { InboxPane } from "./index";
 capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
+registerSessionDiskCache(clearQueries);
 installClientUpdates();
 registerSessionDiskCache(() => void clearAppBadge());
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.

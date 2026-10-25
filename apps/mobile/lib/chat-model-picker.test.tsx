@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode, Ref } from "react";
 import { act, createElement, useEffect, useImperativeHandle } from "react";
 import type { Root } from "react-dom/client";
@@ -14,6 +15,7 @@ import { ModelPickerList } from "../components/model-picker-list";
 import type { ModelConnectionRequest } from "./model-connection-request";
 import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
+import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
   scrollToLocation: vi.fn(),
@@ -33,6 +35,9 @@ const mocks = vi.hoisted(() => ({
   savedGatewayId: "gateway-fixture",
   vendorLabels: false,
   subscriptionSignIn: false,
+  secondConnection: false,
+  alert: vi.fn(),
+  prompt: vi.fn(),
   completeOAuth: vi.fn(),
   rpc: vi.fn(),
   dismissKeyboard: vi.fn(),
@@ -65,6 +70,11 @@ const mocks = vi.hoisted(() => ({
   >(),
 }));
 
+/** The deployment's approval model, shown when the member chose none. */
+const APPROVAL_DEFAULT = { provider: "openrouter", modelId: "vendor/model-1" };
+const CREDENTIAL_ID = "credential-fixture";
+const WORK_CREDENTIAL_ID = "credential-work";
+
 const catalog = Array.from({ length: 11 }, (_, index) => ({
   provider: "openrouter",
   providerName: "OpenRouter",
@@ -85,6 +95,9 @@ vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   captureApiRequestContext: async () => ({ headers: {} }),
@@ -98,11 +111,16 @@ vi.mock("./api", () => ({
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
       await result;
-      const saved = input as { maxTokens?: number; accountId?: string; gatewayId?: string };
-      mocks.savedMaxTokens = saved.maxTokens;
+      const saved = input as {
+        maxTokens?: number | null;
+        accountId?: string;
+        gatewayId?: string;
+      };
+      // A null limit clears it, as the server does.
+      mocks.savedMaxTokens = saved.maxTokens ?? undefined;
       if (saved.accountId) mocks.savedAccountId = saved.accountId;
       if (saved.gatewayId) mocks.savedGatewayId = saved.gatewayId;
-      return {};
+      return { id: CREDENTIAL_ID };
     }
     if (procedure === "models/beginOAuth")
       return {
@@ -116,7 +134,11 @@ vi.mock("./api", () => ({
     if (procedure === "bots/update") return mocks.update(input);
     if (procedure === "models/role") {
       const main = (input as { role: string }).role === "main";
-      return { primary: main ? mocks.primary : null, backups: main ? await mocks.backups : [] };
+      return {
+        primary: main ? mocks.primary : null,
+        backups: main ? await mocks.backups : [],
+        deploymentPrimary: main ? null : APPROVAL_DEFAULT,
+      };
     }
     if (procedure === "models/forRole") return mocks.catalogEmpty ? [] : catalog;
     if (procedure === "models/setRole") {
@@ -127,7 +149,11 @@ vi.mock("./api", () => ({
         backups: { provider: string; modelId: string }[];
       }>;
       if (patch.role !== "main")
-        return { primary: patch.primary ?? null, backups: patch.backups ?? [] };
+        return {
+          primary: patch.primary ?? null,
+          backups: patch.backups ?? [],
+          deploymentPrimary: APPROVAL_DEFAULT,
+        };
       // The main list persists like the server so a reload after a promotion keeps it.
       if (patch.primary !== undefined) mocks.primary = patch.primary;
       if (patch.backups) mocks.backups = patch.backups;
@@ -177,6 +203,7 @@ vi.mock("./api", () => ({
       return mocks.connected
         ? [
             {
+              id: CREDENTIAL_ID,
               provider: cloudflare?.provider ?? "openrouter",
               label: cloudflare?.providerName ?? "OpenRouter",
               maxTokens: mocks.savedMaxTokens,
@@ -189,6 +216,18 @@ vi.mock("./api", () => ({
               isDefault: true,
               thinkingLevel: "high",
             },
+            ...(mocks.secondConnection
+              ? [
+                  {
+                    id: WORK_CREDENTIAL_ID,
+                    provider: "openrouter",
+                    label: "Work",
+                    hasKey: true,
+                    isDefault: false,
+                    authKind: "api_key",
+                  },
+                ]
+              : []),
           ]
         : [];
     return [];
@@ -247,7 +286,7 @@ vi.mock("react-native", () => {
       },
     },
     Keyboard: { dismiss: mocks.dismissKeyboard },
-    Alert: { alert: vi.fn() },
+    Alert: { alert: mocks.alert, prompt: mocks.prompt },
     Linking: { openURL: vi.fn() },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,
@@ -542,12 +581,14 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
   mocks.rpc.mockReset();
   mocks.menus.clear();
   mocks.rowAccessibilityActions.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -715,6 +756,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
       : mocks.workers
         ? "cloudflare-workers-ai"
         : "openrouter",
+    credentialId: mocks.connected ? CREDENTIAL_ID : null,
     makeDefault: false,
     ...request,
   });
@@ -812,7 +854,11 @@ describe("provider connection screen", () => {
         makeDefault: false,
       }),
     );
-    expect(onConnected).toHaveBeenCalledWith({ provider: "openrouter", modelId: "vendor/model-1" });
+    expect(onConnected).toHaveBeenCalledWith({
+      provider: "openrouter",
+      modelId: "vendor/model-1",
+      credentialId: CREDENTIAL_ID,
+    });
     expect(mocks.replace).toHaveBeenCalledWith({
       pathname: "/model-picker",
       params: { requestId: "picker-fixture" },
@@ -879,6 +925,8 @@ describe("provider connection limit saves", () => {
       makeDefault: false,
       maxTokens: 2000,
       label: "OpenRouter",
+      // A save on a managed connection updates that connection only.
+      credentialId: CREDENTIAL_ID,
     });
     expect(buttonWithText("Save")).toBeUndefined();
     const field = container.querySelector('input[aria-label="Maximum output tokens"]')!;
@@ -963,6 +1011,8 @@ describe("provider connection limit saves", () => {
 
 describe("model role lists", () => {
   const model = (index: number) => ({ provider: "openrouter", modelId: `vendor/model-${index}` });
+  /** A row picked from the list runs on the connection it was listed under. */
+  const pinned = (index: number) => ({ ...model(index), credentialId: CREDENTIAL_ID });
   const section = (title: string) =>
     container.querySelector<HTMLElement>(`section[aria-label="${title}"]`)!;
   const rowTitles = (title = "Main model") =>
@@ -997,8 +1047,9 @@ describe("model role lists", () => {
       "Add fallback",
     ]);
     const approval = [...section("Approval model").querySelectorAll("button")];
+    // A single row has no order to number.
     expect(approval.map((button) => button.textContent)).toEqual([
-      "1Deployment default",
+      "Model 1OpenRouter",
       "Add fallback",
     ]);
   });
@@ -1021,7 +1072,7 @@ describe("model role lists", () => {
     await act(async () => pickerRows()[0]!.click());
     expect(rowTitles()).toEqual(["Model 1", "Model 4"]);
     // Keeping the first row leaves the main model and its effort alone.
-    expect(roleSaves()).toEqual([{ backups: [model(4)] }]);
+    expect(roleSaves()).toEqual([{ backups: [pinned(4)] }]);
   });
 
   it("replaces a row in place from the picker", async () => {
@@ -1037,7 +1088,7 @@ describe("model role lists", () => {
     ).toEqual(["Model 2"]);
     searchModels("vendor/model-5");
     await act(async () => pickerRows()[0]!.click());
-    expect(roleSaves()).toEqual([{ backups: [model(5), model(3)] }]);
+    expect(roleSaves()).toEqual([{ backups: [pinned(5), model(3)] }]);
   });
 
   it("moves, removes and promotes with the full list", async () => {
@@ -1145,7 +1196,7 @@ describe("model role lists", () => {
     // Nothing joins the list until a model is picked from that provider.
     let next: unknown;
     await act(async () => {
-      next = await fallback.onConnected!({ provider: "openrouter", modelId: "vendor/model-1" });
+      next = await fallback.onConnected!(pinned(1));
     });
     expect(roleSaves()).toEqual([]);
     const picker = modelPickerRequest(
@@ -1157,7 +1208,7 @@ describe("model role lists", () => {
       catalog.slice(1).map((entry) => entry.label),
     );
     await act(async () => picker.onSelect(picker.choices[2]!));
-    expect(roleSaves()).toEqual([{ backups: [model(4)] }]);
+    expect(roleSaves()).toEqual([{ backups: [pinned(4)] }]);
   });
 
   it("reopens the empty main slot on the connection that became the main model", async () => {
@@ -1177,22 +1228,24 @@ describe("model role lists", () => {
     mocks.primary = model(1);
     let next: unknown;
     await act(async () => {
-      next = await request.onConnected!(model(1));
+      next = await request.onConnected!(pinned(1));
     });
     const picker = modelPickerRequest(
       (next as { params: { requestId: string } }).params.requestId,
     )!;
-    expect(picker.selectedKey).toBe(JSON.stringify(["openrouter", "vendor/model-1"]));
+    expect(picker.selectedKey).toBe(
+      JSON.stringify(["openrouter", "vendor/model-1", CREDENTIAL_ID]),
+    );
     expect(picker.choices).toHaveLength(11);
     await act(async () => picker.onSelect(picker.choices[0]!));
     expect(roleSaves()).toEqual([]);
   });
 
-  it("sets the approval model and clears it back to the deployment default", async () => {
+  it("names the approval model's deployment default, sets one, and clears back to it", async () => {
     await renderModels();
-    act(() => rowButton("Approval model", "Deployment default").click());
+    act(() => rowButton("Approval model", "Model 1").click());
     expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Approval model" });
-    expect(pickerRows()[0]?.textContent).toBe("Deployment default");
+    expect(pickerRows()[0]?.textContent).toBe("Model 1");
     expect(pickerRows()[0]?.getAttribute("aria-selected")).toBe("true");
     searchModels("vendor/model-2");
     await act(async () => pickerRows()[0]!.click());
@@ -1200,7 +1253,7 @@ describe("model role lists", () => {
     act(() => rowButton("Approval model", "Model 2").click());
     await act(async () => pickerRows()[0]!.click());
     expect(roleSaves("approval")).toEqual([
-      { primary: model(2), backups: [] },
+      { primary: pinned(2), backups: [] },
       { primary: null, backups: [] },
     ]);
   });
@@ -1541,5 +1594,177 @@ describe("shared model picker presentation", () => {
     });
     expect(pickerRows().map((row) => row.textContent)).toEqual(["Gemini"]);
     expect(container.querySelector("input")).toBe(input);
+  });
+});
+
+describe("several connections for one provider", () => {
+  const model = (index: number, credentialId?: string) => ({
+    provider: "openrouter",
+    modelId: `vendor/model-${index}`,
+    ...(credentialId ? { credentialId } : {}),
+  });
+  const section = (title: string) =>
+    container.querySelector<HTMLElement>(`section[aria-label="${title}"]`)!;
+  const roleSaves = () =>
+    mocks.rpc.mock.calls
+      .filter(([procedure]) => procedure === "models/setRole")
+      .map(([, input]) => {
+        const { role: _role, expectedUserId: _user, ...patch } = input as Record<string, unknown>;
+        return patch;
+      });
+  const lastRequest = (mock: typeof mocks.push) =>
+    (mock.mock.lastCall![0] as { params: { requestId: string } }).params.requestId;
+  beforeEach(() => {
+    mocks.secondConnection = true;
+  });
+
+  it("lists each connection's models under its own name and saves the connection picked", async () => {
+    mocks.primary = model(1, CREDENTIAL_ID);
+    await renderModels();
+    act(() =>
+      [...section("Main model").querySelectorAll("button")]
+        .find((button) => button.textContent === "Add fallback")!
+        .click(),
+    );
+    expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
+      "OpenRouter",
+      "OpenRouter · Work",
+    ]);
+    // The running model is offered again on the other account.
+    const picker = modelPickerRequest(mocks.params.requestId!)!;
+    expect(picker.choices.filter((choice) => choice.modelId === "vendor/model-1")).toHaveLength(1);
+    const work = picker.choices.find(
+      (choice) =>
+        choice.providerLabel === "OpenRouter · Work" && choice.modelId === "vendor/model-1",
+    )!;
+    await act(async () => picker.onSelect(work));
+    expect(roleSaves()).toEqual([{ backups: [model(1, WORK_CREDENTIAL_ID)] }]);
+  });
+
+  it("names a row's connection and manages that connection", async () => {
+    mocks.primary = model(1, CREDENTIAL_ID);
+    mocks.backups = [model(1, WORK_CREDENTIAL_ID)];
+    await renderModels();
+    expect(
+      [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
+    ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter · Work", "Add fallback"]);
+    const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
+    expect(menu).toHaveLength(1);
+    await act(async () =>
+      mocks.menus.get("Model 1")!.onPressAction({ nativeEvent: { event: "manage" } }),
+    );
+    expect(modelConnectionRequest(lastRequest(mocks.push))).toMatchObject({
+      provider: "openrouter",
+      credentialId: WORK_CREDENTIAL_ID,
+      makeDefault: false,
+    });
+  });
+
+  it("lists every connection under Providers with rename, replace and disconnect", async () => {
+    await renderModels();
+    expect(
+      [...section("Providers").querySelectorAll("button")].map((button) => button.textContent),
+    ).toEqual(["OpenRouter", "OpenRouter · Work", "Add provider"]);
+    expect(mocks.menus.get("OpenRouter · Work")!.actions.map((action) => action.title)).toEqual([
+      "Rename",
+      "Replace API key",
+      "Disconnect",
+    ]);
+
+    await act(async () =>
+      mocks.menus.get("OpenRouter · Work")!.onPressAction({ nativeEvent: { event: "rename" } }),
+    );
+    const [, , buttons, , current] = mocks.prompt.mock.lastCall!;
+    expect(current).toBe("Work");
+    await act(async () => buttons[1].onPress(" Personal "));
+    expect(mocks.rpc).toHaveBeenCalledWith("models/rename", {
+      credentialId: WORK_CREDENTIAL_ID,
+      label: "Personal",
+    });
+
+    await act(async () =>
+      mocks.menus.get("OpenRouter · Work")!.onPressAction({ nativeEvent: { event: "disconnect" } }),
+    );
+    const [title, , choices] = mocks.alert.mock.lastCall!;
+    expect(title).toBe("Disconnect OpenRouter · Work?");
+    await act(async () => choices[1].onPress());
+    expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
+      provider: "openrouter",
+      credentialId: WORK_CREDENTIAL_ID,
+    });
+
+    await act(async () =>
+      mocks.menus.get("OpenRouter")!.onPressAction({ nativeEvent: { event: "manage" } }),
+    );
+    expect(modelConnectionRequest(lastRequest(mocks.push))).toMatchObject({
+      credentialId: CREDENTIAL_ID,
+    });
+  });
+
+  it("adds another connection for a connected provider without changing any list", async () => {
+    await renderModels();
+    act(() =>
+      [...section("Providers").querySelectorAll("button")]
+        .find((button) => button.textContent === "Add provider")!
+        .click(),
+    );
+    expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Add provider" });
+    const openrouter = pickerRows().find((row) => row.textContent === "OpenRouter")!;
+    act(() => openrouter.click());
+    const request = modelConnectionRequest(lastRequest(mocks.replace))!;
+    expect(request).toMatchObject({
+      provider: "openrouter",
+      credentialId: null,
+      makeDefault: false,
+    });
+    expect(request.onConnected).toBeUndefined();
+    expect(roleSaves()).toEqual([]);
+  });
+});
+
+describe("connection screen targets", () => {
+  it("adds a new connection and then keeps saving that one", async () => {
+    mocks.connected = false;
+    // The saved connection is listed when the screen reloads.
+    mocks.rpc.mockImplementation((procedure: string) => {
+      if (procedure === "models/connect") mocks.connected = true;
+    });
+    await renderConnection();
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({ apiKey: "fixture-key", credentialId: null }),
+    );
+    editField("API key", "fixture-key-2");
+    await act(async () => buttonWithText("Replace API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({ apiKey: "fixture-key-2", credentialId: CREDENTIAL_ID }),
+    );
+  });
+
+  it("signs a new account in and disconnects only the managed connection", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.completeOAuth.mockReturnValueOnce(new Promise(() => undefined));
+    await renderConnection();
+    await act(async () => buttonWithText("Sign in")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/beginOAuth",
+      expect.objectContaining({ provider: "openrouter", credentialId: null }),
+    );
+    act(() => root.render(null));
+
+    mocks.connected = true;
+    mocks.subscriptionSignIn = false;
+    await renderConnection();
+    act(() => buttonWithText("Disconnect")!.click());
+    const [, , choices] = mocks.alert.mock.lastCall!;
+    await act(async () => choices[1].onPress());
+    expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
+      provider: "openrouter",
+      credentialId: CREDENTIAL_ID,
+    });
   });
 });

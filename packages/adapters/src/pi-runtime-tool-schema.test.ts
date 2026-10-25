@@ -1,10 +1,34 @@
-import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import {
+  FLEET_TOOL_NAMES,
+  TICKET_COMMENT_MAX_LENGTH,
+  TICKET_DESCRIPTION_MAX_LENGTH,
+  TICKET_TITLE_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
 
 describe("jsonSchemaParameters", () => {
+  it.each([
+    ["ticket_create", "title", TICKET_TITLE_MAX_LENGTH, { title: "Ship" }],
+    ["ticket_create", "description", TICKET_DESCRIPTION_MAX_LENGTH, { title: "Ship" }],
+    ["ticket_update", "title", TICKET_TITLE_MAX_LENGTH, { id: "t1" }],
+    ["ticket_update", "description", TICKET_DESCRIPTION_MAX_LENGTH, { id: "t1" }],
+    ["ticket_comment", "body", TICKET_COMMENT_MAX_LENGTH, { id: "t1", body: "Ready" }],
+  ] as const)("preserves the %s %s length limit on the model wire", (name, field, limit, base) => {
+    const tool = builtinAgentTools.find((entry) => entry.name === name)!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const schema of [tool.inputSchema, wire]) {
+      expect(schema).toMatchObject({ properties: { [field]: { maxLength: limit } } });
+      const input = { ...base, [field]: "x".repeat(limit) };
+      expect(parseConnectorToolArgs(schema, input)).toEqual(input);
+      expect(() =>
+        parseConnectorToolArgs(schema, { ...base, [field]: "x".repeat(limit + 1) }),
+      ).toThrow();
+    }
+  });
+
   it("exposes fields from a locally referenced allOf branch", () => {
     const tool = {
       name: "catalog_search",

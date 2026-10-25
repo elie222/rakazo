@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { ThreadMessage } from "@rakazo/contracts";
 import { loadPeerHistory, peerConversations } from "@rakazo/core";
 import {
   BotAvatar,
@@ -11,7 +10,9 @@ import {
   DialogTitle,
   Spinner,
 } from "@rakazo/ui-web";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useSpaceQueries } from "../lib/query";
 import { rpc } from "../lib/rpc";
 
 /**
@@ -36,40 +37,29 @@ export function PeerMessagesOverlay({
   onClose: () => void;
 }) {
   const { t } = useLingui();
-  const [messages, setMessages] = useState<readonly ThreadMessage[]>([]);
-  const [historyReady, setHistoryReady] = useState(false);
-  const [historyFailed, setHistoryFailed] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
+  const queries = useSpaceQueries();
+  const history = useQuery({
+    queryKey: [
+      ...queries.threads.messages.queryKey({
+        input: { botId, includePeerRuns: true },
+      }),
+      "peer-history",
+    ],
+    queryFn: ({ signal }) =>
+      loadPeerHistory({
+        signal,
+        loadPage: (before, pageSignal) =>
+          rpc.threads.messages({ botId, before, includePeerRuns: true }, { signal: pageSignal }),
+      }),
+  });
+  // A revisit shows the cached exchange while it refreshes; Retry shows its progress.
+  const historyReady = history.data !== undefined || !history.isFetching;
+  const historyFailed = history.data === undefined && history.isError;
   const conversation = useMemo(() => {
-    if (!historyReady) return null;
-    return peerConversations(messages).find((entry) => entry.peerBotId === peerBotId) ?? null;
-  }, [historyReady, messages, peerBotId]);
+    if (!history.data) return null;
+    return peerConversations(history.data).find((entry) => entry.peerBotId === peerBotId) ?? null;
+  }, [history.data, peerBotId]);
   const peerBotName = conversation?.peerBotName ?? initialPeerBotName;
-
-  useEffect(() => {
-    const abort = new AbortController();
-    setHistoryReady(false);
-    setHistoryFailed(false);
-    setMessages([]);
-    void loadPeerHistory({
-      signal: abort.signal,
-      loadPage: (before, signal) =>
-        rpc.threads.messages({ botId, before, includePeerRuns: true }, { signal }),
-    })
-      .then((loaded) => {
-        if (abort.signal.aborted) return;
-        setMessages(loaded);
-        setHistoryReady(true);
-      })
-      .catch(() => {
-        if (abort.signal.aborted) return;
-        setHistoryFailed(true);
-        setHistoryReady(true);
-      });
-    return () => {
-      abort.abort();
-    };
-  }, [botId, reloadKey]);
 
   const title = `${botName} · ${peerBotName}`;
 
@@ -100,6 +90,17 @@ export function PeerMessagesOverlay({
           </DialogClose>
         </div>
 
+        {history.data !== undefined && history.isError && !history.isFetching ? (
+          <div
+            role="alert"
+            className="flex items-center justify-center gap-2 px-4 pt-3 text-[13px] text-destructive"
+          >
+            <Trans>Could not load this chat.</Trans>
+            <Button variant="link" size="xs" onClick={() => void history.refetch()}>
+              <Trans>Retry now</Trans>
+            </Button>
+          </div>
+        ) : null}
         {!historyReady ? (
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
             <Spinner aria-label={t`Loading…`} />
@@ -108,11 +109,7 @@ export function PeerMessagesOverlay({
           <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-muted-foreground/80">
             <div className="flex flex-col items-center gap-3">
               <Trans>Could not load this chat.</Trans>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setReloadKey((value) => value + 1)}
-              >
+              <Button variant="outline" size="sm" onClick={() => void history.refetch()}>
                 <Trans>Retry now</Trans>
               </Button>
             </div>

@@ -43,7 +43,7 @@ import {
   SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
-import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
+import type { ComputerCommand, MessageBlock, ModelRoleChoice, RunStatus } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
   BotSecretName,
@@ -2757,7 +2757,9 @@ export function desktopProtectionGuardMessage(reason: string): string {
   const recovery =
     reason === "heredoc"
       ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
-      : "";
+      : reason === "command substitution" || reason === "backtick"
+        ? " For HTTP authentication, use the client's auth support or python3 -c reading the saved command credential from os.environ. Never print credentials. No request ran, so this refusal does not indicate invalid credentials."
+        : "";
   return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }
 
@@ -3114,6 +3116,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
     requireStoredSecret = false,
     /** A fallback's own effort from its role list. */
     thinkingLevel?: string | null,
+    /** The connection a role row is pinned to. */
+    credentialId?: string,
   ): Promise<AgentRunRequest["model"]> => {
     const hostedProvider = (await modelCreditBillingEnabled(deps))
       ? resolveDeploymentModel().provider
@@ -3124,7 +3128,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       scope,
       provider,
       modelId,
-      { hostedProvider },
+      { hostedProvider, credentialId },
     );
     if (validationError) throw new Error(validationError);
     const credential = await findConnectedModelCredential(
@@ -3133,6 +3137,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       scope,
       provider,
       modelId,
+      { credentialId },
     );
     if (
       !credential &&
@@ -3152,6 +3157,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
     return {
       provider,
       id: modelId,
+      ...(credentialId ? { connectionId: credentialId } : {}),
       apiKey: resolved.oauth ? undefined : resolved.apiKey,
       callObserver: resolved.callObserver,
       ...cloudflareRunFields(resolved),
@@ -4578,7 +4584,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash. Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`
           : undefined;
         const computerInstruction = [
-          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. Do not inspect the computer just to prepare for an unrelated task.",
+          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. A website with no connected app is still yours to use in the computer's browser, now and in scheduled routines, so a missing connection alone is never a reason to decline. Do not inspect the computer just to prepare for an unrelated task. If what you are about to buy, send or submit differs from what the user confirmed, such as a changed item or total, show the difference and confirm again first.",
           hostInstruction
             ? `${baseComputerInstruction} ${hostInstruction}`
             : dockerToolInstruction
@@ -5242,6 +5248,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     provider: reviewSettings.primary.provider,
                     model: reviewSettings.primary.modelId,
                     thinkingLevel: reviewSettings.primary.thinkingLevel,
+                    credentialId: reviewSettings.primary.credentialId,
                   }
                 : null
               : resolveAutoReviewChecker();
@@ -5371,9 +5378,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   { userId: run.userId, spaceId: run.spaceId },
                   checker.provider,
                   checker.model,
+                  { credentialId: checker.credentialId },
                 );
                 if (
                   (memberChecker ||
+                    checker.credentialId ||
                     reviewSettings?.backups.some(
                       (choice) =>
                         choice.provider === checker.provider && choice.modelId === checker.model,
@@ -5459,6 +5468,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     provider: choice.provider,
                     model: choice.modelId,
                     thinkingLevel: choice.thinkingLevel,
+                    credentialId: choice.credentialId,
                   })) ?? []),
                 ],
                 async (checker) => {
@@ -7965,11 +7975,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return;
         }
 
-        let fallbackModels: Array<{
-          provider: string;
-          modelId: string;
-          thinkingLevel?: string | null;
-        }> = [];
+        let fallbackModels: ModelRoleChoice[] = [];
         if (!scripted) {
           try {
             fallbackModels = (
@@ -7982,13 +7988,22 @@ export function createRunExecutor(deps: ExecutorDeps) {
             getLogger().warn("Backup models could not be loaded", { runId, error });
           }
         }
+        // The running model is not its own backup, unless another account serves it.
+        fallbackModels = fallbackModels.filter(
+          (candidate) =>
+            candidate.provider !== runModelProvider ||
+            candidate.modelId !== runModelId ||
+            (candidate.credentialId !== undefined && candidate.credentialId !== credential?.id),
+        );
+        const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
+          JSON.stringify([provider, modelId, credentialId ?? null]);
         const fallbackModelKeys = new Set(
-          fallbackModels
-            .filter(
-              (candidate) =>
-                candidate.provider !== runModelProvider || candidate.modelId !== runModelId,
-            )
-            .map((candidate) => JSON.stringify([candidate.provider, candidate.modelId])),
+          fallbackModels.map((candidate) =>
+            fallbackKey(candidate.provider, candidate.modelId, candidate.credentialId),
+          ),
+        );
+        const fallbackModelIds = new Set(
+          fallbackModels.map((candidate) => fallbackKey(candidate.provider, candidate.modelId)),
         );
         // Provider kind and model id only: custom endpoints are identified by kind, never host.
         const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
@@ -8052,6 +8067,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               model: {
                 provider: runModelProvider,
                 id: runModelId,
+                ...(credential ? { connectionId: credential.id } : {}),
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 callObserver: resolved.callObserver,
                 ...cloudflareRunFields(resolved),
@@ -8074,13 +8090,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     }
                   : undefined,
               },
-              fallbackModels: fallbackModels.map(({ provider, modelId }) => ({
+              fallbackModels: fallbackModels.map(({ provider, modelId, credentialId }) => ({
                 provider,
                 id: modelId,
+                ...(credentialId ? { connectionId: credentialId } : {}),
               })),
               resolveFallbackModel: fallbackModelKeys.size
-                ? async (provider, modelId) => {
-                    const key = JSON.stringify([provider, modelId]);
+                ? async (provider, modelId, connectionId) => {
+                    const key = fallbackKey(provider, modelId, connectionId);
                     if (!fallbackModelKeys.has(key))
                       throw new Error("Backup model is not selected");
                     return resolveConnectedModel(
@@ -8091,13 +8108,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       true,
                       fallbackModels.find(
                         (candidate) =>
-                          candidate.provider === provider && candidate.modelId === modelId,
+                          fallbackKey(
+                            candidate.provider,
+                            candidate.modelId,
+                            candidate.credentialId,
+                          ) === key,
                       )?.thinkingLevel ?? null,
+                      connectionId,
                     );
                   }
                 : undefined,
               onModelChange: async (provider, modelId) => {
-                if (!fallbackModelKeys.has(JSON.stringify([provider, modelId]))) {
+                if (!fallbackModelIds.has(fallbackKey(provider, modelId))) {
                   throw new Error("Backup model is not selected");
                 }
                 const updated = await deps.prisma.run.updateMany({
@@ -8351,6 +8373,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 hasStreamedText = false;
                 pendingProgress = "";
               }
+              // Give the user a full idle period to answer before the computer may suspend.
+              scheduleComputerSleep(deps.jobs, storedComputer.id);
               await publishMessage(
                 deps,
                 run,

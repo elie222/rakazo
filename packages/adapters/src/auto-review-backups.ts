@@ -15,7 +15,11 @@ export async function reviewWithBackups(
   const seen = new Set<string>();
   for (const candidate of candidates) {
     if (signal.aborted) break;
-    const key = JSON.stringify([candidate.provider, candidate.model]);
+    const key = JSON.stringify([
+      candidate.provider,
+      candidate.model,
+      candidate.credentialId ?? null,
+    ]);
     if (seen.has(key)) continue;
     seen.add(key);
     try {

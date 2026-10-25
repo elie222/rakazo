@@ -276,6 +276,26 @@ export function expandSkillReferencesInPrompt(
   return [...blocks, rest].filter(Boolean).join("\n\n");
 }
 
+/**
+ * Points `@old` skill mentions in a routine prompt at their new names, in one pass. Names
+ * mapped to themselves are still matched, so a longer name wins over a renamed prefix.
+ */
+export function renameRoutineSkillMentions(
+  prompt: string,
+  renames: ReadonlyMap<string, string>,
+): string {
+  const names = [...renames.keys()].sort((a, b) => b.length - a.length);
+  if (names.length === 0) return prompt;
+  const next = new Map([...renames].map(([from, to]) => [from.toLowerCase(), to]));
+  return prompt.replace(
+    new RegExp(`(^|[\\s(,])@(${names.map(escapeRegExp).join("|")})(?=[\\s,.)]|$)`, "gi"),
+    (match, lead: string, name: string) => {
+      const to = next.get(name.toLowerCase());
+      return to ? `${lead}@${to}` : match;
+    },
+  );
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

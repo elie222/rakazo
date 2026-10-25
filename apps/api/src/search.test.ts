@@ -1,5 +1,7 @@
 import type { Actor } from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
@@ -20,7 +22,7 @@ function fixture(count: number) {
     botId: null,
     bot: null,
     groupId: "group-test",
-    group: { name: "Group" },
+    group: { name: "Group", _count: { members: 2 } },
   }));
   const prisma = {
     bot: { findMany: vi.fn().mockResolvedValue([]) },
@@ -29,7 +31,10 @@ function fixture(count: number) {
       findMany: vi.fn().mockResolvedValueOnce(artifacts).mockResolvedValueOnce(groupArtifacts),
     },
     routine: { findMany: vi.fn().mockResolvedValue([]) },
-    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRaw: vi
+      .fn()
+      .mockResolvedValue([])
+      .mockResolvedValueOnce([{ id: "group-test" }]),
   };
   return { prisma, artifacts, groupArtifacts };
 }
@@ -38,10 +43,10 @@ describe("artifact search batching", () => {
   it.each([1, 25])("uses one lookup per destination for %i matching artifacts", async (count) => {
     const { prisma } = fixture(count);
     await querySpaceSearch(prisma as unknown as PrismaClient, actor, "report");
-    // Two artifact batches and the existing direct/group message searches.
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
-    const direct = prisma.$queryRaw.mock.calls[0]?.[0];
-    const group = prisma.$queryRaw.mock.calls[1]?.[0];
+    // Two artifact batches and the eligibility query and direct/group message searches.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+    const direct = prisma.$queryRaw.mock.calls[1]?.[0];
+    const group = prisma.$queryRaw.mock.calls[2]?.[0];
     expect(direct.text).toContain('t."botId" = candidate."targetId"');
     expect(group.text).toContain('t."groupId" = candidate."targetId"');
     for (const query of [direct, group]) {
@@ -70,8 +75,72 @@ describe("artifact search batching", () => {
   it("does not issue artifact queries for empty batches", async () => {
     const { prisma } = fixture(0);
     expect(await querySpaceSearch(prisma as unknown as PrismaClient, actor, "report")).toEqual([]);
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
   });
+});
+
+it("resolves active group eligibility once for names, artifacts, and messages", async () => {
+  const { prisma } = fixture(0);
+  await querySpaceSearch(prisma as never, actor, "Launch");
+
+  const eligibility = prisma.$queryRaw.mock.calls[0]?.[0];
+  expect(eligibility.text).toContain('g."spaceId" = $1');
+  expect(eligibility.text).toContain('g."userId" = $2');
+  expect(eligibility.text).toContain('g."archivedAt" IS NULL');
+  expect(eligibility.text).toContain("SELECT COUNT(*) FROM chat_group_members gm");
+  expect(eligibility.text).toContain('INNER JOIN bots gb ON gb.id = gm."botId"');
+  expect(eligibility.text).toContain('gm."groupId" = g.id AND gb."archivedAt" IS NULL');
+  expect(eligibility.text).toContain(") >= $3");
+  expect(eligibility.values).toEqual([actor.spaceId, actor.userId, GROUP_MEMBER_MIN]);
+
+  expect(prisma.chatGroup.findMany.mock.calls[0]?.[0]).toMatchObject({
+    where: { spaceId: actor.spaceId, userId: actor.userId, id: { in: ["group-test"] } },
+    take: 5,
+  });
+  expect(prisma.artifact.findMany.mock.calls[1]?.[0]).toMatchObject({
+    where: { spaceId: actor.spaceId, userId: actor.userId, groupId: { in: ["group-test"] } },
+    take: 25,
+  });
+  const [strings, ...values] = prisma.$queryRaw.mock.calls[2]!;
+  const groupMessageQuery = Prisma.sql(strings, ...values);
+  expect(groupMessageQuery.text).toContain("AND g.id IN ($3)");
+  expect(groupMessageQuery.values[2]).toBe("group-test");
+});
+
+it("applies group eligibility before name and artifact limits", async () => {
+  const { prisma } = fixture(0);
+  const groups = Array.from({ length: 25 }, (_, index) => ({
+    id: `under-minimum-${index}`,
+    name: "report",
+  })).concat({ id: "group-test", name: "report" });
+  const files = groups.map((group) => ({
+    id: `file-${group.id}`,
+    groupId: group.id,
+    group: { name: group.name },
+    name: "report.txt",
+    mimeType: "text/plain",
+    size: 10,
+  }));
+  prisma.chatGroup.findMany.mockImplementation(async ({ where, take }) =>
+    groups.filter((group) => !where.id || where.id.in.includes(group.id)).slice(0, take),
+  );
+  prisma.artifact.findMany
+    .mockReset()
+    .mockResolvedValueOnce([])
+    .mockImplementation(async ({ where, take }) =>
+      files
+        .filter((file) => !where.groupId?.in || where.groupId.in.includes(file.groupId))
+        .slice(0, take),
+    );
+  prisma.$queryRaw.mockResolvedValueOnce([
+    { artifactId: "file-group-test", id: "message-test", seq: 1 },
+  ]);
+
+  const hits = await querySpaceSearch(prisma as never, actor, "report");
+  expect(hits.map(({ kind, groupId }) => ({ kind, groupId }))).toEqual([
+    { kind: "conversation", groupId: "group-test" },
+    { kind: "file", groupId: "group-test" },
+  ]);
 });
 
 it("searches for the characters the user typed, not SQL wildcards", async () => {
@@ -100,7 +169,7 @@ it("JSON-escapes backslashes only for the message scan", async () => {
   expect(botFilter?.contains).toBe(String.raw`back\\slash`);
   const groupFilter = prisma.chatGroup.findMany.mock.calls[0]?.[0]?.where?.name;
   expect(groupFilter?.contains).toBe(String.raw`back\\slash`);
-  for (const call of prisma.$queryRaw.mock.calls) {
+  for (const call of prisma.$queryRaw.mock.calls.slice(1)) {
     const values = call.flatMap(
       (argument) => (argument as { values?: unknown[] } | undefined)?.values ?? [],
     );
@@ -114,7 +183,9 @@ it("guards name-derived snippets while preserving descriptions", async () => {
     { id: "bot-1", name: "__TestTok1__", title: "", description: "" },
     { id: "bot-2", name: "__TestTok2__", title: "", description: "Keep __TestTok2__ literal" },
   ] as never);
-  prisma.chatGroup.findMany.mockResolvedValue([{ id: "group-1", name: "__TestTok1__" }] as never);
+  prisma.chatGroup.findMany.mockResolvedValue([
+    { id: "group-1", name: "__TestTok1__", _count: { members: 2 } },
+  ] as never);
   const hits = await querySpaceSearch(prisma as never, actor, "TestTok");
   expect(
     hits

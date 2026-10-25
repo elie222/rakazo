@@ -14,11 +14,12 @@
     "intl:compile": "lingui compile"
   },
   "dependencies": {
-    "@better-auth/passkey": "1.7.11",
+    "@better-auth/passkey": "1.7.12",
     "@lingui/core": "6.6.0",
     "@lingui/react": "6.6.0",
     "@orpc/client": "1.15.7",
     "@orpc/contract": "1.15.7",
+    "@orpc/tanstack-query": "1.15.7",
     "@rakazo/chat-ui": "workspace:*",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
@@ -26,7 +27,8 @@
     "@rakazo/ui-web": "workspace:*",
     "@sentry/react": "11.8.0",
     "@simplewebauthn/browser": "13.3.0",
-    "better-auth": "1.7.11",
+    "@tanstack/react-query": "5.104.5",
+    "better-auth": "1.7.12",
     "lucide-react": "1.60.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -50,7 +52,7 @@
     "cross-env": "10.1.0",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.3.4",
+    "vite": "8.3.5",
     "vitest": "4.1.12"
   }
 }

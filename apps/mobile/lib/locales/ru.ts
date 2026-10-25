@@ -6,6 +6,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Main model": "Основная модель",
   "Add fallback": "Добавить резервную модель",
   "Manage {provider}": "Управление: {provider}",
+  "Add provider": "Добавить провайдера",
   "Choose a model": "Выберите модель",
   "Use 80 characters or fewer": "Не более 80 символов",
   "Could not update name": "Не удалось обновить имя",
@@ -435,7 +436,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Delete…": "Удалить…",
   Denied: "Запрещено",
   Deny: "Запретить",
-  "Deployment default": "Развертывание по умолчанию",
   Description: "Описание",
   "Don’t have an account?": "Нет аккаунта?",
   Done: "Готово",
@@ -769,7 +769,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "sk-…": "sk-…",
   Submitted: "Отправлено",
   "Teach a task": "Научить задачу",
-  "This removes the empty space for everyone.": "Это удалит пустое пространство для всех.",
+  "This removes the space for everyone.": "Это удалит пространство для всех.",
+  "Delete {name} and its bot?": "Удалить {name} и его бота?",
+  "Delete {name} and its {count} bots?": "Удалить {name} и его ботов ({count})?",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Это удалит все сообщения и остановит текущую работу. Бот, компьютер, память и задачи сохранятся.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
@@ -1014,4 +1016,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "How big is your team?": "Сколько человек в вашей команде?",
   "How did you hear about us?": "Как вы о нас узнали?",
   "Welcome to Rakazo": "Добро пожаловать в Rakazo",
+  "Choose a bot…": "Выберите бота…",
+  "Connect Slack workspace": "Подключить рабочее пространство Slack",
+  "Link a chat app": "Привязать чат-приложение",
+  Messaging: "Сообщения",
+  "Send {code} to the chat app in a direct message within 10 minutes.":
+    "Отправьте {code} чат-приложению в личном сообщении в течение 10 минут.",
+  Unlink: "Отвязать",
 };

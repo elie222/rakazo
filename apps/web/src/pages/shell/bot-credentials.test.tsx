@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { encodeLoginSecret } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -13,7 +14,12 @@ const botSecrets = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => ({ rpc: { botSecrets } }));
+vi.mock("../../lib/rpc", () => ({
+  rpc: { botSecrets },
+  rpcForSpace: () => ({ botSecrets }),
+  createSpaceRpc: () => ({ botSecrets }),
+  selectedSpaceId: () => null,
+}));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
@@ -51,16 +57,21 @@ const rows = [
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 
 async function flush() {
   await act(async () => {
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
 async function render() {
   await act(async () => {
-    root.render(<BotCredentialsSection botId="bot-1" />);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotCredentialsSection botId="bot-1" />
+      </QueryClientProvider>,
+    );
   });
   await flush();
 }
@@ -98,10 +109,12 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  queryClient.clear();
   container.remove();
   vi.unstubAllGlobals();
 });
@@ -109,7 +122,7 @@ afterEach(async () => {
 describe("BotCredentialsSection", () => {
   it("lists credential metadata and no values", async () => {
     await render();
-    expect(botSecrets.list).toHaveBeenCalledWith({ botId: "bot-1" });
+    expect(botSecrets.list.mock.calls[0]?.[0]).toEqual({ botId: "bot-1" });
     const text = container.textContent ?? "";
     expect(container.querySelectorAll('[data-testid="bot-credential-row"]')).toHaveLength(4);
     for (const expected of [

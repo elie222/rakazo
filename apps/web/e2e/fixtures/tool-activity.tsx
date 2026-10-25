@@ -1,8 +1,10 @@
 import { I18nProvider } from "@lingui/react";
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
+import { queryClient } from "../../src/lib/query";
 import {
   getToolActivityEnabled,
   subscribeToolActivity,
@@ -83,8 +85,10 @@ function SettingsFixture() {
 
 void bootstrapI18n("en").then(() => {
   createRoot(document.getElementById("root")!).render(
-    <I18nProvider i18n={i18n}>
-      {view === "settings" ? <SettingsFixture /> : <ThreadFixture />}
-    </I18nProvider>,
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider i18n={i18n}>
+        {view === "settings" ? <SettingsFixture /> : <ThreadFixture />}
+      </I18nProvider>
+    </QueryClientProvider>,
   );
 });

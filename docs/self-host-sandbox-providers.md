@@ -84,9 +84,10 @@ a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while r
 a run is executing on it or a user is in control of its screen. `0` turns the cap off.
 That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
 applies once nothing holds the computer.
-Docker and this-Mac computers are never capped. The next use resumes it. On providers that
-do not bill while running, a run waiting for takeover also holds the computer for 30 minutes
-after asking, so the user can answer the push on the same open page.
+Docker and this-Mac computers are never capped. The next use resumes it. Asking for
+takeover restarts the idle timer, and on providers that do not bill while running the run
+also holds the computer for 30 minutes after asking, so the user can answer the push on
+the same open page.
 
 ### Linux background-work inspection
 

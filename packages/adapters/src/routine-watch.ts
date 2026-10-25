@@ -502,6 +502,8 @@ async function readTool(
   } catch (error) {
     throw new RoutineWatchError(`Could not list the integration's tools: ${errorText(error)}`);
   }
+  // Discovery waits on every provider; the tool call gets its own full budget.
+  ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
   const call = { tool: toolName, args: watch.args ?? {}, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool

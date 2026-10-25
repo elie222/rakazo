@@ -32,7 +32,7 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   // first bot is created automatically — land in Chief's chat with no form.
   const integrations = page.getByRole("heading", { name: "Server integrations", exact: true });
   const chief = page.getByText("Chief").first();
-  await integrations.or(chief).or(page.getByText("Opening chat…")).waitFor({ timeout: 20_000 });
+  await integrations.or(chief).waitFor({ timeout: 20_000 });
   if ((await chief.isVisible().catch(() => false)) && page.url().includes("/app")) {
     if (testInfo) {
       await captureScreenshot(page, testInfo, "03-create-first-bot");
@@ -215,11 +215,11 @@ export async function openUserSettings(
   return settings;
 }
 
-/** The connection dialog for a provider, titled "Connect X" until it is connected and "X" after. */
+/** The connection page for a provider, titled "Connect X" until it is connected and "X" after. */
 export function modelConnectionDialog(page: Page, provider: string) {
   const name = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return page
-    .getByRole("dialog")
+    .getByTestId("model-connection")
     .filter({ has: page.getByRole("heading", { name: new RegExp(`^(Connect )?${name}$`) }) });
 }
 
@@ -319,4 +319,35 @@ export async function chooseOption(trigger: Locator, option: string | { index: n
     ? trigger.page().getByRole("option", { name: option, exact: true })
     : options.nth(option.index)
   ).click();
+}
+
+/**
+ * Clicks a button and waits for the RPC it sends to succeed, so what the test reads next
+ * reflects it. The wait starts before the click, so a fast reply is never missed.
+ */
+export async function clickAndWaitForRpc(page: Page, button: Locator, path: string) {
+  const [reply] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/rpc/${path}` &&
+        response.request().method() === "POST",
+    ),
+    button.click(),
+  ]);
+  expect(reply.status()).toBe(200);
+  // The whole reply has arrived, not just its headers.
+  const failure = await reply.finished();
+  if (failure) throw new Error(`/rpc/${path} reply did not finish: ${failure.message}`);
+}
+
+/** Presents a deployment default the offline E2E server cannot run, as host credentials would. */
+export async function presentMainDeploymentDefault(page: Page, provider: string, modelId: string) {
+  await page.route("**/rpc/models/role", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: { role: string } };
+    if (json.role !== "main") return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.deploymentPrimary = { provider, modelId };
+    await route.fulfill({ response, json: body });
+  });
 }

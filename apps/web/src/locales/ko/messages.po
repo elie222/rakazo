@@ -119,6 +119,10 @@ msgstr "{0}의 화면"
 msgid "{amount} / {period}"
 msgstr ""
 
+#: src/pages/shell/dialogs.tsx
+msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
+msgstr "{botCount, plural, other {{name}과(와) 봇 #개를 삭제할까요?}}"
+
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "{botName}의 컴퓨터"
@@ -329,6 +333,10 @@ msgstr "{summary} 백업 모델도 실패했습니다."
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "{title}, saved as {savedAs}"
+msgstr "{title}, {savedAs}(으)로 저장"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr ""
@@ -427,6 +435,7 @@ msgstr "활동"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Add"
 msgstr "추가"
 
@@ -530,6 +539,10 @@ msgstr "OpenAPI 추가"
 msgid "Add passkey"
 msgstr "패스키 추가"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "서비스 추가"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "원격 MCP 서버 추가"
@@ -541,6 +554,10 @@ msgstr "서버 추가"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Add server URL"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Add to an existing bot"
+msgstr "기존 봇에 추가"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
@@ -583,15 +600,12 @@ msgstr "고급..."
 msgid "Agent computer"
 msgstr "Agent 컴퓨터"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Agent connections"
-msgstr "Agent 연결"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Agents:"
 msgstr "사용 Bot:"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "All bots"
 msgstr ""
 
@@ -642,6 +656,10 @@ msgstr ""
 msgid "Allowed once"
 msgstr "한 번 허용됨"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Already connected"
+msgstr "이미 연결됨"
+
 #: src/pages/Auth.tsx
 msgid "Already have an account?"
 msgstr "이미 계정이 있나요?"
@@ -670,6 +688,14 @@ msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되�
 msgid "An existing Honcho peer to read from. Rakazo never writes to it."
 msgstr "데이터를 읽어올 기존 Honcho 피어입니다. Rakazo는 이 피어에 데이터를 쓰지 않습니다."
 
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be checked. Try again."
+msgstr "가져온 API 키를 확인하지 못했습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "An imported API key could not be used. Untick it and try again."
+msgstr "가져온 API 키를 사용할 수 없습니다. 선택을 해제하고 다시 시도하세요."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "연동 도구"
@@ -677,6 +703,10 @@ msgstr "연동 도구"
 #: src/lib/activity-list-filters.ts
 msgid "Another agent"
 msgstr "다른 Agent"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Another assistant"
+msgstr "다른 어시스턴트"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -718,9 +748,21 @@ msgstr ""
 msgid "API key"
 msgstr "API 키"
 
+#: src/pages/shell/import-status.ts
+msgid "API key for {provider}"
+msgstr "{provider}용 API 키"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "API key header"
 msgstr "API 키 헤더"
+
+#: src/pages/shell/agent-import.tsx
+msgid "API keys"
+msgstr "API 키"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "API keys stay connected."
+msgstr "API 키는 계속 연결되어 있습니다."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
@@ -809,6 +851,10 @@ msgid "at {timeSelect}"
 msgstr "{timeSelect}에"
 
 #: src/pages/shell/composer.tsx
+msgid "Attach"
+msgstr "첨부"
+
+#: src/pages/shell/composer.tsx
 msgid "Attach file"
 msgstr "파일 첨부"
 
@@ -874,6 +920,7 @@ msgstr "아바타 스튜디오"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "뒤로"
 
@@ -923,7 +970,9 @@ msgstr "Bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Bot"
@@ -945,10 +994,6 @@ msgstr "Bot 화면"
 #: src/pages/shell/computer-panel.tsx
 msgid "Bot screen preview"
 msgstr "Bot 화면 미리보기"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Bot to link"
-msgstr "연결할 Bot"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
@@ -979,6 +1024,7 @@ msgid "Browse MCP servers"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Built-in"
 msgstr "기본 제공"
 
@@ -1029,16 +1075,23 @@ msgstr "이미지를 읽을 수 없음"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import-undo.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "취소"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Cancel new bot"
+msgstr "새 Bot 만들기 취소"
 
 #: src/pages/GroupPanel.tsx
 msgid "Cancel new group"
@@ -1081,17 +1134,9 @@ msgstr "비밀번호 변경"
 msgid "Changing…"
 msgstr "변경 중…"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Channels"
-msgstr "채널"
-
 #: src/pages/shell/message-cards.tsx
 msgid "Chart failed to render: {error}"
 msgstr "차트를 표시하지 못했습니다: {error}"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Chat apps"
-msgstr "채팅 앱"
 
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
@@ -1139,6 +1184,10 @@ msgstr "API 키 또는 로그인을 확인한 뒤 다시 테스트하세요."
 msgid "Check the server URL and network, then test again."
 msgstr "서버 URL과 네트워크를 확인한 뒤 다시 테스트하세요."
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Check this yourself"
+msgstr "직접 확인하세요"
+
 #: src/pages/Auth.tsx
 msgid "Check your email"
 msgstr "이메일을 확인하세요"
@@ -1161,13 +1210,13 @@ msgstr "연결 확인 중…"
 msgid "Checking…"
 msgstr "확인 중…"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Choose a bot"
+msgstr "봇 선택"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
 msgstr "봇 모양과 색을 고르거나 이미지를 업로드하세요"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Choose a bot…"
-msgstr "Bot 선택…"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose a model"
@@ -1181,9 +1230,18 @@ msgstr "새 비밀번호 선택"
 msgid "Choose a provider"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Choose backup"
+msgstr "백업 선택"
+
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "파일 선택"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Choose folder"
+msgstr "폴더 선택"
 
 #: src/components/ModelCredits.tsx
 msgid "Choose how to use Rakazo"
@@ -1218,6 +1276,7 @@ msgstr "비우는 중…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1356,7 +1415,6 @@ msgstr "컴퓨터"
 msgid "Computer failed to boot"
 msgstr "컴퓨터를 시작하지 못했습니다"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-overlay.tsx
 msgid "Computer is asleep"
 msgstr "컴퓨터가 절전 상태입니다"
@@ -1365,7 +1423,6 @@ msgstr "컴퓨터가 절전 상태입니다"
 msgid "Computer is asleep. Open it to wake."
 msgstr "컴퓨터가 절전 상태입니다. 열어 깨우세요."
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "컴퓨터가 중지됨"
@@ -1421,6 +1478,10 @@ msgstr "연결"
 msgid "Connect {selectedProviderName}"
 msgstr "{selectedProviderName} 연결"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Connect a chat app"
+msgstr "채팅 앱 연결"
+
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
 msgstr "AI 모델 연결"
@@ -1441,6 +1502,10 @@ msgstr "Executor 연결"
 msgid "Connect MCP server “{name}”"
 msgstr "MCP 서버 ‘{name}’ 연결"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Connect memory provider"
+msgstr "기억 서비스 연결"
+
 #: src/components/ModelCredits.tsx
 msgid "Connect my own"
 msgstr ""
@@ -1448,6 +1513,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "OAuth 연결"
+
+#: src/lib/agent-import-errors.ts
+msgid "Connect this model's provider first."
+msgstr "먼저 이 모델의 제공자를 연결하세요."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
@@ -1492,6 +1561,11 @@ msgstr "연결 테스트에 실패했습니다."
 msgid "Connection to {0} is still pending. You can close this and check again."
 msgstr "{0} 연결이 아직 진행 중입니다. 이 창을 닫고 나중에 다시 확인할 수 있습니다."
 
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
+msgid "Contains code to run"
+msgstr "실행할 코드 포함"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Context limit"
@@ -1501,6 +1575,7 @@ msgstr "컨텍스트 한도"
 #: src/components/SignupSurvey.tsx
 #: src/pages/Auth.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Continue"
 msgstr "계속"
 
@@ -1525,9 +1600,14 @@ msgstr ""
 msgid "Continue with email"
 msgstr "이메일로 계속하기"
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Conversations"
+msgstr ""
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1540,6 +1620,10 @@ msgstr "복사"
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Copy .env example"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Copy prompt"
+msgstr "프롬프트 복사"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -1622,6 +1706,7 @@ msgstr ""
 msgid "Could not continue"
 msgstr "계속 진행하지 못했습니다."
 
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "Bot을 만들지 못했습니다."
@@ -1811,6 +1896,10 @@ msgstr "모델 서버에 연결하지 못했습니다."
 msgid "Could not reach the server"
 msgstr "서버에 연결할 수 없습니다"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Could not read these files"
+msgstr "이 파일을 읽지 못했습니다"
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1828,6 +1917,7 @@ msgstr "확인 규칙을 삭제하지 못했습니다."
 msgid "Could not remove the credential"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr ""
@@ -1836,7 +1926,7 @@ msgstr ""
 msgid "Could not rename section"
 msgstr "섹션 이름을 바꿀 수 없습니다"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "스페이스 이름을 바꿀 수 없습니다"
 
@@ -1858,6 +1948,7 @@ msgstr "루틴을 실행할 수 없습니다"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
@@ -1944,6 +2035,10 @@ msgstr "직접 조작으로 전환하지 못했습니다."
 msgid "Could not test MCP server"
 msgstr "MCP 서버를 테스트하지 못했습니다."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Could not undo the import"
+msgstr "가져오기를 취소하지 못했습니다"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "업데이트하지 못했습니다."
@@ -1989,6 +2084,7 @@ msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
 #: src/pages/shell/sidebar-header.tsx
@@ -2040,6 +2136,7 @@ msgid "Created"
 msgstr "생성됨"
 
 #: src/pages/GroupPanel.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Creating…"
 msgstr "만드는 중…"
@@ -2060,6 +2157,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Credentials are encrypted and never sent to the model."
 msgstr "인증 정보는 암호화되며 모델에 전송되지 않습니다."
+
+#: src/pages/shell/import-status.ts
+msgid "Credentials: {names}"
+msgstr "자격 증명: {names}"
 
 #: src/components/ModelCredits.tsx
 msgid "Credit amount"
@@ -2113,6 +2214,7 @@ msgid "Decline"
 msgstr "거절"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2124,6 +2226,14 @@ msgstr "기본값"
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "기본값 ({0})"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from Hermes"
+msgstr "Hermes 기본값"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Default from OpenClaw"
+msgstr "OpenClaw 기본값"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Default scope"
@@ -2178,6 +2288,7 @@ msgid "Delete section"
 msgstr "섹션 삭제"
 
 #: src/pages/Shell.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr ""
 
@@ -2203,11 +2314,8 @@ msgstr "거부됨"
 msgid "Deny"
 msgstr "거부"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "서버 기본값"
-
 #: src/pages/Board.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "설명"
@@ -2239,6 +2347,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
+#: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2252,10 +2361,9 @@ msgstr ""
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr ""
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} 연결을 해제했습니다."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -2314,6 +2422,7 @@ msgstr "계정이 없나요?"
 #: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
+#: src/pages/shell/import-setup-card.tsx
 msgid "Done"
 msgstr "완료"
 
@@ -2357,6 +2466,8 @@ msgstr "각 이름은 한 번만 사용할 수 있습니다."
 
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "편집"
 
@@ -2440,6 +2551,10 @@ msgstr "테스트하기 전에 API 키를 입력하세요."
 msgid "Environment variables"
 msgstr "환경 변수"
 
+#: src/pages/shell/import-status.ts
+msgid "Environment variables: {names}"
+msgstr "환경 변수: {names}"
+
 #: src/lib/roster-status.ts
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Error"
@@ -2457,6 +2572,10 @@ msgstr "매"
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "{intervalAmountSelect} {intervalUnitSelect}마다"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Every bot in this space reads these notes and keeps them up to date."
+msgstr "이 공간의 모든 봇이 이 메모를 읽고 최신 상태로 유지합니다."
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -2594,6 +2713,10 @@ msgstr "모델 찾기"
 #: src/pages/Onboarding.tsx
 msgid "Finding…"
 msgstr "찾는 중…"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Finish setting up"
+msgstr "설정 마무리"
 
 #. placeholder {0}: new URL(oauth.verificationUri).hostname
 #: src/pages/model-settings/connection-controls.tsx
@@ -2803,9 +2926,24 @@ msgstr ""
 msgid "Image upload area"
 msgstr "이미지 업로드 영역"
 
+#: src/pages/shell/composer.tsx
+#: src/pages/shell/create-bot-dialog.tsx
+msgid "Import"
+msgstr "가져오기"
+
+#: src/pages/Onboarding.tsx
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/message-cards.tsx
+msgid "Import an agent"
+msgstr "에이전트 가져오기"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "OpenAPI JSON 가져오기"
+
+#: src/pages/shell/composer.tsx
+msgid "Import this agent as a bot?"
+msgstr "이 에이전트를 봇으로 가져올까요?"
 
 #: src/lib/ticket-status.ts
 msgid "In progress"
@@ -2822,6 +2960,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Include API keys"
+msgstr "API 키 포함"
 
 #: src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -2861,8 +3003,18 @@ msgstr "지침 기록"
 
 #: src/components/AskCard.tsx
 #: src/components/InstructionSettings.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Instructions"
 msgstr "지침"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions {position}"
+msgstr "지침 {position}"
+
+#: src/lib/agent-import-errors.ts
+#: src/pages/shell/agent-import.tsx
+msgid "Instructions are too long. Untick some files."
+msgstr "지침이 너무 깁니다. 일부 파일의 선택을 해제하세요."
 
 #: src/components/AskCard.tsx
 msgid "Instructions updated"
@@ -2910,6 +3062,26 @@ msgstr "이 섹션의 Bot과 그룹은 유지되며 섹션에서 빠집니다."
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "대화, 파일, 자동 실행이 영구 삭제됩니다. 이 Bot이 만든 다른 Bot은 목록에 남습니다."
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions changed since the import, so they stay."
+msgstr "가져온 뒤 지침이 바뀌었으므로 그대로 유지됩니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "Its instructions changed. Review them, then try again."
+msgstr "지침이 바뀌었습니다. 확인한 뒤 다시 시도하세요."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its instructions go back to before the import."
+msgstr "지침이 가져오기 전 상태로 돌아갑니다."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model changed since the import, so it stays."
+msgstr "가져온 뒤 모델이 바뀌었으므로 그대로 유지됩니다."
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Its model goes back to before the import."
+msgstr "모델이 가져오기 전 상태로 돌아갑니다."
+
 #: src/pages/shell/transcript.tsx
 msgid "Jump to latest"
 msgstr "최신 메시지로 이동"
@@ -2922,9 +3094,17 @@ msgstr "답장한 메시지로 이동: {excerpt}"
 msgid "just now"
 msgstr "방금"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Keep its instructions"
+msgstr "기존 지침 유지"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Keep memories"
 msgstr "기억은 유지"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Kept"
+msgstr "유지됨"
 
 #: src/pages/RoutineEditor.tsx
 msgid "key"
@@ -2952,6 +3132,10 @@ msgstr ""
 msgid "Leave"
 msgstr "나가기"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
+msgstr "MEMORY.md와 함께 봇이 의미를 기준으로 사실을 저장하고 떠올릴 수 있게 합니다."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "라이트"
@@ -2959,10 +3143,6 @@ msgstr "라이트"
 #: src/pages/RoutineEditor.tsx
 msgid "Linear issue"
 msgstr "Linear 이슈"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Link a chat app"
-msgstr "채팅 앱 연결"
 
 #: src/components/AccountAccess.tsx
 msgid "Link SSO"
@@ -3022,26 +3202,18 @@ msgstr "모델 목록을 불러오는 중…"
 msgid "Loading preview…"
 msgstr "미리보기를 불러오는 중…"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Loading rules…"
-msgstr "확인 규칙을 불러오는 중…"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "음성 서비스를 불러오는 중…"
 
+#: src/components/PageLoading.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
 msgid "Loading…"
 msgstr "불러오는 중…"
-
-#: src/pages/memory-providers/ConnectionModeFields.tsx
-msgid "Local"
-msgstr "로컬"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
@@ -3056,6 +3228,10 @@ msgstr ""
 #: src/pages/Paywall.tsx
 msgid "Log out"
 msgstr "로그아웃"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Looks like it contains a key"
+msgstr "키가 포함된 것 같습니다"
 
 #: src/lib/ticket-priority.ts
 #: src/pages/model-settings/compatible-model-fields.tsx
@@ -3150,6 +3326,7 @@ msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "MCP servers"
 msgstr "MCP 서버"
 
@@ -3175,8 +3352,17 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Memory"
 msgstr "기억"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory {position}"
+msgstr "기억 {position}"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Memory for {title}"
+msgstr "{title}의 기억"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Memory scope"
@@ -3189,6 +3375,14 @@ msgstr "멘션"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Mentions only"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions OpenClaw features"
+msgstr "OpenClaw 기능을 언급함"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Mentions: {mentions}"
+msgstr "언급: {mentions}"
 
 #: src/pages/shell/chat-shared.ts
 #: src/pages/shell/composer.tsx
@@ -3277,6 +3471,7 @@ msgstr ""
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "모델"
@@ -3370,13 +3565,21 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "이름"
+
+#: src/lib/agent-import-errors.ts
+#: src/pages/shell/agent-import.tsx
+msgid "Name this bot"
+msgstr "Bot 이름"
 
 #: src/pages/GroupPanel.tsx
 msgid "Name this group"
@@ -3407,9 +3610,17 @@ msgstr "인수 필요"
 msgid "Needs you"
 msgstr ""
 
+#: src/pages/shell/import-status.ts
+msgid "Needs: {names}"
+msgstr "필요: {names}"
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "New bot"
+msgstr "새 Bot 만들기"
 
 #: src/pages/GroupPanel.tsx
 msgid "New group"
@@ -3449,10 +3660,6 @@ msgstr ""
 msgid "Next settings sections"
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No agent connections yet."
-msgstr "아직 Agent 연결이 없습니다."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
 msgstr "검색 결과가 없습니다."
@@ -3477,14 +3684,6 @@ msgstr ""
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr ""
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No chat apps linked yet."
-msgstr "아직 연결된 채팅 앱이 없습니다."
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No group chats yet."
-msgstr "아직 그룹 채팅이 없습니다."
 
 #: src/components/AskCard.tsx
 msgid "No longer active"
@@ -3528,10 +3727,15 @@ msgstr "사용 가능한 모델 목록이 없습니다."
 msgid "No models listed."
 msgstr "나열된 모델이 없습니다."
 
+#: src/pages/shell/agent-import.tsx
+msgid "No OpenClaw, Hermes or agent document found."
+msgstr "OpenClaw, Hermes 또는 에이전트 문서를 찾지 못했습니다."
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3549,10 +3753,6 @@ msgstr "아직 실행 기록이 없습니다"
 msgid "No skills yet"
 msgstr "아직 스킬이 없습니다"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "No team conversations yet."
-msgstr ""
-
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr ""
@@ -3565,9 +3765,21 @@ msgstr "트리거 없음"
 msgid "Normal"
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "Not a valid skill"
+msgstr "올바른 스킬이 아닙니다"
+
 #: src/components/McpServerHealthLine.tsx
 msgid "Not checked yet"
 msgstr "아직 확인되지 않음"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not imported"
+msgstr "가져오지 않음"
+
+#: src/pages/shell/import-status.ts
+msgid "Not in Rakazo's catalog"
+msgstr "Rakazo 카탈로그에 없음"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3576,6 +3788,15 @@ msgstr "플러그인 카탈로그에 없음"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "나중에"
+
+#: src/pages/shell/agent-import.tsx
+#: src/pages/shell/import-status.ts
+msgid "Not supported in Rakazo"
+msgstr "Rakazo에서 지원하지 않음"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Not used by Rakazo"
+msgstr "Rakazo에서 사용하지 않음"
 
 #: src/components/McpServerHealthLine.tsx
 msgid "Not working"
@@ -3642,12 +3863,9 @@ msgstr "매월 1일 {0}에"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
-#: src/pages/Shell.tsx
-msgid "Only empty spaces can be deleted. Delete its bots and groups first."
-msgstr ""
-
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
+#: src/pages/shell/import-setup-card.tsx
 #: src/pages/shell/message-view.tsx
 msgid "Open"
 msgstr "열기"
@@ -3656,6 +3874,10 @@ msgstr "열기"
 #: src/pages/shell/sidebar-roster.tsx
 msgid "Open {0}"
 msgstr "{0} 열기"
+
+#: src/pages/shell/import-setup-card.tsx
+msgid "Open {name}"
+msgstr "{name} 열기"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/model-settings/connection-controls.tsx
@@ -3707,13 +3929,9 @@ msgstr ""
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 호환 서버 주소"
 
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "채팅 여는 중…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "작업공간을 여는 중…"
+#: src/pages/shell/agent-import.tsx
+msgid "OpenClaw or Hermes"
+msgstr "OpenClaw 또는 Hermes"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx
@@ -3803,6 +4021,10 @@ msgstr "새 API 키를 붙여넣으세요"
 msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
 msgstr "서버의 OpenAI 호환 주소를 붙여넣으세요. 필요하면 Rakazo가 /v1을 추가합니다."
 
+#: src/pages/shell/agent-import.tsx
+msgid "Paste the reply"
+msgstr "답변 붙여넣기"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "API 키를 붙여넣으세요"
@@ -3812,12 +4034,21 @@ msgid "Paste your API key, then test again."
 msgstr "API 키를 붙여넣은 뒤 다시 테스트하세요."
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/import-status.ts
 msgid "Paused"
 msgstr "일시 중지됨"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Pending"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Permissions"
 msgstr "권한"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Persona"
+msgstr "페르소나"
 
 #: src/components/SignupSurvey.tsx
 msgid "Personal"
@@ -3905,6 +4136,10 @@ msgstr "Bot 전용"
 msgid "Private workspace with its own bots and groups."
 msgstr ""
 
+#: src/pages/shell/import-status.ts
+msgid "Program: {name}"
+msgstr "프로그램: {name}"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
 msgstr ""
@@ -3915,6 +4150,10 @@ msgstr ""
 msgid "Provider"
 msgstr "서비스"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "서비스"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "풀 리퀘스트"
@@ -3922,10 +4161,6 @@ msgstr "풀 리퀘스트"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "대기 중"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -3946,6 +4181,10 @@ msgstr "반응"
 #: src/pages/shell/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "답변을 자동으로 읽기"
+
+#: src/pages/shell/import-status.ts
+msgid "Ready"
+msgstr "준비됨"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
@@ -4125,6 +4364,10 @@ msgstr "작업 기술 {0} 삭제"
 msgid "Remove webhook"
 msgstr "웹훅 제거"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Removed"
+msgstr "제거됨"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Removed, but list refresh failed"
 msgstr "삭제했지만 목록을 새로고침하지 못했습니다."
@@ -4143,8 +4386,7 @@ msgstr "이름 변경"
 msgid "Rename section"
 msgstr "섹션 이름 바꾸기"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Rename space"
 msgstr "스페이스 이름 바꾸기"
 
@@ -4160,6 +4402,10 @@ msgstr "다시 열기"
 msgid "Replace API key"
 msgstr "API 키 교체"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Replace its instructions"
+msgstr "지침 바꾸기"
+
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "키 교체"
@@ -4169,6 +4415,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "답장"
 
@@ -4184,6 +4431,10 @@ msgstr ""
 #: src/lib/user-error.ts
 msgid "Request a new code"
 msgstr "새 코드를 요청하세요"
+
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Requests"
+msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
@@ -4301,6 +4552,7 @@ msgid "Routine"
 msgstr "자동 실행"
 
 #: src/pages/RoutineEditor.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Routines"
 msgstr "자동 실행"
 
@@ -4331,7 +4583,6 @@ msgstr "실행 중"
 #: src/components/McpServerHealthLine.tsx
 #: src/components/SubagentCard.tsx
 #: src/pages/ActivityList.tsx
-#: src/pages/Shell.tsx
 msgid "Running"
 msgstr "실행 중"
 
@@ -4359,11 +4610,14 @@ msgstr ""
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "저장"
 
@@ -4408,7 +4662,9 @@ msgstr ""
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4433,6 +4689,7 @@ msgid "Screen not connected"
 msgstr "화면이 연결되지 않음"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4492,13 +4749,17 @@ msgstr "보안"
 msgid "Select a bot"
 msgstr "대화할 Bot을 선택하세요"
 
+#: src/pages/memory-providers/ConnectionModeFields.tsx
+msgid "Self-hosted"
+msgstr "자체 호스팅"
+
 #: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "보내기"
 
 #: src/pages/MessagingSettingsOverlay.tsx
-msgid "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes. You'll get a confirmation reply once linked."
-msgstr "10분 안에 채팅 앱에서 연결할 회선으로 <0>{linkCode}</0>를 보내세요. 연결되면 확인 답장을 받습니다."
+msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Send answer"
@@ -4564,6 +4825,10 @@ msgstr "설정: 일반"
 msgid "Settings: Usage"
 msgstr "설정: 사용량"
 
+#: src/pages/shell/import-setup-card.tsx
+msgid "Setup complete"
+msgstr "설정 완료"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "설정 도움말"
@@ -4587,8 +4852,8 @@ msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all rep
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Shared documents"
-msgstr "공유 문서"
+msgid "Shared memory"
+msgstr "공유 기억"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
@@ -4681,9 +4946,18 @@ msgstr ""
 msgid "Skill {0}"
 msgstr "작업 기술 {0}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Skill {position}"
+msgstr "스킬 {position}"
+
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/shell/agent-import.tsx
 msgid "Skills"
 msgstr "스킬"
+
+#: src/pages/shell/agent-import.tsx
+msgid "Skills join the library all your bots share."
+msgstr "스킬은 모든 봇이 공유하는 라이브러리에 추가됩니다."
 
 #: src/pages/shell/computer-release-actions.tsx
 msgid "Skip"
@@ -4706,14 +4980,30 @@ msgstr "Slack 메시지"
 msgid "Slack not enabled"
 msgstr ""
 
+#: src/pages/MessagingSettingsOverlay.tsx
+msgid "Slack workspace"
+msgstr ""
+
 #: src/components/composer/HoldToTalk.tsx
 msgid "Slide up to lock"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Some settings are not imported"
+msgstr "일부 설정은 가져오지 않습니다"
 
 #: src/App.tsx
 #: src/lib/user-error.ts
 msgid "Something went wrong. Try again."
 msgstr "문제가 발생했습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something with the same name was just added. Try again."
+msgstr "같은 이름의 항목이 방금 추가되었습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "Something you chose cannot work here. Untick it and try again."
+msgstr "선택한 항목 중 여기서 작동하지 않는 것이 있습니다. 선택을 해제하고 다시 시도하세요."
 
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
@@ -4871,10 +5161,6 @@ msgstr "팀 공용"
 msgid "Team Computer"
 msgstr "팀 컴퓨터"
 
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Team conversations"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Teams message"
 msgstr "Teams 메시지"
@@ -4904,6 +5190,10 @@ msgstr "테스트 실행"
 #: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "테스트 중…"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "The bot and what its import added will be removed."
+msgstr "봇과 가져오기로 추가된 항목이 제거됩니다."
 
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
@@ -4943,6 +5233,14 @@ msgstr "선택한 기억 서비스는 현재 빌드에서 사용할 수 없습�
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr ""
 
+#: src/pages/shell/agent-import.tsx
+msgid "These files are too large to import."
+msgstr "이 파일은 가져오기에 너무 큽니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "These files or choices no longer match. Choose the files again."
+msgstr "파일이나 선택이 더 이상 맞지 않습니다. 파일을 다시 선택하세요."
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
@@ -4959,9 +5257,21 @@ msgstr "생각 깊이"
 msgid "Thinking: {0}"
 msgstr "사고: {0}"
 
+#: src/pages/shell/agent-import.tsx
+msgid "This backup could not be read."
+msgstr "이 백업을 읽지 못했습니다."
+
+#: src/pages/shell/agent-import.tsx
+msgid "This bot"
+msgstr "이 봇"
+
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "이 Bot은 별도 Linux 화면이 아니라 현재 컴퓨터에서 실행됩니다. 터미널과 파일 작업은 홈 폴더를 사용합니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "This bot was not imported."
+msgstr "이 봇은 가져온 봇이 아닙니다."
 
 #: src/components/call/IncomingCall.tsx
 msgid "This call is no longer ringing."
@@ -4997,6 +5307,14 @@ msgstr ""
 #: src/components/ArtifactFileCard.tsx
 msgid "This file is not valid UTF-8 text."
 msgstr ""
+
+#: src/lib/agent-import-errors.ts
+msgid "This import changed. Try again."
+msgstr "이 가져오기가 바뀌었습니다. 다시 시도하세요."
+
+#: src/lib/agent-import-errors.ts
+msgid "This import was already used. Choose the files again."
+msgstr "이미 사용된 가져오기입니다. 파일을 다시 선택하세요."
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
@@ -5062,6 +5380,10 @@ msgstr "실행 시각"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Timezone"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Timing may differ"
+msgstr "실행 시간이 달라질 수 있습니다"
 
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -5180,6 +5502,14 @@ msgstr "섹션 없음"
 #: src/components/AskCard.tsx
 msgid "Undo"
 msgstr "실행 취소"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import"
+msgstr "가져오기 취소"
+
+#: src/pages/shell/agent-import-undo.tsx
+msgid "Undo import?"
+msgstr "가져오기를 취소할까요?"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
@@ -5337,6 +5667,14 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
+#: src/pages/shell/import-status.ts
+msgid "Uses files that are not imported"
+msgstr "가져오지 않는 파일을 사용합니다"
+
+#: src/pages/shell/import-status.ts
+msgid "Uses paths on your computer"
+msgstr "내 컴퓨터의 경로를 사용합니다"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
 msgstr "이 서버의 자체 {hostCredentialSource} 자격 증명으로 {selectedProviderName}에 액세스합니다."
@@ -5433,6 +5771,10 @@ msgstr "어떤 작업을 직접 보여줄까요?"
 msgid "What should this routine do each time it runs?"
 msgstr "이 루틴이 실행될 때마다 무엇을 해야 하나요?"
 
+#: src/pages/shell/agent-import-undo.tsx
+msgid "What the import added will be removed. The bot stays."
+msgstr "가져오기로 추가된 항목이 제거됩니다. 봇은 유지됩니다."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "What this bot is for"
 msgstr "이 Bot을 언제, 어떤 일에 사용할지 적어주세요"
@@ -5469,6 +5811,10 @@ msgstr "언제 사용할지"
 msgid "Where should bots run?"
 msgstr "Bot을 어디에서 실행할까요?"
 
+#: src/pages/shell/agent-import.tsx
+msgid "Where to import"
+msgstr "가져올 위치"
+
 #: src/lib/ticket-status.ts
 msgid "Won't do"
 msgstr ""
@@ -5476,6 +5822,10 @@ msgstr ""
 #: src/components/SignupSurvey.tsx
 msgid "Work"
 msgstr ""
+
+#: src/pages/shell/agent-import.tsx
+msgid "Working instructions"
+msgstr "작업 지침"
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx
@@ -5527,6 +5877,14 @@ msgstr "사용 중인 Anthropic"
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "이메일 주소"
+
+#: src/pages/Onboarding.tsx
+msgid "Your first bot already existed, so the agent was not imported."
+msgstr "첫 번째 봇이 이미 있어서 에이전트를 가져오지 않았습니다."
+
+#: src/lib/agent-import-errors.ts
+msgid "Your first bot already exists."
+msgstr "첫 번째 봇이 이미 있습니다."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts

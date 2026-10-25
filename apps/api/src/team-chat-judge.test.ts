@@ -1,6 +1,6 @@
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { withMainRole } from "../../../packages/adapters/src/testing/model-roles.js";
+import { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
@@ -9,7 +9,7 @@ import {
 
 class ModelTeamChatEngagementJudge extends Judge {
   constructor(deps: ConstructorParameters<typeof Judge>[0]) {
-    super({ ...deps, prisma: withMainRole(deps.prisma) });
+    super({ ...deps, prisma: withModelRoles(deps.prisma) });
   }
 }
 
@@ -65,11 +65,17 @@ describe("team chat engagement judge", () => {
             secretId: "secret-fixture",
           },
           modelId: "model-fixture",
-          isDefault: true,
         })),
       },
       secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext: "encrypted" })) },
     };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        "openai-compatible",
+        "model-fixture",
+      ),
+    ]);
     const run = vi.fn((_request: unknown) => {
       throw new Error("upstream echoed route-value-fixture 12345678 us");
     });

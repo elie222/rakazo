@@ -3,6 +3,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -30,6 +31,7 @@ import {
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { fetchFresh, queryClient, rpcQuery, writeSaved } from "../../lib/query";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
@@ -56,22 +58,56 @@ type VoiceStatus = {
   voiceId: string;
 };
 type VoiceInfo = { id: string; label: string; description?: string };
+type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
+
+const voiceReads = () => ({
+  catalog: rpcQuery<VoiceCatalogEntry[]>("voice/catalog"),
+  credentials: rpcQuery<VoiceCredential[]>("voice/credentials"),
+  status: rpcQuery<VoiceStatus>("voice/status"),
+});
+const voicesRead = (provider: string) => rpcQuery<VoiceInfo[]>("voice/voices", { provider });
+
+function pickProvider(catalog: VoiceCatalogEntry[], status: VoiceStatus, preferred?: string) {
+  return (
+    [preferred, status.provider].find((id) => catalog.some((entry) => entry.id === id)) ??
+    catalog[0]?.id ??
+    ""
+  );
+}
+
+/** What this screen showed last in this space, so a revisit paints it before refreshing. */
+function cachedVoiceSettings() {
+  const reads = voiceReads();
+  const catalog = queryClient.getQueryData(reads.catalog.queryKey);
+  const credentials = queryClient.getQueryData(reads.credentials.queryKey);
+  const status = queryClient.getQueryData(reads.status.queryKey);
+  if (!catalog || !credentials || !status) return null;
+  const provider = pickProvider(catalog, status);
+  const credential = credentials.find((entry) => entry.provider === provider);
+  const voices = credential ? queryClient.getQueryData(voicesRead(provider).queryKey) : [];
+  return { catalog, credentials, status, provider, credential, voices: voices ?? [] };
+}
 
 export default function VoiceSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createVoiceStyles);
   const { t } = useI18n();
-  const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
-  const [credentials, setCredentials] = useState<VoiceCredential[]>([]);
-  const [status, setStatus] = useState<VoiceStatus | null>(null);
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [provider, setProvider] = useState("");
+  const [cached] = useState(cachedVoiceSettings);
+  const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
+  const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
+  const [status, setStatus] = useState<VoiceStatus | null>(cached?.status ?? null);
+  const [voices, setVoices] = useState<VoiceInfo[]>(cached?.voices ?? []);
+  const [provider, setProvider] = useState(cached?.provider ?? "");
   const [apiKey, setApiKey] = useState("");
-  const [voiceId, setVoiceId] = useState("");
-  const [speechModel, setSpeechModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [ttsModel, setTtsModel] = useState("");
-  const [sttModel, setSttModel] = useState("");
+  const [voiceId, setVoiceId] = useState(cached?.credential?.voiceId ?? "");
+  const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
+  const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
+  const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  // Fields typed into since the last load; an opening refresh keeps them.
+  const edited = useRef(new Set<VoiceField>());
+  // Every load and action bumps this, so an older refresh never lands over a newer choice.
+  const loadRevision = useRef(0);
   const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
@@ -80,7 +116,8 @@ export default function VoiceSettings() {
   // Prevent stale reads from overwriting a saved preference.
   const soundPrefsRevision = useRef(0);
   const soundPrefSaving = useRef(false);
-  const [loading, setLoading] = useState(true);
+  // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
+  const [loading, setLoading] = useState(!cached);
   const [pending, setPending] = useState<
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
@@ -88,38 +125,50 @@ export default function VoiceSettings() {
   const deviceVoiceRevision = useRef(0);
   const deviceVoiceSaveInFlight = useRef(false);
 
-  const load = useCallback(async (nextProvider?: string) => {
+  /**
+   * Opening keeps fields typed into meanwhile and may share a read already in flight; after a
+   * change, every field takes the server's value from a read sent afterwards.
+   */
+  const load = useCallback(async (nextProvider?: string, opening = false) => {
+    const revision = ++loadRevision.current;
+    if (!opening) edited.current.clear();
+    const reads = voiceReads();
+    const reuse = { reuse: opening };
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
-      rpc<VoiceCatalogEntry[]>("voice/catalog"),
-      rpc<VoiceCredential[]>("voice/credentials"),
-      rpc<VoiceStatus>("voice/status"),
+      fetchFresh(reads.catalog, reuse),
+      fetchFresh(reads.credentials, reuse),
+      fetchFresh(reads.status, reuse),
     ]);
-    const selected =
-      [nextProvider, nextStatus.provider].find((id) =>
-        nextCatalog.some((entry) => entry.id === id),
-      ) ??
-      nextCatalog[0]?.id ??
-      "";
+    if (revision !== loadRevision.current) return;
+    const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setStatus(nextStatus);
     setProvider(selected);
     const cred = nextCredentials.find((entry) => entry.provider === selected);
-    setVoiceId(cred?.voiceId ?? "");
-    setSpeechModel(cred?.speechModel ?? "");
-    setBaseUrl(cred?.endpoint ?? "");
-    setTtsModel(cred?.ttsModel ?? "");
-    setSttModel(cred?.sttModel ?? "");
+    const fields: [VoiceField, (value: string) => void, string | undefined][] = [
+      ["voiceId", setVoiceId, cred?.voiceId],
+      ["speechModel", setSpeechModel, cred?.speechModel],
+      ["baseUrl", setBaseUrl, cred?.endpoint],
+      ["ttsModel", setTtsModel, cred?.ttsModel],
+      ["sttModel", setSttModel, cred?.sttModel],
+    ];
+    for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
     if (cred) {
-      setVoices(await rpc<VoiceInfo[]>("voice/voices", { provider: selected }));
+      const nextVoices = await fetchFresh(voicesRead(selected), reuse);
+      if (revision === loadRevision.current) setVoices(nextVoices);
     } else {
       setVoices([]);
     }
   }, []);
 
+  const edit = (field: VoiceField, set: (value: string) => void) => (value: string) => {
+    edited.current.add(field);
+    set(value);
+  };
+
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       const revision = ++deviceVoiceRevision.current;
       void loadDeviceVoiceEnabled()
         .then((value) => {
@@ -146,8 +195,11 @@ export default function VoiceSettings() {
           }
         },
       );
-      void load()
-        .catch((err: unknown) => setError(errorText(err, t("Could not load voice settings"))))
+      void load(undefined, true)
+        .catch((err: unknown) => {
+          // A newer read replaced this one and reports for both.
+          if (!isCancelledError(err)) setError(errorText(err, t("Could not load voice settings")));
+        })
         .finally(() => setLoading(false));
     }, [load, t]),
   );
@@ -219,6 +271,7 @@ export default function VoiceSettings() {
     if (pending !== null || !deviceVoiceReady) return;
     const wasDeviceVoice = deviceVoice;
     const previousProvider = provider;
+    loadRevision.current++;
     setPending("voice");
     setError(null);
     try {
@@ -232,6 +285,7 @@ export default function VoiceSettings() {
             provider: nextProvider,
           });
           setStatus(saved);
+          await writeSaved(voiceReads().status.queryKey, () => saved);
         } catch (err) {
           setProvider(previousProvider);
           if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
@@ -320,10 +374,15 @@ export default function VoiceSettings() {
         provider: selected.id,
         speechModel: next,
       });
+      const merge = (current: VoiceCredential[] = []) =>
+        current.map((entry) => (entry.id === saved.id ? { ...entry, ...saved } : entry));
+      // A read still out started before this save, so it must not land; read again after it.
+      loadRevision.current++;
+      edited.current.delete("speechModel");
       setSpeechModel(saved.speechModel ?? "");
-      setCredentials((current) =>
-        current.map((entry) => (entry.id === saved.id ? { ...entry, ...saved } : entry)),
-      );
+      setCredentials(merge);
+      await writeSaved(voiceReads().credentials.queryKey, merge);
+      void load(selected.id, true).catch(() => undefined);
     } catch (err) {
       setError(errorText(err, t("Could not save that speech model")));
     } finally {
@@ -333,6 +392,7 @@ export default function VoiceSettings() {
   }
 
   async function chooseVoice(nextVoiceId: string) {
+    loadRevision.current++;
     setVoiceId(nextVoiceId);
     setPending("voice");
     try {
@@ -445,7 +505,7 @@ export default function VoiceSettings() {
                 inputMode="url"
                 keyboardType="url"
                 value={baseUrl}
-                onChangeText={setBaseUrl}
+                onChangeText={edit("baseUrl", setBaseUrl)}
                 placeholder="http://192.168.1.10:8880/v1"
                 placeholderTextColor={native.tertiaryLabel}
                 style={styles.input}
@@ -480,7 +540,7 @@ export default function VoiceSettings() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={ttsModel}
-                  onChangeText={setTtsModel}
+                  onChangeText={edit("ttsModel", setTtsModel)}
                   placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
@@ -491,7 +551,7 @@ export default function VoiceSettings() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={sttModel}
-                  onChangeText={setSttModel}
+                  onChangeText={edit("sttModel", setSttModel)}
                   placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
@@ -526,7 +586,7 @@ export default function VoiceSettings() {
                   autoCorrect={false}
                   editable={pending === null}
                   value={speechModel}
-                  onChangeText={setSpeechModel}
+                  onChangeText={edit("speechModel", setSpeechModel)}
                   onBlur={() => void saveSpeechModel()}
                   onSubmitEditing={() => void saveSpeechModel()}
                   placeholder={t("Optional")}

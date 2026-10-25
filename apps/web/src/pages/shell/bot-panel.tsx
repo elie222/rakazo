@@ -3,11 +3,8 @@ import type {
   AgentSkillCatalogEntry,
   Bot,
   ComputerMode,
-  Me,
   ModelCatalogEntry,
-  ModelCredential,
   ThinkingLevel,
-  VoiceInfo,
 } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
@@ -39,6 +36,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@rakazo/ui-web/components/ui/collapsible";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Download, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
@@ -47,8 +45,9 @@ import { InstructionSettings } from "../../components/InstructionSettings";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { lazyComponent } from "../../lib/preload-recovery";
-import { rpc } from "../../lib/rpc";
+import { useSpaceQueries } from "../../lib/query";
 import { errorText } from "../../lib/user-error";
+import { AgentImportUndo } from "./agent-import-undo";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
 import { ChatModelPicker } from "./chat-model-picker";
@@ -63,7 +62,19 @@ const KnowledgeSection = lazyComponent(() =>
 
 const rowLabelClass = "text-sm text-foreground";
 
-function ComputerModePicker({
+/** The advanced fields one Save sends, in the order their saved snapshot keeps them. */
+function advancedValues(bot: Bot) {
+  return [
+    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
+    bot.thinkingLevel ?? "",
+    bot.computerMode,
+    bot.memoryScope,
+    bot.autoSpeak,
+    bot.voiceId ?? "",
+  ] as const;
+}
+
+export function ComputerModePicker({
   value,
   onChange,
 }: {
@@ -92,17 +103,18 @@ function ComputerModePicker({
 export function BotSettings({
   bot,
   memoryProviderConfigured,
-  onSkillsChange,
   onSave,
   onExport,
   onClear,
+  onUndoImport,
   focusModel = 0,
   onOpenConnections,
 }: {
   bot: Bot;
   focusModel?: number;
   onOpenConnections?: () => void;
-  onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
+  /** Unused: the skill sections read and save the shared cached skill list. */
+  onSkillsChange?: (skills: AgentSkillCatalogEntry[]) => void;
   memoryProviderConfigured: boolean;
   onSave: (patch: {
     name?: string;
@@ -124,6 +136,8 @@ export function BotSettings({
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
+  /** Shown for bots that came from an agent import. */
+  onUndoImport?: () => void;
 }) {
   const { t } = useLingui();
   const ids = useId();
@@ -168,7 +182,6 @@ export function BotSettings({
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
   );
@@ -188,21 +201,23 @@ export function BotSettings({
     persistedDisabledToolsRef.current = next;
     if (pendingSavesRef.current === 0) setDisabledBuiltinTools(next);
   }, [bot.disabledBuiltinTools]);
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [me, setMe] = useState<Me | null>(null);
-  const [modelMetaReady, setModelMetaReady] = useState(false);
+  // Shared with the model and voice settings, so a revisit paints at once and refreshes behind.
+  const queries = useSpaceQueries();
+  const refresh = { refetchOnMount: "always" } as const;
+  const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
+  const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
+  const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
+  const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
+  const credentials = credentialsQuery.data ?? NO_CREDENTIALS;
+  const catalog = catalogQuery.data ?? NO_CATALOG;
+  const me = meQuery.data ?? null;
+  // A failed catalog load must not clear an existing thinkingLevel override on save.
+  const modelMetaReady =
+    credentialsQuery.data !== undefined &&
+    catalogQuery.data !== undefined &&
+    meQuery.data !== undefined;
   const [saving, setSaving] = useState(false);
-  const [savedAdvanced, setSavedAdvanced] = useState(() =>
-    JSON.stringify([
-      bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
-      bot.thinkingLevel ?? "",
-      bot.computerMode,
-      bot.memoryScope,
-      bot.autoSpeak,
-      bot.voiceId ?? "",
-    ]),
-  );
+  const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
   const advancedSnapshot = JSON.stringify([
     modelKey,
     thinkingLevel,
@@ -234,22 +249,34 @@ export function BotSettings({
       revisions?: { color: number; notifyOnFinish: number },
     ) => Promise<void>
   >(async () => undefined);
+  // The panel can open on a cached bot. When a newer copy arrives, every field not edited since
+  // follows it, so a later save does not send the cached values back over it. A copy that is not
+  // newer (a roster read from before a save) is ignored.
+  const shownBotRef = useRef(bot);
   useEffect(() => {
-    void rpc.voice
-      .voices({})
-      .then(setVoices)
-      .catch(() => setVoices([]));
-    void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
-      .then(([nextCredentials, nextCatalog, nextMe]) => {
-        setCredentials(nextCredentials);
-        setCatalog(nextCatalog);
-        setMe(nextMe);
-        // Only mark ready on success — a failed catalog load must not clear
-        // an existing thinkingLevel override on save.
-        setModelMetaReady(true);
-      })
-      .catch(() => undefined);
-  }, []);
+    if (bot.updatedAt <= shownBotRef.current.updatedAt) return;
+    shownBotRef.current = bot;
+    if (name.trim() === savedNameRef.current.trim()) setName(bot.name);
+    savedNameRef.current = bot.name;
+    if (title.trim() === savedTitleRef.current.trim()) setTitle(bot.title);
+    savedTitleRef.current = bot.title;
+    if (description.trim() === savedDescriptionRef.current) setDescription(bot.description);
+    savedDescriptionRef.current = bot.description ?? "";
+    const accepted = acceptedAutomatic.current;
+    const nextNotify = bot.notifyOnFinish ?? true;
+    if (color === accepted.color) setColor(bot.color);
+    if (notifyOnFinish === accepted.notifyOnFinish) setNotifyOnFinish(nextNotify);
+    acceptedAutomatic.current = { color: bot.color, notifyOnFinish: nextNotify };
+    const saved = JSON.parse(savedAdvanced) as unknown[];
+    const next = advancedValues(bot);
+    if (modelKey === saved[0]) setModelKey(next[0]);
+    if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
+    if (computerMode === saved[2]) setComputerMode(next[2]);
+    if (memoryScope === saved[3]) setMemoryScope(next[3]);
+    if (autoSpeak === saved[4]) setAutoSpeak(next[4]);
+    if (voiceId === saved[5]) setVoiceId(next[5]);
+    setSavedAdvanced(JSON.stringify(next));
+  }, [bot]);
 
   const connectedOptions = connectedModelChoices(credentials, catalog);
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
@@ -538,7 +565,7 @@ export function BotSettings({
       </ErrorBoundary>
       <ErrorBoundary fallback={<SectionLoadFailed />}>
         <Suspense fallback={null}>
-          <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} />
+          <KnowledgeSection botId={bot.id} />
         </Suspense>
       </ErrorBoundary>
       <Collapsible
@@ -658,7 +685,7 @@ export function BotSettings({
                   onCheckedChange={(checked) => setAutoSpeak(checked)}
                 />
               </label>
-              {voices.length ? (
+              {voices?.length ? (
                 <label
                   htmlFor={`${ids}-voice`}
                   className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"
@@ -780,7 +807,7 @@ export function BotSettings({
             <BotCredentialsSection botId={bot.id} />
             <ErrorBoundary fallback={<SectionLoadFailed />}>
               <Suspense fallback={null}>
-                <KnowledgeSection botId={bot.id} onSkillsChange={onSkillsChange} skillsOnly />
+                <KnowledgeSection botId={bot.id} skillsOnly />
               </Suspense>
             </ErrorBoundary>
             <div className="overflow-hidden rounded-xl bg-muted/50 px-4">
@@ -799,6 +826,7 @@ export function BotSettings({
               >
                 <Trans>Clear conversation</Trans>
               </button>
+              {onUndoImport ? <AgentImportUndo botId={bot.id} onUndone={onUndoImport} /> : null}
             </div>
           </div>
         </CollapsibleContent>
@@ -824,6 +852,9 @@ export function BotSettings({
     </div>
   );
 }
+
+const NO_CREDENTIALS: never[] = [];
+const NO_CATALOG: ModelCatalogEntry[] = [];
 
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);

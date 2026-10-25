@@ -230,3 +230,29 @@ describe("createBackgroundJobHandlers", () => {
     });
   });
 });
+
+it("retries retired messaging credentials without deleting a currently referenced credential", async () => {
+  const remove = vi.fn(async () => undefined);
+  const findUnique = vi.fn(async () => ({ ciphertext: "active-ref" }));
+  const handlers = createBackgroundJobHandlers({
+    prisma: { messagingInstallation: { findUnique } },
+    secretStore: { delete: remove },
+  } as unknown as Parameters<typeof createBackgroundJobHandlers>[0]);
+  await handlers["messaging.credential-cleanup"]({
+    installationId: "install-a",
+    ref: "active-ref",
+  });
+  expect(remove).not.toHaveBeenCalled();
+  await handlers["messaging.credential-cleanup"]({
+    installationId: "install-a",
+    ref: "retired-ref",
+  });
+  expect(remove).toHaveBeenCalledWith(
+    "retired-ref",
+    expect.objectContaining({ recordId: "install-a" }),
+  );
+  remove.mockRejectedValueOnce(new Error("secret store temporarily unavailable") as never);
+  await expect(
+    handlers["messaging.credential-cleanup"]({ installationId: "install-a", ref: "retired-ref" }),
+  ).rejects.toThrow("temporarily unavailable");
+});

@@ -331,9 +331,38 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
           homeStorageId: true,
           homeStorageKey: true,
           homeStorageRevision: true,
+          updatedAt: true,
         },
       }),
     );
+  }
+
+  /**
+   * Lifecycle claims (booting, suspending) fence on the computer's updatedAt, so recording where
+   * a home is stored must leave it unchanged. Writing it back would race a claim landing between
+   * the read and the write, so the write also requires the value it read and retries if a claim
+   * moved it.
+   */
+  private async updateKeepingClaim(
+    reason: string,
+    homeKey: string,
+    where: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const row = await this.row(homeKey);
+      if (!row) return false;
+      const { count } = await runAsSystem(reason, () =>
+        this.prisma.computer.updateMany({
+          where: { ...where, id: row.id, updatedAt: row.updatedAt },
+          data: { ...data, updatedAt: row.updatedAt },
+        }),
+      );
+      if (count === 1) return true;
+      const current = await this.row(homeKey);
+      if (!current || current.updatedAt.getTime() === row.updatedAt.getTime()) return false;
+    }
+    return false;
   }
 
   async load(homeKey: string): Promise<StoredHome | undefined> {
@@ -361,24 +390,23 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
         randomBytes(32).toString("base64"),
       );
       // Two first saves can race; the loser uses the winner's key.
-      await runAsSystem("create an agent home's storage key", () =>
-        this.prisma.computer.updateMany({
-          where: { id: row.id, homeStorageId: null },
-          data: { homeStorageId: storageId, homeStorageKey: wrapped, homeStorageRevision: null },
-        }),
+      await this.updateKeepingClaim(
+        "create an agent home's storage key",
+        homeKey,
+        { homeStorageId: null },
+        { homeStorageId: storageId, homeStorageKey: wrapped, homeStorageRevision: null },
       );
     }
     return this.load(homeKey);
   }
 
   async advance(homeKey: string, storageId: string, from: string | null, to: string) {
-    const { count } = await runAsSystem("record an agent home's saved revision", () =>
-      this.prisma.computer.updateMany({
-        where: { homeKey, homeStorageId: storageId, homeStorageRevision: from },
-        data: { homeStorageRevision: to },
-      }),
+    return this.updateKeepingClaim(
+      "record an agent home's saved revision",
+      homeKey,
+      { homeStorageId: storageId, homeStorageRevision: from },
+      { homeStorageRevision: to },
     );
-    return count === 1;
   }
 
   async revisions(storageIds: readonly string[]) {

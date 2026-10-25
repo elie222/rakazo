@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
   compatibleConnectionName,
+  connectionDisplayName,
   isOllamaCloudBaseUrl,
   OLLAMA_CLOUD_BASE_URL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -25,11 +26,13 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ModelCredential } from "../lib/model-auth";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
 import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
+import { ConnectionNameField, ProvidersSection } from "./model-settings/providers-section";
 import type { ConnectableProvider } from "./model-settings/role-model-picker";
 import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
@@ -54,7 +57,6 @@ export function ModelSettingsOverlay({
     credential,
     credentialByProvider,
     credentials,
-    currentEntry,
     disconnectCredential,
     disconnectName,
     error,
@@ -71,13 +73,20 @@ export function ModelSettingsOverlay({
     provider,
     refresh,
     selected,
+    selectedConnectionName,
     selectedProviderName,
     setConfirmDisconnect,
     setMaxTokens,
     setNotice,
     settingsDirty,
   } = model;
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // Where the connection form opens: under a role's list, under a provider row, or at the
+  // end of Providers when adding one. The rest of the page stays where it was.
+  const [connectionAt, setConnectionAt] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    panelRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [connectionAt]);
 
   const providers: ConnectableProvider[] = groups
     .filter((group) => !credentialByProvider.has(group.id))
@@ -91,6 +100,27 @@ export function ModelSettingsOverlay({
       name: t`Ollama Cloud`,
       baseUrl: OLLAMA_CLOUD_BASE_URL,
     });
+  // Adding another account is open to every provider, connected or not.
+  const allProviders: ConnectableProvider[] = [
+    ...groups.map((group) => ({ id: group.id, name: group.name })),
+    ...(groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID)
+      ? [
+          {
+            id: OPENAI_COMPATIBLE_PROVIDER_ID,
+            name: t`Ollama Cloud`,
+            baseUrl: OLLAMA_CLOUD_BASE_URL,
+          },
+        ]
+      : []),
+  ];
+  const connectionName = (entry: ModelCredential) => {
+    const group = groups.find((item) => item.id === entry.provider);
+    return connectionDisplayName(
+      entry,
+      group?.name ?? entry.provider,
+      group?.entries[0]?.providerName ? [group.entries[0].providerName] : [],
+    );
+  };
   const providerLabel = (id: string) =>
     compatibleConnectionName(
       credentialByProvider.get(id)?.baseUrl,
@@ -102,23 +132,29 @@ export function ModelSettingsOverlay({
       (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
   );
 
-  function openConnection(next: ConnectableProvider, intent: ModelRoleConnectIntent | null) {
-    model.chooseProvider(next.id, next.baseUrl);
+  /** Opens a connection by id, or connects a new one for the provider. */
+  function openConnection(
+    next: ConnectableProvider,
+    intent: ModelRoleConnectIntent | null,
+    credentialId: string | null,
+    at: string,
+  ) {
+    model.chooseProvider(next.id, next.baseUrl, credentialId);
     intentRef.current = {
       makeDefault: intent?.makeDefault ?? false,
       onConnected: async (choice) => {
-        setDialogOpen(false);
+        setConnectionAt(null);
         intentRef.current = null;
         await intent?.onConnected(choice);
       },
     };
-    setDialogOpen(true);
+    setConnectionAt(at);
   }
 
   function closeConnection() {
     cancelOAuthAttempt();
     intentRef.current = null;
-    setDialogOpen(false);
+    setConnectionAt(null);
   }
 
   const disconnectButton = connected ? (
@@ -160,7 +196,7 @@ export function ModelSettingsOverlay({
             type="button"
             variant="secondary"
             size="sm"
-            className="mt-4 rounded-full"
+            className="mt-4"
             disabled={busy}
             onClick={() => void connectKey({ settingsOnly: true })}
           >
@@ -184,6 +220,56 @@ export function ModelSettingsOverlay({
     )
   ) : null;
 
+  // Under its own Providers row the row is the heading, so the form sits there unframed.
+  const panelFor = (framed: boolean) => (
+    <div
+      ref={panelRef}
+      className={framed ? "mt-3 rounded-xl border border-border px-4 py-4" : "pt-1"}
+      data-testid="model-connection"
+    >
+      <div className={framed ? "mb-3 flex items-center justify-between gap-3" : "sr-only"}>
+        <h4
+          data-testid="model-connection-title"
+          className="min-w-0 truncate text-[15px] font-medium text-foreground"
+        >
+          {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
+        </h4>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="-me-1.5 shrink-0 text-muted-foreground"
+          aria-label={t`Close`}
+          tabIndex={framed ? undefined : -1}
+          onClick={closeConnection}
+        >
+          <X />
+        </Button>
+      </div>
+      {error ? (
+        <p className="mb-4 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="mb-4 text-sm text-success" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {/* Edits made while a save is in flight would be replaced by what it saved. */}
+      <fieldset className="contents" disabled={pending === "connect" || pending === "settings"}>
+        {connected && credential ? (
+          <ConnectionNameField
+            key={credential.id}
+            credential={credential}
+            onRenamed={() => void refresh()}
+          />
+        ) : null}
+        {connection}
+      </fieldset>
+    </div>
+  );
+
   const body = (
     <>
       {!embedded ? (
@@ -200,13 +286,13 @@ export function ModelSettingsOverlay({
       ) : null}
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-        <div className="mx-auto max-w-[600px]">
-          {error && !dialogOpen ? (
+        <div className="max-w-[600px]">
+          {error && !connectionAt ? (
             <p className="mb-4 text-sm text-destructive" role="alert">
               {error}
             </p>
           ) : null}
-          {notice && !dialogOpen ? (
+          {notice && !connectionAt ? (
             <p className="mb-4 text-sm text-success" role="status">
               {notice}
             </p>
@@ -218,15 +304,14 @@ export function ModelSettingsOverlay({
                 spaceId={me.spaceId}
                 credentials={credentials}
                 title={t`Main model`}
-                defaultLabel={
-                  me.needsModel
-                    ? t`Choose a model`
-                    : (currentEntry?.label ?? me.defaultModel ?? t`Deployment default`)
-                }
+                defaultLabel={t`Choose a model`}
                 providers={providers}
                 providerLabel={providerLabel}
-                onConnect={openConnection}
-                onManage={(id) => openConnection({ id, name: id }, null)}
+                onConnect={(next, intent) => openConnection(next, intent, null, "main")}
+                onManage={(id, credentialId) =>
+                  openConnection({ id, name: id }, null, credentialId, "main")
+                }
+                panel={connectionAt === "main" ? panelFor(true) : null}
                 thinking
                 onChanged={() => void refresh()}
               />
@@ -241,11 +326,37 @@ export function ModelSettingsOverlay({
                 credentials={credentials}
                 modelRole="approval"
                 title={t`Approval model`}
-                defaultLabel={t`Deployment default`}
+                defaultLabel={t`Choose a model`}
                 providers={providers}
                 providerLabel={providerLabel}
-                onConnect={openConnection}
-                onManage={(id) => openConnection({ id, name: id }, null)}
+                onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
+                onManage={(id, credentialId) =>
+                  openConnection({ id, name: id }, null, credentialId, "approval")
+                }
+                panel={connectionAt === "approval" ? panelFor(true) : null}
+              />
+              <ProvidersSection
+                credentials={credentials}
+                providers={allProviders}
+                name={connectionName}
+                disabled={busy}
+                onAdd={(next) => openConnection(next, null, null, "providers:add")}
+                onOpen={(entry) =>
+                  connectionAt === `providers:${entry.id}`
+                    ? closeConnection()
+                    : openConnection(
+                        { id: entry.provider, name: entry.provider },
+                        null,
+                        entry.id,
+                        `providers:${entry.id}`,
+                      )
+                }
+                panel={
+                  connectionAt?.startsWith("providers:")
+                    ? panelFor(connectionAt === "providers:add")
+                    : null
+                }
+                panelAt={connectionAt?.slice("providers:".length) ?? null}
               />
             </>
           ) : loading ? (
@@ -257,32 +368,6 @@ export function ModelSettingsOverlay({
           )}
         </div>
       </div>
-
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) closeConnection();
-        }}
-      >
-        <DialogContent className="max-h-[calc(100%-2rem)] w-[480px] max-w-[calc(100%-2rem)] overflow-y-auto rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg">
-              {connected ? selectedProviderName : <Trans>Connect {selectedProviderName}</Trans>}
-            </DialogTitle>
-          </DialogHeader>
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {notice ? (
-            <p className="text-sm text-success" role="status">
-              {notice}
-            </p>
-          ) : null}
-          <div>{connection}</div>
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
@@ -303,7 +388,7 @@ export function ModelSettingsOverlay({
               disabled={pending === "disconnect"}
               onClick={() => {
                 setConfirmDisconnect(false);
-                setDialogOpen(false);
+                setConnectionAt(null);
                 intentRef.current = null;
                 void disconnectCredential();
               }}

@@ -295,7 +295,7 @@ export function RoutineListRow({
         <Button
           size="xs"
           onClick={onStop}
-          className="shrink-0 rounded-full bg-warning/15 text-warning hover:bg-warning/25"
+          className="shrink-0 bg-warning/15 text-warning hover:bg-warning/25"
         >
           <Trans>Running · Stop</Trans>
         </Button>

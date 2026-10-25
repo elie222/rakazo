@@ -226,10 +226,22 @@ export interface RedeemedMessagingLink {
  */
 export async function redeemMessagingLinkCode(
   prisma: PrismaClient,
-  request: { code: string; provider: string; address: string; dmThreadId: string | null },
+  request: {
+    code: string;
+    provider: string;
+    address: string;
+    dmThreadId: string | null;
+    spaceId?: string;
+    installationId?: string;
+  },
 ): Promise<RedeemedMessagingLink | null> {
   const row = await prisma.messagingLinkCode.findUnique({ where: { code: request.code } });
-  if (!row || row.expiresAt.getTime() < Date.now()) return null;
+  if (
+    !row ||
+    row.expiresAt.getTime() < Date.now() ||
+    (request.spaceId && row.spaceId !== request.spaceId)
+  )
+    return null;
   try {
     return await prisma.$transaction(async (tx) => {
       // Single-use: the delete is the claim; a concurrent redemption loses.
@@ -244,7 +256,12 @@ export async function redeemMessagingLinkCode(
           where: { id: existing.id },
           // The identity must follow the bot's space: runs resolve
           // credentials, memory, and approval rules from run.spaceId.
-          data: { botId: row.botId, spaceId: row.spaceId, dmThreadId: request.dmThreadId },
+          data: {
+            botId: row.botId,
+            spaceId: row.spaceId,
+            dmThreadId: request.dmThreadId,
+            installationId: request.installationId ?? null,
+          },
         });
         return {
           identityId: existing.id,
@@ -259,6 +276,7 @@ export async function redeemMessagingLinkCode(
           provider: request.provider,
           address: request.address,
           dmThreadId: request.dmThreadId,
+          installationId: request.installationId,
           userId: row.userId,
           spaceId: row.spaceId,
           botId: row.botId,

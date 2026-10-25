@@ -5,14 +5,26 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import VoiceSettings from "../app/(settings)/voice";
+import { queryClient } from "./query";
 
-const state = vi.hoisted(() => ({ rpc: vi.fn(), load: vi.fn(), save: vi.fn() }));
+const state = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  load: vi.fn(),
+  save: vi.fn(),
+  held: null as Promise<void> | null,
+}));
 const t = (text: string) => text;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
 }));
-vi.mock("./api", () => ({ rpc: state.rpc }));
+vi.mock("./api", () => ({
+  rpc: state.rpc,
+  currentApiBase: () => "https://app.example.test",
+  selectedSpaceId: () => "space-fixture",
+  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+}));
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./device-voice", () => ({
   loadDeviceVoiceEnabled: state.load,
   saveDeviceVoiceEnabled: state.save,
@@ -54,7 +66,7 @@ vi.mock("react-native", () => {
     View,
     ScrollView: View,
     Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-    ActivityIndicator: () => null,
+    ActivityIndicator: () => <span>Loading</span>,
     StyleSheet: { create: (styles: unknown) => styles },
     Pressable: ({ children, onPress, disabled, accessibilityState }: ButtonProps) => (
       <button
@@ -66,8 +78,23 @@ vi.mock("react-native", () => {
         {children}
       </button>
     ),
-    TextInput: ({ accessibilityLabel, value }: { accessibilityLabel: string; value: string }) => (
-      <input aria-label={accessibilityLabel} value={value} readOnly />
+    TextInput: ({
+      accessibilityLabel,
+      value,
+      onChangeText,
+      onBlur,
+    }: {
+      accessibilityLabel: string;
+      value: string;
+      onChangeText?: (value: string) => void;
+      onBlur?: () => void;
+    }) => (
+      <input
+        aria-label={accessibilityLabel}
+        value={value}
+        onChange={(event) => onChangeText?.(event.currentTarget.value)}
+        onBlur={onBlur}
+      />
     ),
   };
 });
@@ -107,10 +134,13 @@ async function click(label: string) {
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   activeProvider = "fish-audio";
   state.load.mockReset().mockResolvedValue(true);
   state.save.mockReset().mockResolvedValue(undefined);
+  state.held = null;
   state.rpc.mockReset().mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (state.held) await state.held;
     if (proc === "voice/catalog") return catalog;
     if (proc === "voice/credentials") return credentials;
     if (proc === "voice/setVoice") activeProvider = args!.provider;
@@ -281,4 +311,99 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save).not.toHaveBeenCalled();
+});
+
+async function revisit() {
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  let release!: () => void;
+  state.held = new Promise((resolve) => {
+    release = resolve;
+  });
+  await render();
+  return async () => {
+    await act(async () => release());
+  };
+}
+
+it("paints a revisit from cache without a spinner and refreshes behind it", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  expect(container.textContent).toContain("fish-audio voice");
+  const calls = state.rpc.mock.calls.length;
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation((proc: string, args?: { provider: string }) =>
+    proc === "voice/voices"
+      ? Promise.resolve([{ id: "fish-new", label: "Refreshed voice" }])
+      : original(proc, args),
+  );
+
+  const release = await revisit();
+  expect(container.textContent).not.toContain("Loading");
+  expect(container.textContent).toContain("fish-audio voice");
+  expect(state.rpc.mock.calls.length).toBeGreaterThan(calls);
+
+  await release();
+  expect(container.textContent).toContain("Refreshed voice");
+});
+
+it("keeps a field typed into while the opening refresh is in flight", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  const release = await revisit();
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Speech model"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "typed");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await release();
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Speech model"]')!.value).toBe(
+    "typed",
+  );
+});
+
+it("keeps a saved speech model when an opening read started before the save lands after it", async () => {
+  state.load.mockResolvedValue(false);
+  await render();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  let serverSpeechModel = "speech-model";
+  let releaseCatalog!: () => void;
+  const catalogHeld = new Promise<void>((resolve) => {
+    releaseCatalog = resolve;
+  });
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog") await catalogHeld;
+    if (proc === "voice/credentials") {
+      return credentials.map((entry) =>
+        entry.id === "fish" ? { ...entry, speechModel: serverSpeechModel } : entry,
+      );
+    }
+    if (proc === "voice/setSpeechModel") {
+      serverSpeechModel = "saved-model";
+      return { ...credentials[0], speechModel: serverSpeechModel };
+    }
+    return original(proc, args);
+  });
+  await render();
+  const input = () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Speech model"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input(),
+      "saved-model",
+    );
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input().focus();
+    input().blur();
+  });
+  expect(state.rpc).toHaveBeenCalledWith("voice/setSpeechModel", {
+    provider: "fish-audio",
+    speechModel: "saved-model",
+  });
+  await act(async () => releaseCatalog());
+  await vi.waitFor(() => expect(input().value).toBe("saved-model"));
 });

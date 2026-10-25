@@ -1456,6 +1456,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   // After "Mark as unread" on a message, the chat stays unread for the rest of this visit. The
   // hold names the visit, so returning to the chat (a new visit) reads it again.
   const heldUnread = useRef<number | null>(null);
+  const [markedUnread, setMarkedUnread] = useState<{ visit: number; messageId: string } | null>(
+    null,
+  );
+  const markedUnreadMessageId =
+    markedUnread?.visit === readVisit.current.visit ? markedUnread.messageId : undefined;
   const markUnreadFrom = (message: MobileMessage) => {
     const visit = readVisit.current.visit;
     const target = groupId ?? botId;
@@ -1467,10 +1472,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         ...(groupId ? { groupId } : { botId: botId! }),
         messageId: message.id,
       }),
-    ).catch((err) => {
-      if (heldUnread.current === visit) heldUnread.current = null;
-      Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
-    });
+    )
+      .then(() => {
+        if (readVisit.current.visit === visit) {
+          setMarkedUnread({ visit, messageId: message.id });
+        }
+      })
+      .catch((err) => {
+        if (heldUnread.current === visit) heldUnread.current = null;
+        Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
+      });
   };
 
   const markReadIfVisible = useCallback(() => {
@@ -2519,6 +2530,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           separator={separatorIds.has(message.id)}
           headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
           unreadDivider={message.id === unreadDividerId}
+          markedUnread={message.id === markedUnreadMessageId}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           waitingForUser={[...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])].some(
@@ -2572,6 +2584,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       separatorIds,
       visibleMessages[0]?.id,
       unreadDividerId,
+      markedUnreadMessageId,
       columnWidth,
       t,
       locale,
@@ -3374,6 +3387,7 @@ type MessageRowProps = {
   separator: boolean;
   headerAdjacent: boolean;
   unreadDivider: boolean;
+  markedUnread: boolean;
   replyAuthor: string;
   replyFallbackText?: string;
   waitingForUser: boolean;
@@ -3418,6 +3432,7 @@ const MessageRow = memo(function MessageRow({
   separator,
   headerAdjacent,
   unreadDivider,
+  markedUnread,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -3477,7 +3492,7 @@ const MessageRow = memo(function MessageRow({
     const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
     const includeSelect = messageText.trim().length > 0;
     // Any sent message can be marked unread; the next open starts New at the first reply from it.
-    const includeUnread = !readOnly && canMarkMessageUnread(message);
+    const includeUnread = !readOnly && !markedUnread && canMarkMessageUnread(message);
     const reply = () => actions.reply(message);
     const quote = () => actions.quote(message);
     const speakMessage = () => actions.speak(message);
@@ -3654,6 +3669,7 @@ const MessageRow = memo(function MessageRow({
   }, [
     message,
     actions,
+    markedUnread,
     readOnly,
     onCall,
     colorScheme,

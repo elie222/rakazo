@@ -167,6 +167,7 @@ it.each([false, true])(
         "Models",
         "Voice",
         "Integrations",
+        "Messaging",
         "AI data sharing",
       ]);
       expect(rows[0]!.getAttribute("role")).toBe("button");
@@ -176,6 +177,9 @@ it.each([false, true])(
       events.length = 0;
       act(() => rows[1]!.click());
       expect(events).toEqual(["/models"]);
+      events.length = 0;
+      act(() => rows[4]!.click());
+      expect(events).toEqual(["/messaging"]);
       act(() => root.render(render(true)));
       expect(container.querySelector("button")!.disabled).toBe(true);
     } finally {

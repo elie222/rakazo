@@ -1,3 +1,4 @@
+export * from "./approval-rules.js";
 export * from "./artifact-versions.js";
 export * from "./billing.js";
 export * from "./board.js";
@@ -24,10 +25,10 @@ export * from "./history-retrieval.js";
 export * from "./memory-config.js";
 export * from "./messages.js";
 export * from "./messaging.js";
-export * from "./model-backups.js";
 export * from "./model-credentials.js";
 export * from "./model-credits.js";
 export * from "./model-roles.js";
+export * from "./provider-transactions.js";
 export * from "./repos.js";
 export * from "./row-security.js";
 export * from "./run-secrets.js";

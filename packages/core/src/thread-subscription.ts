@@ -91,9 +91,13 @@ export async function runThreadSubscription(options: {
     let cursor = head.cursor;
     let effectsCursor = head.cursor;
     let generation = 0;
+    // A snapshot on screen counts as current only if it reaches the head. An older one (say,
+    // painted from a cache while its fresh load failed) would otherwise never get the events
+    // between its cursor and the head, since the stream starts from the head.
+    const shown = options.currentSnapshot();
     const recovery: { current: SnapshotRecovery } = {
       current:
-        options.currentSnapshot()?.threadId === head.threadId
+        shown?.threadId === head.threadId && shown.cursor >= head.cursor
           ? { phase: "live" }
           : { phase: "snapshot" },
     };

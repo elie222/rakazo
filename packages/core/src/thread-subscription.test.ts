@@ -100,6 +100,36 @@ describe("thread subscription recovery", () => {
     await running;
   });
 
+  it.each([
+    ["bot", { threadId: "thread", cursor: 5 }],
+    ["group", { threadId: "thread", cursor: 7 }],
+  ])("recovers the gap behind a cached %s snapshot older than the head", async (_kind, cached) => {
+    vi.useFakeTimers();
+    const { abort, channel, state, callbacks } = setup(cached);
+    const replay = stream();
+    // The fresh load failed or timed out, so only the cached snapshot is on screen.
+    callbacks.loadInitial.mockResolvedValue(null);
+    callbacks.subscribe.mockResolvedValueOnce(channel.events).mockResolvedValueOnce(replay.events);
+    callbacks.refresh.mockImplementation(async () => {
+      state.committed = { ...head, cursor: 10 };
+    });
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.subscribe).toHaveBeenCalledWith(10, expect.any(AbortSignal));
+    channel.send(event(11));
+    await vi.advanceTimersByTimeAsync(0);
+    // Not applied onto a snapshot missing everything after its own cursor.
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.refresh).toHaveBeenCalled();
+    expect(callbacks.subscribe.mock.calls.map(([cursor]) => cursor)).toEqual([10, 10]);
+    replay.send(event(11));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(11));
+    abort.abort();
+    await running;
+  });
+
   it("keeps effects immediate through failed snapshot refreshes and replays all missing state", async () => {
     vi.useFakeTimers();
     const { abort, channel, state, callbacks } = setup(null);

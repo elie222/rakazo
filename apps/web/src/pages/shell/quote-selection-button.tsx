@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { cn } from "@rakazo/ui-web";
+import { Button, cn } from "@rakazo/ui-web";
 import { TextQuote } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -49,26 +49,32 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
   }, [range]);
 
   return createPortal(
-    <button
-      ref={buttonRef}
-      type="button"
+    // The wrapper owns the offset so the button's pressed nudge cannot move it.
+    <div
       data-quote-selection
-      data-testid="quote-selection"
-      onMouseDown={(event) => {
-        // Keep the highlight alive until the click commits the quote.
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-      onClick={onQuote}
       style={placement ? { top: placement.top, left: placement.left } : { visibility: "hidden" }}
       className={cn(
-        "fixed z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[13px] font-medium text-foreground shadow-md hover:bg-accent",
+        "fixed z-50 -translate-x-1/2",
         placement?.above === false ? "translate-y-0" : "-translate-y-full",
       )}
     >
-      <TextQuote size={13} strokeWidth={2} />
-      {t`Quote`}
-    </button>,
+      <Button
+        ref={buttonRef}
+        variant="floating"
+        size="sm"
+        data-testid="quote-selection"
+        onMouseDown={(event) => {
+          // Keep the highlight alive until the click commits the quote.
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onClick={onQuote}
+        className="px-3 shadow-md"
+      >
+        <TextQuote strokeWidth={2} />
+        {t`Reply`}
+      </Button>
+    </div>,
     document.body,
   );
 });

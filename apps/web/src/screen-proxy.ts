@@ -65,16 +65,22 @@ function isHttp2PseudoHeader(key: string) {
   return key.startsWith(":");
 }
 
-export function safeProxyHeaders(headers: IncomingHttpHeaders) {
-  return Object.fromEntries(
-    Object.entries(headers).filter(([key, value]) => {
-      return (
-        value != null &&
-        !isHttp2PseudoHeader(key) &&
-        !SENSITIVE_FORWARD_HEADERS.has(key.toLowerCase())
-      );
-    }),
-  );
+export function safeProxyHeaders(
+  headers: IncomingHttpHeaders,
+  upstreamHeaders?: Record<string, string>,
+) {
+  return {
+    ...Object.fromEntries(
+      Object.entries(headers).filter(([key, value]) => {
+        return (
+          value != null &&
+          !isHttp2PseudoHeader(key) &&
+          !SENSITIVE_FORWARD_HEADERS.has(key.toLowerCase())
+        );
+      }),
+    ),
+    ...upstreamHeaders,
+  };
 }
 
 /** Recheck streams as well as new requests; no positive authorization cache. */

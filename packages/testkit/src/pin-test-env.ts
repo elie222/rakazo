@@ -35,6 +35,9 @@ if (!process.env.VERIFY_PROVIDERS) {
   process.env.WAKEUP_DRIVER = "memory";
   delete process.env.COMPOSIO_API_KEY;
   delete process.env.INTEGRATIONS_CATALOG_URL;
+  delete process.env.EMAIL_PROVIDER;
+  delete process.env.EMAIL_API_KEY;
+  delete process.env.SMTP_URL;
   if (!process.env.VERIFY_DATABASE) {
     delete process.env.DATABASE_URL;
     delete process.env.REALTIME_DATABASE_URL;

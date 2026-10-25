@@ -625,3 +625,193 @@ it("hides call dictation until the server enables it", () => {
   renderComposer(vi.fn().mockResolvedValue(true));
   expect(container?.querySelector('button[aria-label="Hold to talk"]')).toBeNull();
 });
+
+describe("a dropped folder or archive", () => {
+  /** A drop whose file list the browser empties once the handler returns. */
+  function drop(entries: unknown[], files: File[]) {
+    const fieldset = container!.querySelector("fieldset")!;
+    const list = [...files];
+    const dataTransfer = {
+      files: list,
+      types: ["Files"],
+      items: files.map((file, index) => ({
+        kind: "file",
+        getAsFile: () => file,
+        webkitGetAsEntry: () => entries[index] ?? null,
+      })),
+    };
+    act(() => {
+      const event = new Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+      fieldset.dispatchEvent(event);
+    });
+    list.length = 0;
+  }
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  it("attaches an archive that is not an agent, after the event's list is gone", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    const archive = new File(["not a zip"], "photos.zip");
+    drop([{ name: "photos.zip", isFile: true, isDirectory: false }], [archive]);
+    await settle();
+    expect(onAttachmentPick).toHaveBeenCalledTimes(1);
+    expect([...(onAttachmentPick.mock.calls[0] as unknown as [File[]])[0]]).toEqual([archive]);
+  });
+
+  it("attaches nothing when the chat changes while a dropped archive is read", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    // A large archive: its read finishes only after the user moved to another chat.
+    const archive = new File(["not a zip"], "photos.zip");
+    let finishRead: (bytes: ArrayBuffer) => void = () => undefined;
+    archive.arrayBuffer = () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finishRead = resolve;
+      });
+    drop([{ name: "photos.zip", isFile: true, isDirectory: false }], [archive]);
+    rerenderComposer({ draftKey: "bot:bot-2", artifactTarget: { botId: "bot-2" } });
+    finishRead(new TextEncoder().encode("not a zip").buffer as ArrayBuffer);
+    await settle();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+  });
+
+  it("attaches a dropped agent when the user picks Attach, after the event's list is gone", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    const onImportAgent = vi.fn();
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent },
+    );
+    const soul: unknown = {
+      name: "SOUL.md",
+      fullPath: "/workspace/SOUL.md",
+      isFile: true,
+      isDirectory: false,
+      file: (resolve: (file: File) => void) => resolve(new File(["Calm."], "SOUL.md")),
+    };
+    let listed = false;
+    const folder = {
+      name: "workspace",
+      fullPath: "/workspace",
+      isFile: false,
+      isDirectory: true,
+      createReader: () => ({
+        readEntries: (resolve: (entries: unknown[]) => void) => {
+          resolve(listed ? [] : [soul]);
+          listed = true;
+        },
+      }),
+    };
+    const placeholder = new File([], "workspace");
+    drop([folder], [placeholder]);
+    await settle();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+    const attach = [...container!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Attach",
+    )!;
+    act(() => attach.click());
+    expect([...(onAttachmentPick.mock.calls[0] as unknown as [File[]])[0]]).toEqual([placeholder]);
+    expect(onImportAgent).not.toHaveBeenCalled();
+  });
+
+  it("attaches nothing when the composer is replaced while a dropped archive is read", async () => {
+    // The shell keys the composer by chat: moving to another chat unmounts this one.
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    const archive = new File(["not a zip"], "photos.zip");
+    let finishRead: (bytes: ArrayBuffer) => void = () => undefined;
+    archive.arrayBuffer = () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finishRead = resolve;
+      });
+    drop([{ name: "photos.zip", isFile: true, isDirectory: false }], [archive]);
+    act(() =>
+      root?.render(
+        <Composer
+          key="bot:bot-2"
+          {...composerProps}
+          draftKey="bot:bot-2"
+          artifactTarget={{ botId: "bot-2" }}
+        />,
+      ),
+    );
+    finishRead(new TextEncoder().encode("not a zip").buffer as ArrayBuffer);
+    await settle();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+  });
+
+  it("drops the Import or Attach choice when the user moves to another chat", async () => {
+    const onAttachmentPick = vi.fn(() => true);
+    renderComposer(
+      vi.fn(async () => true),
+      { onAttachmentPick, onImportAgent: vi.fn() },
+    );
+    const soul: unknown = {
+      name: "SOUL.md",
+      fullPath: "/workspace/SOUL.md",
+      isFile: true,
+      isDirectory: false,
+      file: (resolve: (file: File) => void) => resolve(new File(["Calm."], "SOUL.md")),
+    };
+    let listed = false;
+    const folder = {
+      name: "workspace",
+      fullPath: "/workspace",
+      isFile: false,
+      isDirectory: true,
+      createReader: () => ({
+        readEntries: (resolve: (entries: unknown[]) => void) => {
+          resolve(listed ? [] : [soul]);
+          listed = true;
+        },
+      }),
+    };
+    drop([folder], [new File([], "workspace")]);
+    await settle();
+    const attach = () =>
+      [...container!.querySelectorAll("button")].find((button) => button.textContent === "Attach");
+    expect(attach()).toBeTruthy();
+    rerenderComposer({ draftKey: "bot:bot-2", artifactTarget: { botId: "bot-2" } });
+    expect(attach()).toBeUndefined();
+    expect(onAttachmentPick).not.toHaveBeenCalled();
+  });
+});
+
+it("accepts file drops in transparent padding only during file drags", () => {
+  const onAttachmentPick = vi.fn(() => true);
+  renderComposer(async () => true, { onAttachmentPick });
+  const fieldset = container!.querySelector("fieldset")!;
+  const dispatchDrag = (target: EventTarget, type: string, dataTransfer: object) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    act(() => target.dispatchEvent(event));
+  };
+  dispatchDrag(window, "dragenter", { types: ["text/plain"], items: [] });
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  const files = [new File(["example"], "example.txt", { type: "text/plain" })];
+  const dataTransfer = { types: ["Files"], items: [], files };
+  dispatchDrag(window, "dragenter", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-auto")).toBe(true);
+  dispatchDrag(fieldset, "dragover", dataTransfer);
+  expect(fieldset.dataset.dragging).toBe("files");
+  dispatchDrag(fieldset, "drop", dataTransfer);
+  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(files);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  expect(fieldset.dataset.dragging).toBeUndefined();
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragleave", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragend", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+});
