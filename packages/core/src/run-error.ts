@@ -160,7 +160,7 @@ export type RunErrorKind =
  * that reject a model's malformed tool call or empty reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b|(?:openai_harmony\.HarmonyError: )?unexpected tokens remaining in message header:)/;
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =
@@ -228,6 +228,20 @@ export function normalizeRunError(
     typeof payload.message === "string" ? asRecord(asRecord(parseJson(payload.message)).error) : {};
   if (Object.keys(wrapped).length) payload = wrapped;
   const message = typeof payload.message === "string" ? payload.message : body;
+  // Parser diagnostics can quote generated text containing unrelated quota or network errors.
+  // Classify the diagnostic prefix before interpreting any of that text as provider status.
+  if (
+    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
+    MODEL_OUTPUT_FAILURE.test(trimmed) ||
+    MODEL_OUTPUT_FAILURE.test(message)
+  ) {
+    return {
+      summary: translate("The model returned an unusable response. Try again."),
+      details,
+      kind: "output",
+      recovery: "model",
+    };
+  }
   const metadata = asRecord(payload.metadata ?? record.metadata);
   const signals = [
     message,
@@ -381,14 +395,6 @@ export function normalizeRunError(
     )
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
-  } else if (
-    trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
-    MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message)
-  ) {
-    recovery = "model";
-    kind = "output";
-    summary = translate("The model returned an unusable response. Try again.");
   }
   return {
     summary,

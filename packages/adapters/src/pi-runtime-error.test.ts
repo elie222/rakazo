@@ -106,6 +106,10 @@ describe("Pi runtime errors", () => {
     "Provider finish_reason: error",
     "Provider stopped with: MALFORMED_FUNCTION_CALL",
     "Provider returned an empty response",
+    'unexpected tokens remaining in message header: Some("to=functions.example")',
+    'openai_harmony.HarmonyError: unexpected tokens remaining in message header: Some("analysis")',
+    '500: {"message":"unexpected tokens remaining in message header: Some(\\"analysis\\")"}',
+    'unexpected tokens remaining in message header: Some("credit limit, timeout, model not found")',
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",
     MODEL_OUTPUT_LIMIT_ERROR,
@@ -121,6 +125,7 @@ describe("Pi runtime errors", () => {
     '{"error":{"message":"Function call is missing a thought_signature in functionCall parts.","code":400}}',
     '400: {"message":"Provider returned error","code":400,"metadata":{"raw":"The `uniqueItems` JSON Schema keyword is not supported."}}',
     "Cannot read properties of undefined (reading 'content')",
+    "Internal failure while handling unexpected tokens remaining in message header: unknown",
   ])("keeps a request we built or an unknown failure ordinary: %s", async (message) => {
     provider.errorMessage = message;
     const failure = consume();
