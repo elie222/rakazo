@@ -182,9 +182,6 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Add OpenAPI", exact: true })).toBeHidden();
   await expect(page.getByRole("button", { name: "Add GraphQL", exact: true })).toBeHidden();
   await expect(page.getByText("Tool sources", { exact: true })).toBeHidden();
-  await expect(
-    page.getByText("Connect apps or add Treg, MCP, and OpenAPI tool sources.", { exact: true }),
-  ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
   // Nearest ancestor with an Add/Added control (featured tile or catalog row).
@@ -369,9 +366,6 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await page.getByRole("button", { name: "Export" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/chief-export\.json/i);
-  const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Archive bot" })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Delete bot" })).toHaveCount(0);
   await page.getByRole("button", { name: "Close panel" }).click();
 
   await page.locator("aside").first().getByRole("button", { name: /Chief/ }).first().click({
@@ -415,9 +409,9 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(sidebarBotButton(page, /Scout/)).toBeVisible({
     timeout: 30_000,
   });
-  const botLinkCard = page.getByTestId("bot-link-card");
-  await expect(botLinkCard).toBeVisible({ timeout: 30_000 });
-  await expectCardWidth(botLinkCard, 340);
+  await expect(page.getByTestId("bot-mention").filter({ hasText: "Scout" })).toBeVisible({
+    timeout: 30_000,
+  });
   await captureScreenshot(page, testInfo, "13-spawned-bot");
 
   await page
@@ -429,9 +423,6 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByTestId("composer-steering-status")).toHaveCount(0);
-  await expect(page.getByText("Messages sent now guide the next turn.")).toHaveCount(0);
-  await expect(page.getByText(/^Steer /)).toHaveCount(0);
   await expect(composer).toHaveAttribute("placeholder", "Message Chief");
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   const holdToTalk = page

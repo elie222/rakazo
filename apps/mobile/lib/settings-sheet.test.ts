@@ -60,7 +60,7 @@ describe("settings sheet", () => {
 describe("settings links", () => {
   it("knows every public page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))
-      .filter((file) => file !== "_layout.tsx" && file !== "model-picker.tsx")
+      .filter((file) => !["_layout.tsx", "model-picker.tsx", "model-connection.tsx"].includes(file))
       .map((file) => file.replace(/\.tsx$/, ""));
 
     for (const page of pages) expect(isSettingsLink(`/${page}`), page).toBe(true);
@@ -70,6 +70,7 @@ describe("settings links", () => {
     expect(isSettingsLink("rakazo:///models")).toBe(true);
     // Picker sessions only exist after an in-sheet push, never from a link.
     expect(isSettingsLink("rakazo:///model-picker")).toBe(false);
+    expect(isSettingsLink("rakazo:///model-connection")).toBe(false);
     expect(isSettingsLink("rakazo://voice")).toBe(true);
     expect(isSettingsLink("rakazo:///account?focus=usage")).toBe(true);
     expect(isSettingsLink("rakazo://integrations/")).toBe(true);

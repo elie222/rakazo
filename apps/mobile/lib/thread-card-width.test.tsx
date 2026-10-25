@@ -75,10 +75,14 @@ vi.mock("./native", () => ({
   useMobileTokens: () => ({}),
 }));
 
+vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => <i /> }));
+vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => <i /> }));
+
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) => <button type="button">{label}</button>,
 }));
 
+import { BotMention, MessageMentions } from "../components/bot-mention";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import { withUserBubble } from "./user-bubble";
 
@@ -111,6 +115,9 @@ const scope = {
   withTiming: (value: number) => value,
   Animated: { View },
   NativeSymbol: () => <i data-chevron="down" />,
+  BotAvatar: () => <i />,
+  BotMention,
+  MessageMentions,
   useResolvedAppearance: () => "light",
   mobileTokens: () => ({}),
   withUserBubble,
@@ -203,11 +210,7 @@ describe("thread cards", () => {
       [helper(), text("Ship Flow B")],
       ["agent-1CompletedCheck the plan", "Ship Flow B"],
     ],
-    [
-      "text around a child",
-      [text("Before"), child, text("After")],
-      ["Before", "PlannerbotOpened its thread.", "After"],
-    ],
+    ["text around a child", [text("Before"), child, text("After")], ["Before", "Planner", "After"]],
     ["cloud then text", [cloud, text("Cloud result")], ["Remote taskfinished", "Cloud result"]],
     [
       "two helpers",
@@ -222,7 +225,7 @@ describe("thread cards", () => {
     expect(styleOf(container.firstElementChild)).toMatchObject({ gap: 8, width: "100%" });
   });
 
-  it.each([helper(), child, cloud])("preserves a lone $kind card's width and padding", (block) => {
+  it.each([helper(), cloud])("preserves a lone $kind card's width and padding", (block) => {
     renderBlocks([block]);
     expect(container.children).toHaveLength(1);
     expect(styleOf(container.firstElementChild)).toMatchObject({
@@ -248,17 +251,36 @@ describe("thread cards", () => {
     }
   });
 
+  it.each([
+    ["no longer in the roster", child, []],
+    ["deleted", { ...child, status: "deleted" }, [{ id: "child-1", name: "Planner" }]],
+  ])("keeps a child bot's name without a link when it is %s", (_, block, bots) => {
+    const onOpenBot = vi.fn();
+    renderBlocks([block as MessageBlock], { bots, onOpenBot });
+    const row = container.firstElementChild as HTMLElement;
+    expect(row.textContent).toContain("Planner");
+    expect(row.querySelector('[role="link"]')).toBeNull();
+    act(() => {
+      for (const span of row.querySelectorAll("span")) span.click();
+    });
+    expect(onOpenBot).not.toHaveBeenCalled();
+  });
+
   it("keeps child navigation and long-press actions on each card and text piece", () => {
     const onOpenBot = vi.fn();
     const onLongPress = vi.fn();
-    renderBlocks([helper(), child, text("After")], { onOpenBot, actionProps: { onLongPress } });
+    renderBlocks([helper(), child, text("After")], {
+      bots: [{ id: "child-1", name: "Planner", color: "orange" }],
+      onOpenBot,
+      actionProps: { onLongPress },
+    });
     const cards = [...container.firstElementChild!.children] as HTMLElement[];
     expect(cards).toHaveLength(3);
-    act(() => cards[1]!.click());
+    act(() => cards[1]!.querySelector<HTMLElement>('[role="link"]')!.click());
     expect(onOpenBot).toHaveBeenCalledWith("child-1", "Planner");
     act(() =>
       cards.forEach((card) => {
-        const target = card.tagName === "BUTTON" ? card : card.querySelector("button")!;
+        const target = card.tagName === "DIV" ? card.querySelector("button")! : card;
         target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
       }),
     );

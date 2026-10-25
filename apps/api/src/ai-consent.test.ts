@@ -15,7 +15,7 @@ function setup() {
     env: { agentRuntime: "scripted" },
     prisma: {
       spaceModelPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-      spaceBackupModel: { findMany: vi.fn(async () => []) },
+      spaceModelRoleChoice: { findMany: vi.fn(async () => []) },
       userModelCredential: { findMany: vi.fn(async () => []) },
       secret: { findMany: vi.fn(async () => []) },
       bot: { findMany: vi.fn(async () => []) },
@@ -79,11 +79,17 @@ describe("consent grants", () => {
       }),
     );
   });
-  it("includes selected backup models in the provider-sharing disclosure until each is allowed", async () => {
+  it("includes every purpose's selected models in the provider-sharing disclosure until each is allowed", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";
-    vi.mocked(deps.prisma.spaceBackupModel.findMany).mockResolvedValue([
-      { provider: "anthropic", modelId: "claude-backup" },
+    vi.mocked(deps.prisma.spaceModelRoleChoice.findMany).mockResolvedValue([
+      {
+        role: "main",
+        position: 1,
+        provider: "anthropic",
+        modelId: "claude-backup",
+        thinkingLevel: null,
+      },
     ] as never);
     vi.mocked(deps.prisma.userModelCredential.findMany).mockResolvedValue([
       {
@@ -109,9 +115,9 @@ describe("consent grants", () => {
         }),
       ]),
     );
-    expect(deps.prisma.spaceBackupModel.findMany).toHaveBeenCalledWith({
+    expect(deps.prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith({
       where: { userId: actor.userId, spaceId: actor.spaceId },
-      orderBy: { position: "asc" },
+      orderBy: [{ role: "asc" }, { position: "asc" }],
     });
   });
   it("discloses only the selected voice provider before a voice action", async () => {

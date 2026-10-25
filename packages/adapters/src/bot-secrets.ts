@@ -13,6 +13,7 @@ import {
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { withTransactionRetry } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
@@ -312,26 +313,38 @@ function authMetadata(value: unknown): unknown {
 }
 
 /**
- * Keep a bare origin. Never return the raw string: `new URL` resolves `..`, so the raw
- * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
- * and a real path are removed. A placeholder keeps the origin error when no bare origin remains.
+ * The site a credential is saved under when given a page URL: the origin of an http or https
+ * URL, without its path, query or fragment. Any other scheme gets nothing, since
+ * `blob:https://host/x` reports `https://host` without being a page on it. With
+ * `allowUserinfo` false, a URL carrying a username or password gets nothing either, and so does
+ * one longer than `maxLength`, checked on what was given rather than on the site it reduces to.
  */
-function originMetadata(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  if (value === "") return "";
+export function pageUrlOrigin(
+  value: string,
+  { allowUserinfo, maxLength }: { allowUserinfo: boolean; maxLength: number },
+): string | undefined {
+  if (value.length > maxLength) return undefined;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return "invalid-origin";
+    return undefined;
   }
-  const bare = !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
-  if (bare) return url.origin;
-  url.username = "";
-  url.password = "";
-  url.search = "";
-  url.hash = "";
-  return url.pathname === "/" ? url.origin : `${url.origin}/path`;
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  if (!allowUserinfo && (url.username || url.password)) return undefined;
+  return url.origin;
+}
+
+/**
+ * Keep only the site. Never return the raw string: `new URL` resolves `..`, so the raw
+ * path can still hold a secret while the parsed path is `/`. Userinfo, query, fragment,
+ * and path are removed. A placeholder keeps the origin error when no site remains.
+ */
+function originMetadata(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value === "") return "";
+  // A sign-in redirect URL can be long; the authenticated request URL's limit, not the origin's.
+  return pageUrlOrigin(value, { allowUserinfo: true, maxLength: 8192 }) ?? "invalid-origin";
 }
 
 function parsedCredentialObject(value: unknown): unknown {
@@ -584,6 +597,51 @@ export async function requestWithBotSecret(input: {
 
 export type LoginField = "username" | "password";
 const MIN_REDACTED_USERNAME = 6;
+const MIN_REDACTED_PASSWORD_EVERY_RUN = MIN_REDACTED_USERNAME;
+
+function passwordRedactionForms(password: string): string[] {
+  return [
+    ...new Set([
+      ...commandRedactionForms(password),
+      // A submitted form encodes `+` for spaces and escapes `!'()~`, unlike encodeURIComponent.
+      new URLSearchParams({ v: password }).toString().slice(2),
+    ]),
+  ];
+}
+
+/**
+ * Redaction forms of the password of every website login saved for this bot. A filled login
+ * stays on its page after the run that filled it, so each run hides the passwords before any
+ * tool output reaches the model. Usernames stay visible outside the filling run: one is often
+ * the user's own email, which ordinary tasks need. Only login rows are decrypted.
+ */
+export async function loadLoginPasswordRedactions(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+): Promise<string[]> {
+  // Every saved login, however many other credentials the bot has.
+  const rows = await prisma.botSecret.findMany({
+    where: { ...scopeFields(scope), auth: { path: ["type"], equals: "login" } },
+    select: { id: true, auth: true, ciphertext: true },
+  });
+  const forms = new Set<string>();
+  for (const row of rows) {
+    if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") continue;
+    try {
+      const { password } = decodeLoginSecret(await secretStore.load(row.ciphertext, row.id));
+      // Every run would mangle each occurrence of a short password; the filling run still hides it.
+      if (password.length < MIN_REDACTED_PASSWORD_EVERY_RUN) continue;
+      for (const form of passwordRedactionForms(password)) forms.add(form);
+    } catch {
+      // Like an unreadable command variable, it must not stop every computer tool. The id only:
+      // an operator can see which login is no longer hidden. Not under a "secret" key, which
+      // the logger scrubs.
+      getLogger().warn("saved login could not be loaded for redaction", { loginId: row.id });
+    }
+  }
+  return [...forms];
+}
 
 /**
  * Resolve one field of a saved website login for a page fill. The caller must pass `origin` to

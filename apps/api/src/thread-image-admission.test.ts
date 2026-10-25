@@ -33,6 +33,7 @@ function fixture(group = false) {
     },
     bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1", ...model }) },
     spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+    spaceModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
     userModelCredential: {
       findFirst: vi.fn().mockResolvedValue({
         id: "credential-1",
@@ -344,6 +345,26 @@ describe("current image send admission", () => {
       message: "Image input is not configured for this model.",
     });
   });
+  it("follows the member's main model when the bot has none", async () => {
+    const { tx, send } = fixture();
+    tx.bot.findFirst.mockResolvedValue({ id: "bot-1", modelProvider: null, modelId: null });
+    // The deployment default can see images; the main model chosen by the member cannot.
+    tx.deploymentSettings.findUnique.mockResolvedValue({
+      defaultModelProvider: "openrouter",
+      defaultModelId: "openai/gpt-4o",
+    });
+    tx.spaceModelRoleChoice.findMany.mockResolvedValue([
+      {
+        position: 0,
+        provider: "openrouter",
+        modelId: "deepseek/deepseek-v4-pro",
+        thinkingLevel: null,
+      },
+    ]);
+    await expect(send()).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(tx.message.create).not.toHaveBeenCalled();
+  });
+
   it("rejects a known text-only effective model before persisting or waking work", async () => {
     const { tx, send, notify, enqueue, releaseTakeover } = fixture();
     await expect(send()).rejects.toMatchObject({ code: "CONFLICT", status: 409 });

@@ -594,3 +594,18 @@ describe("web markdown code copy", () => {
     expect(html.match(/aria-label="Copy code"/g)).toHaveLength(1);
   });
 });
+
+describe("web markdown mentions", () => {
+  it("draws a mention the app renders and keeps an unknown one as its name", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        renderMention={(id, name) => (id === "bot-1" ? <b data-id={id}>{name}</b> : undefined)}
+      >
+        {"[Planner](rakazo-mention:bot-1) and [Other](rakazo-mention:bot-2)"}
+      </ChatMarkdown>,
+    );
+    expect(html).toContain('<b data-id="bot-1">Planner</b>');
+    expect(html).toContain("<span>Other</span>");
+    expect(html).not.toContain("<a");
+  });
+});

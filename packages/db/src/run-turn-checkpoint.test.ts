@@ -38,6 +38,7 @@ function fixture() {
     },
     attempt: { updateMany: vi.fn() },
     task: { updateMany: vi.fn() },
+    secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { client: client as unknown as PrismaClient, upsert, locked, stored: () => stored };
 }
@@ -90,7 +91,7 @@ describe("encrypted run turn checkpoint", () => {
     await saveRunTurnCheckpoint(state.client, run, "fixture-worker", 1, "fixture");
     await cancelRunsInTransaction(
       state.client,
-      [{ id: run.id, taskId: "fixture-task" }],
+      [{ id: run.id, taskId: "fixture-task", userId: "fixture-user", spaceId: run.spaceId }],
       new Date(0),
     );
     expect(await loadRunTurnCheckpoint(state.client, run)).toBeUndefined();

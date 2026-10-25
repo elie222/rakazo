@@ -116,6 +116,24 @@ it.each(["http", "https"])(
   },
 );
 
+it("rejects a saved-login fill that does not say which field it is", async () => {
+  const response = await supervisorApp.request("/computers/computer-login/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      command: "act",
+      actions: [
+        { kind: "fill", ref: "e1", text: "fake-password-1", origin: "https://login.example.test" },
+      ],
+    }),
+  });
+  expect(response.status).toBeGreaterThanOrEqual(400);
+  expect(mock.exec).not.toHaveBeenCalled();
+});
+
 it("closes helper stdin when the request is cancelled", async () => {
   const stream = new PassThrough();
   const controller = new AbortController();
@@ -155,7 +173,13 @@ it("closes helper stdin when the request is cancelled", async () => {
 
 it("sends a saved-login fill only over stdin, never in the helper's arguments", async () => {
   const actions = [
-    { kind: "fill", ref: "e1", text: "fake-password-1", origin: "https://login.example.test" },
+    {
+      kind: "fill",
+      ref: "e1",
+      text: "fake-password-1",
+      origin: "https://login.example.test",
+      field: "password",
+    },
   ];
   const response = await supervisorApp.request("/computers/computer-login/browser", {
     method: "POST",

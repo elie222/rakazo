@@ -18,9 +18,11 @@ import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
 import { deviceTimeZone, routineRowDetail, sortRoutinesByNextRun } from "../lib/routine";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function BotProfile() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const router = useRouter();
   const styles = useThemedStyles(createStyles);
@@ -112,7 +114,7 @@ export default function BotProfile() {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, sideInsets]}
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >

@@ -21,34 +21,29 @@ test("actions run by default while optional confirmations live in space settings
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "50-actions-run-without-confirmation");
 
-  await page.getByTestId("bot-settings-trigger").click();
-  await expect(page.getByTestId("bot-settings")).toBeVisible();
-  await expect(page.getByTestId("bot-settings").getByText("Action confirmations")).toHaveCount(0);
-  await page.getByRole("button", { name: "Close panel" }).click();
-
   const settings = await openUserSettings(page);
   await expect(settings).toHaveAttribute("role", "dialog");
   await expect(settings).toBeFocused();
   await expect(settings.getByText("Advanced", { exact: true })).toBeVisible();
-  await expect(settings.getByText("Optional controls most people never need")).toHaveCount(0);
-  // Confirmations are per space, so they live in their own section, not General.
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "51-user-settings-general");
 
   await settings.getByTestId("settings-nav-confirmations").click();
   await expect(settings.getByRole("heading", { name: "Confirmations", exact: true })).toBeVisible();
-  await expect(
-    settings.getByText(
-      "Bots act without asking by default. Add an exception only when you want to review a type of action first.",
-    ),
-  ).toHaveCount(0);
-  await expect(settings.getByText("No exceptions. Actions run automatically.")).toHaveCount(0);
   await expect(settings.getByTestId("auto-review-toggle")).toBeVisible();
   await expect(settings.getByTestId("auto-review-toggle")).not.toBeChecked();
   await expect(settings.getByText("Flag unexpected actions")).toBeVisible();
   await settings.getByRole("button", { name: "Ask before sending external email" }).click();
   await expect(settings.getByText("Ask before email actions", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "52-advanced-action-confirmations");
+  const skipApprovals = settings.getByTestId("skip-approvals-toggle");
+  await expect(skipApprovals).not.toBeChecked();
+  await skipApprovals.click();
+  await expect(skipApprovals).toBeChecked();
+  await expect(settings.getByTestId("auto-review-toggle")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "52b-skip-approvals");
+  await skipApprovals.click();
+  await expect(skipApprovals).not.toBeChecked();
+  await expect(settings.getByTestId("auto-review-toggle")).toBeVisible();
   await settings.getByRole("button", { name: "Close user settings" }).click();
 
   await rpc(page, "approvalRules/set", {

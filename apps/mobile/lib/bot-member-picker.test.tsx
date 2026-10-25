@@ -16,6 +16,7 @@ const { rpc, back, push, replace } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
 }));
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({ rpc }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },

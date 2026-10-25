@@ -13,6 +13,9 @@ const rpc = vi.hoisted(() => vi.fn());
 const textScale = vi.hoisted(() => ({ fontScale: 1 }));
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
 const foreground = vi.hoisted(() => ({ value: true }));
+const folds = vi.hoisted(() => ({
+  regions: [] as Array<{ x: number; y: number; width: number; height: number }>,
+}));
 const screens = vi.hoisted(() => ({ mounts: 0 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -21,10 +24,19 @@ const picker = vi.hoisted(() => ({
     | undefined,
 }));
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native", () => {
   function MockView(props: {
     children?: ReactNode;
-    style?: { flexDirection?: string; flex?: number; alignSelf?: string; color?: string };
+    style?: {
+      flexDirection?: string;
+      flex?: number;
+      alignSelf?: string;
+      color?: string;
+      height?: number;
+      paddingTop?: number;
+    };
+    keyboardShouldPersistTaps?: string;
   }) {
     return createElement(
       "div",
@@ -33,6 +45,9 @@ vi.mock("react-native", () => {
         "data-direction": props.style?.flexDirection,
         "data-flex": props.style?.flex,
         "data-align-self": props.style?.alignSelf,
+        "data-height": props.style?.height,
+        "data-padding-top": props.style?.paddingTop,
+        "data-persist-taps": props.keyboardShouldPersistTaps,
       },
       props.children,
     );
@@ -86,11 +101,12 @@ vi.mock("./app-foreground", () => ({
   useAppForeground: () => foreground.value,
 }));
 vi.mock("react-native-keyboard-controller", () => ({
-  KeyboardAvoidingView: ({ children }: { children: ReactNode }) =>
-    createElement(Fragment, null, children),
+  KeyboardAvoidingView: ({ children, enabled }: { children: ReactNode; enabled?: boolean }) =>
+    createElement("div", { "data-avoids-keyboard": String(enabled ?? true) }, children),
 }));
 vi.mock("../components/computer-keyboard-bar", () => ({
-  ComputerKeyboardBar: () => createElement("div", { "data-keyboard-bar": true }),
+  ComputerKeyboardBar: (props: { active: boolean }) =>
+    createElement("div", { "data-keyboard-bar": true, "data-active": String(props.active) }),
 }));
 
 vi.mock("react-native-webview", () => {
@@ -126,9 +142,7 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({ setOptions: () => undefined }),
 }));
 
-vi.mock("../lib/orientation", () => ({
-  holdFreeRotation: () => () => undefined,
-}));
+vi.mock("../lib/fold-regions", () => ({ useFoldRegions: () => folds.regions }));
 
 vi.mock("../components/native-action-button", () => {
   return {
@@ -248,6 +262,7 @@ describe("computer screen", () => {
     picker.props = undefined;
     appState.listeners.clear();
     foreground.value = true;
+    folds.regions = [];
     screens.mounts = 0;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -485,6 +500,88 @@ describe("computer screen", () => {
     expect(screens).toHaveLength(1);
     expect(screens[0]?.getAttribute("data-elements-hidden")).toBe("false");
     expect(screens[0]?.getAttribute("data-important")).toBe("auto");
+  });
+
+  it("keeps the desktop above a tabletop fold and the keys below it", async () => {
+    folds.regions = [{ x: 0, y: 416, width: 393, height: 20 }];
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const fullWindow = view.querySelector("section");
+    expect(
+      fullWindow?.querySelector("[data-avoids-keyboard]")?.getAttribute("data-avoids-keyboard"),
+    ).toBe("false");
+    const lowerHalf = fullWindow?.querySelector('[data-height="436"]');
+    expect(lowerHalf?.getAttribute("data-padding-top")).toBe("20");
+    expect(lowerHalf?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
+    expect(lowerHalf?.querySelector('[data-avoids-keyboard="true"]')).not.toBeNull();
+    expect(lowerHalf?.contains(fullWindow?.querySelector("iframe") ?? null)).toBe(false);
+  });
+
+  it("keeps the keys under the desktop when flat or only viewing", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const flat = await render();
+    await act(async () => preview(flat).click());
+    await settle();
+    expect(
+      flat.querySelector("section [data-avoids-keyboard]")?.getAttribute("data-avoids-keyboard"),
+    ).toBe("true");
+    expect(flat.querySelector("section [data-height]")).toBeNull();
+    act(() => root?.unmount());
+    container?.remove();
+
+    folds.regions = [{ x: 0, y: 416, width: 393, height: 20 }];
+    respond(botWorking);
+    const viewing = await render();
+    await act(async () => preview(viewing).click());
+    await settle();
+    expect(viewing.querySelector("section [data-height]")).toBeNull();
+    expect(viewing.querySelector("[data-keyboard-bar]")).toBeNull();
+  });
+
+  it("lets the full window's buttons take a tap while the computer keyboard is up", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const close = view.querySelector('section [aria-label="Close computer"]');
+    const scroll = close?.closest("[data-persist-taps]");
+    expect(scroll?.getAttribute("data-persist-taps")).toBe("always");
+    expect(scroll?.contains(view.querySelector("[data-keyboard-bar]"))).toBe(true);
+  });
+
+  it("closes the keyboard as soon as Release is tapped, even if the release fails", async () => {
+    const held = { ...botWorking, controlHolder: "user" as const, controlBotId: "bot-1" };
+    respond({ ...held, busyBotName: null });
+    let fail: (error: Error) => void = () => undefined;
+    const base = rpc.getMockImplementation();
+    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
+      method === "computer/release"
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : base?.(method, ...rest),
+    );
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+
+    const fullWindow = view.querySelector("section");
+    const bar = () => fullWindow?.querySelector<HTMLElement>("[data-keyboard-bar]");
+    expect(bar()?.dataset.active).toBe("true");
+    const release = Array.from(fullWindow?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Release",
+    );
+    await act(async () => release?.click());
+    expect(calls("computer/release")).toHaveLength(1);
+    expect(bar()?.dataset.active).toBe("false");
+
+    await act(async () => fail(new Error("offline")));
+    await settle();
+    expect(bar()?.dataset.active).toBe("true");
   });
 
   it("loads the screen again when the app returns from the background", async () => {

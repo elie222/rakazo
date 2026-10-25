@@ -60,6 +60,35 @@ export async function selectSpaceModelPreference(
   });
 }
 
+/** Stores a connection's model choice for the space without making it the default. */
+export function saveSpaceModelPreference(
+  prisma: Pick<PrismaClient, "spaceModelPreference">,
+  scope: ModelCredentialScope,
+  credentialId: string,
+  modelId: string | null | undefined,
+  thinkingLevel?: string | null,
+) {
+  const persistedModelId = usableModelId(modelId);
+  return prisma.spaceModelPreference.upsert({
+    where: {
+      spaceId_userId_credentialId: {
+        spaceId: scope.spaceId,
+        userId: scope.userId,
+        credentialId,
+      },
+    },
+    create: {
+      spaceId: scope.spaceId,
+      userId: scope.userId,
+      credentialId,
+      modelId: persistedModelId,
+      thinkingLevel: thinkingLevel ?? null,
+      isDefault: false,
+    },
+    update: { modelId: persistedModelId, thinkingLevel: thinkingLevel ?? null },
+  });
+}
+
 function withModelPreference<
   T extends {
     credential: {
@@ -84,20 +113,8 @@ function withModelPreference<
   };
 }
 
-export async function findDefaultModelCredential(
-  prisma: PrismaClient,
-  scope: ModelCredentialScope,
-) {
-  const preference = await prisma.spaceModelPreference.findFirst({
-    where: { spaceId: scope.spaceId, userId: scope.userId, isDefault: true },
-    include: { credential: true },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-  });
-  return preference ? withModelPreference(preference) : null;
-}
-
 export function findNewestUserModelCredential(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "userModelCredential">,
   userId: string,
   provider: string,
 ) {
@@ -267,7 +284,7 @@ function credentialFromChoice<
 }
 
 export async function findModelCredential(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "spaceModelPreference" | "userModelCredential">,
   scope: ModelCredentialScope,
   provider: string,
   modelId?: string | null,

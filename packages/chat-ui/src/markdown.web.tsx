@@ -27,6 +27,7 @@ import {
   linkLabel,
   markdownLinkDisplayParts,
   markdownLinkRequiresConfirmation,
+  markdownMentionId,
   markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
@@ -473,7 +474,13 @@ function MarkdownAnchor({
   ...props
 }: React.ComponentPropsWithoutRef<"a"> & { node?: MarkdownHast }) {
   const loadRemote = useContext(RemoteImagesContext);
+  const renderMention = useContext(MentionContext);
   const href = typeof props.href === "string" ? props.href : "";
+  const mentionId = markdownMentionId(href);
+  if (mentionId) {
+    const name = hastText(node) ?? "";
+    return renderMention?.(mentionId, name) ?? <span>{props.children}</span>;
+  }
   const image = href ? soleRemoteImage(node) : undefined;
   if (image && !remoteImageRenders(image.href, loadRemote, false)) {
     return <LinkedRemoteImage href={href} image={image} alt={image.alt} title={image.title} />;
@@ -497,6 +504,8 @@ function MarkdownAnchor({
     </InsideLinkContext.Provider>
   );
 }
+
+const MentionContext = createContext<ChatMarkdownProps["renderMention"]>(undefined);
 
 const components: Components = {
   a: MarkdownAnchor,
@@ -540,41 +549,46 @@ export function LinkifiedText({ children }: { children: string }) {
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
+  renderMention,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   const source = streaming ? closeUnterminatedFence(children) : children;
 
   return (
     <ConfirmLinkContext.Provider value={request}>
-      <div
-        className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
-      >
-        <LinkFaviconsPausedContext.Provider value={streaming}>
-          <StreamingSourceContext.Provider value={streaming ? children : undefined}>
-            <MarkdownTableSourceContext.Provider value={source}>
-              <ReactMarkdown
-                components={components}
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[preserveSkippedTableText]}
-                skipHtml
-                // MarkdownImage decides what an image source may do, so it receives the source as written.
-                urlTransform={(url, key) =>
-                  key === "src" ? url : (sanitizeMarkdownUrl(url, true) ?? "")
-                }
-              >
-                {source}
-              </ReactMarkdown>
-            </MarkdownTableSourceContext.Provider>
-          </StreamingSourceContext.Provider>
-        </LinkFaviconsPausedContext.Provider>
-        {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
-      </div>
+      <MentionContext.Provider value={renderMention}>
+        <div
+          className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
+        >
+          <LinkFaviconsPausedContext.Provider value={streaming}>
+            <StreamingSourceContext.Provider value={streaming ? children : undefined}>
+              <MarkdownTableSourceContext.Provider value={source}>
+                <ReactMarkdown
+                  components={components}
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[preserveSkippedTableText]}
+                  skipHtml
+                  // MarkdownImage decides what an image source may do, so it receives the source as written.
+                  urlTransform={(url, key) =>
+                    key === "src" || markdownMentionId(url)
+                      ? url
+                      : (sanitizeMarkdownUrl(url, true) ?? "")
+                  }
+                >
+                  {source}
+                </ReactMarkdown>
+              </MarkdownTableSourceContext.Provider>
+            </StreamingSourceContext.Provider>
+          </LinkFaviconsPausedContext.Provider>
+          {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
+        </div>
+      </MentionContext.Provider>
       {dialog}
     </ConfirmLinkContext.Provider>
   );
 });
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
-export { LinkFaviconsContext, RemoteImagesContext } from "./markdown";
+export { LinkFaviconsContext, RemoteImagesContext, withBlockMentions } from "./markdown";
 
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

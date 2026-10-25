@@ -104,7 +104,6 @@ test("choose free API keys or monthly credits, then add a one-time top-up", asyn
   await page.reload();
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect my own", exact: true })).toBeVisible();
-  await expect(page.getByText("Hosted computer included.", { exact: true })).toHaveCount(0);
   const planSelect = page.getByRole("combobox", { name: "Monthly credits" });
   await expect(planSelect).toHaveCSS("height", "48px");
   await expect(planSelect).toContainText("$20 / month");

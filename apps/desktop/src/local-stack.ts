@@ -506,16 +506,20 @@ export class LocalStackController {
     const stackToken = await ensureStackToken(this.deps.stackDir, this.deps.randomHex);
     this.currentStackToken = stackToken;
 
-    this.push({ type: "pull-start" });
-    const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
-    if (interrupted(signal, pulled))
-      return this.push({ type: "failed", message: START_INTERRUPTED });
-    if (pulled.code !== 0) {
-      this.push({
-        type: "failed",
-        message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
-      });
-      return;
+    const imagesCached = await this.hasLocalReleaseImages(binary, signal);
+    if (signal.aborted) return this.push({ type: "failed", message: START_INTERRUPTED });
+    if (!imagesCached) {
+      this.push({ type: "pull-start" });
+      const pulled = await this.compose(binary, ["pull"], PULL_TIMEOUT_MS, signal);
+      if (interrupted(signal, pulled))
+        return this.push({ type: "failed", message: START_INTERRUPTED });
+      if (pulled.code !== 0) {
+        this.push({
+          type: "failed",
+          message: stackFailureMessage(failureKind(pulled), "pulling", this.deps.imageTag),
+        });
+        return;
+      }
     }
 
     this.push({ type: "up-start" });
@@ -568,6 +572,28 @@ export class LocalStackController {
         ? START_INTERRUPTED
         : "The stack started but the web app did not answer. Retry, and check the output below.",
     });
+  }
+
+  private async hasLocalReleaseImages(binary: string, signal: AbortSignal): Promise<boolean> {
+    // Moving tags must still check the registry for newer images.
+    if (!this.deps.imageTag.startsWith("v") || !STABLE_VERSION.test(this.deps.imageTag.slice(1)))
+      return false;
+    const config = await this.compose(
+      binary,
+      ["config", "--images"],
+      DOCKER_INFO_TIMEOUT_MS,
+      signal,
+    );
+    if (interrupted(signal, config) || config.code !== 0) return false;
+    const images = [...new Set(config.stdout.split(/\s+/).filter(Boolean))];
+    if (images.length === 0) return false;
+    const inspected = await this.docker(
+      binary,
+      ["image", "inspect", "--format", "{{.Id}}", ...images],
+      DOCKER_INFO_TIMEOUT_MS,
+      signal,
+    );
+    return !interrupted(signal, inspected) && inspected.code === 0;
   }
 
   private hostConfigIdentity() {

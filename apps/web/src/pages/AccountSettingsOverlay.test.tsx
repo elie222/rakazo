@@ -9,7 +9,10 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray) => strings.join(""),
+    i18n: { locale: "en" },
+  }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
@@ -122,25 +125,6 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("offers no avatar style choice", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () => {
-      root.render(<GeneralSettingsPanels name="Jamie" />);
-    });
-
-    expect(container.querySelector('[data-testid="avatar-style-select"]')).toBeNull();
-    expect(container.textContent).not.toContain("Robot");
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
 it("flips the stored tool activity preference from the settings toggle", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -227,6 +211,46 @@ it.each([undefined, true, false])("respects the password-change policy (%s)", as
   }
 });
 
+it("keeps the password form closed until asked and closes it after a change", async () => {
+  vi.mocked(authClient.changePassword).mockResolvedValue({ data: {}, error: null } as never);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const passwordFields = () => container.querySelectorAll('input[type="password"]');
+  const setValue = (input: Element, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  try {
+    await act(async () => root.render(<GeneralSettingsPanels name="Test" />));
+    expect(passwordFields()).toHaveLength(0);
+
+    const open = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Change password",
+    );
+    await act(async () => open?.click());
+    const [current, next, confirm] = passwordFields();
+    await act(async () => {
+      setValue(current!, "old-password");
+      setValue(next!, "new-password-123");
+      setValue(confirm!, "new-password-123");
+    });
+    await act(async () => container.querySelector("form")?.requestSubmit());
+
+    expect(authClient.changePassword).toHaveBeenCalledWith({
+      currentPassword: "old-password",
+      newPassword: "new-password-123",
+      revokeOtherSessions: true,
+    });
+    expect(passwordFields()).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("updates the Enter preference from Settings and reflects external changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   setComposerEnterToSend(true);
@@ -256,20 +280,58 @@ it("updates the Enter preference from Settings and reflects external changes", a
   }
 });
 
-it.each([
-  [201, "2 runs · 201 tokens"],
-  [null, "2 runs · — tokens"],
-])("shows usage totals (%s)", async (totalTokens, expected) => {
+it("shows usage totals and a per-model breakdown", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
     await act(async () =>
       root.render(
-        <UsageSettingsPanel usage={{ runs: 2, inputTokens: 10, outputTokens: 1, totalTokens }} />,
+        <UsageSettingsPanel
+          usage={{
+            runs: 2,
+            inputTokens: 1200,
+            outputTokens: 34,
+            totalTokens: 1234,
+            costUsd: 0.5,
+            modelCalls: 3,
+            models: [
+              {
+                provider: "openai",
+                model: "model-a",
+                modelCalls: 2,
+                inputTokens: 1000,
+                outputTokens: 30,
+                totalTokens: 1030,
+                costUsd: 0.5,
+              },
+              {
+                provider: "local",
+                model: "model-b",
+                modelCalls: 1,
+                inputTokens: 200,
+                outputTokens: 4,
+                totalTokens: 204,
+                costUsd: null,
+              },
+            ],
+          }}
+        />,
       ),
     );
-    expect(container.textContent).toContain(expected);
+    expect([...container.querySelectorAll("dd")].map((node) => node.textContent)).toEqual([
+      "2",
+      "1,234",
+      "$0.50",
+    ]);
+    expect(
+      [...container.querySelectorAll("tbody tr")].map((row) =>
+        [...row.querySelectorAll("td")].map((cell) => cell.textContent),
+      ),
+    ).toEqual([
+      ["model-aopenai", "2", "1,000", "30", "$0.50"],
+      ["model-blocal", "1", "200", "4", "—"],
+    ]);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

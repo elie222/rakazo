@@ -668,7 +668,7 @@ export function PluginsOverlay({
         className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
       >
         <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
-          <DialogTitle className="text-2xl text-foreground">
+          <DialogTitle className="text-heading2 text-foreground">
             <Trans>Integrations</Trans>
           </DialogTitle>
           <DialogClose

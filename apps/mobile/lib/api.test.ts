@@ -2508,6 +2508,205 @@ describe("mobile thread subscription", () => {
       2,
       expect.objectContaining({ type: "thread.message.created", seq: 5 }),
     );
+    expect(stream.locked).toBe(false);
+  });
+
+  it("rejects an oversized partial SSE frame and cancels the remaining response", async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_MOBILE_RPC_RESPONSE_BYTES + 1).fill(97));
+        controller.enqueue(encoder.encode('data: {"json":{"type":"thread.progress","seq":8}}\n\n'));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream, { status: 200 })),
+    );
+    const onEvent = vi.fn();
+
+    await expect(
+      subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal),
+    ).rejects.toThrow(RangeError);
+    expect(cancelled).toBe(true);
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(stream.locked).toBe(false);
+  });
+
+  it.each(["single chunk", "fragmented delimiter"])(
+    "accepts an exactly-at-cap SSE frame with a %s",
+    async (framing) => {
+      const frame = paddedThreadFrame(MAX_MOBILE_RPC_RESPONSE_BYTES, 4);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (framing === "single chunk") {
+            controller.enqueue(frame);
+          } else {
+            controller.enqueue(frame.subarray(0, frame.byteLength - 1));
+            controller.enqueue(frame.subarray(frame.byteLength - 1));
+          }
+          controller.close();
+        },
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(stream)),
+      );
+      const onEvent = vi.fn();
+
+      await subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal);
+
+      expect(onEvent).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ type: "thread.progress", seq: 4 }),
+      );
+      expect(stream.locked).toBe(false);
+    },
+  );
+
+  it.each(["single chunk", "fragmented delimiter"])(
+    "counts UTF-8 and delimiter bytes when rejecting an oversized frame with a %s",
+    async (framing) => {
+      const encoder = new TextEncoder();
+      const frame = paddedThreadFrame(MAX_MOBILE_RPC_RESPONSE_BYTES + 1, 4);
+      frame.set(encoder.encode("é"), 1);
+      const cancel = vi.fn();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (framing === "single chunk") {
+            controller.enqueue(frame);
+          } else {
+            controller.enqueue(frame.subarray(0, frame.byteLength - 1));
+            controller.enqueue(frame.subarray(frame.byteLength - 1));
+          }
+          controller.enqueue(
+            encoder.encode('data: {"json":{"type":"thread.progress","seq":5}}\n\n'),
+          );
+          controller.close();
+        },
+        cancel,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(stream)),
+      );
+      const onEvent = vi.fn();
+
+      await expect(
+        subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal),
+      ).rejects.toThrow(RangeError);
+
+      expect(onEvent).not.toHaveBeenCalled();
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(stream.locked).toBe(false);
+    },
+  );
+
+  it("accepts multiple valid frames in a chunk larger than the per-frame cap", async () => {
+    const first = paddedThreadFrame(MAX_MOBILE_RPC_RESPONSE_BYTES / 2 + 1, 4);
+    const second = paddedThreadFrame(MAX_MOBILE_RPC_RESPONSE_BYTES / 2 + 1, 5);
+    const chunk = new Uint8Array(first.byteLength + second.byteLength);
+    chunk.set(first);
+    chunk.set(second, first.byteLength);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn();
+
+    await subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal);
+
+    expect(onEvent.mock.calls.map(([event]) => event.seq)).toEqual([4, 5]);
+    expect(stream.locked).toBe(false);
+  });
+
+  it("reassembles split UTF-8 characters and a split LF delimiter", async () => {
+    const encoder = new TextEncoder();
+    const frame = encoder.encode(
+      'data: {"json":{"type":"thread.progress","seq":4,"payload":{"delta":"🌿 café"}}}\n\n',
+    );
+    const splitCharacter = frame.indexOf(0xf0) + 2;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(frame.subarray(0, splitCharacter));
+        controller.enqueue(frame.subarray(splitCharacter, frame.byteLength - 1));
+        controller.enqueue(frame.subarray(frame.byteLength - 1));
+        controller.enqueue(encoder.encode('data: {"json":{"type":"thread.progress","seq":5}}\n\n'));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn();
+
+    await subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal);
+
+    expect(onEvent).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ seq: 4, payload: { delta: "🌿 café" } }),
+    );
+    expect(onEvent).toHaveBeenNthCalledWith(2, expect.objectContaining({ seq: 5 }));
+    expect(stream.locked).toBe(false);
+  });
+
+  it("discards complete JSON without an LF-LF terminator at EOF", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"json":{"type":"thread.progress","seq":4}}'));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn();
+
+    await subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal);
+
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(stream.locked).toBe(false);
+  });
+
+  it("keeps consuming frames after a callback throws", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"json":{"type":"thread.progress","seq":4}}\n\n' +
+              'data: {"json":{"type":"thread.progress","seq":5}}\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn().mockImplementationOnce(() => {
+      throw new Error("callback failed");
+    });
+
+    await subscribeThread({ botId: "bot-1" }, -1, onEvent, new AbortController().signal);
+
+    expect(onEvent.mock.calls.map(([event]) => event.seq)).toEqual([4, 5]);
+    expect(stream.locked).toBe(false);
   });
 
   it("rejects responses that are unsuccessful or have no stream body", async () => {
@@ -2526,6 +2725,24 @@ describe("mobile thread subscription", () => {
     await expect(
       subscribeThread({ botId: "bot-1" }, -1, vi.fn(), new AbortController().signal),
     ).rejects.toThrow("rpc threads/subscribe failed (200)");
+  });
+
+  it("cancels unsuccessful HTTP bodies without replacing the status error", async () => {
+    const cancel = vi.fn(async () => {
+      throw new Error("cancel failed");
+    });
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream, { status: 503 })),
+    );
+
+    await expect(
+      subscribeThread({ botId: "bot-1" }, -1, vi.fn(), new AbortController().signal),
+    ).rejects.toThrow("rpc threads/subscribe failed (503)");
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
   });
 
   it("ignores heartbeat frames so the caller's cursor never skips an event", async () => {
@@ -2584,7 +2801,89 @@ describe("mobile thread subscription", () => {
     expect(settled).toBe(true);
     expect(cancelled).toBe(true);
     expect(abort.signal.aborted).toBe(false);
+    expect(stream.locked).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
+  });
+
+  it("unblocks an aborted read without waiting for idle or stalled cancellation", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn(() => new Promise<void>(() => {}));
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn();
+    const abort = new AbortController();
+    const removeListener = vi.spyOn(abort.signal, "removeEventListener");
+    const running = subscribeThread({ botId: "bot-1" }, -1, onEvent, abort.signal);
+    let settled = false;
+    void running.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.locked).toBe(true);
+
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(settled).toBe(true);
+    await running;
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("cancels an already-aborted custom response without delivering queued events", async () => {
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('data: {"json":{"type":"thread.progress","seq":4}}\n\n'),
+        );
+      },
+      cancel,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const onEvent = vi.fn();
+    const abort = new AbortController();
+    abort.abort();
+
+    await subscribeThread({ botId: "bot-1" }, -1, onEvent, abort.signal);
+
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
+  });
+
+  it("releases an errored reader and clears its timer and abort listener", async () => {
+    vi.useFakeTimers();
+    const failure = new Error("read failed");
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(failure);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream)),
+    );
+    const abort = new AbortController();
+    const removeListener = vi.spyOn(abort.signal, "removeEventListener");
+
+    await expect(subscribeThread({ botId: "bot-1" }, -1, vi.fn(), abort.signal)).rejects.toBe(
+      failure,
+    );
+
+    expect(stream.locked).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
 
@@ -2834,6 +3133,246 @@ describe("mobile thread event reduction", () => {
 
     expect(next.messages.map((item) => item.id)).toEqual(["m-0", "m-1", "m-2"]);
     expect(next.olderCursor).toBeNull();
+  });
+
+  it("shows peer-started group work without hiding a waiting member", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
+      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
+      members: [
+        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" },
+        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
+      ],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 9,
+      runId: "peer-run",
+      botId: "bot-2",
+      payload: { trigger: "user_message" },
+    });
+
+    expect(next?.cursor).toBe(9);
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
+    expect(next?.activeRuns).toEqual([
+      { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
+      { id: "peer-run", botId: "bot-2", status: "running", error: null },
+    ]);
+    expect(next?.members?.map((member) => member.status)).toEqual(["waiting_input", "running"]);
+  });
+
+  it("consumes background run starts without changing visible work or members", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "waiting-run", botId: "bot-1", status: "waiting_input" },
+      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_input" }],
+      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "waiting_input" }],
+    };
+    const event = {
+      type: "run.started",
+      seq: 9,
+      runId: "ticket-run",
+      botId: "bot-1",
+      payload: { trigger: "tickets" },
+    };
+
+    const next = applyMobileThreadEvent(initial, event);
+
+    expect(next?.cursor).toBe(9);
+    expect(next?.run).toBe(initial.run);
+    expect(next?.activeRuns).toBe(initial.activeRuns);
+    expect(next?.members).toBe(initial.members);
+    expect(next?.messages).toBe(initial.messages);
+    expect(applyMobileThreadEvent(next, event)).toBe(next);
+  });
+
+  it("updates only the matching member and cursor when a start omits its run ID", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
+      activeRuns: [{ id: "waiting-run", botId: "bot-1", status: "waiting_takeover" }],
+      members: [
+        { botId: "bot-1", name: "Writer", color: "blue", status: "waiting_takeover" },
+        { botId: "bot-2", name: "Researcher", color: "green", status: "idle" },
+      ],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 9,
+      botId: "bot-2",
+    });
+
+    expect(next).toEqual({
+      ...initial,
+      cursor: 9,
+      members: [
+        initial.members![0],
+        { botId: "bot-2", name: "Researcher", color: "green", status: "running" },
+      ],
+    });
+    expect(next?.run).toBe(initial.run);
+    expect(next?.activeRuns).toBe(initial.activeRuns);
+    expect(next?.members?.[0]).toBe(initial.members?.[0]);
+    expect(applyMobileThreadEvent(next, { type: "run.started", seq: 9, botId: "bot-2" })).toBe(
+      next,
+    );
+  });
+
+  it("does not invent members for a start with an unknown bot or run ID", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 9,
+      botId: "unknown-bot",
+    });
+
+    expect(next).toEqual({ ...initial, cursor: 9 });
+    expect(next?.members).toBe(initial.members);
+    expect(applyMobileThreadEvent(initial, { type: "run.started" })).toBe(initial);
+  });
+
+  it("does not infer a started run's bot from the snapshot", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      members: [{ botId: "bot-1", name: "Writer", color: "blue", status: "idle" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      runId: "unattributed-run",
+    });
+
+    expect(next?.cursor).toBe(3);
+    expect(next?.run).toEqual({ id: "unattributed-run", status: "running", error: null });
+    expect(next?.activeRuns).toEqual([{ id: "unattributed-run", status: "running", error: null }]);
+    expect(next?.members).toBe(initial.members);
+  });
+
+  it("deduplicates a restarted run and retains every other active lifecycle state", () => {
+    const retained = [
+      { id: "queued-run", status: "queued" },
+      { id: "leased-run", status: "leased" },
+      { id: "running-run", status: "running" },
+      { id: "ask-run", status: "waiting_input" },
+      { id: "takeover-run", status: "waiting_takeover" },
+    ];
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: retained[3]!,
+      activeRuns: [
+        ...retained,
+        { id: "resumed-run", botId: "bot-2", status: "waiting_input" },
+        { id: "resumed-run", botId: "bot-2", status: "running" },
+        { id: "completed-run", status: "completed" },
+        { id: "failed-run", status: "failed" },
+        { id: "cancelled-run", status: "cancelled" },
+      ],
+    };
+    const event = { type: "run.started", seq: 9, runId: "resumed-run", botId: "bot-2" };
+
+    const next = applyMobileThreadEvent(initial, event);
+    const replayed = applyMobileThreadEvent(next, event);
+
+    expect(next?.run).toEqual({
+      id: "resumed-run",
+      botId: "bot-2",
+      status: "running",
+      error: null,
+    });
+    expect(next?.activeRuns).toEqual([
+      ...retained,
+      { id: "resumed-run", botId: "bot-2", status: "running", error: null },
+    ]);
+    expect(replayed?.activeRuns).toEqual(next?.activeRuns);
+  });
+
+  it("retains a waiting primary run when the snapshot omits activeRuns", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      runId: "peer-run",
+      botId: "bot-2",
+    });
+
+    expect(next?.activeRuns).toEqual([
+      { id: "waiting-run", botId: "bot-1", status: "waiting_takeover" },
+      { id: "peer-run", botId: "bot-2", status: "running", error: null },
+    ]);
+    expect(next?.run).toEqual({ id: "peer-run", botId: "bot-2", status: "running", error: null });
+  });
+
+  it("retains an unrelated group failure until that failed run starts again", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      groupId: "group-1",
+      run: { id: "failed-run", botId: "bot-1", status: "failed", error: "Provider unavailable" },
+      activeRuns: [{ id: "waiting-run", botId: "bot-2", status: "waiting_input" }],
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 9,
+      runId: "peer-run",
+      botId: "bot-3",
+    });
+
+    expect(next?.run).toBe(initial.run);
+    expect(next?.activeRuns).toEqual([
+      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
+      { id: "peer-run", botId: "bot-3", status: "running", error: null },
+    ]);
+    const restarted = applyMobileThreadEvent(next, {
+      type: "run.started",
+      seq: 10,
+      runId: "failed-run",
+      botId: "bot-1",
+    });
+    expect(restarted?.cursor).toBe(10);
+    expect(restarted?.run).toEqual({
+      id: "failed-run",
+      botId: "bot-1",
+      status: "running",
+      error: null,
+    });
+    expect(restarted?.activeRuns).toEqual([
+      { id: "waiting-run", botId: "bot-2", status: "waiting_input" },
+      { id: "peer-run", botId: "bot-3", status: "running", error: null },
+      { id: "failed-run", botId: "bot-1", status: "running", error: null },
+    ]);
+  });
+
+  it("replaces an unrelated failure when a direct thread starts work", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      run: { id: "failed-run", status: "failed", error: "Provider unavailable" },
+    };
+
+    const next = applyMobileThreadEvent(initial, {
+      type: "run.started",
+      seq: 9,
+      runId: "new-run",
+      botId: "bot-1",
+    });
+
+    expect(next?.run).toEqual({ id: "new-run", botId: "bot-1", status: "running", error: null });
+    expect(next?.activeRuns).toEqual([
+      { id: "new-run", botId: "bot-1", status: "running", error: null },
+    ]);
   });
 
   it("accumulates progress deltas for the same run", () => {
@@ -3460,6 +3999,7 @@ describe("mobile thread event reduction", () => {
 
   it("leaves the snapshot unchanged for unrelated events", () => {
     const initial = snapshot();
+    expect(applyMobileThreadEvent(initial, { type: "thread.unrecognized" })).toBe(initial);
     expect(applyMobileThreadEvent(initial, { type: "run.checkpointed" })).toBe(initial);
     expect(applyMobileThreadEvent(null, { type: "thread.progress" })).toBeNull();
   });
@@ -3505,6 +4045,16 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 /** A failed procedure as the oRPC server sends it. */
 function rpcErrorResponse(status: number, code: string, message: string) {
   return jsonResponse({ json: { defined: false, code, status, message } }, { status });
+}
+
+function paddedThreadFrame(bytes: number, seq: number) {
+  const suffix = new TextEncoder().encode(
+    `\ndata: ${JSON.stringify({ json: { type: "thread.progress", seq } })}\n\n`,
+  );
+  const frame = new Uint8Array(bytes).fill(120);
+  frame[0] = 58;
+  frame.set(suffix, bytes - suffix.byteLength);
+  return frame;
 }
 
 function snapshot(

@@ -503,7 +503,7 @@ export function createGroupRepos(prisma: PrismaClient) {
                   in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"],
                 },
               },
-              select: { id: true, taskId: true },
+              select: { id: true, taskId: true, userId: true, spaceId: true },
             })
           : [];
         if (activeRuns.length) {
@@ -568,7 +568,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             threadId: current.thread.id,
             status: { in: activeRunStatuses },
           },
-          select: { id: true, taskId: true },
+          select: { id: true, taskId: true, userId: true, spaceId: true },
         });
         const runIds = activeRuns.map((run) => run.id);
         const now = new Date();

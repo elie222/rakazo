@@ -519,12 +519,16 @@ app.post("/computers/:id/browser", async (c) => {
                 paths: z.array(z.string().min(1).max(1024)).min(1).max(10),
                 roots: z.array(z.string().min(1).max(1024)).max(2).optional(),
               }),
-              z.object({
-                kind: z.enum(["fill", "type"]),
-                ref: z.string().min(1).max(200),
-                text: z.string().max(32_000),
-                origin: z.string().url().max(2048).optional(),
-              }),
+              z
+                .object({
+                  kind: z.enum(["fill", "type"]),
+                  ref: z.string().min(1).max(200),
+                  text: z.string().max(32_000),
+                  origin: z.string().url().max(2048).optional(),
+                  field: z.enum(["username", "password"]).optional(),
+                })
+                // The field decides which input types the helper accepts for a saved login.
+                .refine((step) => !step.origin || step.field, "A saved login fill needs its field"),
             ]),
           )
           .min(1)

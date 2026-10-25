@@ -6,6 +6,7 @@ import {
   modelAcceptsImageInput,
   modelIdSupportsImages,
   parseModelSecret,
+  resolveMemberMainModel,
   resolveRuntimeModel,
   runModelChoice,
   selectConfiguredModel,
@@ -13,7 +14,7 @@ import {
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { findDefaultModelCredential, findModelCredential } from "@rakazo/db";
+import { findModelCredential, getModelRole } from "@rakazo/db";
 
 type ModelChoice = {
   modelProvider: string | null;
@@ -63,9 +64,13 @@ export async function assertThreadImageInput(
   const selected = selectConfiguredModel({
     override,
     overrideCredential,
-    defaultCredential: await findDefaultModelCredential(prisma, actor),
-    settings: await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-    deployment: configuration?.deployment ?? null,
+    main: configuration
+      ? await resolveMemberMainModel({ prisma, secretStore: configuration.secrets }, actor)
+      : await mainModelWithoutSecrets(prisma, actor),
+    defaults: {
+      settings: await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+      deployment: configuration?.deployment ?? null,
+    },
     hostedProvider: configuration?.hostedProvider,
   });
   const provider = running ? run.modelProvider : selected.provider;
@@ -103,4 +108,14 @@ export async function assertThreadImageInput(
       message: unknownInput ? MODEL_IMAGE_INPUT_UNKNOWN : MODEL_IMAGE_INPUT_ERROR,
       data: { reason: "model_image_input_unsupported" },
     });
+}
+
+/** The main model as resolveMemberMainModel picks it, without reading secrets. */
+async function mainModelWithoutSecrets(prisma: PrismaClient, actor: Actor) {
+  const { primary } = await getModelRole(prisma, actor, "main");
+  if (!primary) return null;
+  return {
+    ...primary,
+    credential: await findModelCredential(prisma, actor, primary.provider, primary.modelId),
+  };
 }

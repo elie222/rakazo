@@ -5,16 +5,9 @@ import {
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
-  runSecretKind,
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
-
-describe("runSecretKind", () => {
-  it("scopes secrets to a single run", () => {
-    expect(runSecretKind("run-1")).toBe("run-secret:run-1");
-  });
-});
 
 describe("normalizeSecretAskPurpose", () => {
   it("keeps known purposes and defaults unknown ones to otp", () => {

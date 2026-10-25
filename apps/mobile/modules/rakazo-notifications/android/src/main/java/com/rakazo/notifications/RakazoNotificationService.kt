@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -34,6 +35,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.cos
@@ -74,10 +76,12 @@ class RakazoNotificationService : Service() {
       manager.cancelAll()
       state.edit().putBoolean(THREAD_NOTIFICATION_IDS, true).apply()
     }
-    createChannels()
+    createChannels(localizedContext(NotificationStorage(this).locale))
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // Channel names follow the current locale; recreating an existing channel updates its copy.
+    createChannels(localizedContext(NotificationStorage(this).locale))
     val generation = synchronized(sessionLock) {
       if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) tokenCache.reset()
       sessionGeneration.incrementAndGet().also {
@@ -123,6 +127,7 @@ class RakazoNotificationService : Service() {
         return
       }
       val seeded = prepareHistorySpace(generation, storage.spaceId) ?: return
+      val copyContext = localizedContext(storage.locale)
       var recentPageBusy = true
       try {
         if (generation != sessionGeneration.get()) return
@@ -139,7 +144,9 @@ class RakazoNotificationService : Service() {
         if (!runIfCurrent(generation) {
             recentPageBusy = recent.size >= RECENT_LIMIT && recent.any { it.runId !in knownCompleted }
             val visibleWorking = working.filterNot(::isOpenThread)
-            if (visibleWorking.isEmpty()) clearLive() else showLive(visibleWorking, avatarStyle)
+            if (visibleWorking.isEmpty()) clearLive() else {
+              showLive(visibleWorking, avatarStyle, copyContext)
+            }
             if (!seeded) {
               knownCompleted += recent.map { it.runId }
             } else {
@@ -147,7 +154,7 @@ class RakazoNotificationService : Service() {
                 when {
                   !run.notificationsEnabled || isOpenThread(run) -> Unit
                   run.status == "failed" && settings.needsAttention ->
-                    immediate += run to attentionCopy(run)
+                    immediate += run to attentionCopy(copyContext, run)
                   run.status != "completed" -> Unit
                   run.trigger == "routine" && settings.scheduledTasks ->
                     replyLookups += run to true
@@ -168,7 +175,7 @@ class RakazoNotificationService : Service() {
               active.filter { it.status == "waiting_input" || it.status == "waiting_takeover" }
                 .filter { it.notificationsEnabled }
                 .filter { alertedAttention.add("${it.runId}:${it.status}") }
-                .forEach { immediate += it to attentionCopy(it) }
+                .forEach { immediate += it to attentionCopy(copyContext, it) }
             }
             alertedAttention.retainAll(active.map { "${it.runId}:${it.status}" }.toSet())
             immediate.forEach { (run, copy) -> post(run, copy) }
@@ -187,9 +194,10 @@ class RakazoNotificationService : Service() {
                 run,
                 NotificationCopy(
                   title = when {
-                    scheduled -> "${run.botName} · Scheduled task"
-                    run.groupName != null -> "${run.botName} replied in ${run.groupName}"
-                    else -> "${run.botName} replied"
+                    scheduled -> copyContext.getString(R.string.rakazo_scheduled_title, run.botName)
+                    run.groupName != null ->
+                      copyContext.getString(R.string.rakazo_replied_group, run.botName, run.groupName)
+                    else -> copyContext.getString(R.string.rakazo_replied, run.botName)
                   },
                   body = reply.ifBlank { run.prompt },
                   channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
@@ -276,11 +284,11 @@ class RakazoNotificationService : Service() {
     manager.notify(run.threadId.hashCode(), notification)
   }
 
-  private fun showLive(active: List<RunRecord>, avatarStyle: String) {
+  private fun showLive(active: List<RunRecord>, avatarStyle: String, context: Context) {
     val primary = active.first()
     val title = when (active.size) {
-      1 -> "${primary.botName} is working"
-      else -> "${primary.botName} and ${active.size - 1} more are working"
+      1 -> context.getString(R.string.rakazo_live_one, primary.botName)
+      else -> context.getString(R.string.rakazo_live_many, primary.botName, active.size - 1)
     }
     val body = when {
       active.size == 1 -> primary.prompt
@@ -299,7 +307,7 @@ class RakazoNotificationService : Service() {
       .setCategory(Notification.CATEGORY_SERVICE)
     if (Build.VERSION.SDK_INT >= 36) {
       liveBuilder.extras.putBoolean(PROMOTED_ONGOING_EXTRA, true)
-      liveBuilder.setShortCriticalText("Working")
+      liveBuilder.setShortCriticalText(context.getString(R.string.rakazo_live_working))
     }
     val notification = liveBuilder.build()
     if (Build.VERSION.SDK_INT >= 34) {
@@ -375,13 +383,36 @@ class RakazoNotificationService : Service() {
     )
   }
 
-  private fun createChannels() {
+  private fun localizedContext(tag: String): Context {
+    if (tag.isBlank()) return this
+    val configuration = Configuration(resources.configuration)
+    configuration.setLocale(Locale.forLanguageTag(tag))
+    return createConfigurationContext(configuration)
+  }
+
+  private fun createChannels(context: Context) {
     if (Build.VERSION.SDK_INT < 26) return
     listOf(
-      NotificationChannel(Channels.LIVE, "Live agent status", NotificationManager.IMPORTANCE_LOW),
-      NotificationChannel(Channels.MESSAGES, "Agent messages", NotificationManager.IMPORTANCE_DEFAULT),
-      NotificationChannel(Channels.SCHEDULED, "Scheduled tasks", NotificationManager.IMPORTANCE_DEFAULT),
-      NotificationChannel(Channels.ATTENTION, "Needs attention", NotificationManager.IMPORTANCE_HIGH),
+      NotificationChannel(
+        Channels.LIVE,
+        context.getString(R.string.rakazo_channel_live),
+        NotificationManager.IMPORTANCE_LOW,
+      ),
+      NotificationChannel(
+        Channels.MESSAGES,
+        context.getString(R.string.rakazo_channel_messages),
+        NotificationManager.IMPORTANCE_DEFAULT,
+      ),
+      NotificationChannel(
+        Channels.SCHEDULED,
+        context.getString(R.string.rakazo_channel_scheduled),
+        NotificationManager.IMPORTANCE_DEFAULT,
+      ),
+      NotificationChannel(
+        Channels.ATTENTION,
+        context.getString(R.string.rakazo_channel_attention),
+        NotificationManager.IMPORTANCE_HIGH,
+      ),
     ).forEach(manager::createNotificationChannel)
   }
 
@@ -449,14 +480,22 @@ class RakazoNotificationService : Service() {
 
 private data class NotificationCopy(val title: String, val body: String, val channel: String)
 
-private fun attentionCopy(run: RunRecord): NotificationCopy = when (run.status) {
-  "failed" -> NotificationCopy("${run.botName} hit a problem", run.prompt, Channels.ATTENTION)
-  "waiting_takeover" -> NotificationCopy(
-    "${run.botName} needs you on screen",
+private fun attentionCopy(context: Context, run: RunRecord): NotificationCopy = when (run.status) {
+  "failed" -> NotificationCopy(
+    context.getString(R.string.rakazo_attention_failed, run.botName),
     run.prompt,
     Channels.ATTENTION,
   )
-  else -> NotificationCopy("${run.botName} needs your input", run.prompt, Channels.ATTENTION)
+  "waiting_takeover" -> NotificationCopy(
+    context.getString(R.string.rakazo_attention_takeover, run.botName),
+    run.prompt,
+    Channels.ATTENTION,
+  )
+  else -> NotificationCopy(
+    context.getString(R.string.rakazo_attention_input, run.botName),
+    run.prompt,
+    Channels.ATTENTION,
+  )
 }
 
 private object Channels {
@@ -519,7 +558,7 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
-private const val PAYLOAD_MARK = ''
+private const val PAYLOAD_MARK = '\uE000'
 /** A preview is one line. Cap the source so one huge reply cannot stall the poll loop. */
 private const val MAX_PREVIEW_SOURCE = 4_096
 private val ESCAPE_RE =

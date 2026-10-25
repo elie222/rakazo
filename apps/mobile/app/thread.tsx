@@ -1,13 +1,6 @@
 import type { MenuAction } from "@expo/ui/community/menu";
-import { ChatMarkdown, markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type {
-  AgentSkillCatalogEntry,
-  Connection,
-  ConnectionCatalogItem,
-  MessageBlock,
-  MessageReaction,
-  Routine,
-} from "@rakazo/contracts";
+import { ChatMarkdown, markdownCodeBlocks, withBlockMentions } from "@rakazo/chat-ui/native";
+import type { AgentSkillCatalogEntry, MessageBlock, MessageReaction } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_COUNT,
   attachmentMaxBytes,
@@ -15,7 +8,7 @@ import {
   isAttachmentAudioMimeType,
   MESSAGE_REACTIONS,
 } from "@rakazo/contracts";
-import type { ReadBoundary, SlashActionId, ThreadItem } from "@rakazo/core";
+import type { ChildBotBlock, ReadBoundary, SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
   answerableAskMessageIds,
@@ -45,6 +38,7 @@ import {
   liveMessageComposing,
   openThreadWindow,
   plainTextFromMarkdown,
+  projectBotMentions,
   projectMessageReactions,
   reconcileThreadScrollState,
   replyAttachment,
@@ -125,6 +119,7 @@ import { AskActions } from "../components/AskActions";
 import { ActivityMark } from "../components/activity-mark";
 import { AudioAttachment } from "../components/audio-attachment";
 import { BotAvatar } from "../components/bot-avatar";
+import { BotMention, MessageMentions } from "../components/bot-mention";
 import { ChoiceCard } from "../components/ChoiceCard";
 import { ComputerCard } from "../components/ComputerCard";
 import { ComposerReplyPreview } from "../components/composer-reply-preview";
@@ -266,6 +261,7 @@ import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { threadKeyboardOffset } from "../lib/thread-keyboard-offset";
+import { useThreadMentionCatalog } from "../lib/thread-mention-catalog";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import {
@@ -476,14 +472,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const foreground = useAppForeground();
   const router = useRouter();
   // Beside the chat list on a wide window, the chat has only the width the list leaves.
-  const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
+  const { split, inboxHidden, inboxShown, foldActive, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
   const headerClearance = threadHeaderClearance(headerHeight);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
   const columnInsets = readableGutters(windowWidth, {
-    left: split && !inboxHidden ? 0 : insets.left,
+    left: inboxShown ? 0 : insets.left,
     right: insets.right,
   });
   const columnWidth = windowWidth - columnInsets.left - columnInsets.right;
@@ -678,15 +674,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const mentionBotsRef = useRef<MobileBot[]>([]);
   mentionBotsRef.current = mentionBots;
   const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>([]);
-  const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
-  const [mentionConnectors, setMentionConnectors] = useState<
-    Array<{
-      id: string;
-      name: string;
-      authStatus: "connected" | "needs_auth";
-      connectionId?: string;
-    }>
-  >([]);
+  const {
+    routines: mentionRoutines,
+    connectors: mentionConnectors,
+    onMentionRequested,
+  } = useThreadMentionCatalog(
+    JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
+    mentionBots,
+  );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -739,20 +734,23 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
     [snap?.messages],
   );
-  const reactionView = useMemo(
-    () =>
-      projectMessageReactions(
-        expandPeerReplies(peerTranscript, expandedPeerMarkers)
-          .map((message) => {
-            const dismissed = dismissedChoiceQuestions.get(message.id);
-            if (!dismissed) return message;
-            const blocks = applyLocalChoiceDismissals(message.blocks, dismissed);
-            return blocks === message.blocks ? message : { ...message, blocks: [...blocks] };
-          })
-          .filter((message) => hasVisibleMessagePresentation(message.blocks)),
-      ),
-    [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
-  );
+  const reactionView = useMemo(() => {
+    const mentionView = projectBotMentions(
+      expandPeerReplies(peerTranscript, expandedPeerMarkers)
+        .map((message) => {
+          const dismissed = dismissedChoiceQuestions.get(message.id);
+          if (!dismissed) return message;
+          const blocks = applyLocalChoiceDismissals(message.blocks, dismissed);
+          return blocks === message.blocks ? message : { ...message, blocks: [...blocks] };
+        })
+        .filter((message) => hasVisibleMessagePresentation(message.blocks)),
+    );
+    return {
+      ...projectMessageReactions(mentionView.visibleMessages),
+      mentions: mentionView.mentions,
+      foldedInto: mentionView.foldedInto,
+    };
+  }, [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript]);
   const visibleMessages = reactionView.visibleMessages;
   const latestMessage = latestArrivalMessage(visibleMessages, peerTranscript.markerOf);
   const latestMessageId = latestMessage?.id ?? null;
@@ -916,71 +914,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       .catch(() => setMentionGroups([]));
   }, [refreshMentionBots]);
 
-  useEffect(() => {
-    if (mentionBots.length === 0) {
-      setMentionRoutines([]);
-      setMentionConnectors([]);
-      return;
-    }
-    let cancelled = false;
-    const botNameById = new Map(mentionBots.map((bot) => [bot.id, bot.name]));
-    void Promise.all(
-      mentionBots.map((bot) =>
-        rpc<Routine[]>("routines/list", { botId: bot.id })
-          .then((rows) =>
-            rows.map((routine) => ({
-              ...routine,
-              botName: botNameById.get(bot.id) ?? bot.name,
-            })),
-          )
-          .catch(() => [] as Array<Routine & { botName?: string }>),
-      ),
-    ).then((lists) => {
-      if (!cancelled) setMentionRoutines(lists.flat());
-    });
-    void Promise.all([
-      rpc<Connection[]>("connections/list").catch(() => [] as Connection[]),
-      rpc<ConnectionCatalogItem[]>("connections/catalog", {}).catch(
-        () => [] as ConnectionCatalogItem[],
-      ),
-    ]).then(([connections, catalog]) => {
-      if (cancelled) return;
-      const connected = connections.filter((row) => row.status === "connected");
-      const options: Array<{
-        id: string;
-        name: string;
-        authStatus: "connected" | "needs_auth";
-        connectionId?: string;
-      }> = connected.map((row) => ({
-        id: row.id,
-        name: row.displayName,
-        authStatus: "connected" as const,
-        connectionId: row.id,
-      }));
-      for (const item of catalog) {
-        if (item.connected || item.noAuth) continue;
-        if (
-          connected.some(
-            (row) =>
-              row.provider.toLowerCase() === item.slug.toLowerCase() ||
-              row.displayName.toLowerCase() === item.name.toLowerCase(),
-          )
-        ) {
-          continue;
-        }
-        options.push({
-          id: `catalog:${item.connectorId}:${item.slug}`,
-          name: item.name,
-          authStatus: "needs_auth",
-        });
-      }
-      setMentionConnectors(options);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionBots]);
-
   function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
     return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
   }
@@ -1099,7 +1032,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             </Pressable>
           </View>
         ),
-      ...(split
+      ...(split && !foldActive
         ? {
             headerBackVisible: false,
             ...(iosAtLeast(26)
@@ -1130,9 +1063,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               </Pressable>
             ),
           }
-        : // Folding back takes the list away, so the chat gets its back button again.
+        : // Folding back takes the list away, so the chat gets its back button again. Folded like
+          // a book, the list stays beside the chat, so it needs neither.
           {
-            headerBackVisible: true,
+            headerBackVisible: !split,
             headerLeft: undefined,
             ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
           }),
@@ -1142,6 +1076,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     });
   }, [
     split,
+    foldActive,
     inboxHidden,
     readOnly,
     restoring,
@@ -1695,30 +1630,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
-              if (
-                event.type === "thread.progress" ||
-                event.type === "agent.tool.called" ||
-                event.type === "agent.tool.completed" ||
-                event.type === "thread.message.created" ||
-                event.type === "thread.message.updated" ||
-                event.type === "thread.message.reaction" ||
-                event.type === "thread.subagent" ||
-                event.type === "thread.cloud_agent" ||
-                event.type === "thread.cleared" ||
-                event.type === "run.waiting_input" ||
-                event.type === "computer.takeover.requested" ||
-                event.type === "computer.takeover.released" ||
-                isRunTerminalEvent(event)
-              ) {
-                if (event.type === "thread.cleared") {
-                  expandedHistoryThread.current = null;
-                  pinnedAroundRef.current = null;
-                  jumpScrollTarget.current = null;
-                  jumpAnchor.current.release();
-                  historyEpoch.current += 1;
-                }
-                commitSnap(applyMobileThreadEvent(snapRef.current, event));
+              if (event.type === "thread.cleared") {
+                expandedHistoryThread.current = null;
+                pinnedAroundRef.current = null;
+                jumpScrollTarget.current = null;
+                jumpAnchor.current.release();
+                historyEpoch.current += 1;
               }
+              const previous = snapRef.current;
+              const reduced = applyMobileThreadEvent(previous, event);
+              if (reduced !== previous) commitSnap(reduced);
               liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
@@ -2474,7 +2395,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         params: { ...target, ...(groupId ? { groupId } : { botId }) },
       }),
     jump: (messageId) => {
-      void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
+      void applyMessageJump({
+        botId,
+        groupId,
+        messageId: reactionView.foldedInto.get(messageId) ?? messageId,
+      }).catch(() => undefined);
     },
     dismissChoice: (messageId, question) => {
       setDismissedChoiceQuestions((current) => {
@@ -2602,6 +2527,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               (run.status === "waiting_input" || run.status === "waiting_takeover"),
           )}
           messageReactions={messageReactions}
+          mentions={reactionView.mentions.get(message.id)}
           peerReplies={
             peerTranscript.folded.has(message.id)
               ? expandedPeerMarkers.has(message.id)
@@ -2628,7 +2554,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       snap?.run,
       mentionBots,
       displayName,
-      reactionView.reactions,
+      reactionView,
       peerTranscript,
       expandedPeerMarkers,
       inGroup,
@@ -3152,6 +3078,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             ref={composerRef}
             agentSkills={agentSkills}
             composerMentionTargets={composerMentionTargets}
+            onMentionRequested={onMentionRequested}
             composerPrompt={composerPrompt}
             replyTargetId={replyTarget?.id}
             replyQuote={replyQuote}
@@ -3244,13 +3171,9 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             }}
           />
         ) : null}
+        {/* The header buttons float over the chat; only the clock gets a soft backdrop. */}
         {headerHeight > 0 ? (
-          <View
-            pointerEvents="none"
-            style={[styles.headerFade, { height: headerClearance.opaqueHeight }]}
-          >
-            <View style={styles.headerFadeEdge} />
-          </View>
+          <View pointerEvents="none" style={[styles.statusBarFade, { height: insets.top }]} />
         ) : null}
       </KeyboardAvoidingView>
     </View>
@@ -3455,6 +3378,7 @@ type MessageRowProps = {
   replyFallbackText?: string;
   waitingForUser: boolean;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
+  mentions?: readonly ChildBotBlock[];
   /** Set on a received marker whose peer run has folded replies. */
   peerReplies?: "collapsed" | "expanded";
   activityBotId?: string;
@@ -3497,6 +3421,7 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
+  mentions,
   waitingForUser,
   peerReplies,
   activityBotId,
@@ -3820,6 +3745,7 @@ const MessageRow = memo(function MessageRow({
           >
             <ThreadReadOnlyContext.Provider value={readOnly}>
               <MessageBubble
+                mentions={mentions}
                 botId={bubbleBotId}
                 groupId={groupId}
                 message={message}
@@ -3888,9 +3814,36 @@ const MessageRow = memo(function MessageRow({
 // its row mounts again when the helper finishes. Remember open cards by agent id across that.
 const openHelpers = new Set<string>();
 
-const MessageBubble = memo(function MessageBubble(
-  props: ComponentProps<typeof MessageBubbleContent>,
-) {
+const MessageBubble = memo(function MessageBubble({
+  mentions,
+  ...props
+}: ComponentProps<typeof MessageBubbleContent> & { mentions?: readonly ChildBotBlock[] }) {
+  if (!mentions?.length) return <MessageBubbleBody {...props} />;
+  return (
+    <MessageMentions
+      mentions={mentions}
+      colorOf={(id) =>
+        props.bots.find((bot) => bot.id === id)?.color ??
+        props.members?.find((member) => member.botId === id)?.color
+      }
+      tokens={mobileTokens()}
+      onOpenBot={props.onOpenBot}
+    >
+      <MessageBubbleBody
+        {...props}
+        message={{
+          ...props.message,
+          blocks: withBlockMentions(
+            props.message.blocks,
+            mentions.map((bot) => ({ id: bot.botId, name: bot.name })),
+          ),
+        }}
+      />
+    </MessageMentions>
+  );
+});
+
+function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
   if (!message.blocks.some(isSpecialMessageBlock)) return <MessageBubbleContent {...props} />;
 
@@ -3910,6 +3863,8 @@ const MessageBubble = memo(function MessageBubble(
         key={first.kind === "subagent" ? first.agentId : `${first.kind}-${index}`}
         special={first}
         actionProps={props.actionProps}
+        bots={props.bots}
+        members={props.members}
         onOpenBot={props.onOpenBot}
         onHelperToggle={props.onHelperToggle}
         userBubble={props.userBubble}
@@ -3928,7 +3883,7 @@ const MessageBubble = memo(function MessageBubble(
   ) : (
     <View style={{ gap: 8, width: "100%" }}>{content}</View>
   );
-});
+}
 
 type SpecialMessageBlock = Extract<
   MessageBlock,
@@ -4530,7 +4485,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 
 type SpecialMessageCardProps = Pick<
   ComponentProps<typeof MessageBubbleContent>,
-  "actionProps" | "onOpenBot" | "onHelperToggle" | "userBubble"
+  "actionProps" | "bots" | "members" | "onOpenBot" | "onHelperToggle" | "userBubble"
 > & { special: SpecialMessageBlock };
 
 function HelperMessageCard({
@@ -4661,7 +4616,7 @@ function HelperMessageCard({
 }
 
 function SpecialMessageCard(props: SpecialMessageCardProps) {
-  const { special, actionProps, onOpenBot, userBubble } = props;
+  const { special, actionProps, bots, members, onOpenBot, userBubble } = props;
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useI18n();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
@@ -4725,50 +4680,31 @@ function SpecialMessageCard(props: SpecialMessageCardProps) {
     );
   }
   if (special.kind === "child_bot") {
-    const removed = special.status === "deleted" || special.status === "archived";
     return (
-      <Pressable
+      <Text
         {...actionProps}
-        onPress={
-          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
-        }
         style={{
-          width: "90%",
-          borderRadius: 18,
-          backgroundColor: tokens.card,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          opacity: removed ? 0.6 : 1,
+          alignSelf: "flex-start",
+          paddingHorizontal: 4,
+          color: tokens.mutedForeground,
+          ...typeScale.body,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-        >
-          <Text style={{ flexShrink: 1, color: tokens.foreground, ...typeScale.cardTitle }}>
-            {special.name || t("Bot")}
-          </Text>
-          <Text
-            style={{ color: removed ? tokens.destructive : tokens.success, ...typeScale.caption }}
-          >
-            {special.status === "archived"
-              ? t("archived")
-              : special.status === "deleted"
-                ? t("deleted")
-                : t("bot")}
-          </Text>
-        </View>
-        <Text style={{ color: tokens.mutedForeground, marginTop: 8, ...typeScale.secondary }}>
-          {removed
-            ? special.status === "archived"
-              ? t("Archived. Chat, memory, and files kept.")
-              : t("Removed with chat, computer, and memory.")
-            : special.title || t("Opened its thread.")}
-        </Text>
-      </Pressable>
+        <BotMention
+          block={special}
+          color={
+            bots.find((bot) => bot.id === special.botId)?.color ??
+            members?.find((member) => member.botId === special.botId)?.color
+          }
+          tokens={tokens}
+          onOpenBot={onOpenBot}
+        />
+        {special.status === "archived"
+          ? ` ${t("archived")}`
+          : special.status === "deleted"
+            ? ` ${t("deleted")}`
+            : null}
+      </Text>
     );
   }
   return null;

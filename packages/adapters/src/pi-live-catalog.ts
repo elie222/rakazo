@@ -287,14 +287,14 @@ export async function savedCatalogSelections(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Set<string>> {
-  const [preferences, bots, routines, backups, settings] = await Promise.all([
+  const [preferences, bots, routines, roleChoices, settings] = await Promise.all([
     prisma.spaceModelPreference.findMany({
       where: { userId },
       select: { modelId: true, credential: { select: { provider: true } } },
     }),
     prisma.bot.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
     prisma.routine.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
-    prisma.spaceBackupModel.findMany({
+    prisma.spaceModelRoleChoice.findMany({
       where: { userId },
       select: { provider: true, modelId: true },
     }),
@@ -310,7 +310,7 @@ export async function savedCatalogSelections(
     ...routines.map(
       (p) => `${p.modelProvider ? canonicalPiProviderId(p.modelProvider) : ""}:${p.modelId}`,
     ),
-    ...backups.map((p) => `${canonicalPiProviderId(p.provider)}:${p.modelId}`),
+    ...roleChoices.map((p) => `${canonicalPiProviderId(p.provider)}:${p.modelId}`),
     ...(settings ? [`${settings.defaultModelProvider}:${settings.defaultModelId}`] : []),
   ]);
 }

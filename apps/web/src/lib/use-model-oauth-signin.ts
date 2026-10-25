@@ -10,6 +10,7 @@ export type ModelOAuthSignInBegin = {
   provider: string;
   modelId?: string;
   thinkingLevel?: ThinkingLevel | null;
+  makeDefault?: boolean;
   label?: string;
 };
 
@@ -135,6 +136,7 @@ export function useModelOAuthSignIn(options: {
           provider: begin.provider,
           modelId: begin.modelId,
           thinkingLevel: begin.thinkingLevel,
+          makeDefault: begin.makeDefault,
           label: begin.label,
         },
         { signal: controller.signal },

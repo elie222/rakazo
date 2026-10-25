@@ -63,7 +63,7 @@ Android package. Download `google-services.json` and, from `apps/mobile`, store
 it as an EAS file environment variable:
 
 ```sh
-eas env:create --environment production --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret
+eas env:set production --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret
 ```
 
 Keep the file and credentials out of Git. Upload an FCM V1 service account key

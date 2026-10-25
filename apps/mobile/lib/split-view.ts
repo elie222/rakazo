@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 import { useWindowDimensions } from "react-native";
+import { crossesWindow } from "./fold-layout";
 import type { FoldRegion } from "./fold-regions";
 import { useFoldRegions } from "./fold-regions";
 
@@ -70,6 +71,8 @@ const currentState = () => state;
 
 /**
  * split: the window is wide enough for the chat list and a chat side by side.
+ * inboxShown: the list is beside the screen; a book-like fold keeps it there so no column
+ * straddles the hinge.
  * contentWidth: what is left for the screen beside the list.
  */
 export function useSplitView() {
@@ -78,15 +81,16 @@ export function useSplitView() {
   const { hidden, chosenWidth } = useSyncExternalStore(subscribe, currentState, currentState);
   const split = splitsWindow(width);
   const { inboxWidth, gap, folded } = splitPaneLayout(width, height, chosenWidth, folds);
-  const showsInbox = split && !hidden;
+  const inboxShown = split && (!hidden || folded);
   return {
     split,
     inboxHidden: hidden,
+    inboxShown,
     inboxWidth,
     foldGap: gap,
     foldActive: folded,
     windowWidth: width,
-    contentWidth: showsInbox ? width - inboxWidth - gap : width,
+    contentWidth: inboxShown ? width - inboxWidth - gap : width,
   };
 }
 
@@ -99,12 +103,8 @@ export function splitPaneLayout(
 ): { inboxWidth: number; gap: number; folded: boolean } {
   const fold = regions.find(
     (region) =>
-      Number.isFinite(region.x) &&
-      Number.isFinite(region.width) &&
-      region.width >= 0 &&
+      crossesWindow(region, width, height) &&
       region.height > region.width &&
-      region.y < height &&
-      region.height + region.y > 0 &&
       region.x >= INBOX_MIN_WIDTH &&
       width - region.x - region.width >= CONTENT_MIN_WIDTH,
   );

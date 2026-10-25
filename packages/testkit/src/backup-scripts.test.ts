@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -16,6 +17,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const temporaryDirectories: string[] = [];
+const runningWriters = { api: "running", worker: "running", supervisor: "running" };
+const stoppedWriters = { api: "stopped", worker: "stopped", supervisor: "stopped" };
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -77,8 +80,10 @@ if (args[0] === "inspect") {
   console.log("fake custom-format dump");
 } else if (args.includes("psql") && args.includes("-c")) {
   // restore.sh pre-creates the runtime role the dump's grants name.
+  if (process.env.FAIL_ROLE === "1") process.exit(24);
 } else if (args.includes("psql")) {
   fs.writeFileSync(process.env.SQL_INPUT, fs.readFileSync(0));
+  fs.writeFileSync(process.env.SQL_SERVICE_STATE, fs.readFileSync(process.env.SERVICE_STATE));
   if (process.env.FAIL_SQL === "1") {
     console.error("ERROR: relation example already exists");
     // psql normally exits successfully after SQL errors unless explicitly told to stop.
@@ -86,7 +91,41 @@ if (args[0] === "inspect") {
   }
 } else if (args.includes("ps")) {
   console.log("example-api-container");
-} else if (!args.includes("up") && !args.includes("pg_isready")) {
+} else if (args.includes("stop")) {
+  const state = JSON.parse(fs.readFileSync(process.env.SERVICE_STATE, "utf8"));
+  const fail = process.env.FAIL_INITIAL_STOP === "1" && !fs.existsSync(process.env.STOP_FAILURE_USED);
+  const services = args.slice(args.indexOf("stop") + 1);
+  for (const service of fail ? services.slice(0, 1) : services) {
+    if (service in state) state[service] = "stopped";
+  }
+  fs.writeFileSync(process.env.SERVICE_STATE, JSON.stringify(state));
+  if (fail) {
+    fs.writeFileSync(process.env.STOP_FAILURE_USED, "");
+    process.exit(21);
+  }
+  if (process.env.FAIL_CLEANUP_STOP === "1" && fs.existsSync(process.env.STARTUP_SERVICE_STATE)) process.exit(23);
+} else if (args.includes("up")) {
+  const services = args.slice(args.indexOf("up") + 1).filter((arg) => !arg.startsWith("-"));
+  if (services.includes("postgres")) {
+    if (process.env.FAIL_POSTGRES_START === "1") process.exit(22);
+  } else {
+    const state = JSON.parse(fs.readFileSync(process.env.SERVICE_STATE, "utf8"));
+    const requested = services.length ? services : Object.keys(state);
+    const starting = process.env.STARTUP_ONLY
+      ? requested.filter((service) => service === process.env.STARTUP_ONLY)
+      : requested;
+    for (const service of starting) {
+      if (service in state) state[service] = "running";
+    }
+    fs.writeFileSync(process.env.SERVICE_STATE, JSON.stringify(state));
+    fs.writeFileSync(process.env.STARTUP_SERVICE_STATE, JSON.stringify(state));
+    if (process.env.FAIL_STARTUP === "1") {
+      console.error("simulated startup failure after starting writers");
+      process.exit(19);
+    }
+    if (process.env.INTERRUPT_STARTUP) process.kill(process.ppid, process.env.INTERRUPT_STARTUP);
+  }
+} else if (!args.includes("pg_isready")) {
   process.exit(92);
 }
 `,
@@ -106,6 +145,10 @@ if [[ "$1" == "-czf" && "$*" == *" -C "* && -n "\${FAIL_TAR:-}" ]]; then
   exit "$FAIL_TAR"
 fi
 /usr/bin/tar "$@"
+if [[ "$1" == "-xzf" && "\${FAIL_EXTRACT:-0}" == "1" ]]; then
+  echo "simulated archive extraction failure" >&2
+  exit 2
+fi
 if [[ "$1" == "-czf" && "\${CHANGED_TAR:-0}" == "1" ]]; then
   echo "file changed as we read it" >&2
   exit 1
@@ -206,10 +249,15 @@ esac
     PATH: [bin, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter),
     COMMAND_LOG: path.join(root, "commands.jsonl"),
     SQL_INPUT: path.join(root, "input.sql"),
+    SQL_SERVICE_STATE: path.join(root, "sql-service-state"),
+    SERVICE_STATE: path.join(root, "service-state"),
+    STARTUP_SERVICE_STATE: path.join(root, "startup-service-state"),
+    STOP_FAILURE_USED: path.join(root, "stop-failure-used"),
     FAKE_APPDATA: path.join(root, "appdata"),
     FAKE_REMOTE: path.join(root, "remote"),
     RCLONE_LOG: path.join(root, "rclone.log"),
   };
+  write(env.SERVICE_STATE, JSON.stringify(runningWriters));
   return {
     root,
     checkout,
@@ -225,6 +273,9 @@ esac
       expect(result.error).toBeUndefined();
       expect(result.signal).toBeNull();
       return result;
+    },
+    serviceStates(file = env.SERVICE_STATE) {
+      return JSON.parse(readFileSync(file, "utf8"));
     },
     commands(): string[][] {
       if (!existsSync(env.COMMAND_LOG)) return [];
@@ -258,6 +309,134 @@ describe("development backup failures", () => {
     if (hasEnv) expect(f.commands()[0]).toContain(path.join(f.checkout, ".env"));
   });
 
+  it("preserves spaces in a single-component backup stamp", () => {
+    const f = fixture();
+    const stamp = " snapshot with spaces ";
+    write(path.join(f.checkout, "data/home.txt"), "example home");
+
+    const result = f.run("scripts/backup.sh", [stamp]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(path.join(f.checkout, "backups", stamp, "rakazo.sql"), "utf8")).toContain(
+      "CREATE TABLE",
+    );
+    expect(contents(path.join(f.checkout, "backups", stamp, "homes.tgz"))).toContain(
+      "data/home.txt",
+    );
+  });
+
+  it.each(["", ".", "..", "/", "../data", "../../outside", "link/snapshot"])(
+    "rejects unsafe stamp %j without changing contents or modes",
+    (stamp) => {
+      const f = fixture();
+      const backups = path.join(f.checkout, "backups");
+      const outside = path.join(f.root, "outside");
+      const directories = [
+        f.checkout,
+        backups,
+        path.join(f.checkout, "data"),
+        outside,
+        path.join(outside, "snapshot"),
+      ];
+      for (const directory of directories) {
+        write(path.join(directory, "rakazo.sql"), "existing database backup");
+        write(path.join(directory, "homes.tgz"), "existing homes backup");
+        chmodSync(directory, 0o755);
+        chmodSync(path.join(directory, "rakazo.sql"), 0o644);
+        chmodSync(path.join(directory, "homes.tgz"), 0o640);
+      }
+      symlinkSync(outside, path.join(backups, "link"));
+      const entries = directories.map((directory) => readdirSync(directory).sort());
+
+      const result = f.run("scripts/backup.sh", [stamp]);
+
+      expect(result.status).not.toBe(0);
+      expect(f.commands()).toEqual([]);
+      for (const [index, directory] of directories.entries()) {
+        expect(readdirSync(directory).sort()).toEqual(entries[index]);
+        expect(statSync(directory).mode & 0o777).toBe(0o755);
+        expect(readFileSync(path.join(directory, "rakazo.sql"), "utf8")).toBe(
+          "existing database backup",
+        );
+        expect(readFileSync(path.join(directory, "homes.tgz"), "utf8")).toBe(
+          "existing homes backup",
+        );
+        expect(statSync(path.join(directory, "rakazo.sql")).mode & 0o777).toBe(0o644);
+        expect(statSync(path.join(directory, "homes.tgz")).mode & 0o777).toBe(0o640);
+      }
+    },
+  );
+
+  it.each([false, true])("keeps new and reused backups private: %s", (reuse) => {
+    const f = fixture();
+    write(path.join(f.checkout, "data/home.txt"), "example home");
+    const output = path.join(f.checkout, "backups/private");
+    if (reuse) {
+      write(path.join(output, "rakazo.sql"), "old dump");
+      write(path.join(output, "homes.tgz"), "old archive");
+      chmodSync(path.dirname(output), 0o777);
+      chmodSync(output, 0o777);
+      chmodSync(path.join(output, "rakazo.sql"), 0o666);
+      chmodSync(path.join(output, "homes.tgz"), 0o666);
+    }
+    const result = spawnSync(
+      "/bin/bash",
+      [
+        "-c",
+        'umask 022; exec bash "$1" private',
+        "backup-permissions",
+        path.join(f.checkout, "scripts/backup.sh"),
+      ],
+      { cwd: f.root, env: f.env, encoding: "utf8" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(statSync(path.dirname(output)).mode & 0o777).toBe(0o700);
+    expect(statSync(output).mode & 0o777).toBe(0o700);
+    expect(statSync(path.join(output, "rakazo.sql")).mode & 0o777).toBe(0o600);
+    expect(statSync(path.join(output, "homes.tgz")).mode & 0o777).toBe(0o600);
+  });
+
+  it("makes reused backup artifacts private even when the database dump fails", () => {
+    const f = fixture();
+    const output = path.join(f.checkout, "backups/example");
+    for (const name of ["rakazo.sql", "homes.tgz"]) {
+      write(path.join(output, name), "old backup");
+      chmodSync(path.join(output, name), 0o666);
+    }
+    chmodSync(output, 0o755);
+
+    const result = f.run("scripts/backup.sh", ["example"], { FAIL_DUMP: "1" });
+
+    expect(result.status).toBe(2);
+    expect(statSync(output).mode & 0o777).toBe(0o700);
+    for (const name of ["rakazo.sql", "homes.tgz"]) {
+      expect(statSync(path.join(output, name)).mode & 0o777).toBe(0o600);
+    }
+  });
+
+  it.each(["directory", "artifact"])("does not write through a backup %s symlink", (kind) => {
+    const f = fixture();
+    const target = path.join(f.root, "outside");
+    const output = path.join(f.checkout, "backups/example");
+    if (kind === "directory") {
+      write(path.join(target, "rakazo.sql"), "keep this");
+      mkdirSync(path.dirname(output), { recursive: true });
+      symlinkSync(target, output);
+    } else {
+      write(target, "keep this");
+      mkdirSync(output, { recursive: true });
+      symlinkSync(target, path.join(output, "rakazo.sql"));
+    }
+
+    const result = f.run("scripts/backup.sh", ["example"]);
+
+    expect(result.status).not.toBe(0);
+    expect(
+      readFileSync(kind === "directory" ? path.join(target, "rakazo.sql") : target, "utf8"),
+    ).toBe("keep this");
+    expect(f.commands()).toEqual([]);
+  });
+
   it.each(["absent", "skipped"])("allows an empty archive when data is %s", (scenario) => {
     const f = fixture();
     if (scenario === "skipped") write(path.join(f.checkout, "data/home.txt"), "example home");
@@ -268,11 +447,14 @@ describe("development backup failures", () => {
     expect(contents(path.join(f.checkout, "backups/example/homes.tgz"))).toBe("");
   });
 
-  it.each(["file", "broken link"])("rejects a data path that is a %s", (kind) => {
+  it.each(["file", "broken link", "directory link"])("rejects a data path that is a %s", (kind) => {
     const f = fixture();
     const data = path.join(f.checkout, "data");
     if (kind === "file") write(data, "not a directory");
-    else symlinkSync(path.join(f.root, "missing"), data);
+    else {
+      const target = path.join(f.root, kind === "directory link" ? "appdata" : "missing");
+      symlinkSync(target, data);
+    }
     const result = f.run("scripts/backup.sh", ["example"]);
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain("Backup written");
@@ -306,10 +488,33 @@ describe("development restore failures", () => {
     return f;
   }
 
+  it("restores the saved data tree without retaining post-snapshot files", () => {
+    const f = restoreFixture();
+    const extra = path.join(f.checkout, "data/post-snapshot.txt");
+    write(extra, "state that did not exist in the backup");
+
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("backed-up home");
+    expect(existsSync(extra)).toBe(false);
+    const rollbacks = readdirSync(f.checkout).filter((name) => name.startsWith("data.rollback."));
+    expect(rollbacks).toHaveLength(1);
+    const rollback = path.join(f.checkout, rollbacks[0]!);
+    expect(statSync(rollback).mode & 0o777).toBe(0o700);
+    expect(readFileSync(path.join(rollback, "data/home.txt"), "utf8")).toBe("current home");
+    expect(readFileSync(path.join(rollback, "data/post-snapshot.txt"), "utf8")).toBe(
+      "state that did not exist in the backup",
+    );
+    expect(result.stdout).toContain(path.join(rollback, "data"));
+    expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+  });
+
   it.each([false, true])(
     "restores files and starts services only after SQL succeeds: %s",
     (fail) => {
       const f = restoreFixture();
+      write(path.join(f.checkout, "data/post-snapshot.txt"), "current-only file");
       const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
         FAIL_SQL: fail ? "1" : "0",
       });
@@ -326,22 +531,216 @@ describe("development restore failures", () => {
         ]),
       );
       expect(readFileSync(f.env.SQL_INPUT, "utf8")).toContain("CREATE TABLE example");
+      expect(f.serviceStates(f.env.SQL_SERVICE_STATE)).toEqual(stoppedWriters);
+      expect(f.serviceStates()).toEqual(fail ? stoppedWriters : runningWriters);
       expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe(
         fail ? "current home" : "backed-up home",
       );
       expect(f.commands().some((args) => args.slice(-2).join(" ") === "up -d")).toBe(!fail);
       expect(result.stdout.includes("Restore complete")).toBe(!fail);
-      if (fail) expect(result.stderr).toContain("already exists");
+      if (fail) {
+        expect(result.stderr).toContain("already exists");
+        expect(readFileSync(path.join(f.checkout, "data/post-snapshot.txt"), "utf8")).toBe(
+          "current-only file",
+        );
+        expect(readdirSync(f.checkout).some((name) => name.startsWith("data.rollback."))).toBe(
+          false,
+        );
+        expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+      }
     },
   );
 
-  it("fails rather than starting services after an invalid homes archive", () => {
+  it.each([
+    { stage: "initial writer stop", setting: "FAIL_INITIAL_STOP", status: 21 },
+    { stage: "Postgres startup", setting: "FAIL_POSTGRES_START", status: 22 },
+    { stage: "role setup", setting: "FAIL_ROLE", status: 24 },
+  ])("stops every writer after $stage fails", ({ setting, status }) => {
     const f = restoreFixture();
-    write(path.join(f.checkout, "backups/example/homes.tgz"), "invalid archive");
-    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")]);
+
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+      [setting]: "1",
+    });
+
+    expect(result.status).toBe(status);
+    expect(f.serviceStates()).toEqual(stoppedWriters);
+    expect(existsSync(f.env.SQL_INPUT)).toBe(false);
+    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
+    expect(result.stdout).not.toContain("Restore complete");
+    expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+  });
+
+  it.each([
+    { failure: "exit", status: 19 },
+    { failure: "partial exit", status: 19 },
+    { failure: "SIGHUP", status: 129 },
+    { failure: "SIGINT", status: 130 },
+    { failure: "SIGTERM", status: 143 },
+  ])(
+    "stops every writer after startup $failure and preserves both recovery trees",
+    ({ failure, status }) => {
+      const f = restoreFixture();
+      write(path.join(f.checkout, "data/current-only.txt"), "preserve this file");
+
+      const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+        FAIL_STARTUP: failure.endsWith("exit") ? "1" : "0",
+        INTERRUPT_STARTUP: failure.startsWith("SIG") ? failure : "",
+        STARTUP_ONLY: failure === "partial exit" ? "api" : "",
+        FAIL_CLEANUP_STOP: "1",
+      });
+
+      expect(result.status).toBe(status);
+      expect(f.serviceStates(f.env.SQL_SERVICE_STATE)).toEqual(stoppedWriters);
+      expect(f.serviceStates(f.env.STARTUP_SERVICE_STATE)).toEqual(
+        failure === "partial exit" ? { ...stoppedWriters, api: "running" } : runningWriters,
+      );
+      expect(f.serviceStates()).toEqual(stoppedWriters);
+      expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("backed-up home");
+      expect(existsSync(path.join(f.checkout, "data/current-only.txt"))).toBe(false);
+      const rollbacks = readdirSync(f.checkout).filter((name) => name.startsWith("data.rollback."));
+      expect(rollbacks).toHaveLength(1);
+      const rollback = path.join(f.checkout, rollbacks[0]!, "data");
+      expect(readFileSync(path.join(rollback, "home.txt"), "utf8")).toBe("current home");
+      expect(readFileSync(path.join(rollback, "current-only.txt"), "utf8")).toBe(
+        "preserve this file",
+      );
+      expect(result.stdout).not.toContain("Restore complete");
+      expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+    },
+  );
+
+  it.each(["corrupt", "extraction failure"])("rejects a %s homes archive before SQL", (kind) => {
+    const f = restoreFixture();
+    if (kind === "corrupt") {
+      write(path.join(f.checkout, "backups/example/homes.tgz"), "invalid archive");
+    }
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+      FAIL_EXTRACT: kind === "extraction failure" ? "1" : "0",
+    });
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain("Restore complete");
     expect(f.commands().some((args) => args.slice(-2).join(" ") === "up -d")).toBe(false);
+    expect(existsSync(f.env.SQL_INPUT)).toBe(false);
+    expect(f.commands().some((args) => args.includes("psql"))).toBe(false);
+    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
+    expect(readdirSync(f.checkout).some((name) => name.startsWith(".restore."))).toBe(false);
+  });
+
+  it("keeps the previous tree outside active data if the post-SQL tree switch fails", () => {
+    const f = restoreFixture();
+    write(path.join(f.checkout, "data/current-only.txt"), "preserve this file");
+    const mv = path.join(f.root, "bin/mv");
+    write(
+      mv,
+      `#!/bin/bash
+if [[ ! -e "$ACTIVE_DATA" ]]; then
+  for argument in "$@"; do
+    if [[ "$argument" == "$ACTIVE_DATA" ]]; then exit 17; fi
+  done
+fi
+PATH=/usr/bin:/bin exec mv "$@"
+`,
+    );
+    chmodSync(mv, 0o755);
+
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")], {
+      ACTIVE_DATA: path.join(f.checkout, "data"),
+    });
+
+    expect(result.status).toBe(17);
+    expect(readFileSync(f.env.SQL_INPUT, "utf8")).toContain("CREATE TABLE example");
+    expect(f.serviceStates()).toEqual(stoppedWriters);
+    expect(existsSync(path.join(f.checkout, "data"))).toBe(false);
+    const rollback = readdirSync(f.checkout).find((name) => name.startsWith("data.rollback."));
+    expect(rollback).toBeDefined();
+    expect(readFileSync(path.join(f.checkout, rollback!, "data/home.txt"), "utf8")).toBe(
+      "current home",
+    );
+    expect(readFileSync(path.join(f.checkout, rollback!, "data/current-only.txt"), "utf8")).toBe(
+      "preserve this file",
+    );
+    expect(result.stdout).not.toContain("Restore complete");
+  });
+
+  it.each(["missing", "skipped", "empty data"])("handles a %s homes snapshot", (kind) => {
+    const f = restoreFixture();
+    const snapshot = path.join(f.checkout, "backups/example");
+    if (kind === "missing") {
+      rmSync(path.join(snapshot, "homes.tgz"));
+    } else if (kind === "skipped") {
+      expect(
+        f.run("scripts/backup.sh", ["example"], { RAKAZO_BACKUP_SKIP_HOMES: "1" }).status,
+      ).toBe(0);
+    } else {
+      const source = path.join(f.root, "empty-snapshot");
+      mkdirSync(path.join(source, "data"), { recursive: true });
+      execFileSync("/usr/bin/tar", [
+        "-czf",
+        path.join(snapshot, "homes.tgz"),
+        "-C",
+        source,
+        "data",
+      ]);
+    }
+    write(path.join(f.checkout, "data/post-snapshot.txt"), "keep unless the tree is replaced");
+
+    const result = f.run("scripts/restore.sh", [snapshot]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(f.env.SQL_INPUT, "utf8")).toContain("CREATE TABLE example");
+    if (kind === "empty data") {
+      expect(readdirSync(path.join(f.checkout, "data"))).toEqual([]);
+      const rollback = readdirSync(f.checkout).find((name) => name.startsWith("data.rollback."));
+      expect(rollback).toBeDefined();
+      expect(readFileSync(path.join(f.checkout, rollback!, "data/home.txt"), "utf8")).toBe(
+        "current home",
+      );
+    } else {
+      expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
+      expect(readFileSync(path.join(f.checkout, "data/post-snapshot.txt"), "utf8")).toBe(
+        "keep unless the tree is replaced",
+      );
+      expect(readdirSync(f.checkout).some((name) => name.startsWith("data.rollback."))).toBe(false);
+    }
+  });
+
+  it.each(["outside data", "data symlink"])("rejects %s archive paths before SQL", (kind) => {
+    const f = restoreFixture();
+    const source = path.join(f.root, "invalid-snapshot");
+    const outside = path.join(f.root, "outside");
+    write(path.join(outside, "keep.txt"), "untouched");
+    mkdirSync(source);
+    const member = kind === "outside data" ? "unexpected.txt" : "data";
+    if (kind === "outside data") write(path.join(source, member), "not app data");
+    else symlinkSync(outside, path.join(source, member));
+    const snapshot = path.join(f.checkout, "backups/example");
+    execFileSync("/usr/bin/tar", ["-czf", path.join(snapshot, "homes.tgz"), "-C", source, member]);
+
+    const result = f.run("scripts/restore.sh", [snapshot]);
+
+    expect(result.status).not.toBe(0);
+    expect(existsSync(f.env.SQL_INPUT)).toBe(false);
+    expect(f.commands().some((args) => args.includes("psql"))).toBe(false);
+    expect(readFileSync(path.join(f.checkout, "data/home.txt"), "utf8")).toBe("current home");
+    expect(readFileSync(path.join(outside, "keep.txt"), "utf8")).toBe("untouched");
+    expect(f.serviceStates()).toEqual(runningWriters);
+  });
+
+  it.each(["file", "directory link", "broken link"])("rejects active data %s", (kind) => {
+    const f = restoreFixture();
+    const data = path.join(f.checkout, "data");
+    rmSync(data, { recursive: true });
+    if (kind === "file") write(data, "keep this file");
+    else symlinkSync(path.join(f.root, kind === "directory link" ? "appdata" : "missing"), data);
+
+    const result = f.run("scripts/restore.sh", [path.join(f.checkout, "backups/example")]);
+
+    expect(result.status).not.toBe(0);
+    expect(existsSync(f.env.SQL_INPUT)).toBe(false);
+    expect(f.commands().some((args) => args.includes("psql"))).toBe(false);
+    if (kind === "file") expect(readFileSync(data, "utf8")).toBe("keep this file");
+    else
+      expect(readFileSync(path.join(f.root, "appdata/home.txt"), "utf8")).toBe("example bot home");
   });
 });
 

@@ -36,6 +36,17 @@ type Tenant = {
 function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>]> {
   return [
     [
+      "spaceModelRoleChoice",
+      {
+        spaceId: t.spaceId,
+        userId: t.userId,
+        role: `approval-${tag}`,
+        position: 0,
+        provider: "openrouter",
+        modelId: `model-${tag}`,
+      },
+    ],
+    [
       "botSecret",
       {
         id: `rls-bot-secret-${tag}-${t.botId}`,
@@ -166,6 +177,25 @@ describePostgres("row-level security (PostgreSQL)", () => {
           spaceId: t.spaceId,
           kind: "test",
           ciphertext: "c",
+        },
+      });
+      await o.member.create({
+        data: {
+          id: `${t.userId}-member`,
+          organizationId,
+          userId: t.userId,
+          role: "owner",
+          createdAt: new Date(),
+        },
+      });
+      await o.spaceMember.create({
+        data: {
+          id: `${t.userId}-space-member`,
+          spaceId: t.spaceId,
+          userId: t.userId,
+          organizationId,
+          role: "owner",
+          createdAt: new Date(),
         },
       });
       for (const [table, data] of rowsFor(t, "fixture")) {

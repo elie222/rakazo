@@ -14,9 +14,11 @@ import { useFloatingHeaderInset } from "../../lib/floating-header";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
 import { openFromSettingsSheet } from "../../lib/settings-sheet";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function ArchivedBots() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const router = useRouter();
   const tokens = useMobileTokens();
@@ -187,7 +189,7 @@ export default function ArchivedBots() {
   if (!bots?.length && !groups.length)
     return (
       <ScrollView
-        style={{ flex: 1, backgroundColor: tokens.background }}
+        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: 24, gap: 12 }}
       >

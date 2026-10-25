@@ -161,6 +161,28 @@ describe("prepareRequestSecretArguments", () => {
     ).toEqual({ label: "GitHub PAT", purpose: "api_key", credential: sampleCredential });
   });
 
+  it("keeps a page URL's site, not its path or query", () => {
+    expect(
+      prepareRequestSecretArguments({
+        label: "Sign in",
+        purpose: "password",
+        credential: {
+          name: "site_login",
+          origin: "https://www.example.test/some/login/page?x=1",
+          auth: { type: "login" },
+        },
+      }),
+    ).toEqual({
+      label: "Sign in",
+      purpose: "password",
+      credential: {
+        name: "site_login",
+        origin: "https://www.example.test",
+        auth: { type: "login" },
+      },
+    });
+  });
+
   it("keeps replace, so an existing credential can be overwritten", () => {
     const credential = { name: "x", origin: "https://api.example.com", auth: { type: "bearer" } };
     const out = prepareRequestSecretArguments({

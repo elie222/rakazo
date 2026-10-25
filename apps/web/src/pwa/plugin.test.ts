@@ -1,4 +1,4 @@
-import { darkTokens } from "@rakazo/ui-tokens";
+import { webDarkTokens } from "@rakazo/ui-tokens";
 import type { Rolldown } from "vite";
 import { describe, expect, it } from "vitest";
 import { injectShell, shellFiles, webManifest } from "./plugin.js";
@@ -50,8 +50,8 @@ describe("PWA build", () => {
       scope: "/",
       start_url: "/",
       display: "standalone",
-      background_color: darkTokens.background,
-      theme_color: darkTokens.background,
+      background_color: webDarkTokens.background,
+      theme_color: webDarkTokens.background,
     });
     expect(manifest.icons.filter((icon) => icon.purpose === "maskable")).toHaveLength(2);
   });

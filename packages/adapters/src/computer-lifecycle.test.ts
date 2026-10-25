@@ -1820,6 +1820,7 @@ describe("computer execution leases", () => {
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
       computerExecutionLease: {
         updateMany: vi.fn().mockImplementation(async ({ data }) => {
           lease.expiresAt = data.expiresAt;

@@ -88,6 +88,22 @@ Docker and this-Mac computers are never capped. The next use resumes it. On prov
 do not bill while running, a run waiting for takeover also holds the computer for 30 minutes
 after asking, so the user can answer the push on the same open page.
 
+### Linux background-work inspection
+
+The fallback background-work probe and cancellation commands require Bash,
+Python 3.7 or newer, and a readable/searchable `/proc` root. Both supplied images
+install `python3` explicitly in `infra/sandboxes/computer/Dockerfile` and
+`infra/sandboxes/desktop/Dockerfile`. Custom and remote images must provide this
+capability. The scanner itself never installs Python.
+
+The scanner reads marker file descriptors regardless of the holder's UID,
+including duplicated, inherited, and deleted-but-open markers. Individual
+entries that disappear or deny access are skipped because their links cannot
+be observed. A failed root traversal, unexpected filesystem error, or missing
+Python capability makes inspection unknown. Such failures do not authorize marker
+cleanup or cancellation signals from partial scanner output. Cancellation
+rechecks each selected PID's marker descriptors before signaling it.
+
 ### E2B computer template
 
 E2B computers start from the `rakazo-computer` template: E2B's stock desktop at

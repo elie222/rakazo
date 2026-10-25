@@ -36,6 +36,8 @@ const SENSITIVE_REVIEW_ARG_KEY =
 export type AutoReviewChecker = {
   provider: string;
   model: string;
+  /** The effort saved with this approval choice; the model's default when unset. */
+  thinkingLevel?: AgentRunModel["thinkingLevel"];
 };
 
 export type AutoReviewJudgeResult = AutoReviewResult;
@@ -209,7 +211,7 @@ function redactNestedReviewValue(value: unknown, secrets: string[]): unknown {
   );
 }
 
-function truncate(value: string, max: number): string {
+export function truncateReviewText(value: string, max: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 1)}…`;
@@ -222,7 +224,7 @@ export function sanitizeAutoReviewReason(reason: string | undefined): string | u
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return undefined;
-  return truncate(cleaned, MAX_REASON_CHARS);
+  return truncateReviewText(cleaned, MAX_REASON_CHARS);
 }
 
 export function parseAutoReviewJudgeText(text: string): {
@@ -251,7 +253,7 @@ export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
   // A new site is judged on the whole URL, since any part of it can carry data out.
   const argsJson = input.newSite
     ? JSON.stringify(input.args)
-    : truncate(JSON.stringify(input.args), MAX_ARGS_CHARS);
+    : truncateReviewText(JSON.stringify(input.args), MAX_ARGS_CHARS);
   const rules =
     input.matchingRules.length === 0
       ? "none"
@@ -268,8 +270,8 @@ export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
     `tool: ${input.toolName}`,
     `connector: ${input.connectorKind}`,
     `<tool_args>\n${escapePromptData(argsJson)}\n</tool_args>`,
-    `<user_task>\n${escapePromptData(truncate(input.userTask, input.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS))}\n</user_task>`,
-    `<bot>\n${escapePromptData(truncate(input.botDescription, MAX_BOT_CHARS))}\n</bot>`,
+    `<user_task>\n${escapePromptData(truncateReviewText(input.userTask, input.newSite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS))}\n</user_task>`,
+    `<bot>\n${escapePromptData(truncateReviewText(input.botDescription, MAX_BOT_CHARS))}\n</bot>`,
     `matching_rules: ${rules}`,
   ].join("\n");
 }
@@ -316,6 +318,7 @@ export async function runAutoReviewJudge(
           contextWindow: input.contextWindow,
           maxTokens: input.maxTokens,
           reasoning: input.reasoning,
+          thinkingLevel: input.checker.thinkingLevel ?? null,
           oauth: input.oauth,
           callObserver: input.callObserver,
         },
@@ -357,7 +360,7 @@ export async function runAutoReviewJudge(
       ? timeoutSignal.aborted
         ? `timed out after ${timeoutMs}ms`
         : "timed out (parent deadline)"
-      : `failed: ${truncate(
+      : `failed: ${truncateReviewText(
           redactSecrets(
             error instanceof Error ? `${error.name}: ${error.message}` : String(error),
             secrets,

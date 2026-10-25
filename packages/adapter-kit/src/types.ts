@@ -996,6 +996,8 @@ export type BrowserActStep =
       text: string;
       /** Refuse the step unless the page is on this origin when it is applied. */
       origin?: string;
+      /** Which part of a saved login `text` is; a password is typed only into a password field. */
+      field?: "username" | "password";
     };
 
 export interface BrowserActRequest {

@@ -15,7 +15,12 @@ import type {
   ProviderHeaders,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { clampThinkingLevel, Type, validateToolArguments } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  Type,
+  validateToolArguments,
+} from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type {
@@ -85,6 +90,7 @@ import {
 import {
   clipToolResultContent,
   clipToolResultText,
+  effectiveOutputReserve,
   MODEL_STREAM_IDLE_TIMEOUT_MS,
   MODEL_STREAM_TIMEOUT_MS,
   modelStreamMaxRetries,
@@ -143,6 +149,10 @@ const MAX_SILENT_TOOL_CONTINUATIONS = 3;
 // user telling them never to stop, and kept going instead of asking.
 export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
+);
+// Sent after a reply was cut off by a dropped connection; the cut text is the previous turn.
+export const CUT_REPLY_CONTINUATION_PROMPT = automated(
+  "Your previous reply was cut off by a connection error. Continue exactly where it stopped, mid-word if needed, without repeating anything.",
 );
 export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
   "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing, even if you were told to stay silent. Otherwise, if you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply; if not, use any remaining tools needed, then give the user the final answer.",
@@ -288,6 +298,7 @@ export class PiAgentRuntime implements AgentRuntime {
           config: request.model,
           models,
           model: completionModel,
+          cardMaxTokens: cardOutputCeiling(model),
           apiKey,
           credentials: selectedModel.credentials,
         };
@@ -428,6 +439,8 @@ export class PiAgentRuntime implements AgentRuntime {
           attempted: new Set<string>(),
           nextIndex: 0,
           backupOutcomes: new Map(),
+          selfRecoveries: 0,
+          cutReplies: new WeakSet(),
           stream: (target, ctx, options) => {
             if (hasCurrentImages && !target.model.input.includes("image")) {
               throw new Error(MODEL_IMAGE_INPUT_ERROR);
@@ -604,6 +617,18 @@ export class PiAgentRuntime implements AgentRuntime {
         let toolCalls = 0;
         let toolActivityShowing = false;
         let silentToolContinuations = 0;
+        // A reply cut off by a dropped connection continues in the same bubble: no turn break,
+        // and a continuation that starts by repeating the end of the cut text loses that repeat.
+        let joinCutReply: { tail: string; held: string } | undefined;
+        const releaseJoin = () => {
+          if (!joinCutReply) return;
+          const { tail, held } = joinCutReply;
+          joinCutReply = undefined;
+          const text = held.slice(continuationOverlap(tail, held));
+          if (!text) return;
+          streamed += text;
+          queue.push({ type: "text", text });
+        };
         let toolWorkPendingFinal = false;
         // Text streamed before this point is tool-turn narration. Only text after
         // it counts as the final reply, including when the completed message omits it.
@@ -640,7 +665,7 @@ export class PiAgentRuntime implements AgentRuntime {
             currentMessageStreamed = "";
             // A later message (after a finished shell or steering, not only a tool call)
             // must not run its text straight on from the previous one.
-            if (streamed) queue.push({ type: "turn" });
+            if (streamed && !joinCutReply) queue.push({ type: "turn" });
           }
           if (
             event.type === "message_update" &&
@@ -653,9 +678,15 @@ export class PiAgentRuntime implements AgentRuntime {
                 toolActivityShowing = false;
                 queue.push({ type: "progress", text: "", activity: true });
               }
-              streamed += delta;
               currentMessageStreamed += delta;
-              queue.push({ type: "text", text: delta });
+              if (joinCutReply) {
+                joinCutReply.held += delta;
+                const decidable = Math.min(joinCutReply.tail.length, MAX_CONTINUATION_OVERLAP);
+                if (joinCutReply.held.length > decidable) releaseJoin();
+              } else {
+                streamed += delta;
+                queue.push({ type: "text", text: delta });
+              }
             }
           }
           if (event.type === "turn_end") {
@@ -701,6 +732,17 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end" && event.message.role === "assistant") {
             const text = assistantText(event.message);
+            // The completed text can hold more of a continuation than arrived as deltas, so its
+            // repeat of the cut reply is judged on all of it.
+            if (
+              joinCutReply &&
+              !messageHasToolCall(event.message) &&
+              text.startsWith(joinCutReply.held)
+            ) {
+              joinCutReply.held = text;
+              currentMessageStreamed = text;
+            }
+            releaseJoin();
             const streamedThisMessage = currentMessageStreamed;
             currentMessageStreamed = "";
             const continued =
@@ -716,6 +758,14 @@ export class PiAgentRuntime implements AgentRuntime {
             } else if (text && !streamed) {
               streamed = text;
               queue.push({ type: "text", text });
+            }
+            if (fallbackState.cutReplies?.has(event.message.content)) {
+              joinCutReply = { tail: text, held: "" };
+              agent.followUp({
+                role: "user",
+                content: CUT_REPLY_CONTINUATION_PROMPT,
+                timestamp: Date.now(),
+              });
             }
           }
         });
@@ -846,6 +896,8 @@ export class PiAgentRuntime implements AgentRuntime {
             signal.removeEventListener("abort", onAbort);
           }
         }
+        // A continuation that failed or stopped early still hands over what it wrote.
+        releaseJoin();
 
         // Budget abort stops the agent underneath the model, which leaves
         // errorMessage set. Treat that as a soft stop so the turn still ends
@@ -1711,6 +1763,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       config: requestModel,
       models: selectedModel.models,
       model: subagentModel,
+      cardMaxTokens: cardOutputCeiling(selectedModel.model),
       apiKey: selectedModel.apiKey,
       credentials: selectedModel.credentials,
     },
@@ -1743,6 +1796,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     attempted: new Set(),
     nextIndex: 0,
     backupOutcomes: new Map(),
+    selfRecoveries: 0,
     onSwitch: async () => undefined,
     onContextLimit: (contextWindow) => {
       const target = resizeRuntimeTarget(nestedHost.activeModel, contextWindow);
@@ -1768,7 +1822,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         target.model,
         ctx,
         withCloudflareAuth(requestModel, options),
-        requestModel.maxTokens,
+        target.config.maxTokens,
         () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
         (preparedOptions) =>
           observedPiStream(
@@ -2624,6 +2678,8 @@ interface RuntimeModelTarget {
   config: AgentRunRequest["model"];
   models: Models;
   model: Model<Api>;
+  /** The model card's output ceiling, before the completion default caps `model.maxTokens`. */
+  cardMaxTokens?: number;
   apiKey?: string;
   credentials?: PiRuntimeCredentialStore;
 }
@@ -2648,6 +2704,17 @@ interface FallbackStreamState {
   nextIndex: number;
   primaryFailure?: string;
   backupOutcomes: Map<string, ModelBackupOutcome>;
+  /** Calls repeated, given more room or continued after a cut; bounded per run. */
+  selfRecoveries: number;
+  /** More room for the next call, after a call ran out of it inside a tool call. */
+  nextCallRecovery?: { maxTokens?: number; thinkingLevel?: ModelThinkingLevel };
+  /**
+   * Replies ended early by a dropped connection; the runtime asks the model to continue them.
+   * Absent where nothing asks (subagents), so a cut there still fails.
+   */
+  cutReplies?: WeakSet<AssistantMessage["content"]>;
+  /** The next call continues a cut reply, so it is not continued again if it is cut too. */
+  continuingCutReply?: boolean;
   onSwitch(target: RuntimeModelTarget): Promise<void>;
   onContextLimit(contextWindow: number): void;
   isProviderFailure(message: AssistantMessage): boolean;
@@ -2668,29 +2735,97 @@ interface FallbackStreamState {
   ): AssistantMessageEventStream;
 }
 
-function assistantHasPartialOutput(message: AssistantMessage): boolean {
-  return message.content.some((part) => {
-    if (part.type === "toolCall") return true;
-    if (part.type === "text") return part.text.length > 0;
-    return part.thinking.length > 0 || Boolean(part.redacted);
-  });
+/**
+ * Reply text or a tool call. Thinking alone is never shown or run, so a call that has only
+ * thought can be retried from scratch with its thinking discarded.
+ */
+function assistantHasVisibleOutput(message: AssistantMessage): boolean {
+  return message.content.some(
+    (part) => part.type === "toolCall" || (part.type === "text" && part.text.length > 0),
+  );
 }
 
-function eventHasPartialOutput(event: AssistantMessageEvent): boolean {
+function eventHasVisibleOutput(event: AssistantMessageEvent): boolean {
   if (event.type === "toolcall_start" || event.type === "toolcall_end") return true;
-  if (
-    event.type === "text_delta" ||
-    event.type === "thinking_delta" ||
-    event.type === "toolcall_delta"
-  ) {
+  if (event.type === "text_delta" || event.type === "toolcall_delta") {
     if (event.delta.length > 0) return true;
   }
-  if (event.type === "text_end" || event.type === "thinking_end") {
-    if (event.content.length > 0) return true;
+  if (event.type === "text_end" && event.content.length > 0) return true;
+  if (event.type === "done") return assistantHasVisibleOutput(event.message);
+  if (event.type === "error") return assistantHasVisibleOutput(event.error);
+  return assistantHasVisibleOutput(event.partial);
+}
+
+const MAX_SELF_RECOVERIES_PER_RUN = 3;
+const MIN_CONTINUATION_OVERLAP = 4;
+const MAX_CONTINUATION_OVERLAP = 240;
+
+/**
+ * How much of the start of a continuation repeats the end of the cut reply: the longest such
+ * run of at least a few characters, up to about a sentence. Shorter matches are coincidence.
+ */
+export function continuationOverlap(cut: string, continuation: string): number {
+  const longest = Math.min(cut.length, continuation.length, MAX_CONTINUATION_OVERLAP);
+  for (let size = longest; size >= MIN_CONTINUATION_OVERLAP; size -= 1) {
+    if (cut.endsWith(continuation.slice(0, size))) return size;
   }
-  if (event.type === "done") return assistantHasPartialOutput(event.message);
-  if (event.type === "error") return assistantHasPartialOutput(event.error);
-  return assistantHasPartialOutput(event.partial);
+  return 0;
+}
+const LOWEST_FIRST_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+/**
+ * A call that spent its whole output budget before writing anything gets one more try with
+ * more room: double the budget within the model's ceiling, the input reserve and any output cap
+ * the provider asked for, or, when the user set the budget or it is already at that ceiling,
+ * one thinking level less (never off, which some endpoints refuse).
+ */
+function lengthRecovery(
+  target: RuntimeModelTarget,
+  sentMaxTokens: number,
+  thinkingLevel: ModelThinkingLevel,
+  outputCap?: number,
+): { maxTokens?: number; thinkingLevel?: ModelThinkingLevel } | undefined {
+  if (target.config.maxTokens === undefined) {
+    const doubled = Math.min(
+      target.cardMaxTokens ?? Number.POSITIVE_INFINITY,
+      outputCap ?? Number.POSITIVE_INFINITY,
+      sentMaxTokens * 2,
+    );
+    const maxTokens = target.model.contextWindow
+      ? effectiveOutputReserve(target.model.contextWindow, doubled)
+      : doubled;
+    if (Number.isFinite(maxTokens) && maxTokens > sentMaxTokens) return { maxTokens };
+  }
+  if (thinkingLevel === "off") return undefined;
+  const supported = getSupportedThinkingLevels(target.model);
+  const lower = LOWEST_FIRST_THINKING_LEVELS.slice(
+    0,
+    LOWEST_FIRST_THINKING_LEVELS.indexOf(thinkingLevel),
+  ).findLast((level) => supported.includes(level));
+  return lower ? { thinkingLevel: lower } : undefined;
+}
+
+/**
+ * An OpenAI-compatible model's card carries the default, not the endpoint's ceiling, which
+ * is unknown unless the connection sets one; then only the input reserve bounds a raise.
+ */
+function cardOutputCeiling(model: Model<Api>): number | undefined {
+  return model.provider === OPENAI_COMPATIBLE_PROVIDER_ID ? undefined : model.maxTokens;
+}
+
+function withOutputBudget(target: RuntimeModelTarget, maxTokens: number): RuntimeModelTarget {
+  return {
+    ...target,
+    config: { ...target.config, maxTokens },
+    model: { ...target.model, maxTokens },
+  };
 }
 
 function contextImageCount(context: Context): number {
@@ -2879,6 +3014,7 @@ function fallbackAwareModelStream(
           config,
           models: resolved.models,
           model: modelForCompletion(resolved.model, config.maxTokens),
+          cardMaxTokens: cardOutputCeiling(resolved.model),
           apiKey: resolved.apiKey,
           credentials: resolved.credentials,
         };
@@ -2911,6 +3047,13 @@ function fallbackAwareModelStream(
     let startedAt = Date.now();
     const timeoutMs = options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS;
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
+    // Set once this call has been repeated after spending its output budget on nothing visible.
+    let lengthRecovered = false;
+    let outputBudget = state.nextCallRecovery?.maxTokens;
+    let thinkingOverride = state.nextCallRecovery?.thinkingLevel;
+    state.nextCallRecovery = undefined;
+    const continuingCutReply = Boolean(state.continuingCutReply);
+    state.continuingCutReply = false;
     while (!signalAborted()) {
       const remainingMs = timeoutMs - (Date.now() - startedAt);
       const failure = firstRetryableError ?? sizingFailure;
@@ -2930,26 +3073,38 @@ function fallbackAwareModelStream(
           : {}),
       };
       lastPartial = undefined;
-      let sawPartialOutput = false;
+      let sawVisibleOutput = false;
       let restart = false;
       let stream: AssistantMessageEventStream;
-      try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
-        const thinkingLevel = target.model.reasoning
+      const thinkingLevel =
+        thinkingOverride ??
+        (target.model.reasoning
           ? thinkingLevelFor(
               target.model,
               target.config.thinkingLevel ??
                 options?.reasoning ??
                 state.request.model.thinkingLevel,
             )
-          : "off";
+          : "off");
+      const sentTarget = outputBudget ? withOutputBudget(target, outputBudget) : target;
+      const sentMaxTokens = resolveCompletionMaxTokens(
+        sentTarget.model.maxTokens,
+        sentTarget.config.maxTokens,
+        attemptOptions.maxTokens,
+        sentTarget.model.reasoning,
+        sentTarget.model.contextWindow,
+      );
+      try {
+        const apiKey = target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
-          target,
+          sentTarget,
           requestContext(),
           state.request.fallbackModels?.length
             ? { ...attemptOptions, apiKey, reasoning }
-            : attemptOptions,
+            : thinkingOverride
+              ? { ...attemptOptions, reasoning }
+              : attemptOptions,
         );
       } catch (error) {
         finishWithThrownError(target, error);
@@ -2960,10 +3115,10 @@ function fallbackAwareModelStream(
           if (event.type === "error") {
             recordFailure(target, event.error.errorMessage ?? "Model request failed.");
             let terminalEvent = event;
-            const hasTerminalPartialOutput = assistantHasPartialOutput(event.error);
+            const hasTerminalVisibleOutput = assistantHasVisibleOutput(event.error);
             if (
-              !sawPartialOutput &&
-              !hasTerminalPartialOutput &&
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
               event.reason === "error" &&
               !signalAborted() &&
               !sizingFailure &&
@@ -2987,17 +3142,10 @@ function fallbackAwareModelStream(
                 restart = true;
                 break;
               }
-              const currentLimit = resolveCompletionMaxTokens(
-                target.model.maxTokens,
-                target.config.maxTokens,
-                attemptOptions.maxTokens,
-                target.model.reasoning,
-                target.model.contextWindow,
-              );
               const affordable = affordableOpenRouterOutput(
                 target.config.provider,
                 event.error.errorMessage,
-                currentLimit,
+                sentMaxTokens,
               );
               if (affordable !== undefined && Date.now() - startedAt < timeoutMs) {
                 state.outputCaps ??= new Map();
@@ -3006,7 +3154,7 @@ function fallbackAwareModelStream(
                   runId: state.request.runId,
                   provider: target.config.provider,
                   model: target.config.id,
-                  requestedMaxTokens: currentLimit,
+                  requestedMaxTokens: sentMaxTokens,
                   effectiveMaxTokens: affordable,
                 });
                 sizingFailure = event;
@@ -3016,8 +3164,8 @@ function fallbackAwareModelStream(
               }
             }
             if (
-              !sawPartialOutput &&
-              !hasTerminalPartialOutput &&
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
               event.reason === "error" &&
               !signalAborted() &&
               !state.dropThinkingBlocks &&
@@ -3030,8 +3178,8 @@ function fallbackAwareModelStream(
               break;
             }
             if (
-              !sawPartialOutput &&
-              !hasTerminalPartialOutput &&
+              !sawVisibleOutput &&
+              !hasTerminalVisibleOutput &&
               event.reason === "error" &&
               !signalAborted() &&
               state.isProviderFailure(event.error) &&
@@ -3047,6 +3195,9 @@ function fallbackAwareModelStream(
                 state.messagesBeforeSwitch = context.messages.length;
                 await state.onSwitch(next);
                 if (failIfAborted(target)) return;
+                // A raised budget or lower thinking level fitted the failed model, not this one.
+                outputBudget = undefined;
+                thinkingOverride = undefined;
                 buffered = [];
                 restart = true;
                 break;
@@ -3081,10 +3232,42 @@ function fallbackAwareModelStream(
                 terminalEvent = firstRetryableError;
               }
             }
+            const cutText = lastPartial ? assistantText(lastPartial) : "";
+            if (
+              state.cutReplies &&
+              sawVisibleOutput &&
+              lastPartial &&
+              cutText &&
+              !continuingCutReply &&
+              !messageHasToolCall(lastPartial) &&
+              event.reason === "error" &&
+              !signalAborted() &&
+              state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN &&
+              isTransientModelError(event.error)
+            ) {
+              // End the call with the text the user already sees; the runtime asks for the rest.
+              // The terminal message can hold text that never arrived as a delta.
+              const { errorMessage: _dropped, ...ended } = event.error;
+              const cut: AssistantMessage = {
+                ...ended,
+                content: (assistantText(event.error) ? event.error : lastPartial).content.filter(
+                  (part) => part.type === "text",
+                ),
+                stopReason: "stop",
+              };
+              state.selfRecoveries += 1;
+              state.cutReplies.add(cut.content);
+              state.continuingCutReply = true;
+              for (const pending of buffered) output.push(pending);
+              buffered = [];
+              output.push({ type: "done", reason: "stop", message: cut });
+              output.end(cut);
+              return;
+            }
             for (const pending of buffered) output.push(pending);
             buffered = [];
             const terminal =
-              sawPartialOutput && event.error.content.length === 0 && lastPartial
+              sawVisibleOutput && event.error.content.length === 0 && lastPartial
                 ? { ...event, error: { ...event.error, content: lastPartial.content } }
                 : terminalEvent;
             output.push(terminal);
@@ -3095,6 +3278,53 @@ function fallbackAwareModelStream(
             // A recovered call must not replace a later failure with its old error.
             state.primaryFailure = undefined;
             state.backupOutcomes.delete(targetKey);
+            if (
+              event.message.stopReason === "length" &&
+              !event.message.errorMessage &&
+              messageHasToolCall(event.message)
+            ) {
+              // pi fails a tool call cut at the limit and asks for it again. That re-issue gets
+              // more room; once the run's recoveries are spent, the run fails instead of looping.
+              if (state.selfRecoveries >= MAX_SELF_RECOVERIES_PER_RUN) {
+                const failure: AssistantMessage = {
+                  ...event.message,
+                  content: event.message.content.filter((part) => part.type !== "toolCall"),
+                  stopReason: "error",
+                  errorMessage: MODEL_OUTPUT_LIMIT_ERROR,
+                };
+                for (const pending of buffered) output.push(pending);
+                buffered = [];
+                output.push({ type: "error", reason: "error", error: failure });
+                output.end(failure);
+                return;
+              }
+              state.selfRecoveries += 1;
+              state.nextCallRecovery = lengthRecovery(
+                target,
+                sentMaxTokens,
+                thinkingLevel,
+                outputCap,
+              );
+            }
+            const recovery =
+              !lengthRecovered &&
+              event.message.stopReason === "length" &&
+              !event.message.errorMessage &&
+              !assistantHasVisibleOutput(event.message) &&
+              state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN &&
+              !signalAborted()
+                ? lengthRecovery(target, sentMaxTokens, thinkingLevel, outputCap)
+                : undefined;
+            if (recovery) {
+              // Repeat the call from the same context; its thinking is discarded with `buffered`.
+              state.selfRecoveries += 1;
+              lengthRecovered = true;
+              outputBudget = recovery.maxTokens ?? outputBudget;
+              thinkingOverride = recovery.thinkingLevel ?? thinkingOverride;
+              buffered = [];
+              restart = true;
+              break;
+            }
             for (const pending of buffered) output.push(pending);
             buffered = [];
             output.push(event);
@@ -3105,12 +3335,12 @@ function fallbackAwareModelStream(
             ...event.partial,
             content: event.partial.content.map((part) => ({ ...part })),
           };
-          if (eventHasPartialOutput(event)) {
-            sawPartialOutput = true;
+          if (eventHasVisibleOutput(event)) {
+            sawVisibleOutput = true;
             for (const pending of buffered) output.push(pending);
             buffered = [];
             output.push(event);
-          } else if (sawPartialOutput) {
+          } else if (sawVisibleOutput) {
             output.push(event);
           } else {
             buffered.push(event);

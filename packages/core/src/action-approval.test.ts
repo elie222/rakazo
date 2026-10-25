@@ -337,6 +337,24 @@ describe("resolveActionApproval", () => {
 describe("planActionGate", () => {
   const consequential = true;
 
+  it("allows without judging when approvals are skipped, except under a require rule", () => {
+    const gate = (decision: "ask" | "allow") =>
+      planActionGate({
+        resolved: {
+          decision,
+          source: decision === "ask" ? "require_approval" : "default",
+          matchingRules: [],
+        },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+        newDestination: true,
+        skipApprovals: true,
+      });
+    expect(gate("allow")).toBe("allow");
+    expect(gate("ask")).toBe("ask");
+  });
+
   it("lets require_approval win without judging", () => {
     expect(
       planActionGate({

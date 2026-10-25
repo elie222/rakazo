@@ -43,6 +43,7 @@ import {
   linkifyExplicitUrls,
   linkLabel,
   markdownLinkRequiresConfirmation,
+  markdownMentionId,
   markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
@@ -1108,12 +1109,35 @@ const renderRules: RenderRules = {
   },
 };
 
+const MentionContext = createContext<ChatMarkdownProps["renderMention"]>(undefined);
+
+function MarkdownMention({
+  id,
+  name,
+  children,
+}: {
+  id: string;
+  name: string;
+  children: ReactNode;
+}) {
+  const renderMention = useContext(MentionContext);
+  return renderMention?.(id, name) ?? <Text>{children}</Text>;
+}
+
 function renderMarkdownLink(
   node: ASTNode,
   children: ReactNode[],
   styleMap: MarkdownStyleMap,
   block: boolean,
 ) {
+  const mentionId = markdownMentionId(node.attributes.href);
+  if (mentionId) {
+    return (
+      <MarkdownMention key={node.key} id={mentionId} name={astText(node) ?? ""}>
+        {children}
+      </MarkdownMention>
+    );
+  }
   const href = sanitizeMarkdownUrl(node.attributes.href ?? "");
   if (!href) return <Text key={node.key}>{children}</Text>;
   const image = soleRemoteImage(node);
@@ -1342,6 +1366,7 @@ export const LinkifiedText = memo(function LinkifiedText({
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
+  renderMention,
   palette = darkTokens,
   colorScheme = "dark",
 }: ChatMarkdownProps & { palette?: ColorTokens; colorScheme?: ResolvedAppearance }) {
@@ -1364,19 +1389,21 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 
   return (
     <OpenLinkContext.Provider value={openLink}>
-      <View style={layout.wrap}>
-        <LinkFaviconsPausedContext.Provider value={streaming}>
-          <DiagramSurfaceContext.Provider value={diagramSurface}>
-            {streaming ? (
-              <MarkdownStream {...sharedProps} cursorColor={palette.mutedForeground} streaming>
-                {children}
-              </MarkdownStream>
-            ) : (
-              <Markdown {...sharedProps}>{children}</Markdown>
-            )}
-          </DiagramSurfaceContext.Provider>
-        </LinkFaviconsPausedContext.Provider>
-      </View>
+      <MentionContext.Provider value={renderMention}>
+        <View style={layout.wrap}>
+          <LinkFaviconsPausedContext.Provider value={streaming}>
+            <DiagramSurfaceContext.Provider value={diagramSurface}>
+              {streaming ? (
+                <MarkdownStream {...sharedProps} cursorColor={palette.mutedForeground} streaming>
+                  {children}
+                </MarkdownStream>
+              ) : (
+                <Markdown {...sharedProps}>{children}</Markdown>
+              )}
+            </DiagramSurfaceContext.Provider>
+          </LinkFaviconsPausedContext.Provider>
+        </View>
+      </MentionContext.Provider>
     </OpenLinkContext.Provider>
   );
 });
@@ -1467,5 +1494,5 @@ const layout = StyleSheet.create({
 });
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
-export { LinkFaviconsContext, RemoteImagesContext } from "./markdown";
+export { LinkFaviconsContext, RemoteImagesContext, withBlockMentions } from "./markdown";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

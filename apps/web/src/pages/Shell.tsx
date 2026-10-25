@@ -16,6 +16,7 @@ import type {
   TaughtSkill,
   ThreadMessage,
   ThreadSnapshot,
+  UsageSummary,
   VoiceStatus,
 } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, attachmentMaxBytes, attachmentSizeLabel } from "@rakazo/contracts";
@@ -348,6 +349,7 @@ function SpaceShell() {
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
   }, [userId]);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
@@ -741,12 +743,7 @@ function SpaceShell() {
       cancelled = true;
     };
   }, [session.data?.user]);
-  const [usage, setUsage] = useState<{
-    inputTokens: number | null;
-    outputTokens: number | null;
-    totalTokens?: number | null;
-    runs: number;
-  } | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const refreshUsage = useCallback(() => {
     void rpc.usage
       .summary()
@@ -1847,6 +1844,7 @@ function SpaceShell() {
 
   async function jumpToSearchHit(hit: SearchHit) {
     setQuery("");
+    setSearchOpen(false);
     setSearchHits([]);
     const params = new URLSearchParams();
     if (hit.messageId) params.set("m", hit.messageId);
@@ -3242,6 +3240,25 @@ function SpaceShell() {
             if (miniSidebar) setBotsSidebarCollapsedPref(false);
             toggleActivityMode();
           }}
+          searchOpen={searchOpen && !miniSidebar}
+          onSearch={
+            activityMode && !miniSidebar
+              ? undefined
+              : () => {
+                  if (searchOpen && !miniSidebar) {
+                    setQuery("");
+                    setSearchOpen(false);
+                    return;
+                  }
+                  if (miniSidebar) setBotsSidebarCollapsedPref(false);
+                  setSearchOpen(true);
+                  requestAnimationFrame(() =>
+                    document
+                      .querySelector<HTMLInputElement>('input[name="sidebar-search"]')
+                      ?.focus(),
+                  );
+                }
+          }
           setBotsSidebarCollapsedPref={setBotsSidebarCollapsedPref}
           bots={bots}
           setMobileSidebarOpen={setMobileSidebarOpen}
@@ -3251,24 +3268,7 @@ function SpaceShell() {
           setCreateBotOpen={setCreateBotOpen}
           setPickerInfoTopic={setPickerInfoTopic}
         />
-        {miniSidebar ? (
-          <IconTooltip label={t`Search`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t`Search`}
-              className="mx-auto mb-1"
-              onClick={() => {
-                setBotsSidebarCollapsedPref(false);
-                requestAnimationFrame(() =>
-                  document.querySelector<HTMLInputElement>('input[name="sidebar-search"]')?.focus(),
-                );
-              }}
-            >
-              <Search size={16} aria-hidden="true" />
-            </Button>
-          </IconTooltip>
-        ) : (
+        {miniSidebar || !(activityMode || searchOpen || query) ? null : (
           <InputGroup
             data-testid="sidebar-search"
             className="mx-2.5 mb-3 w-auto rounded-xl bg-card dark:bg-input border border-border text-muted-foreground focus-within:border-ring"
@@ -3283,9 +3283,13 @@ function SpaceShell() {
                 else setQuery(e.target.value);
               }}
               onKeyDown={(event) => {
-                if (activityMode && event.key === "Escape") {
+                if (event.key !== "Escape") return;
+                if (activityMode) {
                   setActivityFilters({ ...activityFilters, query: "" });
+                  return;
                 }
+                setQuery("");
+                setSearchOpen(false);
               }}
               placeholder={activityMode ? t`Search runs` : t`Search`}
               aria-label={activityMode ? t`Search runs` : t`Search`}
@@ -3447,21 +3451,27 @@ function SpaceShell() {
             className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none md:hidden"
           />
         ) : null}
-        <div className="app-drag flex items-center justify-between border-b border-sidebar-border px-3 py-[17px] md:px-[22px]">
-          <div className="flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label={t`Open navigation`}
-              onClick={() => setMobileSidebarOpen(true)}
-              className="app-no-drag grid h-8 w-8 shrink-0 place-items-center rounded-lg text-foreground/75 hover:bg-accent md:hidden"
-            >
-              <Menu size={19} strokeWidth={1.7} />
-            </button>
+        <CallReturnBar />
+        {/* The header floats so the transcript scrolls under its buttons. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
+          <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
+            <div className="flex items-center">
+              <button
+                type="button"
+                aria-label={t`Open navigation`}
+                onClick={() => setMobileSidebarOpen(true)}
+                className="app-no-drag grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-border bg-muted/90 backdrop-blur text-foreground/75 hover:bg-accent md:hidden"
+              >
+                <Menu size={19} strokeWidth={1.7} />
+              </button>
+            </div>
             <button
               type="button"
               data-testid="bot-settings-trigger"
               onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="app-no-drag flex min-w-0 items-center gap-3"
+              className="app-no-drag flex min-w-0 items-center gap-2 rounded-full border border-border bg-muted/90 backdrop-blur py-1 ps-1 pe-3.5 hover:bg-accent"
             >
               {inGroup ? (
                 <GroupAvatar
@@ -3477,136 +3487,135 @@ function SpaceShell() {
                 />
               ) : null}
               <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-foreground" dir="auto">
+                <span className="block truncate text-[15px] font-medium text-foreground" dir="auto">
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
                     : (active?.name ?? t`Select a bot`)}
                 </span>
               </span>
             </button>
+            <div className="flex items-center justify-self-end gap-2">
+              {bootstrapMe?.phoneCallsEnabled && !inGroup && active ? (
+                <IconTooltip label={call?.botId === active.id ? t`Open call` : t`Call`}>
+                  <button
+                    type="button"
+                    data-testid="call-button"
+                    aria-label={call?.botId === active.id ? t`Open call` : t`Call`}
+                    onClick={() => {
+                      if (call?.botId === active.id) {
+                        setCallMinimized(false);
+                        return;
+                      }
+                      callBot(active);
+                    }}
+                    data-active={call?.botId === active.id ? "" : undefined}
+                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                  >
+                    <Phone size={17} strokeWidth={1.6} className="text-foreground/75" />
+                  </button>
+                </IconTooltip>
+              ) : null}
+              {!inGroup && active ? (
+                <IconTooltip label={t`Agent computer`}>
+                  <button
+                    type="button"
+                    aria-label={t`Agent computer`}
+                    aria-pressed={panel === "computer"}
+                    onClick={() => {
+                      const next = panel === "computer" ? null : "computer";
+                      setPanel(next);
+                      if (next === "computer" && active) {
+                        // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
+                        void refreshThread(active.id).catch(() => undefined);
+                      }
+                    }}
+                    data-active={panel === "computer" ? "" : undefined}
+                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                  >
+                    <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
+                  </button>
+                </IconTooltip>
+              ) : null}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            {bootstrapMe?.phoneCallsEnabled && !inGroup && active ? (
-              <IconTooltip label={call?.botId === active.id ? t`Open call` : t`Call`}>
-                <button
-                  type="button"
-                  data-testid="call-button"
-                  aria-label={call?.botId === active.id ? t`Open call` : t`Call`}
-                  onClick={() => {
-                    if (call?.botId === active.id) {
-                      setCallMinimized(false);
-                      return;
-                    }
-                    callBot(active);
-                  }}
-                  data-active={call?.botId === active.id ? "" : undefined}
-                  className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
-                >
-                  <Phone size={17} strokeWidth={1.6} className="text-foreground/75" />
-                </button>
-              </IconTooltip>
-            ) : null}
-            {!inGroup && active ? (
-              <IconTooltip label={t`Agent computer`}>
-                <button
-                  type="button"
-                  aria-label={t`Agent computer`}
-                  aria-pressed={panel === "computer"}
-                  onClick={() => {
-                    const next = panel === "computer" ? null : "computer";
-                    setPanel(next);
-                    if (next === "computer" && active) {
-                      // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
-                      void refreshThread(active.id).catch(() => undefined);
-                    }
-                  }}
-                  data-active={panel === "computer" ? "" : undefined}
-                  className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
-                >
-                  <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
-                </button>
-              </IconTooltip>
-            ) : null}
-          </div>
-        </div>
-        <CallReturnBar />
-        {!active && !activeGroup && initialBotsLoaded ? (
-          <div className="grid flex-1 place-items-center">
-            <Button onClick={() => setCreateBotOpen(true)}>
-              <Plus size={16} aria-hidden="true" />
-              <Trans>Create new Bot</Trans>
-            </Button>
-          </div>
-        ) : (
-          <Transcript
-            key={activeSnapshot?.threadId}
-            scrollRef={messageScroll}
-            scrollRequest={scrollRequest}
-            onScrollRequestHandled={clearScrollRequest}
-            artifactTarget={transcriptArtifactTarget}
-            transcript={transcript}
-            showToolActivity={showToolActivity}
-            olderCursor={activeSnapshot?.olderCursor ?? null}
-            unreadAfterSeq={
-              readBoundary?.visit === readVisit.current.visit ? readBoundary.seq : null
-            }
-            loadingOlder={loadingOlder}
-            answerableAskIds={answerableAskIds}
-            dismissableAskIds={dismissableAskIds}
-            running={transcriptRunning}
-            workingBots={workingBots}
-            userBubble={userBubble}
-            onCallBack={
-              bootstrapMe?.phoneCallsEnabled && !inGroup && active
-                ? () => callBot(active)
-                : undefined
-            }
-            onLoadOlder={loadOlder}
-            onOpenBot={openBot}
-            onAnswer={answerMessage}
-            onReply={(message) => {
-              setReplyTarget(message);
-              setReplyQuote(null);
-            }}
-            onMarkUnread={(message) => {
-              // The next open of this chat starts the New divider at this message.
-              if (groupId) {
-                manuallyUnread.current.add(groupId);
-                void readInOrder(`group:${groupId}`, () =>
-                  rpc.threads.markUnread({ groupId, messageId: message.id }),
-                )
-                  .then(() =>
-                    setGroups((current) =>
-                      current.map((group) =>
-                        group.id === groupId ? { ...group, unread: true } : group,
-                      ),
-                    ),
-                  )
-                  .catch(() => manuallyUnread.current.delete(groupId));
-              } else if (active) {
-                void markBotUnread(active.id, message.id).catch(() => undefined);
+          {!active && !activeGroup && initialBotsLoaded ? (
+            <div className="grid flex-1 place-items-center">
+              <Button onClick={() => setCreateBotOpen(true)}>
+                <Plus size={16} aria-hidden="true" />
+                <Trans>Create new Bot</Trans>
+              </Button>
+            </div>
+          ) : (
+            <Transcript
+              key={activeSnapshot?.threadId}
+              scrollRef={messageScroll}
+              scrollRequest={scrollRequest}
+              onScrollRequestHandled={clearScrollRequest}
+              artifactTarget={transcriptArtifactTarget}
+              transcript={transcript}
+              showToolActivity={showToolActivity}
+              olderCursor={activeSnapshot?.olderCursor ?? null}
+              unreadAfterSeq={
+                readBoundary?.visit === readVisit.current.visit ? readBoundary.seq : null
               }
-            }}
-            onQuote={(message, quote) => {
-              setReplyTarget(message);
-              setReplyQuote(quote);
-            }}
-            onReact={reactToMessage}
-            onJumpToMessage={jumpToReplyMessage}
-            onOpenPeerMessages={(peer) => {
-              setPeerConversation(peer);
-            }}
-            memberName={resolveTranscriptMemberName}
-            peerBot={resolveTranscriptBot}
-            onRefresh={refreshActiveThread}
-            onBotChanged={refreshBots}
-            onAddRoutine={addSkillRoutine}
-            voiceReady={Boolean(voiceStatus?.ready)}
-            speakingMessageId={speakingMessageId}
-            onSpeak={speakMessage}
-            onOpenComputer={onOpenComputer}
-          />
-        )}
+              loadingOlder={loadingOlder}
+              answerableAskIds={answerableAskIds}
+              dismissableAskIds={dismissableAskIds}
+              running={transcriptRunning}
+              workingBots={workingBots}
+              userBubble={userBubble}
+              onCallBack={
+                bootstrapMe?.phoneCallsEnabled && !inGroup && active
+                  ? () => callBot(active)
+                  : undefined
+              }
+              onLoadOlder={loadOlder}
+              onOpenBot={openBot}
+              onAnswer={answerMessage}
+              onReply={(message) => {
+                setReplyTarget(message);
+                setReplyQuote(null);
+              }}
+              onMarkUnread={(message) => {
+                // The next open of this chat starts the New divider at this message.
+                if (groupId) {
+                  manuallyUnread.current.add(groupId);
+                  void readInOrder(`group:${groupId}`, () =>
+                    rpc.threads.markUnread({ groupId, messageId: message.id }),
+                  )
+                    .then(() =>
+                      setGroups((current) =>
+                        current.map((group) =>
+                          group.id === groupId ? { ...group, unread: true } : group,
+                        ),
+                      ),
+                    )
+                    .catch(() => manuallyUnread.current.delete(groupId));
+                } else if (active) {
+                  void markBotUnread(active.id, message.id).catch(() => undefined);
+                }
+              }}
+              onQuote={(message, quote) => {
+                setReplyTarget(message);
+                setReplyQuote(quote);
+              }}
+              onReact={reactToMessage}
+              onJumpToMessage={jumpToReplyMessage}
+              onOpenPeerMessages={(peer) => {
+                setPeerConversation(peer);
+              }}
+              memberName={resolveTranscriptMemberName}
+              peerBot={resolveTranscriptBot}
+              onRefresh={refreshActiveThread}
+              onBotChanged={refreshBots}
+              onAddRoutine={addSkillRoutine}
+              voiceReady={Boolean(voiceStatus?.ready)}
+              speakingMessageId={speakingMessageId}
+              onSpeak={speakMessage}
+              onOpenComputer={onOpenComputer}
+            />
+          )}
+        </div>
         {recordingSkill ? (
           <div className="px-6 pb-2 text-center text-[13px] text-destructive">
             <Trans>Teaching in progress. Stop teaching before sending a new message.</Trans>

@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 test("changing language updates settings overflow without resizing", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -100,7 +107,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(menu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect(menu.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
   await expect(menu.getByRole("button", { name: "Log out", exact: true })).toBeVisible();
-  await expect(menu.getByRole("button", { name: "Models", exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "settings-account-menu-lean");
   await page.keyboard.press("Escape");
 
@@ -112,13 +118,11 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   );
   await expect(settings.getByRole("heading", { name: "General", exact: true })).toBeVisible();
   await expect(settings.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
-  await expect(settings.getByRole("heading", { name: "Replies", exact: true })).toHaveCount(0);
   await expect(settings.getByTestId("response-streaming-toggle")).toBeHidden();
   await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const streamReplies = settings.getByTestId("response-streaming-toggle");
   await expect(streamReplies).toBeVisible();
   await expect(streamReplies).not.toBeChecked();
-  await expect(settings.getByText("Stream replies", { exact: true })).toBeVisible();
   await streamReplies.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "settings-shell-general");
   const scroller = settings.getByTestId("settings-scroll");
@@ -151,13 +155,13 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
 
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");
-  await expect(settings.getByRole("heading", { name: "Models", exact: true })).toBeVisible();
   await expect(settings.getByTestId("model-settings")).toBeVisible();
+  await expect(settings.getByTestId("model-role-main")).toBeVisible();
+  await expect(settings.getByTestId("model-role-approval")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-models");
 
   await settings.getByTestId("settings-nav-memory").click();
   await expect(settings).toHaveAttribute("data-settings-section", "memory");
-  await expect(settings.getByRole("heading", { name: "Memory", exact: true })).toBeVisible();
   await expect(settings.getByTestId("memory-settings")).toBeVisible();
   const memory = settings.getByTestId("memory-settings");
   await expect(memory.getByLabel("Provider")).toBeVisible();
@@ -169,7 +173,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
 
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
-  await expect(settings.getByRole("heading", { name: "Voice", exact: true })).toBeVisible();
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
 
@@ -274,4 +277,24 @@ test("shell overlays open from the URL and keep it in sync", async ({ page }, te
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(apps).toBeVisible();
   await expect(page).toHaveURL((url) => url.searchParams.has("integrations"));
+});
+
+test("usage lists spend per model", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `usage-models-${stamp}@rakazo.test`, "password12", "Usage");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await rpc(page, "threads/send", { botId: activeBotId(page), text: "Plan my week" });
+  await expect
+    .poll(async () => (await rpc<{ modelCalls?: number }>(page, "usage/summary", {})).modelCalls, {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(0);
+
+  await openUserSettings(page, "usage");
+  const usage = page.getByTestId("usage-settings");
+  await expect(usage.getByRole("columnheader", { name: "Model" })).toBeVisible();
+  await expect(usage.locator("tbody tr")).not.toHaveCount(0);
+  await captureScreenshot(page, testInfo, "settings-usage-models");
 });

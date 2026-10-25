@@ -1,5 +1,6 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { AdapterContext } from "@rakazo/adapter-kit";
+import { BOT_SECRET_VALUE_MAX_LENGTH } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { withTransactionRetry } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -608,4 +609,36 @@ describe("prepared run-secret writes", () => {
       }
     },
   );
+
+  it("does not encrypt a secret answer over the value limit", async () => {
+    const store = new EncryptedSecretStore("fake-key");
+    const put = vi.spyOn(store, "put");
+    const prisma = {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      message: {
+        findFirst: async () => ({
+          blocks: [{ kind: "ask", text: "Code", input: "secret", status: "pending" }],
+        }),
+      },
+    } as unknown as PrismaClient;
+    const writer = createRunSecretWriter(store);
+    const stored = await writer.withPrepared!(
+      prisma,
+      {
+        spaceId: "space",
+        runId: "run",
+        threadId: "thread",
+        messageId: "message",
+        answeredByUserId: "user",
+        answer: "x".repeat(BOT_SECRET_VALUE_MAX_LENGTH + 1),
+      },
+      async (prepared) =>
+        prepared
+          .store({} as Parameters<typeof prepared.store>[0])
+          .then(() => true)
+          .catch(() => false),
+    );
+    expect(stored).toBe(false);
+    expect(put).not.toHaveBeenCalled();
+  });
 });

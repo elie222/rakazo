@@ -1267,10 +1267,13 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
     });
     throw new ORPCError("SERVICE_UNAVAILABLE", { message: error.message, cause: error });
   }
-  logUnexpectedRpcError(error, path);
   if (error instanceof SandboxRateLimitError) {
+    getLogger().warn(`rpc ${path.join("/")} computer rate limited`, {
+      reason: error.cause instanceof Error ? error.cause.message : undefined,
+    });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
   }
+  logUnexpectedRpcError(error, path);
 }
 
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {

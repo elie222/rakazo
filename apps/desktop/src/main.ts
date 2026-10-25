@@ -34,6 +34,7 @@ import {
   reportDesktopError,
 } from "./monitoring.js";
 import { oauthCallbackFrom } from "./oauth-callback.js";
+import { associatedPasskeyRpIds } from "./passkeys.js";
 import {
   bundledRendererCandidates,
   bundledRendererHeaders,
@@ -128,6 +129,15 @@ app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"
 app.once("ready", () => markOnce("rk:main:ready"));
 // Includes fresh partitions and popup-created sessions, before they load remote content.
 app.on("session-created", (value) => installSessionPermissions(value, permissionTarget));
+
+const passkeyRpIds = associatedPasskeyRpIds({
+  platform: process.platform,
+  packaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  exists: existsSync,
+});
+// Routes WebAuthn to the system passkey sheet (iCloud Keychain and other providers).
+if (passkeyRpIds.length > 0) app.configureWebAuthn({ platformPasskeys: true });
 
 function permissionTarget() {
   if (mainWindow === null || mainWindow.isDestroyed()) return null;
@@ -533,7 +543,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#141414",
+    backgroundColor: "#161616",
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }
@@ -1164,6 +1174,7 @@ app.whenReady().then(async () => {
     createBadgeHandler(permissionTarget, (count) => app.setBadgeCount(count)),
   );
   ipcMain.handle("desktop.platform", () => process.platform);
+  ipcMain.handle("desktop.passkeys.rpIds", () => passkeyRpIds);
   ipcMain.handle("desktop.window.close", (event) => {
     windowFrom(event)?.close();
   });

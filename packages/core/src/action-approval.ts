@@ -362,6 +362,7 @@ export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
  * Pure combiner for Auto Review after rule resolution.
  * Rules win: require_approval asks, always_allow runs. Only the default path may call a judge.
  * The judge only escalates to ask; it never silent-denies.
+ * Mandatory approvals never reach this gate, so skipping approvals cannot pass them.
  */
 export function planActionGate(input: {
   resolved: ActionApprovalResolved;
@@ -370,8 +371,11 @@ export function planActionGate(input: {
   checkerConfigured: boolean;
   /** A fetch to a site the run was not given (see outboundSiteGate). */
   newDestination?: boolean;
+  /** The owner chose to run actions without asking; their own "ask before" rules still ask. */
+  skipApprovals?: boolean;
 }): "ask" | "allow" | "judge" {
   if (input.resolved.decision === "ask") return "ask";
+  if (input.skipApprovals) return "allow";
   // A rule for the whole tool is not a choice of sites, so it never allows a new one; only a site
   // rule does, and that makes the site no longer new. Auto Review may pass one, judging only the
   // owner's own words and the full URL: it never sees tool results or inbound messages, so text

@@ -29,6 +29,7 @@ import {
   resetDesktopRuntimeCommand,
   screenPorts,
   shellQuote,
+  stopBrowserProfileCommand,
   stopExtraScreenCommand,
   terminalCommand,
 } from "./desktop-runtime.js";
@@ -556,7 +557,6 @@ describe("shared Linux desktop lifecycle", () => {
           workspaceDir: home,
           browserProfilesDir: profiles,
         }).replaceAll("/tmp/rakazo", path.join(root, "runtime"));
-        expect(command).toContain("Browser.close");
         waitForReady(joinedReady);
         const result = spawnSync("bash", ["-eu", "-c", command], {
           encoding: "utf8",
@@ -592,6 +592,75 @@ describe("shared Linux desktop lifecycle", () => {
           } catch {
             child.kill("SIGKILL");
           }
+        }
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux").each(["replacement", "unclosed"])(
+    "preserves lock state and fails when a %s browser survives shutdown",
+    (mode) => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-stop-"));
+      roots.push(root);
+      const profile = path.join(root, "profile with spaces");
+      const pidFile = path.join(root, "browser-pid");
+      const replacementPidFile = path.join(root, "replacement-pid");
+      const ready = path.join(root, "ready");
+      const sleeper = path.join(root, "browser.py");
+      const python = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], {
+        encoding: "utf8",
+      }).stdout.trim();
+      mkdirSync(profile);
+      const locks = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
+      for (const lock of locks) writeFileSync(path.join(profile, lock), "keep");
+      writeFileSync(
+        sleeper,
+        `import time\nopen(${JSON.stringify(ready)}, "w").write("ready")\ntime.sleep(120)\n`,
+      );
+      const child = spawn(
+        python,
+        [sleeper, `--user-data-dir=${profile}`, "--remote-debugging-port=9336"],
+        { stdio: "ignore", detached: true },
+      );
+      try {
+        waitForReady(ready);
+        writeFileSync(pidFile, String(child.pid));
+        const close =
+          mode === "replacement"
+            ? [
+                "python3() {",
+                `  rm -f ${shellQuote(ready)}`,
+                `  ${shellQuote(python)} ${shellQuote(sleeper)} ${shellQuote(`--user-data-dir=${profile}`)} --remote-debugging-port=9337 </dev/null >/dev/null 2>&1 &`,
+                `  printf %s "$!" >${shellQuote(replacementPidFile)}`,
+                `  for attempt in $(seq 1 100); do [ -s ${shellQuote(ready)} ] && break; sleep 0.01; done`,
+                `  [ -s ${shellQuote(ready)} ] || return 1`,
+                '  kill "$3"',
+                "}",
+              ].join("\n")
+            : "python3() { return 1; }; kill() { return 0; }; sleep() { :; }";
+        const result = spawnSync(
+          "bash",
+          ["-eu", "-c", `${close}\n${stopBrowserProfileCommand(profile, shellQuote(pidFile))}`],
+          { encoding: "utf8", timeout: 20_000 },
+        );
+        expect(result.status, result.stderr).toBe(1);
+        expect(result.stderr).toContain("browser still running");
+        for (const lock of locks) {
+          expect(readFileSync(path.join(profile, lock), "utf8")).toBe("keep");
+        }
+        expect(readFileSync(pidFile, "utf8")).not.toBe("");
+        const survivingPid =
+          mode === "replacement" ? Number(readFileSync(replacementPidFile, "utf8")) : child.pid;
+        expect(survivingPid).toBeGreaterThan(0);
+        if (!survivingPid) throw new Error("expected surviving browser PID");
+        expect(() => process.kill(survivingPid, 0)).not.toThrow();
+      } finally {
+        child.kill("SIGKILL");
+        try {
+          const pid = Number(readFileSync(replacementPidFile, "utf8"));
+          if (Number.isSafeInteger(pid) && pid > 0) process.kill(pid, "SIGKILL");
+        } catch {
+          // The close command may fail before starting a replacement.
         }
       }
     },

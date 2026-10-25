@@ -308,7 +308,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_act",
     description:
-      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, upload, fill_secret). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, upload, fill_secret). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. type presses keys like a keyboard and replaces the field\'s text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
     inputSchema: {
       type: "object",
       properties: {
@@ -322,7 +322,10 @@ export const builtinAgentTools: ConnectorTool[] = [
                 enum: ["click", "fill", "type", "upload", "fill_secret"],
               },
               ref: { type: "string", description: "Element ref from browser_snapshot." },
-              text: { type: "string", description: "Text for fill or type." },
+              text: {
+                type: "string",
+                description: "Text for fill or type (type replaces the field's text).",
+              },
               paths: {
                 type: "array",
                 items: { type: "string" },
@@ -1156,7 +1159,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "create_space",
     description:
-      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. This always shows the user a confirmation card before creation. Creating the space is the whole action; do not create bots in it unless the user asks later.",
+      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. Creating the space is the whole action; do not create bots in it unless the user asks later.",
     inputSchema: {
       type: "object",
       properties: {

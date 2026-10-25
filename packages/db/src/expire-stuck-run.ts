@@ -9,6 +9,7 @@ import {
   discardAnsweredSteering,
 } from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
+import { deleteRunSecretsInTransaction } from "./run-secrets.js";
 import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
 
 export interface ExpireStuckRunInput {
@@ -72,7 +73,7 @@ export async function expireStuckRun(
 
   const run = await tx.run.findUniqueOrThrow({
     where: { id: input.runId },
-    select: { spaceId: true, threadId: true, botId: true, taskId: true },
+    select: { spaceId: true, userId: true, threadId: true, botId: true, taskId: true },
   });
   const sibling = await tx.run.findFirst({
     where: {
@@ -115,6 +116,9 @@ export async function expireStuckRun(
     payload: {},
   });
   await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
+  await deleteRunSecretsInTransaction(tx, [
+    { id: input.runId, userId: run.userId, spaceId: run.spaceId },
+  ]);
   await expireComputerExecutionLeases(tx, { runId: input.runId });
   // A user lease still on this row is on the screen until release or revocation.
   // Dropping controlRunId first makes maintenance treat the takeover as idle.

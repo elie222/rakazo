@@ -259,6 +259,11 @@ describe("botSecrets router", () => {
         "http://100.100.100.200",
         "https://169.254.169.254",
         "https://metadata.google.internal",
+        "http://example.com/login",
+        "http://100.100.100.200/latest",
+        "https://169.254.169.254/latest/meta-data",
+        "https://metadata.google.internal/computeMetadata/v1",
+        `https://example.com/${"a".repeat(2048)}`,
       ]) {
         const { secrets, rows, call } = botSecretDeps();
         const result = await call("put", putInput(origin));
@@ -268,6 +273,47 @@ describe("botSecrets router", () => {
         expect(rows).toHaveLength(0);
       }
     }
+  });
+
+  it("saves a pasted page URL under its site", async () => {
+    const { rows, call } = botSecretDeps();
+    const saved = await call("put", {
+      botId: "bot-1",
+      destination: {
+        name: "portal",
+        origin: "https://portal.example.test/account/sign-in?next=/",
+        auth: { type: "login" },
+      },
+      value: JSON.stringify({ username: "fake-user", password: FAKE_VALUE }),
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.json).toMatchObject({
+      name: "portal",
+      origin: "https://portal.example.test",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.origin).toBe("https://portal.example.test");
+    const listed = await call("list", { botId: "bot-1" });
+    expect(listed.body.json).toMatchObject([{ origin: "https://portal.example.test" }]);
+    expect(listed.text).not.toContain("sign-in");
+  });
+
+  it("turns down a pasted URL with a username or password in it", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: {
+        name: "portal",
+        origin: `https://fake-user:${FAKE_VALUE}@portal.example.test/login`,
+        auth: { type: "login" },
+      },
+      value: JSON.stringify({ username: "fake-user", password: "fake-password-2" }),
+    });
+    expect(result.status).toBe(400);
+    expect(result.text).toContain("Invalid credential destination");
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(0);
   });
 
   it("maps malformed website login values to a bad request without echoing them", async () => {

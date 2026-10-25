@@ -40,6 +40,27 @@ describe("browser tools", () => {
     expect(() => parseBrowserActions([{ kind: "fill", ref: "e1" }])).toThrow(/text/i);
   });
 
+  it("types over the field's text instead of adding to it", async () => {
+    const browser = new FakeBrowserProvider({
+      pages: {
+        "https://example.test/name": {
+          title: "Name",
+          html: `<!doctype html><html><head><title>Name</title></head><body>
+            <input aria-label="Name" value="Ada" />
+          </body></html>`,
+        },
+      },
+    });
+    await browserNavigateFromTool(browser, computer, context, { url: "https://example.test/name" });
+    type Snap = { elements: Array<{ ref: string; name: string; value?: string }> };
+    const name = (result: unknown) => (result as Snap).elements.find((el) => el.name === "Name")!;
+    const before = await browserSnapshotFromTool(browser, computer, context, {});
+    const typed = await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "type", ref: name(before).ref, text: " Lovelace" }],
+    });
+    expect(name(typed).value).toBe(" Lovelace");
+  });
+
   it("rejects URL credentials before invoking the browser", async () => {
     const browser = new FakeBrowserProvider();
     browser.navigateError = new Error("must not invoke browser");
@@ -249,6 +270,27 @@ describe("browser tools", () => {
       expect(JSON.stringify(acted)).not.toContain(values.password);
     });
 
+    it("types the password only into a password field and the username never into one", async () => {
+      const browser = loginPage("https://login.example.test/signin");
+      for (const [target, field, error] of [
+        ["email", "password", /password field/],
+        ["password", "username", /text, email, or telephone/],
+      ] as const) {
+        const ref = (await refs(browser, "https://login.example.test/signin"))[target];
+        const acted = await browserActFromTool(
+          browser,
+          computer,
+          context,
+          { actions: [{ kind: "fill_secret", ref, secret: "site_login", field }] },
+          { resolveSecretFill },
+        );
+        expect(acted, field).toMatchObject({ ok: false, completed: 0, uncertain: false });
+        expect(acted, field).not.toHaveProperty("fallback");
+        expect(JSON.stringify(acted), field).toMatch(error);
+        expect(JSON.stringify(acted), field).not.toContain(values[field]);
+      }
+    });
+
     it("never reports a login-filled field's value, even when too short to redact", async () => {
       const browser = loginPage("https://login.example.test/signin");
       const { email } = await refs(browser, "https://login.example.test/signin");
@@ -266,7 +308,7 @@ describe("browser tools", () => {
       expect(JSON.stringify(snap)).not.toContain("ada");
     });
 
-    it("keeps a login-filled field hidden after ordinary typing appends to it", async () => {
+    it("shows a login-filled field once typing has replaced the login", async () => {
       const browser = loginPage("https://login.example.test/signin");
       const { email } = await refs(browser, "https://login.example.test/signin");
       // Each result carries a fresh snapshot, whose refs replace the previous ones.
@@ -286,10 +328,11 @@ describe("browser tools", () => {
       });
       expect(typed).toMatchObject({ ok: true });
       expect(JSON.stringify(typed)).not.toContain("ada");
-      const replaced = await browserActFromTool(browser, computer, context, {
-        actions: [{ kind: "fill", ref: emailRef(typed), text: "visible-now" }],
-      });
-      expect(JSON.stringify(replaced)).toContain("visible-now");
+      expect(
+        (typed as { elements: Array<{ name: string; value?: string }> }).elements.find((el) =>
+          el.name.includes("Email"),
+        )?.value,
+      ).toBe("!");
     });
 
     it("refuses to type a saved login into editable page content", async () => {
@@ -318,7 +361,7 @@ describe("browser tools", () => {
         { resolveSecretFill },
       );
       expect(acted).toMatchObject({ ok: false, completed: 0 });
-      expect(JSON.stringify(acted)).toMatch(/text, email, password, or telephone/);
+      expect(JSON.stringify(acted)).toMatch(/text, email, or telephone/);
     });
 
     it("refuses to type a saved login into a textarea or a non-login input type", async () => {
@@ -363,7 +406,7 @@ describe("browser tools", () => {
           { resolveSecretFill },
         );
         expect(acted, name).toMatchObject({ ok: false, completed: 0 });
-        expect(JSON.stringify(acted), name).toMatch(/text, email, password, or telephone/);
+        expect(JSON.stringify(acted), name).toMatch(/text, email, or telephone/);
       }
       const phone = await browserActFromTool(
         browser,
@@ -423,8 +466,11 @@ describe("browser tools", () => {
         { actions: [{ kind: "fill_secret", ref: email, secret: "site_login", field: "username" }] },
         { resolveSecretFill },
       );
-      expect(acted).toMatchObject({ ok: false, completed: 0 });
-      expect(JSON.stringify(acted)).toMatch(/not on the site/);
+      expect(acted).toMatchObject({ ok: false, completed: 0, uncertain: false });
+      expect(JSON.stringify(acted)).toMatch(/not on the site.*browser_navigate/);
+      // A refusal is settled: nothing points the bot at desktop tools or takeover.
+      expect(acted).not.toHaveProperty("fallback");
+      expect(acted).not.toHaveProperty("note");
     });
 
     it("acts on nothing when a saved login cannot be resolved", async () => {

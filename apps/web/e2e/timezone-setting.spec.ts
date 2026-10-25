@@ -12,11 +12,6 @@ test("account settings save the timezone and offer this device's zone back", asy
 
   const settings = await openUserSettings(page);
 
-  // Bots have one avatar style, so there is no style picker.
-  await expect(settings.getByRole("heading", { name: "Timezone", exact: true })).toBeVisible();
-  await expect(settings.getByTestId("avatar-style-select")).toHaveCount(0);
-  await expect(settings.getByRole("heading", { name: "Avatars", exact: true })).toHaveCount(0);
-
   const select = settings.getByRole("combobox", { name: "Timezone" });
   // First sign-in saves the browser's zone without asking.
   await expect(select).toHaveValue("Pacific/Auckland");

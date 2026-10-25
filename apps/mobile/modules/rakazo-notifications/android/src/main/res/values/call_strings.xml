@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">Ongoing call</string>
+  <string name="rakazo_call_title">Rakazo call</string>
+  <string name="rakazo_call_text">Microphone is active</string>
+</resources>

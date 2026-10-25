@@ -6,6 +6,7 @@ import type {
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
+  AgentRuntimeEvent,
   AgentToolCompletion,
   AgentToolExecutionObserver,
   ArtifactStore,
@@ -95,6 +96,7 @@ import {
   nextFence,
   nextRoutineRunDateAcross,
   outboundSiteGate,
+  plainTextFromMarkdown,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -108,7 +110,9 @@ import {
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
   truncatedPlainText,
+  truncatePlainText,
   unattendedTriggerToolRequiresApproval,
+  userRunError,
   userTurnMessageForRun,
 } from "@rakazo/core";
 import { normalizedHttpUrl, sitesInText, urlSite } from "@rakazo/core/egress";
@@ -127,9 +131,9 @@ import {
   createThreadMessageInTransaction,
   dropRunTurnCheckpoint,
   effectiveMemoryScope,
-  findDefaultModelCredential,
   InstructionConflictError,
   InvalidSpaceNameError,
+  isPartialReplyClientNonce,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
@@ -142,6 +146,7 @@ import {
   reserveInstructionProposal,
   retireModelCredential,
   runAsSystem,
+  runSecretKind,
   SpaceLimitError,
   saveRunTurnCheckpoint,
   searchHistory,
@@ -195,6 +200,7 @@ import {
   settleUncertainEffect,
   uncertainEffectResult,
 } from "./approval-effect.js";
+import type { AutoReviewChecker } from "./auto-review.js";
 import {
   autoReviewTimeoutMs,
   deploymentAutoReviewDefault,
@@ -203,7 +209,9 @@ import {
   resolveAutoReviewChecker,
   resolveAutoReviewProviderKind,
 } from "./auto-review.js";
+import { reviewWithBackups } from "./auto-review-backups.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
+import { PARTIAL_REPLY_NOTE } from "./automated-messages.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
 import {
@@ -215,6 +223,7 @@ import {
   forgetBotSecret,
   listBotSecrets,
   loadBotCommandEnvironment,
+  loadLoginPasswordRedactions,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
@@ -279,6 +288,8 @@ import { connectApp } from "./connect-app.js";
 import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
+import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
+import { decisionModel } from "./decision-models.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import type { FleetPrepareDeps, FleetRun } from "./fleet-tools.js";
 import {
@@ -305,6 +316,7 @@ import {
   selectCompactedHistory,
   shouldEnqueueCompaction,
 } from "./history-compaction.js";
+import { HttpDecisionProvider } from "./http-decisions.js";
 import {
   assertConnectorToolArgs,
   CATALOG_EXECUTE,
@@ -324,6 +336,12 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "./model-credit-observer.js";
+import type { EffectiveModelRole } from "./model-roles.js";
+import {
+  effectiveModelRole,
+  resolveMemberMainModel,
+  selectConfiguredModel,
+} from "./model-roles.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -331,7 +349,6 @@ import {
   pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
-  selectConfiguredModel,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -384,7 +401,6 @@ import {
   reconcileManagedConnection,
   resolveCompletedSecretLeftover,
   resolveMissingRunSecretAction,
-  runSecretKind,
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
@@ -3097,6 +3113,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
     modelId: string,
     registerSecrets?: (values: string[]) => void,
     requireStoredSecret = false,
+    /** A fallback's own effort from its role list. */
+    thinkingLevel?: string | null,
   ): Promise<AgentRunRequest["model"]> => {
     const hostedProvider = (await modelCreditBillingEnabled(deps))
       ? resolveDeploymentModel().provider
@@ -3149,9 +3167,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       acceptsImages: resolved.acceptsImages,
       maxImagesPerPrompt: resolved.maxImagesPerPrompt,
       thinkingLevel:
-        ((credential?.defaultModel === modelId
-          ? credential?.thinkingLevel
-          : null) as AgentRunRequest["model"]["thinkingLevel"]) ??
+        ((thinkingLevel !== undefined
+          ? thinkingLevel
+          : credential?.defaultModel === modelId
+            ? credential?.thinkingLevel
+            : null) as AgentRunRequest["model"]["thinkingLevel"]) ??
         resolved.thinkingLevel ??
         null,
       oauth: resolved.oauth
@@ -3182,7 +3202,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })
         : null;
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
-      const [overrideCredential, defaultCredential, settings] = await Promise.all([
+      const [overrideCredential, main, settings] = await Promise.all([
         hasOverride
           ? findConnectedModelCredential(
               deps.prisma,
@@ -3192,7 +3212,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               override!.modelId,
             )
           : Promise.resolve(null),
-        findDefaultModelCredential(deps.prisma, scope),
+        resolveMemberMainModel(deps, scope),
         deps.prisma.deploymentSettings.findUnique({
           where: { id: "default" },
         }),
@@ -3200,12 +3220,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const selected = selectConfiguredModel({
         override,
         overrideCredential,
-        defaultCredential,
-        settings,
+        main,
         hostedProvider: (await modelCreditBillingEnabled(deps))
           ? resolveDeploymentModel().provider
           : undefined,
-        deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+        defaults: {
+          settings,
+          deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+        },
       });
       const { credential, thinkingLevel } = selected;
       let { provider, id } = selected;
@@ -3835,13 +3857,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
           peerMessage,
           task,
           storedConnections,
-          defaultCredential,
+          main,
           settings,
           configuredMemory,
           savedSkills,
           agentSkills,
           agentSecretRows,
           initialBotCommandEnvironment,
+          savedLoginPasswordRedactions,
         ] = await Promise.all([
           deps.prisma.bot.findUniqueOrThrow({
             where: { id: run.botId },
@@ -3864,7 +3887,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               status: true,
             },
           }),
-          findDefaultModelCredential(deps.prisma, run),
+          resolveMemberMainModel(deps, run),
           deps.prisma.deploymentSettings.findUnique({
             where: { id: "default" },
           }),
@@ -3884,6 +3907,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
           }),
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
+          loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
         ]);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
@@ -3900,6 +3924,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runSecrets.push(...Object.values(agentEnvironment));
         // Encoded forms too: read_file redacts with these values before any shell command runs.
         runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        // A login filled in an earlier run may still be on its page, and anything this run reads
+        // or is given may contain it, so every run hides its saved passwords before the model runs.
+        runSecrets.push(...savedLoginPasswordRedactions);
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction({
           ...agentEnvironment,
           ...initialBotCommandEnvironment,
@@ -3981,7 +4008,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 | "user"
                 | "assistant"
                 | "system",
-              content: messageToAgentHistoryText(m),
+              content: isPartialReplyClientNonce(m.clientNonce)
+                ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
+                : messageToAgentHistoryText(m),
             })),
             summary: thread.historyCompactionSummary,
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
@@ -4126,12 +4155,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const selected = selectConfiguredModel({
           override: modelChoice,
           overrideCredential,
-          defaultCredential,
-          settings,
+          main,
           hostedProvider: (await modelCreditBillingEnabled(deps))
             ? resolveDeploymentModel().provider
             : undefined,
-          deployment: runDeployment,
+          defaults: { settings, deployment: runDeployment },
         });
         const { credential, thinkingLevel } = selected;
         const runModelProvider = selected.provider ?? runtimeFallback?.provider;
@@ -4388,7 +4416,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             .then((rules) => rules as ActionApprovalRule[]);
           return approvalRulesPromise;
         };
-        let autoReviewPreferencePromise: Promise<boolean> | undefined;
+        let approvalModelPromise: Promise<EffectiveModelRole> | undefined;
+        const loadApprovalModel = () =>
+          (approvalModelPromise ??= effectiveModelRole(
+            deps.prisma,
+            { userId: run.userId, spaceId: run.spaceId },
+            "approval",
+            {},
+          ));
+        let autoReviewPreferencePromise:
+          | Promise<{ enabled: boolean; skipApprovals: boolean }>
+          | undefined;
         const loadAutoReviewPreference = () => {
           autoReviewPreferencePromise ??= deps.prisma.actionAutoReviewPreference
             .findUnique({
@@ -4398,9 +4436,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   userId: run.userId,
                 },
               },
-              select: { enabled: true },
+              select: { enabled: true, skipApprovals: true },
             })
-            .then((row) => row?.enabled ?? deploymentAutoReviewDefault());
+            .then((row) => ({
+              enabled: row?.enabled ?? deploymentAutoReviewDefault(),
+              skipApprovals: row?.skipApprovals ?? false,
+            }));
           return autoReviewPreferencePromise;
         };
         // Outbound destinations this run may reach without asking. See outboundSiteGate and
@@ -4743,8 +4784,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             visualActionKey,
           );
           unchangedVisualStreak = guard.streak;
+          // A browser window's title is the page title, which can echo a signed-in username.
+          const activeWindow = observation.activeWindow;
           const result = observationToolResult(
-            observation,
+            activeWindow?.title
+              ? {
+                  ...observation,
+                  activeWindow: {
+                    ...activeWindow,
+                    title: redactSecrets(activeWindow.title, runSecrets),
+                  },
+                }
+              : observation,
             note,
             lastComputerFrameId,
             visualActionKey ? { unchangedVisualCount: guard.streak.count } : undefined,
@@ -4832,6 +4883,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (IMAGE_RETURNING_COMPUTER_TOOLS.has(name) && !acceptsImages) {
             return { error: MODEL_CANNOT_SEE_MESSAGE };
           }
+          const registerRunSecrets = (values: string[]) => {
+            const additions = values.filter((value) => !runSecrets.includes(value));
+            if (additions.length === 0) return;
+            pendingProgress += progressRedactor.finish();
+            runSecrets.push(...additions);
+            progressRedactor = createStreamingRedactor(runSecrets);
+          };
           let connectorCall: ConnectorCall = {
             tool: name,
             args,
@@ -5165,11 +5223,18 @@ export function createRunExecutor(deps: ExecutorDeps) {
             siteGate === "new" ||
             connectorReadGated ||
             toolRequiresApproval(name, viaConnector, declaredReadOnly);
+          // An owner who skips approvals gets new spaces, and their bot's own instruction updates
+          // (with Undo on the card), without a card. An update still asks once outside content
+          // entered the run, since that content could have written it.
+          const ownerSkipsMandatoryApproval =
+            (name === "create_space" || name === "propose_instructions_update") &&
+            (await loadAutoReviewPreference()).skipApprovals &&
+            (name === "create_space" || !(await isRunTainted()));
           const requiresMandatoryApproval =
             commandWatch ||
             scheduleNamesNewSite ||
             requiresUnattendedApproval ||
-            toolRequiresExplicitApproval(name);
+            (toolRequiresExplicitApproval(name) && !ownerSkipsMandatoryApproval);
           const approvalResolved = requiresMandatoryApproval
             ? {
                 decision: "ask" as const,
@@ -5183,14 +5248,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 site: fetchSite,
                 rules: await loadApprovalRules(),
               });
-          const autoReviewPref = requiresMandatoryApproval
-            ? false
+          const preference = requiresMandatoryApproval
+            ? { enabled: false, skipApprovals: false }
             : await loadAutoReviewPreference();
+          const autoReviewPref = preference.enabled && !preference.skipApprovals;
           const injectedReview = requiresMandatoryApproval ? undefined : deps.autoReview;
-          const checker = requiresMandatoryApproval ? undefined : resolveAutoReviewChecker();
+          const reviewSettings =
+            requiresMandatoryApproval || !autoReviewPref || injectedReview
+              ? null
+              : await loadApprovalModel();
+          const memberChecker = reviewSettings?.primarySource === "member";
+          const checker = requiresMandatoryApproval
+            ? undefined
+            : reviewSettings
+              ? reviewSettings.primary
+                ? {
+                    provider: reviewSettings.primary.provider,
+                    model: reviewSettings.primary.modelId,
+                    thinkingLevel: reviewSettings.primary.thinkingLevel,
+                  }
+                : null
+              : resolveAutoReviewChecker();
           const checkerConfigured =
             autoReviewPref &&
             (Boolean(injectedReview) ||
+              memberChecker ||
+              Boolean(reviewSettings?.backups.length) ||
               (checker
                 ? isAutoReviewCheckerConfigured({}) ||
                   Boolean(
@@ -5210,6 +5293,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 autoReviewEnabled: autoReviewPref,
                 checkerConfigured,
                 newDestination: siteGate === "new",
+                skipApprovals: preference.skipApprovals,
               });
           let reviewReason: string | undefined;
           let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
@@ -5258,7 +5342,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 );
 
           const runAutoReview = async () => {
-            if (!injectedReview && !checker) return;
+            if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
             try {
               const botDescription = redactSecrets(
                 `${bot.name}: ${bot.title}\n${bot.description}`,
@@ -5292,76 +5376,121 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
                 botId: bot.id,
                 runId,
-                signal: AbortSignal.any([
-                  context.signal,
-                  AbortSignal.timeout(autoReviewTimeoutMs()),
-                ]),
+                signal: context.signal,
               };
-              let provider = injectedReview;
-              if (!provider) {
-                const kind = resolveAutoReviewProviderKind();
+              const checkerProvider = async (
+                checker: AutoReviewChecker,
+              ): Promise<AutoReviewProvider> => {
+                if (injectedReview) return injectedReview;
+                const kind =
+                  memberChecker || (checker.provider !== "jev" && checker.provider !== "scripted")
+                    ? "llm"
+                    : resolveAutoReviewProviderKind();
                 if (kind === "jev" || kind === "scripted") {
-                  provider = createAutoReviewProvider(kind);
-                } else {
-                  const reviewCredential = await findConnectedModelCredential(
-                    deps.prisma,
-                    deps.secretStore,
-                    { userId: run.userId, spaceId: run.spaceId },
-                    checker!.provider,
-                    checker!.model,
-                  );
-                  const judgeKey = await resolveModelKey(
-                    deps,
-                    run.userId,
-                    run.spaceId,
-                    reviewCredential,
-                    checker!.provider,
-                    checker!.model,
-                    (values) => runSecrets.push(...values),
-                  );
-                  provider = createAutoReviewProvider("llm", {
-                    llm: {
-                      onUsage: (event) =>
-                        recordUsage(deps.prisma, event, {
-                          spaceId: run.spaceId,
-                          userId: run.userId,
-                          botId: bot.id,
-                          parentRunId: runId,
-                          runId,
-                          operationId: `auto-review:${runId}`,
-                          operationKind: "setup",
-                        }),
-                      runtime: deps.runtime,
-                      checker: checker!,
-                      apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
-                      callObserver: judgeKey.callObserver,
-                      accountId: judgeKey.accountId,
-                      gatewayId: judgeKey.gatewayId,
-                      baseUrl: judgeKey.baseUrl,
-                      headers: judgeKey.headers,
-                      allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
-                      cacheCapabilities: judgeKey.cacheCapabilities,
-                      contextWindow: judgeKey.contextWindow,
-                      maxTokens: judgeKey.maxTokens,
-                      reasoning: judgeKey.reasoning,
-                      oauth: judgeKey.oauth
-                        ? {
-                            credential: judgeKey.oauth,
-                            persist: judgeKey.persistOAuth,
-                            retire: judgeKey.retireOAuth,
-                          }
-                        : undefined,
-                      runId,
-                      spaceId: run.spaceId,
-                      userId: run.userId,
-                      botId: bot.id,
-                      threadId: thread.id,
-                      timeoutMs: autoReviewTimeoutMs(),
-                    },
-                  });
+                  return createAutoReviewProvider(kind);
                 }
-              }
-              const judge = await provider.review(reviewRequest, reviewContext);
+                const reviewCredential = await findConnectedModelCredential(
+                  deps.prisma,
+                  deps.secretStore,
+                  { userId: run.userId, spaceId: run.spaceId },
+                  checker.provider,
+                  checker.model,
+                );
+                if (
+                  (memberChecker ||
+                    reviewSettings?.backups.some(
+                      (choice) =>
+                        choice.provider === checker.provider && choice.modelId === checker.model,
+                    )) &&
+                  !reviewCredential &&
+                  !(await hasHostedModelCredits(
+                    deps.prisma,
+                    { userId: run.userId, spaceId: run.spaceId },
+                    checker.provider,
+                  ))
+                ) {
+                  throw new Error("Selected checker connection is unavailable");
+                }
+                const judgeKey = await resolveModelKey(
+                  deps,
+                  run.userId,
+                  run.spaceId,
+                  reviewCredential,
+                  checker.provider,
+                  checker.model,
+                  (values) => runSecrets.push(...values),
+                );
+                const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
+                  recordUsage(deps.prisma, event, {
+                    spaceId: run.spaceId,
+                    userId: run.userId,
+                    botId: bot.id,
+                    parentRunId: runId,
+                    runId,
+                    operationId: `auto-review:${runId}`,
+                    operationKind: "setup",
+                  });
+                return decisionModel(checker.provider, checker.model)
+                  ? new DecisionAutoReviewProvider({
+                      provider: new HttpDecisionProvider("openrouter", {
+                        apiKey: judgeKey.apiKey ?? "",
+                        callObserver: judgeKey.callObserver,
+                        onUsage,
+                      }),
+                      providerId: checker.provider,
+                      model: checker.model,
+                    })
+                  : createAutoReviewProvider("llm", {
+                      llm: {
+                        onUsage,
+                        runtime: deps.runtime,
+                        checker,
+                        apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
+                        callObserver: judgeKey.callObserver,
+                        accountId: judgeKey.accountId,
+                        gatewayId: judgeKey.gatewayId,
+                        baseUrl: judgeKey.baseUrl,
+                        headers: judgeKey.headers,
+                        allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
+                        cacheCapabilities: judgeKey.cacheCapabilities,
+                        contextWindow: judgeKey.contextWindow,
+                        maxTokens: judgeKey.maxTokens,
+                        reasoning: judgeKey.reasoning,
+                        oauth: judgeKey.oauth
+                          ? {
+                              credential: judgeKey.oauth,
+                              persist: judgeKey.persistOAuth,
+                              retire: judgeKey.retireOAuth,
+                            }
+                          : undefined,
+                        runId,
+                        spaceId: run.spaceId,
+                        userId: run.userId,
+                        botId: bot.id,
+                        threadId: thread.id,
+                        timeoutMs: autoReviewTimeoutMs(),
+                      },
+                    });
+              };
+              const judge = await reviewWithBackups(
+                [
+                  ...(checker
+                    ? [checker]
+                    : injectedReview
+                      ? [{ provider: "injected", model: "injected" }]
+                      : []),
+                  ...(reviewSettings?.backups.map((choice) => ({
+                    provider: choice.provider,
+                    model: choice.modelId,
+                    thinkingLevel: choice.thinkingLevel,
+                  })) ?? []),
+                ],
+                async (checker) => {
+                  const provider = await checkerProvider(checker);
+                  return provider.review(reviewRequest, reviewContext);
+                },
+                context.signal,
+              );
               if (context.signal.aborted) return;
               reviewReason = judge.reason;
               gateDecision = applyJudgeDecision({
@@ -5682,13 +5811,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               : Promise.resolve(true);
           const finish = async (result: unknown) =>
             (await persistEffectResult(result)) ? result : uncertainEffectResult(name, args);
-          const registerRunSecrets = (values: string[]) => {
-            const additions = values.filter((value) => !runSecrets.includes(value));
-            if (additions.length === 0) return;
-            pendingProgress += progressRedactor.finish();
-            runSecrets.push(...additions);
-            progressRedactor = createStreamingRedactor(runSecrets);
-          };
           const appendComputerCommand = (payload: ComputerCommand) =>
             deps.events
               .append({
@@ -5782,7 +5904,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               path: requestedPath,
               entries: entries.map((entry) => ({
                 ...entry,
-                path: displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+                // A file name can carry a value an earlier command or page wrote.
+                path: redactSecrets(
+                  displayBotWorkspacePath(computerMode, bot.id, requestedPath, entry.path),
+                  runSecrets,
+                ),
               })),
             };
           }
@@ -5952,7 +6078,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               return finish({ ok: true, path: outPath, attached });
             } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
+              const message = redactSecrets(
+                error instanceof Error ? error.message : String(error),
+                runSecrets,
+              );
               if (!checkingSpec)
                 getLogger().error(`render_plot failed for bot ${bot.id}: ${message}`);
               return finish({
@@ -7168,8 +7297,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${displayName(bot.name, "Bot")} needs a code`,
-              body: String(args.label ?? "Code"),
+              ...secretAskNotification(
+                displayName(bot.name, "Bot"),
+                String(args.label ?? "Code"),
+                runSecrets,
+              ),
               botId: bot.id,
               threadId: thread.id,
             });
@@ -7183,7 +7315,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             };
           }
           if (name === "propose_instructions_update") {
-            if (nextApprovedTool !== name || !claimedEffect) {
+            if ((nextApprovedTool !== name && !bypassApproval) || !claimedEffect) {
               return finish({ error: "Instruction updates require human approval." });
             }
             const committed = await deps.prisma.$transaction(async (tx) => {
@@ -7857,14 +7989,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return;
         }
 
-        let fallbackModels: { provider: string; modelId: string }[] = [];
+        let fallbackModels: Array<{
+          provider: string;
+          modelId: string;
+          thinkingLevel?: string | null;
+        }> = [];
         if (!scripted) {
           try {
-            fallbackModels = await deps.prisma.spaceBackupModel.findMany({
-              where: { userId: run.userId, spaceId: run.spaceId },
-              orderBy: { position: "asc" },
-              select: { provider: true, modelId: true },
-            });
+            fallbackModels = (
+              await effectiveModelRole(deps.prisma, run, "main", {
+                settings,
+                deployment: runDeployment,
+              })
+            ).backups;
           } catch (error) {
             getLogger().warn("Backup models could not be loaded", { runId, error });
           }
@@ -7984,6 +8121,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       modelId,
                       (values) => runSecrets.push(...values),
                       true,
+                      fallbackModels.find(
+                        (candidate) =>
+                          candidate.provider === provider && candidate.modelId === modelId,
+                      )?.thinkingLevel ?? null,
                     );
                   }
                 : undefined,
@@ -8683,10 +8824,21 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!terminalCheckpointComplete) {
             await workspaceCheckpoint.flush().catch(() => undefined);
           }
-          const message = redactSecrets(
-            error instanceof Error ? error.message : String(error),
-            runSecrets,
-          );
+          const message = redactSecrets(userRunError(error), runSecrets);
+          // Reply text the user watched stream in since the last saved message stays in the
+          // thread, above the error, instead of vanishing with the live row.
+          recordExplicitNoResponse(assistantTurnText);
+          const partialText =
+            scripted || handedOff || explicitNoResponse || !runPromotesMidTurnNarration(run.trigger)
+              ? ""
+              : redactSecrets(
+                  extractNarrationText(messageSegments, currentTextSegment).text,
+                  runSecrets,
+                ).trim();
+          const partialReply =
+            partialText && !containsSecret(partialText, runSecrets)
+              ? [{ kind: "text" as const, text: partialText }]
+              : [];
           await settleRunningHelpers();
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
@@ -8699,6 +8851,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "failed",
             error: message,
+            ...(partialReply.length > 0 ? { partialReply } : {}),
           });
           if (!failed) return;
           if (
@@ -8756,10 +8909,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       } catch (setupError) {
         const computerBusy = setupError instanceof ComputerBusyError;
         const retryForever = computerBusy || isTooManyDatabaseConnections(setupError);
-        const setupMessage = redactSecrets(
-          setupError instanceof Error ? setupError.message : String(setupError),
-          runSecrets,
-        );
+        const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
         const reportedSetupError = sanitizedError(setupError, (text) =>
           redactSecrets(text, runSecrets),
         );
@@ -9137,16 +9287,21 @@ function fleetPrepareDeps(
           provider,
         ),
       defaultModel: async () => {
-        const [defaultCredential, settings] = await Promise.all([
-          findDefaultModelCredential(deps.prisma, scope),
+        const [main, settings] = await Promise.all([
+          resolveMemberMainModel(deps, scope),
           deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
         ]);
         const selected = selectConfiguredModel({
           override: null,
           overrideCredential: null,
-          defaultCredential,
-          settings,
-          deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+          main,
+          hostedProvider: (await modelCreditBillingEnabled(deps))
+            ? resolveDeploymentModel().provider
+            : undefined,
+          defaults: {
+            settings,
+            deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+          },
         });
         return { provider: selected.provider ?? null, model: selected.id ?? null };
       },
@@ -9569,7 +9724,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "create_space",
-      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
+      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     ),
     spawnBotClause(parts.disabledBuiltinTools),
     offeredBuiltinClause(
@@ -9815,6 +9970,17 @@ const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 /** Push body: Markdown stripped, then truncated so a cut cannot land inside a marker. */
 export function completionNotificationPreview(text: string): string {
   return truncatedPlainText(text, COMPLETION_NOTIFICATION_MAX_CHARS);
+}
+
+/** A secret card can ask for a code or a login, so the title stays generic and the label short. */
+export function secretAskNotification(botName: string, label: string, runSecrets: string[]) {
+  // Strip and redact before shortening so no protected value is left half-shown.
+  const text = plainTextFromMarkdown(redactSecrets(label, runSecrets), { maxSource: Infinity });
+  const body = truncatePlainText(
+    redactSecrets(text, runSecrets),
+    COMPLETION_NOTIFICATION_MAX_CHARS,
+  );
+  return { title: `${botName} needs an answer`, body };
 }
 
 export function completionMarksUnread(
@@ -10323,12 +10489,10 @@ async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMateria
   const [deps, userId, spaceId, , provider] = args;
   const billingEnabled = await modelCreditBillingEnabled(deps);
   const scope = { userId, spaceId };
-  if (
-    billingEnabled &&
-    !args[7]?.requireStoredSecret &&
-    (await hasHostedModelCredits(deps.prisma, scope, provider))
-  ) {
+  if (billingEnabled && (await hasHostedModelCredits(deps.prisma, scope, provider))) {
     args[3] = null;
+    // Funded managed backups use deployment credentials just like the primary.
+    args[7] = { ...args[7], requireStoredSecret: false };
   }
   const credential = args[3];
   const material = await resolveModelKeyMaterial(...args);
@@ -10350,7 +10514,7 @@ async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMateria
   }
   const callObserver =
     !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
-  return { ...material, callObserver };
+  return { ...material, apiKey: material.apiKey ?? runtimeKey, callObserver };
 }
 
 async function resolveModelKeyMaterial(

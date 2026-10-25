@@ -446,7 +446,7 @@ export const Composer = memo(function Composer({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-6 md:pb-6 ${
+      className={`relative z-30 m-0 min-w-0 border-0 px-3 pb-4 pt-3 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6 ${
         draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
       }`}
     >
@@ -757,7 +757,7 @@ export const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
+            className="rk-scroll max-h-25 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-body1 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-40"
           />
         </div>
         <div
@@ -778,7 +778,7 @@ export const Composer = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95"
+                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>
@@ -803,7 +803,7 @@ export const Composer = memo(function Composer({
                 aria-label={t`Send`}
                 disabled={sending || !canSend || disabled}
                 onClick={() => void send()}
-                className="size-8 shrink-0 rounded-full transition-transform active:scale-95"
+                className="size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100"
               >
                 <ArrowUp size={16} strokeWidth={2.2} />
               </Button>

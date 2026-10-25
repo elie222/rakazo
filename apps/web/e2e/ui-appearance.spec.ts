@@ -8,6 +8,8 @@ async function captureSidebarSearchSelected(
   name: string,
 ) {
   const aside = page.locator("aside").first();
+  const trigger = aside.getByTestId("sidebar-search-trigger");
+  if ((await trigger.getAttribute("aria-pressed")) !== "true") await trigger.click();
   const search = aside.getByTestId("sidebar-search");
   const selected = aside.getByRole("button", { name: /^Chief/ }).first();
   await expect(search).toBeVisible();
@@ -54,7 +56,6 @@ test("account settings appearance control switches to light mode", async ({ page
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toBeVisible();
-  await expect(settings.getByRole("heading", { name: "Appearance", exact: true })).toBeVisible();
 
   const picker = settings.getByTestId("ui-appearance-select");
   await expect(picker).toBeVisible();
@@ -86,7 +87,7 @@ test("account settings appearance control switches to light mode", async ({ page
     .locator("code")
     .filter({ hasText: "shared/PROJECT_CHECKPOINT_WRAPUP.md" });
   await expect(inlinePath).toBeVisible({ timeout: 30_000 });
-  await expect(inlinePath).toHaveCSS("color", "rgb(0, 0, 0)");
+  await expect(inlinePath).toHaveCSS("color", "rgb(28, 28, 28)");
   await captureScreenshot(page, testInfo, "inline-code-light");
 
   await page.getByTestId("user-menu-trigger").click();
@@ -105,6 +106,7 @@ test("sidebar footer opens integrations and the account menu", async ({ page }, 
   await completeOnboarding(page);
   const footer = page.getByTestId("sidebar-footer");
   await expect(footer).toBeVisible();
+  await page.getByTestId("sidebar-search-trigger").click();
   const searchBox = await page.getByTestId("sidebar-search").boundingBox();
   const avatarBox = await page.getByTestId("user-menu-trigger").boundingBox();
   const pillBox = await footer
