@@ -1449,6 +1449,16 @@ before moving anything. Switching the tree alone does not roll back the database
 Plaintext snapshots use `cat` in place of `age -d` and the filenames `rakazo.dump` and
 `appdata.tgz`. Use the same clean-directory procedure.
 
+To restore into a new stack with an empty database, apply the migrations once before the
+procedure above. The dump grants to the `rakazo_app` role, which the migration step creates
+rather than Postgres, so `pg_restore` stops on the first `GRANT` otherwise. Start only
+Postgres, run the migrations without starting the application, then follow the procedure:
+
+```bash
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait postgres"
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE run --rm -T --no-deps api pnpm db:deploy"
+```
+
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
 (mode `0600`). The service reads this optional file on each run; the script uses the selected
