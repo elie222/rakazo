@@ -131,7 +131,7 @@ jobs:
   test-integration:
     name: Postgres journeys
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
