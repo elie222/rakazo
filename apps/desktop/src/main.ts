@@ -990,7 +990,23 @@ function safeOrigin(targetUrl: string) {
   }
 }
 
+// A second launch on Linux/Windows would rerun host-computer setup, overwrite
+// the saved token and restart the local stack under the running instance.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = setupWindow !== null && !setupWindow.isDestroyed() ? setupWindow : mainWindow;
+    if (win === null || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   try {
