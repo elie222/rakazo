@@ -68,6 +68,21 @@ test("a chat opens with a New divider above replies that arrived while away", as
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-message-id]").filter({ hasText: followUp })).toBeVisible();
   await expect(divider).toHaveCount(0);
+  // Let Chief answer here so its reply is read before leaving.
+  await expect
+    .poll(
+      async () => {
+        const bots = await rpc<Array<{ id: string; unread: boolean; status: string }>>(
+          page,
+          "bots/list",
+          {},
+        );
+        const chief = bots.find((bot) => bot.id === chiefId);
+        return chief?.unread === false && !["queued", "leased", "running"].includes(chief.status);
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
 
   // Once read, the next visit has no divider.
   await page.goto(`/app/${otherId}`);
