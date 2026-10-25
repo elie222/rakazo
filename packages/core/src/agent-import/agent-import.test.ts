@@ -671,6 +671,7 @@ describe("secret stripping", () => {
             models: {
               providers: {
                 openai: { baseUrl: "https://gateway.example.com/v1", apiKey: "placeholder-gw" },
+                deepseek: { baseUrl: "https://gateway.example.com/v1" },
               },
             },
           }),
@@ -690,6 +691,7 @@ describe("secret stripping", () => {
         models: {
           providers: {
             openai: { baseUrl: "https://gateway.example.com/v1", apiKey: "placeholder-gw" },
+            deepseek: { baseUrl: "https://gateway.example.com/v1" },
           },
         },
       },

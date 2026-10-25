@@ -163,41 +163,38 @@ function projectConfig(
   referenced: Set<string>,
 ): string {
   const keyed = (name: string) => KEY_PROVIDERS.has(normalizeImportProvider(name));
+  // A base URL is kept even without a key here, so a key for that provider from `.env`
+  // can be held back when it belongs to a proxy.
+  const keyEntry = (entry: Json, key: "api_key" | "apiKey", url: "base_url" | "baseUrl") => {
+    const kept = {
+      ...(entry[key] !== undefined ? { [key]: noteReferences(entry[key], referenced) } : {}),
+      ...baseUrlOf(entry, url),
+    };
+    return Object.keys(kept).length ? kept : null;
+  };
   if (path === "config.yaml") {
     const model = isObject(config.model) ? config.model : {};
     const keepModelKey = secrets && keyed(String(model.provider ?? ""));
     const providers = Object.entries(isObject(config.providers) ? config.providers : {}).flatMap(
-      ([name, entry]) =>
-        secrets && keyed(name) && isObject(entry) && entry.api_key !== undefined
-          ? [
-              [
-                name,
-                {
-                  api_key: noteReferences(entry.api_key, referenced),
-                  ...baseUrlOf(entry, "base_url"),
-                },
-              ],
-            ]
-          : [],
+      ([name, entry]) => {
+        const kept =
+          secrets && keyed(name) && isObject(entry) ? keyEntry(entry, "api_key", "base_url") : null;
+        return kept ? [[name, kept]] : [];
+      },
     );
     const custom = (Array.isArray(config.custom_providers) ? config.custom_providers : []).flatMap(
-      (entry) =>
-        secrets && isObject(entry) && keyed(String(entry.name ?? "")) && entry.api_key !== undefined
-          ? [
-              {
-                name: String(entry.name),
-                api_key: noteReferences(entry.api_key, referenced),
-                ...baseUrlOf(entry, "base_url"),
-              },
-            ]
-          : [],
+      (entry) => {
+        const kept =
+          secrets && isObject(entry) && keyed(String(entry.name ?? ""))
+            ? keyEntry(entry, "api_key", "base_url")
+            : null;
+        return kept ? [{ name: String(entry.name), ...kept }] : [];
+      },
     );
     return stringifyYaml({
       model: {
         ...strings(model, ["default", "model", "provider"]),
-        ...(keepModelKey && model.api_key !== undefined
-          ? { api_key: noteReferences(model.api_key, referenced), ...baseUrlOf(model, "base_url") }
-          : {}),
+        ...(keepModelKey ? keyEntry(model, "api_key", "base_url") : {}),
       },
       ...(providers.length ? { providers: Object.fromEntries(providers) } : {}),
       ...(custom.length ? { custom_providers: custom } : {}),
@@ -231,18 +228,10 @@ function projectConfig(
   if (secrets) {
     const models = isObject(config.models) ? config.models : {};
     const providers = Object.entries(isObject(models.providers) ? models.providers : {}).flatMap(
-      ([id, entry]) =>
-        keyed(id) && isObject(entry) && entry.apiKey !== undefined
-          ? [
-              [
-                id,
-                {
-                  apiKey: noteReferences(entry.apiKey, referenced),
-                  ...baseUrlOf(entry, "baseUrl"),
-                },
-              ],
-            ]
-          : [],
+      ([id, entry]) => {
+        const kept = keyed(id) && isObject(entry) ? keyEntry(entry, "apiKey", "baseUrl") : null;
+        return kept ? [[id, kept]] : [];
+      },
     );
     const env = isObject(config.env) ? config.env : {};
     const vars = {

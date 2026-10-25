@@ -464,6 +464,26 @@ describe("keys with a base URL", () => {
       anthropic: "placeholder-anthropic-key",
     });
   });
+
+  it("hold back a provider's key from .env when its config points at a gateway", () => {
+    const settings = readAgentImportSettings(
+      {
+        source: "openclaw",
+        root: "workspace",
+        files: new Map([
+          [
+            "openclaw.json",
+            JSON.stringify({
+              models: { providers: { deepseek: { baseUrl: "https://gateway.example.com/v1" } } },
+            }),
+          ],
+          [".env", "DEEPSEEK_API_KEY=placeholder-gateway-key\nGROQ_API_KEY=placeholder-groq-key"],
+        ]),
+      },
+      { includeSecrets: true },
+    );
+    expect(Object.fromEntries(settings.keyValues)).toEqual({ groq: "placeholder-groq-key" });
+  });
 });
 
 describe("helpers", () => {
