@@ -2836,6 +2836,49 @@ describeJourneys("required product journeys", () => {
     expect(connector.records.length).toBe(recordsAfterDefault + 3);
   });
 
+  it("20b: always allow replaces a require-approval rule on the same tool", async () => {
+    const cookie = await signup(app, `always-replaces-j-${stamp}@rakazo.test`, "Always Replaces");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const rule = { matchKind: "tool", matchValue: "destination.write" };
+    const effects = async () =>
+      (await rpc<Array<{ effect: string; matchValue: string }>>(app, cookie, "approvalRules/list"))
+        .filter((row) => row.matchValue === rule.matchValue)
+        .map((row) => row.effect);
+    await rpc(app, cookie, "approvalRules/set", { effect: "require_approval", ...rule });
+
+    const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "write this to the destination crm as a note",
+    });
+    const waiting = await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => snap.run?.status === "waiting_input",
+    );
+    await answerPendingApproval(app, cookie, bot.id, first.runId, "always", waiting);
+    await waitFor(
+      app,
+      cookie,
+      bot.id,
+      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
+    );
+    expect(await effects()).toEqual(["always_allow"]);
+
+    const recordsBefore = connector.records.length;
+    await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
+    expect(connector.records.length).toBe(recordsBefore + 1);
+
+    await rpc(app, cookie, "approvalRules/set", { effect: "require_approval", ...rule });
+    expect(await effects()).toEqual(["require_approval"]);
+  });
+
   it("21: routine destination writes pause on the same approval card", async () => {
     const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

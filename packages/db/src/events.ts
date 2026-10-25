@@ -898,6 +898,8 @@ async function commitAnswerRunInput(
         matchKind: site ? "site" : "tool",
         matchValue: site ?? approvalEffect!.kind,
       };
+      // A match has one effect, so "Always" replaces a require-approval rule on the same tool.
+      await tx.actionApprovalRule.deleteMany({ where: { ...rule, effect: "require_approval" } });
       await tx.actionApprovalRule.upsert({
         where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
         create: rule,

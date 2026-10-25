@@ -6642,24 +6642,26 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       set: authed.approvalRules.set.handler(async ({ context, input }) => {
-        const row = await deps.prisma.actionApprovalRule.upsert({
-          where: {
-            spaceId_createdByUserId_effect_matchKind_matchValue: {
-              spaceId: context.actor.spaceId,
-              createdByUserId: context.actor.userId,
-              effect: input.effect,
-              matchKind: input.matchKind,
-              matchValue: input.matchValue,
+        const rule = {
+          spaceId: context.actor.spaceId,
+          createdByUserId: context.actor.userId,
+          effect: input.effect,
+          matchKind: input.matchKind,
+          matchValue: input.matchValue,
+        };
+        // A match has one effect: setting one replaces the other.
+        const row = await deps.prisma.$transaction(async (tx) => {
+          await tx.actionApprovalRule.deleteMany({
+            where: {
+              ...rule,
+              effect: input.effect === "always_allow" ? "require_approval" : "always_allow",
             },
-          },
-          create: {
-            spaceId: context.actor.spaceId,
-            createdByUserId: context.actor.userId,
-            effect: input.effect,
-            matchKind: input.matchKind,
-            matchValue: input.matchValue,
-          },
-          update: {},
+          });
+          return tx.actionApprovalRule.upsert({
+            where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
+            create: rule,
+            update: {},
+          });
         });
         return {
           id: row.id,

@@ -2239,6 +2239,7 @@ describe("answerRunInput", () => {
           update: vi.fn().mockResolvedValue({ id: "effect-1" }),
         },
         actionApprovalRule: {
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
         },
         thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
@@ -2272,6 +2273,15 @@ describe("answerRunInput", () => {
       expect(tx.externalEffect.update).toHaveBeenCalledWith({
         where: { id: "effect-1" },
         data: { status: "approved" },
+      });
+      expect(tx.actionApprovalRule.deleteMany).toHaveBeenCalledWith({
+        where: {
+          spaceId: "workspace-1",
+          createdByUserId: "user-1",
+          effect: "require_approval",
+          matchKind,
+          matchValue,
+        },
       });
       expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
         where: {
