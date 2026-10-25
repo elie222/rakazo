@@ -76,6 +76,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
   "The server had a problem. Try again in a moment.": "服务器出现问题。请稍后重试。",
   "Password sign-in is turned off on this server": "此服务器已关闭密码登录",
+  "Password must be {max} characters or fewer": "密码不能超过 {max} 个字符",
   "Could not save your sign-in on this device. Try again.": "无法在此设备上保存登录信息。请重试。",
   "Your OpenRouter": "你的 OpenRouter",
   "Your OpenAI": "你的 OpenAI",

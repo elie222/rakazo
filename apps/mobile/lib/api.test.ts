@@ -106,6 +106,11 @@ describe("mobile API authentication", () => {
       [502, "<html>Bad gateway</html>", "Could not reach the server"],
       [504, "{}", "Could not reach the server"],
       [403, '{"code":"PASSWORD_AUTH_DISABLED"}', "Password sign-in is turned off on this server"],
+      [
+        400,
+        '{"code":"PASSWORD_TOO_LONG","message":"Password too long"}',
+        "Password must be 128 characters or fewer",
+      ],
       [403, '{"message":"Registration is closed"}', "Registration is closed"],
       [
         422,

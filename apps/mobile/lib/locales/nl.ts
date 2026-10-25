@@ -79,6 +79,7 @@ export const NL_MESSAGES: Record<string, string> = {
     "Er is een probleem met de server. Probeer het zo nog eens.",
   "Password sign-in is turned off on this server":
     "Aanmelden met wachtwoord is uitgeschakeld op deze server",
+  "Password must be {max} characters or fewer": "Het wachtwoord mag maximaal {max} tekens bevatten",
   "Could not save your sign-in on this device. Try again.":
     "Je aanmelding kon niet op dit apparaat worden opgeslagen. Probeer het opnieuw.",
   "Your OpenRouter": "Jouw OpenRouter",

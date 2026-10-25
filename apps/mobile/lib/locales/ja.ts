@@ -82,6 +82,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "サーバーで問題が発生しました。しばらくしてからもう一度お試しください。",
   "Password sign-in is turned off on this server":
     "このサーバーではパスワードでのログインが無効になっています",
+  "Password must be {max} characters or fewer": "パスワードは{max}文字以内にしてください",
   "Could not save your sign-in on this device. Try again.":
     "このデバイスにログイン情報を保存できませんでした。もう一度お試しください。",
   "Your OpenRouter": "お使いのOpenRouter",

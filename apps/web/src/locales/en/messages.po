@@ -3986,6 +3986,10 @@ msgstr "Passkeys"
 msgid "Password"
 msgstr "Password"
 
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Password recovery is not configured for this server"

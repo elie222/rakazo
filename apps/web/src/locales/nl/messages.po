@@ -3986,6 +3986,10 @@ msgstr "Passkeys"
 msgid "Password"
 msgstr "Wachtwoord"
 
+#: src/lib/user-error.ts
+msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
+msgstr ""Het wachtwoord mag maximaal {MAX_PASSWORD_LENGTH} tekens bevatten"
+
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Wachtwoordherstel is niet geconfigureerd voor deze server"
