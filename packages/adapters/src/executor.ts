@@ -5325,11 +5325,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 );
 
           // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
-          // so only real denies match. web_fetch is gated per site; secret and app requests name
-          // their own target.
+          // so only real denies match. A stored row is checked only while it still waits for an
+          // answer. web_fetch is gated per site; secret and app requests name their own target.
           const repeatChecked =
             applied &&
-            !applied.duplicate &&
+            (!applied.duplicate || applied.effect.status === "intended") &&
             !["web_fetch", "request_secret", "connect_app"].includes(name);
           const deniedEarlier = repeatChecked
             ? (

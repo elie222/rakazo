@@ -2165,6 +2165,18 @@ describe("retry of an action a person denied in the same run", () => {
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
   });
 
+  it("refuses a retry whose card was stored before the worker stopped", async () => {
+    const f = fixture({
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" }],
+    });
+    await f.run();
+    f.effects.push(denied("demo_get_item", { id: "item-9" }));
+    f.setCalls([{ args: { id: "item-1" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual(DENIED);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
   it("still runs the approved replay of the same tool", async () => {
     const f = fixture({
       rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" }],
