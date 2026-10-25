@@ -820,6 +820,36 @@ describe("MCP OAuth", () => {
     expect(await provider.tokens()).toMatchObject({ access_token: "working" });
   });
 
+  it("allows private-network HTTP authorization URLs only when the instance opts in", async () => {
+    const url = new URL("http://192.0.2.10:8123/auth/authorize");
+    const allowed = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization: vi.fn(),
+      allowPrivateEndpoint: true,
+    });
+    await allowed.redirectToAuthorization(url);
+    expect(allowed.authorizationUrl).toEqual(url);
+
+    const denied = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      onAuthorization: vi.fn(),
+    });
+    await expect(denied.redirectToAuthorization(url)).rejects.toThrow(/HTTPS/i);
+  });
+
+  it("binds a private-network HTTP resource only when the instance opts in", async () => {
+    const resource = "http://192.0.2.10:8123/mcp";
+    const allowed = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
+      allowPrivateEndpoint: true,
+    });
+    const denied = new StoredMcpOAuthProvider("server-1", {}, async () => undefined);
+
+    expect(await allowed.validateResourceURL("http://192.0.2.10:8123/mcp", resource)).toEqual(
+      new URL(resource),
+    );
+    expect(
+      await denied.validateResourceURL("http://192.0.2.10:8123/mcp", resource),
+    ).toBeUndefined();
+  });
+
   it("allows localhost HTTP browser authorization URLs", async () => {
     const onAuthorization = vi.fn();
     const provider = new StoredMcpOAuthProvider("server-1", {}, async () => undefined, {
