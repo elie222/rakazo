@@ -34,8 +34,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          count=$(gh pr list --base main --state open --limit 1000 --json headRefName \
-            --jq '[.[] | select(.headRefName | startswith("deps/weekly-dependencies-"))] | length')
+          count=$(gh pr list --base main --state open --limit 1000 --json headRefName,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false and (.headRefName | startswith("deps/weekly-dependencies-")))] | length')
           echo "existing=$count" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         if: steps.base.outputs.existing == '0'
