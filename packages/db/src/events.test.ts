@@ -2295,6 +2295,111 @@ describe("answerRunInput", () => {
     },
   );
 
+  it("writes always-allow rules for each wrapped Composio action, never the wrapper", async () => {
+    const fanout = new TestFanout();
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              approvalEffectId: "effect-1",
+              text: "Review before GMAIL_ARCHIVE_THREAD, GMAIL_SEND_EMAIL",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "always", label: "Always allow this tool" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ userId: "user-1", status: "queued" }),
+      },
+      task: { updateMany: vi.fn() },
+      externalEffect: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "effect-1",
+          status: "intended",
+          kind: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          request: {
+            tools: [
+              { tool_slug: "GMAIL_ARCHIVE_THREAD", arguments: { id: "t1" } },
+              { tool_slug: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } },
+            ],
+          },
+        }),
+        update: vi.fn().mockResolvedValue({ id: "effect-1" }),
+      },
+      actionApprovalRule: { upsert: vi.fn().mockResolvedValue({ id: "rule-1" }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "always",
+        },
+        fanout,
+      ),
+    ).resolves.toBe(true);
+
+    const matchValues = tx.actionApprovalRule.upsert.mock.calls.map(
+      ([call]) => (call as { create: { matchValue: string; matchKind: string } }).create.matchValue,
+    );
+    expect(matchValues).toEqual(["GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL"]);
+    for (const matchValue of matchValues) {
+      expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
+        where: {
+          spaceId_createdByUserId_effect_matchKind_matchValue: {
+            spaceId: "workspace-1",
+            createdByUserId: "user-1",
+            effect: "always_allow",
+            matchKind: "tool",
+            matchValue,
+          },
+        },
+        create: {
+          spaceId: "workspace-1",
+          createdByUserId: "user-1",
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue,
+        },
+        update: {},
+      });
+    }
+    expect(
+      tx.actionApprovalRule.upsert.mock.calls.some(
+        ([call]) =>
+          (call as { create: { matchValue: string } }).create.matchValue ===
+          "COMPOSIO_MULTI_EXECUTE_TOOL",
+      ),
+    ).toBe(false);
+  });
+
   it("does not let another workspace member create an always-allow rule for the run owner", async () => {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),

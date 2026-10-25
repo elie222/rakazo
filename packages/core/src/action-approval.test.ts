@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type ActionApprovalRule,
   applyJudgeDecision,
+  COMPOSIO_MULTI_EXECUTE_TOOL,
+  composioMultiExecuteSlugs,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -13,6 +15,7 @@ import {
   planActionGate,
   resolveActionApproval,
   resolveActionApprovalDetail,
+  resolveActionApprovalForTools,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
@@ -621,4 +624,108 @@ describe("toolResultTaintsRun", () => {
 it("requires human confirmation to approve an agent connection", () => {
   expect(toolRequiresExplicitApproval("respond_agent_connection")).toBe(true);
   expect(toolRequiresApproval("respond_agent_connection", false)).toBe(true);
+});
+
+describe("composioMultiExecuteSlugs", () => {
+  it("returns the wrapped slugs and flags entries it cannot name", () => {
+    expect(
+      composioMultiExecuteSlugs(COMPOSIO_MULTI_EXECUTE_TOOL, {
+        tools: [
+          { tool_slug: "GMAIL_ARCHIVE_THREAD", arguments: { id: "t1" } },
+          { tool_slug: " gmail_send_email " },
+        ],
+      }),
+    ).toEqual({ slugs: ["GMAIL_ARCHIVE_THREAD", "gmail_send_email"], complete: true });
+    expect(
+      composioMultiExecuteSlugs(COMPOSIO_MULTI_EXECUTE_TOOL, {
+        tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }, { arguments: {} }],
+      }),
+    ).toEqual({ slugs: ["GMAIL_SEND_EMAIL"], complete: false });
+  });
+
+  it("ignores calls that are not a wrapped batch", () => {
+    expect(composioMultiExecuteSlugs("GMAIL_SEND_EMAIL", { to: "a@b.c" })).toBeUndefined();
+    expect(composioMultiExecuteSlugs(COMPOSIO_MULTI_EXECUTE_TOOL, { to: "a@b.c" })).toBeUndefined();
+    expect(composioMultiExecuteSlugs(COMPOSIO_MULTI_EXECUTE_TOOL, { tools: "x" })).toBeUndefined();
+    expect(composioMultiExecuteSlugs(COMPOSIO_MULTI_EXECUTE_TOOL, { tools: [] })).toEqual({
+      slugs: [],
+      complete: true,
+    });
+  });
+});
+
+describe("resolveActionApprovalForTools", () => {
+  const allowArchive = {
+    effect: "always_allow" as const,
+    matchKind: "tool" as const,
+    matchValue: "gmail_archive_thread",
+  };
+  const requireSend = {
+    effect: "require_approval" as const,
+    matchKind: "tool" as const,
+    matchValue: "gmail_send_email",
+  };
+
+  it("asks when any wrapped action has a require-approval rule", () => {
+    const resolved = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_ARCHIVE_THREAD" }, { name: "GMAIL_SEND_EMAIL" }],
+      rules: [allowArchive, requireSend],
+    });
+    expect(resolved.decision).toBe("ask");
+    expect(resolved.source).toBe("require_approval");
+    expect(resolved.matchingRules).toEqual([allowArchive, requireSend]);
+  });
+
+  it("runs only when every wrapped action is always-allowed", () => {
+    const allowed = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_ARCHIVE_THREAD" }],
+      rules: [allowArchive],
+    });
+    expect(allowed).toMatchObject({ decision: "allow", source: "always_allow" });
+    const mixed = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_ARCHIVE_THREAD" }, { name: "GMAIL_SEND_EMAIL" }],
+      rules: [allowArchive],
+    });
+    expect(mixed).toMatchObject({ decision: "allow", source: "default" });
+  });
+
+  it("does not match a rule on the wrapper name to the actions inside", () => {
+    const wrapperRules = [
+      {
+        effect: "require_approval" as const,
+        matchKind: "tool" as const,
+        matchValue: "composio_multi_execute_tool",
+      },
+    ];
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "GMAIL_SEND_EMAIL" }],
+        rules: wrapperRules,
+      }).source,
+    ).toBe("default");
+  });
+
+  it("matches connector and category rules against each slug's own kind", () => {
+    const emailRule = {
+      effect: "require_approval" as const,
+      matchKind: "category" as const,
+      matchValue: "email",
+    };
+    const resolved = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_SEND_EMAIL", connectorKind: "gmail" }],
+      rules: [emailRule],
+    });
+    expect(resolved.decision).toBe("ask");
+    const connectorRule = {
+      effect: "always_allow" as const,
+      matchKind: "connector" as const,
+      matchValue: "gmail",
+    };
+    expect(
+      resolveActionApprovalForTools({
+        tools: [{ name: "GMAIL_SEND_EMAIL", connectorKind: "gmail" }],
+        rules: [connectorRule],
+      }).source,
+    ).toBe("always_allow");
+  });
 });

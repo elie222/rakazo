@@ -12,6 +12,7 @@ import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  composioMultiExecuteSlugs,
   instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
@@ -888,21 +889,26 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    // "Always" on a fetch card allows that site, never every site the tool can reach.
+    // "Always" on a fetch card allows that site, never every site the tool can reach. A
+    // Composio batch card allows each action it wrapped, never the wrapper name: a rule on
+    // the wrapper would allow every Composio action the connector can run.
     const site = alwaysAllowedSite(approvalEffect!);
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
-      const rule = {
-        spaceId: input.spaceId,
-        createdByUserId: approvalUserId!,
-        effect: "always_allow",
-        matchKind: site ? "site" : "tool",
-        matchValue: site ?? approvalEffect!.kind,
-      };
-      await tx.actionApprovalRule.upsert({
-        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
-        create: rule,
-        update: {},
-      });
+      const matchValues = site ? [site] : alwaysAllowedToolValues(approvalEffect!);
+      for (const matchValue of matchValues) {
+        const rule = {
+          spaceId: input.spaceId,
+          createdByUserId: approvalUserId!,
+          effect: "always_allow" as const,
+          matchKind: site ? "site" : "tool",
+          matchValue,
+        };
+        await tx.actionApprovalRule.upsert({
+          where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
+          create: rule,
+          update: {},
+        });
+      }
     }
   } else if (dismissed) {
     // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed
@@ -2101,4 +2107,9 @@ function alwaysAllowedSite(effect: {
   if (effect.kind !== "web_fetch") return undefined;
   const request = effect.request as { url?: unknown } | null;
   return typeof request?.url === "string" ? urlSite(request.url) : undefined;
+}
+
+function alwaysAllowedToolValues(effect: { kind: string; request: Prisma.JsonValue }): string[] {
+  const nested = composioMultiExecuteSlugs(effect.kind, effect.request);
+  return nested ? nested.slugs : [effect.kind];
 }

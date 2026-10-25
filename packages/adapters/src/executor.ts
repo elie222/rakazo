@@ -70,6 +70,7 @@ import {
   botMessageAllowsSilence,
   CALL_CLIENT_NONCE_PREFIX,
   callIdFromClientNonce,
+  composioMultiExecuteSlugs,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -101,7 +102,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
-  resolveActionApprovalDetail,
+  resolveActionApprovalForTools,
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -5147,16 +5148,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const declaredReadOnly = viaConnector
             ? (resolvedTool ?? connectorTools.get(name))?.readOnly
             : undefined;
-          const requiresUnattendedApproval = unattendedTriggerToolRequiresApproval(
-            run.trigger,
-            name,
-            viaConnector,
-            declaredReadOnly,
+          // A Composio batch hides its actions in tools[].tool_slug: rules and the read/write
+          // check evaluate each slug, never the wrapper, and an entry with no readable slug
+          // cannot prove it is safe, so it asks.
+          const nestedComposio = composioMultiExecuteSlugs(name, args);
+          const approvalToolNames = nestedComposio?.slugs.length ? nestedComposio.slugs : [name];
+          const unidentifiedAction = Boolean(
+            nestedComposio && (!nestedComposio.complete || nestedComposio.slugs.length === 0),
           );
-          const connectorKind = connectorKindFromToolName(
-            name,
-            connectedPlugins.map((plugin) => plugin.provider),
-          );
+          const declaredReadOnlyFor = (toolName: string) =>
+            toolName === name ? declaredReadOnly : connectorTools.get(toolName)?.readOnly;
+          const requiresUnattendedApproval =
+            (unidentifiedAction && run.trigger === "webhook") ||
+            approvalToolNames.some((toolName) =>
+              unattendedTriggerToolRequiresApproval(
+                run.trigger,
+                toolName,
+                viaConnector,
+                declaredReadOnlyFor(toolName),
+              ),
+            );
+          const connectorProviders = connectedPlugins.map((plugin) => plugin.provider);
+          const connectorKind = connectorKindFromToolName(name, connectorProviders);
           const fetchUrl =
             name === "web_fetch" ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
           const fetchSite = fetchUrl ? urlSite(fetchUrl) : undefined;
@@ -5180,7 +5193,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               : "allow";
           const connectorReadGated =
             viaConnector &&
-            !connectorToolRequiresApproval(name, declaredReadOnly) &&
+            !unidentifiedAction &&
+            approvalToolNames.every(
+              (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+            ) &&
             connectorReadRequiresApproval({
               tainted: await isRunTainted(),
               connectorTrusted: (await loadTrustedConnectors()).has(connectorTrust),
@@ -5202,7 +5218,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             requiresUnattendedApproval ||
             siteGate === "new" ||
             connectorReadGated ||
-            toolRequiresApproval(name, viaConnector, declaredReadOnly);
+            unidentifiedAction ||
+            approvalToolNames.some((toolName) =>
+              toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)),
+            );
           // An owner who skips approvals gets new spaces, and their bot's own instruction updates
           // (with Undo on the card), without a card. An update still asks once outside content
           // entered the run, since that content could have written it.
@@ -5219,15 +5238,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? {
                 decision: "ask" as const,
                 source: "default" as const,
-                matchingRules: [],
+                matchingRules: [] as ActionApprovalRule[],
               }
-            : resolveActionApprovalDetail({
-                toolName: name,
-                connectorKind,
-                readOnly: declaredReadOnly,
-                site: fetchSite,
-                rules: await loadApprovalRules(),
-              });
+            : await (async () => {
+                const resolved = resolveActionApprovalForTools({
+                  tools: approvalToolNames.map((toolName) => ({
+                    name: toolName,
+                    connectorKind: connectorKindFromToolName(toolName, connectorProviders),
+                    readOnly: declaredReadOnlyFor(toolName),
+                  })),
+                  site: fetchSite,
+                  rules: await loadApprovalRules(),
+                });
+                return unidentifiedAction ? { ...resolved, decision: "ask" as const } : resolved;
+              })();
           const preference = requiresMandatoryApproval
             ? { enabled: false, skipApprovals: false }
             : await loadAutoReviewPreference();

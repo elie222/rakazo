@@ -356,6 +356,71 @@ export function resolveActionApproval(input: {
   return resolveActionApprovalDetail(input).decision;
 }
 
+/** Composio wraps every action batch in this one tool; the actions live in `tools[].tool_slug`. */
+export const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
+
+/**
+ * The action slugs a multi-execute call expands to. `undefined` unless the call is the wrapper
+ * with an array body. `complete` is false when an entry carries no readable slug; the caller
+ * cannot prove what that entry does, so it must ask rather than match rules on the wrapper.
+ */
+export function composioMultiExecuteSlugs(
+  toolName: string,
+  args: unknown,
+): { slugs: string[]; complete: boolean } | undefined {
+  if (toolName !== COMPOSIO_MULTI_EXECUTE_TOOL) return undefined;
+  const tools = args && typeof args === "object" ? (args as { tools?: unknown }).tools : undefined;
+  if (!Array.isArray(tools)) return undefined;
+  const slugs: string[] = [];
+  let complete = true;
+  for (const item of tools) {
+    const slug =
+      item && typeof item === "object" && !Array.isArray(item)
+        ? (item as { tool_slug?: unknown }).tool_slug
+        : undefined;
+    if (typeof slug === "string" && slug.trim()) {
+      if (!slugs.includes(slug.trim())) slugs.push(slug.trim());
+    } else {
+      complete = false;
+    }
+  }
+  return { slugs, complete };
+}
+
+/**
+ * Resolve rules for every action a call dispatches: the strictest name wins, so one
+ * always-allowed action never carries the rest of a batch. The batch counts as rule-allowed
+ * only when every action matched an always-allow rule.
+ */
+export function resolveActionApprovalForTools(input: {
+  tools: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
+  site?: string;
+  rules: ActionApprovalRule[];
+}): ActionApprovalResolved {
+  const resolved = input.tools.map((tool) =>
+    resolveActionApprovalDetail({
+      toolName: tool.name,
+      connectorKind: tool.connectorKind,
+      readOnly: tool.readOnly,
+      site: input.site,
+      rules: input.rules,
+    }),
+  );
+  const matchingRules = [
+    ...new Map(resolved.flatMap((part) => part.matchingRules).map((rule) => [rule, rule])).values(),
+  ];
+  const asking = resolved.find((part) => part.decision === "ask");
+  if (asking) return { decision: "ask", source: asking.source, matchingRules };
+  return {
+    decision: "allow",
+    source:
+      resolved.length > 0 && resolved.every((part) => part.source === "always_allow")
+        ? "always_allow"
+        : "default",
+    matchingRules,
+  };
+}
+
 export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**

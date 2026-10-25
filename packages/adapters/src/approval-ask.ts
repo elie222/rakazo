@@ -2,6 +2,8 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   CARD_TITLE_ESCAPED_CHARACTERS,
+  COMPOSIO_MULTI_EXECUTE_TOOL,
+  composioMultiExecuteSlugs,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -144,6 +146,9 @@ function webFetchSite(toolName: string, args: Record<string, unknown>): string |
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
+  const nested = composioMultiExecuteSlugs(toolName, args);
+  if (nested?.slugs.length)
+    return nested.complete ? nested.slugs.join(", ") : `${nested.slugs.join(", ")}, …`;
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
@@ -173,13 +178,50 @@ function formatApprovalDetail(
   // A fetch carries data in its path and query, so the card shows the whole URL.
   const keys =
     toolName === "web_fetch" ? ["url"] : ["collection", "title", "to", "subject", "amount", "body"];
-  for (const key of keys) {
-    const value = args[key];
-    if (value == null || value === "") continue;
-    lines.push(`${key}: ${String(value)}`);
+  const tools =
+    toolName === COMPOSIO_MULTI_EXECUTE_TOOL && Array.isArray(args.tools) ? args.tools : undefined;
+  if (tools) {
+    for (const item of tools) {
+      const slug =
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as { tool_slug?: unknown }).tool_slug
+          : undefined;
+      lines.push(typeof slug === "string" && slug.trim() ? slug.trim() : "unidentified action");
+      const itemArgs = nestedToolArguments(
+        item && typeof item === "object" ? (item as { arguments?: unknown }).arguments : undefined,
+      );
+      for (const key of keys) {
+        const value = itemArgs?.[key];
+        if (value == null || value === "") continue;
+        lines.push(`${key}: ${String(value)}`);
+      }
+    }
+  } else {
+    for (const key of keys) {
+      const value = args[key];
+      if (value == null || value === "") continue;
+      lines.push(`${key}: ${String(value)}`);
+    }
   }
   if (lines.length === 0) return undefined;
   return lines.join("\n");
+}
+
+/** Each wrapped action's arguments may be an object or a JSON string. */
+function nestedToolArguments(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        return parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function pickScopeLabel(args: Record<string, unknown>): string | undefined {

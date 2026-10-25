@@ -1001,6 +1001,95 @@ describe("connector read-only metadata and approval enforcement", () => {
   });
 });
 
+describe("composio multi-execute approvals", () => {
+  beforeEach(() => reviewMock.mockReset());
+  const multiExecute = (slugs: Array<string | undefined>) => ({
+    tools: slugs.map((slug) =>
+      slug === undefined
+        ? { arguments: {} }
+        : { tool_slug: slug, arguments: { to: "a@b.c", subject: "Hi" } },
+    ),
+  });
+  const pausedCard = (f: ReturnType<typeof fixture>) =>
+    (
+      f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
+    )[0]?.[0].blocks[0];
+
+  it("asks under a rule that names the wrapped action slug", async () => {
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "gmail_send_email" }],
+    });
+    f.setCalls([
+      {
+        args: multiExecute(["GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL"]),
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+  });
+
+  it("runs a wrapped action its always-allow rule names", async () => {
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" }],
+    });
+    f.setCalls([{ args: multiExecute(["GMAIL_ARCHIVE_THREAD"]), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("does not let a rule on the wrapper name cover the actions inside", async () => {
+    reviewMock.mockResolvedValue({ decision: "pass", model: "mock" });
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      autoReview: true,
+      rules: [
+        {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue: "composio_multi_execute_tool",
+        },
+      ],
+    });
+    f.setCalls([{ args: multiExecute(["GMAIL_SEND_EMAIL"]), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+    // The wrapper rule never matched, so the batch still reached Auto Review.
+    expect(reviewMock).toHaveBeenCalledOnce();
+  });
+
+  it("asks when a batch entry has no readable slug", async () => {
+    const f = fixture({ name: "COMPOSIO_MULTI_EXECUTE_TOOL", readOnly: false });
+    f.setCalls([{ args: multiExecute([undefined]), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+  });
+
+  it("names the wrapped actions on the approval card", async () => {
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "gmail_send_email" }],
+    });
+    f.setCalls([{ args: multiExecute(["GMAIL_SEND_EMAIL"]), executionId: "call-1" }]);
+    await f.run();
+    expect(pausedCard(f)).toMatchObject({
+      text: "Review before GMAIL_SEND_EMAIL",
+      detail: "GMAIL_SEND_EMAIL\nto: a@b.c\nsubject: Hi",
+    });
+  });
+});
+
 describe("create_space", () => {
   it("asks by default and skips the card when the owner skips approvals", async () => {
     const asked = fixture({ name: "create_space", builtin: true, autoReview: true });

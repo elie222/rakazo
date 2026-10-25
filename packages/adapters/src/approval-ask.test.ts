@@ -36,6 +36,33 @@ describe("buildApprovalAskBlock", () => {
     expect(block.detail?.length).toBeLessThanOrEqual(4_001);
   });
 
+  it("names the wrapped actions and their inputs on a Composio batch card", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      {
+        tools: [
+          { tool_slug: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c", subject: "Hi" } },
+          { tool_slug: "GMAIL_ARCHIVE_THREAD", arguments: { id: "t1" } },
+          { arguments: {} },
+        ],
+      },
+      [],
+    );
+
+    expect(block).toMatchObject({
+      text: "Review before GMAIL_SEND_EMAIL, GMAIL_ARCHIVE_THREAD, …",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "always", label: "Always allow this tool" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    expect(block.kind === "ask" && block.detail).toBe(
+      "GMAIL_SEND_EMAIL\nto: a@b.c\nsubject: Hi\nGMAIL_ARCHIVE_THREAD\nunidentified action",
+    );
+  });
+
   it("includes an optional review reason as the first detail line", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
