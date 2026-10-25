@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { handoffToGroupBot, loadBotGroupDirectory } from "./group-handoff.js";
 
 const run = {
@@ -15,6 +15,7 @@ function harness(
   existing?: { id?: string; sourceRuns: { id: string; botId: string }[] },
 ) {
   const runCreate = vi.fn(async () => ({ id: "run-b" }));
+  const taskCreate = vi.fn(async () => ({ id: "task-b" }));
   const messageCreate = vi.fn(async (_args: unknown) => ({ id: "message-1" }));
   const tx = {
     $queryRaw: vi.fn(async (..._args: unknown[]) => [{ id: "group-1" }]),
@@ -41,6 +42,7 @@ function harness(
     },
     message: {
       findUnique: vi.fn(async (_args: unknown) => existing ?? null),
+      findMany: vi.fn(async () => [{ blocks: [{ kind: "text", text: "営業CF120 設備投資80" }] }]),
       create: messageCreate,
     },
     thread: {
@@ -48,7 +50,7 @@ function harness(
         args.select.nextMessageSeq ? { nextMessageSeq: 2 } : { nextEventSeq: 2 },
       ),
     },
-    task: { create: vi.fn(async (_args: unknown) => ({ id: "task-b" })) },
+    task: { create: taskCreate },
     event: {
       findFirst: vi.fn(async () => ({ seq: 1 })),
       create: vi.fn(async () => ({ seq: 1 })),
@@ -66,10 +68,31 @@ function harness(
     messageCreate,
     runCreate,
     tx,
+    taskCreate,
   };
 }
 
 describe("group handoff ownership", () => {
+  afterEach(() => {
+    delete process.env.RAKAZO_GROUP_HANDOFF_CONTEXT;
+  });
+  it("passes prior user facts internally to the next bot when opted in", async () => {
+    process.env.RAKAZO_GROUP_HANDOFF_CONTEXT = "true";
+    const { deps, taskCreate } = harness([{ kind: "text", text: "Current instruction" }]);
+    await handoffToGroupBot(deps as never, run, "group-1", {
+      bot_id: "bot-b",
+      message: "Review the scenario",
+    });
+    expect(taskCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          prompt: expect.stringContaining("営業CF120 設備投資80"),
+        }),
+      }),
+    );
+    expect(deps.jobs.enqueue).toHaveBeenCalledOnce();
+  });
+
   it("marks a new ownership transfer as a follow-up with a chain hop", async () => {
     const { deps, messageCreate, runCreate } = harness([{ kind: "text", text: "user request" }]);
 

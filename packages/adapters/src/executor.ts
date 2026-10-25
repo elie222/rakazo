@@ -413,6 +413,7 @@ import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-che
 
 export { selectRunConnections } from "./connection-context.js";
 
+import { isGroupGoalScopedRun, scopeToGroupGoal } from "./local-group-history.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
@@ -421,6 +422,7 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
+  filterGroupPeerHandoffTool,
   isScheduleValueProvided,
   listSchedulesFromTool,
   SCHEDULE_TOOL_NAMES,
@@ -3949,6 +3951,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
           loadBotCommandEnvironment(deps.prisma, deps.secretStore, run),
           loadLoginPasswordRedactions(deps.prisma, deps.secretStore, run),
         ]);
+        // Restrict internal group teamwork to the current user request and
+        // later teammate messages. Old unrelated group uploads and compressed
+        // summaries must not silently become evidence for the latest goal.
+        const goalScopedTeamRun = isGroupGoalScopedRun(run.clientNonce, task.prompt);
+        const goalStartSeq =
+          goalScopedTeamRun && run.sourceMessageId
+            ? (messages.find((m) => m.id === run.sourceMessageId)?.seq ??
+              (
+                await deps.prisma.message.findUnique({
+                  where: { id: run.sourceMessageId, threadId: thread.id },
+                  select: { seq: true },
+                })
+              )?.seq)
+            : null;
+        if (goalScopedTeamRun && goalStartSeq == null) {
+          throw new Error("Cannot resolve the current user request for group delegation");
+        }
+        const scopedRunMessages =
+          goalStartSeq == null ? messages : scopeToGroupGoal(messages, goalStartSeq);
         const historySearchBeforeSeq =
           contextStrategy !== "current" && run.sourceMessageId
             ? (messages.find((message) => message.id === run.sourceMessageId)?.seq ??
@@ -4020,9 +4041,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ...connectedContext(connectedPlugins),
           connectedProviders: connectedComposio.map((row) => row.provider),
         };
-        const memoryScope = configuredMemory
-          ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
-          : null;
+        // Peer jobs must not resurrect unrelated past research via semantic memory.
+        const memoryScope =
+          !goalScopedTeamRun && configuredMemory
+            ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
+            : null;
         const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
 
         await deps.events.append({
@@ -4040,7 +4063,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const threadContext = threadContextForRun(
           run.trigger,
           {
-            messages: [...messages].reverse().map((m) => ({
+            messages: [...scopedRunMessages].reverse().map((m) => ({
               id: m.id,
               createdAt: m.createdAt?.toISOString(),
               seq: m.seq,
@@ -4052,8 +4075,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 ? `${messageToAgentHistoryText(m)}\n\n${PARTIAL_REPLY_NOTE}`
                 : messageToAgentHistoryText(m),
             })),
-            summary: thread.historyCompactionSummary,
-            historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
+            summary: goalScopedTeamRun ? null : thread.historyCompactionSummary,
+            historyCompactedUpToSeq: goalScopedTeamRun ? null : thread.historyCompactedUpToSeq,
           },
           messagingChannelRun,
           run.sourceMessageId,
@@ -4069,7 +4092,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           role,
           content,
         }));
-        const historyMessages = messages.map((message) => ({
+        const historyMessages = scopedRunMessages.map((message) => ({
           id: message.id,
           role: message.role,
           runId: message.runId,
@@ -4390,25 +4413,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
           graphical && browser.describe().capabilities.page && !heldForTakeover;
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const builtins = [
-          ...selectBuiltinToolsForRun({
-            ticketBoardEnabled: deps.ticketBoardEnabled,
-            phoneCallsEnabled: deps.phoneCallsEnabled,
-            historyRetrievalEnabled: contextStrategy !== "current",
-            graphicalToolsAllowed,
-            pageBrowserAllowed,
-            groupId: thread.groupId,
-            trigger: run.trigger,
-            semanticMemoryEnabled,
-            semanticMemoryForgets: Boolean(semanticMemory?.forget),
-            mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
-            mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
-            cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
-            messagingChannelRun,
-            voiceCall,
-            disabledBuiltinTools: bot.disabledBuiltinTools,
-            fleetManagement: bot.fleetManagement,
-            followUpFromUser: sourceMessage?.role === "user",
-          }),
+          ...filterGroupPeerHandoffTool(
+            selectBuiltinToolsForRun({
+              ticketBoardEnabled: deps.ticketBoardEnabled,
+              phoneCallsEnabled: deps.phoneCallsEnabled,
+              historyRetrievalEnabled: contextStrategy !== "current",
+              graphicalToolsAllowed,
+              pageBrowserAllowed,
+              groupId: thread.groupId,
+              trigger: run.trigger,
+              semanticMemoryEnabled,
+              semanticMemoryForgets: Boolean(semanticMemory?.forget),
+              mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
+              mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+              cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
+              messagingChannelRun,
+              voiceCall,
+              disabledBuiltinTools: bot.disabledBuiltinTools,
+              fleetManagement: bot.fleetManagement,
+              followUpFromUser: sourceMessage?.role === "user",
+            }),
+            run.clientNonce,
+          ),
           // Cross-owner agent connections only exist for chat-linked bots.
           ...(hasMessagingIdentity &&
           bot.crossSpaceCommunication === true &&
@@ -7712,6 +7738,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(result);
           }
           if (name === "handoff_to_bot") {
+            if (run.clientNonce?.startsWith("local-group-team:"))
+              return finish({
+                error:
+                  "Report your findings to this group. The coordinator handles further delegation.",
+              });
             const groupId = args.group_id ? String(args.group_id).trim() : thread.groupId;
             if (!groupId) return finish({ error: "group_id is required outside a group chat" });
             const result = await handoffToGroupBot(deps, run, groupId, {

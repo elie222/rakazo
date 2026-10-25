@@ -39,6 +39,18 @@ export function filterBuiltinToolsForRun<T extends { name: string }>(
     : tools;
 }
 
+/** Fanout peers report to the group; only the coordinator may assign new
+ * group ownership. This is enforced in the offered tool list, not just prompt
+ * instructions (which models may ignore). */
+export function filterGroupPeerHandoffTool<T extends { name: string }>(
+  tools: T[],
+  runClientNonce: string | null | undefined,
+): T[] {
+  return runClientNonce?.startsWith("local-group-team:")
+    ? tools.filter((tool) => tool.name !== "handoff_to_bot")
+    : tools;
+}
+
 /** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],

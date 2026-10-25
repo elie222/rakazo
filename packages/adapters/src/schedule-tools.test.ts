@@ -7,6 +7,7 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
+  filterGroupPeerHandoffTool,
   isOneShotRoutineCron,
   listSchedulesFromTool,
   resolveScheduleTiming,
@@ -1081,5 +1082,18 @@ describe("updateScheduleFromTool", () => {
       error: "A watch checks on its own interval; cancel it and create a schedule.",
     });
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+});
+
+describe("filterGroupPeerHandoffTool", () => {
+  const names = [{ name: "handoff_to_bot" }, { name: "web_search" }, { name: "run_subagent" }];
+  it("removes ownership transfers only for a scheduled team peer", () => {
+    expect(
+      filterGroupPeerHandoffTool(names, "local-group-team:root:peer").map((x) => x.name),
+    ).toEqual(["web_search", "run_subagent"]);
+  });
+  it("preserves ordinary group handoff for the coordinator", () => {
+    expect(filterGroupPeerHandoffTool(names, "local-agent-goal:root:1")).toEqual(names);
+    expect(filterGroupPeerHandoffTool(names, null)).toEqual(names);
   });
 });

@@ -756,6 +756,8 @@ model Run {
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
+  // Local opt-in coordinator: once the terminal peer returns, wake the original bot.
+  groupReviewScheduledAt DateTime?
   messagingMirroredAt  DateTime?
   teamChatMirroredAt   DateTime?
   createdAt            DateTime          @default(now())
@@ -770,6 +772,7 @@ model Run {
   @@index([status, leaseExpiresAt])
   @@index([status, updatedAt, id])
   @@index([botOutcomeReturnedAt, status])
+  @@index([trigger, status, groupReviewScheduledAt, completedAt])
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
