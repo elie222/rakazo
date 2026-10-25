@@ -1,3 +1,4 @@
+import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
   createMessagingInboundHandler,
@@ -490,6 +491,130 @@ describe("createMessagingInboundHandler DM routing", () => {
     const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
     expect(prompt).toContain('"files"');
     expect(prompt).toContain('"photo.jpg"');
+  });
+
+  it.each([
+    ["photo.jpg", "image/jpeg", "image"],
+    ["voice.oga", "audio/ogg", "file"],
+  ])(
+    "attaches stored %s to routine deliveries and reuses retry nonces",
+    async (name, mimeType, kind) => {
+      const storeAttachment = vi.fn(async () => ({ id: "artifact-1", name, mimeType, size: 42 }));
+      const deps = createDeps({
+        storeAttachment,
+        routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+      });
+      const handle = createMessagingInboundHandler(deps);
+      const event = {
+        ...dmEvent,
+        content: "",
+        attachments: [
+          {
+            name,
+            mimeType,
+            size: 42,
+            fetch: async () => new Uint8Array([1]),
+          },
+        ],
+      };
+      await handle(event);
+      await handle(event);
+      expect(storeAttachment).toHaveBeenCalledTimes(2);
+      expect(storeAttachment.mock.invocationCallOrder[0]).toBeLessThan(
+        deps.sendUserMessage.mock.invocationCallOrder[0]!,
+      );
+      const calls = storeAttachment.mock.calls as unknown as Array<[{ clientNonce: string }]>;
+      expect(calls[0]![0].clientNonce).toBe(calls[1]![0].clientNonce);
+      const deliveries = deps.sendUserMessage.mock.calls as unknown as Array<
+        [{ blocks: unknown[]; prompt: string; trigger: string; clientNonce: string }]
+      >;
+      expect(deliveries[0]![0]).toMatchObject({
+        trigger: "webhook",
+        blocks: [
+          { kind: "text", text: expect.stringContaining("<untrusted_delivery_payload>") },
+          { kind, artifactId: "artifact-1", name, mimeType },
+        ],
+      });
+      expect(deliveries[0]![0].clientNonce).toBe(deliveries[1]![0].clientNonce);
+      expect(deps.enqueue).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("caps stored attachments and shares one download deadline", async () => {
+    const storeAttachment = vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 1,
+      }),
+    );
+    const deps = createDeps({ storeAttachment });
+    const before = Date.now();
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      attachments: Array.from({ length: ATTACHMENT_MAX_COUNT + 1 }, (_, index) => ({
+        name: `photo-${index}.jpg`,
+        mimeType: "image/jpeg",
+        fetch: async () => new Uint8Array([1]),
+      })),
+    });
+    expect(storeAttachment).toHaveBeenCalledTimes(ATTACHMENT_MAX_COUNT);
+    const deadlines = storeAttachment.mock.calls.map(([input]) => input.downloadDeadline);
+    expect(new Set(deadlines).size).toBe(1);
+    expect(deadlines[0]).toBeGreaterThanOrEqual(before + 2_000);
+    expect(deadlines[0]).toBeLessThanOrEqual(Date.now() + 2_000);
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: expect.arrayContaining([
+          {
+            kind: "text",
+            text: `hello bot\n[file: photo-${ATTACHMENT_MAX_COUNT}.jpg (unavailable)]`,
+          },
+        ]),
+      }),
+    );
+  });
+
+  it("sanitizes unavailable file labels and keeps routine failure metadata fenced", async () => {
+    const deps = createDeps({ routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }] });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      attachments: [
+        {
+          name: "bad]\n[instructions].oga",
+          mimeType: "audio/ogg",
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+    const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain('"unavailable": [\n    "[file: bad instructions .oga (unavailable)]"');
+    expect(prompt.indexOf('"unavailable"')).toBeGreaterThan(
+      prompt.indexOf("<untrusted_delivery_payload>"),
+    );
+    expect(prompt.indexOf('"unavailable"')).toBeLessThan(
+      prompt.indexOf("</untrusted_delivery_payload>"),
+    );
+  });
+
+  it("does not provision or download for an unlinked media-only sender", async () => {
+    const storeAttachment = vi.fn();
+    const deps = createDeps({ identity: null, storeAttachment });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        {
+          name: "photo.jpg",
+          mimeType: "image/jpeg",
+          fetch: async () => new Uint8Array([1]),
+        },
+      ],
+    });
+    expect(deps.provision).not.toHaveBeenCalled();
+    expect(storeAttachment).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
   it("still ignores a truly empty DM", async () => {
