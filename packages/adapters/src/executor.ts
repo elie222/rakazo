@@ -5326,11 +5326,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
 
           // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
           // so only real denies match. A stored row is checked only while it still waits for an
-          // answer. web_fetch is gated per site; secret and app requests name their own target.
+          // answer. web_fetch and secret_request target one site per call; request_secret and
+          // connect_app name their own target.
           const repeatChecked =
             applied &&
             (!applied.duplicate || applied.effect.status === "intended") &&
-            !["web_fetch", "request_secret", "connect_app"].includes(name);
+            !["web_fetch", "secret_request", "request_secret", "connect_app"].includes(name);
           const deniedEarlier = repeatChecked
             ? (
                 await deps.prisma.externalEffect.findMany({
