@@ -93,6 +93,8 @@ export interface AppEnv {
   sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
   smtpUrl: string | undefined;
+  emailProvider?: string;
+  emailApiKey?: string;
   emailFrom: string | undefined;
   /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
   stripeSecretKey: string | undefined;
@@ -251,6 +253,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     smtpUrl: optional(source.SMTP_URL),
+    emailProvider: optional(source.EMAIL_PROVIDER),
+    emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),

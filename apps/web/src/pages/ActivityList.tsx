@@ -175,13 +175,7 @@ function ActivityError({
   return (
     <>
       <p className={`${compact ? "text-[12.5px]" : "text-[13px]"} text-destructive`}>{error}</p>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        className="mt-2 rounded-full"
-        onClick={onRetry}
-      >
+      <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={onRetry}>
         <Trans>Try again</Trans>
       </Button>
     </>
@@ -306,7 +300,7 @@ function ActivityFilters({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 rounded-full px-2 text-[12px]"
+            className="h-7 px-2 text-[12px]"
             data-testid="activity-reset-filters"
             onClick={() => onChange(emptyActivityFilters())}
           >

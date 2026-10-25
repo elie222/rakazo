@@ -231,7 +231,9 @@ export const DE_MESSAGES: Record<string, string> = {
   "Searching…": "Suche…",
   "Space actions for {name}": "Space-Aktionen für {name}",
   "Tap + to create a bot": "Tippe auf +, um einen Bot zu erstellen",
-  "This removes the empty space for everyone.": "Das entfernt den leeren Space für alle.",
+  "This removes the space for everyone.": "Das entfernt den Space für alle.",
+  "Delete {name} and its bot?": "{name} und seinen Bot löschen?",
+  "Delete {name} and its {count} bots?": "{name} und seine {count} Bots löschen?",
   "notifications silenced": "Benachrichtigungen stumm",
   unread: "ungelesen",
   // app/thread.tsx

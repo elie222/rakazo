@@ -20,9 +20,15 @@
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
-    "better-auth": "1.7.11"
+    "@rakazo/ui-tokens": "workspace:*",
+    "better-auth": "1.7.11",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-email": "6.11.3"
   },
   "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
     "typescript": "7.0.2",
     "vitest": "4.1.12"
   }

@@ -15,7 +15,7 @@ import {
   voiceChatHoldsMessage,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
-import { cn, Spinner } from "@rakazo/ui-web";
+import { Button, cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
 import type { CSSProperties, RefObject } from "react";
 import {
@@ -430,16 +430,17 @@ export const Transcript = memo(function Transcript({
         }
       >
         {olderCursor != null ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             disabled={loadingOlder}
             onClick={() => void loadOlder()}
             aria-label={t`Load earlier messages`}
-            className="flex items-center gap-2 self-center rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground/75 disabled:opacity-50"
+            className="self-center text-muted-foreground"
           >
             {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
             {t`Load earlier messages`}
-          </button>
+          </Button>
         ) : null}
         {groupVoiceChats(reactionView.visibleMessages).map((item) => {
           if (item.kind === "voiceChat") {
@@ -590,19 +591,20 @@ export const Transcript = memo(function Transcript({
           }}
         />
       ) : null}
-      <button
+      <Button
         ref={jumpButtonRef}
-        type="button"
+        variant="floating"
+        size="icon-lg"
         aria-label={t`Jump to latest`}
         aria-hidden={atEnd}
         tabIndex={atEnd ? -1 : 0}
         onClick={jumpToLatest}
-        className={`absolute bottom-11 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-border bg-muted/95 text-foreground/75 shadow-md backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-border motion-reduce:transition-none ${
+        className={`absolute bottom-11 left-1/2 z-20 -translate-x-1/2 shadow-md transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none ${
           atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
-        <ArrowDown size={17} strokeWidth={1.8} />
-      </button>
+        <ArrowDown strokeWidth={1.8} className="size-[17px]" />
+      </Button>
     </div>
   );
 });

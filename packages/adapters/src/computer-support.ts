@@ -83,8 +83,9 @@ export function teamBotWorkspaceDirectory(botId: string): string {
 export function resolveBotWorkspacePath(
   scope: ComputerMode,
   botId: string,
-  requestedPath: string,
+  rawPath: string,
 ): string {
+  const requestedPath = expandHomePrefix(rawPath);
   if (scope !== "team") return requestedPath;
   const explicitRootPath = stripVirtualWorkspaceRoot(requestedPath);
   const normalized = normalizeWorkspacePath(explicitRootPath ?? requestedPath);
@@ -141,7 +142,7 @@ export function displayBotWorkspacePath(
 }
 
 function isBotRelativeRequest(value: string): boolean {
-  if (stripVirtualWorkspaceRoot(value) !== null) return false;
+  if (stripVirtualWorkspaceRoot(expandHomePrefix(value)) !== null) return false;
   return !isTeamRootPath(normalizeWorkspacePath(value));
 }
 
@@ -152,6 +153,11 @@ function isTeamRootPath(value: string): boolean {
     value === "bots" ||
     value.startsWith("bots/")
   );
+}
+
+// A leading ~ means the workspace root, the same as a leading /.
+function expandHomePrefix(value: string): string {
+  return value.replace(/^~([\\/]|$)/, (_, separator: string) => separator || "/");
 }
 
 function stripVirtualWorkspaceRoot(value: string): string | null {

@@ -515,7 +515,7 @@ export function VoiceSettingsOverlay({
                   <Button
                     type="button"
                     variant="secondary"
-                    className="mt-4 rounded-full"
+                    className="mt-4"
                     disabled={busy || !status?.ready}
                     onClick={() => void testVoice()}
                   >

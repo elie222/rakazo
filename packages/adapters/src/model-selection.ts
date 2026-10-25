@@ -157,7 +157,6 @@ export async function modelCredentialAuthKindsForSpace(
         id: true,
         modelId: true,
         thinkingLevel: true,
-        isDefault: true,
         updatedAt: true,
         credential: {
           select: {
@@ -507,7 +506,7 @@ export async function findConnectedModelCredential(
     if (credential.id === selected.id) continue;
     const candidate = await readSecret(credential);
     candidates.push({
-      credential: { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null },
+      credential: { ...credential, defaultModel: null, thinkingLevel: null },
       defaultModel: null,
       enabledModelIds: candidate?.kind === "openai_compatible" ? candidate.enabledModelIds : [],
     });

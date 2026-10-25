@@ -125,7 +125,7 @@ export function ConnectionNameField({
           className="h-10 text-foreground"
         />
         {trimmed && trimmed !== credential.label ? (
-          <Button type="submit" variant="secondary" className="h-10 rounded-full" disabled={saving}>
+          <Button type="submit" variant="secondary" className="h-10" disabled={saving}>
             {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
           </Button>
         ) : null}

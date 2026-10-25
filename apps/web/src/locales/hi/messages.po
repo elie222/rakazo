@@ -119,6 +119,10 @@ msgstr ""
 msgid "{amount} / {period}"
 msgstr ""
 
+#: src/pages/shell/dialogs.tsx
+msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
+msgstr "{botCount, plural, one {{name} और उसका # बॉट हटाएँ?} other {{name} और उसके # बॉट हटाएँ?}}"
+
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "{botName} का कंप्यूटर"
@@ -1088,6 +1092,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
 
@@ -1512,6 +1517,10 @@ msgstr "Executor कनेक्ट करें"
 msgid "Connect MCP server “{name}”"
 msgstr "MCP सर्वर “{name}” कनेक्ट करें"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Connect memory provider"
+msgstr "मेमोरी प्रोवाइडर कनेक्ट करें"
+
 #: src/components/ModelCredits.tsx
 msgid "Connect my own"
 msgstr ""
@@ -1928,7 +1937,7 @@ msgstr ""
 msgid "Could not rename section"
 msgstr "अनुभाग का नाम नहीं बदला जा सका"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "स्पेस का नाम नहीं बदला जा सका"
 
@@ -2290,6 +2299,7 @@ msgid "Delete section"
 msgstr "अनुभाग हटाएँ"
 
 #: src/pages/Shell.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr ""
 
@@ -2467,6 +2477,7 @@ msgstr "हर नाम का उपयोग केवल एक बार �
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "संपादित करें"
 
@@ -2571,6 +2582,10 @@ msgstr "हर"
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "हर {intervalAmountSelect} {intervalUnitSelect}"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Every bot in this space reads these notes and keeps them up to date."
+msgstr "इस स्पेस के सभी बॉट ये नोट्स पढ़ते हैं और इन्हें अपडेट रखते हैं।"
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -3127,6 +3142,10 @@ msgstr ""
 msgid "Leave"
 msgstr ""
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
+msgstr "बॉट्स को MEMORY.md के साथ-साथ अर्थ के आधार पर तथ्य सहेजने और याद करने देता है।"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "लाइट"
@@ -3213,10 +3232,6 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 #: src/pages/shell/transcript.tsx
 msgid "Loading…"
 msgstr "लोड हो रहा है…"
-
-#: src/pages/memory-providers/ConnectionModeFields.tsx
-msgid "Local"
-msgstr "लोकल"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
@@ -3575,6 +3590,7 @@ msgstr "माइक बंद है"
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "नाम"
 
@@ -3881,10 +3897,6 @@ msgstr "1 तारीख को {0} बजे"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
-#: src/pages/Shell.tsx
-msgid "Only empty spaces can be deleted. Delete its bots and groups first."
-msgstr ""
-
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4188,10 +4200,6 @@ msgstr "पुल अनुरोध"
 msgid "Queued"
 msgstr "कतार में"
 
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
-
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -4416,8 +4424,7 @@ msgstr "नाम बदलें"
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Rename space"
 msgstr "स्पेस का नाम बदलें"
 
@@ -4446,6 +4453,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "उत्तर दें"
 
@@ -4643,6 +4651,7 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "सहेजें"
 
@@ -4770,6 +4779,10 @@ msgstr "सुरक्षा"
 msgid "Select a bot"
 msgstr "एक बॉट चुनें"
 
+#: src/pages/memory-providers/ConnectionModeFields.tsx
+msgid "Self-hosted"
+msgstr "सेल्फ़-होस्टेड"
+
 #: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "भेजें"
@@ -4869,8 +4882,8 @@ msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all rep
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Shared documents"
-msgstr "साझा दस्तावेज़"
+msgid "Shared memory"
+msgstr "साझा मेमोरी"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"

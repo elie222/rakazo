@@ -69,7 +69,6 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   Menu,
   Monitor,
-  Pencil,
   Phone,
   Plus,
   Search,
@@ -219,11 +218,11 @@ import {
   ClearConversationDialog,
   DeleteBotDialog,
   DeleteItemDialog,
+  DeleteSpaceDialog,
   NewBotSectionDialog,
   NewSpaceDialog,
   PickerInfoDialog,
   RenameBotSectionDialog,
-  RenameSpaceDialog,
 } from "./shell/dialogs";
 import type { RosterDropTarget } from "./shell/roster-drop";
 import { resolveRosterDrop } from "./shell/roster-drop";
@@ -590,7 +589,6 @@ function SpaceShell() {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
-  const [renameSpaceTarget, setRenameSpaceTarget] = useState<Space | null>(null);
   const [spaceMenu, setSpaceMenu] = useState<{
     id: string;
     position: { x: number; y: number };
@@ -2619,7 +2617,36 @@ function SpaceShell() {
   // Space-scoped sections bind their own rpc client to this space, so another
   // space's settings open in place without switching the app or reloading.
   function openSpaceSettings(spaceId: string) {
-    openSettings("models", spaceId);
+    openSettings("space", spaceId);
+  }
+
+  async function renameSpace(spaceId: string, name: string) {
+    await commitSpaceRename({
+      rename: async () => {
+        await rpc.spaces.rename({ spaceId, name });
+      },
+      apply: () => {
+        setSpaces((current) =>
+          current.map((space) => (space.id === spaceId ? { ...space, name } : space)),
+        );
+      },
+      refresh: () => refreshBots(),
+    });
+  }
+
+  async function removeSpace(spaceId: string) {
+    const result = await rpc.spaces.remove({ spaceId });
+    if (!alive.current) return;
+    setPanel(null);
+    const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+    if (effectiveSpaceId === spaceId) {
+      // The auth boundary changed, so reload like a space switch.
+      if (selectSpace(result.activeSpaceId)) {
+        window.location.assign("/app");
+        return;
+      }
+    }
+    await refreshBots(true);
   }
 
   function openCreatedBot(bot: Bot) {
@@ -3456,20 +3483,21 @@ function SpaceShell() {
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
             <div className="flex items-center">
-              <button
-                type="button"
+              <Button
+                variant="floating"
+                size="icon-lg"
                 aria-label={t`Open navigation`}
                 onClick={() => setMobileSidebarOpen(true)}
-                className="app-no-drag grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-border bg-muted/90 backdrop-blur text-foreground/75 hover:bg-accent md:hidden"
+                className="app-no-drag md:hidden"
               >
-                <Menu size={19} strokeWidth={1.7} />
-              </button>
+                <Menu strokeWidth={1.7} className="size-[19px]" />
+              </Button>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="floating"
               data-testid="bot-settings-trigger"
               onClick={() => setPanel(inGroup ? "group-settings" : "settings")}
-              className="app-no-drag flex min-w-0 items-center gap-2 rounded-full border border-border bg-muted/90 backdrop-blur py-1 ps-1 pe-3.5 hover:bg-accent"
+              className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
             >
               {inGroup ? (
                 <GroupAvatar
@@ -3491,12 +3519,13 @@ function SpaceShell() {
                     : (active?.name ?? t`Select a bot`)}
                 </span>
               </span>
-            </button>
+            </Button>
             <div className="flex items-center justify-self-end gap-2">
               {bootstrapMe?.phoneCallsEnabled && !inGroup && active ? (
                 <IconTooltip label={call?.botId === active.id ? t`Open call` : t`Call`}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="floating"
+                    size="icon-lg"
                     data-testid="call-button"
                     aria-label={call?.botId === active.id ? t`Open call` : t`Call`}
                     onClick={() => {
@@ -3507,16 +3536,17 @@ function SpaceShell() {
                       callBot(active);
                     }}
                     data-active={call?.botId === active.id ? "" : undefined}
-                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                    className="app-no-drag"
                   >
-                    <Phone size={17} strokeWidth={1.6} className="text-foreground/75" />
-                  </button>
+                    <Phone strokeWidth={1.6} className="size-[17px]" />
+                  </Button>
                 </IconTooltip>
               ) : null}
               {!inGroup && active ? (
                 <IconTooltip label={t`Agent computer`}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="floating"
+                    size="icon-lg"
                     aria-label={t`Agent computer`}
                     aria-pressed={panel === "computer"}
                     onClick={() => {
@@ -3527,11 +3557,10 @@ function SpaceShell() {
                         void refreshThread(active.id).catch(() => undefined);
                       }
                     }}
-                    data-active={panel === "computer" ? "" : undefined}
-                    className="app-no-drag grid h-[34px] w-[34px] place-items-center rounded-full border border-border bg-muted/90 backdrop-blur hover:bg-accent data-active:bg-accent"
+                    className="app-no-drag"
                   >
-                    <Monitor size={18} strokeWidth={1.6} className="text-foreground/75" />
-                  </button>
+                    <Monitor strokeWidth={1.6} className="size-[18px]" />
+                  </Button>
                 </IconTooltip>
               ) : null}
             </div>
@@ -3947,17 +3976,6 @@ function SpaceShell() {
                   {t`Settings`}
                 </DropdownMenuItem>
               ) : null}
-              {spaceMenuTarget?.canRename ? (
-                <DropdownMenuItem
-                  onClick={() => {
-                    setRenameSpaceTarget(spaceMenuTarget);
-                    setSpaceMenu(null);
-                  }}
-                >
-                  <Pencil />
-                  {t`Rename space`}
-                </DropdownMenuItem>
-              ) : null}
               {spaceMenuTarget?.canDelete ? (
                 <DropdownMenuItem
                   variant="destructive"
@@ -4001,51 +4019,13 @@ function SpaceShell() {
           />
         ) : null}
 
-        {renameSpaceTarget ? (
-          <RenameSpaceDialog
-            space={renameSpaceTarget}
-            onCancel={() => setRenameSpaceTarget(null)}
-            onConfirm={async (name) => {
-              const spaceId = renameSpaceTarget.id;
-              await commitSpaceRename({
-                rename: async () => {
-                  await rpc.spaces.rename({ spaceId, name });
-                },
-                apply: () => {
-                  setSpaces((current) =>
-                    current.map((space) => (space.id === spaceId ? { ...space, name } : space)),
-                  );
-                },
-                refresh: () => refreshBots(),
-              });
-              setRenameSpaceTarget(null);
-            }}
-          />
-        ) : null}
-
         {deleteSpaceTarget ? (
-          <DeleteItemDialog
-            item={deleteSpaceTarget}
-            noun="space"
-            description={
-              <Trans>Only empty spaces can be deleted. Delete its bots and groups first.</Trans>
-            }
+          <DeleteSpaceDialog
+            space={deleteSpaceTarget}
             onCancel={() => setDeleteSpaceTarget(null)}
             onConfirm={async () => {
-              const targetId = deleteSpaceTarget.id;
-              const result = await rpc.spaces.remove({ spaceId: targetId });
-              if (!alive.current) return;
+              await removeSpace(deleteSpaceTarget.id);
               setDeleteSpaceTarget(null);
-              setPanel(null);
-              const effectiveSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
-              if (effectiveSpaceId === targetId) {
-                // The auth boundary changed, so reload like a space switch.
-                if (selectSpace(result.activeSpaceId)) {
-                  window.location.assign("/app");
-                  return;
-                }
-              }
-              await refreshBots(true);
             }}
           />
         ) : null}
@@ -4193,6 +4173,11 @@ function SpaceShell() {
           <SettingsOverlay
             space={settingsSpace}
             spaces={spaces}
+            onRenameSpace={renameSpace}
+            onDeleteSpace={async (spaceId) => {
+              await removeSpace(spaceId);
+              if (alive.current) setOverlay(null);
+            }}
             currentSpaceId={currentSpaceId}
             onSpaceChange={(spaceId) => setOverlay({ ...overlay, spaceId })}
             name={session.data?.user.name ?? ""}

@@ -95,6 +95,19 @@ vi.mock("./MemorySettingsOverlay", () => ({
     return null;
   },
 }));
+vi.mock("./SpaceSettingsPanel", () => ({
+  SpaceSettingsPanel: ({
+    space,
+    onDelete,
+  }: {
+    space: { name: string };
+    onDelete: () => Promise<void>;
+  }) => (
+    <button type="button" data-testid="space-settings" onClick={() => void onDelete()}>
+      {space.name}
+    </button>
+  ),
+}));
 vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: () => null }));
 vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
@@ -164,6 +177,34 @@ it("names the space a space-scoped section acts on and switches it in place", as
     await act(async () => options[1]?.click());
 
     await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b"));
+  } finally {
+    await cleanup();
+  }
+});
+
+it("opens the Space section for the space it acts on, with the space picker", async () => {
+  const onDeleteSpace = vi.fn(async () => undefined);
+  const { container, cleanup } = await render({
+    space: { ...acme, canDelete: true },
+    spaces,
+    onSpaceChange: vi.fn(),
+    onDeleteSpace,
+    section: "space",
+  });
+  try {
+    const nav = [...container.querySelectorAll('[data-testid^="settings-nav-"]')].map((item) =>
+      item.getAttribute("data-testid"),
+    );
+    expect(nav.slice(0, 3)).toEqual([
+      "settings-nav-general",
+      "settings-nav-space",
+      "settings-nav-models",
+    ]);
+    expect(container.querySelector('[data-testid="settings-space"]')?.textContent).toBe("Acme");
+    const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
+    expect(panel?.textContent).toBe("Acme");
+    await act(async () => panel?.click());
+    expect(onDeleteSpace).toHaveBeenCalledWith("space-a");
   } finally {
     await cleanup();
   }

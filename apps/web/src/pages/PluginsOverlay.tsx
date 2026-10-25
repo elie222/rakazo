@@ -466,7 +466,6 @@ export function PluginsOverlay({
         <Button
           type="button"
           variant="secondary"
-          className="rounded-full"
           size="sm"
           disabled={connecting}
           onClick={(event) => {
@@ -482,7 +481,6 @@ export function PluginsOverlay({
       <Button
         type="button"
         variant="secondary"
-        className="rounded-full"
         size="sm"
         disabled={connecting}
         onClick={(event) => {
@@ -574,7 +572,6 @@ export function PluginsOverlay({
           <Button
             type="button"
             variant="secondary"
-            className="rounded-full"
             size="sm"
             disabled={uninstalling || connecting}
             onClick={() => void uninstall(item)}
@@ -603,7 +600,7 @@ export function PluginsOverlay({
               <Button
                 type="button"
                 variant="ghost"
-                className="h-8 shrink-0 rounded-full px-2.5 text-[12px] text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+                className="h-8 shrink-0 px-2.5 text-[12px] text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
                 size="sm"
                 disabled={pending === row.id || uninstalling}
                 onClick={() => void revokeAccount(row, item)}
@@ -615,7 +612,7 @@ export function PluginsOverlay({
           <Button
             type="button"
             variant="ghost"
-            className="h-9 rounded-lg px-2 text-[14px] text-muted-foreground"
+            className="h-9 px-2 text-[14px] text-muted-foreground"
             size="sm"
             disabled={connecting || uninstalling}
             onClick={() => void connect(item)}
@@ -848,7 +845,6 @@ export function PluginsOverlay({
                   <Button
                     type="button"
                     variant="secondary"
-                    className="rounded-full"
                     size="sm"
                     onClick={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}
                   >
@@ -907,7 +903,6 @@ export function PluginsOverlay({
                           <Button
                             type="submit"
                             variant="secondary"
-                            className="rounded-full"
                             size="sm"
                             disabled={!catalogFeedQuery.trim() || catalogFeedPending}
                           >
@@ -959,7 +954,6 @@ export function PluginsOverlay({
                                     key={`${result.domain}:${surface.slug}`}
                                     type="button"
                                     variant="secondary"
-                                    className="rounded-full"
                                     size="sm"
                                     disabled={!canAdd}
                                     title={canAdd ? undefined : t`Manual setup required`}
@@ -979,7 +973,6 @@ export function PluginsOverlay({
                   <Button
                     type="button"
                     variant="secondary"
-                    className="rounded-full"
                     size="sm"
                     aria-expanded={setupOpen}
                     onClick={() => setSetupOpen((current) => !current)}
@@ -1002,7 +995,6 @@ export function PluginsOverlay({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full"
                       size="sm"
                       onClick={() => beginSource("mcp")}
                     >
@@ -1011,7 +1003,6 @@ export function PluginsOverlay({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full"
                       size="sm"
                       onClick={() => beginSource("api")}
                     >
@@ -1020,7 +1011,6 @@ export function PluginsOverlay({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full"
                       size="sm"
                       onClick={() => beginSource("graphql")}
                     >
@@ -1029,7 +1019,6 @@ export function PluginsOverlay({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full"
                       size="sm"
                       onClick={() => beginSource("executor")}
                     >
@@ -1038,7 +1027,6 @@ export function PluginsOverlay({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full"
                       size="sm"
                       onClick={() => beginSource("treg")}
                     >
@@ -1139,7 +1127,6 @@ export function PluginsOverlay({
                           <Button
                             type="button"
                             variant="secondary"
-                            className="rounded-full"
                             size="sm"
                             disabled={pending === "install-source"}
                             onClick={() => void installSource()}
@@ -1153,7 +1140,6 @@ export function PluginsOverlay({
                           <Button
                             type="button"
                             variant="secondary"
-                            className="rounded-full"
                             size="sm"
                             onClick={() => setSourceKind(null)}
                           >
@@ -1197,7 +1183,6 @@ export function PluginsOverlay({
                         <Button
                           type="button"
                           variant="secondary"
-                          className="rounded-full"
                           size="sm"
                           disabled={pending === source.id}
                           onClick={() => void removeSource(source)}

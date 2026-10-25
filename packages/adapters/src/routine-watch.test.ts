@@ -252,6 +252,31 @@ describe("tickRoutineWatch", () => {
     expect(deps.connector!.execute).toHaveBeenCalledTimes(readOnly ? 1 : 0);
   });
 
+  it("runs the tool call on a fresh time budget when discovery used up its own", async () => {
+    const { deps, routine } = setup({ data: "ok" });
+    const budgets: AbortController[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const budget = new AbortController();
+      budgets.push(budget);
+      return budget.signal;
+    });
+    try {
+      vi.mocked(deps.connector!.discoverTools).mockImplementation(async (ctx) => {
+        budgets.find((budget) => budget.signal === ctx.signal)!.abort();
+        return [{ name: "brain_changed", readOnly: true, description: "Read", inputSchema: {} }];
+      });
+      let callSignal: AbortSignal | undefined;
+      vi.mocked(deps.connector!.execute).mockImplementation(async function* (_call, ctx) {
+        callSignal = ctx.signal;
+        yield { type: "result", data: "ok" };
+      });
+      await expect(checkRoutineWatch(deps, routine)).resolves.toMatchObject({ changed: false });
+      expect(callSignal?.aborted).toBe(false);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it.each([{ isError: true, content: [{ type: "text", text: "failed" }] }, { error: "failed" }])(
     "rejects error result envelopes",
     async (data) => {

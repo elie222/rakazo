@@ -12,6 +12,7 @@ import {
 } from "@rakazo/contracts";
 import { z } from "zod";
 import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
+import { BROWSER_ACT_KINDS } from "./browser-tools.js";
 import { messageUserMaxLength } from "./user-progress.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
@@ -307,8 +308,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "browser_act",
-    description:
-      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, upload, fill_secret). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. type presses keys like a keyboard and replaces the field\'s text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+    description: `Click or fill page elements by ref from browser_snapshot (kinds: ${BROWSER_ACT_KINDS.join(", ")}). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. type presses keys like a keyboard and replaces the field's text; use it for code boxes and fields that ignore fill. For a code split into one box per digit, type the whole code once into the first box, and to correct it type it again. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -319,7 +319,7 @@ export const builtinAgentTools: ConnectorTool[] = [
             properties: {
               kind: {
                 type: "string",
-                enum: ["click", "fill", "type", "upload", "fill_secret"],
+                enum: [...BROWSER_ACT_KINDS],
               },
               ref: { type: "string", description: "Element ref from browser_snapshot." },
               text: {

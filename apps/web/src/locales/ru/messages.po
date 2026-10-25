@@ -119,6 +119,10 @@ msgstr "Экран {0}"
 msgid "{amount} / {period}"
 msgstr ""
 
+#: src/pages/shell/dialogs.tsx
+msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
+msgstr "{botCount, plural, one {Удалить {name} и # бота?} few {Удалить {name} и # бота?} many {Удалить {name} и # ботов?} other {Удалить {name} и # бота?}}"
+
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "Компьютер {botName}"
@@ -1088,6 +1092,7 @@ msgstr "Не может читать изображения"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "Отмена"
 
@@ -1512,6 +1517,10 @@ msgstr "Подключить Executor"
 msgid "Connect MCP server “{name}”"
 msgstr "Подключите MCP-сервер «{name}»"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Connect memory provider"
+msgstr "Подключить поставщика памяти"
+
 #: src/components/ModelCredits.tsx
 msgid "Connect my own"
 msgstr ""
@@ -1928,7 +1937,7 @@ msgstr "Не удалось переименовать соединение"
 msgid "Could not rename section"
 msgstr "Не удалось переименовать раздел"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "Не удалось переименовать пространство"
 
@@ -2290,6 +2299,7 @@ msgid "Delete section"
 msgstr "Удалить раздел"
 
 #: src/pages/Shell.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "Удалить пространство"
 
@@ -2467,6 +2477,7 @@ msgstr "Каждое имя можно использовать только о�
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "Изменить"
 
@@ -2571,6 +2582,10 @@ msgstr "Каждые"
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "каждые {intervalAmountSelect} {intervalUnitSelect}"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Every bot in this space reads these notes and keeps them up to date."
+msgstr "Все боты в этом пространстве читают эти заметки и поддерживают их в актуальном состоянии."
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -3127,6 +3142,10 @@ msgstr "Позже"
 msgid "Leave"
 msgstr "Выйти"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
+msgstr "Позволяет ботам сохранять и находить факты по смыслу в дополнение к MEMORY.md."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Светлая"
@@ -3213,10 +3232,6 @@ msgstr "Загрузка поставщиков голосовой связи…
 #: src/pages/shell/transcript.tsx
 msgid "Loading…"
 msgstr "Загрузка…"
-
-#: src/pages/memory-providers/ConnectionModeFields.tsx
-msgid "Local"
-msgstr "Местный"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
@@ -3575,6 +3590,7 @@ msgstr "микрофон выключен"
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "Имя"
 
@@ -3881,10 +3897,6 @@ msgstr "1-го числа в {0}"
 msgid "One-time purchase. Credits do not expire."
 msgstr ""
 
-#: src/pages/Shell.tsx
-msgid "Only empty spaces can be deleted. Delete its bots and groups first."
-msgstr "Удалить можно только пустые пространства. Сначала удалите их ботов и группы."
-
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4188,10 +4200,6 @@ msgstr "Запрос на слияние"
 msgid "Queued"
 msgstr "В очереди"
 
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
-
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
 msgstr ""
@@ -4416,8 +4424,7 @@ msgstr "Переименовать"
 msgid "Rename section"
 msgstr "Переименовать раздел"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Rename space"
 msgstr "Переименовать пространство"
 
@@ -4446,6 +4453,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "Ответить"
 
@@ -4643,6 +4651,7 @@ msgstr "Запускается, когда этот бот получает пр
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "Сохранить"
 
@@ -4770,6 +4779,10 @@ msgstr "Безопасность"
 msgid "Select a bot"
 msgstr "Выберите бота"
 
+#: src/pages/memory-providers/ConnectionModeFields.tsx
+msgid "Self-hosted"
+msgstr "Свой сервер"
+
 #: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "Отправить"
@@ -4869,8 +4882,8 @@ msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all rep
 msgstr "Общий чат с {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} ботами. Все отвечают в одной ветке."
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Shared documents"
-msgstr "Общие документы"
+msgid "Shared memory"
+msgstr "Общая память"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"

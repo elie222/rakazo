@@ -766,7 +766,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "sk-…": "sk-…",
   Submitted: "Отправлено",
   "Teach a task": "Научить задачу",
-  "This removes the empty space for everyone.": "Это удалит пустое пространство для всех.",
+  "This removes the space for everyone.": "Это удалит пространство для всех.",
+  "Delete {name} and its bot?": "Удалить {name} и его бота?",
+  "Delete {name} and its {count} bots?": "Удалить {name} и его ботов ({count})?",
   "This removes every message and stops current work. The bot, computer, memory, and routines are kept.":
     "Это удалит все сообщения и остановит текущую работу. Бот, компьютер, память и задачи сохранятся.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":

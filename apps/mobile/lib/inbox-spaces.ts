@@ -6,7 +6,7 @@ import { t } from "./i18n";
 
 export type InboxSpace = Pick<
   MobileSpace,
-  "id" | "name" | "isDefault" | "hasContent" | "canDelete" | "botSections"
+  "id" | "name" | "isDefault" | "hasContent" | "canDelete" | "botCount" | "botSections"
 > & {
   bots: (MobileBot | SpaceBot)[];
   groups: (MobileGroup | SpaceGroup)[];
@@ -28,10 +28,17 @@ export type InboxSpaceItem =
       count?: number;
     };
 
-export function canDeleteInboxSpace(
-  space: Pick<InboxSpace, "isDefault" | "hasContent" | "canDelete">,
-) {
-  return !space.isDefault && !space.hasContent && space.canDelete === true;
+export function canDeleteInboxSpace(space: Pick<InboxSpace, "isDefault" | "canDelete">) {
+  return !space.isDefault && space.canDelete === true;
+}
+
+/** Names every bot that goes with the space, archived and other members' included. */
+export function deleteSpaceTitle(space: Pick<InboxSpace, "name" | "botCount" | "bots">) {
+  // Servers before botCount only listed the member's active bots.
+  const bots = space.botCount ?? space.bots.length;
+  if (bots === 0) return t("Delete {name}?", { name: space.name });
+  if (bots === 1) return t("Delete {name} and its bot?", { name: space.name });
+  return t("Delete {name} and its {count} bots?", { name: space.name, count: bots });
 }
 
 /** Only headings with no chats under them, counting chats in collapsed sections. */

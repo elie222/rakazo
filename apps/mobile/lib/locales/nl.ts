@@ -224,8 +224,9 @@ export const NL_MESSAGES: Record<string, string> = {
   "Searching…": "Bezig met zoeken…",
   "Space actions for {name}": "Space-acties voor {name}",
   "Tap + to create a bot": "Tik op + om een bot te maken",
-  "This removes the empty space for everyone.":
-    "Hiermee wordt de lege space voor iedereen verwijderd.",
+  "This removes the space for everyone.": "Hiermee wordt de space voor iedereen verwijderd.",
+  "Delete {name} and its bot?": "{name} en de bijbehorende bot verwijderen?",
+  "Delete {name} and its {count} bots?": "{name} en de {count} bijbehorende bots verwijderen?",
   "notifications silenced": "meldingen gedempt",
   unread: "ongelezen",
   "@{name}": "@{name}",

@@ -1,5 +1,6 @@
 const SETTINGS_SECTIONS = [
   "general",
+  "space",
   "models",
   "memory",
   "voice",

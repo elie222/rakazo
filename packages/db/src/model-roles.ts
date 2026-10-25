@@ -7,25 +7,10 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
-import { writeSpaceBackupModels } from "./model-backups.js";
-import { selectSpaceModelPreference } from "./model-credentials.js";
 import { withTransactionRetry } from "./transaction-retry.js";
 
 type Scope = { userId: string; spaceId: string };
 type RoleClient = Pick<PrismaClient, "spaceModelRoleChoice">;
-type RoleWriteClient = Pick<
-  PrismaClient,
-  "spaceModelRoleChoice" | "spaceModelPreference" | "spaceBackupModel"
->;
-
-export type ModelRoleWriteOptions = {
-  /**
-   * The connection serving a newly written main model that names none, or null for a
-   * deployment-managed one. The previous release reads the main model from that
-   * connection's default preference.
-   */
-  primaryCredentialId?: string | null;
-};
 
 /** The member's own ordered models for a purpose; empty when the deployment's defaults apply. */
 export async function getModelRole(
@@ -65,7 +50,6 @@ export async function updateModelRole(
   scope: Scope,
   role: ModelRole,
   patch: Partial<ModelRoleSettings>,
-  options: ModelRoleWriteOptions = {},
 ): Promise<ModelRoleSettings> {
   return withTransactionRetry(() =>
     prisma.$transaction(
@@ -76,7 +60,7 @@ export async function updateModelRole(
           SELECT 1 AS locked FROM "space_members" WHERE "spaceId" = ${scope.spaceId} AND "userId" = ${scope.userId} FOR UPDATE
         `;
         if (members.length !== 1) throw new Error("Space membership not found");
-        return writeModelRole(tx, scope, role, patch, options);
+        return writeModelRole(tx, scope, role, patch);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     ),
@@ -88,11 +72,10 @@ export async function updateModelRole(
  * thinking level keeps the one its model already had, so reordering never resets effort.
  */
 export async function writeModelRole(
-  tx: RoleWriteClient,
+  tx: RoleClient,
   scope: Scope,
   role: ModelRole,
   patch: Partial<ModelRoleSettings>,
-  options: ModelRoleWriteOptions = {},
 ): Promise<ModelRoleSettings> {
   const scoped = { userId: scope.userId, spaceId: scope.spaceId };
   const current = await getModelRole(tx, scope, role);
@@ -145,50 +128,5 @@ export async function writeModelRole(
       credentialId: row.credentialId ?? null,
     })),
   });
-  if (role === "main") {
-    await mirrorPreviousMainModel(
-      tx,
-      scope,
-      {
-        primary: patch.primary === undefined ? undefined : primary,
-        // The previous release lists each model once, whichever connection runs it.
-        backups: backups.filter(
-          (backup, index) =>
-            (!primary || backupChoiceKey(backup) !== backupChoiceKey(primary)) &&
-            backups.findIndex((item) => backupChoiceKey(item) === backupChoiceKey(backup)) ===
-              index,
-        ),
-      },
-      primary?.credentialId ?? options.primaryCredentialId ?? null,
-    );
-  }
   return getModelRole(tx, scope, role);
-}
-
-/** Keeps the default preference and space_backup_models the previous release reads. */
-async function mirrorPreviousMainModel(
-  tx: RoleWriteClient,
-  scope: Scope,
-  main: { primary: ModelRoleChoice | null | undefined; backups: ModelRoleChoice[] },
-  credentialId: string | null,
-) {
-  if (main.primary && credentialId) {
-    await selectSpaceModelPreference(
-      tx,
-      scope,
-      credentialId,
-      main.primary.modelId,
-      main.primary.thinkingLevel ?? null,
-    );
-  } else if (main.primary !== undefined) {
-    await tx.spaceModelPreference.updateMany({
-      where: { userId: scope.userId, spaceId: scope.spaceId, isDefault: true },
-      data: { isDefault: false },
-    });
-  }
-  await writeSpaceBackupModels(
-    tx,
-    scope,
-    main.backups.map(({ provider, modelId }) => ({ provider, modelId })),
-  );
 }

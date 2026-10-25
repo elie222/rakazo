@@ -381,6 +381,9 @@ export async function destroyBot(
     deleteMemories: boolean;
     /** Runs in the deletion transaction once the bot row is locked; may set `deleteMemories`. */
     within?: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
+    /** Fail before deleting anything when the provider cannot confirm the sandbox is gone,
+     * so the computer row keeps its handle for a retry. */
+    strictTeardown?: boolean;
   },
 ) {
   const [dedicated, activeRuns, routines] = await Promise.all([
@@ -414,7 +417,8 @@ export async function destroyBot(
     cancelRunWork: true,
   });
   if (dedicated?.providerRef) {
-    await deps.sandbox.destroy(toComputerRef(dedicated), context).catch(() => undefined);
+    const destroyed = deps.sandbox.destroy(toComputerRef(dedicated), context);
+    await (options.strictTeardown ? destroyed : destroyed.catch(() => undefined));
   }
   // Keep the bot deletion transaction from committing if raw transcript cleanup fails.
   await removePiBotSessions(deps.dataDir, bot.userId, bot.id);

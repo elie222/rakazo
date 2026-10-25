@@ -117,7 +117,7 @@ export function VoiceChatCard({
           ) : null}
         </button>
         {missed && onCallBack ? (
-          <Button size="sm" className="shrink-0 rounded-full" onClick={onCallBack}>
+          <Button size="sm" className="shrink-0" onClick={onCallBack}>
             {t`Call back`}
           </Button>
         ) : null}

@@ -428,10 +428,9 @@ describeIntegration("agent import", () => {
     expect(await db.mcpServer.count({ where: owner })).toBe(0);
     expect(await db.routine.count({ where: owner })).toBe(0);
 
-    const defaultBefore = await db.spaceModelPreference.findFirstOrThrow({
-      where: { ...owner, isDefault: true },
-    });
-    expect(defaultBefore.credentialId).toBe(existing.id);
+    const mainModel = () =>
+      db.spaceModelRoleChoice.findMany({ where: { ...owner, role: "main", position: 0 } });
+    expect((await mainModel()).map((row) => row.credentialId)).toEqual([existing.id]);
 
     const response = await raw(app, cookie, "bots/importCreate", {
       files: settingsHome,
@@ -460,14 +459,8 @@ describeIntegration("agent import", () => {
       existing.secretId,
     );
     // The imported key is added without switching the user's default model.
-    const defaults = await db.spaceModelPreference.findMany({
-      where: { ...owner, isDefault: true },
-    });
-    expect(defaults.map((row) => row.credentialId)).toEqual([existing.id]);
+    expect((await mainModel()).map((row) => row.credentialId)).toEqual([existing.id]);
     const imported = credentials.find((row) => row.provider === "openrouter")!;
-    expect(
-      await db.spaceModelPreference.findFirst({ where: { ...owner, credentialId: imported.id } }),
-    ).toMatchObject({ isDefault: false });
     const secrets = await db.secret.findMany({ where: { userId: owner.userId } });
     expect(secrets.length).toBeGreaterThan(0);
     for (const secret of secrets) expect(secret.ciphertext).not.toContain("placeholder-");

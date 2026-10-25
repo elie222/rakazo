@@ -118,30 +118,17 @@ export function ComputersUnavailableHint({
             type="button"
             variant="secondary"
             size="sm"
-            className="rounded-full"
             disabled={phase === "loading"}
             onClick={() => void handleCheckAgain()}
           >
             {phase === "loading" ? <Trans>Checking…</Trans> : <Trans>Check again</Trans>}
           </Button>
           {onOpenComputerSettings ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              onClick={onOpenComputerSettings}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={onOpenComputerSettings}>
               <Trans>Open computer settings</Trans>
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="rounded-full"
-            onClick={() => void handleCopyGuidance()}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={() => void handleCopyGuidance()}>
             {copied ? <Trans>Copied</Trans> : <Trans>Copy .env example</Trans>}
           </Button>
         </div>

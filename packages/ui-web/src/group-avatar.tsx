@@ -32,8 +32,7 @@ export const GroupAvatar = memo(function GroupAvatar({
       >
         <svg
           aria-hidden="true"
-          width={Math.round(size * 0.48)}
-          height={Math.round(size * 0.48)}
+          style={{ width: Math.round(size * 0.48), height: Math.round(size * 0.48) }}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

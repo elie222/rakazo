@@ -137,7 +137,6 @@ export async function aiConsentStatus(
         id: preference.modelId ?? "",
         credential: {
           ...preference.credential,
-          isDefault: preference.isDefault,
           defaultModel: preference.modelId,
           thinkingLevel: preference.thinkingLevel,
         },

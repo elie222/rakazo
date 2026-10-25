@@ -189,8 +189,6 @@ export const BotAvatar = memo(function BotAvatar({
       </svg>
       <svg
         viewBox={VIEWBOX}
-        width={size}
-        height={size}
         aria-hidden="true"
         className={cn(
           "overflow-visible transition-transform duration-300",
@@ -198,7 +196,10 @@ export const BotAvatar = memo(function BotAvatar({
             ? "animate-pulse scale-[1.04] motion-reduce:animate-none"
             : "hover:scale-[1.03] motion-reduce:hover:scale-100",
         )}
+        // Inline size so a parent's icon sizing (Button sizes bare SVGs) cannot shrink it.
         style={{
+          width: size,
+          height: size,
           filter: isWorking
             ? `drop-shadow(0 0 8px ${colorDef.light}) drop-shadow(0 0 2px #ffffff)`
             : "drop-shadow(0 2px 4px rgba(0,0,0,0.45))",

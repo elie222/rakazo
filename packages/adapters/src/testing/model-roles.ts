@@ -23,14 +23,12 @@ type MockClient = {
     findMany?: (args: unknown) => Promise<unknown>;
   };
   spaceModelRoleChoice?: unknown;
-  spaceBackupModel?: Record<string, unknown>;
   $transaction?: ((...args: unknown[]) => Promise<unknown>) & { mainRole?: true };
 };
 
 /**
  * Mocked clients written for the previous storage describe the main model as a default
- * preference. This gives them the role table the dual write keeps in step with it: rows read
- * from that preference until a test writes some, and stub writes for the previous release's copy.
+ * preference. This gives them a role table seeded from that preference until a test writes rows.
  */
 export function withMainRole<T>(prisma: T): T {
   const client = prisma as MockClient | null;
@@ -96,12 +94,6 @@ export function withMainRole<T>(prisma: T): T {
             ),
           }
         : (own ?? roleTable);
-    target.spaceBackupModel = {
-      findMany: vi.fn(async () => []),
-      deleteMany: vi.fn(async () => ({ count: 0 })),
-      createMany: vi.fn(async () => ({ count: 0 })),
-      ...target.spaceBackupModel,
-    };
     return target;
   };
   augment(client);

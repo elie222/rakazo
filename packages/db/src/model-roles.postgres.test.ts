@@ -194,92 +194,40 @@ describePostgres("model roles (PostgreSQL)", () => {
     expect(await mainRows()).toEqual([]);
   });
 
-  it("writes the main model where both releases read it", async () => {
-    await updateModelRole(
-      prisma,
-      scope,
-      "main",
-      {
-        primary: { provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },
-        backups: [{ provider: "azure-openai-responses", modelId: "gpt-5" }],
-      },
-      { primaryCredentialId: compatible },
-    );
+  it("writes the main model only to the role table and leaves the legacy rows frozen", async () => {
+    await prisma.spaceModelPreference.create({
+      data: { userId, spaceId, credentialId: anthropic, modelId: "gpt-5", isDefault: true },
+    });
+    await prisma.spaceBackupModel.create({
+      data: { userId, spaceId, provider: "xai", modelId: "grok", position: 0 },
+    });
+    const before = await legacy();
+
+    await updateModelRole(prisma, scope, "main", {
+      primary: { provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },
+      backups: [{ provider: "azure-openai-responses", modelId: "gpt-5" }],
+    });
 
     expect(await mainRows()).toEqual([
       { position: 0, provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },
       { position: 1, provider: "azure", modelId: "gpt-5", thinkingLevel: null },
     ]);
-    expect(await legacy()).toEqual({
-      defaults: [{ credentialId: compatible, modelId: "llama", thinkingLevel: "low" }],
-      backups: [{ provider: "azure", modelId: "gpt-5" }],
-    });
-
-    // A deployment-managed main model has no connection for the previous release to default to.
-    await updateModelRole(
-      prisma,
-      scope,
-      "main",
-      { primary: { provider: "openrouter", modelId: "managed" } },
-      { primaryCredentialId: null },
-    );
-    expect(await legacy()).toEqual({
-      defaults: [],
-      backups: [{ provider: "azure", modelId: "gpt-5" }],
-    });
+    expect(await legacy()).toEqual(before);
   });
 
   it("keeps a model's effort when the list is reordered", async () => {
-    await updateModelRole(
-      prisma,
-      scope,
-      "main",
-      {
-        primary: { provider: "azure", modelId: "gpt-5", thinkingLevel: "high" },
-        backups: [{ provider: "openai-compatible", modelId: "llama" }],
-      },
-      { primaryCredentialId: anthropic },
-    );
-    await updateModelRole(
-      prisma,
-      scope,
-      "main",
-      {
-        primary: { provider: "openai-compatible", modelId: "llama" },
-        backups: [{ provider: "azure", modelId: "gpt-5" }],
-      },
-      { primaryCredentialId: compatible },
-    );
+    await updateModelRole(prisma, scope, "main", {
+      primary: { provider: "azure", modelId: "gpt-5", thinkingLevel: "high" },
+      backups: [{ provider: "openai-compatible", modelId: "llama" }],
+    });
+    await updateModelRole(prisma, scope, "main", {
+      primary: { provider: "openai-compatible", modelId: "llama" },
+      backups: [{ provider: "azure", modelId: "gpt-5" }],
+    });
 
     await expect(getModelRole(prisma, scope, "main")).resolves.toEqual({
       primary: { provider: "openai-compatible", modelId: "llama" },
       backups: [{ provider: "azure", modelId: "gpt-5", thinkingLevel: "high" }],
     });
-    expect((await legacy()).defaults).toEqual([
-      { credentialId: compatible, modelId: "llama", thinkingLevel: null },
-    ]);
-  });
-
-  it("leaves the previous release's main model alone when only fallbacks change", async () => {
-    await updateModelRole(
-      prisma,
-      scope,
-      "main",
-      { primary: { provider: "azure", modelId: "gpt-5" } },
-      { primaryCredentialId: anthropic },
-    );
-    await updateModelRole(prisma, scope, "main", {
-      backups: [{ provider: "xai", modelId: "grok" }],
-    });
-
-    expect(await legacy()).toEqual({
-      defaults: [{ credentialId: anthropic, modelId: "gpt-5", thinkingLevel: null }],
-      backups: [{ provider: "xai", modelId: "grok" }],
-    });
-    // Other purposes never touch the main model's tables.
-    await updateModelRole(prisma, scope, "approval", {
-      primary: { provider: "xai", modelId: "grok-mini" },
-    });
-    expect((await legacy()).backups).toEqual([{ provider: "xai", modelId: "grok" }]);
   });
 });

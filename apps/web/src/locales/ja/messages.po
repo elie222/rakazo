@@ -119,6 +119,10 @@ msgstr "{0}の画面"
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
 
+#: src/pages/shell/dialogs.tsx
+msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
+msgstr "{botCount, plural, other {{name} と # 個のボットを削除しますか？}}"
+
 #: src/pages/shell/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "{botName}のコンピューター"
@@ -1088,6 +1092,7 @@ msgstr "画像を読み取れません"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "キャンセル"
 
@@ -1512,6 +1517,10 @@ msgstr "Executorを接続"
 msgid "Connect MCP server “{name}”"
 msgstr "MCPサーバー「{name}」を接続"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Connect memory provider"
+msgstr "メモリプロバイダーを接続"
+
 #: src/components/ModelCredits.tsx
 msgid "Connect my own"
 msgstr "自分のキーを接続"
@@ -1928,7 +1937,7 @@ msgstr "接続の名前を変更できませんでした"
 msgid "Could not rename section"
 msgstr "セクションの名前を変更できませんでした"
 
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Could not rename space"
 msgstr "スペースの名前を変更できませんでした"
 
@@ -2290,6 +2299,7 @@ msgid "Delete section"
 msgstr "セクションを削除"
 
 #: src/pages/Shell.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "スペースを削除"
 
@@ -2467,6 +2477,7 @@ msgstr "各名前は一度だけ使用できます。"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "編集"
 
@@ -2571,6 +2582,10 @@ msgstr "間隔"
 #: src/pages/RoutineSchedule.tsx
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "{intervalAmountSelect}{intervalUnitSelect}ごと"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Every bot in this space reads these notes and keeps them up to date."
+msgstr "このスペースのすべてのボットがこのメモを読み、最新の状態に保ちます。"
 
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
@@ -3127,6 +3142,10 @@ msgstr "後で"
 msgid "Leave"
 msgstr "退出"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Lets bots save and recall facts by meaning, alongside MEMORY.md."
+msgstr "MEMORY.md に加えて、ボットが意味に基づいて事実を保存・想起できるようにします。"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "ライト"
@@ -3213,10 +3232,6 @@ msgstr "音声プロバイダーを読み込み中…"
 #: src/pages/shell/transcript.tsx
 msgid "Loading…"
 msgstr "読み込み中…"
-
-#: src/pages/memory-providers/ConnectionModeFields.tsx
-msgid "Local"
-msgstr "ローカル"
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Local access lets bots run commands without asking. Avoid it on shared or public servers."
@@ -3575,6 +3590,7 @@ msgstr "ミュート中"
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Name"
 msgstr "名前"
 
@@ -3881,10 +3897,6 @@ msgstr "毎月1日 {0}"
 msgid "One-time purchase. Credits do not expire."
 msgstr "1回限りの購入です。クレジットは失効しません。"
 
-#: src/pages/Shell.tsx
-msgid "Only empty spaces can be deleted. Delete its bots and groups first."
-msgstr "削除できるのは空のスペースのみです。先にボットとグループを削除してください。"
-
 #: src/components/markdown-link-prompt.tsx
 #: src/pages/shell/computer-panel.tsx
 #: src/pages/shell/import-setup-card.tsx
@@ -4188,10 +4200,6 @@ msgstr "プルリクエスト"
 msgid "Queued"
 msgstr "待機中"
 
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr "引用"
-
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
 msgstr "Rakazoクレジット"
@@ -4416,8 +4424,7 @@ msgstr "名前を変更"
 msgid "Rename section"
 msgstr "セクション名を変更"
 
-#: src/pages/Shell.tsx
-#: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Rename space"
 msgstr "スペース名を変更"
 
@@ -4446,6 +4453,7 @@ msgid "Replace value"
 msgstr "値を置き換え"
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "返信"
 
@@ -4643,6 +4651,7 @@ msgstr "このボットがこのプロバイダーから検証済みのメッセ
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "保存"
 
@@ -4770,6 +4779,10 @@ msgstr "セキュリティ"
 msgid "Select a bot"
 msgstr "ボットを選択"
 
+#: src/pages/memory-providers/ConnectionModeFields.tsx
+msgid "Self-hosted"
+msgstr "セルフホスト"
+
 #: src/pages/shell/composer.tsx
 msgid "Send"
 msgstr "送信"
@@ -4869,8 +4882,8 @@ msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all rep
 msgstr "{GROUP_MEMBER_MIN}〜{GROUP_MEMBER_MAX}個のボットとの共有チャットです。全員が同じスレッドで返信します。"
 
 #: src/pages/KnowledgeSection.tsx
-msgid "Shared documents"
-msgstr "共有ドキュメント"
+msgid "Shared memory"
+msgstr "共有メモリ"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"

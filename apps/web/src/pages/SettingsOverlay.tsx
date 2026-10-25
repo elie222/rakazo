@@ -17,6 +17,7 @@ import {
   Cpu,
   CreditCard,
   Gauge,
+  Lock,
   Monitor,
   Settings,
   ShieldCheck,
@@ -40,11 +41,14 @@ import {
 import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
+import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
+import type { SettingsSpace } from "./shell/dialogs";
 import type { SettingsSection } from "./shell-overlay";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 /** Sections whose settings belong to a space; only these show the space picker. */
 const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
+  "space",
   "models",
   "memory",
   "voice",
@@ -62,6 +66,8 @@ export function SettingsOverlay({
   spaces = [],
   currentSpaceId,
   onSpaceChange,
+  onRenameSpace,
+  onDeleteSpace,
   email,
   name,
   usage,
@@ -82,11 +88,13 @@ export function SettingsOverlay({
   onVoiceStatusMaybeChanged,
 }: {
   /** The space the per-space sections act on; it need not be the selected space. */
-  space?: { id: string; name: string } | null;
+  space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   /** The space the app is showing; its memory config comes from the shell. */
   currentSpaceId?: string | null;
   onSpaceChange?: (spaceId: string) => void;
+  onRenameSpace?: (spaceId: string, name: string) => Promise<void>;
+  onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
   name: string;
   usage?: UsageSummary | null;
@@ -171,6 +179,7 @@ export function SettingsOverlay({
 
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },
+    { id: "space", label: t`Space`, icon: Lock },
     { id: "models", label: t`Models`, icon: Cpu },
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
@@ -375,6 +384,14 @@ export function SettingsOverlay({
                     onOpenMessaging={
                       onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
                     }
+                  />
+                ) : null}
+                {section === "space" && space ? (
+                  <SpaceSettingsPanel
+                    key={space.id}
+                    space={space}
+                    onRename={(name) => onRenameSpace?.(space.id, name) ?? Promise.resolve()}
+                    onDelete={() => onDeleteSpace?.(space.id) ?? Promise.resolve()}
                   />
                 ) : null}
                 {section === "confirmations" ? <ApprovalRulesSettings /> : null}

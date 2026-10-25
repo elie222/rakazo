@@ -196,7 +196,7 @@ export function ModelSettingsOverlay({
             type="button"
             variant="secondary"
             size="sm"
-            className="mt-4 rounded-full"
+            className="mt-4"
             disabled={busy}
             onClick={() => void connectKey({ settingsOnly: true })}
           >

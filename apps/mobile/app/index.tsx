@@ -110,6 +110,7 @@ import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxSpace, InboxSpaceItem } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
+  deleteSpaceTitle,
   inboxHasNoChats,
   inboxNeedsCreateHint,
   removeInboxSpace,
@@ -771,18 +772,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         spaceActionRef.current.recoveryId
       )
         return;
-      Alert.alert(
-        t("Delete {name}?", { name: space.name }),
-        t("This removes the empty space for everyone."),
-        [
-          { text: t("Cancel"), style: "cancel" },
-          {
-            text: t("Delete"),
-            style: "destructive",
-            onPress: () => void deleteInboxSpace(space),
-          },
-        ],
-      );
+      Alert.alert(deleteSpaceTitle(space), t("This removes the space for everyone."), [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Delete"),
+          style: "destructive",
+          onPress: () => void deleteInboxSpace(space),
+        },
+      ]);
     },
     [deleteInboxSpace, t],
   );

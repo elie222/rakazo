@@ -250,14 +250,15 @@ export const MessageView = memo(function MessageView({
                 return null;
               })}
               {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-                <button
-                  type="button"
+                <Button
+                  variant="text"
+                  size="xs"
                   aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                   onClick={onSpeak}
-                  className="text-[12px] text-muted-foreground hover:text-foreground"
+                  className="font-normal"
                 >
                   {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
@@ -505,14 +506,15 @@ export const MessageView = memo(function MessageView({
                     <ChatMarkdown renderMention={renderMention}>{block.text}</ChatMarkdown>
                   </div>
                   {voiceReady ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="text"
+                      size="xs"
                       aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                       onClick={onSpeak}
-                      className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+                      className="mt-2 font-normal"
                     >
                       {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}

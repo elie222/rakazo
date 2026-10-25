@@ -146,6 +146,11 @@ test("marking a message unread brings the chat back with New above the reply fro
         { timeout: 60_000 },
       )
       .toBe(true);
+  // A closing menu stays mounted while it animates out; wait for it before opening the next.
+  const closeMenu = async () => {
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menuitem")).toHaveCount(0);
+  };
   const first = `First question ${stamp}`;
   const second = `Second question ${stamp}`;
   await rpc(page, "threads/send", { botId: chiefId, text: first });
@@ -186,7 +191,7 @@ test("marking a message unread brings the chat back with New above the reply fro
   expect(composerBounds).not.toBeNull();
   expect(transcriptBounds!.y + transcriptBounds!.height - composerBounds!.y).toBe(28);
   await captureScreenshot(page, testInfo, "message-marked-unread-menu");
-  await page.keyboard.press("Escape");
+  await closeMenu();
   // The menu's modal backdrop intentionally intercepts hits until it finishes closing.
   await expect
     .poll(() =>
@@ -209,7 +214,7 @@ test("marking a message unread brings the chat back with New above the reply fro
   await firstReply.hover();
   await firstReply.getByRole("button", { name: "More" }).click();
   await expect(page.getByRole("menuitem")).toHaveText(["Reply", "Copy"]);
-  await page.keyboard.press("Escape");
+  await closeMenu();
 
   await page.goto(`/app/${otherId}`);
   await expect(page.getByPlaceholder("Message Elsewhere")).toBeVisible();
@@ -224,7 +229,7 @@ test("marking a message unread brings the chat back with New above the reply fro
   await firstReply.hover();
   await firstReply.getByRole("button", { name: "More" }).click();
   await expect(markUnread).toBeVisible();
-  await page.keyboard.press("Escape");
+  await closeMenu();
 
   // The user's own message offers it too; New then starts at the reply after it.
   const secondQuestion = page.locator("[data-message-id]").filter({ hasText: second }).first();

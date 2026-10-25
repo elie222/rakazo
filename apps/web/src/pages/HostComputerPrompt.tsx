@@ -162,7 +162,6 @@ export function HostComputerPrompt({
               type="button"
               variant="secondary"
               size="sm"
-              className="rounded-full"
               disabled={busy}
               onClick={() => void refreshChoiceState()}
             >

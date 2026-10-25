@@ -133,29 +133,35 @@ hosted product should review [Treg's integration terms](https://treg.to/integrat
 a written agreement for hosted resale.
 
 ```bash
-docker compose --env-file .env \
-  -f infra/compose/docker-compose.yml \
-  -f infra/compose/docker-compose.postgres-host.yml \
-  up postgres -d
 pnpm install
-pnpm db:generate
-pnpm db:migrate
 pnpm sandbox:build
 pnpm dev
 ```
 
-Postgres stays network-internal in the default Compose file (same as published images). The
-`postgres-host` overlay publishes loopback `127.0.0.1:5433` for host-side `pnpm` and DB tools.
-If that port is occupied, change `POSTGRES_HOST_PORT` and the ports in `DATABASE_URL` and
-`DATABASE_MIGRATION_URL` in `.env`.
-Without the overlay, open a shell with
-`docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
+`pnpm dev` uses the Postgres in `DATABASE_URL` when it accepts a connection. Otherwise it starts a
+local `rakazo-dev-postgres` container with Docker, and every checkout reuses that one. It applies
+migrations and generates the Prisma client before starting. A branch that adds migrations main
+doesn't have gets its own database on the same server, copied from the shared one when possible,
+so unmerged schema changes stay out of it. When the default ports are taken, for example by
+another git worktree, it moves to the next free block and prints the URL. Set `WEB_PORT` and
+`API_PORT` to choose ports yourself.
+
+To run Postgres from the Compose file instead, start it with the `postgres-host` overlay, which
+publishes loopback `127.0.0.1:5433`, and point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at it:
+
+```bash
+docker compose --env-file .env \
+  -f infra/compose/docker-compose.yml \
+  -f infra/compose/docker-compose.postgres-host.yml \
+  up postgres -d
+```
+
 Use a URI-safe `POSTGRES_PASSWORD` (`openssl rand -hex 16`). An existing `pgdata` volume keeps the
 user, password, and database from first init, so keep those values in `.env`, or change them in
 place with `ALTER ROLE` / rename. Recreate the volume only after a backup (or when the data is
 disposable); `docker compose down -v` deletes all Postgres state.
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, connect a model, and create
+Open the printed URL ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default), create an account, connect a model, and create
 your first bot.
 
 For deployment, provider selection, backups, and upgrades, see the

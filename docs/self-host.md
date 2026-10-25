@@ -4,7 +4,7 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 ## Local (source checkout)
 
-Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173) (or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. The managed API gets a Docker-assigned loopback port; all desktop traffic uses the web origin.
+Same as the README quick start: `.env` from `.env.example`, `pnpm sandbox:build`, `pnpm dev`, then the URL it prints ([http://127.0.0.1:5173](http://127.0.0.1:5173) by default, or `http://localhost:5173` — both loopback hosts are trusted). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up, choosing **Existing instance** with that address. The desktop app's **This computer** option instead installs and runs the published images itself with Docker Compose (see [Published images](#published-images-no-checkout)), using port 45173 by default so it can run alongside `pnpm dev`. If that port is occupied, the app selects and remembers another loopback port. The managed API gets a Docker-assigned loopback port; all desktop traffic uses the web origin.
 
 For source development in WSL, keep the checkout and `data` directory in the Linux filesystem (for example, `~/rakazo`), and run `pnpm dev` as your normal user. The host-run supervisor matches bot container UID/GID to that user. If Docker Desktop container IPs are unreachable, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` in `.env`; this publishes the token-protected control service on a random loopback port. Leave this unset for the Compose-hosted supervisor.
 
@@ -371,15 +371,34 @@ error that names `EXPO_ACCESS_TOKEN`; the token itself is never logged.
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
 appears on sign-in only when a transactional email provider is available. Rakazo uses a
-provider-neutral contract and ships an SMTP adapter, so Amazon SES, Resend, and self-hosted SMTP
-servers use the same configuration:
+provider-neutral contract with Resend API and SMTP adapters. Templates render locally with React
+Email into HTML and plain text, independent of the sending provider.
+
+To use the Resend HTTP API, verify a sending domain and create a sending-only API key restricted
+to that domain, then configure:
+
+```env
+EMAIL_PROVIDER=resend
+EMAIL_API_KEY=replace-with-sending-api-key
+EMAIL_FROM=Rakazo <hello@mail.example.com>
+```
+
+Disable click and open tracking for account email in the provider's domain settings. Resend delivery
+has a ten-second deadline and bounded retries with the same idempotency key, including when a
+response is lost. Errors omit provider response bodies and credentials.
+
+For Amazon SES or another SMTP server, use:
 
 ```env
 SMTP_URL=smtps://smtp-user:replace-with-password@smtp.example.com:465
 EMAIL_FROM=Rakazo <no-reply@example.com>
 ```
 
-For Resend, use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
+`EMAIL_PROVIDER=smtp` is optional: an existing `SMTP_URL` continues to select SMTP when no provider
+is specified. `EMAIL_PROVIDER=none` disables external sending. Explicit provider settings take
+precedence over an old `SMTP_URL`; incomplete or unknown provider configurations fail at startup.
+
+Resend also supports SMTP: use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
 SES, use the regional SMTP endpoint and SES SMTP credentials; these are different from ordinary AWS
 access keys. Verify the sender/domain with the provider before testing delivery. Keep credentials in
 `.env`, never in tracked files. `smtps://` uses implicit TLS; `smtp://` is also supported but requires
