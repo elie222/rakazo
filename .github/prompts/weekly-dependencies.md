@@ -12,7 +12,7 @@ If an update breaks compatibility, omit it rather than weakening checks.
 
 Prepend the directory containing `$VALIDATION_NODE` to PATH for package commands
 so validation covers CI's Node baseline. Keep package caches inside the ignored
-`.context/` directory if the sandbox needs a writable cache.
+`.cache/` directory if the sandbox needs a writable cache.
 Install dependencies, generate the database client, and run workspace typechecks,
 affected offline unit tests, and production builds. Use fake build credentials as
 in CI. This task may run on macOS; leave Linux-only host-script checks and desktop
