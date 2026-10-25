@@ -229,7 +229,7 @@ export function AppConnectCard({
         {status === "connected" ? (
           <SuccessPop label={t`Connected`} />
         ) : (
-          <Button className="rounded-full" disabled={busy} onClick={() => void authorize()}>
+          <Button disabled={busy} onClick={() => void authorize()}>
             {busy ? t`Waiting…` : t`Authorize`}
           </Button>
         )}
@@ -419,16 +419,11 @@ export function McpApprovalCard({
           </p>
           {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              className="rounded-full"
-              disabled={state !== "pending" || busy}
-              onClick={() => void authorize()}
-            >
+            <Button disabled={state !== "pending" || busy} onClick={() => void authorize()}>
               {state === "connecting" ? t`Connecting…` : needsOAuth ? t`Authorize` : t`Approve`}
             </Button>
             <Button
               variant="secondary"
-              className="rounded-full"
               disabled={state !== "pending" || busy}
               onClick={() => void dismiss()}
             >

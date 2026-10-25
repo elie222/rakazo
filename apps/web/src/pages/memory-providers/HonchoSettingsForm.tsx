@@ -132,7 +132,7 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
       <Button
         type="button"
         variant="secondary"
-        className="mt-5 rounded-full"
+        className="mt-5"
         disabled={busy || !ready}
         onClick={() => void connect()}
       >

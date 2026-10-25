@@ -206,7 +206,7 @@ export function MemorySettingsOverlay({
                 type="button"
                 disabled={busy}
                 onClick={() => void disconnect()}
-                className="mt-5 rounded-full"
+                className="mt-5"
               >
                 {pending === "disconnect" ? (
                   <Trans>Disconnecting…</Trans>

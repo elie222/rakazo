@@ -243,7 +243,6 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
         <div className="mt-4">
           <Button
             variant="secondary"
-            className="rounded-full"
             onClick={() => {
               retryImmediately.current = true;
               setAttempt(0);
@@ -270,11 +269,7 @@ function AppFailed() {
           <Trans>Something went wrong. Try again.</Trans>
         </p>
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            className="rounded-full"
-            onClick={() => window.location.reload()}
-          >
+          <Button variant="secondary" onClick={() => window.location.reload()}>
             <Trans>Refresh</Trans>
           </Button>
         </div>

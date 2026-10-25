@@ -186,7 +186,6 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             />
             <Button
               variant="secondary"
-              className="rounded-full"
               disabled={busy || !draft.trim()}
               onClick={() => void addItem()}
             >

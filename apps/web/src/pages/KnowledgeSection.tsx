@@ -271,7 +271,6 @@ function MemoryDocumentList({
                       type="button"
                       disabled={busy || conflicted || draft === doc.content}
                       onClick={() => void save(doc)}
-                      className="rounded-full"
                     >
                       <Trans>Save</Trans>
                     </Button>
@@ -519,7 +518,7 @@ function AgentSkills({
                 type="button"
                 disabled={busy || !draft.trim() || (!creating && draft === open?.content)}
                 onClick={() => void save()}
-                className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
+                className="bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
               >
                 <Trans>Save</Trans>
               </Button>
@@ -534,7 +533,7 @@ function AgentSkills({
                 setCreating(false);
                 setConfirmingDelete(false);
               }}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
+              className="px-3 py-1.5 text-[13px] text-muted-foreground"
             >
               {open?.readOnly ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
             </Button>
@@ -544,7 +543,7 @@ function AgentSkills({
                 type="button"
                 disabled={busy}
                 onClick={() => void remove(open)}
-                className={`ms-auto rounded-lg px-3 py-1.5 text-[13px] ${
+                className={`ms-auto px-3 py-1.5 text-[13px] ${
                   confirmingDelete ? "bg-destructive/10 text-destructive" : "text-destructive"
                 }`}
               >
