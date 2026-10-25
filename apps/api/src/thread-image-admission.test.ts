@@ -163,7 +163,43 @@ describe("current image send admission", () => {
       },
     };
     if (images) await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
-    else await expect(send(configuration)).rejects.toMatchObject({ code: "CONFLICT" });
+    // A custom endpoint is never known to be text-only; image input is just not turned on.
+    else
+      await expect(send(configuration)).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "Image input is not configured for this model.",
+      });
+  });
+
+  it("asks to configure image input for a legacy custom connection that never set it", async () => {
+    const { tx, send } = fixture();
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openai-compatible",
+      modelId: "custom-model",
+    });
+    tx.userModelCredential.findFirst.mockResolvedValue({
+      id: "credential-1",
+      provider: "openai-compatible",
+      secretId: "secret-1",
+      supportsImages: false,
+    });
+    const configuration = {
+      deployment: null,
+      secrets: {
+        load: vi.fn(async () =>
+          JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://model.example.test/v1",
+            enabledModelIds: ["custom-model"],
+          }),
+        ),
+      },
+    };
+    await expect(send(configuration)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Image input is not configured for this model.",
+    });
   });
 
   it("does not require image support for document attachments", async () => {

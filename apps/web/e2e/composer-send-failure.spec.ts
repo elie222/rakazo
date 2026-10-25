@@ -329,7 +329,9 @@ test("an unsupported-image rejection keeps the draft for a compatible resend", a
   await composer.press("Enter");
   await rejection;
   expect((rejectedBody as { json: { imageHandling?: string } }).json.imageHandling).toBe("confirm");
-  await expect(page.getByTestId("composer-error")).toHaveText(/This model cannot read images/);
+  await expect(page.getByTestId("composer-error")).toHaveText(
+    /Image input is not configured for this model/,
+  );
   await expect(composer).toHaveValue("Read this picture");
   await expect(remove).toBeVisible();
   const sendAsFile = page.getByRole("button", { name: "Send as file", exact: true });
@@ -411,7 +413,9 @@ for (const change of ["text", "attachment"] as const) {
       });
     release();
     await rejection;
-    await expect(page.getByTestId("composer-error")).toHaveText(/This model cannot read images/);
+    await expect(page.getByTestId("composer-error")).toHaveText(
+      /Image input is not configured for this model/,
+    );
     await expect(page.getByRole("button", { name: "Send as file", exact: true })).toHaveCount(0);
     if (change === "text") await expect(composer).toHaveValue("A newer draft");
     else await expect(page.getByRole("button", { name: "Remove extra.txt" })).toBeVisible();

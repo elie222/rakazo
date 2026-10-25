@@ -90,12 +90,15 @@ export async function assertThreadImageInput(
         });
         const secret = parseModelSecret(await configuration.secrets.load(row.ciphertext, row.id));
         if (secret.kind === "openai_compatible") {
+          // A custom endpoint is never known to be text-only: without image input turned on,
+          // its capability is unknown, so the user is asked to configure it.
           supportsImages =
             modelAcceptsImageInput(provider, id) ||
             modelIdSupportsImages(secret.visionModelIds, id) ||
             (secret.visionModelIds === undefined &&
               credential.defaultModel?.trim() === id.trim() &&
-              legacy?.supportsImages === true);
+              legacy?.supportsImages === true) ||
+            undefined;
         }
       }
     }
