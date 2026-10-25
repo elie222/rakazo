@@ -317,6 +317,32 @@ describe("ticket mutations", () => {
     expect(s.prisma.$transaction).not.toHaveBeenCalled();
     expect(s.changes).not.toHaveBeenCalled();
   });
+  it("names the caller's ownerBotId argument when create or update validation fails", async () => {
+    const s = mutationDeps();
+    const input = { spaceId: "ws", userId: "user-1", botId: "bot-1", ownerBotId: "" };
+
+    for (const result of [
+      await createTicket(s.deps, { ...input, title: "Ship" }),
+      await updateTicket(s.deps, { ...input, id: "t1" }),
+    ]) {
+      expect(result).toEqual({ error: expect.stringMatching(/^ownerBotId: /) });
+      expect(result).toEqual({ error: expect.not.stringContaining("assigneeBotId") });
+    }
+  });
+
+  it("names the caller's id argument when comment validation fails", async () => {
+    const s = mutationDeps();
+    const result = await commentTicket(s.deps, {
+      spaceId: "ws",
+      botId: "bot-1",
+      id: "",
+      body: "Ready",
+    });
+
+    expect(result).toEqual({ error: expect.stringMatching(/^id: /) });
+    expect(result).toEqual({ error: expect.not.stringContaining("ticketId") });
+  });
+
   it("names the field and limit when input fails validation", async () => {
     const s = mutationDeps();
     await expect(
