@@ -17,7 +17,13 @@ import {
 } from "./config.js";
 import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
-import { HERMES_INSTRUCTION_FILES, HERMES_MEMORY_FILES, parseHermes } from "./hermes.js";
+import {
+  BUNDLED_MANIFEST,
+  bundledSkillNames,
+  HERMES_INSTRUCTION_FILES,
+  HERMES_MEMORY_FILES,
+  parseHermes,
+} from "./hermes.js";
 import {
   isOpenClawDailyMemory,
   OPENCLAW_INSTRUCTION_FILES,
@@ -49,6 +55,7 @@ export {
 } from "./config.js";
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
+export { bundledSkillNames } from "./hermes.js";
 export type { SkillFiles } from "./shared.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
@@ -61,14 +68,11 @@ const WORKSPACE_FILES = new Set<string>([
   ...HERMES_INSTRUCTION_FILES.map(([path]) => path),
   ...HERMES_MEMORY_FILES.map(([source]) => source),
 ]);
-/** Top-level folders a source keeps; a path starting with one has no upload root. */
+/** A path starting with one of these has no upload root. */
 const SOURCE_FOLDERS = new Set(["skills", "memory", "memories", ".agents"]);
 const WORKSPACE_FOLDER = /^workspace(?:-[^/]+)?$/;
 
-/**
- * True for a path inside a chosen OpenClaw or Hermes folder (without the folder name)
- * that an import can use. Clients send only these, so unrelated files stay on the device.
- */
+/** Clients send only these paths, so unrelated files stay on the device. */
 export function isAgentImportCandidate(path: string): boolean {
   if (AGENT_IMPORT_CONFIG_FILES.has(path)) return true;
   if (isPrivatePath(path)) return false;
@@ -84,11 +88,7 @@ const AGENT_SIGNATURES = new Set([
   ".hermes.md",
 ]);
 
-/**
- * True when a folder's or backup's file names look like an OpenClaw or Hermes home or
- * workspace. Only names are looked at, so this can decide before anything is read or sent.
- * Paths an archive reader already mapped to `.openclaw/` or `.hermes/` count as recognised.
- */
+/** Decides from names alone, before anything is read or sent. */
 export function isAgentHome(paths: readonly string[]): boolean {
   if (paths.some((path) => path.startsWith(".openclaw/") || path.startsWith(".hermes/"))) {
     return true;
@@ -103,9 +103,8 @@ export function isAgentHome(paths: readonly string[]): boolean {
 }
 
 /**
- * The files of a chosen folder an import uses, keyed by their path in the upload (which
- * starts with the folder's name) and mapped to their path in the agent's workspace or home.
- * Clients read and send only these; the server applies the same choice to what it receives.
+ * Maps upload paths to their path in the agent's workspace or home. Clients and the server
+ * apply the same choice.
  *
  * Choosing the OpenClaw home (`~/.openclaw`) uses its `workspace/` folder (or the only
  * `workspace-<id>` folder when there is no `workspace/`) plus the managed skills in
@@ -170,10 +169,7 @@ export function agentImportFolder(
   return { root: workspace, files };
 }
 
-/**
- * For each chosen SKILL.md, the names of the other files in its folder. Only names are
- * sent: those files are not imported, and their names show what a skill would be missing.
- */
+/** Names only: those files are not imported, but show what a skill would be missing. */
 export function agentImportSkillFiles(
   paths: readonly string[],
   used: ReadonlyMap<string, string>,
@@ -191,11 +187,7 @@ export function agentImportSkillFiles(
   return out;
 }
 
-/**
- * The source of an upload and its files by path in the agent's workspace or home. Without
- * the API key opt-in, secret files are dropped and settings keep only what an import reads,
- * with the same function the browser applies before sending.
- */
+/** Applies the same secret stripping the browser applies before sending. */
 export function readAgentImportFolder(
   files: AgentImportFile[],
   options: { includeSecrets: boolean },
@@ -216,23 +208,12 @@ export function readAgentImportFolder(
   return source ? { source, root: folder.root, files: kept } : null;
 }
 
-/** The skill folder names a Hermes `skills/.bundled_manifest` lists (`name:hash` lines). */
-export function bundledSkillNames(manifest: string): Set<string> {
-  return new Set(
-    manifest
-      .split(/\r?\n/)
-      .map((line) => line.split(":")[0]!.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
 function isBundledSkill(path: string, bundled: ReadonlySet<string>): boolean {
   if (!isSkillPath(path)) return false;
   const folder = path.split("/").at(-2)?.toLowerCase() ?? "";
   return bundled.has(folder);
 }
 
-/** The folder choice, with Hermes' bundled skills left out once its manifest is read. */
 function chooseFolder(paths: readonly string[], read: (path: string) => string) {
   const first = agentImportFolder(paths);
   const manifest = [...first.files].find(([, home]) => home === BUNDLED_MANIFEST)?.[0];
@@ -240,12 +221,9 @@ function chooseFolder(paths: readonly string[], read: (path: string) => string) 
   return agentImportFolder(paths, { bundledSkills: bundledSkillNames(read(manifest)) });
 }
 
-const BUNDLED_MANIFEST = "skills/.bundled_manifest";
-
 /**
- * What a client reads from a chosen folder or backup: the same choice the server makes.
- * Sizes are checked before anything is read; the manifest is read first so bundled skills
- * are never read; `.env` and `auth.json` are read only with the API key opt-in.
+ * The client's read of a folder or backup, matching the server's choice. Sizes are checked
+ * before anything is read, and bundled skills and secret files are never read without need.
  */
 export async function chooseAgentImportFiles(
   paths: readonly string[],
@@ -253,7 +231,6 @@ export async function chooseAgentImportFiles(
   options: { includeSecrets: boolean; size?: (path: string) => number | undefined },
 ): Promise<{
   entries: { path: string; home: string; content: string }[];
-  /** Whether the folder has `.env` or `auth.json`, read only after the opt-in. */
   hasSecretFiles: boolean;
 }> {
   const first = agentImportFolder(paths);
@@ -275,7 +252,6 @@ export async function chooseAgentImportFiles(
   return { entries, hasSecretFiles };
 }
 
-/** Refuses a choice too large to upload before any of it is read. */
 function checkSizes(paths: readonly string[], size?: (path: string) => number | undefined) {
   if (paths.length > AGENT_IMPORT_MAX_FILES) throw new AgentImportArchiveError("too_large");
   let total = 0;
@@ -288,11 +264,6 @@ function checkSizes(paths: readonly string[], size?: (path: string) => number | 
   if (total > AGENT_IMPORT_MAX_TOTAL_LENGTH * 4) throw new AgentImportArchiveError("too_large");
 }
 
-/**
- * The upload for files chosen from a folder or backup: the shared rule of
- * `prepareAgentImportFiles`, keyed back to the upload paths. Secret files are sent only
- * with the opt-in, and then only their allowlisted entries.
- */
 export function agentImportUpload(
   entries: readonly { path: string; home: string; content: string }[],
   options: { includeSecrets: boolean },
@@ -308,9 +279,8 @@ export function agentImportUpload(
 }
 
 /**
- * Reads files from an OpenClaw workspace or home, a Hermes home or an exported agent
- * document into one plan. Imported text is data: nothing here follows it. Settings
- * (model, MCP servers, scheduled jobs, API keys) are added by the server.
+ * Imported text is data: nothing here follows it. Settings (model, MCP servers, scheduled
+ * jobs, API keys) are added by the server.
  */
 export function parseAgentImport(
   files: AgentImportFile[],
@@ -335,7 +305,6 @@ export function parseAgentImport(
   return plan(folder.source, parsed);
 }
 
-/** True when a path, from any folder down, names a file an OpenClaw or Hermes agent keeps. */
 function isKnownAgentFile(path: string): boolean {
   const parts = path.split("/");
   return parts.some((_, index) => {
@@ -345,8 +314,7 @@ function isKnownAgentFile(path: string): boolean {
 }
 
 function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportPlan {
-  // Every source, the any-assistant document too: key-looking text is flagged, never changed.
-  // Its title (a heading, a skill's name) and a skill's description count as its text too.
+  // Key-looking text is flagged, never changed.
   const flag = <T extends { content: string; title: string; description?: string }>(item: T) =>
     [item.content, item.title, item.description ?? ""].some(looksLikeCredential)
       ? { ...item, containsKey: true }
@@ -384,18 +352,14 @@ function detectSource(
   return [...paths].some((path) => path.endsWith(".md")) ? "openclaw" : null;
 }
 
-/** Neutral headings for the two kinds of instruction text, when both are imported. */
 export const IMPORTED_INSTRUCTION_HEADINGS = {
   persona: "Persona",
   working: "Working instructions",
 } as const;
 
 /**
- * A bot's instructions from imported files, keeping what each file is for: the persona
- * (who the agent is, its tone and boundaries) first, then the working instructions (how it
- * works). With both, each gets a short heading of its own; with one, it is used as is. A
- * file's own title naming the file (`# SOUL.md - Who You Are`) is left out, since it would
- * read as a heading about a file the bot does not have.
+ * Persona first, then working instructions, each under a heading only when both exist. A
+ * title naming the file (`# SOUL.md - Who You Are`) is dropped: the bot has no such file.
  */
 export function combineImportedInstructions(
   items: readonly Pick<AgentImportInstruction, "title" | "content" | "role">[],
@@ -428,9 +392,8 @@ function withoutFileTitle(file: string, content: string): string {
 }
 
 /**
- * Never overwrite: space memory paths and skill names already taken (case-insensitive,
- * like skills) get the first free `-2`, `-3`, ... suffix. Imported bot memory goes into a
- * new bot, so its paths are kept.
+ * Never overwrite: taken space memory paths and skill names (case-insensitive) get the first
+ * free `-2`, `-3`, ... suffix. Bot memory keeps its paths.
  */
 export function resolveAgentImportNames(
   plan: AgentImportPlan,
@@ -452,10 +415,7 @@ export function resolveAgentImportNames(
 
 const NAME_MAX_LENGTH = 80;
 
-/**
- * A memory path that is not yet in `used` (lowercase): the first free `-2`, `-3`, ... before
- * `.md`. Adds the result to `used`, so several imported documents never share a path.
- */
+/** Adds the result to `used` (lowercase), so several imported documents never share a path. */
 export function freeAgentImportMemoryPath(path: string, used: Set<string>): string {
   return freeName(path, used, ".md");
 }

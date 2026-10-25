@@ -3,7 +3,6 @@ import type { AgentImportParse, SkillFiles } from "./shared.js";
 import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./shared.js";
 import { isHermesDefault } from "./stock.js";
 
-/** SOUL.md is the persona; the others are working instructions, as Hermes reads them. */
 export const HERMES_INSTRUCTION_FILES = [
   ["SOUL.md", "persona"],
   ["AGENTS.md", "working"],
@@ -16,20 +15,24 @@ export const HERMES_MEMORY_FILES = [
   ["memories/USER.md", "USER.md"],
 ] as const;
 
-/** Skill names Hermes installed itself, listed one `name:hash` per line. */
-const BUNDLED_MANIFEST = "skills/.bundled_manifest";
+/** Skills Hermes installed itself, one `name:hash` per line. */
+export const BUNDLED_MANIFEST = "skills/.bundled_manifest";
+
+export function bundledSkillNames(manifest: string): Set<string> {
+  return new Set(
+    manifest
+      .split(/\r?\n/)
+      .map((line) => line.split(":")[0]!.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
 
 export function parseHermes(
   files: AgentImportFile[],
   skillFiles: SkillFiles = {},
 ): AgentImportParse {
   const byName = fileMap(files);
-  const bundled = new Set(
-    (byName.get(BUNDLED_MANIFEST) ?? "")
-      .split(/\r?\n/)
-      .map((line) => line.split(":")[0]!.trim().toLowerCase())
-      .filter(Boolean),
-  );
+  const bundled = bundledSkillNames(byName.get(BUNDLED_MANIFEST) ?? "");
   // Offering Hermes' own library would flood Rakazo's; only the user's skills are imported.
   const all = skillItems(byName, skillFiles);
   const builtIn = all.skills.filter((skill) => {

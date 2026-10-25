@@ -7,7 +7,6 @@ export function useImportStatusText() {
   const need = (item: AgentImportNeed): string => {
     switch (item.kind) {
       case "api_key": {
-        // The provider's display name when the caller has it (e.g. "DeepSeek").
         const provider = item.provider;
         return t`API key for ${provider}`;
       }
@@ -16,7 +15,6 @@ export function useImportStatusText() {
         return t`Credentials: ${names}`;
       }
       case "env": {
-        // The same words as the MCP server settings use.
         const names = item.names.join(", ");
         return t`Environment variables: ${names}`;
       }

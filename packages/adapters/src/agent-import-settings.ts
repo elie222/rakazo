@@ -63,7 +63,6 @@ export type AgentImportSettings = {
   skipped: Skipped[];
 };
 
-/** Re-exported so callers keep one import for the settings translation. */
 export { normalizeImportProvider, parseDotEnv };
 
 const isObject = (value: unknown): value is Json =>
@@ -78,7 +77,6 @@ export function readAgentImportSettings(
   folder: { source: "openclaw" | "hermes"; root: string; files: Map<string, string> },
   options: {
     includeSecrets: boolean;
-    /** Whether this deployment can launch a stdio command (its allowlist). */
     stdioAllowed?: (command: string) => boolean;
   },
 ): AgentImportSettings & { keyValues: Map<string, string> } {
@@ -90,7 +88,6 @@ export function readAgentImportSettings(
   const config = parsedConfig ?? {};
   const resolve = (value: unknown) => resolveSecret(value, env);
   const skipped: Skipped[] = [];
-  // A settings file that cannot be read is reported, not silently ignored.
   if (rawConfig !== undefined && !parsedConfig)
     skipped.push({ path: configPath, reason: "invalid_file" });
 
@@ -112,7 +109,7 @@ export function readAgentImportSettings(
   if (jobsFile !== undefined && !Array.isArray(jobs)) {
     skipped.push({ path: "cron/jobs.json", reason: "invalid_file" });
   }
-  const agentId = /^workspace-(.+)$/.exec(folder.root)?.[1] ?? "main";
+  const agentId = openClawAgentId(folder.root);
   for (const [index, job] of (Array.isArray(jobs) ? jobs : []).entries()) {
     if (!isObject(job)) continue;
     // A job bound to another OpenClaw agent belongs to that agent's import.
@@ -221,7 +218,7 @@ function catalogModel(title: string, provider: string, modelId: string): Importe
 /** The chosen agent's model: its own entry overrides `agents.defaults.model`. */
 function openClawModel(config: Json, root: string): ImportedModel | null {
   const agents = isObject(config.agents) ? config.agents : {};
-  const agentId = /^workspace-(.+)$/.exec(root)?.[1] ?? "main";
+  const agentId = openClawAgentId(root);
   const entries = [
     ...Object.entries(isObject(agents.entries) ? agents.entries : {}).map(([id, entry]) => ({
       id,
@@ -250,6 +247,10 @@ function hermesModel(config: Json): ImportedModel | null {
   return catalogModel(`${provider}/${modelId}`, provider, modelId);
 }
 
+function openClawAgentId(root: string): string {
+  return /^workspace-(.+)$/.exec(root)?.[1] ?? "main";
+}
+
 function folderName(path: string): string {
   return (
     path
@@ -265,7 +266,6 @@ function mcpServer(
   stdioAllowed: (command: string) => boolean,
 ): Omit<ImportedMcpServer, "id"> | null {
   if (!isObject(entry)) return null;
-  // The same conservative rule the projection applies before sending (see the core).
   if (entry.skipped !== undefined || !mcpServerImportable(entry)) return null;
   // OAuth, client certificates and `$include` have no import equivalent.
   for (const key of ["auth", "oauth", "tls", "cert", "clientCert", "$include"]) {
@@ -281,8 +281,7 @@ function mcpServer(
   const warnings: AgentImportWarning[] = [];
   // An approved server gets all its tools in Rakazo, so a source tool limit would widen.
   if (Array.isArray(filter.include) && filter.include.length > 0) warnings.push("dropped_settings");
-  // MCP credentials are never imported. The server is created as the MCP form creates one
-  // with its credential left blank (no headers, no env); the names show in the preview.
+  // MCP credentials are never imported: headers and env stay blank; only their names show.
   const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
   const base = {
     slug: mcpSlug(name),
@@ -329,11 +328,6 @@ function mcpServer(
   };
 }
 
-/**
- * What an imported MCP server needs before it works. A remote server without auth headers is
- * ready; header names mean credentials to enter; a stdio server this deployment can run needs
- * its program (and env values) on the bot's computer; one it cannot run is not supported.
- */
 function mcpStatus(entry: Json, warnings: AgentImportWarning[]): AgentImportStatus {
   if (warnings.includes("unsupported_command")) {
     return { kind: "unsupported", reason: "unsupported_command" };
@@ -352,12 +346,10 @@ function mcpStatus(entry: Json, warnings: AgentImportWarning[]): AgentImportStat
   return needs.length ? { kind: "needs_setup", needs } : { kind: "ready" };
 }
 
-/** An absolute, home-relative or drive path: a file on the source machine. */
 function isLocalPath(value: string): boolean {
   return /^(?:\/|~\/|[A-Za-z]:[\\/])/.test(value);
 }
 
-/** An MCP slug: lowercase letters, digits, `-` and `_`, starting with a letter or digit. */
 export function mcpSlug(name: string): string {
   const slug = name
     .toLowerCase()
@@ -438,10 +430,7 @@ function routine(
   };
 }
 
-/**
- * A repeat interval as a cron expression when one fires at exactly that interval: minutes
- * that divide an hour, or hours that divide a day. Anything else has no exact cron.
- */
+/** Null unless a cron fires at exactly that interval. */
 export function intervalCron(minutes: number): string | null {
   if (!Number.isInteger(minutes) || minutes <= 0) return null;
   if (minutes < 60) return 60 % minutes === 0 ? `*/${minutes} * * * *` : null;

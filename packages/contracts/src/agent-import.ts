@@ -7,10 +7,7 @@ export const AGENT_IMPORT_MAX_FILE_LENGTH = 100_000;
 export const AGENT_IMPORT_MAX_TOTAL_LENGTH = 4_000_000;
 export const AGENT_IMPORT_MAX_PATH_LENGTH = 300;
 
-/**
- * Settings files an OpenClaw or Hermes home keeps at its root (after the chosen folder's
- * name, when the upload has one). Nothing else that is not Markdown can be sent.
- */
+/** The only non-Markdown files an import may send, optionally under the chosen folder's name. */
 const AGENT_IMPORT_CONFIG_PATH =
   /^(?:[^/]+\/)?(?:openclaw\.json|\.env|config\.yaml|auth\.json|cron\/jobs\.json|skills\/\.bundled_manifest)$/;
 
@@ -68,16 +65,12 @@ const warnings = z.array(AgentImportWarningSchema).default([]);
 
 const status = AgentImportStatusSchema.default({ kind: "ready" });
 
-/** What an instruction file is for: who the agent is, or how it works. */
 export const AgentImportInstructionRoleSchema = z.enum(["persona", "working"]);
 export type AgentImportInstructionRole = z.infer<typeof AgentImportInstructionRoleSchema>;
 
-/** Unchanged from the default the source writes when an agent is created: starts unticked. */
+/** Unchanged from the template the source writes for a new agent. */
 const stock = z.boolean().default(false);
-/**
- * Its text has something shaped like a credential (an API key, a token, a private key): it
- * starts unticked and says so. The text is never changed, and the match is never named.
- */
+/** Text shaped like a credential; the match itself is never returned. */
 const containsKey = z.boolean().optional();
 
 export const AgentImportInstructionSchema = z.object({
@@ -179,7 +172,6 @@ export type AgentImportSkipReason = z.infer<typeof AgentImportSkipReasonSchema>;
 export const AgentImportPlanSchema = z.object({
   source: AgentImportSourceSchema,
   suggestedName: z.string(),
-  /** The bot description the source gives the agent, if any. */
   suggestedDescription: z.string().default(""),
   instructions: z.array(AgentImportInstructionSchema),
   memory: z.array(AgentImportMemorySchema),
@@ -195,25 +187,16 @@ export type AgentImportPlan = z.infer<typeof AgentImportPlanSchema>;
 export const AgentImportMemoryDestinationSchema = z.enum(["bot", "space"]);
 export type AgentImportMemoryDestination = z.infer<typeof AgentImportMemoryDestinationSchema>;
 
-const selectedIds = z.array(
-  z
-    .string()
-    .min(1)
-    .max(AGENT_IMPORT_MAX_PATH_LENGTH + 20),
-);
+const selectedId = z
+  .string()
+  .min(1)
+  .max(AGENT_IMPORT_MAX_PATH_LENGTH + 20);
+const selectedIds = z.array(selectedId);
 
 export const AgentImportSelectionSchema = z.strictObject({
   instructions: selectedIds.max(AGENT_IMPORT_MAX_FILES),
   memory: z
-    .array(
-      z.strictObject({
-        id: z
-          .string()
-          .min(1)
-          .max(AGENT_IMPORT_MAX_PATH_LENGTH + 20),
-        destination: AgentImportMemoryDestinationSchema,
-      }),
-    )
+    .array(z.strictObject({ id: selectedId, destination: AgentImportMemoryDestinationSchema }))
     .max(AGENT_IMPORT_MAX_FILES),
   skills: selectedIds.max(AGENT_IMPORT_MAX_FILES),
   model: z.boolean().default(false),
@@ -226,10 +209,7 @@ export type AgentImportSelection = z.infer<typeof AgentImportSelectionSchema>;
 /** API keys and credential values are read only when the user opted in. */
 const includeSecrets = z.boolean().default(false);
 
-/**
- * Names (never contents) of the other files in each skill's folder, keyed by the SKILL.md
- * path in the agent's home. Those files are not imported; their names show what is missing.
- */
+/** Names, never contents, of the files beside each SKILL.md, to show what a skill is missing. */
 const skillFiles = z
   .record(
     z.string().max(AGENT_IMPORT_MAX_PATH_LENGTH),
@@ -244,11 +224,7 @@ export const AgentImportPreviewInput = z.strictObject({
   skillFiles,
 });
 
-/**
- * Where an import goes: a new bot (the default), or a bot the user already has. An existing
- * bot keeps its name, profile, model and instructions unless the user chooses to replace
- * the instructions; the model changes only when it is ticked.
- */
+/** An existing bot keeps its instructions unless replaced, and its model unless ticked. */
 export const AgentImportDestinationSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("new") }),
   z.strictObject({
@@ -288,9 +264,8 @@ const importedNames = z.object({
   routines: z.array(z.string()).default([]),
 });
 
-/** What Undo would do for an imported bot: what it removes and what it keeps because it changed. */
+/** What Undo would remove, and what it keeps because it changed since the import. */
 export const AgentImportInfoSchema = z.object({
-  /** The import this describes. Undo names it, so it never removes a different one. */
   id: z.string(),
   source: AgentImportSourceSchema,
   createdAt: z.string(),
@@ -298,10 +273,7 @@ export const AgentImportInfoSchema = z.object({
   keep: importedNames,
   /** Added to a bot that existed before; Undo then never deletes the bot. */
   existingBot: z.boolean().default(false),
-  /**
-   * When the import replaced the bot's instructions: whether Undo puts the previous ones
-   * back (`restore`) or keeps the current ones because they changed since (`keep`).
-   */
+  /** Set when the import replaced the instructions; `keep` when they changed since. */
   instructions: z.enum(["restore", "keep"]).nullable().default(null),
   /** Likewise for a model the import set on an existing bot. */
   model: z.enum(["restore", "keep"]).nullable().default(null),

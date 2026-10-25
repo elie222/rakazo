@@ -33,10 +33,7 @@ export function shouldRenderToolCard(block: MessageBlock, showToolActivity: bool
   return showToolActivity && block.kind === "steps";
 }
 
-/**
- * Blocks that survive into a message render: everything except hidden tool activity and a
- * retired import checklist.
- */
+/** Blocks that survive into a message render. */
 export function renderableMessageBlocks(
   blocks: readonly MessageBlock[],
   showToolActivity: boolean,

@@ -62,7 +62,7 @@ const STATUS_WARNINGS: ReadonlySet<AgentImportWarning> = new Set([
 ]);
 
 const panelStyle = { section: "mt-6", heading: "text-sm text-foreground" };
-// Onboarding's step style: label rhythm, full-width groups (see SignupSurvey).
+// Matches SignupSurvey's step style.
 const pageStyle = { section: "mt-6 first:mt-0", heading: "text-sm font-medium text-foreground" };
 
 /** A chosen folder or opened backup: its paths, and its files read on demand. */
@@ -72,13 +72,8 @@ export type AgentImportSource = {
   size: (path: string) => number | undefined;
 };
 
-/** What the form sends to create the bot. */
 export type AgentImportCreateRequest = Parameters<typeof rpc.bots.importCreate>[0];
 
-/**
- * Import an OpenClaw or Hermes folder or backup, or another assistant's exported document,
- * into a new bot or (from the shell) one the user already has.
- */
 export function AgentImportForm({
   onBack,
   onCancel,
@@ -93,14 +88,11 @@ export function AgentImportForm({
   onCreated: (bot: Bot) => void;
   /** How the bot is created; onboarding wraps it so a first bot is only made once. */
   createBot?: (input: AgentImportCreateRequest) => Promise<Bot>;
-  /** `page` renders as an onboarding step; `panel` as the shell's side panel. */
+  /** `page` is an onboarding step; `panel` is the shell's side panel. */
   layout?: "panel" | "page";
-  /**
-   * Bots the import can be added to instead of making a new one. Empty (as in onboarding)
-   * hides the choice: the import always makes a new bot.
-   */
+  /** Bots the import can be added to; empty (onboarding) always makes a new bot. */
   bots?: readonly Bot[];
-  /** A folder or backup already chosen (dropped into a chat): previewed straight away. */
+  /** A folder or backup dropped into a chat, previewed straight away. */
   initialSource?: AgentImportSource;
 }) {
   const page = layout === "page";
@@ -112,10 +104,10 @@ export function AgentImportForm({
   const folderInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<AgentImportFile[]>([]);
-  // The chosen folder or backup, read on demand.
   const [source, setSource] = useState<AgentImportSource | null>(null);
-  // Its files read so far, by upload path, with their path in the agent's home.
-  const [folder, setFolder] = useState<{ path: string; home: string; content: string }[]>([]);
+  const [sourceFiles, setSourceFiles] = useState<{ path: string; home: string; content: string }[]>(
+    [],
+  );
   const [hasSecretFiles, setHasSecretFiles] = useState(false);
   const [includeSecrets, setIncludeSecrets] = useState(false);
   // One key per import, so a retried create returns the bot the first one made.
@@ -130,7 +122,6 @@ export function AgentImportForm({
   const [destinations, setDestinations] = useState<Record<string, AgentImportMemoryDestination>>(
     {},
   );
-  // Where the import goes. Always starts as a new bot; an existing bot must be picked.
   const [target, setTarget] = useState<"new" | "existing">("new");
   const [targetBotId, setTargetBotId] = useState("");
   const [replaceInstructions, setReplaceInstructions] = useState(false);
@@ -223,7 +214,6 @@ export function AgentImportForm({
     }
   }
 
-  /** Why a folder or backup could not be used, as the alert shows it. */
   function readError(err: unknown) {
     if (err instanceof AgentImportArchiveError) {
       return err.reason === "too_large"
@@ -233,10 +223,7 @@ export function AgentImportForm({
     return t`Could not read these files`;
   }
 
-  /**
-   * Reads a folder or backup with the shared rule: sizes are checked first, bundled skills
-   * and `.env`/`auth.json` are not read, and only the files an import uses leave the device.
-   */
+  /** Only the files an import uses leave the device; `.env`/`auth.json` are not read. */
   async function loadSource(next: AgentImportSource) {
     const read = ++latestRead.current;
     setError(null);
@@ -252,7 +239,7 @@ export function AgentImportForm({
         new Map(chosen.entries.map((entry) => [entry.path, entry.home])),
       );
       setSource(next);
-      setFolder(chosen.entries);
+      setSourceFiles(chosen.entries);
       setHasSecretFiles(chosen.hasSecretFiles);
       setSkillFiles(siblings);
       importKey.current = crypto.randomUUID();
@@ -279,7 +266,7 @@ export function AgentImportForm({
         size: source.size,
       });
       if (read !== latestRead.current) return;
-      setFolder(chosen.entries);
+      setSourceFiles(chosen.entries);
       await preview(read, agentImportUpload(chosen.entries, { includeSecrets: checked }), {
         secrets: checked,
         keepChoices: true,
@@ -300,7 +287,7 @@ export function AgentImportForm({
     });
   }
 
-  /** A backup is unpacked here, on this device, one file at a time. */
+  /** Unpacked on this device, one file at a time. */
   async function pickArchive(file: File | undefined) {
     if (!file) return;
     setError(null);
@@ -315,7 +302,6 @@ export function AgentImportForm({
     }
   }
 
-  // A dropped agent is read once, with the same rule as one chosen here.
   const loaded = useRef<AgentImportSource | null>(null);
   useEffect(() => {
     if (!initialSource || loaded.current === initialSource) return;
@@ -324,13 +310,12 @@ export function AgentImportForm({
   }, [initialSource]);
 
   const secretsAvailable =
-    hasSecretFiles || folder.some(({ home, content }) => hasAgentImportSecrets(home, content));
+    hasSecretFiles || sourceFiles.some(({ home, content }) => hasAgentImportSecrets(home, content));
 
-  /** A pasted or chosen document: no folder, no secrets. */
   async function previewDocument(content: string) {
     const read = ++latestRead.current;
     setSource(null);
-    setFolder([]);
+    setSourceFiles([]);
     setHasSecretFiles(false);
     setSkillFiles({});
     importKey.current = crypto.randomUUID();
@@ -341,7 +326,6 @@ export function AgentImportForm({
     const file = list?.[0];
     if (!file) return;
     try {
-      // Refused before it is read when it is larger than a document can be.
       const text = await readAgentDocument(file);
       if (text === null) {
         setError(t`These files are too large to import.`);
@@ -438,7 +422,6 @@ export function AgentImportForm({
     });
   }
 
-  // Each title expands to the text that would be imported; the checkbox stays separate.
   const item = (
     id: string,
     title: string,
@@ -490,14 +473,10 @@ export function AgentImportForm({
     </li>
   );
 
-  // An untouched file the source wrote for every new agent.
   const defaultNote = plan?.source === "hermes" ? t`Default from Hermes` : t`Default from OpenClaw`;
   // Never the matched text: the expanded item shows the user's own text, unchanged.
   const keyNote = t`Looks like it contains a key`;
-  /**
-   * A flagged item's label, unless the label itself looks like a key (a heading or a skill
-   * name that is one): then its kind and position, so the value is never shown as a title.
-   */
+  // A label that itself looks like a key is replaced by its kind and position.
   const safeLabel = (label: string, containsKey: boolean | undefined, fallback: string) =>
     containsKey && looksLikeCredential(label) ? fallback : label;
   const skillLabel = (index: number) => {
@@ -514,7 +493,6 @@ export function AgentImportForm({
       invalid_file: t`Could not read these files`,
       default: defaultNote,
     })[reason];
-  /** Extra detail next to a status; the status already says what it needs. */
   const warningText = (warning: AgentImportWarning) =>
     warning === "runs_code"
       ? t`Contains code to run`
@@ -523,12 +501,7 @@ export function AgentImportForm({
         : warning === "changed_schedule"
           ? t`Timing may differ`
           : null;
-  /**
-   * Next to each skill, MCP server and routine: whether it works here (Ready, what it needs,
-   * or not supported), then anything else worth reading first.
-   */
   const statusNote = (status: AgentImportStatus, warnings: AgentImportWarning[]) => {
-    // One status per item; extra detail only when it says something the status does not.
     const others = warnings.filter(
       (warning) =>
         !STATUS_WARNINGS.has(warning) &&
@@ -668,7 +641,6 @@ export function AgentImportForm({
                     entry.id,
                     safeLabel(entry.title, entry.containsKey, t`Instructions ${position}`),
                     entry.content,
-                    // What the file is for, then why it may need a look.
                     note(
                       [
                         entry.role === "persona" ? t`Persona` : t`Working instructions`,

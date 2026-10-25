@@ -43,7 +43,6 @@ export function CreateBotDialog({
 }: {
   onCancel: () => void;
   onCreate: (input: CreateBotDialogInput) => Promise<void>;
-  /** Import an OpenClaw, Hermes or other agent instead. */
   onImport?: () => void;
 }) {
   const { t } = useLingui();

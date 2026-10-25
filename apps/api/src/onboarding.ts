@@ -154,8 +154,7 @@ export async function promptFocus(
       select: { id: true },
     });
     if (intro) return null;
-    // An imported agent already has a role, so it is not asked for one, even by a client
-    // that no longer remembers the import (onboarding after a reload).
+    // An imported agent already has a role.
     const imported = await tx.agentImport.findFirst({
       where: { botId: bot.id },
       select: { id: true },

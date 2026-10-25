@@ -519,7 +519,6 @@ export function createRepos(
         };
         /** Adds content in the creation transaction, after the bot and its MEMORY.md exist. */
         seed?: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
-        /** For a seed whose own checks need it (an agent import's create-only keys). */
         isolationLevel?: Prisma.TransactionIsolationLevel;
       },
     ): Promise<Bot> {

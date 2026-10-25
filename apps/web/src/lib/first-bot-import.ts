@@ -4,11 +4,7 @@ import { agentImportErrorReason } from "@rakazo/contracts";
 type FirstBot = { id: string };
 type ImportCreateRequest = { spawnKey?: string } & Record<string, unknown>;
 
-/**
- * Imports an agent as the space's first bot, under the same cross-tab lock and spawn key
- * onboarding uses for Chief: if another tab already made the first bot, that bot is used
- * and nothing is imported, so a space never gets both.
- */
+/** Shares Chief's cross-tab lock and spawn key, so a space never gets both first bots. */
 export async function importAsFirstBot<Request extends ImportCreateRequest>(
   deps: {
     lock: <T>(run: () => Promise<T>) => Promise<T>;
@@ -25,7 +21,7 @@ export async function importAsFirstBot<Request extends ImportCreateRequest>(
       const bot = await deps.importCreate({ ...input, spawnKey: deps.spawnKey });
       return { bot: { id: bot.id }, imported: true };
     } catch (error) {
-      // Another device made the first bot meanwhile: the server keeps it and imports nothing.
+      // Another device made the first bot meanwhile.
       const made =
         agentImportErrorReason(error) === "first_bot_exists" ? await deps.existing() : undefined;
       if (!made) throw error;

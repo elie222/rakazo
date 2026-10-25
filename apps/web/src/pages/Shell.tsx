@@ -407,7 +407,6 @@ function SpaceShell() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modelFocusRequest, setModelFocusRequest] = useState(0);
   const [panel, setPanelState] = useState<Panel>(null);
-  // An agent dropped into a chat, waiting in the import form.
   const [droppedAgent, setDroppedAgent] = useState<DroppedAgent | null>(null);
   const [restoredPanelKey, setRestoredPanelKey] = useState<string | null>(null);
   const panelStorageKeyRef = useRef<string | null>(null);
@@ -2616,7 +2615,6 @@ function SpaceShell() {
     openSettings("models", spaceId);
   }
 
-  /** An imported bot: shown like a created one, with the import panel closed. */
   function openCreatedBot(bot: Bot) {
     // A roster requested before creation may omit this bot and redirect its new chat.
     botsRefreshEpoch.current += 1;
@@ -3836,7 +3834,6 @@ function SpaceShell() {
                 bots={bots.filter((bot) => !bot.archivedAt)}
                 initialSource={droppedAgent ?? undefined}
                 onBack={() => {
-                  // Back to the new bot dialog the import was opened from.
                   setDroppedAgent(null);
                   setPanel(null);
                   setCreateBotOpen(true);

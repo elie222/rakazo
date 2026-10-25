@@ -31,10 +31,7 @@ function isCardBlock(block: MessageBlock): boolean {
   return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
 }
 
-/**
- * Cards only the web app draws (an agent import's setup checklist links to web settings).
- * The app leaves them out rather than drawing an empty bubble.
- */
+/** The import setup checklist links to web settings, so mobile leaves it out. */
 function isWebOnlyBlock(block: MessageBlock): boolean {
   return block.kind === "import_setup";
 }

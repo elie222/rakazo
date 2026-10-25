@@ -8,7 +8,7 @@ export type Panel =
   | null;
 export type RightPanelState = { panel: Panel; routineId?: string };
 
-/** Panels that are safe to remember across reloads. Create-group and import stay ephemeral. */
+/** Panels that are safe to remember across reloads. */
 const durablePanels: readonly Panel[] = ["computer", "settings", "routine", "group-settings", null];
 
 export function rightPanelStorageKey(

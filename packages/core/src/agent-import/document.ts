@@ -5,9 +5,8 @@ import type { AgentImportParse } from "./shared.js";
 import { memoryItem, skillItem } from "./shared.js";
 
 /**
- * Copied into another assistant, which answers with the document `parseAgentDocument`
- * reads. Model-facing text for a product the user already uses, so it stays in English.
- * Keep the section names here and in SECTIONS together.
+ * Model-facing text pasted into another product, so it stays in English. Keep its section
+ * names in sync with SECTIONS.
  */
 export const AGENT_IMPORT_PROMPT = `I am moving you to a new assistant app. Write down everything it needs to carry on where you left off, as one Markdown document in exactly this layout:
 
@@ -38,7 +37,6 @@ const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 
 type Block = { heading: string; lines: string[] };
 
-/** True when the text has at least one of the document's sections. */
 export function isAgentDocument(text: string): boolean {
   const sections = documentSections(text);
   return Boolean(sections && (sections.instructions || sections.memory || sections.skills));
@@ -72,10 +70,7 @@ export function parseAgentDocument(text: string): AgentImportParse {
   };
 }
 
-/**
- * Sections of the document, ignoring chatter before it and, when the assistant wrapped
- * it in a code fence, after it. Headings inside code blocks are content.
- */
+/** Ignores chatter before the document and after its wrapping fence, if any. */
 function documentSections(text: string): Partial<Record<Section, Block>> | null {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const start = lines.findIndex((line) => SECTION_HEADING.test(line));
@@ -122,7 +117,7 @@ function withFences(lines: string[]): { text: string; inFence: boolean }[] {
   });
 }
 
-/** `## <title>` blocks of a section; lines before the first one have an empty title. */
+/** Lines before the first `## ` heading form a block with an empty heading. */
 function subsections(lines: string[]): Block[] {
   const blocks: Block[] = [{ heading: "", lines: [] }];
   for (const line of withFences(lines)) {
@@ -169,7 +164,6 @@ function skillDocuments(section: Block): Pick<AgentImportParse, "skills" | "skip
   return { skills, skipped };
 }
 
-/** Trimmed block text ending in one newline, or empty. */
 function markdown(lines: string[]): string {
   const text = lines.join("\n").trim();
   return text ? `${text}\n` : "";

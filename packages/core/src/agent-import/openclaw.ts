@@ -3,11 +3,7 @@ import type { AgentImportParse, SkillFiles } from "./shared.js";
 import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./shared.js";
 import { isOpenClawDefault } from "./stock.js";
 
-/**
- * OpenClaw workspace files that become instructions, with what each is for: SOUL.md is the
- * persona (tone, values, boundaries), AGENTS.md the working conventions. IDENTITY.md is
- * read for the bot's name and description only.
- */
+/** IDENTITY.md is read for the bot's name and description only, not as instructions. */
 export const OPENCLAW_INSTRUCTION_FILES = [
   ["SOUL.md", "persona"],
   ["AGENTS.md", "working"],
@@ -71,7 +67,7 @@ export function parseOpenClaw(
   };
 }
 
-/** Labels OpenClaw reads from IDENTITY.md, and the ones that are not imported. */
+/** In OpenClaw's order of preference. */
 const DESCRIPTION_LABELS = ["theme", "creature", "vibe"] as const;
 const UNUSED_LABELS = { emoji: "Emoji", avatar: "Avatar" } as const;
 /** The hints OpenClaw's template leaves in place of a value. */
@@ -84,11 +80,7 @@ const PLACEHOLDERS = new Set([
   "workspace-relative path, http(s) url, or data uri",
 ]);
 
-/**
- * IDENTITY.md as OpenClaw reads it: `- Label: value` lines, labels case-insensitive and
- * possibly bold, placeholder hints ignored. Theme, then Creature, then Vibe gives the
- * description, in OpenClaw's own order of preference.
- */
+/** `- Label: value` lines; labels case-insensitive and possibly bold, placeholders ignored. */
 export function parseOpenClawIdentity(content: string): {
   name?: string;
   description?: string;
@@ -137,11 +129,7 @@ function identityValue(raw: string): string {
 const RUNTIME_HEADING = /^#{1,6}\s+(?:\W+\s*)?(first run|session startup|heartbeats?\b.*)$/i;
 const RUNTIME_FILE = /\b(BOOTSTRAP\.md|HEARTBEAT\.md|BOOT\.md|memory\/YYYY-MM-DD\.md)\b/g;
 
-/**
- * Where a customised AGENTS.md refers to OpenClaw's runtime (its first-run ritual, session
- * startup, heartbeat polling, daily memory files). The text is kept as written and only
- * flagged: whether it still makes sense is the user's call.
- */
+/** Only flagged, never rewritten: whether the text still makes sense is the user's call. */
 export function openClawRuntimeMentions(content: string): string[] {
   const found = new Set<string>();
   for (const line of content.replace(/\r\n?/g, "\n").split("\n")) {
@@ -152,7 +140,6 @@ export function openClawRuntimeMentions(content: string): string[] {
   return [...found];
 }
 
-/** `workspace-<agentId>` is the folder of a named agent. */
 function workspaceAgentId(root: string): string | undefined {
   return /^workspace-(.+)$/.exec(root)?.[1];
 }

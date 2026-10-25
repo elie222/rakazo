@@ -11,11 +11,7 @@
  *   (`DEFAULT_SOUL_MD` and `_LEGACY_TEMPLATE_SOULS`), from the file as committed at HEAD
  *   (`git show`, never the working copy), evaluated with python3.
  *
- * Offline: only local files, git and python3. Output is sorted, with full commit hashes,
- * and any failure to read a version stops the script. The fingerprint matches
- * `fingerprint()` in stock.ts: front matter removed (OpenClaw only, as OpenClaw seeds the
- * file), a byte order mark dropped, whitespace runs collapsed, then
- * `<32-bit FNV-1a hex>:<UTF-8 length>`.
+ * Offline: only local files, git and python3. `fingerprint()` must match stock.ts.
  */
 import { execFileSync } from "node:child_process";
 
@@ -63,7 +59,6 @@ for (const name of ["SOUL", "AGENTS", "USER", "IDENTITY"]) {
   for (let index = 0; index < log.length; index += 2) {
     const [sha, path] = [log[index], log[index + 1]];
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`unexpected commit "${sha}" for ${file}`);
-    // A version that cannot be read stops the script rather than being skipped.
     const content = git(openclaw, "show", `${sha}:${path}`);
     if (!content.trim()) continue;
     const key = fingerprint(withoutFrontmatter(content));

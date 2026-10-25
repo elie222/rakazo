@@ -379,11 +379,7 @@ export async function destroyBot(
   context: AdapterContext,
   options: {
     deleteMemories: boolean;
-    /**
-     * More removals that must commit or fail together with the bot's deletion. Runs right
-     * after the bot row is locked, before memories are archived, and may decide whether
-     * the bot's memories are deleted.
-     */
+    /** Runs in the deletion transaction once the bot row is locked; may set `deleteMemories`. */
     within?: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
   },
 ) {

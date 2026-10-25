@@ -2,11 +2,6 @@ import { t } from "@lingui/core/macro";
 import { agentImportErrorReason } from "@rakazo/contracts";
 import { translateRunError } from "./run-error";
 
-/**
- * Copy for an import or Undo the server refused, chosen by the reason it sends (its message
- * is English). Undefined for anything else, which `errorText` handles as before.
- */
-/** The provider an import error names, for copy that says which key failed. */
 function errorProvider(error: unknown): string {
   const data = error && typeof error === "object" && "data" in error ? error.data : undefined;
   const provider = data && typeof data === "object" && "provider" in data ? data.provider : "";
@@ -15,6 +10,7 @@ function errorProvider(error: unknown): string {
     : translateRunError("Your model provider");
 }
 
+/** Localized copy for a refused import or Undo; undefined for other errors. */
 export function agentImportErrorText(error: unknown): string | undefined {
   switch (agentImportErrorReason(error)) {
     case "selection_mismatch":

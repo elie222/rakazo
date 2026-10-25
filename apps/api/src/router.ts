@@ -1081,7 +1081,6 @@ export function createRouter(deps: RouterDeps) {
     void probeMcpServer(row, actor);
     return display;
   };
-  /** The writes of `mcp.servers.remove`, shared with undoing an import. */
   const removeMcpServerInTransaction = async (
     tx: Prisma.TransactionClient,
     actor: Actor,
@@ -1100,7 +1099,6 @@ export function createRouter(deps: RouterDeps) {
     }
     return painted;
   };
-  /** `mcp.servers.create` in three steps, shared with agent imports: validate and encrypt, */
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
     if (input.transport === "stdio") {
@@ -1112,7 +1110,6 @@ export function createRouter(deps: RouterDeps) {
       ? await deps.secrets.put(secretPayload, computerContext(actor, "mcp", "mcp.create"))
       : null;
   };
-  /** write the rows in the caller's transaction, */
   const insertMcpServer = async (
     tx: Prisma.TransactionClient,
     actor: Actor,
@@ -1155,12 +1152,10 @@ export function createRouter(deps: RouterDeps) {
       },
     });
   };
-  /** then start its first health check, as the form does. */
   const announceMcpServer = async (row: McpServerRow, actor: Actor) => {
     const oauth = await mcpOAuth.summaryFor(row, actor);
     return mcpServerDto(await beginMcpProbe(row, actor, oauth), oauth);
   };
-  /** After a routine row is written: tell its thread and schedule its first run. */
   const announceRoutine = async (
     actor: Actor,
     bot: { id: string; thread: { id: string } | null },
@@ -1180,10 +1175,6 @@ export function createRouter(deps: RouterDeps) {
     }
   };
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
-  /**
-   * The checks of `models.connect` before anything is saved; returns the secret to store and
-   * the connection it updates (null adds one).
-   */
   const verifyModelConnection = async (
     actor: Actor,
     input: ModelConnectInput,
@@ -1249,7 +1240,6 @@ export function createRouter(deps: RouterDeps) {
     }
     return { plaintext, credential };
   };
-  /** Saves a model connection: the `models.connect` path. */
   const connectModelCredential = async (
     actor: Actor,
     input: ModelConnectInput,
@@ -1281,7 +1271,6 @@ export function createRouter(deps: RouterDeps) {
     deps.refreshExpiredModelCredential ??
     ((scope: { userId: string; spaceId: string }, secretId: string, provider: string) =>
       kickModelCredentialRefresh(deps.prisma, deps.secrets, scope, secretId, provider));
-  /** What `bots.update` checks a bot's model against, shared with agent imports. */
   const botModelValidation = (actor: Actor) => ({
     prisma: deps.prisma,
     secretStore: deps.secrets,
@@ -1293,7 +1282,6 @@ export function createRouter(deps: RouterDeps) {
       return { provider: me.defaultProvider, model: me.defaultModel };
     },
   });
-  /** `bots.remove`: the bot, its computer, runs and history, shared with undoing an import. */
   const removeBot = async (
     actor: Actor,
     botId: string,
@@ -1327,8 +1315,7 @@ export function createRouter(deps: RouterDeps) {
   };
   const agentImportServices: AgentImportServices<ImportKey> = {
     prisma: deps.prisma,
-    // Serializable, like `models.connect`, so an import's create-only key check cannot race
-    // a connection saved at the same moment; a conflict retries the whole import.
+    // Serializable so the create-only key check cannot race a connection saved meanwhile.
     createBot: (actor, input) =>
       withSerializableRetry(() =>
         repos.createBot(actor, {
@@ -1343,8 +1330,7 @@ export function createRouter(deps: RouterDeps) {
         where: { id: server.secretId, spaceId: actor.spaceId, userId: actor.userId },
       });
       if (!secret) return null;
-      // Decrypted material stays inside this function: a failure to decrypt or parse (whose
-      // error can quote the input) is neither rethrown nor logged, only noted by server id.
+      // A decrypt or parse error can quote the secret, so it is neither rethrown nor logged.
       try {
         return mcpCredentialRecords(
           JSON.parse(await deps.secrets.load(secret.ciphertext, { recordId: secret.id })),
@@ -1379,7 +1365,6 @@ export function createRouter(deps: RouterDeps) {
       deps.env.mcpStdioEnabled === true &&
       isAllowedStdioCommand(command, deps.env.mcpStdioAllowedCommands ?? []),
     prepareModelKey: async (actor, input, signal) => {
-      // Always a new connection: an import never updates or renames one the user has.
       const connect = ModelConnectInputSchema.parse({ ...input, credentialId: null });
       const { plaintext } = await verifyModelConnection(actor, connect, signal);
       const credential = {
@@ -7918,11 +7903,10 @@ type ModelCredentialInput = {
   makeDefault?: boolean;
   supportsImages?: boolean;
   signal?: AbortSignal;
-  /** Leave the space's existing main model as it is; set this one only if there is none. */
+  /** Becomes the main model only while the space has none. */
   keepExistingDefault?: boolean;
 };
 
-/** Checks a connection's model and encrypts its secret; nothing is written yet. */
 async function prepareModelCredential(
   deps: RouterDeps,
   actor: Actor,
@@ -7972,7 +7956,6 @@ async function prepareModelCredential(
   return { stored, defaultModel, allowedThinking };
 }
 
-/** The `headers` and `env` of decoded MCP credential material, if both are string records. */
 function mcpCredentialRecords(
   material: unknown,
 ): { headers: Record<string, string>; env: Record<string, string> } | null {
@@ -7990,11 +7973,7 @@ function mcpCredentialRecords(
   return parsed.headers && parsed.env ? { headers: parsed.headers, env: parsed.env } : null;
 }
 
-/**
- * An import's key: written only when the user has no connection for the provider. The import
- * runs in a serializable transaction, as `models.connect` does, so a connection saved at the
- * same time makes one of the two retry and never leaves two (or a replaced one).
- */
+/** Create-only: null when the provider is already connected. */
 async function createImportedModelCredential(
   tx: Prisma.TransactionClient,
   actor: Actor,
@@ -8009,7 +7988,6 @@ async function createImportedModelCredential(
   return writeModelCredential(tx, actor, input, prepared);
 }
 
-/** Writes a prepared connection in the caller's transaction. */
 async function writeModelCredential(
   tx: Prisma.TransactionClient,
   actor: Actor,
@@ -8081,7 +8059,6 @@ async function writeModelCredential(
     select: { isDefault: true },
   });
   // Only an explicit main-model connect changes a role. Omitted means yes for older apps.
-  // An import's key becomes the main model only while the space has none.
   const becomesMain =
     input.makeDefault !== false &&
     Boolean(defaultModel) &&
@@ -8144,7 +8121,6 @@ async function persistModelCredential(
   return modelCredentialDto(cred, input.plaintext);
 }
 
-/** The `routines.create` schedule rules, shared with agent imports. */
 function assertRoutineSchedule(input: CreateRoutineInput): void {
   if (hasMixedOneShotSchedule(input.crons)) {
     throw new ORPCError("BAD_REQUEST", {

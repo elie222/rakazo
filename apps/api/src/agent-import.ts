@@ -53,9 +53,8 @@ type Reader = Pick<Prisma.TransactionClient, "memoryDocument" | "agentSkill" | "
 type Stored = Awaited<ReturnType<SecretStore["put"]>> | null;
 
 /**
- * The existing paths an import writes through, built by the router so each setting is
- * validated, encrypted and scheduled exactly as when the user adds it by hand. Checks and
- * encryption run before the import's single transaction; the writes run inside it.
+ * The router's own write paths, so imported settings are validated, encrypted and scheduled
+ * exactly as when added by hand.
  */
 export type AgentImportServices<PreparedKey = unknown> = {
   prisma: PrismaClient;
@@ -75,19 +74,14 @@ export type AgentImportServices<PreparedKey = unknown> = {
     },
   ) => Promise<Bot>;
   hasModelConnection: (actor: Actor, provider: string) => Promise<boolean>;
-  /**
-   * The header and env values stored for an MCP server's credential, decrypted on the server
-   * only to tell set from blank; never returned to a client. Null when there is none.
-   */
+  /** Decrypted only to tell set from blank; never returned to a client. */
   mcpCredentialValues: (
     actor: Actor,
     server: { id: string; secretId: string },
   ) => Promise<{ headers: Record<string, string>; env: Record<string, string> } | null>;
-  /** Which of these providers the actor has a connection for, read once. */
   connectedProviders: (actor: Actor, providers: string[]) => Promise<Set<string>>;
   /** `bots.update`'s model check; an error message or null. */
   validateBotModel: (actor: Actor, provider: string, modelId: string) => Promise<string | null>;
-  /** Whether this deployment can launch a stdio MCP command. */
   stdioAllowed: (command: string) => boolean;
   /** `models.connect`'s checks and encryption for a key, without writing it. */
   prepareModelKey: (
@@ -95,10 +89,7 @@ export type AgentImportServices<PreparedKey = unknown> = {
     input: { provider: string; apiKey: string; modelId?: string },
     signal?: AbortSignal,
   ) => Promise<PreparedKey>;
-  /**
-   * `models.connect`'s writes, keeping the space's existing default model. Create-only:
-   * null, and nothing written, when the provider is already connected.
-   */
+  /** Create-only: null, and nothing written, when the provider is already connected. */
   writeModelKey: (
     tx: Prisma.TransactionClient,
     actor: Actor,
@@ -112,12 +103,8 @@ export type AgentImportServices<PreparedKey = unknown> = {
     input: McpServerConfigInput,
     stored: Stored,
   ) => Promise<McpServerRow>;
-  /**
-   * A serializable transaction, retried on conflict, for an import into an existing bot
-   * (a new bot's import runs inside `createBot`, serializable too).
-   */
+  /** Serializable and retried on conflict, like `createBot`'s transaction. */
   inTransaction: <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
-  /** The actor's bot as `bots.get` returns it, or null. */
   findBot: (actor: Actor, botId: string) => Promise<Bot | null>;
   assertRoutineSchedule: (input: CreateRoutineInputType) => void;
   routineNextRunAt: (input: CreateRoutineInputType) => Date | null;
@@ -131,7 +118,6 @@ export type AgentImportServices<PreparedKey = unknown> = {
     bot: { id: string; thread: { id: string } | null },
     row: Routine,
   ) => Promise<void>;
-  /** `bots.remove`, with more removals inside its deletion transaction. */
   destroyBot: (
     actor: Actor,
     botId: string,
@@ -140,20 +126,16 @@ export type AgentImportServices<PreparedKey = unknown> = {
       within: (tx: Prisma.TransactionClient) => Promise<{ deleteMemories: boolean } | undefined>;
     },
   ) => Promise<void>;
-  /** `mcp.servers.remove`'s writes; returns the chat events its closed cards appended. */
+  /** Returns the chat events its closed approval cards appended. */
   removeMcpServer: (
     tx: Prisma.TransactionClient,
     actor: Actor,
     server: { id: string; secretId: string | null },
   ) => Promise<{ threadId: string; seq: number }[]>;
-  /** Tells open chats about an event, once its transaction committed. */
   notifyThread: (threadId: string, seq: number) => Promise<void>;
 };
 
-/**
- * What an import created and how it looked then, kept on its record so Undo removes only
- * what the user has not changed since.
- */
+/** What an import created and how it looked then, so Undo removes only what is unchanged. */
 type ImportRecord = {
   skills: { id: string; hash: string }[];
   spaceMemory: { id: string; revision: number }[];
@@ -171,20 +153,16 @@ type ImportRecord = {
   }[];
   routines: { id: string; updatedAt?: string }[];
   credentials: { id: string; secretId: string; provider: string }[];
-  /** Added to a bot that existed before: Undo removes what was added, never the bot. */
   existingBot?: boolean;
-  /** The checklist message this import posted, retired by Undo. */
   setupMessageId?: string;
-  /** When the import replaced that bot's instructions: the history entry with the old ones. */
+  /** `versionId` is the history entry holding the replaced instructions. */
   instructions?: { versionId: string; imported: string };
-  /** When the import set that bot's model: the one it had before, and the one set. */
   model?: {
     previous: { provider: string | null; modelId: string | null };
     imported: { provider: string; modelId: string };
   };
 };
 
-/** Warnings that mean the item cannot work at all here. */
 const BLOCKING: ReadonlySet<AgentImportWarning> = new Set(["unsupported_command"]);
 
 function parsePlan(files: AgentImportFile[], skillFiles: SkillFiles): AgentImportPlan {
@@ -193,7 +171,6 @@ function parsePlan(files: AgentImportFile[], skillFiles: SkillFiles): AgentImpor
   return plan;
 }
 
-/** Names this actor already uses; imports never overwrite them. */
 async function takenNames(db: Reader, actor: Actor) {
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   const documents = await db.memoryDocument.findMany({
@@ -214,14 +191,10 @@ type Built = {
   settings: (AgentImportSettings & { keyValues: Map<string, string> }) | null;
   routineInputs: Map<string, CreateRoutineInputType>;
   mcpConfigs: Map<string, ImportedMcpServer & { slug: string }>;
-  /** Key ids skipped because their provider is connected (since the preview, perhaps). */
   connectedKeyIds: Set<string>;
 };
 
-/**
- * The plan for these files against the actor's data. Settings come from the source's
- * config files; key values stay in `settings.keyValues` and never enter the plan.
- */
+/** Key values stay in `settings.keyValues` and never enter the plan. */
 async function buildPlan(
   services: AgentImportServices,
   actor: Actor,
@@ -235,7 +208,6 @@ async function buildPlan(
     base.source === "document" ? null : readAgentImportFolder(files, { includeSecrets });
   const routineInputs = new Map<string, CreateRoutineInputType>();
   const mcpConfigs = new Map<string, ImportedMcpServer & { slug: string }>();
-  // Keys whose provider is connected now: never imported, and fine to still be selected.
   const connectedKeyIds = new Set<string>();
   if (!folder) return { plan, settings: null, routineInputs, mcpConfigs, connectedKeyIds };
   const settings = readAgentImportSettings(folder, {
@@ -246,8 +218,6 @@ async function buildPlan(
   let model: AgentImportPlan["model"] = null;
   if (settings.model) {
     const { title, provider, providerName, modelId, known } = settings.model;
-    // Usable means what `bots.update` would accept for this actor now: a connection for
-    // that provider (or the deployment's hosted credits) and a model it can call.
     const usable = (await services.validateBotModel(actor, provider, modelId)) === null;
     const status = usable ? "ready" : known ? "needs_key" : "unknown";
     model = { id: "model", title, provider, providerName, modelId, status };
@@ -256,7 +226,6 @@ async function buildPlan(
   const skipped = [...plan.skipped, ...settings.skipped];
   const apiKeys: AgentImportPlan["apiKeys"] = [];
   for (const key of settings.apiKeys) {
-    // An existing connection is never replaced by an import.
     if (await services.hasModelConnection(actor, key.provider)) {
       skipped.push({ path: key.source, reason: "connected" });
       connectedKeyIds.add(key.id);
@@ -295,7 +264,6 @@ async function buildPlan(
       prompt: routine.prompt,
       crons: [routine.cron],
       timezone,
-      // Paused, like every new routine: the user turns it on.
       active: false,
     });
     if (!parsed.success) {
@@ -309,7 +277,6 @@ async function buildPlan(
         title: routine.title,
         content: `${routine.cron} (${timezone})\n\n${routine.prompt}`,
         warnings: routine.warnings,
-        // Created paused: it runs once the user turns it on.
         status: { kind: "needs_setup" as const, needs: [{ kind: "turn_on" as const }] },
       },
     ];
@@ -332,7 +299,7 @@ export async function previewAgentImport(
   return (await buildPlan(services, actor, input)).plan;
 }
 
-/** Items of `items` whose ids were selected, in plan order; unknown or repeated ids fail. */
+/** In plan order; unknown or repeated ids are refused. */
 function selected<
   T extends { id: string; warnings?: AgentImportWarning[]; status?: { kind: string } },
 >(items: T[], ids: string[]): T[] {
@@ -345,7 +312,6 @@ function selected<
   if (picked.some((item) => item.warnings?.some((warning) => BLOCKING.has(warning)))) {
     throw refused("BAD_REQUEST", "cannot_run_here", "That MCP server cannot run here.");
   }
-  // Not supported here at all (a skill for another platform): never created.
   if (picked.some((item) => item.status?.kind === "unsupported")) {
     throw refused("BAD_REQUEST", "cannot_run_here", "That item cannot work here.");
   }
@@ -353,10 +319,8 @@ function selected<
 }
 
 /**
- * Creates the bot from re-read files (nothing is staged between preview and create). Every
- * check, key verification and encryption runs first; then one transaction writes the keys,
- * bot, memory, skills, MCP servers with their approval cards, routines and the import
- * record. Health checks and routine notices follow; they write nothing the import needs.
+ * Re-reads the files (nothing is staged between preview and create), runs every check and
+ * encryption, then writes everything and the import record in one transaction.
  */
 export async function createImportedBot<PreparedKey>(
   services: AgentImportServices<PreparedKey>,
@@ -367,7 +331,6 @@ export async function createImportedBot<PreparedKey>(
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   const { importKey, ...request } = input;
   const digest = requestDigest(request);
-  // A retried create (same import key, same request) returns the bot the first one made.
   const already = async () => {
     if (!importKey) return null;
     const found = await services.prisma.agentImport.findFirst({
@@ -384,8 +347,8 @@ export async function createImportedBot<PreparedKey>(
     }
     return services.findBot(actor, found.botId);
   };
-  const repeated = await already();
-  if (repeated) return repeated;
+  const retried = await already();
+  if (retried) return retried;
   const destination = input.destination;
   if (destination.kind === "existing" && input.spawnKey) {
     throw refused("BAD_REQUEST", "first_bot_new_only", "A first bot is always a new bot.");
@@ -393,7 +356,6 @@ export async function createImportedBot<PreparedKey>(
   if (destination.kind === "new" && !input.name) {
     throw refused("BAD_REQUEST", "name_required", "Name the new bot.");
   }
-  // Only the actor's own bot in this space; anything else is not found.
   const target =
     destination.kind === "existing" ? await services.findBot(actor, destination.botId) : null;
   if (destination.kind === "existing" && !target) throw new IsolationError();
@@ -428,9 +390,7 @@ export async function createImportedBot<PreparedKey>(
   const routines = selected(plan.routines, input.selection.routines).map(
     (item) => routineInputs.get(item.id)!,
   );
-  // A key whose provider was connected after the preview stays selected in the request; it
-  // is skipped like any connected key, and the existing connection is kept.
-  // A repeated id is refused first, connected or not.
+  // A key whose provider was connected after the preview is still selected; skip it.
   if (new Set(input.selection.apiKeys).size !== input.selection.apiKeys.length) {
     throw refused("BAD_REQUEST", "selection_mismatch", "The selection does not match the files.");
   }
@@ -455,8 +415,7 @@ export async function createImportedBot<PreparedKey>(
     services.routineNextRunAt(routine);
   }
 
-  // Checks and encryption, before anything is written. A key for the chosen model's
-  // provider is also checked against that model, as a connection made for it would be.
+  // A key for the chosen model's provider is checked against that model too.
   const preparedKeys: PreparedKey[] = [];
   for (const key of keys) {
     if (await services.hasModelConnection(actor, key.provider)) continue;
@@ -504,12 +463,9 @@ export async function createImportedBot<PreparedKey>(
   };
   const routineRows: Routine[] = [];
   const setup: AgentImportSetupItem[] = [];
-  // The bot the latest attempt imported into. An attempt can be rolled back (a
-  // serialization retry) and a later one may not run the import at all (a first bot made
-  // meanwhile). The bot `createBot` returns is the one its committed transaction made, so the
-  // import committed exactly when that is the bot the last import attempt wrote into.
+  // Attempts can roll back (serialization retry) or be skipped (first bot made meanwhile),
+  // so the import committed exactly when the returned bot is the one last written into.
   let importedInto: string | null = null;
-  // Each chat message the import adds, as an event open chats are told of once committed.
   let added: { threadId: string; seq: number }[] = [];
   const announceAdded = async (
     tx: Prisma.TransactionClient,
@@ -527,7 +483,6 @@ export async function createImportedBot<PreparedKey>(
     });
     added.push({ threadId, seq: event.seq });
   };
-  /** Every write of the import, in one transaction, into the new or the existing bot. */
   const write = async (tx: Prisma.TransactionClient, botId: string) => {
     // A serialization conflict runs this again: start each attempt clean.
     for (const list of [
@@ -546,8 +501,6 @@ export async function createImportedBot<PreparedKey>(
     setup.length = 0;
     if (target) {
       record.existingBot = true;
-      // An existing bot's instructions change only when the user chose to replace them, as a
-      // recorded edit the user can restore; its model only when the model was ticked.
       if (destination.kind === "existing" && destination.replaceInstructions && instructions) {
         const versionId = await writeBotInstructions(tx, {
           botId,
@@ -573,13 +526,11 @@ export async function createImportedBot<PreparedKey>(
       }
     }
     for (const prepared of preparedKeys) {
-      // Only keys this import created are recorded; one connected meanwhile stays as is.
       const credential = await services.writeModelKey(tx, actor, prepared);
       if (credential) record.credentials.push(credential);
     }
-    // Names are checked again under the creation lock: the preview may be stale.
+    // The preview may be stale: names are resolved again under the creation lock.
     const resolved = resolveAgentImportNames(plan, await takenNames(tx, actor));
-    // An existing bot's memory is never overwritten: a taken path gets the next free name.
     const botPaths = new Set(
       target
         ? (
@@ -593,8 +544,8 @@ export async function createImportedBot<PreparedKey>(
     const memory = resolved.memory
       .filter((item) => memoryIds.includes(item.id))
       .sort((left, right) => curatedRank(left.path) - curatedRank(right.path));
-    // Agent context reads the newest memory first within a size budget, so the curated
-    // documents get the newest times, set explicitly so the order never rests on clock ticks.
+    // Agent context reads newest memory first within a budget: curated documents get the
+    // newest times, set explicitly rather than left to clock ticks.
     const now = Date.now();
     for (const [index, item] of memory.entries()) {
       const updatedAt = new Date(now - (memory.length - 1 - index));
@@ -649,13 +600,11 @@ export async function createImportedBot<PreparedKey>(
         setup.push({ kind: "skill", name: row.name, needs: item.status.needs });
       }
     }
-    // Imported servers are not given to the bot: an approval card in its chat lets the
-    // user grant them, as when a bot asks for a server itself.
+    // Imported servers are not given to the bot; an approval card lets the user grant them.
     const thread = await tx.thread.findFirstOrThrow({
       where: { ...owner, botId },
       select: { id: true },
     });
-    // Slugs are checked again in the transaction, like skill names above.
     const slugs = new Set(
       (await tx.mcpServer.findMany({ where: owner, select: { slug: true } })).map(
         (row) => row.slug,
@@ -715,7 +664,6 @@ export async function createImportedBot<PreparedKey>(
       routineRows.push(row);
       setup.push({ kind: "routine", routineId: row.id, name: row.name });
     }
-    // A model this import could not apply (its provider has no key here) is set up later.
     if (plan.model?.status === "needs_key" && !model) {
       setup.push({
         kind: "model",
@@ -724,7 +672,6 @@ export async function createImportedBot<PreparedKey>(
         providerName: plan.model.providerName,
       });
     }
-    // One checklist of what is left to set up, in the same transaction; none if nothing is.
     if (setup.length) {
       const checklist: MessageBlock[] = [{ kind: "import_setup", items: setup }];
       const message = await createThreadMessageInTransaction(tx, {
@@ -735,7 +682,6 @@ export async function createImportedBot<PreparedKey>(
       await announceAdded(tx, botId, message, thread.id, checklist);
       record.setupMessageId = message.id;
     }
-    // A new bot's memory is all from the import (and its starting index).
     if (!target) {
       record.botMemory = await tx.memoryDocument.findMany({
         where: { ...owner, scope: "bot", botId },
@@ -764,7 +710,7 @@ export async function createImportedBot<PreparedKey>(
         if (target.threadId) {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
         }
-        // Archived meanwhile (an Undo deleting it reserves it so): as for any other bot.
+        // Undo archives a bot it is about to delete.
         const live = await tx.$queryRaw<{ id: string }[]>`
           SELECT id FROM bots WHERE id = ${target.id} AND "archivedAt" IS NULL FOR UPDATE
         `;
@@ -790,9 +736,7 @@ export async function createImportedBot<PreparedKey>(
         },
       });
     }
-    // A spawn key already taken returns that bot without the import, and a rolled-back
-    // attempt wrote into a bot that never committed: neither is this bot. What happens to the
-    // record after the commit (an Undo, say) does not change that this import committed.
+    // A taken spawn key returns that bot without running the import.
     if (importedInto !== bot.id) {
       throw refused("CONFLICT", "first_bot_exists", "Your first bot already exists.");
     }
@@ -808,9 +752,8 @@ export async function createImportedBot<PreparedKey>(
   const settle = (label: string) => (error: unknown) => {
     getLogger().error(label, error);
   };
-  // After the commit nothing may fail the import: each step is logged and left to the
-  // existing recovery (catalog refresh on next read, the routine list's own scheduling).
-  // Imported MCP servers are not probed or launched before the user approves them.
+  // Nothing may fail the import after its commit: failures are logged and left to the
+  // existing recovery. MCP servers are not probed before the user approves them.
   for (const credential of record.credentials) {
     try {
       services.afterModelKey(credential.provider);
@@ -830,7 +773,7 @@ export async function createImportedBot<PreparedKey>(
   return bot;
 }
 
-/** Undo's view of a bot's latest import: what it removes, and what it keeps because it changed. */
+/** What Undo of a bot's latest import removes, and what it keeps because it changed. */
 async function undoPlan(
   db: Prisma.TransactionClient | PrismaClient,
   actor: Actor,
@@ -838,8 +781,7 @@ async function undoPlan(
   importId?: string,
 ) {
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
-  // A bot can hold several imports (one that made it, others added to it); Undo is the
-  // latest, unless a deletion already reserved for one import names it.
+  // A bot can hold several imports; Undo takes the latest unless a reserved deletion names one.
   const found = await db.agentImport.findFirst({
     where: { ...owner, botId, ...(importId ? { id: importId } : {}) },
     orderBy: { createdAt: "desc" },
@@ -884,7 +826,6 @@ async function undoPlan(
     remove: rows.filter((row) => !changed(row)),
     keep: rows.filter(changed),
   });
-  // A server stays when another bot now relies on it.
   const assignedElsewhere = await db.botMcpServer.findMany({
     where: { ...owner, serverId: { in: ids(record.mcpServers) }, botId: { not: botId } },
     select: { serverId: true },
@@ -900,24 +841,20 @@ async function undoPlan(
       servers,
       (row) => row.revision !== revisions.get(row.id) || sharedServers.has(row.id),
     ),
-    // In an existing bot, each added document goes unless it changed since.
     addedBotMemory: existingBot
       ? split(botMemory, (row) => row.revision !== revisions.get(row.id))
       : { remove: [], keep: [] },
     routines: split(routines, (row) => row.updatedAt.toISOString() !== routineTimes.get(row.id)),
-    // A new bot's memory written or edited after the import is archived to space memory, as
-    // deleting a bot with "keep memories" does, instead of being deleted.
+    // Edited memory of a new bot is archived to space memory, as "keep memories" would.
     botMemoryChanged:
       !existingBot && botMemory.some((row) => row.revision !== revisions.get(row.id)),
     botMemory: existingBot ? [] : botMemory,
-    // A model set by the import goes back only while it is still the imported one.
     model: record.model
       ? bot?.modelProvider === record.model.imported.provider &&
         bot?.modelId === record.model.imported.modelId
         ? ("restore" as const)
         : ("keep" as const)
       : null,
-    // Replaced instructions go back only while they are still the imported ones.
     instructions: record.instructions
       ? bot?.instructions === record.instructions.imported
         ? ("restore" as const)
@@ -981,12 +918,7 @@ async function undoPlan(
   return { record, plan, info: info(planned), infoFor: info };
 }
 
-/**
- * Whether each item on an import's setup checklist is done now: a model connected for the
- * provider; an MCP server given to this bot AND holding a non-blank value for every header
- * and setting it was shown to need (or `unverifiable` when it needs a program or local
- * paths); a routine turned on. Only the actor's own rows are read; unknown ids are not done.
- */
+/** Only the actor's own rows are read; unknown ids are not done. */
 export async function agentImportSetupState(
   services: AgentImportServices,
   actor: Actor,
@@ -1007,7 +939,6 @@ export async function agentImportSetupState(
       where: { botId: input.botId, id: { in: input.routineIds }, bot: owner },
       select: { id: true, active: true },
     }),
-    // What each imported server was shown to need, from this bot's own import records.
     db.agentImport.findMany({ where: { ...owner, botId: input.botId }, select: { created: true } }),
   ]);
   const needed = new Map(
@@ -1018,10 +949,8 @@ export async function agentImportSetupState(
     ),
   );
   const given = new Set(assigned.map((row) => row.serverId));
-  const set = (value: string | undefined) => typeof value === "string" && value.trim() !== "";
-  // A server is set up when it is given to this bot and every header and setting it was shown
-  // to need has a non-blank stored value. Approval alone is not setup; a program or local
-  // paths cannot be checked from here; a record without its requirements is unknown.
+  const nonBlank = (value: string | undefined) => typeof value === "string" && value.trim() !== "";
+  // Approval alone is not setup: every value the server was shown to need must be stored.
   const serverState = async (id: string): Promise<AgentImportSetupState["serverIds"][string]> => {
     const row = servers.find((server) => server.id === id);
     const need = needed.get(id);
@@ -1031,22 +960,19 @@ export async function agentImportSetupState(
     if (need.unverifiable) return "unverifiable";
     if (!given.has(id)) return false;
     if (need.credentials.length === 0 && need.env.length === 0) return true;
-    // Unreadable material (null) leaves the server not done; nothing about it is returned.
     const values = row.secretId
       ? await services.mcpCredentialValues(actor, { id: row.id, secretId: row.secretId })
       : null;
     if (!values) return false;
     return (
-      need.credentials.every((name) => set(values.headers[name])) &&
-      need.env.every((name) => set(values.env[name]))
+      need.credentials.every((name) => nonBlank(values.headers[name])) &&
+      need.env.every((name) => nonBlank(values.env[name]))
     );
   };
-  // Each server once: a repeated id is decrypted a single time.
   const serverIds = [...new Set(input.serverIds)];
   const serverStates = Object.fromEntries(
     await Promise.all(serverIds.map(async (id) => [id, await serverState(id)] as const)),
   );
-  // Each provider once, with one read of the actor's connections.
   const providers = [...new Set(input.providers)];
   const connected = await services.connectedProviders(actor, providers);
   return {
@@ -1067,10 +993,8 @@ export async function agentImportInfo(
 }
 
 /**
- * Undoes a bot's latest import, only while it is the one the user was shown. For a bot the
- * import created, removes the bot and what the import added, in the bot deletion's
- * transaction. For an existing bot, removes only what the import added and keeps the bot.
- * Anything changed since is kept and reported; API keys always stay.
+ * Undoes the bot's latest import, only while it is the one the user was shown. Deletes a bot
+ * the import created; anything changed since is kept and reported; API keys always stay.
  */
 export async function undoAgentImport(
   services: AgentImportServices,
@@ -1087,7 +1011,6 @@ export async function undoAgentImport(
   }
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
   let result = before.info;
-  // Chat events Undo appends (closed MCP cards, the retired checklist), sent once committed.
   let changed: { threadId: string; seq: number }[] = [];
   const announce = async () => {
     for (const event of changed) {
@@ -1116,7 +1039,7 @@ export async function undoAgentImport(
       throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
     }
     const { plan } = current;
-    // Each delete also matches the state it was decided on; the counts say what happened.
+    // Each delete matches the state it was decided on; the counts say what happened.
     const removed = {
       skills: [] as string[],
       spaceMemory: [] as string[],
@@ -1150,7 +1073,6 @@ export async function undoAgentImport(
     }
     const events: { threadId: string; seq: number }[] = [];
     for (const server of plan.mcpServers.remove) {
-      // The same writes as removing it in settings: its approval cards are dismissed.
       events.push(...(await services.removeMcpServer(tx, actor, server)));
       removed.mcpServers.push(server.id);
     }
@@ -1189,7 +1111,7 @@ export async function undoAgentImport(
           data: { modelProvider: previous.provider, modelId: previous.modelId },
         });
       }
-      // The bot stays, so does its chat: its checklist would link to what Undo removed.
+      // The bot's chat stays, and its checklist would link to what Undo removed.
       if (thread && plan.record.setupMessageId) {
         const retired = await retireSetupMessage(
           tx,
@@ -1247,15 +1169,10 @@ export async function undoAgentImport(
     }
     throw error;
   }
-  // Cards in other chats (a group) the removed servers closed.
   await announce();
   return result;
 }
 
-/**
- * Marks an import's checklist undone, the way other cards are settled: the message is
- * updated in place and the change is sent to open chats.
- */
 async function retireSetupMessage(
   tx: Prisma.TransactionClient,
   actor: Actor,
@@ -1286,11 +1203,8 @@ async function retireSetupMessage(
   return { threadId: target.threadId, seq: event.seq };
 }
 
-/** SHA-256 of a create request with object keys and lists in a fixed order. */
+/** Every list in a create request is a set, so keys and lists are sorted before hashing. */
 export function requestDigest(request: unknown): string {
-  // Every list in a create request is a set (files have unique paths; selections are ids;
-  // skill files are names), so lists are sorted too: the same import in another order
-  // is the same request.
   const canonical = (value: unknown): unknown =>
     Array.isArray(value)
       ? value
@@ -1313,10 +1227,7 @@ function contentHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-/**
- * A key the import could not connect, as a reason the client words itself. The provider's
- * own text is never passed on: it can echo details of the request.
- */
+/** The provider's own error text is never passed on: it can echo details of the request. */
 function keyCheckFailure(error: unknown, provider: string) {
   if (signalAborted(error)) return error;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
@@ -1335,7 +1246,6 @@ function signalAborted(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
-/** An error a client shows in its own words, by `data.reason`. */
 function refused(
   code: "BAD_REQUEST" | "CONFLICT" | "NOT_FOUND" | "PRECONDITION_FAILED",
   reason: AgentImportErrorReason,

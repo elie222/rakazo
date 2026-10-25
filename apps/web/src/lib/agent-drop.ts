@@ -5,25 +5,19 @@ import {
   openAgentImportArchive,
 } from "@rakazo/core";
 
-/** A chosen folder or opened backup: its paths, and its files read on demand. */
 export type DroppedAgent = {
   paths: string[];
   read: (path: string) => Promise<string> | string;
   size: (path: string) => number | undefined;
 };
 
-/** What a drop carried, captured during the event (entries are gone after it). */
 export type CapturedDrop = { entries: FileSystemEntry[]; files: readonly File[] };
 
 const ARCHIVE = /\.(?:zip|tar\.gz|tgz)$/i;
-/** Folders an agent home never needs, skipped while listing a dropped folder. */
 const SKIPPED_FOLDERS = new Set(["node_modules", ".git", ".venv", "venv", "__pycache__"]);
 const MAX_LISTED = 50_000;
 
-/**
- * Copies what a drop carried while the event runs: the browser empties `dataTransfer` (its
- * file list and entries) once the handler returns, so nothing may read it later.
- */
+/** The browser empties `dataTransfer` once the drop handler returns, so copy it first. */
 export function captureDrop(dataTransfer: DataTransfer): CapturedDrop {
   const entries = [...dataTransfer.items].flatMap((item) => {
     const entry = item.kind === "file" ? item.webkitGetAsEntry?.() : null;
@@ -32,20 +26,13 @@ export function captureDrop(dataTransfer: DataTransfer): CapturedDrop {
   return { entries, files: [...dataTransfer.files] };
 }
 
-/**
- * Whether a drop might be an agent: one folder, or one `.zip`/`.tar.gz`/`.tgz`. Anything
- * else (images, documents, several items) is attached as before without looking further.
- */
+/** One folder or one backup archive; anything else attaches as usual without a look. */
 export function mightBeAgent(drop: CapturedDrop): boolean {
   if (drop.entries.length === 1 && drop.entries[0]!.isDirectory) return true;
   return drop.files.length === 1 && ARCHIVE.test(drop.files[0]!.name);
 }
 
-/**
- * The dropped folder or backup as an import source, or null when its file names are not
- * an OpenClaw or Hermes home. Only names are listed here; nothing is uploaded, and file
- * contents are read later, by the import form, and only for the files an import uses.
- */
+/** Null unless the drop is an OpenClaw or Hermes home. Lists names only; uploads nothing. */
 export async function droppedAgent(drop: CapturedDrop): Promise<DroppedAgent | null> {
   const entry = drop.entries[0];
   if (drop.entries.length === 1 && entry?.isDirectory) {
@@ -58,7 +45,6 @@ export async function droppedAgent(drop: CapturedDrop): Promise<DroppedAgent | n
     const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()));
     return isAgentHome(archive.paths) ? archive : null;
   } catch {
-    // Not a backup this import can read: it stays an ordinary attachment.
     return null;
   }
 }
@@ -68,7 +54,6 @@ async function folderSource(root: FileSystemDirectoryEntry): Promise<DroppedAgen
   await walk(root, entries);
   const paths = [...entries.keys()];
   if (!isAgentHome(paths)) return null;
-  // Only the files an import may read are opened (their size is known without reading).
   const wanted = new Set([
     ...agentImportFolder(paths).files.keys(),
     ...paths.filter((path) => path.endsWith("skills/.bundled_manifest")),

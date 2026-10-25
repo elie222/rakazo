@@ -14,33 +14,25 @@ const SHAPES: { pattern: RegExp; random?: boolean }[] = [
     pattern: /(?<![\w-])sk-(?:ant-(?:api\d\d-)?|or-v1-|proj-)?([A-Za-z0-9_-]{20,})/g,
     random: true,
   },
-  // GitHub tokens.
   { pattern: /\bgh[pousr]_[A-Za-z0-9]{36,}/g },
   { pattern: /\bgithub_pat_[A-Za-z0-9_]{22,}/g },
-  // Slack tokens.
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
   // AWS access key ids, long-term (AKIA) and temporary (ASIA).
   { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
-  // Google API keys.
   { pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g },
-  // GitLab personal access tokens.
   { pattern: /\bglpat-[A-Za-z0-9_-]{20,}/g },
-  // Hugging Face tokens.
   { pattern: /\bhf_[A-Za-z0-9]{30,}/g },
   // Stripe live secret and restricted keys.
   { pattern: /\b[rs]k_live_[A-Za-z0-9]{20,}/g },
-  // PEM private keys of any kind.
   { pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/g },
-  // A bearer token written out in full, in any case ("bearer", "BEARER").
   { pattern: /\bbearer\s+([A-Za-z0-9._~+/-]{24,}=*)/gi, random: true },
 ];
 
-/** A random-looking value: both letters and digits, and more than four distinct characters. */
 function random(value: string): boolean {
   return /[A-Za-z]/.test(value) && /\d/.test(value) && new Set(value).size > 4;
 }
 
-/** Whether the text has something shaped like a real credential. Never returns the value. */
+/** Never returns the value. */
 export function looksLikeCredential(text: string): boolean {
   for (const { pattern, random: needsRandom } of SHAPES) {
     pattern.lastIndex = 0;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { looksLikeCredential } from "./credentials.js";
+import { parseAgentImport } from "./index.js";
 
 // Synthetic values, built from parts so no scanner mistakes this file for a leak.
 const body = (length: number) => "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zA".repeat(4).slice(0, length);
@@ -59,8 +60,7 @@ describe("credential shapes", () => {
 describe("imported items with key-looking text", () => {
   const key = join("sk", "-proj-", body(40));
 
-  it("are flagged from a folder, unchanged", async () => {
-    const { parseAgentImport } = await import("./index.js");
+  it("are flagged from a folder, unchanged", () => {
     const result = parseAgentImport([
       { path: "workspace/SOUL.md", content: "Calm.\n" },
       { path: "workspace/MEMORY.md", content: `Deploy key: ${key}\n` },
@@ -81,8 +81,7 @@ describe("imported items with key-looking text", () => {
     ).not.toContain(key);
   });
 
-  it("are flagged in another assistant's document", async () => {
-    const { parseAgentImport } = await import("./index.js");
+  it("are flagged in another assistant's document", () => {
     const result = parseAgentImport([
       { path: "agent.md", content: `# Instructions\nAlways send ${key} with requests.\n` },
     ]);
@@ -95,8 +94,7 @@ describe("imported items with key-looking text", () => {
 describe("a key only in a title", () => {
   const key = join("sk", "-proj-", body(40));
 
-  it("flags a document memory whose heading is the key", async () => {
-    const { parseAgentImport } = await import("./index.js");
+  it("flags a document memory whose heading is the key", () => {
     const result = parseAgentImport([
       { path: "agent.md", content: `# Instructions\nBe brief.\n\n# Memory\n## ${key}\nNotes.\n` },
     ]);

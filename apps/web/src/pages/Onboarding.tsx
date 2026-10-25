@@ -176,11 +176,10 @@ export function OnboardingPage() {
   // An imported agent replaces Chief as the first bot.
   const [importing, setImporting] = useState(false);
   const importedBotRef = useRef<{ id: string } | null>(null);
-  // The same facts for rendering (refs are read only by the async flow and handlers).
+  // Mirrors importedBotRef for rendering; the ref serves the async flow.
   const [importedBotId, setImportedBotId] = useState<string | null>(null);
-  // No model step follows the survey: the survey is the one screen before the first bot.
   const noModelStep = afterSurvey === "bot";
-  // The import found a first bot already made (another tab or device): nothing was imported.
+  // Another tab or device made the first bot before the import could.
   const [notImported, setNotImported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -530,8 +529,8 @@ export function OnboardingPage() {
       const imported = importedBotRef.current;
       const bot = imported ?? (await ensureFirstBot());
       // Onboarding continues conversationally in the thread: greeting first,
-      // then the focus choice (immediate for the first bot). An imported bot
-      // already has a role, so it is not asked for one.
+      // then the focus choice (immediate for the first bot), which an imported
+      // bot already answered.
       const started = await rpc.onboarding
         .start({ botId: bot.id })
         .then(() => true)
@@ -563,13 +562,10 @@ export function OnboardingPage() {
           <>
             <SignupSurvey
               onDone={() => {
-                // Also past a not-imported notice: on to the first bot that already existed.
                 setNotImported(false);
                 setSurveyDone(true);
               }}
             />
-            {/* With no model step to follow, this is the one screen before the first bot is
-                made: the same quiet way in as on the model step. */}
             {noModelStep && !importedBotId ? (
               <Button
                 variant="link"
@@ -592,17 +588,14 @@ export function OnboardingPage() {
             onDone={(bot, imported) => {
               setImporting(false);
               if (!imported) {
-                // Said plainly; the user continues into that bot, which keeps its own intro.
                 setNotImported(true);
                 return;
               }
               importedBotRef.current = bot;
               setImportedBotId(bot.id);
-              // From the survey, the survey still comes first; its Continue then opens the
-              // imported bot instead of making Chief.
+              // The survey's own Continue then opens the imported bot.
               if (step === "survey") return;
-              // The model step is done when the import brought a usable connection,
-              // decided exactly as on load.
+              // The import may have brought a usable model connection.
               void rpc
                 .me()
                 .then((me) => {
@@ -617,13 +610,11 @@ export function OnboardingPage() {
             <p role="alert" className="text-sm text-destructive">
               <Trans>Your first bot already existed, so the agent was not imported.</Trans>
             </p>
-            {/* On the survey, its own Continue goes on: one way forward, not two. */}
             {step === "survey" ? null : (
               <Button
                 className="mt-4"
                 onClick={() => {
                   setNotImported(false);
-                  // On to that bot once a model is connected; otherwise the model step stays.
                   void rpc
                     .me()
                     .then((me) => {
@@ -1119,7 +1110,6 @@ export function OnboardingPage() {
                 </Button>
               ) : null}
             </div>
-            {/* A quieter way in, below the step, not a peer of Continue. */}
             {importedBotId ? null : (
               <Button
                 variant="link"

@@ -1,14 +1,10 @@
 /**
- * Recognising the files OpenClaw and Hermes write when an agent is created, so an untouched
- * default is not imported as if the user wrote it (a Rakazo bot would otherwise follow
- * OpenClaw's first-run ritual, or say it is Hermes).
+ * Untouched templates OpenClaw and Hermes seed, so they are not imported as if the user
+ * wrote them (a bot would otherwise follow OpenClaw's first-run ritual, or say it is Hermes).
  *
- * A file is a default only when its whole text, with whitespace runs collapsed (and, for
- * OpenClaw, its front matter removed, as OpenClaw does when it seeds the file), is exactly
- * one published version of the template. Any added or changed line or sentence, however
- * small, makes it the user's own. Versions are kept as `<32-bit FNV-1a hex>:<UTF-8 length>`
- * of that text: every version of OpenClaw's `docs/reference/templates` files, and Hermes'
- * default SOUL.md. `scripts/agent-import-defaults.mjs` rebuilds the table below.
+ * A file is a default only when its whole text, whitespace collapsed (and, for OpenClaw,
+ * front matter removed as OpenClaw does when seeding), exactly matches a published version;
+ * any edit makes it the user's own. `scripts/agent-import-defaults.mjs` rebuilds the tables.
  */
 
 const versions = (keys: readonly string[]): ReadonlySet<string> => new Set(keys);
@@ -104,12 +100,10 @@ const HERMES_SOUL_DEFAULTS = versions([
   "f6791ed3:665",
 ]);
 
-/** True when an OpenClaw workspace file is a template OpenClaw seeded, unchanged. */
 export function isOpenClawDefault(path: string, content: string): boolean {
   return OPENCLAW_DEFAULTS[path]?.has(fingerprint(withoutFrontmatter(content))) === true;
 }
 
-/** True when a Hermes SOUL.md is the default Hermes writes, unchanged. */
 export function isHermesDefault(content: string): boolean {
   return HERMES_SOUL_DEFAULTS.has(fingerprint(content));
 }
@@ -119,7 +113,7 @@ function withoutFrontmatter(content: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n/, "");
 }
 
-/** The text with whitespace runs collapsed, as `<FNV-1a hex>:<UTF-8 length>`. */
+/** `<32-bit FNV-1a hex>:<UTF-8 length>` of the text with whitespace runs collapsed. */
 function fingerprint(content: string): string {
   const bytes = new TextEncoder().encode(
     content

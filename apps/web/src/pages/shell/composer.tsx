@@ -105,10 +105,7 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
-  /**
-   * Opens the import form with a dropped OpenClaw or Hermes folder or backup. When set, such
-   * a drop is not attached: the user chooses Import or Attach first.
-   */
+  /** When set, a dropped OpenClaw or Hermes folder or backup offers Import or Attach. */
   onImportAgent?: (agent: DroppedAgent) => void;
 }) {
   const { t } = useLingui();
@@ -138,7 +135,6 @@ export const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
-  // A dropped agent waiting for the user's choice, with what Attach would attach.
   const [agentDrop, setAgentDrop] = useState<{
     agent: DroppedAgent;
     files: readonly File[];
@@ -220,7 +216,6 @@ export const Composer = memo(function Composer({
     retryNonce.current = null;
   }
 
-  // The chat a drop was made in, and whether the composer is still mounted.
   const draftKeyRef = useRef(draftKey);
   draftKeyRef.current = draftKey;
   const mountedRef = useRef(true);
@@ -230,7 +225,6 @@ export const Composer = memo(function Composer({
       mountedRef.current = false;
     };
   }, []);
-  // A drop's Import / Attach choice belongs to the chat it was dropped in.
   useEffect(() => setAgentDrop(null), [draftKey]);
 
   function pickAttachments(files: FileList | readonly File[] | null) {
@@ -419,18 +413,14 @@ export const Composer = memo(function Composer({
     if (disabled) return;
     const drop = onImportAgent ? captureDrop(dataTransfer) : null;
     if (!drop || !mightBeAgent(drop)) {
-      // Attached during the event, as before.
       pickAttachments(dataTransfer.files);
       return;
     }
-    // The event's file list is empty once this handler returns: everything later (Attach,
-    // or the fallback for an ordinary archive) uses the copy taken during the event.
+    // The event's file list is emptied once this handler returns.
     const files = drop.files;
-    // Reading a large archive takes a while: the drop belongs to this chat, so nothing
-    // happens if the user moved to another one (or left) in the meantime.
+    // Reading a large archive takes a while; drop nothing into a chat the user has left.
     const target = draftKey;
     const stillHere = () => mountedRef.current && draftKeyRef.current === target;
-    // Looked at by name only, on this device; nothing is uploaded until the user chooses.
     void droppedAgent(drop).then(
       (agent) => {
         if (!stillHere()) return;

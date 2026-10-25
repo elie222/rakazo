@@ -2,15 +2,12 @@ import { Gunzip, Inflate } from "fflate";
 import { AGENT_IMPORT_CONFIG_FILES } from "./config.js";
 
 /**
- * Reads an agent backup in the browser, so the upload can be reduced to what an import uses
- * before anything is sent. OpenClaw's backups are `.tar.gz` (with a manifest, validated
- * here); zips are mapped by their layout only, such as Hermes' home at the archive root. Only
- * files an import might use are decompressed and read; every other entry is listed by name
- * only (or, inside a gzip stream, skipped).
+ * Reads an agent backup in the browser, so the upload is reduced before anything is sent.
+ * OpenClaw backups are `.tar.gz` with a manifest; zips (Hermes) are mapped by layout. Only
+ * files an import might use are decompressed; others are listed by name only.
  */
 
 export const AGENT_IMPORT_ARCHIVE_LIMITS = {
-  /** The backup file itself. */
   archiveBytes: 256 * 1024 * 1024,
   entries: 50_000,
   /** One file that is read. Larger files are never sent (the upload cap is far lower). */
@@ -42,13 +39,11 @@ export class AgentImportArchiveError extends Error {
 const unreadable = () => new AgentImportArchiveError("unreadable");
 const tooLarge = () => new AgentImportArchiveError("too_large");
 
-/** One file in an archive: its path and, when it was read, its bytes. */
 type Entry = { path: string; size?: number; data?: Uint8Array };
 
 /**
- * Opens a backup: its files listed under a folder name the import recognises (`.openclaw/...`
- * or `.hermes/...` when the layout is known), and a reader that decompresses one file at a
- * time. Files outside what an import reads were never kept, so reading them fails.
+ * Paths are mapped under `.openclaw/` or `.hermes/` when the layout is known. Files outside
+ * what an import reads were never kept, so reading them fails.
  */
 export function openAgentImportArchive(
   data: Uint8Array,
@@ -77,8 +72,7 @@ export function openAgentImportArchive(
   }
   let read = 0;
   const decoder = new TextDecoder("utf-8", { fatal: false });
-  // Each file is decompressed and counted once: reading it again (turning API keys on and
-  // off reads the same choice again) returns the same text without using more budget.
+  // Counted once: toggling API keys rereads the same choice.
   const texts = new Map<string, string>();
   return {
     paths,
@@ -112,7 +106,7 @@ export function safeArchivePath(raw: string): string | null {
   return segments.join("/");
 }
 
-/** The Markdown files an import reads by name, besides skills and daily memory. */
+/** Besides skills and daily memory. */
 const READ_MARKDOWN = new Set([
   "SOUL.md",
   "AGENTS.md",
@@ -128,10 +122,7 @@ const READ_MARKDOWN = new Set([
 ]);
 const NOISE_FOLDERS = new Set(["node_modules", ".git", ".venv", "venv", "site-packages"]);
 
-/**
- * Files an import might read; only these are kept while a gzip stream is inflated. Other
- * Markdown (skill references, package docs) is listed by name only.
- */
+/** Only these are kept while a gzip stream is inflated. */
 function mayBeRead(path: string): boolean {
   const segments = path.split("/");
   const name = segments.at(-1) ?? "";
@@ -151,7 +142,6 @@ function mayBeRead(path: string): boolean {
 const NESTED_ARCHIVE = /\.(?:zip|tar|tgz|gz|bz2|xz|7z|rar)$/i;
 
 // ---------------------------------------------------------------------------------- zip
-// Zips carry no OpenClaw manifest handling: their files are mapped by layout alone.
 
 function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -480,14 +470,11 @@ function ascii(bytes: Uint8Array): string {
 // ----------------------------------------------------------------------------- layout
 
 /**
- * Where a backup keeps the agent's home, as a function from archive path to the path the
- * import reads (`.openclaw/...`, `.hermes/...`), or null for files outside it.
+ * Maps archive paths to `.openclaw/...` or `.hermes/...`, or null outside the agent's home.
  *
- * OpenClaw backups are `.tar.gz` files holding `<name>/manifest.json` and
- * `<name>/payload/posix/<original path>`: the `state` asset is the home, and a `workspace`
- * asset outside it becomes its workspace. The manifest is read and validated for tar
- * backups only (its data is kept while streaming); a zip is mapped by its layout, as Hermes
- * writes zips with the home's files at the archive root.
+ * OpenClaw backups hold `<name>/manifest.json` and `<name>/payload/posix/<original path>`:
+ * the `state` asset is the home, and a `workspace` asset outside it its workspace. Only tar
+ * keeps manifest data while streaming; Hermes zips hold the home at the archive root.
  */
 function archiveLayout(entries: Entry[]): (path: string) => string | null {
   const manifest = entries.find((entry) => /^[^/]+\/manifest\.json$/.test(entry.path));

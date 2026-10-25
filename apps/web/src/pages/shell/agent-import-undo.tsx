@@ -26,10 +26,7 @@ const flatten = (names: Names) => [
   ...names.apiKeys,
 ];
 
-/**
- * "Undo import" for a bot that came from an agent import: removes the bot and what the
- * import added, keeping anything changed since. Renders nothing for other bots.
- */
+/** Removes what the import added, keeping anything changed since. */
 export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: () => void }) {
   const { t } = useLingui();
   const [info, setInfo] = useState<AgentImportInfo | null>(null);
@@ -164,7 +161,7 @@ export function AgentImportUndo({ botId, onUndone }: { botId: string; onUndone: 
                         agentImportErrorText(err) ?? errorText(err, t`Could not undo the import`),
                       );
                       setBusy(false);
-                      // Shows what Undo would do now: another tab may have undone this import.
+                      // Another tab may have undone this import meanwhile.
                       rpc.bots
                         .importInfo({ botId })
                         .then((found) => {

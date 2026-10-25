@@ -175,7 +175,6 @@ function replyBlockText(block: MessageBlock): string {
     case "chart":
       return block.name;
     case "import_setup":
-      // A retired checklist (Undo) is quoted as nothing.
       if (block.undone) return "";
       return block.items.map((item) => ("name" in item ? item.name : item.title)).join(" · ");
     case "image":

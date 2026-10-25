@@ -6,7 +6,6 @@ import { AgentImportForm } from "./shell/agent-import";
 
 type FirstBot = { id: string };
 
-/** The import form, full width inside onboarding. */
 export function OnboardingImport({
   firstBot,
   onBack,

@@ -24,7 +24,7 @@ function isVerifiable(item: AgentImportSetupItem): boolean {
   return !item.needs.some((need) => need.kind === "program" || need.kind === "local_paths");
 }
 
-/** Done now, not done yet, or null when it cannot be checked (or is not read yet). */
+/** Null when it cannot be checked or is not read yet. */
 function isDone(item: AgentImportSetupItem, state: AgentImportSetupState | null) {
   if (!state || !isVerifiable(item)) return null;
   if (item.kind === "model") return state.providers[item.provider] === true;
@@ -33,13 +33,7 @@ function isDone(item: AgentImportSetupItem, state: AgentImportSetupState | null)
   return null;
 }
 
-/**
- * The one checklist an agent import posts in the bot's chat: each imported item that still
- * needs something, and a way to the place that finishes it. Whether each item is done is read
- * from current data when the card is shown and whenever the thread is refreshed; with
- * everything done the card shrinks to one line. MCP servers are still granted through their
- * approval cards.
- */
+/** MCP servers on this checklist are still granted through their own approval cards. */
 export function ImportSetupCard({
   botId,
   block,
@@ -52,7 +46,6 @@ export function ImportSetupCard({
   const { t } = useLingui();
   const text = useImportStatusText();
   const [state, setState] = useState<AgentImportSetupState | null>(null);
-  // Retired by Undo or empty: shown as nothing, so nothing is fetched either.
   const retired = isRetiredImportSetup(block);
 
   // `block` is a new object each time the thread is fetched again, so this follows refreshes.
@@ -79,9 +72,8 @@ export function ImportSetupCard({
     };
   }, [botId, block, retired]);
 
-  // Nothing to set up: no card at all.
   if (retired) return null;
-  // Shrinks only when every row is verifiably done; anything unchecked keeps the full list.
+  // Rows that cannot be checked keep the full list.
   if (state && block.items.every((item) => isDone(item, state) === true)) {
     return (
       <div

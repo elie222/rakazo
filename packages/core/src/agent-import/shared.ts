@@ -12,7 +12,6 @@ import { parseSkillMd } from "../agent-skill.js";
 /** Names of the other files in each skill's folder, by SKILL.md path. */
 export type SkillFiles = Readonly<Record<string, readonly string[]>>;
 
-/** What a source parser returns; detection adds the source. */
 export type AgentImportParse = Omit<
   AgentImportPlan,
   "source" | "model" | "mcpServers" | "routines" | "apiKeys"
@@ -68,7 +67,6 @@ export function memoryItem(id: string, title: string, path: string, content: str
   } satisfies AgentImportMemory;
 }
 
-/** Skill items from SKILL.md files; invalid ones are reported, not imported. */
 export function skillItems(
   files: Map<string, string>,
   skillFiles: SkillFiles = {},
@@ -84,9 +82,8 @@ export function skillItems(
 }
 
 /**
- * A skill item that keeps the SKILL.md bytes exactly as written, including a byte order mark
- * or CRLF line endings: the frontmatter parser here is minimal and would flatten nested
- * metadata, so it only checks a normalised copy.
+ * Keeps the SKILL.md bytes exactly as written (BOM, CRLF): the frontmatter parser is minimal
+ * and would flatten nested metadata, so it only checks a normalised copy.
  */
 export function skillItem(
   id: string,
@@ -144,15 +141,8 @@ function yamlScalar(value: string): string {
 /** Fenced blocks in a language a shell or interpreter runs, or a shebang line. */
 const RUNNABLE_CODE =
   /^\s*(?:`{3,}|~{3,})\s*(?:bash|sh|shell|zsh|fish|console|powershell|pwsh|ps1|cmd|bat|python3?|py|javascript|js|node|typescript|ts|ruby|rb|perl|php|applescript|osascript|lua|go|rust)\b|^#!/im;
-/** How a skill points at files kept next to its SKILL.md. */
 const BUNDLED_REFERENCE = /\{baseDir\}|(?:^|[\s(`'"/])(?:scripts|references|templates|assets)\//m;
 
-/**
- * Why a skill may not work in Rakazo, from what it declares and what its text does:
- * OpenClaw `metadata.openclaw.requires` and `os`; Hermes `platforms`, `prerequisites`,
- * `required_environment_variables` and `metadata.hermes.requires_toolsets`; references to
- * files in its folder (never imported); and runnable code the user should read first.
- */
 function skillWarnings(
   content: string,
   body: string,
@@ -182,11 +172,7 @@ function frontmatter(content: string): Record<string, unknown> {
   }
 }
 
-/**
- * A skill's one status: not supported (another platform), needs setup (what it declares,
- * or files next to its SKILL.md that are not imported), needs review (code to run), or ready.
- * The warnings keep the same facts for the server's checks.
- */
+/** One status for the UI; the warnings keep the same facts for the server's checks. */
 function skillAssessment(
   content: string,
   body: string,
@@ -208,9 +194,9 @@ function skillAssessment(
 }
 
 /**
- * What a skill's frontmatter says it needs (OpenClaw's `metadata.openclaw.requires`,
- * Hermes' prerequisites and toolsets), by name, and whether it runs only on a platform
- * other than Linux, where Rakazo runs skills.
+ * OpenClaw `metadata.openclaw.requires`/`os`; Hermes `platforms`, `prerequisites`,
+ * `required_environment_variables`, `metadata.hermes.requires_toolsets`. Rakazo runs skills
+ * on Linux, so a platform list without it is another platform.
  */
 function skillRequirements(front: Record<string, unknown>): {
   names: string[];

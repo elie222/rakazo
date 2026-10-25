@@ -360,11 +360,8 @@ export const appContract = {
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
-    /** Whether a bot came from an import, and what Undo would remove or keep. */
     importInfo: oc.input(botId).output(AgentImportInfoSchema.nullable()),
-    /** What is already done on an import's setup checklist, from current data. */
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
-    /** Removes an imported bot and what the import created, keeping what changed since. */
     importUndo: oc.input(AgentImportUndoInput).output(AgentImportInfoSchema),
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
