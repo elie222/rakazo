@@ -1,0 +1,23 @@
+appId: com.rakazo.app
+name: Split view
+---
+# On a phone this is a single column; on an unfolded iPhone Duo the chat list sits beside it.
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*The fixture workspace is ready.*"
+    timeout: 20000
+- takeScreenshot: 01-chat-beside-list
+- runFlow:
+    when:
+      visible: "Hide chats"
+    commands:
+      - tapOn: "Hide chats"
+      - extendedWaitUntil:
+          visible: "Show chats"
+          timeout: 5000
+      - takeScreenshot: 02-chats-hidden
+      - tapOn: "Show chats"

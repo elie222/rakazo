@@ -181,6 +181,10 @@ msgstr "{name} is mislukt"
 msgid "{name} finished"
 msgstr "{name} is klaar"
 
+#: src/pages/ModelRoleSettings.tsx
+msgid "{name} options"
+msgstr "Opties voor {name}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} stopped"
@@ -416,10 +420,6 @@ msgstr "Acties voor space"
 msgid "Active"
 msgstr "Actief"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Active model"
-msgstr "Actief model"
-
 #: src/pages/shell/sidebar-header.tsx
 msgid "Activity"
 msgstr "Activiteit"
@@ -480,10 +480,6 @@ msgstr "Voeg een HTTPS-server-URL toe."
 msgid "Add another"
 msgstr "Nog een toevoegen"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Add backup model"
-msgstr "Back-upmodel toevoegen"
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Add credential"
 msgstr "Gegeven toevoegen"
@@ -495,6 +491,10 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Add Executor"
 msgstr "Executor toevoegen"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Add fallback"
+msgstr "Terugvalmodel toevoegen"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Add GraphQL"
@@ -565,8 +565,8 @@ msgstr "Toevoegen…"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -594,10 +594,6 @@ msgstr "Agents:"
 #: src/pages/Artifacts.tsx
 msgid "All bots"
 msgstr "Alle bots"
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "All providers"
-msgstr "Alle aanbieders"
 
 #: src/pages/ActivityList.tsx
 msgid "All statuses"
@@ -737,6 +733,10 @@ msgstr "Toepassen"
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "Goedkeuringsgrenzen"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Approval model"
+msgstr "Goedkeuringsmodel"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -880,10 +880,6 @@ msgstr "Terug"
 #: src/pages/Auth.tsx
 msgid "Back to sign in"
 msgstr "Terug naar aanmelden"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Backup models"
-msgstr "Back-upmodellen"
 
 #: src/pages/memory-providers/ConnectionModeFields.tsx
 msgid "Base URL"
@@ -1069,6 +1065,14 @@ msgstr "Geannuleerd"
 msgid "Card view"
 msgstr "Kaartweergave"
 
+#: src/pages/ModelRoleSettings.tsx
+msgid "Change {name}"
+msgstr "{name} wijzigen"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Change {title}"
+msgstr "{title} wijzigen"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Wachtwoord wijzigen"
@@ -1164,6 +1168,10 @@ msgstr "Kies een botvorm, kleur of upload een afbeelding"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Choose a bot…"
 msgstr "Kies een bot…"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose a model"
+msgstr "Kies een model"
 
 #: src/pages/Auth.tsx
 msgid "Choose a new password"
@@ -1378,10 +1386,6 @@ msgstr "Computers staan uit. Stel SANDBOX_PROVIDER=docker in met SANDBOX_SUPERVI
 msgid "Configure a plugin catalog on the server to connect apps."
 msgstr "Configureer een plugincatalogus op de server om apps te koppelen."
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Configured by deployment"
-msgstr "Geconfigureerd door de implementatie"
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Configured servers"
 msgstr "Geconfigureerde servers"
@@ -1408,9 +1412,14 @@ msgstr "Bevestigingen"
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
 msgstr "Verbinden"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connect {selectedProviderName}"
+msgstr "{selectedProviderName} verbinden"
 
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
@@ -1447,7 +1456,6 @@ msgstr "Treg koppelen"
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/model-settings/provider-list.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1556,10 +1564,6 @@ msgstr "Deze app autoriseren mislukt"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Could not change password"
 msgstr "Wachtwoord wijzigen mislukt"
-
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Could not change the default model"
-msgstr "Het standaardmodel wijzigen mislukt"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
@@ -1725,10 +1729,6 @@ msgstr "Goedkeuringsregels laden mislukt"
 msgid "Could not load artifacts."
 msgstr "Artefacten laden mislukt."
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Could not load backup models"
-msgstr "Back-upmodellen laden mislukt"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Could not load billing"
 msgstr "Facturatie laden mislukt"
@@ -1866,10 +1866,6 @@ msgstr "Opslaan mislukt"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
 msgstr "Auto Review opslaan mislukt"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Could not save backup models"
-msgstr "Back-upmodellen opslaan mislukt"
 
 #: src/pages/GroupPanel.tsx
 msgid "Could not save group"
@@ -2117,6 +2113,7 @@ msgid "Decline"
 msgstr "Weigeren"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Default"
@@ -2125,12 +2122,6 @@ msgstr "Standaard"
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
-msgid "Default ({0})"
-msgstr "Standaard ({0})"
-
-#. js-lingui-explicit-id
-#. placeholder {0}: thinkingLevelLabel("medium")
-#: src/pages/model-settings/catalog-model-fields.tsx
 msgid "Default ({0})"
 msgstr "Standaard ({0})"
 
@@ -3022,6 +3013,7 @@ msgstr "Integraties laden…"
 msgid "Loading memory settings…"
 msgstr "Geheugeninstellingen laden…"
 
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "Modelcatalogus laden…"
@@ -3080,9 +3072,19 @@ msgstr "Laag"
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr "Kleine letters, cijfers, koppeltekens en underscores, beginnend met een letter."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Main model"
+msgstr "Hoofdmodel"
+
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Manage"
 msgstr "Beheren"
+
+#. placeholder {0}: providerName(choice)
+#: src/pages/ModelRoleSettings.tsx
+msgid "Manage {0}"
+msgstr "{0} beheren"
 
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
@@ -3092,10 +3094,6 @@ msgstr "Facturatie beheren"
 #: src/pages/PluginsOverlay.tsx
 msgid "Manage MCP servers"
 msgstr "MCP-servers beheren"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Manage messaging settings"
-msgstr "Berichtinstellingen beheren"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Manage the bots it creates"
@@ -3140,8 +3138,8 @@ msgstr "Maximaliseren"
 msgid "Maximum images per request"
 msgstr "Maximum aantal afbeeldingen per verzoek"
 
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Maximum output tokens"
 msgstr "Maximaal aantal uitvoertokens"
@@ -3275,7 +3273,6 @@ msgid "Missed call"
 msgstr "Gemist gesprek"
 
 #: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/Onboarding.tsx
@@ -3298,12 +3295,9 @@ msgid "Model id"
 msgstr "Model-id"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 msgid "Model options"
 msgstr "Modelopties"
-
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Model updated."
-msgstr "Model bijgewerkt."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -3347,13 +3341,9 @@ msgstr "Meer"
 msgid "More computer actions"
 msgstr "Meer computeracties"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Move {full} down"
-msgstr "{full} omlaag verplaatsen"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Move {full} up"
-msgstr "{full} omhoog verplaatsen"
+#: src/pages/ModelRoleSettings.tsx
+msgid "Move down"
+msgstr "Omlaag"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Move them to your shared memory."
@@ -3362,6 +3352,10 @@ msgstr "Verplaats ze naar je gedeelde geheugen."
 #: src/pages/BotContextMenu.tsx
 msgid "Move to"
 msgstr "Verplaatsen naar"
+
+#: src/pages/ModelRoleSettings.tsx
+msgid "Move up"
+msgstr "Omhoog"
 
 #: src/components/call/CallCard.tsx
 msgid "Mute"
@@ -3505,6 +3499,7 @@ msgid "No matching artifacts on this page."
 msgstr "Geen overeenkomende artefacten op deze pagina."
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "No matching models"
 msgstr "Geen overeenkomende modellen"
@@ -3532,10 +3527,6 @@ msgstr "Er is geen modelcatalogus beschikbaar."
 #: src/lib/model-connection-preflight.ts
 msgid "No models listed."
 msgstr "Geen modellen vermeld."
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "No providers found."
-msgstr "Geen aanbieders gevonden."
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "No remote MCP servers found"
@@ -3578,10 +3569,6 @@ msgstr "Normaal"
 msgid "Not checked yet"
 msgstr "Nog niet gecontroleerd"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Not connected"
-msgstr "Niet verbonden"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
 msgstr "Niet in de plugincatalogus"
@@ -3605,11 +3592,6 @@ msgstr "Meldingen"
 #: src/pages/ActivityList.tsx
 msgid "Now"
 msgstr "Nu"
-
-#. placeholder {0}: selected.label
-#: src/pages/model-settings/use-model-settings.ts
-msgid "Now using {0}."
-msgstr "Nu wordt {0} gebruikt."
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
@@ -3642,7 +3624,7 @@ msgstr "OAuth verlopen"
 msgid "Ollama API key"
 msgstr ""
 
-#: src/pages/model-settings/provider-list.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Ollama Cloud"
 msgstr ""
@@ -3894,6 +3876,10 @@ msgstr "Plaats \"No changes\" in de chat"
 msgid "POST to"
 msgstr "POST naar"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Preferences"
+msgstr "Voorkeuren"
+
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
 msgid "Preview {0}"
@@ -3928,10 +3914,6 @@ msgstr "Beveiligde invoer"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "Aanbieder"
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "Providers"
-msgstr "Aanbieders"
 
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
@@ -4088,6 +4070,7 @@ msgstr "Herladen"
 
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4103,10 +4086,6 @@ msgstr "{0} verwijderen"
 #: src/pages/GroupPanel.tsx
 msgid "Remove {0} from the group"
 msgstr "{0} uit de groep verwijderen"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Remove {full}"
-msgstr "{full} verwijderen"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
@@ -4275,7 +4254,7 @@ msgstr "Je werkruimte herstellen"
 #: src/components/AccountAccess.tsx
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
-#: src/pages/ModelBackupsSettings.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4381,6 +4360,7 @@ msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontv
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4429,6 +4409,7 @@ msgstr "Bezig met opslaan..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
@@ -4452,11 +4433,13 @@ msgid "Screen not connected"
 msgstr "Scherm niet verbonden"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "Zoeken"
 
@@ -4482,13 +4465,10 @@ msgid "Search integrations.sh"
 msgstr "integrations.sh doorzoeken"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 msgid "Search models"
 msgstr "Modellen zoeken"
-
-#: src/pages/model-settings/provider-list.tsx
-msgid "Search providers"
-msgstr "Aanbieders zoeken"
 
 #: src/pages/Shell.tsx
 msgid "Search runs"
@@ -4503,6 +4483,10 @@ msgstr "Zoeken: {0}"
 #: src/pages/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "Bezig met zoeken…"
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Security"
+msgstr "Beveiliging"
 
 #: src/pages/Shell.tsx
 msgid "Select a bot"
@@ -4736,14 +4720,6 @@ msgstr "Er is iets misgegaan. Probeer het opnieuw."
 msgid "Space"
 msgstr "Space"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Space changed. Reopen Models to load its backup list."
-msgstr "De space is gewijzigd. Open Modellen opnieuw om de back-uplijst te laden."
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Space changed. Reopen Models to save its backup list."
-msgstr "De space is gewijzigd. Open Modellen opnieuw om de back-uplijst op te slaan."
-
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "Spacestandaard"
@@ -4867,7 +4843,6 @@ msgstr ""
 msgid "Switch bot"
 msgstr "Van bot wisselen"
 
-#: src/pages/model-settings/connection-controls.tsx
 #: src/pages/model-settings/space-bots-model.tsx
 msgid "Switching…"
 msgstr "Bezig met wisselen…"
@@ -4973,15 +4948,16 @@ msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "Deze opgeslagen instellingen kunnen niet worden gelezen. Verwijder ze en voeg ze opnieuw toe."
 
 #: src/components/call/CallCard.tsx
-#: src/pages/model-settings/catalog-model-fields.tsx
+#: src/pages/ModelRoleSettings.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Denkt"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Thinking: {activeThinkingLabel}"
-msgstr "Denkt: {activeThinkingLabel}"
+#. placeholder {0}: thinkingLevelLabel(choice.thinkingLevel)
+#: src/pages/ModelRoleSettings.tsx
+msgid "Thinking: {0}"
+msgstr "Denken: {0}"
 
 #: src/pages/shell/computer-view.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
@@ -5175,10 +5151,6 @@ msgstr "Proefperiode"
 msgid "Trial ends {day}"
 msgstr "Proefperiode eindigt op {day}"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Tried in order if the active model fails."
-msgstr "Op volgorde geprobeerd als het actieve model faalt."
-
 #: src/pages/ActivityList.tsx
 #: src/pages/Onboarding.tsx
 msgid "Try again"
@@ -5352,17 +5324,9 @@ msgstr ""
 msgid "Use space default"
 msgstr ""
 
-#: src/pages/model-settings/connection-controls.tsx
-msgid "Use this model"
-msgstr "Dit model gebruiken"
-
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "Use up to 512 letters, digits, _ or -."
 msgstr "Gebruik maximaal 512 letters, cijfers, _ of -."
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Use your own key"
-msgstr "Gebruik je eigen sleutel"
 
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 msgid "User peer"

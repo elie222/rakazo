@@ -7,10 +7,12 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
+  deploymentModelRole,
   formatCurrentTimeInstruction,
   hasHostedModelCredits,
   hostedModelCreditObserver,
   matchesFailedOAuthSecret,
+  resolveMemberMainModel,
   resolveModelAuth,
   secretValuesToRedact,
   serializeModelSecret,
@@ -18,12 +20,7 @@ import {
 } from "@rakazo/adapters";
 import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import {
-  findDefaultModelCredential,
-  findModelCredential,
-  recordUsage,
-  retireModelCredential,
-} from "@rakazo/db";
+import { findModelCredential, recordUsage, retireModelCredential } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const MAX_RULES_CHARS = 4_000;
@@ -230,7 +227,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       where: { id: "default" },
     });
     const scope = { userId: bot.userId, spaceId: bot.spaceId };
-    const defaultCredential = await findDefaultModelCredential(this.deps.prisma, scope);
+    const member = await resolveMemberMainModel(
+      { prisma: this.deps.prisma, secretStore: this.deps.secrets },
+      scope,
+    );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
     const overrideCredential = requestedProvider
@@ -240,17 +240,21 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const useOverride = Boolean(
       requestedProvider && requestedModel && (explicitJudgeOverride || overrideCredential),
     );
-    const credential = useOverride ? overrideCredential : defaultCredential;
-    const provider =
-      (useOverride ? requestedProvider : null) ??
-      credential?.provider ??
-      settings?.defaultModelProvider ??
-      this.deps.deploymentProvider;
-    const modelId =
-      (useOverride ? requestedModel : null) ??
-      credential?.defaultModel ??
-      settings?.defaultModelId ??
-      this.deps.deploymentModel;
+    // The member's main model runs on its connection, or on funded deployment credits.
+    const main =
+      member &&
+      (member.credential ||
+        (settings?.modelCreditsEnabled &&
+          (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
+        ? member
+        : null;
+    const fallback = deploymentModelRole("main", {
+      settings,
+      deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
+    }).primary;
+    const credential = useOverride ? overrideCredential : (main?.credential ?? null);
+    const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
+    const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
 
     const hosted =

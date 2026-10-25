@@ -193,12 +193,13 @@ async function runWithModel(
     },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceBackupModel: {
-      findMany: vi.fn(async () => {
-        if (backupReadFails) throw new Error("Backup list unavailable");
-        return switchModel
-          ? [{ provider: switchModel.provider, modelId: switchModel.modelId }]
-          : [];
+    spaceModelRoleChoice: {
+      findMany: vi.fn(async ({ where }: { where: { role: string } }) => {
+        if (where.role !== "main") return [];
+        // The run reads its main model first and its fallbacks just before the model call.
+        if (backupReadFails && prisma.spaceModelRoleChoice.findMany.mock.calls.length > 1)
+          throw new Error("Backup list unavailable");
+        return switchModel ? [{ ...switchModel, position: 1, thinkingLevel: null }] : [];
       }),
     },
 
@@ -325,16 +326,15 @@ describe("recent turn images follow model vision", () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, true);
     expect(request.fallbackModels).toEqual([]);
     expect(request.resolveFallbackModel).toBeUndefined();
-    expect(prisma.spaceBackupModel.findMany).toHaveBeenCalledExactlyOnceWith({
-      where: { userId: "user-1", spaceId: "space-1" },
-      orderBy: { position: "asc" },
-      select: { provider: true, modelId: true },
-    });
+    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1", spaceId: "space-1", role: "main" } }),
+    );
   });
 
   it("does not read or configure backups for scripted runs", async () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, true);
-    expect(prisma.spaceBackupModel.findMany).not.toHaveBeenCalled();
+    // Only the main model itself is read.
+    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledTimes(1);
     expect(request.fallbackModels).toEqual([]);
     expect(request.resolveFallbackModel).toBeUndefined();
   });

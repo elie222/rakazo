@@ -26,6 +26,7 @@ const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selec
   }));
 const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
 const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
   selectSpace,

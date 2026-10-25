@@ -33,7 +33,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../../lib/model-auth";
-import { thinkingLevelLabel } from "../../lib/model-catalog";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
 import {
   classifyModelConnectionFailure,
@@ -53,16 +52,25 @@ function connectionMaxTokensField(providerId: string, stored: number | undefined
   return stored !== undefined ? String(stored) : "";
 }
 
+export type ModelConnectIntent = {
+  /** False keeps the current main model; the connection is for a fallback or another role. */
+  makeDefault: boolean;
+  onConnected?: (choice: { provider: string; modelId: string }) => void | Promise<void>;
+};
+
 export function useModelSettings(onClose: () => void) {
   const rpc = useSpaceRpc();
+  const intentRef = useRef<ModelConnectIntent | null>(null);
+  // Sign-in finishes later; it keeps the slot it was started for even if the dialog closes.
+  const oauthChoiceRef = useRef<{
+    choice: { provider: string; modelId: string };
+    intent: ModelConnectIntent | null;
+  } | null>(null);
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [provider, setProvider] = useState("");
-  // The provider whose optional personal-key form is open.
-  const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
-  const [providerQuery, setProviderQuery] = useState("");
   const [modelId, setModelId] = useState("");
   const modelIdRef = useRef(modelId);
   modelIdRef.current = modelId;
@@ -83,9 +91,7 @@ export function useModelSettings(onClose: () => void) {
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "settings" | "default" | "disconnect" | null>(
-    null,
-  );
+  const [pending, setPending] = useState<"connect" | "settings" | "disconnect" | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -96,7 +102,6 @@ export function useModelSettings(onClose: () => void) {
   const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
   const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
   const preflightRevisionRef = useRef(0);
-  const detailScrollRef = useRef<HTMLDivElement>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
   const selectedLabelRef = useRef<string | undefined>(undefined);
@@ -115,6 +120,9 @@ export function useModelSettings(onClose: () => void) {
     onError: setError,
     onFinished: async () => {
       await refresh();
+      const started = oauthChoiceRef.current;
+      oauthChoiceRef.current = null;
+      if (started) await started.intent?.onConnected?.(started.choice);
     },
   });
 
@@ -219,55 +227,6 @@ export function useModelSettings(onClose: () => void) {
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
   );
-  const connectedProviderIds = useMemo(
-    () => new Set(credentials.map((entry) => entry.provider)),
-    [credentials],
-  );
-  const searching = providerQuery.trim() !== "";
-  const filteredGroups = useMemo(() => {
-    const query = providerQuery.trim().toLowerCase();
-    const matched = query
-      ? groups.filter((group) =>
-          [
-            group.id,
-            group.name,
-            group.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Ollama Cloud" : "",
-            ...group.entries.flatMap((entry) => [entry.id, entry.label]),
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(query),
-        )
-      : groups;
-    // Rank exact/prefix provider-name hits above incidental substring matches,
-    // then float connected providers so they are reachable without scrolling.
-    const score = (group: (typeof groups)[number]) =>
-      query
-        ? group.id.toLowerCase().startsWith(query) || group.name.toLowerCase().startsWith(query)
-          ? 0
-          : group.name.toLowerCase().includes(query) || group.id.toLowerCase().includes(query)
-            ? 1
-            : 2
-        : 0;
-    return [...matched].sort(
-      (a, b) =>
-        score(a) - score(b) ||
-        Number(connectedProviderIds.has(b.id)) - Number(connectedProviderIds.has(a.id)),
-    );
-  }, [groups, providerQuery, connectedProviderIds]);
-  // Browsing separates connected providers into their own section; searching
-  // flattens back into one ranked list.
-  const connectedGroups = useMemo(
-    () => (searching ? [] : filteredGroups.filter((group) => connectedProviderIds.has(group.id))),
-    [searching, filteredGroups, connectedProviderIds],
-  );
-  const otherGroups = useMemo(
-    () =>
-      searching
-        ? filteredGroups
-        : filteredGroups.filter((group) => !connectedProviderIds.has(group.id)),
-    [searching, filteredGroups, connectedProviderIds],
-  );
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
@@ -286,19 +245,6 @@ export function useModelSettings(onClose: () => void) {
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
-  const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
-  );
-  // The banner shows the effective effort — stored level or the runtime
-  // default — only when the active model can actually think.
-  const activeThinkingLabel =
-    (currentEntry?.thinkingLevels ?? []).some((level) => level !== "off") ||
-    activeCredential?.reasoning
-      ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium")
-      : null;
-  const isActive =
-    me?.defaultProvider === selected?.provider &&
-    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   // Space still bills the host while this provider matches; model id alone is not credentials.
   const usingServerCredentials = provider === me?.hostCredentialProvider;
   const acceptsKey = selected?.auth !== "oauth";
@@ -423,7 +369,6 @@ export function useModelSettings(onClose: () => void) {
         ? (presetBaseUrl ?? nextCredential?.baseUrl ?? "")
         : "",
     );
-    detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
     setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
@@ -530,41 +475,12 @@ export function useModelSettings(onClose: () => void) {
     setPreflightFailure(result.failure);
   }
 
-  async function setModelDefault() {
-    if (!selected || !credential) return;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    if (isOpenAiCompatible && !activeModelId) return;
-    setError(null);
-    setNotice(null);
-    setPending("default");
-    try {
-      await rpc.models.setDefault({
-        provider: selected.provider,
-        modelId: activeModelId,
-        // Catalog connections keep the space default effort on the preference;
-        // openai-compatible still owns its level inside the stored endpoint config.
-        ...(!isOpenAiCompatible
-          ? {
-              thinkingLevel: clampCatalogThinkingLevel(
-                thinkingLevel,
-                selected.thinkingLevels,
-              ) as ThinkingLevel | null,
-            }
-          : {}),
-      });
-      await refresh();
-      setNotice(isOpenAiCompatible ? t`Model updated.` : t`Now using ${selected.label}.`);
-    } catch (err) {
-      setError(errorText(err, t`Could not change the default model`));
-    } finally {
-      setPending(null);
-    }
-  }
-
   // settingsOnly saves a connected catalog provider's limits and gateway ids
   // without touching the key field; key replacement stays on its own button.
   async function connectKey({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
     if (!selected) return;
+    // Closing the dialog mid-save must not drop the slot this connection is for.
+    const intent = intentRef.current;
     const newKey = settingsOnly ? "" : apiKey.trim();
     const savingLimitOnly = !isOpenAiCompatible && !newKey;
     const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
@@ -637,6 +553,7 @@ export function useModelSettings(onClose: () => void) {
               contextWindow: parsedContextWindow,
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
+              ...(intent ? { makeDefault: intent.makeDefault } : {}),
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
             }
@@ -651,13 +568,18 @@ export function useModelSettings(onClose: () => void) {
               ...(!savingLimitOnly || modelChanged || thinkingDirty
                 ? { thinkingLevel: stagedThinking }
                 : {}),
+              ...(intent ? { makeDefault: intent.makeDefault } : {}),
               maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
       );
       if (!settingsOnly) setApiKey("");
       await refresh();
-      detailScrollRef.current?.scrollTo({ top: 0 });
+      if (!settingsOnly)
+        await intent?.onConnected?.({
+          provider: selected.provider,
+          modelId: activeModelId,
+        });
       // A fresh connection speaks for itself through the Active model row.
       if (isOpenAiCompatible || savingLimitOnly) setNotice(t`Saved.`);
     } catch (err) {
@@ -678,7 +600,6 @@ export function useModelSettings(onClose: () => void) {
       setApiKey("");
       setThinkingLevel(null);
       await refresh();
-      detailScrollRef.current?.scrollTo({ top: 0 });
       setNotice(t`Disconnected ${selected.providerName ?? selected.provider}.`);
     } catch (err) {
       setError(errorText(err, t`Could not disconnect this provider`));
@@ -695,9 +616,15 @@ export function useModelSettings(onClose: () => void) {
   function beginSelectedSubscriptionSignIn() {
     if (!selected) return;
     setNotice(null);
+    const intent = intentRef.current;
+    oauthChoiceRef.current = {
+      choice: { provider: selected.provider, modelId: selected.id },
+      intent,
+    };
     void startSubscriptionSignIn({
       provider: selected.provider,
       modelId: selected.id,
+      ...(intent ? { makeDefault: intent.makeDefault } : {}),
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,
@@ -707,13 +634,14 @@ export function useModelSettings(onClose: () => void) {
   }
 
   return {
+    intentRef,
+    refresh,
     resetOpenAiCompatibleProbe,
     headerRows,
     setHeaderRows,
     savedHeaderEndpointMatches,
     acceptsKey,
     accountId,
-    activeThinkingLabel,
     apiKey,
     baseUrl,
     beginSelectedSubscriptionSignIn,
@@ -727,7 +655,6 @@ export function useModelSettings(onClose: () => void) {
     compatibleRows,
     confirmDisconnect,
     connectKey,
-    connectedGroups,
     contextWindow,
     copyOAuthCode,
     credential,
@@ -735,19 +662,16 @@ export function useModelSettings(onClose: () => void) {
     credentials,
     currentEntry,
     defaultModelOptions,
-    detailScrollRef,
     disconnectCredential,
     disconnectName,
     effectiveBaseUrl,
     enabledModelIds,
     error,
-    filteredGroups,
     gatewayId,
     groups,
     handleClose,
     hostCredentialSource,
     invalidatePreflight,
-    isActive,
     isCloudflare,
     isCloudflareGateway,
     isOpenAiCompatible,
@@ -761,8 +685,6 @@ export function useModelSettings(onClose: () => void) {
     oauth,
     oauthPending,
     openAiCompatibleReady,
-    otherGroups,
-    ownKeyProvider,
     pasteCode,
     pending,
     popupBlocked,
@@ -774,7 +696,6 @@ export function useModelSettings(onClose: () => void) {
     probeServerModels,
     probing,
     provider,
-    providerQuery,
     reasoning,
     selected,
     selectedProviderName,
@@ -787,12 +708,9 @@ export function useModelSettings(onClose: () => void) {
     setGatewayId,
     setMaxImagesPerPrompt,
     setMaxTokens,
-    setModelDefault,
     setModelId,
     setNotice,
-    setOwnKeyProvider,
     setPasteCode,
-    setProviderQuery,
     setReasoning,
     setSupportsImages,
     setThinkingLevel,
@@ -803,7 +721,6 @@ export function useModelSettings(onClose: () => void) {
     supportsImages,
     testApiKeyConnection,
     testOAuthConnection,
-    thinkingDirty,
     thinkingLevel,
     updateApiKey,
     updateBaseUrl,

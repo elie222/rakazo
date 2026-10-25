@@ -196,6 +196,25 @@ describe("Composer", () => {
     expect(container?.querySelector('[data-testid="mention-chip"]')?.textContent).toBe("Alice");
   });
 
+  it.each([false, true])(
+    "draws an idle Send button with the primary disabled tokens (running: %s)",
+    (running) => {
+      renderComposer(vi.fn(), { running });
+      const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+      expect(send?.disabled).toBe(true);
+      expect(send?.className.split(" ")).toEqual(
+        expect.arrayContaining([
+          "bg-primary",
+          "hover:bg-primary-hover",
+          "disabled:bg-primary-disabled",
+          "disabled:text-foreground/30",
+          "disabled:opacity-100",
+        ]),
+      );
+      expect(send?.className).not.toContain("disabled:opacity-50");
+    },
+  );
+
   it("clears the draft once the message is sent", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend);

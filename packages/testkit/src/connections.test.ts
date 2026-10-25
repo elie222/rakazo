@@ -9,7 +9,7 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
-import { listSpaceBackupModels, replaceSpaceBackupModels, runAsSystem } from "@rakazo/db";
+import { getModelRole, runAsSystem, runAsTenant, updateModelRole } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
@@ -88,13 +88,14 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       { provider: "provider-b", modelId: "second" },
       { provider: "provider-c", modelId: "third" },
     ];
-    await replaceSpaceBackupModels(handles.prisma, other, first);
-    await Promise.all([
-      replaceSpaceBackupModels(handles.prisma, owner, first),
-      replaceSpaceBackupModels(handles.prisma, owner, second),
-    ]);
-    expect([first, second]).toContainEqual(await listSpaceBackupModels(handles.prisma, owner));
-    expect(await listSpaceBackupModels(handles.prisma, other)).toEqual(first);
+    const replace = (actor: Actor, backups: typeof first) =>
+      runAsTenant(actor, () => updateModelRole(handles.prisma, actor, "main", { backups }));
+    const backups = async (actor: Actor) =>
+      (await runAsTenant(actor, () => getModelRole(handles.prisma, actor, "main"))).backups;
+    await replace(other, first);
+    await Promise.all([replace(owner, first), replace(owner, second)]);
+    expect([first, second]).toContainEqual(await backups(owner));
+    expect(await backups(other)).toEqual(first);
   });
 
   it("reconciles one scoped row per provider under concurrent catalog fetches", async () => {

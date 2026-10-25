@@ -35,6 +35,7 @@ describe("transient model errors", () => {
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
     ["dropped fetch body", new TypeError("terminated")],
+    ["provider network stop", new Error("Provider finish_reason: network_error")],
     ["fetch failure", new TypeError("fetch failed")],
     ["SDK connection failure", new Error("Connection error.")],
     ["SDK connection timeout", new Error("Request timed out.")],

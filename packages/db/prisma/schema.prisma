@@ -332,6 +332,7 @@ model SpaceMember {
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
   backupModels SpaceBackupModel[]
+  modelRoleChoices SpaceModelRoleChoice[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -1689,4 +1690,20 @@ model ModelCreditLot {
   @@index([organizationId, expiresAt])
   // Partial indexes for outstanding grants are managed in SQL migrations.
   @@map("model_credit_lots")
+}
+
+/// Ordered models for each purpose. Position 0 is the purpose's own model; fallbacks follow.
+model SpaceModelRoleChoice {
+  spaceId       String
+  userId        String
+  spaceMember   SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  role          String
+  position      Int
+  provider      String
+  modelId       String
+  thinkingLevel String?
+
+  @@id([spaceId, userId, role, position])
+  @@unique([spaceId, userId, role, provider, modelId])
+  @@map("space_model_role_choices")
 }

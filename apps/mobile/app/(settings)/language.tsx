@@ -7,10 +7,12 @@ import { mobileTokens } from "../../lib/appearance";
 import { setUiLocale, useI18n } from "../../lib/i18n";
 import { resumeLiveNotifications } from "../../lib/live-notifications";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import type { UiLocale } from "../../lib/ui-locale";
 import { UI_LOCALE_LABELS, UI_LOCALES } from "../../lib/ui-locale";
 
 export default function Language() {
+  const sideInsets = useSideInsets();
   const { t, locale } = useI18n();
   const styles = useThemedStyles(createStyles);
   const [saving, setSaving] = useState(false);
@@ -38,7 +40,7 @@ export default function Language() {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, sideInsets]}
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
     >

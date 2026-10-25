@@ -1,9 +1,12 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
 import { encodeLoginSecret } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   credentialArgument,
+  loadLoginPasswordRedactions,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
@@ -773,14 +776,36 @@ describe("normalizeSecretDestination", () => {
   });
 });
 
+/** Prisma's where for these tests: plain fields, a JSON path filter on auth, and take. */
+function matchingRows<T extends Record<string, unknown>>(
+  rows: T[],
+  { where, take }: { where: Record<string, unknown>; take?: number },
+) {
+  const matches = rows.filter((row) =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === "auth" && value && typeof value === "object" && "path" in value) {
+        const filter = value as { path: string[]; equals: unknown };
+        return (row.auth as Record<string, unknown>)[filter.path[0]!] === filter.equals;
+      }
+      return row[key] === value;
+    }),
+  );
+  return take === undefined ? matches : matches.slice(0, take);
+}
+
 describe("saved website logins", () => {
   const login = {
     name: "site_login",
     origin: "https://login.example.test",
     auth: { type: "login" },
   };
-  async function loginFixture(username: string, auth: object = login.auth, origin = login.origin) {
-    const plaintext = encodeLoginSecret({ username, password: "fake-password-1" });
+  async function loginFixture(
+    username: string,
+    auth: object = login.auth,
+    origin = login.origin,
+    password = "fake-password-1",
+  ) {
+    const plaintext = encodeLoginSecret({ username, password });
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
@@ -792,8 +817,93 @@ describe("saved website logins", () => {
         ? row
         : null,
     );
-    return { prisma: { botSecret: { findFirst } } as unknown as PrismaClient };
+    const findMany = vi.fn(async (query) => matchingRows([row], query));
+    return { prisma: { botSecret: { findFirst, findMany } } as unknown as PrismaClient };
   }
+
+  it("hides every saved password when the bot has more than 100 credentials", async () => {
+    const context = { operationId: "test", traceId: "test", signal: new AbortController().signal };
+    const rows: Record<string, unknown>[] = [];
+    // Other credentials are never decrypted for this, so their ciphertext doesn't matter.
+    for (let index = 0; index < 120; index += 1)
+      rows.push({ ...scope, name: `api_${index}`, auth: { type: "bearer" }, ciphertext: "unused" });
+    const password = "fake-late-password-1";
+    const encrypted = await secretStore.put(
+      encodeLoginSecret({ username: "fake-user@example.test", password }),
+      { ...scope, ...context },
+      { recordId: "login-late" },
+    );
+    rows.push({ ...scope, ...login, ...encrypted });
+    const prisma = {
+      botSecret: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+    } as unknown as PrismaClient;
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
+  });
+
+  it("hides a saved password in its plain, URL, form and base64 forms", async () => {
+    const username = "fake-user@example.test";
+    const password = "fake pass!word+1";
+    const { prisma } = await loginFixture(username, login.auth, login.origin, password);
+    const redactions = await loadLoginPasswordRedactions(prisma, secretStore, scope);
+    const forms = [
+      password,
+      encodeURIComponent(password),
+      new URLSearchParams({ v: password }).toString().slice(2),
+      Buffer.from(password).toString("base64"),
+    ];
+    expect(forms).toContain("fake+pass%21word%2B1");
+    const redacted = redactSecrets([...forms, `Signed in as ${username}`].join("\n"), redactions);
+    for (const form of forms) expect(redacted).not.toContain(form);
+    // Only the run that fills a login hides its username.
+    expect(redacted).toContain(`Signed in as ${username}`);
+    expect(
+      await loadLoginPasswordRedactions(prisma, secretStore, { ...scope, botId: "bot-2" }),
+    ).toEqual([]);
+  });
+
+  it("leaves a short password to the run that fills it", async () => {
+    const { prisma } = await loginFixture(
+      "fake-user@example.test",
+      login.auth,
+      login.origin,
+      "abc",
+    );
+    expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+    const fill = await resolveLoginFill({
+      prisma,
+      secretStore,
+      scope,
+      name: "site_login",
+      field: "password",
+    });
+    expect("redactions" in fill && fill.redactions).toContain("abc");
+  });
+
+  it("skips an unreadable login and logs only its id", async () => {
+    const row = { ...scope, ...login, id: "login-broken", ciphertext: "not-a-ciphertext" };
+    const prisma = { botSecret: { findMany: vi.fn(async () => [row]) } } as unknown as PrismaClient;
+    const warn = vi.fn();
+    const logger = vi.spyOn(Logging, "getLogger").mockReturnValue({ warn } as never);
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.any(String), { loginId: "login-broken" });
+      // The logger's own scrubbing keeps the id readable.
+      expect(Logging.redactBindings(warn.mock.calls[0]![1])).toEqual({ loginId: "login-broken" });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  it("decrypts nothing for a bot without saved logins", async () => {
+    const { prisma } = await loginFixture("fake-user@example.test", { type: "bearer" });
+    const load = vi.spyOn(secretStore, "load");
+    try {
+      expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toEqual([]);
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      load.mockRestore();
+    }
+  });
 
   it("resolves one field bound to the saved origin with its redactions", async () => {
     const { prisma } = await loginFixture("fake-user@example.test");

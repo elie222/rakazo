@@ -48,8 +48,27 @@ test("compact bot sidebar hides previews and preserves roster status accessibly"
   // The unread dot is the one blue in the sidebar, not ink.
   await expect(previewRow.locator("[data-roster-unread-dot]")).toHaveCSS(
     "background-color",
-    "rgb(0, 108, 235)",
+    "rgb(11, 109, 211)",
   );
+  // Times are tertiary text; a hovered row takes the light hover fill, lighter than selection.
+  await expect(previewRow.locator("[data-roster-time]")).toHaveCSS(
+    "color",
+    "rgba(28, 28, 28, 0.56)",
+  );
+  await previewRow.hover();
+  await expect(previewRow).toHaveCSS("background-color", "rgba(28, 28, 28, 0.06)");
+  await expect(selectedRow).toHaveCSS("background-color", "rgba(28, 28, 28, 0.08)");
+  // Once read, the preview is secondary text.
+  await rpc(page, "threads/markRead", { botId: previewBot.id });
+  await page.reload();
+  await expect(previewRow).not.toHaveAttribute("data-roster-unread", "true");
+  await expect(previewRow.locator("[data-roster-preview]")).toHaveCSS(
+    "color",
+    "rgba(28, 28, 28, 0.68)",
+  );
+  await rpc(page, "threads/markUnread", { botId: previewBot.id });
+  await page.reload();
+  await expect(previewRow).toHaveAttribute("data-roster-unread", "true");
   await previewRow.scrollIntoViewIfNeeded();
   const comfortableHeight = await previewRow.evaluate(
     (element) => element.getBoundingClientRect().height,

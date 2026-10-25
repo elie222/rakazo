@@ -11,6 +11,7 @@ import {
   liveActivityLine,
   normalizeResponseStreamingPreference,
   projectMessages,
+  redactSecrets,
   reduceLiveMessageBlocks,
   responseStreamingEnabled,
   runFailureError,
@@ -763,6 +764,24 @@ describe("appendToolCallSegment", () => {
   });
 });
 
+describe("redactSecrets", () => {
+  it("hides a longer value whole when a shorter one appears inside it", () => {
+    expect(redactSecrets("password=hunter123xyz", ["123", "hunter123xyz"])).toBe(
+      "password=[redacted]",
+    );
+    expect(redactSecrets("a 123 b", ["123", "hunter123xyz", ""])).toBe("a [redacted] b");
+  });
+
+  it("hides values that overlap without one containing the other", () => {
+    expect(redactSecrets("x=pre-hunter123xyz;", ["pre-hun", "hunter123xyz"])).toBe("x=[redacted];");
+    expect(redactSecrets("abab abab", ["abab"])).toBe("[redacted] [redacted]");
+    expect(redactSecrets("aaaaaa", ["aaaa"])).toBe("[redacted]");
+    expect(redactSecrets("keyfake-keyfake-", ["fake-", "key"])).toBe(
+      "[redacted][redacted][redacted][redacted]",
+    );
+  });
+});
+
 describe("createStreamingRedactor", () => {
   it("never emits a secret split across streaming chunks", () => {
     const redactor = createStreamingRedactor(["fake-secret-123"]);
@@ -773,6 +792,29 @@ describe("createStreamingRedactor", () => {
     ].join("");
     expect(output).toBe("before [redacted] after");
     expect(output).not.toContain("fake-secret-123");
+  });
+
+  it("hides overlapping values whole, however the text is split", () => {
+    const secrets = ["pre-hun", "hunter123xyz", "123"];
+    const text = "x=pre-hunter123xyz; y=123; z=hunter123xyz";
+    for (let size = 1; size <= text.length; size += 1) {
+      const redactor = createStreamingRedactor(secrets);
+      let output = "";
+      for (let at = 0; at < text.length; at += size)
+        output += redactor.push(text.slice(at, at + size));
+      output += redactor.finish();
+      expect(output).toBe(redactSecrets(text, secrets));
+      expect(output).toBe("x=[redacted]; y=[redacted]; z=[redacted]");
+    }
+  });
+
+  it("shows a long run of a value that overlaps itself as it streams, without holding it", () => {
+    const redactor = createStreamingRedactor(["0000"]);
+    const outputs = Array.from({ length: 10_000 }, () => redactor.push("0000"));
+    // One placeholder as soon as the first match is known; later matches extend it.
+    expect(outputs[0]).toBe("[redacted]");
+    expect(outputs.slice(1).every((output) => output === "")).toBe(true);
+    expect(redactor.push(" done") + redactor.finish()).toBe(" done");
   });
 
   it("does not delay chunks when there are no known secrets", () => {

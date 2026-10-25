@@ -9,6 +9,7 @@ import {
   MODEL_REQUIRED_SEND_ERROR,
   modelFallbackFailure,
   normalizeRunError,
+  userRunError,
 } from "./run-error.js";
 
 describe("normalizeRunError", () => {
@@ -546,4 +547,47 @@ it("does not expose malformed fallback metadata as user-facing copy", () => {
       }),
     ).summary,
   ).toBe("The model provider returned an error.");
+});
+
+describe("userRunError", () => {
+  it("shows nothing of a database error's query, file or source", () => {
+    const database = Object.assign(
+      new Error(
+        "\nInvalid `tx.run.findUnique()` invocation in\n/app/packages/db/src/events.ts:1604:40\n\n  1603 const run = await tx.run.findUnique({\nTransaction API error: Transaction already closed.",
+      ),
+      { name: "PrismaClientKnownRequestError" },
+    );
+    expect(userRunError(database)).toBe("Internal server error");
+    expect(userRunError(database.message)).toBe("Internal server error");
+  });
+
+  it.each([
+    new Error("timeout exceeded when trying to connect"),
+    new Error("Connection terminated unexpectedly"),
+    new Error("Connection terminated due to connection timeout"),
+    new Error("Can't reach database server at `postgres:5432`"),
+    Object.assign(new Error("DatabaseNotReachable"), { name: "DriverAdapterError" }),
+  ])("treats a lost database connection as a server fault: $message", (error) => {
+    expect(userRunError(error)).toBe("Internal server error");
+  });
+
+  it("drops stack frames and server file paths from a server fault", () => {
+    const error = new Error(
+      "ENOENT: no such file or directory, open '/app/data/bots/x.json'\n    at open (node:fs:573:3)\n    at async Promise.all (index 0)\n    at file:///app/dist/worker.js:12:7",
+    );
+    expect(userRunError(error)).toBe("ENOENT: no such file or directory, open '[path]'");
+  });
+
+  it.each([
+    "terminated",
+    '429: {"error":{"message":"Rate limit reached","type":"rate_limit_error"}}',
+    "404 page not found: https://api.example.test/v1/chat/completions.json",
+    "400 invalid_request_error:\n  at least one message is required",
+    // A model on the user's own machine that is not running is theirs to fix.
+    "connect ECONNREFUSED 127.0.0.1:1234",
+    "Connection error.",
+    MODEL_OUTPUT_LIMIT_ERROR,
+  ])("passes a provider message through: %s", (message) => {
+    expect(userRunError(new Error(message))).toBe(message);
+  });
 });

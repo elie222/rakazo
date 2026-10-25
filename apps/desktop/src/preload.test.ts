@@ -35,6 +35,7 @@ describe("desktop preload bridge", () => {
       "badge",
       "computer",
       "oauth",
+      "passkeys",
       "platform",
       "update",
       "window",
@@ -53,6 +54,7 @@ describe("desktop preload bridge", () => {
 
     await bridge.oauth.open?.("https://provider.example.com/authorize");
     await bridge.oauth.cancel?.("https://provider.example.com/authorize");
+    await bridge.passkeys?.rpIds();
     await bridge.window.close();
     await bridge.window.minimize();
     await bridge.window.toggleMaximize();
@@ -65,6 +67,7 @@ describe("desktop preload bridge", () => {
       "desktop.badge.set",
       "desktop.oauth.open",
       "desktop.oauth.cancel",
+      "desktop.passkeys.rpIds",
       "desktop.window.close",
       "desktop.window.minimize",
       "desktop.window.toggleMaximize",

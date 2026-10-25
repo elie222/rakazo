@@ -3,49 +3,10 @@ import type { PrismaClient } from "./client.js";
 import {
   chooseModelCredential,
   defaultModelCredentialCandidates,
-  findDefaultModelCredential,
   findModelCredential,
   newestModelCredentialOrder,
   selectSpaceModelPreference,
 } from "./model-credentials.js";
-
-describe("findDefaultModelCredential", () => {
-  it("resolves the default from the active space preference", async () => {
-    const findFirst = vi.fn().mockResolvedValue(null);
-    const prisma = { spaceModelPreference: { findFirst } } as unknown as PrismaClient;
-
-    await findDefaultModelCredential(prisma, { userId: "user", spaceId: "space" });
-
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { userId: "user", spaceId: "space", isDefault: true },
-      include: { credential: true },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    });
-  });
-
-  it("treats a stored stringified null model id as unset", async () => {
-    const findFirst = vi.fn().mockResolvedValue({
-      credential: {
-        id: "credential",
-        userId: "user",
-        provider: "anthropic",
-        label: "Anthropic",
-        secretId: "secret",
-        createdAt: new Date(0),
-        updatedAt: new Date(0),
-      },
-      isDefault: true,
-      modelId: "null",
-    });
-    const prisma = { spaceModelPreference: { findFirst } } as unknown as PrismaClient;
-
-    await expect(
-      findDefaultModelCredential(prisma, { userId: "user", spaceId: "space" }),
-    ).resolves.toEqual(
-      expect.objectContaining({ id: "credential", provider: "anthropic", defaultModel: null }),
-    );
-  });
-});
 
 describe("findModelCredential", () => {
   it("falls back to the newest user credential when the space has no preference", async () => {

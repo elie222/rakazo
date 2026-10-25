@@ -14,9 +14,11 @@ import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
@@ -142,7 +144,7 @@ export default function NewGroup() {
       >
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
-          style={{ flex: 1 }}
+          style={[{ flex: 1 }, sideInsets]}
           contentContainerStyle={{
             padding: 24,
             paddingTop: Platform.OS === "ios" ? 24 : headerHeight + 24,

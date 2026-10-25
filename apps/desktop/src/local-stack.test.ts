@@ -404,6 +404,7 @@ describe("LocalStackController", () => {
     expect(phases).toEqual([
       "checking-docker",
       "checking-docker",
+      "preparing",
       "pulling",
       "starting",
       "waiting-healthy",
@@ -422,6 +423,7 @@ describe("LocalStackController", () => {
     expect(calls.map((call) => call.args)).toEqual([
       ["compose", "version", "--short"],
       ["info", "--format", "{{.ServerVersion}}"],
+      [...compose, "config", "--images"],
       [...compose, "pull"],
       [...compose, "up", "-d", "--wait", "--wait-timeout", String(COMPOSE_WAIT_TIMEOUT_S)],
     ]);
@@ -464,6 +466,7 @@ describe("LocalStackController", () => {
       (call) => call.args[0] === "compose" && call.args[1] !== "version",
     );
     expect(commands.map((call) => call.args[7])).toEqual([
+      "config",
       "pull",
       "up",
       "up",
@@ -476,6 +479,58 @@ describe("LocalStackController", () => {
       expect(call.env).not.toHaveProperty("COMPOSE_PROJECT_NAME");
     }
   });
+
+  it("starts a pinned release offline when all resolved images are cached", async () => {
+    const images = ["registry.example.test/app:v1.2.3", "registry.example.test/computer:v1.2.3"];
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: `${images.join("\n")}\n` };
+      if (args[0] === "image" && args[1] === "inspect") return { stdout: "sha256:cached\n" };
+      if (args[7] === "pull") return { code: 1, stderr: "registry unavailable" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(false);
+    expect(calls.find((call) => call.args[0] === "image")?.args).toEqual([
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}}",
+      ...images,
+    ]);
+  });
+
+  it("pulls a pinned release when an image is missing", async () => {
+    const stack = controller({}, (args) => {
+      if (args[7] === "config") return { stdout: "registry.example.test/app:v1.2.3\n" };
+      if (args[0] === "image") return { code: 1, stderr: "No such image" };
+      return ok(args);
+    });
+
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[0] === "image")).toBe(true);
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+  });
+
+  it.each([
+    { code: 1, stdout: "", stderr: "Could not resolve images" },
+    { code: 0, stdout: "\n", stderr: "" },
+  ])("falls back to pulling when image resolution is inconclusive: %j", async (config) => {
+    const stack = controller({}, (args) => (args[7] === "config" ? config : ok(args)));
+    expect((await stack.start()).phase).toBe("ready");
+    expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+    expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+  });
+
+  it.each(["edge", "latest", "custom-tag", "v1.2.3-preview.1"])(
+    "refreshes the moving tag %s even when local images exist",
+    async (imageTag) => {
+      const stack = controller({ imageTag, probe: async () => imageTag });
+      expect((await stack.start()).phase).toBe("ready");
+      expect(calls.some((call) => call.args[7] === "pull")).toBe(true);
+      expect(calls.some((call) => call.args[0] === "image")).toBe(false);
+    },
+  );
 
   it("reuses only the privately identified stack on the desired image", async () => {
     const stackPath = path.join(root, "stack");
@@ -581,7 +636,12 @@ describe("LocalStackController", () => {
       message: "Images for v1.2.3 are not published yet. Try again in a few minutes.",
       output: ["Error response from daemon: manifest unknown"],
     });
-    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual(["compose", "info", "pull"]);
+    expect(calls.map((call) => call.args[7] ?? call.args[0])).toEqual([
+      "compose",
+      "info",
+      "config",
+      "pull",
+    ]);
   });
 
   it("reports interruption instead of a pull failure when docker returns 130", async () => {

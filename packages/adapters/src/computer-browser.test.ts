@@ -297,6 +297,73 @@ describe("page browser safety", () => {
     expect(result.tree).toContain("Digit 1");
   });
 
+  it("reports a refused saved-login fill as settled, without desktop tools", async () => {
+    const error = "The page is not on the site this login was saved for.";
+    const provider = new ComputerBrowserProvider({
+      liveDriver: async () => ({ ok: false, completed: 1, uncertain: false, error }),
+    });
+    const result = await provider.act(
+      computer,
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          {
+            kind: "fill",
+            ref: "e2",
+            text: "fake-password",
+            origin: "https://login.example.test",
+            field: "password",
+          },
+        ],
+      },
+      baseContext,
+    );
+    expect(result).toMatchObject({ ok: false, completed: 1, uncertain: false, error });
+    expect(result).not.toHaveProperty("fallback");
+    expect(result).not.toHaveProperty("tree");
+  });
+
+  it("keeps the page snapshot a settled refusal sends", async () => {
+    const error = "A saved password can only be typed into a password field.";
+    const elements = [
+      { ref: "e1", role: "textbox", name: "Email" },
+      { ref: "e2", role: "textbox", name: "Password" },
+    ];
+    const fill = {
+      kind: "fill" as const,
+      ref: "e1",
+      text: "fake-password",
+      origin: "https://login.example.test",
+      field: "password" as const,
+    };
+    const withTree = new ComputerBrowserProvider({
+      liveDriver: async () => ({
+        ok: false,
+        completed: 0,
+        uncertain: false,
+        error,
+        tree: '- textbox "Password" [e2]',
+        elements,
+      }),
+    });
+    expect(await withTree.act(computer, { actions: [fill] }, baseContext)).toMatchObject({
+      ok: false,
+      uncertain: false,
+      error,
+      tree: '- textbox "Password" [e2]',
+      elements,
+    });
+    const elementsOnly = new ComputerBrowserProvider({
+      liveDriver: async () => ({ ok: false, completed: 0, uncertain: false, error, elements }),
+    });
+    const result = await elementsOnly.act(computer, { actions: [fill] }, baseContext);
+    expect(result).toMatchObject({
+      tree: '- textbox "Email" [e1]\n- textbox "Password" [e2]',
+      elements,
+    });
+    expect(result).not.toHaveProperty("fallback");
+  });
+
   it("propagates cancellation instead of suggesting another action", async () => {
     const signal = AbortSignal.abort();
     const driver = vi.fn(async () => ({ ok: true }));

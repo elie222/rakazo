@@ -102,23 +102,10 @@ tags:
 
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
-    visible: "Model"
+    visible: "Main model"
     timeout: 10000
-- assertNotVisible: "Active model"
+- assertVisible: "Approval model"
 - takeScreenshot: "11-models"
-- tapOn: "Thinking"
-- assertVisible: "Medium"
-- takeScreenshot: "11a-thinking-menu"
-- back
-- assertNotVisible: "Medium"
-- scrollUntilVisible:
-    element: "Advanced"
-    direction: DOWN
-- tapOn: "Advanced"
-- scrollUntilVisible:
-    element: "Maximum output tokens"
-    direction: DOWN
-- takeScreenshot: "11b-models-advanced"
 
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:

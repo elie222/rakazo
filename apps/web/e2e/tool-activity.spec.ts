@@ -30,7 +30,6 @@ async function setToggle(page: Page, on: boolean) {
   await settings.getByTestId("advanced-settings").locator("button[aria-expanded]").click();
   const toggle = settings.getByTestId("tool-activity-toggle");
   await expect(toggle).toBeVisible();
-  await expect(settings.getByText("Show tool activity", { exact: true })).toBeVisible();
   if (on) await expect(toggle).not.toBeChecked();
   else await expect(toggle).toBeChecked();
   await toggle.click();

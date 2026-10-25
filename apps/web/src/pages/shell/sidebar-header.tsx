@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IconTooltip } from "../../components/IconTooltip";
 import { desktopBridge } from "../../lib/desktop";
@@ -14,6 +14,8 @@ export function SidebarHeader({
   mini = false,
   activityMode,
   toggleActivityMode,
+  searchOpen = false,
+  onSearch,
   setBotsSidebarCollapsedPref,
   bots,
   setMobileSidebarOpen,
@@ -26,6 +28,8 @@ export function SidebarHeader({
   mini?: boolean;
   activityMode: boolean;
   toggleActivityMode: () => void;
+  searchOpen?: boolean;
+  onSearch?: () => void;
   setBotsSidebarCollapsedPref: (collapsed: boolean) => void;
   bots: Bot[];
   setMobileSidebarOpen: (open: boolean) => void;
@@ -54,6 +58,21 @@ export function SidebarHeader({
     >
       {!mini || hasWindowChrome ? <WindowChrome /> : null}
       <div className={`relative flex items-center ${mini ? "flex-col gap-0.5" : "gap-2.5"}`}>
+        {onSearch ? (
+          <IconTooltip label={t`Search`}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t`Search`}
+              aria-pressed={searchOpen}
+              data-testid="sidebar-search-trigger"
+              onClick={onSearch}
+              className="app-no-drag flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground/75"
+            >
+              <Search size={15} strokeWidth={1.8} aria-hidden="true" />
+            </Button>
+          </IconTooltip>
+        ) : null}
         <IconTooltip label={t`Activity`}>
           <Button
             variant="ghost"
@@ -95,11 +114,11 @@ export function SidebarHeader({
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
           <IconTooltip label={t`Create`}>
             <PopoverTrigger
-              className="app-no-drag flex size-7 items-center justify-center rounded-full text-[21px] text-muted-foreground/70 outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring"
+              className="app-no-drag flex size-7 items-center justify-center rounded-full text-muted-foreground/70 outline-none hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
             >
-              +
+              <Plus size={15} strokeWidth={1.8} aria-hidden="true" />
             </PopoverTrigger>
           </IconTooltip>
           {/* Unmount with the state change so the panel it opens never coexists with the menu. */}

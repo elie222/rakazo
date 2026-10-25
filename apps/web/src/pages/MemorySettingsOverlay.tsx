@@ -159,7 +159,7 @@ export function MemorySettingsOverlay({
       {!embedded ? (
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <DialogTitle className="text-2xl font-medium text-foreground">
+            <DialogTitle className="text-heading2 font-medium text-foreground">
               <Trans>Memory</Trans>
             </DialogTitle>
           </div>
@@ -184,7 +184,7 @@ export function MemorySettingsOverlay({
           ) : config ? (
             <section className="rounded-xl border border-border px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-medium text-foreground">
+                <h3 className="text-heading3 font-medium text-foreground">
                   {registration?.name ?? config.provider}
                 </h3>
                 <span className="text-[13px] text-success">
@@ -217,7 +217,7 @@ export function MemorySettingsOverlay({
             </section>
           ) : registration ? (
             <section className="rounded-xl border border-border px-4 py-4">
-              <h3 id={providerSelectId} className="text-[15px] font-medium text-foreground">
+              <h3 id={providerSelectId} className="text-heading3 font-medium text-foreground">
                 <Trans>Provider</Trans>
               </h3>
               {MEMORY_PROVIDER_SETTINGS.length > 1 ? (

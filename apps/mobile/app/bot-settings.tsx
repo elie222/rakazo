@@ -57,6 +57,8 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { createQueuedSave } from "../lib/queued-save";
+import { useSideInsets } from "../lib/side-insets";
+import { thinkingLevelLabel } from "../lib/thinking-level";
 import { errorText } from "../lib/user-error";
 import { stopVoicePlayback } from "../lib/voice";
 
@@ -65,6 +67,7 @@ type BotSettingsRecord = MobileBot & {
 };
 
 export default function BotSettingsScreen() {
+  const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
@@ -491,7 +494,7 @@ export default function BotSettingsScreen() {
       <Stack.Screen options={glassHeaderOptions(t("Chat settings"))} />
       <ScrollView
         ref={scrollRef}
-        style={{ flex: 1, backgroundColor: tokens.background }}
+        style={[{ flex: 1, backgroundColor: tokens.background }, sideInsets]}
         contentContainerStyle={{ padding: 24 }}
         automaticallyAdjustKeyboardInsets
         contentInsetAdjustmentBehavior="automatic"
@@ -950,16 +953,6 @@ function SettingsSectionHeading({ children }: { children: string }) {
       {children}
     </Text>
   );
-}
-
-function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string) {
-  if (level === "xhigh") return t("Extra high");
-  if (level === "low") return t("Low");
-  if (level === "medium") return t("Medium");
-  if (level === "high") return t("High");
-  if (level === "minimal") return t("Minimal");
-  if (level === "max") return t("Max");
-  return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }
 
 const styles = StyleSheet.create({

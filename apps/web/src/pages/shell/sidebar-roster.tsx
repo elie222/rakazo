@@ -390,7 +390,7 @@ export function SidebarRoster({
                     } ${
                       selected || rosterDropKey === rowDropKey
                         ? "bg-sidebar-accent"
-                        : "group-hover/row:bg-sidebar-accent"
+                        : "group-hover/row:bg-accent"
                     }`}
                   >
                     {mini ? (
@@ -436,7 +436,7 @@ export function SidebarRoster({
                             <span
                               dir="auto"
                               data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                              className={`min-w-0 truncate text-[14px] text-foreground ${
+                              className={`min-w-0 truncate text-body2 text-foreground ${
                                 item.chat.unread ? "font-semibold" : "font-medium"
                               }`}
                             >
@@ -450,7 +450,10 @@ export function SidebarRoster({
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {!compact ? (
-                              <span className="text-[11.5px] text-muted-foreground/60 tabular-nums">
+                              <span
+                                data-roster-time
+                                className="text-label text-faint-foreground tabular-nums"
+                              >
                                 {formatRosterTime(item.chat.updatedAt)}
                               </span>
                             ) : null}
@@ -497,12 +500,12 @@ export function SidebarRoster({
                           <div
                             dir="auto"
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
-                            className={`mt-1 line-clamp-2 text-[12.5px] break-words whitespace-normal ${
+                            className={`mt-1 line-clamp-2 text-label break-words whitespace-normal ${
                               workStatusLabel
                                 ? "font-semibold text-status-working"
                                 : item.chat.unread
                                   ? "font-medium text-foreground/75"
-                                  : "text-muted-foreground/60"
+                                  : "text-muted-foreground"
                             }`}
                           >
                             {rosterLine}
@@ -536,6 +539,7 @@ export function SidebarRoster({
                     >
                       {mini ? (
                         <IconTooltip
+                          side="inline-end"
                           label={
                             compactStatusLabel
                               ? `${item.chat.name}: ${compactStatusLabel}`

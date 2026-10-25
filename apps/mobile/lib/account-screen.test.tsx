@@ -14,6 +14,7 @@ const { element } = vi.hoisted(() => ({
       createElement(tag, { "aria-label": accessibilityLabel }, children),
 }));
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));

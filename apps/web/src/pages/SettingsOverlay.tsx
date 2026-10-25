@@ -345,7 +345,7 @@ export function SettingsOverlay({
               className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 pb-5 pt-6 sm:px-8 sm:pt-7"
             >
               <div className="flex min-w-0 flex-col gap-2">
-                <DialogTitle className="text-2xl font-medium text-foreground">
+                <DialogTitle className="text-heading2 font-medium text-foreground">
                   {sectionTitle}
                 </DialogTitle>
                 {!spaceScoped ? null : space && spaces.length > 1 && onSpaceChange ? (

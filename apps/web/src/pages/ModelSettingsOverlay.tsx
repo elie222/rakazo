@@ -1,5 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
+  compatibleConnectionName,
+  isOllamaCloudBaseUrl,
+  OLLAMA_CLOUD_BASE_URL,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedCompatibleEndpointMatches,
+} from "@rakazo/contracts";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -14,20 +21,16 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  Disclosure,
+  ModelThinkingOptions,
   Spinner,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import { ModelBackupsSettings } from "./ModelBackupsSettings";
-
-import { CatalogModelFields } from "./model-settings/catalog-model-fields";
+import { useState } from "react";
+import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
+import { ModelRoleSettings } from "./ModelRoleSettings";
 import { CompatibleModelFields } from "./model-settings/compatible-model-fields";
-import {
-  CompatibleKeyControls,
-  ConnectionControls,
-  SaveModelButton,
-} from "./model-settings/connection-controls";
-import { ProviderList } from "./model-settings/provider-list";
+import { CompatibleKeyControls, ConnectionControls } from "./model-settings/connection-controls";
+import type { ConnectableProvider } from "./model-settings/role-model-picker";
 import { SpaceBotsModelNotice } from "./model-settings/space-bots-model";
 import { useModelSettings } from "./model-settings/use-model-settings";
 
@@ -42,48 +45,152 @@ export function ModelSettingsOverlay({
   const { t } = useLingui();
   const model = useModelSettings(onClose);
   const {
-    activeThinkingLabel,
+    baseUrl,
     busy,
     catalog,
+    cancelOAuthAttempt,
     confirmDisconnect,
+    connectKey,
     credential,
+    credentialByProvider,
     credentials,
     currentEntry,
-    detailScrollRef,
     disconnectCredential,
     disconnectName,
     error,
     groups,
     handleClose,
+    hostCredentialSource,
+    intentRef,
     isOpenAiCompatible,
     loading,
+    maxTokens,
     me,
     notice,
-    ownKeyProvider,
     pending,
     provider,
+    refresh,
     selected,
-    setConfirmDisconnect,
-    setOwnKeyProvider,
-    hostCredentialSource,
     selectedProviderName,
+    setConfirmDisconnect,
+    setMaxTokens,
+    setNotice,
+    settingsDirty,
   } = model;
-  const serverCredentialsNote = (
-    <p className="text-[13px] leading-[1.5] text-muted-foreground">
-      <Trans>
-        Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}.
-      </Trans>
-    </p>
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const providers: ConnectableProvider[] = groups
+    .filter((group) => !credentialByProvider.has(group.id))
+    .map((group) => ({ id: group.id, name: group.name }));
+  if (
+    groups.some((group) => group.id === OPENAI_COMPATIBLE_PROVIDER_ID) &&
+    !isOllamaCloudBaseUrl(credentialByProvider.get(OPENAI_COMPATIBLE_PROVIDER_ID)?.baseUrl)
+  )
+    providers.push({
+      id: OPENAI_COMPATIBLE_PROVIDER_ID,
+      name: t`Ollama Cloud`,
+      baseUrl: OLLAMA_CLOUD_BASE_URL,
+    });
+  const providerLabel = (id: string) =>
+    compatibleConnectionName(
+      credentialByProvider.get(id)?.baseUrl,
+      groups.find((group) => group.id === id)?.name ?? id,
+    );
+  // The Ollama Cloud preset shares the compatible provider id with a saved local server.
+  const connected = Boolean(
+    credential &&
+      (!isOpenAiCompatible || savedCompatibleEndpointMatches(baseUrl, credential.baseUrl)),
   );
+
+  function openConnection(next: ConnectableProvider, intent: ModelRoleConnectIntent | null) {
+    model.chooseProvider(next.id, next.baseUrl);
+    intentRef.current = {
+      makeDefault: intent?.makeDefault ?? false,
+      onConnected: async (choice) => {
+        setDialogOpen(false);
+        intentRef.current = null;
+        await intent?.onConnected(choice);
+      },
+    };
+    setDialogOpen(true);
+  }
+
+  function closeConnection() {
+    cancelOAuthAttempt();
+    intentRef.current = null;
+    setDialogOpen(false);
+  }
+
+  const disconnectButton = connected ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="mt-6 -ml-2.5 text-muted-foreground"
+      disabled={busy}
+      onClick={() => setConfirmDisconnect(true)}
+    >
+      {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
+    </Button>
+  ) : null;
+
+  const connection = selected ? (
+    isOpenAiCompatible ? (
+      <>
+        <CompatibleModelFields {...model} />
+        <CompatibleKeyControls {...model} />
+        {disconnectButton}
+      </>
+    ) : credential ? (
+      <>
+        <ConnectionControls {...model} />
+        <ModelThinkingOptions
+          showThinking={false}
+          disabled={busy}
+          advancedLabel={t`Advanced`}
+          maxTokens={maxTokens}
+          onMaxTokensChange={(value) => {
+            setMaxTokens(value);
+            setNotice(null);
+          }}
+          maxTokensLabel={t`Maximum output tokens`}
+        />
+        {settingsDirty ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-4 rounded-full"
+            disabled={busy}
+            onClick={() => void connectKey({ settingsOnly: true })}
+          >
+            {pending === "settings" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+          </Button>
+        ) : null}
+        {disconnectButton}
+      </>
+    ) : (
+      <>
+        {provider === me?.hostCredentialProvider ? (
+          <p className="mb-5 text-[13px] leading-[1.5] text-muted-foreground">
+            <Trans>
+              Uses this server's own {hostCredentialSource} credentials to access{" "}
+              {selectedProviderName}.
+            </Trans>
+          </p>
+        ) : null}
+        <ConnectionControls {...model} />
+      </>
+    )
+  ) : null;
+
   const body = (
     <>
       {!embedded ? (
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
-          <div>
-            <DialogTitle className="text-2xl font-medium text-foreground">
-              <Trans>Models</Trans>
-            </DialogTitle>
-          </div>
+          <DialogTitle className="text-heading2 font-medium text-foreground">
+            <Trans>Models</Trans>
+          </DialogTitle>
           <DialogClose
             render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
           >
@@ -92,135 +199,91 @@ export function ModelSettingsOverlay({
         </DialogHeader>
       ) : null}
 
-      {me?.needsModel ? null : (
-        <div className={`mx-6 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}>
-          <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-6">
-            <span className="shrink-0 text-[13.5px] text-muted-foreground md:w-[310px]">
-              <Trans>Active model</Trans>
-            </span>
-            <div className="flex min-w-0 items-baseline gap-3">
-              <span className="truncate text-[15px] text-foreground">
-                {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
-              </span>
-              <span className="truncate text-[13px] leading-[1.5] text-muted-foreground">
-                {groups.find((group) => group.id === currentEntry?.provider)?.name ??
-                  me?.defaultProvider ?? <Trans>Configured by deployment</Trans>}
-                {activeThinkingLabel ? (
-                  <>
-                    {" · "}
-                    <span>
-                      <Trans>Thinking: {activeThinkingLabel}</Trans>
-                    </span>
-                  </>
-                ) : null}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
-        <ProviderList {...model} />
-
-        <div
-          ref={detailScrollRef}
-          className="rk-scroll -m-1 min-h-0 min-w-0 flex-1 overflow-y-auto p-1"
-        >
-          {error ? (
+      <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+        <div className="mx-auto max-w-[600px]">
+          {error && !dialogOpen ? (
             <p className="mb-4 text-sm text-destructive" role="alert">
               {error}
             </p>
           ) : null}
-          {notice ? (
+          {notice && !dialogOpen ? (
             <p className="mb-4 text-sm text-success" role="status">
               {notice}
             </p>
           ) : null}
-          {selected ? (
+          {me ? (
             <>
-              {isOpenAiCompatible ? <CompatibleModelFields {...model} /> : null}
-              {isOpenAiCompatible ? (
-                <>
-                  <CompatibleKeyControls {...model} />
-                  <SaveModelButton {...model} />
-                </>
-              ) : credential ? (
-                <>
-                  {/* The key may be the default in another space while this one runs on server
-                      credentials; saving here switches this space to the key. */}
-                  {provider === me?.hostCredentialProvider ? (
-                    <div className="mb-5">{serverCredentialsNote}</div>
-                  ) : null}
-                  <CatalogModelFields {...model} />
-                  <SaveModelButton {...model} />
-                  <div className="mt-6 border-t border-border pt-5">
-                    <ConnectionControls {...model} />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-3 -ml-2.5 text-muted-foreground"
-                      disabled={busy}
-                      onClick={() => setConfirmDisconnect(true)}
-                    >
-                      {pending === "disconnect" ? (
-                        <Trans>Disconnecting…</Trans>
-                      ) : (
-                        <Trans>Disconnect</Trans>
-                      )}
-                    </Button>
-                  </div>
-                </>
-              ) : provider === me?.hostCredentialProvider ? (
-                <>
-                  {serverCredentialsNote}
-                  <Disclosure
-                    className="mt-5 text-[13px] leading-[1.5] text-muted-foreground"
-                    open={ownKeyProvider === provider}
-                    onOpenChange={(open) => setOwnKeyProvider(open ? provider : null)}
-                    summary={<Trans>Use your own key</Trans>}
-                  >
-                    <div className="mt-5">
-                      <ConnectionControls {...model} />
-                    </div>
-                    <div className="mt-6">
-                      <CatalogModelFields {...model} />
-                    </div>
-                  </Disclosure>
-                </>
-              ) : (
-                <>
-                  <ConnectionControls {...model} />
-                  <div className="mt-6">
-                    <CatalogModelFields {...model} />
-                  </div>
-                </>
+              <ModelRoleSettings
+                userId={me.userId}
+                spaceId={me.spaceId}
+                credentials={credentials}
+                title={t`Main model`}
+                defaultLabel={
+                  me.needsModel
+                    ? t`Choose a model`
+                    : (currentEntry?.label ?? me.defaultModel ?? t`Deployment default`)
+                }
+                providers={providers}
+                providerLabel={providerLabel}
+                onConnect={openConnection}
+                onManage={(id) => openConnection({ id, name: id }, null)}
+                thinking
+                onChanged={() => void refresh()}
+              />
+              {me.needsModel ? null : (
+                <SpaceBotsModelNotice
+                  refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
+                />
               )}
+              <ModelRoleSettings
+                userId={me.userId}
+                spaceId={me.spaceId}
+                credentials={credentials}
+                modelRole="approval"
+                title={t`Approval model`}
+                defaultLabel={t`Deployment default`}
+                providers={providers}
+                providerLabel={providerLabel}
+                onConnect={openConnection}
+                onManage={(id) => openConnection({ id, name: id }, null)}
+              />
             </>
           ) : loading ? (
-            <p className="text-[13px] leading-[1.5] text-muted-foreground">
-              <Spinner aria-label={t`Loading model catalog…`} />
-            </p>
-          ) : (
+            <Spinner aria-label={t`Loading model catalog…`} />
+          ) : catalog.length ? null : (
             <p className="text-[13px] leading-[1.5] text-muted-foreground">
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
-          {me && !me.needsModel ? (
-            <SpaceBotsModelNotice
-              refreshKey={`${me.spaceId}:${me.defaultProvider ?? ""}:${me.defaultModel ?? ""}`}
-            />
-          ) : null}
-          {me ? (
-            <ModelBackupsSettings
-              userId={me.userId}
-              spaceId={me.spaceId}
-              catalog={catalog}
-              credentials={credentials}
-            />
-          ) : null}
         </div>
       </div>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeConnection();
+        }}
+      >
+        <DialogContent className="max-h-[calc(100%-2rem)] w-[480px] max-w-[calc(100%-2rem)] overflow-y-auto rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">
+              {connected ? selectedProviderName : <Trans>Connect {selectedProviderName}</Trans>}
+            </DialogTitle>
+          </DialogHeader>
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {notice ? (
+            <p className="text-sm text-success" role="status">
+              {notice}
+            </p>
+          ) : null}
+          <div>{connection}</div>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -240,6 +303,8 @@ export function ModelSettingsOverlay({
               disabled={pending === "disconnect"}
               onClick={() => {
                 setConfirmDisconnect(false);
+                setDialogOpen(false);
+                intentRef.current = null;
                 void disconnectCredential();
               }}
             >

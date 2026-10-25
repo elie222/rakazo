@@ -41,7 +41,7 @@ import {
   teachRecordingTtlMs,
 } from "@rakazo/core";
 import {
-  clearRunTurnCheckpoints,
+  clearEndedRunState,
   type createRepos,
   expireComputerExecutionLeases,
   IsolationError,
@@ -122,7 +122,7 @@ async function cancelActiveRuns(
     data: { status: "cancelled", completedAt: new Date() },
     select: { id: true },
   });
-  await clearRunTurnCheckpoints(
+  await clearEndedRunState(
     deps.prisma,
     activeRuns.map((run) => run.id),
   );

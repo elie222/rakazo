@@ -29,11 +29,13 @@ import {
 } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 import { errorText } from "../lib/user-error";
 
 const PAGE_SIZE = 30;
 
 export default function ArtifactsScreen() {
+  const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
   const { t } = useI18n();
@@ -265,7 +267,7 @@ export default function ArtifactsScreen() {
             ))}
           </ScrollView>
         }
-        style={styles.listView}
+        style={[styles.listView, sideInsets]}
         contentInsetAdjustmentBehavior="automatic"
         data={filtered ?? []}
         keyExtractor={(item) => item.id}

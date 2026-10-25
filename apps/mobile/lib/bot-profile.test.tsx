@@ -23,6 +23,7 @@ const { rpc, push, alert, afterChatNotifyChange, listSpaceArtifacts, params, col
     focus: new Set<() => (() => void) | undefined>(),
   }));
 
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",

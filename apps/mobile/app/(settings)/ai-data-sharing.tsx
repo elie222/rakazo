@@ -18,9 +18,11 @@ import {
 import { rpc } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
+import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 export default function AiDataSharing() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const [status, setStatus] = useState<AiConsentStatus | null>(null);
   const [pending, setPending] = useState(false);
@@ -90,7 +92,7 @@ export default function AiDataSharing() {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, sideInsets]}
       contentContainerStyle={[styles.container, stacked && styles.compactContainer]}
       contentInsetAdjustmentBehavior="automatic"
     >

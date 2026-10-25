@@ -79,6 +79,10 @@ WORLD_NAME = "rakazo-page-browser"
 NAVIGATION_EVENTS = ("Page.frameRequestedNavigation", "Page.frameStartedNavigating", "Page.frameNavigated")
 
 
+class Refused(RuntimeError):
+    """The page helper declined an action before changing anything it does not report."""
+
+
 class CdpClient:
     def __init__(self, ws_url: str) -> None:
         self._ws_url = ws_url
@@ -376,6 +380,8 @@ EVAL_HELPERS = r"""
 (() => {
   if (window.__rakazoPageBrowser) return true;
   const refMap = new Map();
+  // A refused fill changed nothing the bot cannot see; act() reports it as settled, not uncertain.
+  const refused = (message) => new Error(`Refused: ${message}`);
   // Fields holding a saved login: snapshots never report their values, whatever their type.
   const loginFilled = new WeakSet();
   // New snapshots/documents never recycle references. Retain exact nodes, not selectors.
@@ -593,27 +599,33 @@ EVAL_HELPERS = r"""
       el.click();
       return { url: location.href, title: (document.title || "").slice(0, 200) };
     },
-    fill(ref, value, origin) {
+    fill(ref, value, origin, field) {
       // Checked in the same evaluation as the fill, so a navigation cannot slip in between.
       // Private-LAN plain HTTP is not a login target, even when the page origin matches.
       if (origin) {
         let saved = null;
         try { saved = new URL(origin); } catch { /* rejected below */ }
         if (!saved || saved.protocol !== "https:" || location.protocol !== "https:") {
-          throw new Error("Website logins can only be filled on HTTPS.");
+          throw refused("Website logins can only be filled on HTTPS. Open the saved site with browser_navigate, then fill again.");
         }
         if (location.origin !== saved.origin) {
-          throw new Error("The page is not on the site this login was saved for.");
+          throw refused("The page is not on the site this login was saved for. Open the saved site with browser_navigate, then fill again.");
         }
       }
       const el = this.resolve(ref);
       if (!el) throw new Error(`Unknown element ref: ${ref}`);
-      if (el.readOnly) throw new Error("Element is read-only");
-      // A username is an input. Textareas, search boxes, and editable page content stay out.
-      if (origin && !(el instanceof HTMLInputElement && ["text", "email", "password", "tel"].includes(el.type))) {
-        throw new Error("A saved login can only be typed into a text, email, password, or telephone field.");
-      }
+      if (el.readOnly) throw refused("Element is read-only");
       el.focus();
+      // After focus, whose handlers may change the field. A password goes only into a password
+      // field, which never displays it. A username is an input; textareas, search boxes, and
+      // editable page content stay out.
+      const password = Boolean(origin) && field !== "username";
+      if (password && !(el instanceof HTMLInputElement && el.type === "password")) {
+        throw refused("A saved password can only be typed into a password field.");
+      }
+      if (origin && !password && !(el instanceof HTMLInputElement && ["text", "email", "tel"].includes(el.type))) {
+        throw refused("A saved username can only be typed into a text, email, or telephone field.");
+      }
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
         if (el instanceof HTMLInputElement && !TEXT_INPUT_TYPES.includes(el.type)) {
           throw new Error("Input type requires desktop tools");
@@ -621,11 +633,19 @@ EVAL_HELPERS = r"""
         const prototype = el instanceof HTMLInputElement ? HTMLInputElement.prototype
           : el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
         Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, String(value));
-        if (el.value !== String(value)) throw new Error("Input did not accept the requested value");
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
+        if (el.value !== String(value)) {
+          // A partly accepted login (an email field trimming a username) is not left on the page,
+          // and desktop tools can't type a saved login either, so it is settled like other refusals.
+          if (origin) {
+            Object.getOwnPropertyDescriptor(prototype, "value").set.call(el, "");
+            throw refused("This field didn't accept the saved login, so it was cleared.");
+          }
+          throw new Error("Input did not accept the requested value");
+        }
         if (origin) loginFilled.add(el);
         else loginFilled.delete(el);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (el.isContentEditable) {
         el.textContent = String(value);
         el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -713,11 +733,11 @@ def eval_json(client: CdpClient, session_id: str, expression: str) -> Any:
     )
     if result.get("exceptionDetails"):
         details = result["exceptionDetails"]
-        text = (
-            details.get("text")
-            or (details.get("exception") or {}).get("description")
-            or "evaluate failed"
-        )
+        # Chromium's text is just "Uncaught"; the reason is the thrown error's first line.
+        description = str((details.get("exception") or {}).get("description") or "").split("\n")[0]
+        text = description.removeprefix("Error: ") or details.get("text") or "evaluate failed"
+        if text.startswith("Refused: "):
+            raise Refused(text.removeprefix("Refused: "))
         raise RuntimeError(str(text))
     return (result.get("result") or {}).get("value")
 
@@ -1055,7 +1075,7 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             if kind != "click":
                 arguments += ", " + json.dumps(step["text"])
             if step.get("origin"):
-                arguments += ", " + json.dumps(step["origin"])
+                arguments += ", " + json.dumps(step["origin"]) + ", " + json.dumps(step.get("field"))
             uncertain = True
             data = eval_json(client, session_id, f"window.__rakazoPageBrowser.{kind}({arguments})")
             if not isinstance(data, dict):
@@ -1064,6 +1084,9 @@ def act(client: CdpClient, session_id: str, actions: list[dict[str, Any]]) -> di
             uncertain = False
         snap = snapshot(client, session_id)
         return {**snap, "completed": completed}
+    except Refused as exc:
+        # Settled, and fixable in the page browser: no desktop fallback.
+        return {"ok": False, "completed": completed, "uncertain": False, "error": str(exc)}
     except Exception as exc:
         return {"ok": False, "completed": completed, "uncertain": uncertain,
                 "error": str(exc), "fallback": "computer_act"}

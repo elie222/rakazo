@@ -16,8 +16,10 @@ import {
 } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { useSideInsets } from "../lib/side-insets";
 
 export default function ServerScreen() {
+  const sideInsets = useSideInsets();
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const router = useRouter();
@@ -105,6 +107,7 @@ export default function ServerScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          style={sideInsets}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"

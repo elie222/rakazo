@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openModelConnection,
+  openUserSettings,
+  signup,
+} from "./helpers";
 
 test("model dropdown search and provider group headers", async ({ page }, testInfo) => {
   const stamp = Date.now();
@@ -8,24 +14,23 @@ test("model dropdown search and provider group headers", async ({ page }, testIn
   await completeOnboarding(page);
 
   await openUserSettings(page, "models");
-  await expect(page.getByRole("button", { name: "Close model settings" })).toBeVisible();
 
-  // OpenRouter has many models so group headers and search are obvious.
-  const providerSearch = page.getByPlaceholder("Search providers");
-  await providerSearch.fill("openrouter");
-  await page.getByRole("button", { name: /OpenRouter/ }).click();
-
-  const modelCombobox = page.getByRole("combobox", { name: "Model", exact: true });
-  await modelCombobox.click();
+  // OpenRouter has many models so group headers and search are obvious. Connecting it
+  // reopens the main model's picker on its models.
+  const dialog = await openModelConnection(page, "OpenRouter");
+  await dialog.getByLabel("API key").fill("fake-picker-api-key");
+  await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(dialog).toBeHidden();
 
   const modelSearch = page.getByRole("combobox", { name: "Search models" });
   const modelOptions = page.getByRole("listbox", { name: "Model options" });
   await expect(modelSearch).toBeVisible();
   await expect(modelSearch).toHaveAttribute("placeholder", "Search");
+  await expect(modelSearch).toHaveValue("OpenRouter");
   await expect(modelOptions).toBeVisible();
-  // A single provider group repeats the provider name already shown by the
-  // picker, so the redundant section header stays hidden.
-  await expect(modelOptions.getByText("OpenRouter", { exact: true })).toBeHidden();
+  await expect(
+    modelOptions.locator("[cmdk-group-heading]", { hasText: /^OpenRouter$/ }),
+  ).toBeVisible();
 
   await captureScreenshot(page, testInfo, "model-picker-dropdown-groups");
 
@@ -61,14 +66,17 @@ test("model dropdown search and provider group headers", async ({ page }, testIn
   expect(afterUp).toBeTruthy();
   expect(afterUp).not.toBe(afterEnd);
 
-  const highlighted = page.locator(`[id="${afterUp}"]`);
-  const selectedLabel = ((await highlighted.locator("span").first().textContent()) ?? "").trim();
+  // Models come before providers that still need connecting, so the first match is a model.
+  await modelSearch.press("Home");
+  const first = page.locator(`[id="${firstActive}"]`);
+  const selectedLabel = ((await first.locator("span").first().textContent()) ?? "").trim();
   expect(selectedLabel.length).toBeGreaterThan(0);
   await modelSearch.press("Enter");
   await expect(modelSearch).toBeHidden();
-  await expect(modelCombobox).toHaveText(selectedLabel);
+  const primary = page.getByTestId("model-role-main").getByTestId("model-role-row-1");
+  await expect(primary).toContainText(selectedLabel);
 
-  await modelCombobox.click();
+  await primary.getByRole("button", { name: /^Change / }).click();
   await expect(modelSearch).toBeVisible();
   await modelSearch.fill("no-model-matches-this");
   await expect(page.getByText("No matching models")).toBeVisible();

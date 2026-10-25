@@ -18,7 +18,7 @@ import {
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   cancelRunsInTransaction,
-  clearRunTurnCheckpoints,
+  clearEndedRunState,
   computerScopeKey,
   createRepos,
   createThreadMessageInTransaction,
@@ -323,7 +323,7 @@ export async function archiveBot(
       where: { id: { in: runIds } },
       data: { status: "cancelled", completedAt: now },
     });
-    await clearRunTurnCheckpoints(tx, runIds);
+    await clearEndedRunState(tx, runIds);
     await tx.task.updateMany({
       where: { runs: { some: { id: { in: runIds } } } },
       data: { status: "cancelled" },
@@ -401,7 +401,7 @@ export async function destroyBot(
     where: { id: { in: runIds } },
     data: { status: "cancelled", completedAt: new Date() },
   });
-  await clearRunTurnCheckpoints(deps.prisma, runIds);
+  await clearEndedRunState(deps.prisma, runIds);
   await Promise.allSettled([
     ...activeRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
     ...routines.map((routine) => deps.jobs.cancel(routineJobKey(routine.id))),
@@ -554,6 +554,8 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
         select: {
           id: true,
           taskId: true,
+          userId: true,
+          spaceId: true,
           botId: true,
           bot: {
             select: {

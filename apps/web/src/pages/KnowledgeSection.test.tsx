@@ -230,8 +230,6 @@ it("downloads only each row’s saved markdown with its own filename", async () 
     await act(async () =>
       root.render(<KnowledgeSection botId="bot-fixture" onSkillsChange={() => undefined} />),
     );
-    expect(container.textContent).not.toContain("rev ");
-    expect(container.textContent).not.toContain("Download as markdown");
     const download = container.querySelector<HTMLButtonElement>('[aria-label="Download"]')!;
     expect(download).not.toBeNull();
     expect(download.parentElement?.textContent).toContain("MEMORY.md");

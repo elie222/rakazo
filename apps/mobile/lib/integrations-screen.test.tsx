@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   persisted: vi.fn(),
   focused: true,
 }));
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => undefined | (() => void)) => {
     useEffect(() => {

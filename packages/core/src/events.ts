@@ -463,11 +463,49 @@ export function subagentBlockFromPayload(
   );
 }
 
+/**
+ * The stretches protected values cover in `value`, in order, as [start, end). Matches that
+ * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
+ * leave the rest readable; matches that only touch stay separate.
+ */
+function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
+  // Count matches starting and ending at each offset rather than listing every match, so a value
+  // that repeats or overlaps itself across a long text costs no more than two counters per offset.
+  let starts: Int32Array | undefined;
+  let ends: Int32Array | undefined;
+  for (const secret of new Set(secrets)) {
+    if (!secret) continue;
+    for (let at = value.indexOf(secret); at !== -1; at = value.indexOf(secret, at + 1)) {
+      starts ??= new Int32Array(value.length + 1);
+      ends ??= new Int32Array(value.length + 1);
+      starts[at] = starts[at]! + 1;
+      ends[at + secret.length] = ends[at + secret.length]! + 1;
+    }
+  }
+  if (!starts || !ends) return [];
+  const ranges: Array<[number, number]> = [];
+  let open = 0;
+  let start = 0;
+  for (let offset = 0; offset <= value.length; offset += 1) {
+    const ending = ends[offset]!;
+    const starting = starts[offset]!;
+    if (ending === 0 && starting === 0) continue;
+    open -= ending;
+    if (ending > 0 && open === 0) ranges.push([start, offset]);
+    if (starting > 0 && open === 0) start = offset;
+    open += starting;
+  }
+  return ranges;
+}
+
 export function redactSecrets(value: string, secrets: string[]): string {
-  return secrets.reduce((acc, secret) => {
-    if (!secret) return acc;
-    return acc.split(secret).join("[redacted]");
-  }, value);
+  let output = "";
+  let offset = 0;
+  for (const [start, end] of redactedRanges(value, secrets)) {
+    output += `${value.slice(offset, start)}[redacted]`;
+    offset = end;
+  }
+  return output + value.slice(offset);
 }
 
 export function containsSecret(value: unknown, secrets: string[]): boolean {
@@ -504,15 +542,9 @@ export function containsSecret(value: unknown, secrets: string[]): boolean {
 /** UTF-16 high surrogates (0xD800–0xDBFF) must be paired with a low surrogate for valid JSON. */
 const HIGH_SURROGATE_START = 0xd800;
 const HIGH_SURROGATE_END = 0xdbff;
-const LOW_SURROGATE_START = 0xdc00;
-const LOW_SURROGATE_END = 0xdfff;
 
 function isHighSurrogate(code: number): boolean {
   return code >= HIGH_SURROGATE_START && code <= HIGH_SURROGATE_END;
-}
-
-function isLowSurrogate(code: number): boolean {
-  return code >= LOW_SURROGATE_START && code <= LOW_SURROGATE_END;
 }
 
 function endsWithHighSurrogate(value: string): boolean {
@@ -557,9 +589,10 @@ export function sanitizeJsonValue<T>(value: T): T {
 }
 
 export function createStreamingRedactor(secrets: string[]) {
-  const values = [...new Set(secrets.filter(Boolean))].sort((a, b) => b.length - a.length);
-  const maxLength = values[0]?.length ?? 0;
+  const values = [...new Set(secrets.filter(Boolean))];
+  const maxLength = Math.max(0, ...values.map((value) => value.length));
   let buffer = "";
+  let covered = 0;
 
   const drain = (final: boolean) => {
     let output: string;
@@ -567,33 +600,20 @@ export function createStreamingRedactor(secrets: string[]) {
       output = buffer;
       buffer = "";
     } else {
-      const safeStartLimit = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
-      let offset = 0;
+      // A match a later chunk completes starts in the last maxLength - 1 units, so text before
+      // that is final. A stretch reaching past it is shown now and its rest kept as `covered`: a
+      // later match starting inside it extends the same placeholder, so nothing is held for long.
+      const cut = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
+      let offset = covered;
       output = "";
-      while (offset < safeStartLimit) {
-        const secret = values.find((value) => buffer.startsWith(value, offset));
-        if (secret) {
-          output += "[redacted]";
-          offset += secret.length;
-          continue;
-        }
-        const code = buffer.charCodeAt(offset);
-        if (isHighSurrogate(code)) {
-          const hasNext = offset + 1 < buffer.length;
-          const next = hasNext ? buffer.charCodeAt(offset + 1) : -1;
-          if (hasNext && isLowSurrogate(next)) {
-            // Keep the pair together; hold both if the low unit is outside this drain window.
-            if (!final && offset + 1 >= safeStartLimit) break;
-            output += buffer[offset]! + buffer[offset + 1]!;
-            offset += 2;
-            continue;
-          }
-          if (!final && !hasNext) break; // trailing high surrogate — wait for the next chunk
-        }
-        output += buffer[offset];
-        offset += 1;
+      for (const [start, end] of redactedRanges(buffer, values)) {
+        if (start >= cut) break;
+        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
+        offset = Math.max(offset, end);
       }
-      buffer = buffer.slice(offset);
+      output += buffer.slice(Math.min(offset, cut), cut);
+      covered = Math.max(0, offset - cut);
+      buffer = buffer.slice(cut);
     }
     // No-secret path emits the whole buffer; hold a trailing high until the next chunk.
     if (!final && endsWithHighSurrogate(output)) {

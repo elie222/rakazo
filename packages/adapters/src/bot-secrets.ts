@@ -13,6 +13,7 @@ import {
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { withTransactionRetry } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
@@ -596,6 +597,51 @@ export async function requestWithBotSecret(input: {
 
 export type LoginField = "username" | "password";
 const MIN_REDACTED_USERNAME = 6;
+const MIN_REDACTED_PASSWORD_EVERY_RUN = MIN_REDACTED_USERNAME;
+
+function passwordRedactionForms(password: string): string[] {
+  return [
+    ...new Set([
+      ...commandRedactionForms(password),
+      // A submitted form encodes `+` for spaces and escapes `!'()~`, unlike encodeURIComponent.
+      new URLSearchParams({ v: password }).toString().slice(2),
+    ]),
+  ];
+}
+
+/**
+ * Redaction forms of the password of every website login saved for this bot. A filled login
+ * stays on its page after the run that filled it, so each run hides the passwords before any
+ * tool output reaches the model. Usernames stay visible outside the filling run: one is often
+ * the user's own email, which ordinary tasks need. Only login rows are decrypted.
+ */
+export async function loadLoginPasswordRedactions(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  scope: BotSecretScope,
+): Promise<string[]> {
+  // Every saved login, however many other credentials the bot has.
+  const rows = await prisma.botSecret.findMany({
+    where: { ...scopeFields(scope), auth: { path: ["type"], equals: "login" } },
+    select: { id: true, auth: true, ciphertext: true },
+  });
+  const forms = new Set<string>();
+  for (const row of rows) {
+    if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") continue;
+    try {
+      const { password } = decodeLoginSecret(await secretStore.load(row.ciphertext, row.id));
+      // Every run would mangle each occurrence of a short password; the filling run still hides it.
+      if (password.length < MIN_REDACTED_PASSWORD_EVERY_RUN) continue;
+      for (const form of passwordRedactionForms(password)) forms.add(form);
+    } catch {
+      // Like an unreadable command variable, it must not stop every computer tool. The id only:
+      // an operator can see which login is no longer hidden. Not under a "secret" key, which
+      // the logger scrubs.
+      getLogger().warn("saved login could not be loaded for redaction", { loginId: row.id });
+    }
+  }
+  return [...forms];
+}
 
 /**
  * Resolve one field of a saved website login for a page fill. The caller must pass `origin` to

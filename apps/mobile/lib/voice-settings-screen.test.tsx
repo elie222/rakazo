@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   focused: true,
   t: (text: string) => text,
 }));
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => {
     useEffect(() => {
