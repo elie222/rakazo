@@ -4918,6 +4918,7 @@ describe("bot intro run", () => {
     expect(prompt([])).toContain("update_bot");
     expect(prompt(["ask_user", "update_bot"])).not.toContain("ask_user");
     expect(prompt(["ask_user", "update_bot"])).not.toContain("update_bot");
+    expect(prompt(["update_bot"])).not.toContain("update_bot");
   });
 });
 

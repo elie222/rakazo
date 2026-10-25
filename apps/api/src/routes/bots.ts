@@ -142,9 +142,9 @@ export function botIntroPrompt(input: {
     // Text streamed before ask_user is not kept once the run pauses, so the greeting
     // goes in the question itself.
     canAsk
-      ? `Call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
+      ? `If your existing profile OR your name clearly denotes a professional specialty or task, infer that role and do NOT ask the user to define your purpose again. ${canUpdate ? "When no profile was saved, call update_bot to set your title and concise public description before beginning." : "Profile editing is disabled, so do not attempt to update your role fields."} Never modify an existing manual title or description. Explain your role in one short sentence. Only if the name is genuinely ambiguous (a personal name, generic name, or unexplained codename), call ask_user right away, with no text before it. Its question greets them by first name in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
       : `Greet them by first name in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
-    "If your profile already makes that clear, say in one line what you will do instead of asking.",
+    "If your saved profile already establishes a specific role, briefly explain it and avoid asking for the purpose again. Never overwrite an existing manual profile merely because of your name.",
     canUpdate
       ? "Once you know what you are for, use update_bot to set your title to a short role and your description to one line. Leave them unset if the answer is too vague, and keep your name and look."
       : undefined,

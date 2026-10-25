@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./events.js", () => ({ appendEventInTransaction: vi.fn() }));
 vi.mock("./bot-instructions.js", () => ({ writeBotInstructions: vi.fn() }));
 
+import { inferBotRoleFromName } from "@rakazo/core";
 import { writeBotInstructions } from "./bot-instructions.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 
@@ -17,6 +18,56 @@ describe("botProfileLabelsChanged", () => {
 });
 
 describe("commitBotUpdate", () => {
+  it("upgrades an untouched generated role after a rename (but not manual instructions)", async () => {
+    const originalEnv = process.env.RAKAZO_BOT_ROLE_AUTOFILL;
+    process.env.RAKAZO_BOT_ROLE_AUTOFILL = "true";
+    try {
+      const initial = inferBotRoleFromName("広域調査")!;
+      const updated = {
+        id: "bot-1",
+        name: "出典監査",
+        title: "出典・根拠監査",
+        description: "audits evidence",
+      };
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        bot: {
+          findUnique: vi.fn().mockResolvedValue({ name: "広域調査", ...initial }),
+          update: vi.fn().mockResolvedValue(updated),
+        },
+      };
+      const appendEvent = vi.fn().mockResolvedValue({ seq: 1 });
+      await commitBotUpdate(
+        {
+          prisma: {
+            $transaction: async (f: (client: typeof tx) => Promise<unknown>) => f(tx),
+          } as never,
+          notify: vi.fn().mockResolvedValue(undefined),
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: { name: "出典監査" },
+          emitBotUpdated: true,
+        },
+        appendEvent,
+      );
+      expect(tx.bot.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: "出典監査", title: "出典・根拠監査" }),
+        }),
+      );
+      expect(writeBotInstructions).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          instructions: inferBotRoleFromName("出典監査")!.instructions,
+        }),
+      );
+    } finally {
+      if (originalEnv === undefined) delete process.env.RAKAZO_BOT_ROLE_AUTOFILL;
+      else process.env.RAKAZO_BOT_ROLE_AUTOFILL = originalEnv;
+    }
+  });
+
   it("does not publish or notify when a restore rejects its baseline", async () => {
     vi.mocked(writeBotInstructions).mockRejectedValueOnce(new Error("Instructions changed"));
     const tx = { $queryRaw: vi.fn().mockResolvedValue([]), bot: { update: vi.fn() } };

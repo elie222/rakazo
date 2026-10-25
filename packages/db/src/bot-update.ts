@@ -1,4 +1,4 @@
-import { displayName } from "@rakazo/core";
+import { displayName, inferBotRoleRename } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { writeBotInstructions } from "./bot-instructions.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -49,15 +49,41 @@ export async function commitBotUpdate(
     });
   }
 
-  const { instructions, ...data } = options.data;
+  let { instructions, ...data } = options.data;
   const committed = await options.prisma.$transaction(async (tx) => {
     // Event appends also lock the thread; all writers take it before the bot row.
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+    // Only names with a recognized meaning get role defaults. Preserve user
+    // edits and any explicit title/description/instructions in the same update.
+    // Read under the thread lock and write instructions via version history.
+    if (
+      process.env.RAKAZO_BOT_ROLE_AUTOFILL === "true" &&
+      typeof data.name === "string" &&
+      !options.instructionRestore
+    ) {
+      const current = await tx.bot.findUnique({
+        where: { id: options.botId },
+        select: { name: true, title: true, description: true, instructions: true },
+      });
+      if (current) {
+        const generated = inferBotRoleRename(current, data.name, {
+          title: data.title,
+          description: data.description,
+          instructions,
+        });
+        if (generated.title !== undefined) data = { ...data, title: generated.title };
+        if (generated.description !== undefined)
+          data = { ...data, description: generated.description };
+        if (generated.instructions !== undefined) instructions = generated.instructions;
+      }
+    }
     if (typeof instructions === "string" || options.instructionRestore) {
       await writeBotInstructions(tx, {
         botId: options.botId,
         instructions,
-        reason: options.instructionRestore ? "Restore" : (options.reason ?? "Manual edit"),
+        reason: options.instructionRestore
+          ? "Restore"
+          : (options.reason ?? "Manual or automatic profile edit"),
         expectedInstructions: options.expectedInstructions,
         ...options.instructionRestore,
       });
