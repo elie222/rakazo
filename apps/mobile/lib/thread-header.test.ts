@@ -21,3 +21,8 @@ it("uses a borderless fallback title fill and leaves the header buttons clear", 
   expect(styles.titleCapsuleFill).not.toHaveProperty("borderWidth");
   expect(styles.statusBarFade).not.toHaveProperty("backgroundColor");
 });
+
+it("lets a long chat name give way to the avatars beside it", () => {
+  const { title } = createThreadHeaderStyles();
+  expect(title.flexShrink).toBe(1);
+});

@@ -345,6 +345,7 @@ describe("normalizeRunError", () => {
     it.each([
       "Provider finish_reason: error",
       "Provider stopped with: MALFORMED_FUNCTION_CALL",
+      "Unhandled stop reason: MALFORMED_RESPONSE",
       "Provider returned an empty response",
       "Failed to parse tool call arguments as JSON",
       '400: {"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}',

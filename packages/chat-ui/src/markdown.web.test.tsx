@@ -8,8 +8,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { LinkFavicons } from "./markdown.web";
 import {
   ChatMarkdown,
+  defaultMarkdownCopy,
   LinkFaviconsContext,
   LinkifiedText,
+  MarkdownCopyProvider,
   RemoteImagesContext,
 } from "./markdown.web";
 
@@ -592,6 +594,28 @@ describe("web markdown code copy", () => {
     );
     expect(html.match(/<pre/g)).toHaveLength(3);
     expect(html.match(/aria-label="Copy code"/g)).toHaveLength(1);
+  });
+
+  it("renders provider copy in place of the English defaults", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => `| ${i + 1} | v${i + 1} |`).join("\n");
+    const markdown = ["```ts", "const a = 1;", "```", "", "| N | V |", "|---|---|", rows].join(
+      "\n",
+    );
+    const html = renderToStaticMarkup(
+      <MarkdownCopyProvider
+        copy={{
+          ...defaultMarkdownCopy,
+          copyCode: "Copiar código",
+          copyRows: "Copiar filas",
+          rowRange: (from, to, total) => `${from} a ${to} de ${total} filas`,
+        }}
+      >
+        <ChatMarkdown>{markdown}</ChatMarkdown>
+      </MarkdownCopyProvider>,
+    );
+    expect(html).toContain('aria-label="Copiar código"');
+    expect(html).toContain('aria-label="Copiar filas"');
+    expect(html).toContain("1 a 10 de 12 filas");
   });
 });
 

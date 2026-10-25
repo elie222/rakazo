@@ -244,6 +244,20 @@ describe("sealed screen capabilities", () => {
       expect(openScreenCapability(path(url), "fake-secret", 101)).toBeNull();
     },
   );
+  it.each(["::1", "fc00::1", "fd50::8"])("allows private IPv6 screen sockets (%s)", (host) => {
+    expect(
+      openScreenCapability(path(`http://[${host}]:6100/embed.html`), "fake-secret", 101)?.target
+        .hostname,
+    ).toBe(host);
+  });
+  it.each(["2001:db8::1", "fe80::1", "::ffff:127.0.0.1", "::", "fc::1"])(
+    "rejects other IPv6 HTTP screen targets (%s)",
+    (host) => {
+      expect(
+        openScreenCapability(path(`http://[${host}]:6100/embed.html`), "fake-secret", 101),
+      ).toBeNull();
+    },
+  );
   it.each(["http://100.64.0.1:49152/embed.html", "http://100.127.255.254:49152/embed.html"])(
     "allows CGNAT 100.64/10 screen targets %s",
     (url) => {

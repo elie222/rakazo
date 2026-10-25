@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
 import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
@@ -22,6 +21,7 @@ import {
 } from "../../components/composer/HoldToTalk";
 import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
+import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
 import {
@@ -44,7 +44,7 @@ import {
 } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
-const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
+const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,

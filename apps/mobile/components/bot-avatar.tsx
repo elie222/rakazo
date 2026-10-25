@@ -166,6 +166,8 @@ export const BotAvatar = memo(function BotAvatar({
           height: size,
           borderRadius: size / 2,
           overflow: "hidden",
+          // A plain circle holds the photo's place while it loads, or if it fails to.
+          backgroundColor: tokens.secondary,
         }}
       >
         <Image source={{ uri: parsed.imageUrl }} style={{ width: size, height: size }} />

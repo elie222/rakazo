@@ -138,7 +138,12 @@ import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { androidRipple } from "../lib/ripple";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
-import { setSearchInbox } from "../lib/search-inbox";
+import {
+  addToSearchInbox,
+  removeFromSearchInbox,
+  searchInboxSession,
+  setSearchInbox,
+} from "../lib/search-inbox";
 import { promptSectionName } from "../lib/section-name-prompt";
 import {
   currentReadySessionGeneration,
@@ -811,6 +816,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     if (creatingBotRef.current || spaceActionRef.current.busy || spaceActionRef.current.recoveryId)
       return;
     creatingBotRef.current = true;
+    const askedIn = searchInboxSession();
     try {
       // Authoritative roster so a slow home fetch does not treat later bots as first.
       // A failed list is unknown — use the delayed path rather than assuming first.
@@ -823,6 +829,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       });
       void refreshBots().catch(() => undefined);
       allowFocusPrompt(bot.id);
+      addToSearchInbox({ kind: "bot", bot }, askedIn);
       openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
@@ -1123,6 +1130,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                 : { ...space, groups: others(space.groups) },
             ),
           );
+          removeFromSearchInbox(chat.id);
           notifyArchivedChatsChanged();
         } catch (err) {
           settle();

@@ -916,3 +916,44 @@ it("offers every space heading's Settings, and Delete only where the member may 
     vi.unstubAllGlobals();
   }
 });
+
+it("adds a bot made from the inbox's Create menu to the inbox roster before opening its chat", async () => {
+  const start = source.indexOf("  const createQuickBot = useCallback(");
+  const body = source.slice(start, source.indexOf("  const runCreateAction =", start));
+  const compiled = ts.transpileModule(`${body}\nreturn createQuickBot;`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const bot = { id: "bot-new", name: "New Bot", spaceId: "space-a" };
+  const calls: string[] = [];
+  const rpc = vi.fn(async (method: string) => (method === "bots/create" ? bot : []));
+  const scope = {
+    useCallback: (callback: unknown) => callback,
+    creatingBotRef: { current: false },
+    spaceActionRef: { current: { busy: false, recoveryId: null } },
+    rpc,
+    normalizeCreateBotProfile: (profile: unknown) => profile,
+    refreshBots: async () => undefined,
+    allowFocusPrompt: () => undefined,
+    scheduleFocusPrompt: () => undefined,
+    searchInboxSession: () => {
+      calls.push("session");
+      return { generation: 7, apiBase: "http://api.test" };
+    },
+    addToSearchInbox: (item: unknown, askedIn: unknown) =>
+      calls.push(`roster ${JSON.stringify(item)} ${JSON.stringify(askedIn)}`),
+    openChat: (destination: unknown) => calls.push(`open ${JSON.stringify(destination)}`),
+    setError: () => undefined,
+    errorText: () => "",
+    t: (text: string) => text,
+  };
+  const createQuickBot = new Function(...Object.keys(scope), compiled)(
+    ...Object.values(scope),
+  ) as () => Promise<void>;
+  await createQuickBot();
+  // The session is taken before the requests, so a bot that lands after a switch is dropped.
+  expect(calls).toEqual([
+    "session",
+    `roster ${JSON.stringify({ kind: "bot", bot })} ${JSON.stringify({ generation: 7, apiBase: "http://api.test" })}`,
+    `open ${JSON.stringify({ pathname: "/thread", params: { botId: bot.id, name: bot.name } })}`,
+  ]);
+});

@@ -561,6 +561,7 @@ describe("inbox swipe handlers", () => {
       confirmDeleteBot: vi.fn(),
       confirmDeleteGroup: vi.fn(),
       notifyArchivedChatsChanged: vi.fn(),
+      removeFromSearchInbox: vi.fn(),
       dismissThreadNotifications: vi.fn(async () => {}),
       currentApiBase: () => "",
       loadSessionToken: async () => null,
@@ -841,6 +842,7 @@ describe("inbox swipe handlers", () => {
       "Could not update chat",
     ]);
     expect(h.notifyArchivedChatsChanged).not.toHaveBeenCalled();
+    expect(h.removeFromSearchInbox).not.toHaveBeenCalled();
   });
 
   it.each(["bot", "group"] as const)(
@@ -848,6 +850,8 @@ describe("inbox swipe handlers", () => {
     async (kind) => {
       const h = handlers(async () => ({ ok: true }));
       await h.runRowAction(kind, { id: "x" }, "archive");
+      // Search stops offering it at once, before the inbox reloads.
+      expect(h.removeFromSearchInbox).toHaveBeenCalledWith("x");
       expect(h.notifyArchivedChatsChanged).toHaveBeenCalledOnce();
       await h.runRowAction(kind, { id: "x" }, "pin");
       expect(h.notifyArchivedChatsChanged).toHaveBeenCalledOnce();

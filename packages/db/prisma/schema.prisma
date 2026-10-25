@@ -293,7 +293,8 @@ model Space {
   externalEffects             ExternalEffect[]
   mcpServers                  McpServer[]
   mcpOAuthSessions            McpOAuthSession[]
-  botMcpServers               BotMcpServer[]
+  modelOAuthSessions          ModelOAuthSession[]
+  botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
@@ -1376,6 +1377,25 @@ model McpOAuthSession {
 
   @@index([spaceId, userId, createdAt])
   @@map("mcp_oauth_sessions")
+}
+
+/// A subscription sign-in waiting for its pasted code, so whichever API process
+/// receives the code can finish it. The ciphertext holds the PKCE verifier.
+model ModelOAuthSession {
+  id         String   @id
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId     String
+  provider   String
+  /// The connection it signs in to; a newer sign-in for the same one replaces it.
+  scope      String
+  ciphertext String
+  createdAt  DateTime @default(now())
+
+  @@index([userId, provider])
+  @@index([scope])
+  @@index([createdAt])
+  @@map("model_oauth_sessions")
 }
 
 model BotMcpServer {

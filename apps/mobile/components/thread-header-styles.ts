@@ -20,6 +20,8 @@ export function createThreadHeaderStyles() {
       backgroundColor: tokens.glassFill,
     },
     title: {
+      // A long name gives way to the avatars beside it and ends in "…".
+      flexShrink: 1,
       color: tokens.foreground,
       fontSize: 18,
       fontWeight: "600",

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -95,11 +96,26 @@ async function main() {
       STRIPE_WEBHOOK_SECRET: "",
       STRIPE_PRICE_ID: "",
     });
-    for (const args of [
-      ["--filter", "@rakazo/db", "generate"],
-      ["--filter", "@rakazo/db", "exec", "prisma", "migrate", "deploy"],
-    ])
-      execFileSync("pnpm", args, { stdio: "pipe", timeout: 120_000 });
+    // Parallel runs share one generated client: generate it once per schema, under a lock, since
+    // generating it from several runs at once collides on its folder.
+    await withLock(path.join(tmpdir(), "rakazo-flows-prisma-generate.lock"), () => {
+      // The schema and the installed generator together decide the generated client.
+      const schema = createHash("sha256")
+        .update(readFileSync(path.resolve("packages/db/prisma/schema.prisma")))
+        .update(readFileSync(path.resolve("packages/db/node_modules/prisma/package.json")))
+        .digest("hex");
+      const stamp = path.resolve("packages/db/src/generated/prisma/.flows-schema-hash");
+      if (existsSync(stamp) && readFileSync(stamp, "utf8") === schema) return;
+      execFileSync("pnpm", ["--filter", "@rakazo/db", "generate"], {
+        stdio: "pipe",
+        timeout: 300_000,
+      });
+      writeFileSync(stamp, schema);
+    });
+    execFileSync("pnpm", ["--filter", "@rakazo/db", "exec", "prisma", "migrate", "deploy"], {
+      stdio: "pipe",
+      timeout: 600_000,
+    });
     if (sandbox.provider === "docker") {
       // An isolated supervisor, never a dev one another checkout may be running.
       const { supervisorApp } = await import("../../../../infra/sandboxes/supervisor/src/index.js");
@@ -174,6 +190,32 @@ async function main() {
     await closeSupervisor?.();
     await database.stop().catch(() => undefined);
     rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A directory lock across processes, released in finally. A run killed outright can leave it
+ * behind; waiting runs then stop with its path instead of guessing who still holds it.
+ */
+async function withLock<T>(lock: string, work: () => T): Promise<T> {
+  const deadline = Date.now() + 600_000;
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (Date.now() > deadline)
+        throw new Error(
+          `Timed out waiting for ${lock}; remove it if no other flow run is starting`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  try {
+    return work();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
   }
 }
 

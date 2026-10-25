@@ -19,6 +19,11 @@
       "development": "./src/message-quote.ts",
       "default": "./src/message-quote.ts"
     },
+    "./screen-reconnect": {
+      "types": "./src/screen-reconnect.ts",
+      "development": "./src/screen-reconnect.ts",
+      "default": "./src/screen-reconnect.ts"
+    },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
       "development": "./src/node/load-root-env.ts",

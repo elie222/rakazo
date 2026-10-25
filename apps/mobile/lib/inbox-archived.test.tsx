@@ -24,6 +24,7 @@ vi.mock("./api", () => ({ rpc: groupRpc }));
 vi.mock("react-native", () => ({ Alert: { alert: groupAlert } }));
 vi.mock("./i18n", () => ({ t: (text: string) => text }));
 vi.mock("./user-error", () => ({ errorText: () => "failure" }));
+vi.mock("./search-inbox", () => ({ removeFromSearchInbox: vi.fn() }));
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
@@ -312,8 +313,10 @@ describe("thread menu archive notifications", () => {
     const leave = vi.fn();
     const confirmDeleteBot = vi.fn();
     const alert = vi.fn();
+    const removeFromSearchInbox = vi.fn();
     const actions = new Function(
       "rpc",
+      "removeFromSearchInbox",
       "notifyArchivedChatsChanged",
       "leaveBot",
       "confirmDeleteBot",
@@ -325,8 +328,11 @@ describe("thread menu archive notifications", () => {
         ${actionsSource}
         return botActions;
       `),
-    )(rpc, notify, leave, confirmDeleteBot, { alert }) as { text: string; onPress: () => void }[];
-    return { rpc, notify, leave, confirmDeleteBot, alert, actions };
+    )(rpc, removeFromSearchInbox, notify, leave, confirmDeleteBot, { alert }) as {
+      text: string;
+      onPress: () => void;
+    }[];
+    return { rpc, removeFromSearchInbox, notify, leave, confirmDeleteBot, alert, actions };
   }
 
   it("notifies only after archive succeeds, including while the inbox stays mounted", async () => {
@@ -339,8 +345,10 @@ describe("thread menu archive notifications", () => {
     );
     h.actions.find((action) => action.text === "Archive")!.onPress();
     expect(h.notify).not.toHaveBeenCalled();
+    expect(h.removeFromSearchInbox).not.toHaveBeenCalled();
     finish();
     await Promise.resolve();
+    expect(h.removeFromSearchInbox).toHaveBeenCalledWith("bot-b");
     expect(h.notify).toHaveBeenCalledOnce();
     expect(h.leave).toHaveBeenCalledOnce();
     h.rpc.mockRejectedValueOnce(new Error("offline"));
@@ -348,6 +356,7 @@ describe("thread menu archive notifications", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(h.notify).toHaveBeenCalledOnce();
+    expect(h.removeFromSearchInbox).toHaveBeenCalledOnce();
     expect(h.alert).toHaveBeenCalledOnce();
   });
 

@@ -53,7 +53,7 @@ vi.mock("react-native-svg", () => {
 
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({
-  useMobileTokens: () => ({ background: "#FFF", workingDot: "#3FA266" }),
+  useMobileTokens: () => ({ background: "#FFF", workingDot: "#3FA266", secondary: "#7676801F" }),
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
 

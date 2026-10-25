@@ -1,5 +1,13 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
-import { displayName, isRetryableError } from "@rakazo/core";
+import type { ScreenPageState } from "@rakazo/core";
+import {
+  createScreenReconnect,
+  displayName,
+  isRetryableError,
+  SCREEN_RECONNECT_DELAY_MS,
+  screenProbeUrl,
+  waitForScreenPage,
+} from "@rakazo/core";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -34,11 +42,16 @@ import {
   computerLabel,
   controlLabel,
   embeddableScreenUrl,
+  fromScreenPage,
+  isProxiedScreenPage,
   nextLoadedScreenUrl,
   previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
   SCREEN_URL_OPEN_ATTEMPTS,
+  screenPageState,
+  screenPageStatus,
+  screenStreamKey,
 } from "../lib/computer";
 import type { ComputerKeyboardCommand } from "../lib/computer-keyboard";
 import {
@@ -267,6 +280,48 @@ export default function Computer() {
     setScreenReload((count) => count + 1);
   }, [refresh]);
 
+  // A screen that drops after connecting loads again by itself now and then; the load goes
+  // through the screen's full authorization, so a revoked one stays closed.
+  const screenReconnect = useRef(createScreenReconnect());
+  const screenReconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const screenReconnectWait = useRef<AbortController | null>(null);
+  const currentScreenUrl = useRef<string | null>(null);
+  currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
+  const onScreenState = useCallback(
+    (state: ScreenPageState) => {
+      if (screenReconnect.current.report(state) !== "reconnect") return;
+      clearTimeout(screenReconnectTimer.current);
+      screenReconnectWait.current?.abort();
+      const wait = new AbortController();
+      screenReconnectWait.current = wait;
+      const url = currentScreenUrl.current;
+      screenReconnectTimer.current = setTimeout(() => {
+        // Wait out an API that can't be reached, so the one reconnect isn't spent on it; the
+        // reload then shows whatever the page answers.
+        // Only the proxy answers probes; another screen is loaded again straight away.
+        const probe = url && isProxiedScreenPage(url) ? screenProbeUrl(url) : null;
+        void waitForScreenPage(
+          async (signal) => (probe ? screenPageStatus(probe, fetch, signal) : 200),
+          { signal: wait.signal },
+        ).then((outcome) => {
+          if (outcome !== "cancelled") void reloadScreen();
+        });
+      }, SCREEN_RECONNECT_DELAY_MS);
+    },
+    [reloadScreen],
+  );
+  const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
+  // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
+  // cancels a pending reconnect.
+  useEffect(
+    () => () => {
+      screenReconnectWait.current?.abort();
+      clearTimeout(screenReconnectTimer.current);
+    },
+    // A renewed link for the same screen keeps the page and the pending reconnect.
+    [computerOpen, foreground, embeddedScreenUrl ? screenStreamKey(embeddedScreenUrl) : null],
+  );
+
   useEffect(() => {
     if (!computerOpen) return;
     let backgrounded = false;
@@ -425,6 +480,8 @@ export default function Computer() {
             key={screenReload}
             url={embeddedScreenUrl}
             interactive={false}
+            onScreenState={onScreenState}
+            onLoadStart={onScreenLoadStart}
             onRendererLost={() => void reloadScreen()}
             onError={() => {
               refreshController.invalidateScreen();
@@ -609,6 +666,8 @@ export default function Computer() {
                     if (!isComputerKeyboardReadyMessage(data, String(gate.session))) return;
                     injectKeyboardCommands(gate.bridge.ready());
                   }}
+                  onScreenState={onScreenState}
+                  onLoadStart={onScreenLoadStart}
                   onRendererLost={() => void reloadScreen()}
                   onError={() => {
                     refreshController.invalidateScreen();
@@ -685,6 +744,8 @@ function ScreenWebView({
   keyboardSession,
   webViewRef,
   onKeyboardMessage,
+  onScreenState,
+  onLoadStart,
   onRendererLost,
   onError,
 }: {
@@ -694,6 +755,8 @@ function ScreenWebView({
   keyboardSession?: string;
   webViewRef?: RefObject<WebView | null>;
   onKeyboardMessage?: (data: string) => void;
+  onScreenState?: (state: ScreenPageState) => void;
+  onLoadStart?: () => void;
   onRendererLost?: () => void;
   onError: () => void;
 }) {
@@ -713,13 +776,14 @@ function ScreenWebView({
       injectedJavaScript={
         nativeKeyboard && keyboardSession ? computerKeyboardReadyProbe(keyboardSession) : undefined
       }
-      onMessage={
-        nativeKeyboard
-          ? (event) => {
-              onKeyboardMessage?.(event.nativeEvent.data);
-            }
-          : undefined
-      }
+      onMessage={(event) => {
+        const state = fromScreenPage(event.nativeEvent.url, sourceUrl.current)
+          ? screenPageState(event.nativeEvent.data)
+          : null;
+        if (state) onScreenState?.(state);
+        else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
+      }}
+      onLoadStart={onLoadStart}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
       // A view-only screen is a picture: keep its page, including the hidden keyboard field,

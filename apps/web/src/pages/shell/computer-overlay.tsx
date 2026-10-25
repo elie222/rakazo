@@ -32,6 +32,8 @@ type ComputerOverlayProps = {
   runStatus?: Run["status"];
   sendError: string | null;
   embeddedScreenUrl: string | null;
+  /** Changes to load the screen again in a new frame. */
+  screenFrameKey?: number;
   screenFrameRef: (frame: HTMLIFrameElement | null) => void;
   computerScreenError: ReactNode;
   computerBooting: ReactNode;
@@ -58,6 +60,7 @@ export function ComputerOverlay({
   runStatus,
   sendError,
   embeddedScreenUrl,
+  screenFrameKey,
   screenFrameRef,
   computerScreenError,
   computerBooting,
@@ -186,6 +189,7 @@ export function ComputerOverlay({
           ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
             <>
               <iframe
+                key={screenFrameKey}
                 title={t`Bot screen`}
                 ref={screenFrameRef}
                 src={embeddedScreenUrl}

@@ -12,7 +12,7 @@ import { iosAtLeast } from "../lib/native-controls";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
-type Action = "recover" | "reset" | "update";
+type Action = "stop" | "recover" | "reset" | "update";
 
 export function ComputerMaintenanceActions({
   botId,
@@ -36,12 +36,18 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await computerUpdates.start(botId, "recover");
+      if (action === "stop") await rpc("computer/stop", { botId });
+      else if (action === "recover") await computerUpdates.start(botId, "recover");
       else if (action === "reset") await rpc("computer/reset", { botId });
       else await computerUpdates.start(botId);
       await onChanged();
     } catch (err) {
-      setError(errorText(err, t("Could not update computer")));
+      setError(
+        errorText(
+          err,
+          action === "stop" ? t("Could not stop computer") : t("Could not update computer"),
+        ),
+      );
     } finally {
       setPending(null);
     }
@@ -64,7 +70,23 @@ export function ComputerMaintenanceActions({
     );
   }
 
-  const actions = [
+  const actions: {
+    id: string;
+    title: string;
+    explanation?: string;
+    destructive: boolean;
+    onPress: () => void;
+  }[] = [
+    ...(computer?.state === "running"
+      ? [
+          {
+            id: "stop",
+            title: t("Stop computer"),
+            destructive: false,
+            onPress: () => void run("stop"),
+          },
+        ]
+      : []),
     {
       id: "recover",
       title: t("Recover computer"),
@@ -94,6 +116,7 @@ export function ComputerMaintenanceActions({
 
   const hasComputer = computer !== null;
   const canUpdate = Boolean(computer?.canUpdate);
+  const running = computer?.state === "running";
   useLayoutEffect(() => {
     if (!iosAtLeast(26)) return;
     navigation.setOptions({
@@ -122,7 +145,7 @@ export function ComputerMaintenanceActions({
     return () => {
       navigation.setOptions({ unstable_headerRightItems: () => [] });
     };
-  }, [navigation, hasComputer, canUpdate, busy, t, botId, onChanged]);
+  }, [navigation, hasComputer, canUpdate, running, busy, t, botId, onChanged]);
 
   if (!computer) return null;
   return (
@@ -131,18 +154,26 @@ export function ComputerMaintenanceActions({
         <MenuView
           colorScheme={scheme}
           title={t("More computer actions")}
-          actions={actions.map((action) => ({
-            id: action.id,
-            title: action.explanation,
-            displayInline: true,
-            subactions: [
-              {
-                id: action.id,
-                title: action.title,
-                attributes: { destructive: action.destructive, disabled: busy },
-              },
-            ],
-          }))}
+          actions={actions.map((action) =>
+            action.explanation
+              ? {
+                  id: action.id,
+                  title: action.explanation,
+                  displayInline: true,
+                  subactions: [
+                    {
+                      id: action.id,
+                      title: action.title,
+                      attributes: { destructive: action.destructive, disabled: busy },
+                    },
+                  ],
+                }
+              : {
+                  id: action.id,
+                  title: action.title,
+                  attributes: { destructive: action.destructive, disabled: busy },
+                },
+          )}
           onPressAction={({ nativeEvent }) =>
             actions.find((action) => action.id === nativeEvent.event)?.onPress()
           }

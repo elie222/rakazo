@@ -119,6 +119,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Connection",
   "McpServer",
   "McpOAuthSession",
+  "ModelOAuthSession",
   "BotMcpServer",
   "Computer",
   "ComputerRun",

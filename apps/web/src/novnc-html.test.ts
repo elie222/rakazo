@@ -54,18 +54,27 @@ describe("noVNC storage shim gate", () => {
 
   it("puts the shim before the first script", () => {
     const headed = injectNovncStorageShim("<html><head><title>x</title>");
-    expect(headed).toMatch(/^<html><head><script>/);
+    expect(headed).toMatch(/^<html><head><style>[^<]*<\/style><script>/);
     expect(headed.indexOf("localStorage")).toBeLessThan(headed.indexOf("<title>"));
     const bare = injectNovncStorageShim('<!doctype html><script src="app.js"></script>');
     expect(bare.indexOf("localStorage")).toBeLessThan(bare.indexOf('src="app.js"'));
+  });
+
+  it("hides noVNC's status bar, and its side panel while the screen is view only", () => {
+    const view = injectNovncStorageShim("<head>", { viewOnly: true });
+    const control = injectNovncStorageShim("<head>");
+    expect(view).toContain("#noVNC_status{display:none!important}");
+    expect(view).toContain("#noVNC_control_bar_anchor{display:none!important}");
+    expect(control).toContain("#noVNC_status{display:none!important}");
+    expect(control).not.toContain("noVNC_control_bar_anchor");
   });
 
   function runShim() {
     const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
     const listeners: ((event: unknown) => void)[] = [];
     const window = {
-      addEventListener: (_type: string, listener: (event: unknown) => void) => {
-        listeners.push(listener);
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type === "error") listeners.push(listener);
       },
       parent: { postMessage() {} },
     } as unknown as { localStorage: Storage; sessionStorage: Storage };
@@ -181,8 +190,23 @@ describe("noVNC HTML read", () => {
 });
 
 describe("noVNC frame state report", () => {
-  function page(options: { readyState?: string; canvas?: boolean; statusBar?: boolean } = {}) {
+  function page(
+    options: {
+      readyState?: string;
+      canvas?: boolean;
+      statusBar?: boolean;
+      nativeApp?: boolean;
+    } = {},
+  ) {
     const posted: unknown[] = [];
+    const nativePosted: unknown[] = [];
+    const canvas = {
+      focused: 0,
+      focus() {
+        this.focused += 1;
+      },
+    };
+    const windowListeners: Record<string, (event: unknown) => void> = {};
     const classes = new Set<string>();
     const statusClasses = new Set<string>();
     const attributes = new Map<string, string>();
@@ -202,14 +226,19 @@ describe("noVNC frame state report", () => {
       getElementById: (id: string) =>
         id === "noVNC_status" && options.statusBar !== false ? status : null,
       querySelector: (selector: string) =>
-        selector === "#screen canvas" && options.canvas ? {} : null,
+        selector.split(", ")[0] === "#screen canvas" && options.canvas ? canvas : null,
       addEventListener: (type: string, listener: () => void) => {
         listeners[type] = listener;
       },
     };
     const window = {
       parent: { postMessage: (data: unknown) => posted.push(data) },
-      addEventListener() {},
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        windowListeners[type] = listener;
+      },
+      ...(options.nativeApp
+        ? { ReactNativeWebView: { postMessage: (data: unknown) => nativePosted.push(data) } }
+        : {}),
     };
     class MutationObserver {
       constructor(callback: () => void) {
@@ -226,6 +255,10 @@ describe("noVNC frame state report", () => {
     );
     return {
       posted,
+      nativePosted,
+      canvas,
+      parent: window.parent,
+      windowListeners,
       classes,
       statusClasses,
       attributes,
@@ -252,6 +285,35 @@ describe("noVNC frame state report", () => {
       { rakazoScreen: "connected" },
       { rakazoScreen: "disconnected" },
     ]);
+  });
+
+  it("tells the mobile app's WebView only the state word, never the page's text", () => {
+    const p = page({ nativeApp: true });
+    p.classes.add("noVNC_connected");
+    p.mutate();
+    p.classes.clear();
+    p.statusClasses.add("noVNC_open");
+    p.statusClasses.add("noVNC_status_error");
+    p.status.textContent = "Failed to connect to wss://screen.example/websockify?token=secret";
+    p.mutate();
+    expect(p.nativePosted).toEqual([
+      '{"rakazoScreen":"loading"}',
+      '{"rakazoScreen":"connected"}',
+      '{"rakazoScreen":"failed"}',
+    ]);
+    expect(page().nativePosted).toEqual([]);
+  });
+
+  it("gives the screen the keyboard back only when the app itself asks", () => {
+    const p = page({ canvas: true });
+    const message = p.windowListeners.message!;
+    message({ source: {}, data: { rakazoScreenFocus: true } });
+    message({ source: p.parent, data: { rakazoScreenFocus: "yes" } });
+    message({ source: p.parent, data: null });
+    message({ source: p.parent, data: { rakazoScreenFocus: true, extra: "x" } });
+    expect(p.canvas.focused).toBe(0);
+    message({ source: p.parent, data: { rakazoScreenFocus: true } });
+    expect(p.canvas.focused).toBe(1);
   });
 
   it("reports noVNC's status bar error with its text", () => {

@@ -1,4 +1,6 @@
 import { droppedTableHtmlText } from "@rakazo/contracts";
+import type { MarkdownCopy } from "./markdown-copy";
+import { defaultMarkdownCopy } from "./markdown-copy";
 
 /**
  * Pure helpers behind the markdown table card: hast extraction, type
@@ -146,19 +148,19 @@ export function isNumericColumn(rows: string[][], columnIndex: number): boolean 
 }
 
 /** Accessible sort label: empty → position; duplicates / collisions append position. */
-export function columnSortLabel(columns: string[], index: number): string {
+export function columnSortLabel(
+  columns: string[],
+  index: number,
+  copy: Pick<
+    MarkdownCopy,
+    "columnFallback" | "columnDuplicate" | "columnCollision"
+  > = defaultMarkdownCopy,
+): string {
   const column = columns[index] ?? "";
-  if (!column) {
-    // Empty header falls back to its position; a literal header may already
-    // claim that name (or the ", empty" disambiguation), so keep suffixing.
-    let label = `column ${index + 1}`;
-    while (columns.includes(label)) label += ", empty";
-    return label;
-  }
-  const duplicated = columns.indexOf(column) !== columns.lastIndexOf(column);
-  if (!duplicated) return column;
-  let label = `${column}, column ${index + 1}`;
-  while (columns.includes(label)) label += ", empty";
+  if (column && columns.indexOf(column) === columns.lastIndexOf(column)) return column;
+  let label = column ? copy.columnDuplicate(column, index + 1) : copy.columnFallback(index + 1);
+  // A literal header can claim a generated name, including its disambiguation.
+  while (columns.includes(label)) label = copy.columnCollision(label);
   return label;
 }
 

@@ -126,6 +126,10 @@ msgstr "de computer van {botName}"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} is gereserveerd en kan niet als commandovariabele worden gebruikt. Kies een andere naam."
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# rij} other {# rijen}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr "{count} dagen"
@@ -146,9 +150,17 @@ msgstr "{count} jaar"
 msgid "{days}d ago"
 msgstr "{days}d geleden"
 
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{from}–{to} van {total} rijen"
+
 #: src/lib/cron.ts
 msgid "{fromName} to {toName}"
 msgstr "{fromName} tot {toName}"
+
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}, kolom {index}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -157,6 +169,10 @@ msgstr "{hidden, plural, one {+# eerdere stap} other {+# eerdere stappen}}"
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours}u geleden"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}, leeg"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -1287,6 +1303,10 @@ msgstr "Paneel sluiten"
 msgid "Close preview"
 msgstr "Voorbeeld sluiten"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "Tabel sluiten"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "Gebruikersinstellingen sluiten"
@@ -1325,6 +1345,10 @@ msgstr "Kleur"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "Kleur {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "kolom {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
@@ -1554,6 +1578,7 @@ msgid "Conversations"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1570,9 +1595,21 @@ msgstr "Kopiëren"
 msgid "Copy .env example"
 msgstr ".env-voorbeeld kopiëren"
 
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "Code kopiëren"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "Diagrambron kopiëren"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "Prompt kopiëren"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "Rijen kopiëren"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -1967,6 +2004,10 @@ msgstr "OAuth starten mislukt"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr "Onderwijs starten mislukt"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Could not stop computer"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Could not submit this answer"
@@ -2388,6 +2429,10 @@ msgstr "{0} downloaden"
 msgid "Download {name}"
 msgstr "{name} downloaden"
 
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV downloaden"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr "Bezig met downloaden…"
@@ -2579,6 +2624,10 @@ msgstr "{0} uitklappen"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label} uitklappen"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "Tabel uitvouwen"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -3251,6 +3300,10 @@ msgstr "Markeren als ongelezen"
 msgid "Mark as Unread"
 msgstr "Markeren als ongelezen"
 
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown-tabel"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3636,6 +3689,10 @@ msgstr "Nieuwe space"
 msgid "New ticket"
 msgstr "Nieuw ticket"
 
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "Volgende pagina"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -3720,6 +3777,10 @@ msgstr "Geen externe MCP-servers gevonden"
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "Geen resultaten"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "Geen rijen"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -3953,6 +4014,10 @@ msgstr "Uitvoer"
 msgid "Owner"
 msgstr "Eigenaar"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "Pagina {page} van {count}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty-incident"
@@ -4105,6 +4170,10 @@ msgstr "{0} bekijken"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Een voorbeeld is niet beschikbaar voor dit bestandstype — download het om het te bekijken."
+
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "Vorige pagina"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -4548,6 +4617,10 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr "Routines die draaien terwijl je weg bent"
 
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "Rij"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Uitvoeren om"
@@ -4988,6 +5061,22 @@ msgstr "Er is net iets met dezelfde naam toegevoegd. Probeer het opnieuw."
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "Iets wat je koos werkt hier niet. Vink het uit en probeer het opnieuw."
 
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "Sorteren op {column}"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "Sortering gewist"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "Gesorteerd op {column}, oplopend"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "Gesorteerd op {column}, aflopend"
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5060,6 +5149,10 @@ msgstr "Stappen"
 msgid "Stop"
 msgstr "Stoppen"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stop computer"
+msgstr ""
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "Stoppen met spreken"
@@ -5072,6 +5165,10 @@ msgstr "Onderwijs stoppen"
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "Gestopt."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stopping…"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
@@ -5128,6 +5225,10 @@ msgstr "Bezig met wisselen…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "Systeem"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "Tabel"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"

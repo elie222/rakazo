@@ -679,6 +679,8 @@ export const DE_MESSAGES: Record<string, string> = {
   // components/AskActions.tsx
   "Allow once": "Einmal erlauben",
   "Always allow": "Immer erlauben",
+  "Always allow this tool": "Dieses Tool immer erlauben",
+  "Always allow {site}": "{site} immer erlauben",
   "Could not submit answer": "Antwort konnte nicht gesendet werden",
   Deny: "Ablehnen",
   "Please try again.": "Versuche es erneut.",
@@ -716,6 +718,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Recover computer": "Computer wiederherstellen",
   "Recovering…": "Wird wiederhergestellt…",
   Reset: "Zurücksetzen",
+  "Stop computer": "Computer stoppen",
+  "Could not stop computer": "Computer konnte nicht gestoppt werden",
   "Reset computer": "Computer zurücksetzen",
   "Reset computer?": "Computer zurücksetzen?",
   "Resetting…": "Wird zurückgesetzt…",

@@ -126,6 +126,37 @@ describe("screen capability lifecycle authorization", () => {
         .status,
     ).toBe(403);
   });
+  // The web proxy rides out a 5xx as the API being down, so tampering must never produce one.
+  it("refuses tampered capabilities with 403, never a server error", async () => {
+    const { path, request, findFirst } = fixture(true);
+    const [, , , policy, sealed] = path.split("/");
+    const [expiry, token] = sealed!.split(".");
+    const flipped = `${token!.slice(0, 20)}${token![20] === "A" ? "B" : "A"}${token!.slice(21)}`;
+    const tampered = [
+      path.replace(`/${policy}/`, policy === "control" ? "/view/" : "/control/"),
+      path.replace(`/${expiry}.`, `/${Number(expiry) + 1}.`),
+      path.replace(token!, flipped),
+      path.replace(token!, token!.slice(0, 30)),
+      path.replace(token!, "%%%"),
+      path.replace(token!, ""),
+      path.replace(`/${expiry}.`, "/1."),
+      "/novnc/session/control/99999999999999999999999.abc/websockify",
+    ];
+    for (const value of tampered) expect((await request(value)).status).toBe(403);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+  it("refuses a body that isn't a path with 403", async () => {
+    const app = new Hono();
+    mountScreenTarget(app, { bot: { findFirst: vi.fn() } } as unknown as PrismaClient, secret);
+    for (const body of ["not json", "null", "{}", '{"path":1}', '{"path":["/novnc"]}']) {
+      const response = await app.request(SCREEN_TARGET_ENDPOINT, {
+        method: "POST",
+        headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+        body,
+      });
+      expect(response.status).toBe(403);
+    }
+  });
   it("reuses one remote capability across polls and still revokes it", async () => {
     resetRemoteScreenCapabilityReuse();
     const upstream =

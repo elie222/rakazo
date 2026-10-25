@@ -2,6 +2,7 @@ import { Alert } from "react-native";
 import type { ApiRequestContext } from "./api";
 import { rpc } from "./api";
 import { t } from "./i18n";
+import { removeFromSearchInbox } from "./search-inbox";
 import { errorText } from "./user-error";
 
 export function confirmDeleteBot(
@@ -22,6 +23,7 @@ export function confirmDeleteBot(
       } else {
         await rpc("bots/remove", { botId: bot.id, deleteMemories });
       }
+      removeFromSearchInbox(bot.id);
       onDeleted();
     } catch (error) {
       if (current()) Alert.alert(t("Could not delete bot"), errorText(error, t("Try again.")));
@@ -53,7 +55,10 @@ export function confirmDeleteGroup(group: { id: string; name: string }, onDelete
       style: "destructive",
       onPress: () =>
         void rpc("groups/remove", { groupId: group.id })
-          .then(onDeleted)
+          .then(() => {
+            removeFromSearchInbox(group.id);
+            onDeleted();
+          })
           .catch((err) =>
             Alert.alert(t("Could not delete group"), errorText(err, t("Try again."))),
           ),

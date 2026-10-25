@@ -47,6 +47,14 @@ export function sandboxProviderOptionsFromEnv(
   | "railwaySandboxRegion"
   | "boatApiKey"
   | "boatApiUrl"
+  | "kubernetesNamespace"
+  | "kubernetesRuntimeClassName"
+  | "kubernetesComputerImage"
+  | "kubernetesCpuLimit"
+  | "kubernetesMemoryLimit"
+  | "kubernetesPodAnnotations"
+  | "kubernetesPodLabels"
+  | "kubernetesReadyTimeoutMs"
 > {
   return {
     hostComputerUrl: source.SANDBOX_HOST_URL,
@@ -65,7 +73,54 @@ export function sandboxProviderOptionsFromEnv(
     railwaySandboxRegion: optional(source.RAILWAY_SANDBOX_REGION),
     boatApiKey: boatApiKeyFromEnv(source),
     boatApiUrl: boatApiUrlFromEnv(source),
+    kubernetesNamespace: optional(source.KUBERNETES_SANDBOX_NAMESPACE),
+    kubernetesRuntimeClassName: optional(source.KUBERNETES_SANDBOX_RUNTIME_CLASS_NAME),
+    kubernetesComputerImage: optional(source.KUBERNETES_SANDBOX_COMPUTER_IMAGE),
+    kubernetesCpuLimit: optional(source.KUBERNETES_SANDBOX_CPU_LIMIT),
+    kubernetesMemoryLimit: optional(source.KUBERNETES_SANDBOX_MEMORY_LIMIT),
+    kubernetesPodAnnotations: stringMap(
+      source.KUBERNETES_SANDBOX_POD_ANNOTATIONS,
+      "KUBERNETES_SANDBOX_POD_ANNOTATIONS",
+    ),
+    kubernetesPodLabels: stringMap(
+      source.KUBERNETES_SANDBOX_POD_LABELS,
+      "KUBERNETES_SANDBOX_POD_LABELS",
+    ),
+    kubernetesReadyTimeoutMs: positiveInteger(
+      source.KUBERNETES_SANDBOX_READY_TIMEOUT_MS,
+      "KUBERNETES_SANDBOX_READY_TIMEOUT_MS",
+    ),
   };
+}
+
+function stringMap(value: string | undefined, name: string): Record<string, string> | undefined {
+  const configured = optional(value);
+  if (!configured) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(configured);
+  } catch (error) {
+    throw new Error(`${name} must be a JSON object of string values`, { cause: error });
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((entry) => typeof entry !== "string")
+  ) {
+    throw new Error(`${name} must be a JSON object of string values`);
+  }
+  return parsed as Record<string, string>;
+}
+
+function positiveInteger(value: string | undefined, name: string): number | undefined {
+  const configured = optional(value);
+  if (!configured) return undefined;
+  const parsed = Number(configured);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function optional(value: string | undefined): string | undefined {

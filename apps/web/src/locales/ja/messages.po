@@ -126,6 +126,10 @@ msgstr "{botName}のコンピューター"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable}は予約済みのため、コマンド変数として使用できません。別の名前を選んでください。"
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# 行} other {# 行}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr "{count}日"
@@ -146,9 +150,17 @@ msgstr "{count}年"
 msgid "{days}d ago"
 msgstr "{days}日前"
 
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{total} 行中 {from}–{to}"
+
 #: src/lib/cron.ts
 msgid "{fromName} to {toName}"
 msgstr "{fromName}〜{toName}"
+
+#: src/components/markdown-copy.tsx
+msgid "{header}, column {index}"
+msgstr "{header}、列 {index}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -157,6 +169,10 @@ msgstr "{hidden, plural, one {+#件の前のステップ} other {+#件の前の�
 #: src/lib/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours}時間前"
+
+#: src/components/markdown-copy.tsx
+msgid "{label}, empty"
+msgstr "{label}、空"
 
 #: src/lib/relative-time.ts
 msgid "{minutes}m ago"
@@ -1287,6 +1303,10 @@ msgstr "パネルを閉じる"
 msgid "Close preview"
 msgstr "プレビューを閉じる"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "テーブルを閉じる"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "ユーザー設定を閉じる"
@@ -1325,6 +1345,10 @@ msgstr "色"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color {color}"
 msgstr "色 {color}"
+
+#: src/components/markdown-copy.tsx
+msgid "column {index}"
+msgstr "列 {index}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Comfortable"
@@ -1554,6 +1578,7 @@ msgid "Conversations"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1570,9 +1595,21 @@ msgstr "コピー"
 msgid "Copy .env example"
 msgstr ".env の例をコピー"
 
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "コードをコピー"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "ダイアグラムのソースをコピー"
+
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "プロンプトをコピー"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "行をコピー"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -1967,6 +2004,10 @@ msgstr "OAuthを開始できませんでした"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr "ティーチングを開始できませんでした"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Could not stop computer"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Could not submit this answer"
@@ -2388,6 +2429,10 @@ msgstr "{0}をダウンロード"
 msgid "Download {name}"
 msgstr "{name}をダウンロード"
 
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV をダウンロード"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr "ダウンロード中…"
@@ -2579,6 +2624,10 @@ msgstr "{0}を展開"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label}を展開"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "テーブルを拡大"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -3251,6 +3300,10 @@ msgstr "未読にする"
 msgid "Mark as Unread"
 msgstr "未読にする"
 
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown テーブル"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3636,6 +3689,10 @@ msgstr "新しいスペース"
 msgid "New ticket"
 msgstr "新しいチケット"
 
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "次のページ"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr "次の設定セクション"
@@ -3720,6 +3777,10 @@ msgstr "リモートMCPサーバーが見つかりません"
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "結果なし"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "行なし"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -3953,6 +4014,10 @@ msgstr "出力"
 msgid "Owner"
 msgstr "オーナー"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "{page} / {count} ページ"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDutyインシデント"
@@ -4105,6 +4170,10 @@ msgstr "{0}をプレビュー"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "このファイル形式はプレビューできません。ダウンロードして表示してください。"
+
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "前のページ"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -4548,6 +4617,10 @@ msgstr "ルーティン"
 msgid "Routines that run while you're away"
 msgstr "不在中に実行されるルーティン"
 
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "行"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "実行日時"
@@ -4988,6 +5061,22 @@ msgstr "同じ名前のものが追加されたところです。もう一度お
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "選択した項目の一部はここでは使えません。チェックを外してもう一度お試しください。"
 
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "{column} で並べ替え"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "並べ替えを解除"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "{column} で並べ替え済み、昇順"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "{column} で並べ替え済み、降順"
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5060,6 +5149,10 @@ msgstr "手順"
 msgid "Stop"
 msgstr "停止"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stop computer"
+msgstr ""
+
 #: src/pages/shell/message-view.tsx
 msgid "Stop speaking"
 msgstr "読み上げを停止"
@@ -5072,6 +5165,10 @@ msgstr "ティーチングを停止"
 #: src/lib/browser-notifications.ts
 msgid "Stopped."
 msgstr "停止しました。"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Stopping…"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
@@ -5128,6 +5225,10 @@ msgstr "切り替え中…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "システム"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "テーブル"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
