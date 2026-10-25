@@ -12,7 +12,7 @@ import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/a
 import type { PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { isApprovalPausedResult } from "./approval-effect.js";
+import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "./approval-effect.js";
 import { MAX_SHARED_MEMORY_CHARS } from "./builtin-tools.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -2100,4 +2100,91 @@ it("uses the OpenRouter environment key for a decision checker on another deploy
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   }
+});
+
+describe("retry of an action a person denied in the same run", () => {
+  const WRAPPER = "COMPOSIO_MULTI_EXECUTE_TOOL";
+  const DENIED = { error: DENIED_ACTION_ERROR };
+  const batch = (...slugs: string[]) => ({
+    args: { tools: slugs.map((tool_slug) => ({ tool_slug, arguments: {} })) },
+    executionId: "call-2",
+  });
+  const denied = (kind: string, args: unknown, extra: Partial<Effect> = {}): Effect => ({
+    id: "effect-0",
+    kind,
+    idempotencyKey: `denied-${kind}`,
+    status: "denied",
+    request: args,
+    runId: "run-1",
+    ...extra,
+  });
+
+  it("refuses the same tool with new arguments, with no card and no execution", async () => {
+    const f = fixture({ readOnly: false });
+    f.effects.push(denied("demo_get_item", { id: "item-1" }));
+    f.setCalls([{ args: { id: "item-2" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results).toEqual([DENIED]);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.effects.map((effect) => effect.status)).toEqual(["denied", "denied"]);
+  });
+
+  it("refuses a multi-execute that shares a tool slug with the denied one", async () => {
+    const f = fixture({ name: WRAPPER, readOnly: false });
+    f.effects.push(denied(WRAPPER, { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }] }));
+    f.setCalls([batch("GMAIL_LIST_THREADS", "gmail_send_email")]);
+    await f.run();
+    expect(f.results).toEqual([DENIED]);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("still asks for a multi-execute with other slugs", async () => {
+    const f = fixture({
+      name: WRAPPER,
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: WRAPPER }],
+    });
+    f.effects.push(denied(WRAPPER, { tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }] }));
+    // A refused retry stores its slugs too; only the person's deny counts.
+    f.effects.push(
+      denied(
+        WRAPPER,
+        { tools: [{ tool_slug: "GMAIL_SEND_DRAFT" }] },
+        {
+          id: "effect-r",
+          idempotencyKey: "refused",
+          result: { refused: "repeat" },
+        },
+      ),
+    );
+    f.setCalls([batch("GMAIL_SEND_DRAFT")]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("still runs the approved replay of the same tool", async () => {
+    const f = fixture({
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_get_item" }],
+    });
+    await f.run();
+    f.effects[0]!.status = "approved";
+    f.effects.push(denied("demo_get_item", { id: "item-9" }));
+    f.setCalls([{ args: { id: "item-1" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("does not carry a deny over to another run", async () => {
+    const f = fixture({
+      readOnly: false,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "demo_get_item" }],
+    });
+    f.effects.push(denied("demo_get_item", {}, { runId: "run-other" }));
+    f.setCalls([{ args: { id: "item-2" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
 });

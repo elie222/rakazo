@@ -140,6 +140,32 @@ export function toolRequiresApproval(
   return false;
 }
 
+/**
+ * Whether this call repeats one of `denied`, the requests a person denied for this tool earlier in
+ * the run. A Composio multi-execute repeats only when it shares an inner tool slug. Telling the
+ * model not to retry did not stop it.
+ */
+export function repeatsDeniedAction(input: {
+  toolName: string;
+  args: unknown;
+  denied: unknown[];
+}): boolean {
+  return input.denied.some((request) => {
+    if (input.toolName !== "COMPOSIO_MULTI_EXECUTE_TOOL") return true;
+    const before = innerToolSlugs(request);
+    return innerToolSlugs(input.args).some((slug) => before.includes(slug));
+  });
+}
+
+function innerToolSlugs(args: unknown): string[] {
+  const tools = (args as { tools?: unknown } | null)?.tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.flatMap((item) => {
+    const slug = (item as { tool_slug?: unknown } | null)?.tool_slug;
+    return typeof slug === "string" && slug.trim() ? [slug.trim().toUpperCase()] : [];
+  });
+}
+
 /** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
 export function toolRequiresExplicitApproval(toolName: string): boolean {
   return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);

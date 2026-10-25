@@ -101,6 +101,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  repeatsDeniedAction,
   resolveActionApprovalDetail,
   sandboxCommandTimeoutMs,
   siteAlwaysAllowed,
@@ -192,6 +193,7 @@ import {
   claimIntendedEffect,
   completeExternalEffect,
   createApprovedEffectReplayQueue,
+  DENIED_ACTION_ERROR,
   isToolPauseResult,
   parseCatalogApprovalTarget,
   replaceCompletedExternalEffectResult,
@@ -5321,6 +5323,39 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   executionId,
                   consumedEffectIds,
                 );
+
+          // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
+          // so only real denies match. web_fetch is gated per site; secret and app requests name
+          // their own target.
+          const repeatChecked =
+            applied &&
+            !applied.duplicate &&
+            !["web_fetch", "request_secret", "connect_app"].includes(name);
+          const deniedEarlier = repeatChecked
+            ? (
+                await deps.prisma.externalEffect.findMany({
+                  where: { runId, status: "denied", kind: replayEffectToolName },
+                  select: { request: true, result: true },
+                })
+              ).flatMap((effect) =>
+                effect.result == null
+                  ? [
+                      boundDirectApprovalDetails(effect.request, CATALOG_APPROVAL_TOOL)?.args ??
+                        effect.request,
+                    ]
+                  : [],
+              )
+            : [];
+          if (
+            applied &&
+            repeatsDeniedAction({ toolName: replayEffectToolName, args, denied: deniedEarlier })
+          ) {
+            await deps.prisma.externalEffect.updateMany({
+              where: { id: applied.effect.id, status: "intended" },
+              data: { status: "denied", result: { refused: "repeat" } },
+            });
+            return { error: DENIED_ACTION_ERROR };
+          }
 
           const runAutoReview = async () => {
             if (!injectedReview && !checker && !reviewSettings?.backups.length) return;

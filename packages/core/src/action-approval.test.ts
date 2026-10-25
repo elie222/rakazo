@@ -11,6 +11,7 @@ import {
   newSiteOutcome,
   outboundSiteGate,
   planActionGate,
+  repeatsDeniedAction,
   resolveActionApproval,
   resolveActionApprovalDetail,
   toolRequiresApproval,
@@ -621,4 +622,35 @@ describe("toolResultTaintsRun", () => {
 it("requires human confirmation to approve an agent connection", () => {
   expect(toolRequiresExplicitApproval("respond_agent_connection")).toBe(true);
   expect(toolRequiresApproval("respond_agent_connection", false)).toBe(true);
+});
+
+describe("repeatsDeniedAction", () => {
+  const WRAPPER = "COMPOSIO_MULTI_EXECUTE_TOOL";
+  const sent = { tools: [{ tool_slug: "GMAIL_SEND_EMAIL" }] };
+
+  it("matches a plain tool whatever its arguments", () => {
+    expect(
+      repeatsDeniedAction({
+        toolName: "shell",
+        args: { command: "pwd" },
+        denied: [{ command: "ls" }],
+      }),
+    ).toBe(true);
+    expect(repeatsDeniedAction({ toolName: "shell", args: {}, denied: [] })).toBe(false);
+  });
+
+  it("matches a multi-execute on any shared slug, ignoring case", () => {
+    const args = (...slugs: string[]) => ({ tools: slugs.map((tool_slug) => ({ tool_slug })) });
+    expect(
+      repeatsDeniedAction({
+        toolName: WRAPPER,
+        args: args("GMAIL_LIST", "gmail_send_email"),
+        denied: [sent],
+      }),
+    ).toBe(true);
+    expect(
+      repeatsDeniedAction({ toolName: WRAPPER, args: args("GMAIL_SEND_DRAFT"), denied: [sent] }),
+    ).toBe(false);
+    expect(repeatsDeniedAction({ toolName: WRAPPER, args: {}, denied: [sent] })).toBe(false);
+  });
 });
