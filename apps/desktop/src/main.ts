@@ -41,6 +41,7 @@ import {
   forwardedRendererRequestInit,
   isRendererAssetMiss,
 } from "./renderer-assets.js";
+import { revealSecondInstanceWindow, secondInstanceWindow } from "./second-instance.js";
 import { installSessionPermissions } from "./session-permissions.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -997,11 +998,9 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    const win = setupWindow !== null && !setupWindow.isDestroyed() ? setupWindow : mainWindow;
-    if (win === null || win.isDestroyed()) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    const win = secondInstanceWindow(setupWindow, mainWindow);
+    if (win === null) return;
+    revealSecondInstanceWindow(win);
   });
 }
 
