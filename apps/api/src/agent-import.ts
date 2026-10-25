@@ -831,11 +831,17 @@ export async function createImportedBot<PreparedKey>(
 }
 
 /** Undo's view of a bot's latest import: what it removes, and what it keeps because it changed. */
-async function undoPlan(db: Prisma.TransactionClient | PrismaClient, actor: Actor, botId: string) {
+async function undoPlan(
+  db: Prisma.TransactionClient | PrismaClient,
+  actor: Actor,
+  botId: string,
+  importId?: string,
+) {
   const owner = { spaceId: actor.spaceId, userId: actor.userId };
-  // A bot can hold several imports (one that made it, others added to it); Undo is the latest.
+  // A bot can hold several imports (one that made it, others added to it); Undo is the
+  // latest, unless a deletion already reserved for one import names it.
   const found = await db.agentImport.findFirst({
-    where: { ...owner, botId },
+    where: { ...owner, botId, ...(importId ? { id: importId } : {}) },
     orderBy: { createdAt: "desc" },
   });
   if (!found) return null;
@@ -1090,7 +1096,7 @@ export async function undoAgentImport(
   };
   // Locks what Undo may remove, then decides again: an edit or assignment made meanwhile
   // either landed (and is seen) or waits for this transaction.
-  const removeAdded = async (tx: Prisma.TransactionClient) => {
+  const removeAdded = async (tx: Prisma.TransactionClient, reservedImportId?: string) => {
     const { record } = before;
     const ids = <T extends { id: string }>(items: T[]) => items.map((item) => item.id);
     const skillIds = ids(record.skills);
@@ -1105,7 +1111,7 @@ export async function undoAgentImport(
     `;
     await tx.$queryRaw`SELECT id FROM mcp_servers WHERE id = ANY(${serverIds}) FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM routines WHERE id = ANY(${routineIds}) FOR UPDATE`;
-    const current = await undoPlan(tx, actor, botId);
+    const current = await undoPlan(tx, actor, botId, reservedImportId);
     if (!current || current.plan.found.id !== before.plan.found.id) {
       throw refused("CONFLICT", "import_changed", "This import changed. Try again.");
     }
@@ -1203,7 +1209,9 @@ export async function undoAgentImport(
 
   // `destroyBot` cancels runs, destroys the computer and removes saved sessions before its
   // transaction, and none of that rolls back. So the confirmed import is checked and reserved
-  // first: an archived bot takes no imports, so none can commit before the deletion.
+  // first, and from then on the deletion goes ahead, like removing the bot: a restore and a
+  // later import meanwhile do not stop it. What that import added to the bot goes with it;
+  // what it added outside the bot (skills, space memory, servers, keys) stays.
   const reservedAt = await services.prisma.$transaction(async (tx) => {
     const thread = await tx.thread.findFirst({ where: { ...owner, botId }, select: { id: true } });
     if (thread) await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
@@ -1224,7 +1232,7 @@ export async function undoAgentImport(
       deleteMemories: false,
       // Runs after the bot row is locked: the rest is decided again under the locks.
       within: async (tx) => {
-        const { plan, current, removed, events } = await removeAdded(tx);
+        const { plan, current, removed, events } = await removeAdded(tx, input.importId);
         result = current.infoFor(removed);
         changed = events;
         return { deleteMemories: !plan.botMemoryChanged };

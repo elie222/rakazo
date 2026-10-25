@@ -1838,6 +1838,100 @@ describeIntegration("agent import", () => {
       ).toEqual({ archivedAt: null });
     });
 
+    it("finishes an Undo it reserved even if the bot is restored and imported into meanwhile", async () => {
+      const { cookie, plan } = await setUp("restored");
+      const made = await rpc<Bot>(app, cookie, "bots/importCreate", {
+        files,
+        name: "Pebble",
+        selection: everything(plan),
+      });
+      const shown = await rpc<AgentImportInfo>(app, cookie, "bots/importInfo", {
+        botId: made.id,
+      });
+      const bot = await db.bot.findUniqueOrThrow({
+        where: { id: made.id },
+        select: { spaceId: true, userId: true },
+      });
+      const { id: threadId } = await db.thread.findFirstOrThrow({ where: { botId: made.id } });
+      // A run the bot deletion cancels before its transaction; holding its row pauses the
+      // deletion after the reservation, where another tab acts.
+      const task = await db.task.create({
+        data: {
+          ...bot,
+          botId: made.id,
+          threadId,
+          prompt: "Work",
+          status: "running",
+        },
+      });
+      const run = await db.run.create({
+        data: {
+          ...bot,
+          botId: made.id,
+          threadId,
+          taskId: task.id,
+          status: "queued",
+          trigger: "user",
+        },
+      });
+      const extra = [
+        { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+        { path: ".openclaw/skills/pruning/SKILL.md", content: skill("pruning", "Prune plants") },
+      ];
+      const extraPlan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+        files: extra,
+      });
+      // Requests start outside that transaction, so none of them runs inside it.
+      let locked!: () => void;
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const holder = db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM runs WHERE id = ${run.id} FOR UPDATE`;
+          locked();
+          await released;
+        },
+        { timeout: 30_000 },
+      );
+      await held;
+      const undo = raw(app, cookie, "bots/importUndo", { botId: made.id, importId: shown.id });
+      for (let i = 0; i < 100; i++) {
+        const row = await db.bot.findUnique({
+          where: { id: made.id },
+          select: { archivedAt: true },
+        });
+        if (row?.archivedAt) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      // Another tab restores the reserved bot and imports into it.
+      await rpc(app, cookie, "bots/restore", { botId: made.id });
+      await rpc(app, cookie, "bots/importCreate", {
+        files: extra,
+        destination: { kind: "existing", botId: made.id },
+        selection: {
+          instructions: [],
+          memory: [],
+          skills: extraPlan.skills.map((item) => item.id),
+          mcpServers: [],
+          routines: [],
+        },
+      });
+      release();
+      await holder;
+      const response = await undo;
+      expect(response.status).toBe(200);
+      // The deletion it started is finished, as removing the bot would be...
+      expect(await db.bot.count({ where: { id: made.id } })).toBe(0);
+      // ...and what the later import added outside the bot stays, as with removing it.
+      expect(await db.agentSkill.count({ where: { userId: bot.userId, name: "pruning" } })).toBe(1);
+      expect(await db.agentSkill.count({ where: { userId: bot.userId, name: "garden" } })).toBe(0);
+    });
+
     it("refuses an import into a bot archived while it was checked", async () => {
       const { cookie, chief, plan } = await setUp("archived-meanwhile");
       const thread = await db.thread.findFirstOrThrow({ where: { botId: chief.id } });
