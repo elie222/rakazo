@@ -99,3 +99,45 @@ it("keeps a saved toggle when the revisit's older background read lands after it
     vi.unstubAllGlobals();
   }
 });
+
+it("saves a deny preset and renders it as a hard block", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  rpcMock.approvalRules.set.mockResolvedValue({
+    id: "rule-1",
+    effect: "deny",
+    matchKind: "category",
+    matchValue: "purchase",
+    createdAt: new Date().toISOString(),
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <ApprovalRulesSettings />
+        </QueryClientProvider>,
+      );
+    });
+    const button = [...container.querySelectorAll("button")].find(
+      (el) => el.textContent === "Never make purchases",
+    );
+    expect(button).toBeDefined();
+    await vi.waitFor(() => expect(button?.disabled).toBe(false));
+    await act(async () => button?.click());
+    expect(rpcMock.approvalRules.set).toHaveBeenCalledWith({
+      effect: "deny",
+      matchKind: "category",
+      matchValue: "purchase",
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Never run purchase actions"));
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

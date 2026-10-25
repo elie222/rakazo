@@ -335,6 +335,59 @@ describe("resolveActionApproval", () => {
       }),
     ).toMatchObject({ decision: "allow", source: "default" });
   });
+
+  it("denies outright whatever else matches, whatever the specificity", () => {
+    expect(
+      resolveActionApproval({
+        toolName: "gmail_delete_threads",
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "gmail_delete_threads" }],
+      }),
+    ).toBe("deny");
+    // A narrower allow cannot punch through a broader deny.
+    expect(
+      resolveActionApproval({
+        toolName: "gmail_send_email",
+        rules: [
+          { effect: "deny", matchKind: "category", matchValue: "email" },
+          { effect: "always_allow", matchKind: "tool", matchValue: "gmail_send_email" },
+        ],
+      }),
+    ).toBe("deny");
+    expect(
+      resolveActionApproval({
+        toolName: "gmail_send_email",
+        rules: [
+          { effect: "require_approval", matchKind: "tool", matchValue: "gmail_send_email" },
+          { effect: "deny", matchKind: "category", matchValue: "email" },
+        ],
+      }),
+    ).toBe("deny");
+    expect(
+      resolveActionApprovalDetail({
+        toolName: "gmail_delete_threads",
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "gmail_delete_threads" }],
+      }).source,
+    ).toBe("deny");
+  });
+
+  it("denies the Composio workbench and remote bash whenever a non-site deny exists", () => {
+    const denySlug: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "gmail_delete_threads" },
+    ];
+    for (const toolName of ["COMPOSIO_REMOTE_WORKBENCH", "COMPOSIO_REMOTE_BASH_TOOL"]) {
+      expect(resolveActionApproval({ toolName, rules: denySlug })).toBe("deny");
+    }
+    // Site rules and allow or ask rules never turn escape hatches into blanket blocks.
+    expect(
+      resolveActionApproval({
+        toolName: "COMPOSIO_REMOTE_WORKBENCH",
+        rules: [{ effect: "deny", matchKind: "site", matchValue: "evil.example" }],
+      }),
+    ).toBe("allow");
+    expect(
+      resolveActionApproval({ toolName: "COMPOSIO_REMOTE_WORKBENCH", rules: requireEmail }),
+    ).toBe("allow");
+  });
 });
 
 describe("planActionGate", () => {
@@ -356,6 +409,24 @@ describe("planActionGate", () => {
       });
     expect(gate("allow")).toBe("allow");
     expect(gate("ask")).toBe("ask");
+  });
+
+  it("refuses a denied action without asking, judging, or honoring skip-approvals", () => {
+    const resolved = resolveActionApprovalDetail({
+      toolName: "gmail_send_email",
+      rules: [{ effect: "deny", matchKind: "category", matchValue: "email" }],
+    });
+    expect(resolved.decision).toBe("deny");
+    expect(
+      planActionGate({
+        resolved,
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+        newDestination: true,
+        skipApprovals: true,
+      }),
+    ).toBe("deny");
   });
 
   it("lets require_approval win without judging", () => {
@@ -534,6 +605,16 @@ describe("watchToolRefusal", () => {
       }),
     ).toBeNull();
   });
+
+  it("refuses a read a space rule blocks", () => {
+    expect(
+      watchToolRefusal({
+        toolName: "brain_search",
+        readOnly: true,
+        rules: [rule("tool", "brain_search", "deny")],
+      }),
+    ).toMatch(/blocked by a space rule/);
+  });
 });
 
 describe("outboundSiteGate", () => {
@@ -665,6 +746,21 @@ describe("resolveActionApprovalForTools", () => {
     matchKind: "tool" as const,
     matchValue: "gmail_send_email",
   };
+
+  it("denies the whole batch when any wrapped action is blocked", () => {
+    const denied = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_ARCHIVE_THREAD" }, { name: "GMAIL_DELETE_THREADS" }],
+      rules: [
+        allowArchive,
+        {
+          effect: "deny" as const,
+          matchKind: "tool" as const,
+          matchValue: "gmail_delete_threads",
+        },
+      ],
+    });
+    expect(denied).toMatchObject({ decision: "deny", source: "deny" });
+  });
 
   it("asks when any wrapped action has a require-approval rule", () => {
     const resolved = resolveActionApprovalForTools({

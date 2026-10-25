@@ -3632,6 +3632,43 @@ msgstr ""
 msgid "Needs: {names}"
 msgstr "Necesita: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "Nunca obtener {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "Nunca hacer compras"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "Nunca ejecutar {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "Nunca ejecutar acciones de {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "Nunca ejecutar acciones del conector {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "Nunca ejecutar acciones de correo"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "Nunca ejecutar acciones de compra"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "Nunca enviar correo externo"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""

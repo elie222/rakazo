@@ -3632,6 +3632,43 @@ msgstr "対応が必要"
 msgid "Needs: {names}"
 msgstr "必要: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "{0} を取得しない"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "購入はしない"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "{0} を実行しない"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "{0} のアクションは実行しない"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "{0} コネクタのアクションは実行しない"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "メール操作は実行しない"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "購入操作は実行しない"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "外部メールは送信しない"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "新規"

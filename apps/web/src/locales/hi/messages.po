@@ -3632,6 +3632,43 @@ msgstr ""
 msgid "Needs: {names}"
 msgstr "ज़रूरी: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "{0} कभी न प्राप्त करें"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "कभी भी खरीदारी न करें"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "{0} कभी न चलाएँ"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "{0} क्रियाएँ कभी न चलाएँ"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "{0} कनेक्टर क्रियाएँ कभी न चलाएँ"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "ईमेल क्रियाएँ कभी न चलाएँ"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "खरीद क्रियाएँ कभी न चलाएँ"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "बाहरी ईमेल कभी न भेजें"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""

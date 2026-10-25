@@ -3632,6 +3632,43 @@ msgstr "נדרשת פעולה"
 msgid "Needs: {names}"
 msgstr "דורש: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "לעולם לא לשלוף {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "לעולם לא לבצע רכישות"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "לעולם לא להריץ {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "לעולם לא להריץ פעולות {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "לעולם לא להריץ פעולות של מחבר {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "לעולם לא להריץ פעולות אימייל"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "לעולם לא להריץ פעולות רכישה"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "לעולם לא לשלוח אימייל חיצוני"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""

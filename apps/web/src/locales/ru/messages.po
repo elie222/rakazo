@@ -3632,6 +3632,43 @@ msgstr "Требуется ваше участие"
 msgid "Needs: {names}"
 msgstr "Нужно: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "Никогда не загружать {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "Никогда не совершать покупки"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "Никогда не выполнять {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "Никогда не выполнять действия {0}"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "Никогда не выполнять действия коннектора {0}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "Никогда не выполнять действия электронной почты"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "Никогда не выполнять действия покупки"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "Никогда не отправлять внешние письма"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "Новые"

@@ -3632,6 +3632,43 @@ msgstr "Heeft jou nodig"
 msgid "Needs: {names}"
 msgstr "Vereist: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "Nooit {0} ophalen"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "Nooit aankopen doen"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "{0} nooit uitvoeren"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "{0}-acties nooit uitvoeren"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "Acties van connector {0} nooit uitvoeren"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "E-mailacties nooit uitvoeren"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "Aankoopacties nooit uitvoeren"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "Nooit externe e-mails versturen"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr "Nieuw"

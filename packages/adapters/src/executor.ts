@@ -5271,24 +5271,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
             scheduleNamesNewSite ||
             requiresUnattendedApproval ||
             (toolRequiresExplicitApproval(name) && !ownerSkipsMandatoryApproval);
-          const approvalResolved = requiresMandatoryApproval
-            ? {
-                decision: "ask" as const,
-                source: "default" as const,
-                matchingRules: [] as ActionApprovalRule[],
-              }
-            : await (async () => {
-                const resolved = resolveActionApprovalForTools({
-                  tools: approvalToolNames.map((toolName) => ({
-                    name: toolName,
-                    connectorKind: connectorKindFromToolName(toolName, connectorProviders),
-                    readOnly: declaredReadOnlyFor(toolName),
-                  })),
-                  site: fetchSite,
-                  rules: await loadApprovalRules(),
-                });
-                return unidentifiedAction ? { ...resolved, decision: "ask" as const } : resolved;
-              })();
+          // Rules resolve before the mandatory-ask override so a deny refuses even the calls
+          // that would otherwise always pause for a person.
+          const approvalResolved = await (async () => {
+            const resolved = resolveActionApprovalForTools({
+              tools: approvalToolNames.map((toolName) => ({
+                name: toolName,
+                connectorKind: connectorKindFromToolName(toolName, connectorProviders),
+                readOnly: declaredReadOnlyFor(toolName),
+              })),
+              site: fetchSite,
+              rules: await loadApprovalRules(),
+            });
+            if (resolved.decision === "deny") return resolved;
+            if (requiresMandatoryApproval || unidentifiedAction) {
+              return { ...resolved, decision: "ask" as const };
+            }
+            return resolved;
+          })();
           const preference = requiresMandatoryApproval
             ? { enabled: false, skipApprovals: false }
             : await loadAutoReviewPreference();
@@ -5337,6 +5337,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 newDestination: siteGate === "new",
                 skipApprovals: preference.skipApprovals,
               });
+          // A deny rule refuses the call outright on every trigger: no card, no review, no run.
+          if (approvalResolved.decision === "deny") {
+            const deniedRule = approvalResolved.matchingRules.find(
+              (rule) => rule.effect === "deny",
+            );
+            return {
+              error: `A space rule blocks ${deniedRule?.matchValue ?? replayEffectToolName}.`,
+            };
+          }
           let reviewReason: string | undefined;
           let gateDecision: "ask" | "allow" = plan === "ask" ? "ask" : "allow";
           const needsApprovalEarly = plan === "ask" || plan === "judge";

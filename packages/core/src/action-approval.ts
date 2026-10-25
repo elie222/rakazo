@@ -115,14 +115,16 @@ export function watchToolRefusal(input: {
   if (readOnly !== true) {
     return `${toolName} can change data, so a change trigger can't run it. Pick a read-only tool.`;
   }
-  if (
-    resolveActionApprovalDetail({
-      toolName,
-      connectorKind: input.connectorKind,
-      readOnly,
-      rules: input.rules,
-    }).decision === "ask"
-  ) {
+  const resolved = resolveActionApprovalDetail({
+    toolName,
+    connectorKind: input.connectorKind,
+    readOnly,
+    rules: input.rules,
+  });
+  if (resolved.decision === "deny") {
+    return `${toolName} is blocked by a space rule, and a change check cannot run it.`;
+  }
+  if (resolved.decision === "ask") {
     return `${toolName} needs approval under this space's rules, and a change check cannot ask.`;
   }
   return null;
@@ -275,6 +277,16 @@ function categoryMatches(
   return false;
 }
 
+/**
+ * Workbench and remote-bash tools run code inside Composio that can invoke any action, so a
+ * deny rule scoped to one slug could be routed around through them. Any non-site deny matches
+ * them outright; allow and ask rules stay name-scoped.
+ */
+const COMPOSIO_ESCAPE_HATCH_TOOLS = new Set([
+  "composio_remote_workbench",
+  "composio_remote_bash_tool",
+]);
+
 function ruleMatches(
   rule: ActionApprovalRule,
   toolName: string,
@@ -282,6 +294,13 @@ function ruleMatches(
   readOnly: boolean | undefined,
   site: string | undefined,
 ): boolean {
+  if (
+    rule.effect === "deny" &&
+    rule.matchKind !== "site" &&
+    COMPOSIO_ESCAPE_HATCH_TOOLS.has(toolName.toLowerCase())
+  ) {
+    return true;
+  }
   const value = rule.matchValue.toLowerCase();
   switch (rule.matchKind) {
     case "site":
@@ -312,16 +331,18 @@ function ruleSpecificity(rule: ActionApprovalRule): number {
   }
 }
 
-export type ActionApprovalSource = "require_approval" | "always_allow" | "default";
+export type ActionApprovalSource = "require_approval" | "always_allow" | "deny" | "default";
 
 export type ActionApprovalResolved = {
-  decision: "ask" | "allow";
+  decision: "ask" | "allow" | "deny";
   source: ActionApprovalSource;
   matchingRules: ActionApprovalRule[];
 };
 
 /**
- * Deterministic rule resolution. Always-allow and require-approval both beat the default.
+ * Deterministic rule resolution. A deny always wins: it is a hard refusal, so a narrower
+ * allow or ask rule cannot punch through it. Otherwise the most specific match decides, and
+ * require-approval beats always-allow at the same specificity.
  * `site` is the destination of an outbound fetch; a rule for that site beats a rule for the tool.
  */
 export function resolveActionApprovalDetail(input: {
@@ -338,6 +359,9 @@ export function resolveActionApprovalDetail(input: {
   if (matchingRules.length === 0) {
     return { decision: "allow", source: "default", matchingRules };
   }
+  if (matchingRules.some((rule) => rule.effect === "deny")) {
+    return { decision: "deny", source: "deny", matchingRules };
+  }
 
   const highestSpecificity = Math.max(...matchingRules.map(ruleSpecificity));
   const winners = matchingRules.filter((rule) => ruleSpecificity(rule) === highestSpecificity);
@@ -352,7 +376,7 @@ export function resolveActionApproval(input: {
   connectorKind?: string;
   readOnly?: boolean;
   rules: ActionApprovalRule[];
-}): "ask" | "allow" {
+}): "ask" | "allow" | "deny" {
   return resolveActionApprovalDetail(input).decision;
 }
 
@@ -409,6 +433,8 @@ export function resolveActionApprovalForTools(input: {
   const matchingRules = [
     ...new Map(resolved.flatMap((part) => part.matchingRules).map((rule) => [rule, rule])).values(),
   ];
+  const denied = resolved.find((part) => part.decision === "deny");
+  if (denied) return { decision: "deny", source: denied.source, matchingRules };
   const asking = resolved.find((part) => part.decision === "ask");
   if (asking) return { decision: "ask", source: asking.source, matchingRules };
   return {
@@ -425,8 +451,8 @@ export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
  * Pure combiner for Auto Review after rule resolution.
- * Rules win: require_approval asks, always_allow runs. Only the default path may call a judge.
- * The judge only escalates to ask; it never silent-denies.
+ * Rules win: deny refuses, require_approval asks, always_allow runs. Only the default path
+ * may call a judge. The judge only escalates to ask; it never silent-denies.
  * Mandatory approvals never reach this gate, so skipping approvals cannot pass them.
  */
 export function planActionGate(input: {
@@ -438,7 +464,8 @@ export function planActionGate(input: {
   newDestination?: boolean;
   /** The owner chose to run actions without asking; their own "ask before" rules still ask. */
   skipApprovals?: boolean;
-}): "ask" | "allow" | "judge" {
+}): "ask" | "allow" | "judge" | "deny" {
+  if (input.resolved.decision === "deny") return "deny";
   if (input.resolved.decision === "ask") return "ask";
   if (input.skipApprovals) return "allow";
   // A rule for the whole tool is not a choice of sites, so it never allows a new one; only a site

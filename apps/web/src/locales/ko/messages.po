@@ -3632,6 +3632,43 @@ msgstr ""
 msgid "Needs: {names}"
 msgstr "필요: {names}"
 
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never fetch {0}"
+msgstr "{0} 가져오지 않음"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never make purchases"
+msgstr "구매하지 않음"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0}"
+msgstr "{0} 실행하지 않음"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} actions"
+msgstr "{0} 작업을 실행하지 않음"
+
+#. placeholder {0}: rule.matchValue
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run {0} connector actions"
+msgstr "{0} 커넥터 작업을 실행하지 않음"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run email actions"
+msgstr "이메일 작업을 실행하지 않음"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never run purchase actions"
+msgstr "구매 작업을 실행하지 않음"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never send external email"
+msgstr "외부 이메일 보내지 않음"
+
+
 #: src/pages/shell/chat-context.tsx
 msgid "New"
 msgstr ""

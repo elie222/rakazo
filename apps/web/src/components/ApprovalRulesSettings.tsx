@@ -9,6 +9,16 @@ import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
 function describeRule(rule: ActionApprovalRule): string {
+  if (rule.effect === "deny") {
+    if (rule.matchKind === "category") {
+      if (rule.matchValue === "email") return t`Never run email actions`;
+      if (rule.matchValue === "purchase") return t`Never run purchase actions`;
+      return t`Never run ${rule.matchValue} actions`;
+    }
+    if (rule.matchKind === "connector") return t`Never run ${rule.matchValue} connector actions`;
+    if (rule.matchKind === "site") return t`Never fetch ${rule.matchValue}`;
+    return t`Never run ${rule.matchValue}`;
+  }
   if (rule.effect === "require_approval") {
     if (rule.matchKind === "category") {
       if (rule.matchValue === "email") return t`Ask before email actions`;
@@ -40,7 +50,7 @@ export function ApprovalRulesSettings() {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
-  const [savingPreset, setSavingPreset] = useState<"email" | "purchase" | null>(null);
+  const [savingPreset, setSavingPreset] = useState<string | null>(null);
   const [savingAutoReview, setSavingAutoReview] = useState(false);
   const [actionError, setError] = useState<string | null>(null);
   const error =
@@ -56,23 +66,21 @@ export function ApprovalRulesSettings() {
     return writeSaved(queryClient, queries.autoReview.get.queryKey(), () => next);
   }
 
-  async function setPreset(matchValue: "email" | "purchase") {
+  async function setPreset(effect: "require_approval" | "deny", matchValue: "email" | "purchase") {
     if (loading || savingPreset) return;
     if (
       rules.some(
         (rule) =>
-          rule.effect === "require_approval" &&
-          rule.matchKind === "category" &&
-          rule.matchValue === matchValue,
+          rule.effect === effect && rule.matchKind === "category" && rule.matchValue === matchValue,
       )
     ) {
       return;
     }
-    setSavingPreset(matchValue);
+    setSavingPreset(`${effect}:${matchValue}`);
     setError(null);
     try {
       const saved = await rpc.approvalRules.set({
-        effect: "require_approval",
+        effect,
         matchKind: "category",
         matchValue,
       });
@@ -125,16 +133,30 @@ export function ApprovalRulesSettings() {
         <Button
           variant="outline"
           disabled={loading || savingPreset !== null}
-          onClick={() => void setPreset("email")}
+          onClick={() => void setPreset("require_approval", "email")}
         >
           <Trans>Ask before sending external email</Trans>
         </Button>
         <Button
           variant="outline"
           disabled={loading || savingPreset !== null}
-          onClick={() => void setPreset("purchase")}
+          onClick={() => void setPreset("require_approval", "purchase")}
         >
           <Trans>Ask before purchases</Trans>
+        </Button>
+        <Button
+          variant="outline"
+          disabled={loading || savingPreset !== null}
+          onClick={() => void setPreset("deny", "email")}
+        >
+          <Trans>Never send external email</Trans>
+        </Button>
+        <Button
+          variant="outline"
+          disabled={loading || savingPreset !== null}
+          onClick={() => void setPreset("deny", "purchase")}
+        >
+          <Trans>Never make purchases</Trans>
         </Button>
       </div>
       {autoReview?.skipApprovals ? null : (

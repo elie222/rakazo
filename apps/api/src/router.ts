@@ -6759,7 +6759,7 @@ export function createRouter(deps: RouterDeps) {
         });
         return rows.map((row) => ({
           id: row.id,
-          effect: row.effect as "always_allow" | "require_approval",
+          effect: row.effect as ActionApprovalRule["effect"],
           matchKind: row.matchKind as ActionApprovalRule["matchKind"],
           matchValue: row.matchValue,
           createdAt: row.createdAt.toISOString(),
@@ -6787,7 +6787,7 @@ export function createRouter(deps: RouterDeps) {
         });
         return {
           id: row.id,
-          effect: row.effect as "always_allow" | "require_approval",
+          effect: row.effect as ActionApprovalRule["effect"],
           matchKind: row.matchKind as ActionApprovalRule["matchKind"],
           matchValue: row.matchValue,
           createdAt: row.createdAt.toISOString(),

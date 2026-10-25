@@ -887,6 +887,34 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     });
 
+    it("fails a denied tool outright: no execution, no card, no review, even skipped", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        autoReview: true,
+        skipApprovals: true,
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "demo_send_message" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.results).toEqual([{ error: "A space rule blocks demo_send_message." }]);
+    });
+
+    it("a denied tool stays blocked on a webhook trigger", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        trigger: "webhook",
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "demo_send_message" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.results).toEqual([{ error: "A space rule blocks demo_send_message." }]);
+    });
+
     it("still asks for webhook-triggered writes when approvals are skipped", async () => {
       const f = fixture({
         catalog,
@@ -1120,6 +1148,28 @@ describe("composio multi-execute approvals", () => {
     expect(f.execute).toHaveBeenCalledOnce();
     expect(reviewMock).toHaveBeenCalledOnce();
     expect(isApprovalPausedResult(f.results[2])).toBe(true);
+  });
+
+  it("refuses the batch when a rule blocks one wrapped slug", async () => {
+    const f = fixture({
+      name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      readOnly: false,
+      rules: [
+        { effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" },
+        { effect: "deny", matchKind: "tool", matchValue: "gmail_delete_threads" },
+      ],
+    });
+    f.setCalls([
+      {
+        args: multiExecute(["GMAIL_ARCHIVE_THREAD", "GMAIL_DELETE_THREADS"]),
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ error: "A space rule blocks gmail_delete_threads." }]);
   });
 });
 
