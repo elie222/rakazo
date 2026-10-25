@@ -231,7 +231,7 @@ export function buildBotMessageWakePrompt(args: {
         : intent === "fyi"
           ? "This is an FYI. If it changes the user's outcome, mention it; if there is genuinely nothing to do or report, staying silent is fine. Do not send an acknowledgement."
           : args.groupName !== undefined
-            ? `This is a request, posted in the group chat "${escapeDirectoryField(args.groupName.trim())}" where the user can see it. Complete it and answer here. Your final written response is automatically returned to ${safeName}.`
+            ? `This is a request, posted in the group chat "${escapeDirectoryField(args.groupName.trim())}" where the user can see it. Complete it and answer here. Do the work yourself rather than handing it to another member. Your final written response is automatically returned to ${safeName}.`
             : `This is a request. Complete it. Your final written response is automatically returned to ${safeName}; use message_bot with bot_id ${safeId} only for a useful interim question, status, or FYI. Sending does not end your turn: continue independent work after a useful update.`;
   return [
     `${BOT_MESSAGE_WAKE_CUE} A message just arrived from another of your user's bots: ${safeName} (id: ${safeId}).`,

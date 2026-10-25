@@ -7630,6 +7630,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return finish({
                 error: "handoff_to_bot is only for group chats",
               });
+            if (run.trigger === "bot_message")
+              return finish({
+                error: `finish this delegated request yourself; your reply is returned to ${peerMessage?.fromBotName || "the sender"} automatically`,
+              });
             const result = await handoffToGroupBot(deps, run, thread.groupId, {
               bot_id: args.bot_id ? String(args.bot_id) : undefined,
               confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
@@ -9391,6 +9395,8 @@ export function selectBuiltinToolsForRun(options: {
           "generate_image",
           "generate_video",
         ].includes(tool.name)) &&
+      // A teammate's request posted in a group returns to its sender only from this run.
+      (!options.groupId || options.trigger !== "bot_message" || tool.name !== "handoff_to_bot") &&
       (options.voiceCall || tool.name !== "end_call") &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&

@@ -2780,6 +2780,86 @@ describeJourneys("required product journeys", () => {
     await waitForDatabase(settled);
   });
 
+  it("54c: a retried bot message is not posted again after its group is archived", async () => {
+    const cookie = await signup(app, `group-replay-${stamp}@rakazo.test`, "Group Replay");
+    const me = await rpc<Me>(app, cookie, "me");
+    const chief = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch desk",
+      botIds: [chief.id, researcher.id],
+    });
+    const chiefThreadId = (
+      await prisma.thread.findUniqueOrThrow({ where: { botId: chief.id }, select: { id: true } })
+    ).id;
+    const task = await prisma.task.create({
+      data: {
+        spaceId: chief.spaceId,
+        botId: chief.id,
+        threadId: chiefThreadId,
+        userId: me.userId,
+        prompt: "ask Researcher for venues",
+        status: "running",
+      },
+    });
+    const working = await prisma.run.create({
+      data: {
+        spaceId: chief.spaceId,
+        botId: chief.id,
+        threadId: chiefThreadId,
+        taskId: task.id,
+        userId: me.userId,
+        status: "running",
+        trigger: "user",
+      },
+    });
+    const send = () =>
+      runAsSystem("background job run.continue", () =>
+        messageBot(
+          { prisma: appPrisma, events: createThreadEvents(appPrisma), jobs },
+          working,
+          { id: chief.id, name: "Chief" },
+          { bot_id: researcher.id, message: "find venues", deliveryKey: "tool-call-1" },
+        ),
+      );
+
+    const first = await send();
+    expect(first).toMatchObject({ ok: true, botId: researcher.id });
+    expect(first).not.toHaveProperty("replayed");
+    expect(
+      await prisma.message.count({ where: { threadId: group.threadId, botId: chief.id } }),
+    ).toBe(1);
+    // The tool call is re-executed after the group stopped being a shared one.
+    await prisma.chatGroup.update({ where: { id: group.id }, data: { archivedAt: new Date() } });
+    await expect(send()).resolves.toMatchObject({ ok: true, replayed: true });
+    expect(
+      await prisma.run.count({ where: { botId: researcher.id, trigger: "bot_message" } }),
+    ).toBe(1);
+
+    await prisma.run.update({ where: { id: working.id }, data: { status: "cancelled" } });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: {
+            botId: { in: [chief.id, researcher.id] },
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+          },
+        })) === 0,
+    );
+  });
+
   it("17: teach a task end to end", async () => {
     const cookie = await signup(app, `teach-j-${stamp}@rakazo.test`, "Teach Ada");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

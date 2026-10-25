@@ -137,8 +137,17 @@ export async function messageBot(
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
   // replayable: without this the recipient is messaged twice and woken twice.
   const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
-  // The group can change between attempts, so a replay looks in both chats.
+  // The destination can change between attempts (a group archived or joined), so a
+  // replay is recognised by the sender's echo, which always lands in the sender's chat.
+  // Deliveries recorded before the echo carried the key are found in the target's chats.
+  const sentNonce = deliveryKey ? `${deliveryKey}:sent` : undefined;
   const replayThreadIds = [...new Set([targetThreadId, deliveryThreadId])];
+  const deliveryRecords = deliveryKey
+    ? [
+        { threadId: run.threadId, clientNonce: sentNonce! },
+        ...replayThreadIds.map((threadId) => ({ threadId, clientNonce: deliveryKey })),
+      ]
+    : [];
   const replayed = () =>
     ({
       ok: true as const,
@@ -196,7 +205,7 @@ export async function messageBot(
         // Claim the delivery key inside the transaction so a concurrent retry
         // either sees the winner or loses on the unique (threadId, clientNonce).
         if (deliveryKey) {
-          if (await findDelivery(tx, replayThreadIds, deliveryKey))
+          if (await findDelivery(tx, deliveryRecords))
             return { ok: true as const, replayed: true as const };
         }
 
@@ -240,6 +249,7 @@ export async function messageBot(
           blocks: [outboundBlock],
           botId: run.botId,
           runId: run.id,
+          clientNonce: sentNonce,
           markUnread: options?.forceUnread === true,
           allowCancelledRun: options?.allowTerminalSource === true,
         });
@@ -333,7 +343,7 @@ export async function messageBot(
     // Two concurrent retries can both miss the in-transaction lookup; the
     // loser hits the unique key. Treat that as a successful replay.
     if (deliveryKey && isUniqueConstraintError(error)) {
-      if (await findDelivery(deps.prisma, replayThreadIds, deliveryKey)) return replayed();
+      if (await findDelivery(deps.prisma, deliveryRecords)) return replayed();
     }
     throw error;
   }
@@ -363,10 +373,9 @@ export async function messageBot(
 
 async function findDelivery(
   prisma: Pick<PrismaClient, "message">,
-  threadIds: readonly string[],
-  clientNonce: string,
+  records: readonly { threadId: string; clientNonce: string }[],
 ) {
-  for (const threadId of threadIds) {
+  for (const { threadId, clientNonce } of records) {
     const found = await prisma.message.findUnique({
       where: { threadId_clientNonce: { threadId, clientNonce } },
       select: { id: true },

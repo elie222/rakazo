@@ -389,6 +389,14 @@ describe("run tool selection", () => {
       messagingChannelRun: false,
     }).map((tool) => tool.name);
 
+  it("keeps a teammate's group request with the bot it was posted to", () => {
+    expect(toolNames("user", "group-1")).toContain("handoff_to_bot");
+    expect(toolNames("follow_up", "group-1")).toContain("handoff_to_bot");
+    const delegated = toolNames("bot_message", "group-1");
+    expect(delegated).not.toContain("handoff_to_bot");
+    expect(delegated).not.toContain("message_bot");
+  });
+
   it("keeps page browser tools without vision, and hides them without a graphical computer", () => {
     const withPage = toolNames("message", null, {
       graphicalToolsAllowed: false,
