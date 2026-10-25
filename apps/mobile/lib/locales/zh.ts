@@ -223,6 +223,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Allow once": "允许一次",
   "Already have an account?": "已有账户？",
   "Always allow": "始终允许",
+  "Always allow this tool": "始终允许此工具",
+  "Always allow {site}": "始终允许 {site}",
   "Always allowed": "已始终允许",
   "Android blocked notifications.": "Android 已阻止通知。",
   Answer: "回答",

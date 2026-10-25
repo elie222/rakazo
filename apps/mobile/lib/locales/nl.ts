@@ -653,6 +653,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Passwords do not match": "Wachtwoorden komen niet overeen",
   "Allow once": "Een keer toestaan",
   "Always allow": "Altijd toestaan",
+  "Always allow this tool": "Deze tool altijd toestaan",
+  "Always allow {site}": "{site} altijd toestaan",
   "Could not submit answer": "Antwoord insturen mislukt",
   Deny: "Weigeren",
   "Please try again.": "Probeer het opnieuw.",

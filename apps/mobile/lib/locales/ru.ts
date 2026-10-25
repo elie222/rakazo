@@ -246,6 +246,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Allow once": "Разрешить один раз",
   "Already have an account?": "У вас уже есть аккаунт?",
   "Always allow": "Всегда разрешать",
+  "Always allow this tool": "Всегда разрешать этот инструмент",
+  "Always allow {site}": "Всегда разрешать {site}",
   "Always allowed": "Всегда разрешено",
   "Android blocked notifications.": "Android заблокировал уведомления.",
   Answer: "Ответ",

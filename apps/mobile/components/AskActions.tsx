@@ -8,16 +8,26 @@ import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
-type AskAction = { id: string; label: string };
+type AskAction = { id: string; label: string; outcome?: "created" | "cancelled" };
 
-const KNOWN_ASK_ACTION_LABELS: Record<string, string> = {
-  allow: "Allow once",
-  always: "Always allow",
-  deny: "Deny",
-};
+function askActionLabel(
+  action: AskAction,
+  site: string | undefined,
+  t: (message: string, values?: Record<string, string | number>) => string,
+): string {
+  if (action.outcome === "created") return t("Create space");
+  if (action.outcome === "cancelled") return t("Cancel");
+  if (action.id === "allow") return t("Allow once");
+  if (action.id === "always")
+    return site ? t("Always allow {site}", { site }) : t("Always allow this tool");
+  if (action.id === "deny") return t("Deny");
+  return action.label;
+}
 
 export function AskActions({
   actions,
+  site,
+  approval,
   instructions,
   disabled,
   onAnswer,
@@ -25,6 +35,8 @@ export function AskActions({
   onAccessibilityAction,
 }: {
   actions: AskAction[];
+  site?: string;
+  approval: boolean;
   instructions?: string;
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
@@ -37,7 +49,6 @@ export function AskActions({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
   const submitting = pendingAction !== null;
-  const approval = actions.some((action) => action.id === "allow");
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -126,8 +137,8 @@ export function AskActions({
               >
                 {pendingAction === action.id
                   ? t("Sending…")
-                  : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
-                    ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
+                  : approval
+                    ? askActionLabel(action, site, t)
                     : action.label}
               </Text>
             </Pressable>
