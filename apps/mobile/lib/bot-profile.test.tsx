@@ -83,7 +83,7 @@ vi.mock("./native", () => ({
 vi.mock("./appearance", () => ({ mobileTokens: () => color }));
 vi.mock("./i18n", () => {
   const t = (text: string) => text;
-  return { t, useI18n: () => ({ t }) };
+  return { t, useI18n: () => ({ t }), getActiveUiLocale: () => "en" };
 });
 vi.mock("./routine", async (importOriginal) => ({
   ...(await importOriginal<typeof RoutineHelpers>()),
