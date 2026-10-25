@@ -7,6 +7,7 @@ import type {
   IntegrationCatalogSurface,
   McpServer,
 } from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import {
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -586,6 +587,7 @@ export function PluginsOverlay({
               <Input
                 value={labelDrafts[row.id] ?? row.displayName}
                 aria-label={t`Account label`}
+                maxLength={CONNECTION_LABEL_MAX_LENGTH}
                 className="h-9 rounded-lg border-transparent bg-transparent px-2 text-[14px] shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
                 onChange={(event) =>
                   setLabelDrafts((current) => ({ ...current, [row.id]: event.target.value }))

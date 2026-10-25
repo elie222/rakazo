@@ -40,6 +40,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
+  CONNECTION_LABEL_MAX_LENGTH,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -906,7 +907,12 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     rename: oc
-      .input(z.object({ connectionId: Id, displayName: z.string().trim().min(1).max(80) }))
+      .input(
+        z.object({
+          connectionId: Id,
+          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+        }),
+      )
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Tools the connected provider exposes. Read-only; no per-tool allowlist yet. */
