@@ -532,7 +532,8 @@ export async function createImportedBot<PreparedKey>(
       if (credential) record.credentials.push(credential);
     }
     // The preview may be stale: names are resolved again under the creation lock.
-    const resolved = resolveAgentImportNames(plan, await takenNames(tx, actor));
+    const taken = await takenNames(tx, actor);
+    const resolved = resolveAgentImportNames(plan, taken);
     const botPaths = new Set(
       target
         ? (
@@ -658,13 +659,15 @@ export async function createImportedBot<PreparedKey>(
       }
     }
     // A skill renamed on a clash keeps its routines: `@garden` follows it to `garden-2`.
+    // Every known name is matched, so `@garden tools` is never read as `@garden`.
     const originalNames = new Map(plan.skills.map((item) => [item.id, item.title]));
-    const renamed = new Map(
-      resolved.skills.flatMap((item) => {
+    const renamed = new Map<string, string>([
+      ...taken.skillNames.map((name): [string, string] => [name, name]),
+      ...resolved.skills.flatMap((item): [string, string][] => {
         const from = originalNames.get(item.id);
-        return skillIds.includes(item.id) && from && from !== item.name ? [[from, item.name]] : [];
+        return from ? [[from, skillIds.includes(item.id) ? item.name : from]] : [];
       }),
-    );
+    ]);
     for (const routine of routines) {
       const routineInput = {
         ...routine,

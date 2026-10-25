@@ -800,6 +800,7 @@ describeIntegration("agent import", () => {
     const files = [
       { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
       { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+      { path: ".openclaw/skills/tools/SKILL.md", content: skill("garden tools", "Sharpen") },
       {
         path: ".openclaw/cron/jobs.json",
         content: JSON.stringify({
@@ -807,7 +808,10 @@ describeIntegration("agent import", () => {
             {
               name: "morning",
               schedule: { kind: "cron", expr: "0 9 * * *" },
-              payload: { kind: "agentTurn", message: "Run @garden, then report." },
+              payload: {
+                kind: "agentTurn",
+                message: "Run @garden tools and @garden, then report.",
+              },
             },
           ],
         }),
@@ -827,7 +831,7 @@ describeIntegration("agent import", () => {
       },
     });
     const routine = await db.routine.findFirstOrThrow({ where: { botId: bot.id } });
-    expect(routine.prompt).toBe("Run @garden-2, then report.");
+    expect(routine.prompt).toBe("Run @garden tools and @garden-2, then report.");
   });
 
   it("keeps an imported skill that another bot's routine mentions", async () => {

@@ -276,7 +276,10 @@ export function expandSkillReferencesInPrompt(
   return [...blocks, rest].filter(Boolean).join("\n\n");
 }
 
-/** Points `@old` skill mentions in a routine prompt at their new names, in one pass. */
+/**
+ * Points `@old` skill mentions in a routine prompt at their new names, in one pass. Names
+ * mapped to themselves are still matched, so a longer name wins over a renamed prefix.
+ */
 export function renameRoutineSkillMentions(
   prompt: string,
   renames: ReadonlyMap<string, string>,
