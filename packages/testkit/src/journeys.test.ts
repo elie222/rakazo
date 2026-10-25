@@ -2898,6 +2898,29 @@ describeJourneys("required product journeys", () => {
     expect(rows.map((row) => row.matchValue).sort()).toEqual(values);
   });
 
+  it("20d: replacing a rule leaves tools with similar names alone", async () => {
+    const cookie = await signup(app, `rule-literal-j-${stamp}@rakazo.test`, "Rule Literal");
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "always_allow",
+      matchKind: "tool",
+      matchValue: "toolXa",
+    });
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "tool_a",
+    });
+    const rows = await rpc<Array<{ effect: string; matchValue: string }>>(
+      app,
+      cookie,
+      "approvalRules/list",
+    );
+    expect(rows.map((row) => `${row.effect}:${row.matchValue}`).sort()).toEqual([
+      "always_allow:toolXa",
+      "require_approval:tool_a",
+    ]);
+  });
+
   it("21: routine destination writes pause on the same approval card", async () => {
     const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

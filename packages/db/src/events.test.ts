@@ -2239,6 +2239,10 @@ describe("answerRunInput", () => {
           update: vi.fn().mockResolvedValue({ id: "effect-1" }),
         },
         actionApprovalRule: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: "rule-0", matchValue: matchValue.toUpperCase() },
+            { id: "rule-other", matchValue: `${matchValue}.other` },
+          ]),
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
         },
@@ -2275,13 +2279,7 @@ describe("answerRunInput", () => {
         data: { status: "approved" },
       });
       expect(tx.actionApprovalRule.deleteMany).toHaveBeenCalledWith({
-        where: {
-          spaceId: "workspace-1",
-          createdByUserId: "user-1",
-          effect: "require_approval",
-          matchKind,
-          matchValue: { equals: matchValue, mode: "insensitive" },
-        },
+        where: { id: { in: ["rule-0"] } },
       });
       expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
         where: {

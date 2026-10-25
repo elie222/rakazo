@@ -18,11 +18,22 @@ export async function saveApprovalRule(tx: Prisma.TransactionClient, rule: Appro
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${match.spaceId}:${match.createdByUserId}:${match.matchKind}:${match.matchValue.toLowerCase()}`}, 0))::text AS "lock"
   `);
+  // Compared here, not with Prisma's insensitive mode: that is ILIKE, where "_" is a wildcard.
+  const opposite = await tx.actionApprovalRule.findMany({
+    where: {
+      spaceId: match.spaceId,
+      createdByUserId: match.createdByUserId,
+      matchKind: match.matchKind,
+      effect: effect === "always_allow" ? "require_approval" : "always_allow",
+    },
+    select: { id: true, matchValue: true },
+  });
+  const value = match.matchValue.toLowerCase();
   await tx.actionApprovalRule.deleteMany({
     where: {
-      ...match,
-      effect: effect === "always_allow" ? "require_approval" : "always_allow",
-      matchValue: { equals: match.matchValue, mode: "insensitive" },
+      id: {
+        in: opposite.filter((row) => row.matchValue.toLowerCase() === value).map((row) => row.id),
+      },
     },
   });
   return tx.actionApprovalRule.upsert({
