@@ -31,7 +31,12 @@ import type {
 import { abortableDelay, boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { screenSessionKey } from "./computer-screens.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeSandboxFilePath,
+  normalizeWorkspacePath,
+  shellQuote,
+  workspacePath,
+} from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
@@ -306,10 +311,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.box(computer);
-    const relative = normalizeWorkspacePath(directory);
-    const entries = await sandbox.fs.listFiles(
-      workspacePath(await this.workspaceRoot(sandbox), relative),
-    );
+    const root = await this.workspaceRoot(sandbox);
+    const relative = normalizeSandboxFilePath(directory, [root, "/home/rakazo"]);
+    const entries = await sandbox.fs.listFiles(workspacePath(root, relative));
     return entries
       .map((entry) => ({
         path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
@@ -329,7 +333,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     options?: { maxBytes?: number },
   ): Promise<Uint8Array> {
     const sandbox = await this.box(computer);
-    const target = workspacePath(await this.workspaceRoot(sandbox), filePath);
+    const root = await this.workspaceRoot(sandbox);
+    const target = workspacePath(root, normalizeSandboxFilePath(filePath, [root, "/home/rakazo"]));
     if (options?.maxBytes !== undefined) {
       const info = await sandbox.fs.getFileDetails(target);
       if (info.size > options.maxBytes) {
@@ -566,7 +571,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (!files.length) return;
     const root = await this.workspaceRoot(sandbox);
     const directories = new Set(
-      files.map((file) => path.posix.dirname(workspacePath(root, file.path))),
+      files.map((file) =>
+        path.posix.dirname(
+          workspacePath(root, normalizeSandboxFilePath(file.path, [root, "/home/rakazo"])),
+        ),
+      ),
     );
     const mkdir = await sandbox.process.executeCommand(
       `mkdir -p -- ${[...directories].map(shellQuote).join(" ")}`,
@@ -576,13 +585,17 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       files.map((file) =>
         sandbox.fs.uploadFile(
           Buffer.from(file.content.buffer, file.content.byteOffset, file.content.byteLength),
-          workspacePath(root, file.path),
+          workspacePath(root, normalizeSandboxFilePath(file.path, [root, "/home/rakazo"])),
         ),
       ),
     );
     const executable = files
       .filter((file) => file.executable)
-      .map((file) => shellQuote(workspacePath(root, file.path)));
+      .map((file) =>
+        shellQuote(
+          workspacePath(root, normalizeSandboxFilePath(file.path, [root, "/home/rakazo"])),
+        ),
+      );
     if (executable.length) {
       const chmod = await sandbox.process.executeCommand(`chmod 700 -- ${executable.join(" ")}`);
       if (chmod.exitCode !== 0) throw new Error(chmod.result || "could not mark files executable");
@@ -846,7 +859,12 @@ function daytonaCwd(root: string, cwd: string | undefined): string {
   ) {
     return root;
   }
-  return workspacePath(root, cwd);
+  const relative = cwd.startsWith(`${root}/`)
+    ? cwd.slice(root.length + 1)
+    : cwd.startsWith("/home/rakazo/")
+      ? cwd.slice("/home/rakazo/".length)
+      : cwd;
+  return workspacePath(root, relative);
 }
 
 function isDaytonaExecutable(mode: string, permissions: string): boolean {

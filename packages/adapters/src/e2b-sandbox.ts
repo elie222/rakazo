@@ -19,7 +19,12 @@ import type {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeSandboxFilePath,
+  normalizeWorkspacePath,
+  shellQuote,
+  workspacePath,
+} from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
@@ -30,6 +35,8 @@ import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { isSandboxGoneError } from "./sandbox-errors.js";
 
 const E2B_WORKSPACE = "/home/user/rakazo-home";
+/** File paths mirror the cwd strip: the workspace root and the Docker-style home alias. */
+const E2B_FILE_ROOTS = [E2B_WORKSPACE, "/home/rakazo"] as const;
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
 
 /** The part of an E2B desktop sandbox handle this adapter uses. */
@@ -330,7 +337,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = normalizeSandboxFilePath(directory, E2B_FILE_ROOTS);
     const entries = await this.use(computer, (desktop) =>
       desktop.files.list(workspacePath(E2B_WORKSPACE, relative), { signal: context.signal }),
     );
@@ -353,7 +360,7 @@ export class E2BSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ) {
-    const target = workspacePath(E2B_WORKSPACE, filePath);
+    const target = workspacePath(E2B_WORKSPACE, normalizeSandboxFilePath(filePath, E2B_FILE_ROOTS));
     return this.use(computer, async (desktop) => {
       if (options?.maxBytes !== undefined) {
         const info = await desktop.files.getInfo(target, { signal: context.signal });
@@ -512,14 +519,16 @@ async function writeE2BFiles(
   if (!files.length) return;
   await desktop.files.write(
     files.map((file) => ({
-      path: workspacePath(E2B_WORKSPACE, file.path),
+      path: workspacePath(E2B_WORKSPACE, normalizeSandboxFilePath(file.path, E2B_FILE_ROOTS)),
       data: toArrayBuffer(file.content),
     })),
     { signal: context.signal },
   );
   const executable = files
     .filter((file) => file.executable)
-    .map((file) => shellQuote(workspacePath(E2B_WORKSPACE, file.path)));
+    .map((file) =>
+      shellQuote(workspacePath(E2B_WORKSPACE, normalizeSandboxFilePath(file.path, E2B_FILE_ROOTS))),
+    );
   if (executable.length) {
     await desktop.commands.run(`chmod 700 -- ${executable.join(" ")}`, {
       signal: context.signal,

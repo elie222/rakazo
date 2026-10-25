@@ -18,12 +18,15 @@ import { ComputerScreenUnavailableError, screenSessionKey } from "./computer-scr
 import {
   applyPlaceholderAction,
   boundedComputerActions,
-  normalizeWorkspacePath,
+  normalizeSandboxFilePath,
   placeholderObservation,
   workspacePath,
 } from "./computer-support.js";
 import { FakeTerminalGateway } from "./fake-terminal.js";
 import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
+
+/** The fake's workspace is its `/home/rakazo`; file paths mirror the cwd strip. */
+const FAKE_FILE_ROOTS = ["/home/rakazo"] as const;
 
 export interface FakeBox {
   ref: ComputerRef;
@@ -108,7 +111,7 @@ export class FakeSandboxProvider implements SandboxProvider {
     } else if (request.argv[0] === "echo") {
       yield { type: "stdout", data: `${request.argv.slice(1).join(" ")}\n` };
     } else if (cmd.startsWith("cat ")) {
-      const file = normalizeWorkspacePath(request.argv[1] ?? "");
+      const file = normalizeSandboxFilePath(request.argv[1] ?? "", FAKE_FILE_ROOTS);
       const stored = box.files.get(file);
       yield { type: "stdout", data: stored ? new TextDecoder().decode(stored.content) : "" };
     } else {
@@ -146,7 +149,7 @@ export class FakeSandboxProvider implements SandboxProvider {
       url: await this.terminals.open(
         computer.id,
         request.controlToken,
-        workspacePath("/home/rakazo", request.cwd ?? ""),
+        workspacePath("/home/rakazo", normalizeSandboxFilePath(request.cwd ?? "", FAKE_FILE_ROOTS)),
       ),
     };
   }
@@ -200,7 +203,7 @@ export class FakeSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const box = this.requiredBox(computer);
-    const normalized = normalizeWorkspacePath(directory);
+    const normalized = normalizeSandboxFilePath(directory, FAKE_FILE_ROOTS);
     const prefix = normalized ? `${normalized}/` : "";
     const entries = new Map<string, ComputerFileEntry>();
     for (const [filePath, file] of box.files) {
@@ -225,7 +228,9 @@ export class FakeSandboxProvider implements SandboxProvider {
     _context: AdapterContext,
     options?: { maxBytes?: number },
   ) {
-    const file = this.requiredBox(computer).files.get(normalizeWorkspacePath(filePath));
+    const file = this.requiredBox(computer).files.get(
+      normalizeSandboxFilePath(filePath, FAKE_FILE_ROOTS),
+    );
     if (!file) throw new Error("computer file not found");
     if (options?.maxBytes !== undefined && file.content.byteLength > options.maxBytes) {
       throw new Error(`computer file exceeds ${options.maxBytes} bytes`);
@@ -234,7 +239,7 @@ export class FakeSandboxProvider implements SandboxProvider {
   }
 
   async writeFile(computer: ComputerRef, file: PortableFile, _context: AdapterContext) {
-    this.requiredBox(computer).files.set(normalizeWorkspacePath(file.path), {
+    this.requiredBox(computer).files.set(normalizeSandboxFilePath(file.path, FAKE_FILE_ROOTS), {
       content: new Uint8Array(file.content),
       executable: file.executable === true,
     });
@@ -262,7 +267,7 @@ export class FakeSandboxProvider implements SandboxProvider {
   ) {
     const box = this.requiredBox(computer);
     for await (const file of files) {
-      box.files.set(normalizeWorkspacePath(file.path), {
+      box.files.set(normalizeSandboxFilePath(file.path, FAKE_FILE_ROOTS), {
         content: new Uint8Array(file.content),
         executable: file.executable === true,
       });

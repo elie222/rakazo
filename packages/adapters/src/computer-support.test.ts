@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   displayBotWorkspacePath,
+  normalizeSandboxFilePath,
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
@@ -35,6 +36,21 @@ describe("Team Computer bot folders", () => {
     );
     expect(resolveBotWorkspacePath("team", "bot-1", "/root-note.md")).toBe("root-note.md");
     expect(resolveBotWorkspacePath("team", "bot-1", "/shared/brief.md")).toBe("shared/brief.md");
+  });
+
+  it("treats the sandbox home prefix as the workspace root on Team Computers", () => {
+    expect(resolveBotWorkspacePath("team", "bot-1", "/home/rakazo")).toBe("");
+    expect(resolveBotWorkspacePath("team", "bot-1", "/home/rakazo/notes/x.md")).toBe("notes/x.md");
+    expect(resolveBotWorkspacePath("team", "bot-1", "/home/rakazo/shared/brief.md")).toBe(
+      "shared/brief.md",
+    );
+    expect(() => resolveBotWorkspacePath("team", "bot-1", "/home/rakazo/../x")).toThrow(
+      "escapes the computer workspace",
+    );
+    // Dedicated computers keep the absolute path; the provider applies its own home mapping.
+    expect(resolveBotWorkspacePath("dedicated", "bot-1", "/home/rakazo/notes/x.md")).toBe(
+      "/home/rakazo/notes/x.md",
+    );
   });
 
   it("treats a leading ~ as the workspace root", () => {
@@ -74,6 +90,25 @@ describe("Team Computer bot folders", () => {
     expect(resolveBotWorkspaceCwd("dedicated", "bot-1", undefined)).toBeUndefined();
     expect(displayBotWorkspacePath("dedicated", "bot-1", "notes", "notes/result.txt")).toBe(
       "notes/result.txt",
+    );
+  });
+});
+
+describe("normalizeSandboxFilePath", () => {
+  it("strips a matching home prefix the way the command cwd mapping does", () => {
+    const roots = ["/home/user/rakazo-home", "/home/rakazo"] as const;
+    expect(normalizeSandboxFilePath("/home/rakazo/notes/x.md", roots)).toBe("notes/x.md");
+    expect(normalizeSandboxFilePath("/home/user/rakazo-home/notes/x.md", roots)).toBe("notes/x.md");
+    expect(normalizeSandboxFilePath("/home/rakazo", roots)).toBe("");
+    expect(normalizeSandboxFilePath("notes/x.md", roots)).toBe("notes/x.md");
+    expect(normalizeSandboxFilePath("/notes/x.md", roots)).toBe("notes/x.md");
+    // A home-looking path the roots do not cover keeps its old literal meaning.
+    expect(normalizeSandboxFilePath("/home/other/notes/x.md", roots)).toBe("home/other/notes/x.md");
+  });
+
+  it("still rejects traversal under a stripped home prefix", () => {
+    expect(() => normalizeSandboxFilePath("/home/rakazo/../x", ["/home/rakazo"])).toThrow(
+      "escapes the computer workspace",
     );
   });
 });

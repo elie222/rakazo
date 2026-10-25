@@ -26,7 +26,12 @@ import {
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "./computer-idle.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeSandboxFilePath,
+  normalizeWorkspacePath,
+  shellQuote,
+  workspacePath,
+} from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
@@ -36,6 +41,8 @@ import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const WORKSPACE = "/home/rakazo";
+/** The Railway workspace is the sandbox home; file paths mirror the cwd strip. */
+const RAILWAY_FILE_ROOTS = [WORKSPACE] as const;
 const SCREEN_PORT = 6080;
 const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -288,7 +295,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.connect(computer, context);
-    const relative = normalizeWorkspacePath(directory);
+    const relative = normalizeSandboxFilePath(directory, RAILWAY_FILE_ROOTS);
     const entries = await sandbox.files.list(workspacePath(WORKSPACE, relative));
     return entries.map((entry) => ({
       path: normalizeWorkspacePath(path.posix.join(relative, entry.name)),
@@ -305,10 +312,13 @@ export class RailwaySandboxProvider implements SandboxProvider {
     options?: { maxBytes?: number },
   ): Promise<Uint8Array> {
     const sandbox = await this.connect(computer, context);
-    const content = await sandbox.files.read(workspacePath(WORKSPACE, filePath), {
-      format: "bytes",
-      length: (options?.maxBytes ?? this.maxWorkspaceFileBytes) + 1,
-    });
+    const content = await sandbox.files.read(
+      workspacePath(WORKSPACE, normalizeSandboxFilePath(filePath, RAILWAY_FILE_ROOTS)),
+      {
+        format: "bytes",
+        length: (options?.maxBytes ?? this.maxWorkspaceFileBytes) + 1,
+      },
+    );
     const maxBytes = options?.maxBytes ?? this.maxWorkspaceFileBytes;
     if (content.byteLength > maxBytes) {
       throw new Error(`computer file exceeds ${maxBytes} bytes`);
@@ -318,9 +328,13 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
     const sandbox = await this.connect(computer, context);
-    await sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content, {
-      mode: file.executable ? 0o700 : 0o600,
-    });
+    await sandbox.files.write(
+      workspacePath(WORKSPACE, normalizeSandboxFilePath(file.path, RAILWAY_FILE_ROOTS)),
+      file.content,
+      {
+        mode: file.executable ? 0o700 : 0o600,
+      },
+    );
   }
 
   async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
@@ -435,7 +449,12 @@ export class RailwaySandboxProvider implements SandboxProvider {
       context.signal.throwIfAborted();
       // Passing mode makes the SDK open an exec connection for every file.
       await Promise.all(
-        batch.map((file) => sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content)),
+        batch.map((file) =>
+          sandbox.files.write(
+            workspacePath(WORKSPACE, normalizeSandboxFilePath(file.path, RAILWAY_FILE_ROOTS)),
+            file.content,
+          ),
+        ),
       );
       batch = [];
       batchBytes = 0;
@@ -444,7 +463,10 @@ export class RailwaySandboxProvider implements SandboxProvider {
       context.signal.throwIfAborted();
       if (batch.length >= 4 || batchBytes + file.content.byteLength > PORTABLE_TRANSFER_BATCH_BYTES)
         await flush();
-      const target = workspacePath(WORKSPACE, file.path);
+      const target = workspacePath(
+        WORKSPACE,
+        normalizeSandboxFilePath(file.path, RAILWAY_FILE_ROOTS),
+      );
       permissions.get(file.executable ? 0o700 : 0o600)?.push(target);
       batch.push(file);
       batchBytes += file.content.byteLength;

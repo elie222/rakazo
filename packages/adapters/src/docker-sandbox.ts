@@ -23,6 +23,7 @@ import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
+  normalizeSandboxFilePath,
   normalizeWorkspacePath,
 } from "./computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
@@ -32,6 +33,8 @@ export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
 export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;
 export const SCREEN_RELEASE_TIMEOUT_MS = 8_000;
 const SANDBOX_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
+/** The Docker sandbox home is the workspace root; file paths mirror the cwd strip. */
+const DOCKER_FILE_ROOTS = ["/home/rakazo"] as const;
 const SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 
 async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
@@ -457,7 +460,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const path = normalizeWorkspacePath(directory);
+    const path = normalizeSandboxFilePath(directory, DOCKER_FILE_ROOTS);
     const res = await fetch(
       this.url(`/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=list`),
       { headers: this.headers(context, computer.botId), signal: context.signal },
@@ -472,7 +475,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ) {
-    const path = normalizeWorkspacePath(filePath);
+    const path = normalizeSandboxFilePath(filePath, DOCKER_FILE_ROOTS);
     const maxBytes = options?.maxBytes;
     const res = await fetch(
       this.url(
@@ -497,7 +500,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
       body: JSON.stringify({
-        path: normalizeWorkspacePath(file.path),
+        path: normalizeSandboxFilePath(file.path, DOCKER_FILE_ROOTS),
         content: Buffer.from(file.content).toString("base64"),
         executable: file.executable === true,
       }),

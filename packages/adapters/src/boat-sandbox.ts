@@ -34,7 +34,12 @@ import {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { BoatApiError, boatResponseError, callerSignal, wrapBoatCall } from "./boat-errors.js";
-import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
+import {
+  normalizeSandboxFilePath,
+  normalizeWorkspacePath,
+  shellQuote,
+  workspacePath,
+} from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
@@ -47,6 +52,8 @@ import { withAbort } from "./web-ssrf.js";
 
 const BOAT_API_BASE = "https://boat.dev/api/v1";
 const BOAT_WORKSPACE = "/home/user/rakazo-home";
+/** File paths mirror the cwd strip: the workspace root and the Docker-style home alias. */
+const BOAT_FILE_ROOTS = [BOAT_WORKSPACE, "/home/rakazo"] as const;
 const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
 /** Outside the workspace so checkpoints never carry it. Boat runs every command as `user`. */
 const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
@@ -557,7 +564,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = normalizeSandboxFilePath(directory, BOAT_FILE_ROOTS);
     const result = await this.runCommand(
       this.id(computer),
       listBoatFilesCommand(workspacePath(BOAT_WORKSPACE, relative)),
@@ -579,7 +586,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): Promise<Uint8Array> {
     return this.readRemoteFile(
       this.id(computer),
-      workspacePath(BOAT_WORKSPACE, filePath),
+      workspacePath(BOAT_WORKSPACE, normalizeSandboxFilePath(filePath, BOAT_FILE_ROOTS)),
       context.signal,
       options?.maxBytes,
     );
@@ -879,7 +886,10 @@ export class BoatSandboxProvider implements SandboxProvider {
                 {
                   sandboxId: id,
                   fileWriteRequest: {
-                    path: workspacePath(BOAT_WORKSPACE, file.path),
+                    path: workspacePath(
+                      BOAT_WORKSPACE,
+                      normalizeSandboxFilePath(file.path, BOAT_FILE_ROOTS),
+                    ),
                     content: Buffer.from(file.content).toString("base64"),
                     encoding: "base64",
                   },
@@ -891,7 +901,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     );
     const executable = files.map(
       (file) =>
-        `${file.executable ? "700" : "600"} ${shellQuote(workspacePath(BOAT_WORKSPACE, file.path))}`,
+        `${file.executable ? "700" : "600"} ${shellQuote(workspacePath(BOAT_WORKSPACE, normalizeSandboxFilePath(file.path, BOAT_FILE_ROOTS)))}`,
     );
     const result = await this.runCommand(
       id,
@@ -907,7 +917,10 @@ export class BoatSandboxProvider implements SandboxProvider {
 
   private async uploadFile(id: string, file: PortableFile, context: AdapterContext): Promise<void> {
     context.signal.throwIfAborted();
-    const filePath = workspacePath(BOAT_WORKSPACE, file.path);
+    const filePath = workspacePath(
+      BOAT_WORKSPACE,
+      normalizeSandboxFilePath(file.path, BOAT_FILE_ROOTS),
+    );
     const signed = await this.whenRunnable(id, context.signal, () =>
       this.client.createUploadUrl(
         { sandboxId: id, fileUrlRequest: { path: filePath } },

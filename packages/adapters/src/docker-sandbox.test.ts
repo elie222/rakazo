@@ -269,6 +269,41 @@ describe("Docker sandbox", () => {
     ).resolves.toEqual(new Uint8Array());
   });
 
+  it("maps a file path under the sandbox home onto the workspace root", async () => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+      String(url).includes("mode=list")
+        ? Response.json([])
+        : String(url).includes("mode=read")
+          ? Response.json({ content: "" })
+          : new Response(null, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker" as const,
+      providerRef: "computer",
+    };
+
+    await provider.writeFile(
+      computer,
+      { path: "/home/rakazo/notes/x.md", content: new Uint8Array([1]) },
+      context,
+    );
+    await provider.readFile(computer, "/home/rakazo/notes/x.md", context);
+    await provider.listFiles(computer, "/home/rakazo/notes", context);
+
+    const written = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      path: string;
+    };
+    expect(written.path).toBe("notes/x.md");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "path=" + encodeURIComponent("notes/x.md"),
+    );
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain("path=" + encodeURIComponent("notes"));
+  });
+
   it("releases this bot's screen assignment through the supervisor", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

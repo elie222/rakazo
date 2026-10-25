@@ -27,6 +27,7 @@ import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
+  normalizeSandboxFilePath,
   normalizeWorkspacePath,
   shellQuote,
   workspacePath,
@@ -40,6 +41,8 @@ import { shellExportScript } from "./sandbox-shell-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
+/** File paths mirror the cwd strip: the workspace root and the Docker-style home alias. */
+const CREATEOS_FILE_ROOTS = [CREATEOS_WORKSPACE, "/home/rakazo"] as const;
 const CREATEOS_BROWSER_PROFILES = `${CREATEOS_WORKSPACE}/.browser-profiles`;
 const CREATEOS_FIREFOX_PROFILE = `${CREATEOS_BROWSER_PROFILES}/firefox`;
 
@@ -585,7 +588,7 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = normalizeSandboxFilePath(directory, CREATEOS_FILE_ROOTS);
     const target = workspacePath(CREATEOS_WORKSPACE, relative);
     const script = `
 import json, os, stat, sys
@@ -638,7 +641,10 @@ print(json.dumps(out))
     context: AdapterContext,
     options?: { maxBytes?: number },
   ) {
-    const target = workspacePath(CREATEOS_WORKSPACE, filePath);
+    const target = workspacePath(
+      CREATEOS_WORKSPACE,
+      normalizeSandboxFilePath(filePath, CREATEOS_FILE_ROOTS),
+    );
     if (options?.maxBytes !== undefined) {
       const stat = await this.runCommand(
         computer,
@@ -1111,7 +1117,10 @@ print(json.dumps(out))
     if (action.kind === "open") {
       const target = /^https?:\/\//i.test(action.path)
         ? action.path
-        : workspacePath(CREATEOS_WORKSPACE, action.path);
+        : workspacePath(
+            CREATEOS_WORKSPACE,
+            normalizeSandboxFilePath(action.path, CREATEOS_FILE_ROOTS),
+          );
       if (/^https?:\/\//i.test(target)) {
         await this.launchBrowser(computer, target, context);
         return;
@@ -1338,7 +1347,10 @@ raise SystemExit(1)
   }
 
   private async putFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
-    const target = workspacePath(CREATEOS_WORKSPACE, file.path);
+    const target = workspacePath(
+      CREATEOS_WORKSPACE,
+      normalizeSandboxFilePath(file.path, CREATEOS_FILE_ROOTS),
+    );
     await this.request(
       "PUT",
       `/v1/sandboxes/${encodeURIComponent(computer.providerRef)}/files?path=${encodeURIComponent(target)}`,
@@ -1816,6 +1828,9 @@ function createosCwd(cwd: string | undefined): string {
     return CREATEOS_WORKSPACE;
   }
   if (cwd === CREATEOS_WORKSPACE || cwd.startsWith(`${CREATEOS_WORKSPACE}/`)) return cwd;
+  if (cwd.startsWith("/home/rakazo/")) {
+    return workspacePath(CREATEOS_WORKSPACE, cwd.slice("/home/rakazo/".length));
+  }
   return workspacePath(CREATEOS_WORKSPACE, cwd);
 }
 
