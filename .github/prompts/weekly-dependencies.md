@@ -10,13 +10,16 @@ pi model-catalog packages to the existing model-catalog-bump workflow. Defer
 major/minor migrations and anything that needs a newer supported Node baseline.
 If an update breaks compatibility, omit it rather than weakening checks.
 
-The action uses Node 24 internally. Prepend the directory containing
-`$VALIDATION_NODE` to PATH for package commands so validation also covers Node 22.
+Prepend the directory containing `$VALIDATION_NODE` to PATH for package commands
+so validation covers CI's Node baseline. Keep package caches inside the ignored
+`.context/` directory if the sandbox needs a writable cache.
 Install dependencies, generate the database client, and run workspace typechecks,
-offline unit tests, and production builds. Use fake build credentials as in CI.
-Check the supported Node versions and run focused tests for any fixes. Keep fixes
-strictly related to the updates. Do not change workflows, agent instructions,
-secrets, or unrelated code. Do not run live-provider tests or desktop Electron E2E.
+affected offline unit tests, and production builds. Use fake build credentials as
+in CI. This task may run on macOS; leave Linux-only host-script checks and desktop
+Electron E2E to CI, and report those limits. Check supported Node versions and run
+focused tests for any fixes. Keep fixes strictly related to the updates. Do not
+change workflows, agent instructions, secrets, or unrelated code. Do not run
+live-provider tests.
 
 If no worthwhile updates remain, leave the checkout unchanged. Otherwise leave
 the complete changes uncommitted. Do not push, open a PR, or merge; the workflow
