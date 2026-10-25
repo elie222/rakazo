@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import type { V1Pod, V1Status } from "@kubernetes/client-node";
-import { ApiException, CoreV1Api, Exec, KubeConfig } from "@kubernetes/client-node";
+import { ApiException, CoreV1Api, Exec, KubeConfig, Observable } from "@kubernetes/client-node";
 import type {
   AdapterContext,
   CommandRequest,
@@ -83,8 +83,8 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private clientsValue: KubernetesSandboxSdk | undefined;
 
   private readonly desktops = new LinuxDesktop({
-    environment: async (computer) => {
-      const pod = await this.readPod(this.podId(computer), AbortSignal.timeout(10_000));
+    environment: async (computer, context) => {
+      const pod = await this.readPod(this.podId(computer), context.signal);
       return {
         homeDir: WORKSPACE,
         workspaceDir: WORKSPACE,
@@ -597,7 +597,23 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private async readPod(name: string, signal: AbortSignal): Promise<V1Pod | undefined> {
     signal.throwIfAborted();
     try {
-      const pod = await this.clients().core.readNamespacedPod({ name, namespace: this.namespace });
+      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+      const request = this.clients().core.readNamespacedPod(
+        { name, namespace: this.namespace },
+        {
+          middlewareMergeStrategy: "append",
+          middleware: [
+            {
+              pre: (request) => {
+                request.setSignal(requestSignal);
+                return new Observable(Promise.resolve(request));
+              },
+              post: (response) => new Observable(Promise.resolve(response)),
+            },
+          ],
+        },
+      );
+      const pod = await abortableRequest(request, requestSignal);
       signal.throwIfAborted();
       return pod;
     } catch (error) {
@@ -879,6 +895,16 @@ function isApiStatus(error: unknown, code: number): boolean {
 
 function positiveInteger(value: number | undefined, fallback: number): number {
   return Number.isSafeInteger(value) && (value ?? 0) > 0 ? value! : fallback;
+}
+
+/** Bound setup as well as transport, including authentication before the HTTP request starts. */
+function abortableRequest<T>(request: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new Error("Kubernetes request aborted"));
+    signal.addEventListener("abort", abort, { once: true });
+    request.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    if (signal.aborted) abort();
+  });
 }
 
 async function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {

@@ -932,4 +932,31 @@ describe("KubernetesSandboxProvider", () => {
       }
     },
   );
+  it.each(["caller", "deadline"])("bounds stalled desktop environment reads (%s)", async (mode) => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("request deadline")), ms);
+      return controller.signal;
+    });
+    try {
+      const controller = new AbortController();
+      const read = vi.fn<KubernetesSandboxSdk["core"]["readNamespacedPod"]>(
+        () => new Promise<V1Pod>(() => {}),
+      );
+      const provider = providerFor({ readNamespacedPod: read });
+      const result = provider.releaseScreen(computer, { ...context, signal: controller.signal });
+      const assertion = expect(result).rejects.toThrow();
+      if (mode === "caller") controller.abort(new Error("caller cancelled"));
+      else await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+      const options = read.mock.calls[0]?.[1];
+      const setSignal = vi.fn();
+      await options?.middleware?.[0]?.pre({ setSignal } as never).toPromise();
+      expect(setSignal).toHaveBeenCalledWith(expect.objectContaining({ aborted: true }));
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

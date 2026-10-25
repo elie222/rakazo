@@ -42,7 +42,7 @@ import {
 } from "./extra-displays.js";
 
 export interface LinuxDesktopHost {
-  environment(computer: ComputerRef): Promise<DesktopEnvironment>;
+  environment(computer: ComputerRef, context: AdapterContext): Promise<DesktopEnvironment>;
   run(
     computer: ComputerRef,
     command: string,
@@ -64,7 +64,7 @@ export class LinuxDesktop {
   }
 
   private async ensure(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
     const key = screenSessionKey(context);
     const output = await this.run(
       computer,
@@ -138,7 +138,7 @@ export class LinuxDesktop {
     }
     const env = interactive
       ? (await this.ensure(computer, context)).env
-      : await this.host.environment(computer);
+      : await this.host.environment(computer, context);
     await this.run(
       computer,
       desktopControlCommand(
@@ -199,12 +199,12 @@ export class LinuxDesktop {
   }
 
   async stopBrowsers(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
     await this.run(computer, stopAllDesktopBrowsersCommand(env), context);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    const env = await this.host.environment(computer);
+    const env = await this.host.environment(computer, context);
     const key = screenSessionKey(context);
     if (context.keepScreenWarm && !context.cancelRunWork && !context.signal.aborted) {
       // Revoke the run's control and keep the display and browser for this bot's next run.
