@@ -1,6 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Dialog,
   DialogClose,
@@ -28,10 +36,12 @@ import {
 function ScopePicker({
   value,
   disabled,
+  sharedOnly = false,
   onChange,
 }: {
   value: "isolated" | "shared";
   disabled: boolean;
+  sharedOnly?: boolean;
   onChange: (scope: "isolated" | "shared") => void;
 }) {
   const labelId = useId();
@@ -45,7 +55,7 @@ function ScopePicker({
           <Toggle
             key={option}
             pressed={value === option}
-            disabled={disabled}
+            disabled={disabled || (sharedOnly && option === "isolated")}
             onPressedChange={() => onChange(option)}
             className="text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm"
           >
@@ -53,6 +63,11 @@ function ScopePicker({
           </Toggle>
         ))}
       </div>
+      {sharedOnly ? (
+        <p className="mt-2 text-[13px] text-muted-foreground">
+          <Trans>Memory is shared by all bots in this Space.</Trans>
+        </p>
+      ) : null}
     </Field>
   );
 }
@@ -83,6 +98,7 @@ export function MemorySettingsOverlay({
   );
   const [pending, setPending] = useState<"connect" | "disconnect" | "scope" | null>(null);
   const [addingProvider, setAddingProvider] = useState(false);
+  const [sharingDraft, setSharingDraft] = useState<MemoryProviderConnectionDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -98,6 +114,10 @@ export function MemorySettingsOverlay({
 
   const registration = memoryProviderSettings(config?.provider ?? selectedProvider);
   const busy = pending !== null;
+  const sharedOnly = config
+    ? config.capabilities?.isolatedScope === false
+    : registration?.isolatedScope === false;
+  const visibleScope = sharedOnly ? "shared" : defaultScope;
 
   useEffect(() => {
     return () => onBusyChange?.(false);
@@ -108,15 +128,20 @@ export function MemorySettingsOverlay({
     onBusyChange?.(next !== null);
   }
 
-  async function connect(draft: MemoryProviderConnectionDraft) {
+  async function connect(draft: MemoryProviderConnectionDraft, confirmed = false) {
     if (!registration) return false;
+    if (sharedOnly && config?.defaultMemoryScope !== "shared" && !confirmed) {
+      setSharingDraft(draft);
+      return false;
+    }
     setError(null);
     markPending("connect");
     try {
       const next = await rpc.memory.connectProvider({
         provider: registration.id,
         ...draft,
-        defaultMemoryScope: defaultScope,
+        defaultMemoryScope: visibleScope,
+        ...(confirmed ? { confirmSharedScope: true } : {}),
       });
       onConfigChange(next);
       return true;
@@ -200,7 +225,8 @@ export function MemorySettingsOverlay({
               </p>
               <div className="mt-4">
                 <ScopePicker
-                  value={defaultScope}
+                  value={visibleScope}
+                  sharedOnly={sharedOnly}
                   disabled={busy}
                   onChange={(scope) => void updateDefaultScope(scope)}
                 />
@@ -243,7 +269,11 @@ export function MemorySettingsOverlay({
                     className="w-full"
                     value={selectedProvider}
                     disabled={busy}
-                    onChange={(event) => setSelectedProvider(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedProvider(event.target.value);
+                      setError(null);
+                      setSharingDraft(null);
+                    }}
                   >
                     {MEMORY_PROVIDER_SETTINGS.map((entry) => (
                       <NativeSelectOption key={entry.id} value={entry.id}>
@@ -257,7 +287,12 @@ export function MemorySettingsOverlay({
               )}
 
               <div className="mt-4">
-                <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
+                <ScopePicker
+                  value={visibleScope}
+                  sharedOnly={sharedOnly}
+                  disabled={busy}
+                  onChange={setDefaultScope}
+                />
               </div>
 
               <registration.SettingsForm busy={busy} onConnect={connect} />
@@ -269,6 +304,40 @@ export function MemorySettingsOverlay({
           )}
         </div>
       </div>
+      <AlertDialog
+        open={sharingDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setSharingDraft(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Use shared memory?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>
+                Bots inheriting the default will share Space memory. Existing isolated overrides
+                will not be changed.
+              </Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSharingDraft(null)}>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const draft = sharingDraft;
+                setSharingDraft(null);
+                if (draft) void connect(draft, true);
+              }}
+            >
+              <Trans>Use shared memory</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 

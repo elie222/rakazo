@@ -17,6 +17,77 @@ describe("botProfileLabelsChanged", () => {
 });
 
 describe("commitBotUpdate", () => {
+  it.each([false, true])(
+    "runs the transaction-local scope guard before either write path (event=%s)",
+    async (emitBotUpdated) => {
+      const update = vi.fn();
+      const tx = { $queryRaw: vi.fn().mockResolvedValue([]), bot: { update } };
+      const beforeWrite = vi.fn(async () => {
+        throw new Error("scope unsupported");
+      });
+      const appendEvent = vi.fn();
+      await expect(
+        commitBotUpdate(
+          {
+            prisma: {
+              bot: { update },
+              $transaction: async (run: (tx: unknown) => unknown) => run(tx),
+            } as never,
+            notify: vi.fn(),
+            spaceId: "space-1",
+            threadId: "thread-1",
+            botId: "bot-1",
+            data: { memoryScope: "isolated" },
+            emitBotUpdated,
+            beforeWrite,
+          },
+          appendEvent,
+        ),
+      ).rejects.toThrow("scope unsupported");
+      expect(beforeWrite).toHaveBeenCalledWith(tx);
+      expect(update).not.toHaveBeenCalled();
+      expect(appendEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it("serializes scope-only writes without publishing a profile event", async () => {
+    const updated = { id: "bot-1", name: "Chief", title: "", description: "" };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      bot: { update: vi.fn().mockResolvedValue(updated) },
+    };
+    const transaction = vi.fn(async (run: (tx: unknown) => unknown) => run(tx));
+    const beforeWrite = vi.fn().mockResolvedValue(undefined);
+    const notify = vi.fn();
+    const appendEvent = vi.fn();
+    await expect(
+      commitBotUpdate(
+        {
+          prisma: { $transaction: transaction } as never,
+          notify,
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: { memoryScope: null },
+          emitBotUpdated: false,
+          beforeWrite,
+        },
+        appendEvent,
+      ),
+    ).resolves.toEqual(updated);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "ReadCommitted",
+    });
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      beforeWrite.mock.invocationCallOrder[0]!,
+    );
+    expect(beforeWrite.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.bot.update.mock.invocationCallOrder[0]!,
+    );
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it("does not publish or notify when a restore rejects its baseline", async () => {
     vi.mocked(writeBotInstructions).mockRejectedValueOnce(new Error("Instructions changed"));
     const tx = { $queryRaw: vi.fn().mockResolvedValue([]), bot: { update: vi.fn() } };

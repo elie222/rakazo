@@ -4,6 +4,7 @@ import type {
   Bot,
   ComputerMode,
   ModelCatalogEntry,
+  SpaceMemoryConfig,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
@@ -102,7 +103,8 @@ export function ComputerModePicker({
 
 export function BotSettings({
   bot,
-  memoryProviderConfigured,
+  memoryProviderConfig,
+  memoryProviderConfigured = memoryProviderConfig != null,
   onSave,
   onExport,
   onClear,
@@ -115,7 +117,8 @@ export function BotSettings({
   onOpenConnections?: () => void;
   /** Unused: the skill sections read and save the shared cached skill list. */
   onSkillsChange?: (skills: AgentSkillCatalogEntry[]) => void;
-  memoryProviderConfigured: boolean;
+  memoryProviderConfigured?: boolean;
+  memoryProviderConfig?: Pick<SpaceMemoryConfig, "capabilities"> | null;
   onSave: (patch: {
     name?: string;
     title?: string;
@@ -659,6 +662,10 @@ export function BotSettings({
                         variant="outline"
                         size="sm"
                         pressed={memoryScope === option.value}
+                        disabled={
+                          option.value === "isolated" &&
+                          memoryProviderConfig?.capabilities?.isolatedScope === false
+                        }
                         onPressedChange={(pressed) => {
                           if (pressed) setMemoryScope(option.value);
                         }}
@@ -668,6 +675,11 @@ export function BotSettings({
                       </Toggle>
                     ))}
                   </div>
+                  {memoryProviderConfig?.capabilities?.isolatedScope === false ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      <Trans>This provider only supports shared Space memory.</Trans>
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </SettingsGroup>

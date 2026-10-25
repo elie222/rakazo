@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
+  serializeSpaceMemoryConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
 
@@ -17,7 +18,13 @@ const deploymentOwner = { ...actor, isDeploymentOwner: true };
 
 function makeDeps(
   overrides: {
-    existing?: { id: string; secretId: string } | null;
+    existing?: {
+      id: string;
+      secretId: string;
+      provider?: string;
+      defaultMemoryScope?: string;
+    } | null;
+    isolatedBot?: boolean;
     upsertResult?: {
       provider: string;
       settings: Record<string, string>;
@@ -62,6 +69,10 @@ function makeDeps(
           overrides.spaceOwner === false ? null : { role: overrides.memberRole ?? "owner" },
         ),
     },
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    bot: {
+      findFirst: vi.fn().mockResolvedValue(overrides.isolatedBot ? { id: "isolated-bot" } : null),
+    },
     spaceMemoryConfig: { findUnique, update, upsert, delete: deleteConfig },
     secret: { create: secretCreate, deleteMany: secretDeleteMany },
     $transaction: vi.fn(),
@@ -95,6 +106,147 @@ function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
 }
 
 describe("persistMemoryProviderConfig", () => {
+  function sharedInput() {
+    return {
+      provider: "rembric",
+      settings: { endpoint: `https://memory.example.test/mcp/space-${actor.spaceId}` },
+      credentials: { token: "fake-token" },
+      defaultMemoryScope: "shared" as const,
+    };
+  }
+
+  function offlineDeps(overrides: Parameters<typeof makeDeps>[0] = {}) {
+    const setup = makeDeps(overrides);
+    return {
+      ...setup,
+      deps: {
+        ...setup.deps,
+        classifySettings: vi.fn(
+          async (_provider: string, settings: Record<string, string>) => settings,
+        ),
+        prepareConnection: vi.fn(
+          async (input: {
+            provider: string;
+            settings: Record<string, string>;
+            credentials: Record<string, string>;
+          }) => ({
+            provider: input.provider,
+            settings: input.settings,
+            credentials: input.credentials,
+          }),
+        ),
+      },
+    };
+  }
+
+  it("requires ownership before exposing unsupported scope validation", async () => {
+    const { deps } = offlineDeps({ spaceOwner: false });
+    await expect(
+      persistMemoryProviderConfig(deps, actor, {
+        ...sharedInput(),
+        defaultMemoryScope: "isolated",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(deps.prepareConnection).not.toHaveBeenCalled();
+  });
+
+  it("never returns credential-bearing probe errors", async () => {
+    const { deps } = offlineDeps();
+    deps.prepareConnection.mockRejectedValueOnce(new Error("remote echoed fake-token"));
+    await expect(
+      persistMemoryProviderConfig(deps, actor, { ...sharedInput(), confirmSharedScope: true }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Could not connect memory provider. Check the endpoint and credentials.",
+    });
+  });
+
+  it("serializes pure optional capability metadata", () => {
+    expect(
+      serializeSpaceMemoryConfig({
+        provider: "rembric",
+        settings: {},
+        defaultMemoryScope: "shared",
+        updatedAt: new Date(0),
+      }),
+    ).toMatchObject({ capabilities: { isolatedScope: false } });
+    expect(
+      serializeSpaceMemoryConfig({
+        provider: "supermemory",
+        settings: {},
+        defaultMemoryScope: "isolated",
+        updatedAt: new Date(0),
+      }),
+    ).not.toHaveProperty("capabilities");
+  });
+
+  it("passes only the actor's trusted Space after spreading input", async () => {
+    const { deps } = offlineDeps();
+    const untrustedInput = {
+      ...sharedInput(),
+      confirmSharedScope: true,
+      spaceId: "untrusted-space",
+    };
+    await persistMemoryProviderConfig(deps, actor, untrustedInput);
+    expect(deps.prepareConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ spaceId: actor.spaceId }),
+    );
+  });
+
+  it("rejects an unsupported isolated default before classification, probes or secrets", async () => {
+    const { deps } = offlineDeps();
+    await expect(
+      persistMemoryProviderConfig(deps, actor, {
+        ...sharedInput(),
+        defaultMemoryScope: "isolated",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(deps.classifySettings).not.toHaveBeenCalled();
+    expect(deps.prepareConnection).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "isolated"])(
+    "requires inherited-scope confirmation (prior=%s)",
+    async (scope) => {
+      const { deps, upsert } = offlineDeps({
+        existing: scope ? { id: "cfg", secretId: "old", defaultMemoryScope: scope } : null,
+      });
+      await expect(persistMemoryProviderConfig(deps, actor, sharedInput())).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+      expect(upsert).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "accepts shared with confirmation, or an already shared default (%s)",
+    async (alreadyShared) => {
+      const { deps, upsert } = offlineDeps({
+        existing: alreadyShared
+          ? { id: "cfg", secretId: "old", defaultMemoryScope: "shared" }
+          : null,
+      });
+      await persistMemoryProviderConfig(deps, actor, {
+        ...sharedInput(),
+        confirmSharedScope: !alreadyShared,
+      });
+      expect(upsert).toHaveBeenCalled();
+    },
+  );
+
+  it("refuses all explicit isolated overrides, without filtering archived bots or members", async () => {
+    const { deps, upsert } = offlineDeps({ isolatedBot: true });
+    await expect(
+      persistMemoryProviderConfig(deps, actor, { ...sharedInput(), confirmSharedScope: true }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith({
+      where: { spaceId: actor.spaceId, memoryScope: "isolated" },
+      select: { id: true },
+    });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
   it("does not trust a legacy owner flag for private-network access", async () => {
     const { deps } = makeDeps();
     await expect(
@@ -258,7 +410,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local"),
       ),
-    ).rejects.toThrow(/baseUrl/);
+    ).rejects.toThrow("Check the endpoint and credentials");
     expect(upsert).not.toHaveBeenCalled();
   });
 
@@ -272,7 +424,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local", "http://169.254.169.254/latest/meta-data/"),
       ),
-    ).rejects.toThrow(/blocked address/);
+    ).rejects.toThrow("Check the endpoint and credentials");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -288,7 +440,7 @@ describe("persistMemoryProviderConfig", () => {
         deploymentOwner,
         connectionInput("local", "http://203.0.113.10:6767"),
       ),
-    ).rejects.toThrow(/private-network/);
+    ).rejects.toThrow("Check the endpoint and credentials");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
@@ -459,7 +611,7 @@ describe("disconnectMemoryProvider", () => {
     await expect(disconnectMemoryProvider(deps, actor)).resolves.toEqual({ ok: true });
 
     expect(transaction).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
-      isolationLevel: "Serializable",
+      isolationLevel: "ReadCommitted",
     });
     expect(deleteConfig).toHaveBeenCalledWith({ where: { id: "cfg-1" } });
     expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-old" } });
@@ -476,6 +628,19 @@ describe("disconnectMemoryProvider", () => {
 });
 
 describe("updateMemoryProviderDefaultScope", () => {
+  it("rejects isolated defaults on a shared-only provider inside the scope transaction", async () => {
+    const { deps, update, transaction } = makeDeps({
+      existing: { id: "cfg", secretId: "old", provider: "rembric", defaultMemoryScope: "shared" },
+    });
+    await expect(updateMemoryProviderDefaultScope(deps, actor, "isolated")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(update).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "ReadCommitted",
+    });
+  });
+
   it("accepts owners with additional Better Auth roles", async () => {
     const { deps, update } = makeDeps({
       existing: { id: "cfg-1", secretId: "secret-existing" },

@@ -1,7 +1,11 @@
 import { lookup } from "node:dns/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertLocalServiceBaseUrl } from "./local-service-endpoint.js";
-import { createMemoryProvider, SpaceMemoryProviderResolver } from "./memory-provider-factory.js";
+import {
+  createMemoryProvider,
+  memoryProviderCapabilities,
+  SpaceMemoryProviderResolver,
+} from "./memory-provider-factory.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 
@@ -43,7 +47,58 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+describe("memoryProviderCapabilities", () => {
+  it("is network-free, restricts only Rembric, and preserves old capability absence", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(memoryProviderCapabilities("rembric")?.isolatedScope).toBe(false);
+    for (const provider of ["honcho", "serenity", "supermemory"]) {
+      expect(memoryProviderCapabilities(provider)).toEqual({
+        recall: true,
+        save: true,
+        purgeHistory: true,
+        sharedScope: true,
+      });
+    }
+    expect(memoryProviderCapabilities("unknown")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
 describe("SpaceMemoryProviderResolver", () => {
+  it.each([
+    { endpoint: "https://203.0.113.10/mcp/space-other", spaceId: "other", projectId: "project-1" },
+    { endpoint: "https://203.0.113.10/mcp/space-space-1", spaceId: "space-1" },
+    {
+      endpoint: "http://127.0.0.1:8123/mcp/space-space-1",
+      spaceId: "space-1",
+      projectId: "project-1",
+      endpointTrust: "private",
+    },
+    {
+      endpoint: "https://memory.example.test/mcp/space-space-1",
+      spaceId: "space-1",
+      projectId: "project-1",
+    },
+  ])("rejects invalid Rembric trust/binding before loading credentials: %j", async (settings) => {
+    vi.stubEnv("MCP_ALLOW_PRIVATE_ENDPOINT", "false");
+    vi.mocked(lookup).mockResolvedValue([{ address: "10.0.0.8", family: 4 }] as never);
+    const secrets = { load: vi.fn() };
+    const prisma = {
+      spaceMemoryConfig: {
+        findUnique: vi.fn(async () => ({
+          provider: "rembric",
+          settings,
+          secret: { id: "secret-1", ciphertext: "encrypted" },
+          defaultMemoryScope: "shared",
+        })),
+      },
+    };
+    const resolver = new SpaceMemoryProviderResolver(prisma as never, secrets as never);
+    await expect(resolver.resolve("space-1")).resolves.toBeNull();
+    expect(secrets.load).not.toHaveBeenCalled();
+  });
   it.each(["honcho", "supermemory"])(
     "disables %s without loading credentials when local DNS revalidation fails",
     async (provider) => {

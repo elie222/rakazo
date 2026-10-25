@@ -1,4 +1,9 @@
-import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type {
+  DurableMemoryScope,
+  SecretStore,
+  SemanticMemoryCapabilities,
+  SemanticMemoryProvider,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -19,6 +24,16 @@ import {
 export { MemoryProviderPrivateEndpointRequiredError } from "./serenity-memory-provider.js";
 
 import {
+  classifyRembricConnectionSettings,
+  createRembricProvider,
+  prepareRembricConnection,
+  REMBRIC_CAPABILITIES,
+  REMBRIC_PROVIDER_ID,
+  rembricRequiresPrivateEndpoint,
+  revalidateRembricSettings,
+} from "./rembric-memory-provider.js";
+
+import {
   createSupermemoryProvider,
   decodeLegacySupermemoryCredentials,
   prepareSupermemoryConnection,
@@ -32,6 +47,8 @@ export interface MemoryProviderConnectionInput {
   credentials: Record<string, string>;
   /** When false, providers must not probe endpoints that classify as private. */
   allowPrivateEndpoint?: boolean;
+  /** Trusted actor Space, never taken from provider settings. Required by Rembric. */
+  spaceId?: string;
 }
 
 export interface PreparedMemoryProviderConnection {
@@ -50,15 +67,16 @@ export interface MemoryProviderResolver {
 }
 
 interface MemoryProviderAdapter {
+  capabilities?: SemanticMemoryCapabilities;
   requiresPrivateEndpoint(settings: Record<string, string>): boolean;
   /** Async trust classification (e.g. DNS) without probing credentials. */
   classifySettings?(settings: Record<string, string>): Promise<Record<string, string>>;
   /** Recheck persisted endpoint settings before their credentials are decrypted. */
-  revalidate?(settings: Record<string, string>): Promise<void>;
+  revalidate?(settings: Record<string, string>, options?: { spaceId?: string }): Promise<void>;
   prepare(
     settings: Record<string, string>,
     credentials: Record<string, string>,
-    options?: { allowPrivateEndpoint?: boolean },
+    options?: { allowPrivateEndpoint?: boolean; spaceId?: string },
   ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }>;
   create(
     settings: Record<string, string>,
@@ -68,6 +86,17 @@ interface MemoryProviderAdapter {
 }
 
 const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new Map([
+  [
+    REMBRIC_PROVIDER_ID,
+    {
+      capabilities: REMBRIC_CAPABILITIES,
+      requiresPrivateEndpoint: rembricRequiresPrivateEndpoint,
+      classifySettings: classifyRembricConnectionSettings,
+      revalidate: revalidateRembricSettings,
+      prepare: prepareRembricConnection,
+      create: createRembricProvider,
+    },
+  ],
   [
     SUPERMEMORY_PROVIDER_ID,
     {
@@ -102,6 +131,19 @@ const MEMORY_PROVIDER_ADAPTERS: ReadonlyMap<string, MemoryProviderAdapter> = new
   ],
 ]);
 
+const DEFAULT_MEMORY_CAPABILITIES = {
+  recall: true,
+  save: true,
+  purgeHistory: true,
+  sharedScope: true,
+} as const;
+
+/** Credential- and network-free capability lookup; unknown providers return null. */
+export function memoryProviderCapabilities(provider: string): SemanticMemoryCapabilities | null {
+  const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
+  return adapter ? { ...(adapter.capabilities ?? DEFAULT_MEMORY_CAPABILITIES) } : null;
+}
+
 function memoryProviderAdapter(provider: string): MemoryProviderAdapter {
   const adapter = MEMORY_PROVIDER_ADAPTERS.get(provider);
   if (!adapter) throw new Error(`Unknown memory provider "${provider}".`);
@@ -134,7 +176,7 @@ export async function prepareMemoryProviderConnection(
   const prepared = await memoryProviderAdapter(input.provider).prepare(
     input.settings,
     input.credentials,
-    { allowPrivateEndpoint: input.allowPrivateEndpoint },
+    { allowPrivateEndpoint: input.allowPrivateEndpoint, spaceId: input.spaceId },
   );
   return { provider: input.provider, ...prepared };
 }
@@ -187,7 +229,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
     }
     const adapter = memoryProviderAdapter(config.provider);
     try {
-      await adapter.revalidate?.(settings);
+      await adapter.revalidate?.(settings, { spaceId });
     } catch {
       getLogger().warn("Semantic memory disabled: endpoint revalidation failed");
       return null;

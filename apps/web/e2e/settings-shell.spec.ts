@@ -175,6 +175,25 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(memory.getByRole("button", { name: "Recall only" })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-memory-serenity");
 
+  // Presentation only: never submit credentials or probe an external endpoint.
+  await memory.getByLabel("Provider").selectOption("rembric");
+  await memory.getByLabel("MCP endpoint").fill("https://memory.example.com/mcp/space-example");
+  await memory.getByLabel("Bearer token").fill("fake-rembric-token");
+  await expect(memory.getByRole("button", { name: "Isolated", exact: true })).toBeDisabled();
+  await expect(memory.getByRole("button", { name: "Shared", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await captureScreenshot(page, testInfo, "settings-shell-memory-rembric");
+  await memory.getByRole("button", { name: "Connect", exact: true }).click();
+  const sharing = page.getByRole("alertdialog");
+  await expect(
+    sharing.getByRole("button", { name: "Use shared memory", exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-shell-memory-rembric-confirm");
+  await sharing.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(memory.getByLabel("Bearer token")).toHaveValue("fake-rembric-token");
+
   await settings.getByTestId("settings-nav-voice").click();
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();

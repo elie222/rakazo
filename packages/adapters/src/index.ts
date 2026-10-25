@@ -128,6 +128,7 @@ export * from "./push-token-store.js";
 export * from "./railway-sandbox.js";
 export * from "./realtime.js";
 export * from "./release-watch.js";
+export * from "./rembric-memory-provider.js";
 export * from "./remote-mcp.js";
 export * from "./resend-email.js";
 export * from "./routine-watch.js";

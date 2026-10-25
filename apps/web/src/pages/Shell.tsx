@@ -4004,7 +4004,7 @@ function SpaceShell() {
                 bot={active}
                 focusModel={modelFocusRequest}
                 onOpenConnections={() => openSettings("models")}
-                memoryProviderConfigured={memoryProviderConfig != null}
+                memoryProviderConfig={memoryProviderConfig}
                 onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
                   if (computerMode !== undefined && computerMode !== active.computerMode) {

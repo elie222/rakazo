@@ -899,6 +899,29 @@ its own PostgreSQL with pgvector, an LLM provider, and an embedding provider; se
 in Honcho; conversation summaries stay in Rakazo. Bots can forget a saved fact on Honcho v3.2 or
 later.
 
+#### Rembric
+
+In **Settings → Memory**, choose **Rembric** and enter the full **MCP endpoint**
+(`https://example.com/mcp/project-slug`) and **Bearer token**. Use an existing Rembric
+project slug and grant the token access. The slug does not need to contain the Rakazo Space ID.
+Use different projects to keep Spaces separate; connecting the same Rembric project to multiple
+Spaces intentionally shares its memories.
+Rakazo checks that project before connecting; it does not create or select a different project.
+Use hosted HTTPS, or an operator-approved local HTTP(S) endpoint with
+`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker. Only connect endpoints you trust.
+The token is stored encrypted and is not shown in the connected label.
+
+Rembric supports shared Space memory only. Connecting requires explicit confirmation to change
+an inherited isolated default. Resolve every explicit isolated bot override first, including
+archived bots; connecting never migrates overrides automatically. Bots can inherit the default
+or use shared scope. Existing providers keep their scope behavior.
+
+Only explicitly saved facts go to Rembric. Conversation history and summaries stay local to
+Rakazo; clearing history does not erase shared facts. Forgetting a Rembric fact archives it,
+not permanently deletes its retained history. Web and Electron share these settings. Mobile
+has no provider connection or semantic scope controls; server-side scope validation still
+protects edits from any client.
+
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud

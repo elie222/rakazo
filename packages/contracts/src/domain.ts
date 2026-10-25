@@ -1393,6 +1393,7 @@ export const ModelOAuthBeginSchema = z.discriminatedUnion("mode", [
 export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 
 export const SpaceMemoryConfigSchema = z.object({
+  capabilities: z.object({ isolatedScope: z.boolean().optional() }).optional(),
   provider: z.string(),
   settings: z.record(z.string(), z.string()),
   defaultMemoryScope: MemoryScopeSchema,

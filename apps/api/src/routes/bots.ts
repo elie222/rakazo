@@ -40,6 +40,7 @@ import {
   undoAgentImport,
 } from "../agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
+import { assertMemoryScopeSupported } from "../memory-provider-config.js";
 import type { RouterDeps } from "../router.js";
 import { loadMessagePage } from "../thread-message-pages.js";
 import type { RouterContext } from "./context.js";
@@ -334,6 +335,12 @@ export function botsRoutes(ctx: RouterContext) {
           threadId: existing.thread.id,
           botId: input.botId,
           emitBotUpdated: botProfileLabelsChanged(input),
+          ...(input.memoryScope !== undefined
+            ? {
+                beforeWrite: (tx: Prisma.TransactionClient) =>
+                  assertMemoryScopeSupported(tx, context.actor.spaceId, input.memoryScope ?? null),
+              }
+            : {}),
           expectedInstructions: input.expectedInstructions,
           data: {
             name: input.name,

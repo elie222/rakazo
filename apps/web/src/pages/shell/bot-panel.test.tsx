@@ -156,6 +156,7 @@ async function render(
   overrides: Partial<Bot> = {},
   memoryProviderConfigured = false,
   focusModel = 0,
+  memoryProviderConfig?: ComponentProps<typeof BotSettings>["memoryProviderConfig"],
 ) {
   await act(async () => {
     root.render(
@@ -165,6 +166,7 @@ async function render(
           focusModel={focusModel}
           bot={bot(description, overrides)}
           memoryProviderConfigured={memoryProviderConfigured}
+          memoryProviderConfig={memoryProviderConfig}
           onSave={onSave}
           onExport={async () => undefined}
           onClear={() => undefined}
@@ -233,6 +235,34 @@ afterEach(async () => {
   queryClient.clear();
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("disables isolated only for explicit unsupported capability and preserves existing overrides on unrelated save", async () => {
+  await render("Billing", { memoryScope: "isolated" }, true, 0, {
+    capabilities: { isolatedScope: false },
+  });
+  await expandAdvanced();
+  const isolated = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === "Isolated",
+  )!;
+  expect(isolated.disabled).toBe(true);
+  expect(isolated.getAttribute("aria-pressed")).toBe("true");
+  for (const label of ["Shared", "Inherit default"])
+    expect(
+      [...container.querySelectorAll("button")].find((node) => node.textContent === label)!
+        .disabled,
+    ).toBe(false);
+  await clickSave();
+  expect(onSave).toHaveBeenCalled();
+  expect(onSave.mock.calls[0]![0].memoryScope).toBe("isolated");
+});
+it("keeps isolated available for configs without capability metadata", async () => {
+  await render("Billing", {}, true, 0, {});
+  await expandAdvanced();
+  expect(
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "Isolated")!
+      .disabled,
+  ).toBe(false);
 });
 
 it("shows the main sections and keeps only rare controls in Advanced", async () => {

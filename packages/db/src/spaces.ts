@@ -210,6 +210,14 @@ export async function lockSpaceForContentCreation(
   return { organizationId: membership.organizationId };
 }
 
+/** Scope/config writers must use READ COMMITTED so reads after waiting see the lock winner. */
+export async function lockSpaceMemoryScope(
+  tx: Prisma.TransactionClient,
+  spaceId: string,
+): Promise<void> {
+  await lockSpaceDeletion(tx, spaceId);
+}
+
 async function lockSpaceDeletion(tx: Prisma.TransactionClient, spaceId: string): Promise<void> {
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${spaceId}, 0))::text AS "lock"

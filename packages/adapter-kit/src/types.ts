@@ -346,6 +346,8 @@ export interface MemoryCapabilities {
 export type DurableMemoryScope = "isolated" | "shared";
 
 export interface SemanticMemoryCapabilities {
+  /** Only explicit false disables isolated memory; absence preserves existing providers. */
+  isolatedScope?: false;
   recall: true;
   save: true;
   purgeHistory: true;

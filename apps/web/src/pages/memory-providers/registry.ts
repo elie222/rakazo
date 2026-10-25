@@ -1,6 +1,7 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import type { ComponentType } from "react";
 import { HonchoSettingsForm } from "./HonchoSettingsForm";
+import { RembricSettingsForm } from "./RembricSettingsForm";
 import { SerenitySettingsForm } from "./SerenitySettingsForm";
 import { SupermemorySettingsForm } from "./SupermemorySettingsForm";
 
@@ -17,6 +18,7 @@ export interface MemoryProviderSettingsFormProps {
 export interface MemoryProviderSettingsRegistration {
   id: string;
   name: string;
+  isolatedScope?: false;
   SettingsForm: ComponentType<MemoryProviderSettingsFormProps>;
   connectedLabel: (config: SpaceMemoryConfig) => string;
 }
@@ -51,6 +53,20 @@ export const MEMORY_PROVIDER_SETTINGS: readonly MemoryProviderSettingsRegistrati
       if (mode === "local")
         return [`Self-hosted (${baseUrl})`, workspaceId].filter(Boolean).join(", ");
       return workspaceId ? `Honcho Cloud (${workspaceId})` : "Honcho Cloud";
+    },
+  },
+  {
+    id: "rembric",
+    name: "Rembric",
+    isolatedScope: false,
+    SettingsForm: RembricSettingsForm,
+    connectedLabel: (config) => {
+      try {
+        const url = new URL(config.settings.endpoint ?? "");
+        return `${url.origin}${url.pathname}`;
+      } catch {
+        return "Rembric";
+      }
     },
   },
 ];

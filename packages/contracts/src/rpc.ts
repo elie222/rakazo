@@ -645,6 +645,7 @@ export const appContract = {
           settings: z.record(z.string(), z.string()),
           credentials: z.record(z.string(), z.string()),
           defaultMemoryScope: MemoryScopeSchema.default("isolated"),
+          confirmSharedScope: z.boolean().optional(),
         }),
       )
       .output(SpaceMemoryConfigSchema),
