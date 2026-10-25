@@ -227,7 +227,7 @@ export function describeRoutineTiming(row: {
 }) {
   return {
     timezone: row.timezone,
-    ...(row.crons.length ? { schedule: row.crons.map(formatCron).join("; ") } : {}),
+    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
     nextRun: row.nextRunAt
       ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
       : null,
