@@ -71,7 +71,9 @@ describe("queued automatic reads", () => {
     const read = slice("const markBotRead = useCallback(", "const markBotUnread = useCallback(");
     const afterAnswer = read.slice(read.indexOf("const answer = await readInOrder"));
     // Only an explicit read clears the hold, before it is sent.
-    expect(read).toContain("if (!stillWanted) manuallyUnread.current.delete(id);");
+    expect(read.slice(0, read.indexOf("const answer = await readInOrder"))).toContain(
+      "manuallyUnread.current.delete(id)",
+    );
     expect(afterAnswer).not.toContain("manuallyUnread.current.delete(id)");
     expect(afterAnswer).toContain(
       "if (!manuallyUnread.current.has(id)) updateBotUnread(id, false);",

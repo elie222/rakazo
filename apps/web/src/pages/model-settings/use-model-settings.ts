@@ -30,10 +30,11 @@ import {
   popularModelProvidersFirst,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry, ModelCredential } from "../../lib/model-auth";
+import type { ModelCatalogEntry } from "../../lib/model-auth";
 import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
 import {
   classifyModelConnectionFailure,
@@ -42,9 +43,13 @@ import {
   runModelConnectionPreflight,
   unavailableSelectedModel,
 } from "../../lib/model-connection-preflight";
+import { fetchFresh, useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
 import { errorText } from "../../lib/user-error";
+
+const NO_CATALOG: ModelCatalogEntry[] = [];
+const NO_CREDENTIALS: never[] = [];
 
 function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -72,9 +77,21 @@ export function useModelSettings(onClose: () => void) {
     intent: ModelConnectIntent | null;
   } | null>(null);
   const { t } = useLingui();
-  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
-  const [me, setMe] = useState<Me | null>(null);
+  // What the space has is cached, so a revisit paints at once and refreshes behind it.
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const catalogQuery = {
+    queryKey: queries.models.list.queryKey(),
+    queryFn: () => rpc.models.list(),
+  };
+  const credentialsQuery = {
+    queryKey: queries.models.credentials.queryKey(),
+    queryFn: () => rpc.models.credentials(),
+  };
+  const meQuery = { queryKey: queries.me.queryKey(), queryFn: () => rpc.me() };
+  const catalog = useQuery(catalogQuery).data ?? NO_CATALOG;
+  const credentials = useQuery(credentialsQuery).data ?? NO_CREDENTIALS;
+  const me: Me | null = useQuery(meQuery).data ?? null;
   const [provider, setProvider] = useState("");
   // The connection the dialog edits; null connects a new one.
   const [credentialId, setCredentialIdState] = useState<string | null>(null);
@@ -102,7 +119,12 @@ export function useModelSettings(onClose: () => void) {
   const [modelProbe] = useState(() => createModelProbe(setProbe));
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [codeCopied, copyOAuthCode] = useCopyText();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    () =>
+      queryClient.getQueryData(catalogQuery.queryKey) === undefined ||
+      queryClient.getQueryData(credentialsQuery.queryKey) === undefined ||
+      queryClient.getQueryData(meQuery.queryKey) === undefined,
+  );
   const [pending, setPending] = useState<"connect" | "settings" | "disconnect" | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,16 +163,36 @@ export function useModelSettings(onClose: () => void) {
     },
   });
 
-  /** `keepForm` reloads the lists without resetting the open connection's fields. */
-  async function refresh({ keepForm = false }: { keepForm?: boolean } = {}) {
+  /**
+   * `keepForm` reloads the lists without resetting the open connection's fields. Every refresh but
+   * the one on open follows a change, so by default it never reuses a read sent before that change.
+   */
+  async function refresh({
+    keepForm = false,
+    reuse = false,
+  }: {
+    keepForm?: boolean;
+    reuse?: boolean;
+  } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
-      rpc.models.list(),
-      rpc.models.credentials(),
-      rpc.me(),
+      fetchFresh(queryClient, catalogQuery, { reuse }),
+      fetchFresh(queryClient, credentialsQuery, { reuse }),
+      fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
+    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision);
+    return nextCredentials;
+  }
+
+  /** Points the form at the saved choice, unless the user picked something since the load began. */
+  function applyLoaded(
+    nextCatalog: ModelCatalogEntry[],
+    nextCredentials: typeof credentials,
+    nextMe: Me,
+    selectionRevision: number,
+  ) {
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
         ? provider
@@ -173,9 +215,6 @@ export function useModelSettings(onClose: () => void) {
             nextCredential?.modelId ??
               (nextProvider === nextMe.defaultProvider ? nextMe.defaultModel : null),
           ));
-    setCatalog(nextCatalog);
-    setCredentials(nextCredentials);
-    setMe(nextMe);
     if (selectionRevision === selectionRevisionRef.current) {
       invalidatePreflight();
       resetOpenAiCompatibleProbe();
@@ -211,11 +250,17 @@ export function useModelSettings(onClose: () => void) {
       setAccountId(nextCredential?.accountId ?? "");
       setGatewayId(nextCredential?.gatewayId ?? "");
     }
-    return nextCredentials;
   }
 
-  useEffect(() => {
-    void refresh()
+  useLayoutEffect(() => {
+    const cachedCatalog = queryClient.getQueryData(catalogQuery.queryKey);
+    const cachedCredentials = queryClient.getQueryData(credentialsQuery.queryKey);
+    const cachedMe = queryClient.getQueryData(meQuery.queryKey);
+    // Before paint, so a revisit opens on the saved choice rather than an empty form.
+    if (cachedCatalog && cachedCredentials && cachedMe) {
+      applyLoaded(cachedCatalog, cachedCredentials, cachedMe, selectionRevisionRef.current);
+    }
+    void refresh({ reuse: true })
       .catch((err: unknown) => setError(errorText(err, t`Could not load model settings`)))
       .finally(() => setLoading(false));
     return () => {

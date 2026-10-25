@@ -23,6 +23,22 @@ function setup(key = crypto.randomUUID()) {
   return { transport, controller: createModelRoleSettings(transport, key), key };
 }
 describe("shared model role settings lifecycle", () => {
+  it("shows initial settings at once and replaces them when the load returns", async () => {
+    const transport = {
+      load: vi.fn(async () => empty),
+      catalog: vi.fn(async () => []),
+      save: vi.fn(async (_patch: Partial<ModelRoleSettings>) => saved),
+    };
+    const controller = createModelRoleSettings(transport, crypto.randomUUID(), {
+      settings: saved,
+      catalog: [],
+    });
+    expect(controller.snapshot()).toMatchObject({ settings: saved, busy: false });
+    const loading = controller.load();
+    expect(controller.snapshot()).toMatchObject({ settings: saved, busy: true });
+    await loading;
+    expect(controller.snapshot()).toMatchObject({ settings: empty, busy: false });
+  });
   it("prevents replacing unseen settings, allows retry, and preserves saved settings on failure", async () => {
     const { transport, controller } = setup();
     transport.load.mockRejectedValueOnce(new Error("offline"));

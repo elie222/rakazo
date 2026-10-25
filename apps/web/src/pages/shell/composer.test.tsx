@@ -786,3 +786,32 @@ describe("a dropped folder or archive", () => {
     expect(onAttachmentPick).not.toHaveBeenCalled();
   });
 });
+
+it("accepts file drops in transparent padding only during file drags", () => {
+  const onAttachmentPick = vi.fn(() => true);
+  renderComposer(async () => true, { onAttachmentPick });
+  const fieldset = container!.querySelector("fieldset")!;
+  const dispatchDrag = (target: EventTarget, type: string, dataTransfer: object) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+    act(() => target.dispatchEvent(event));
+  };
+  dispatchDrag(window, "dragenter", { types: ["text/plain"], items: [] });
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  const files = [new File(["example"], "example.txt", { type: "text/plain" })];
+  const dataTransfer = { types: ["Files"], items: [], files };
+  dispatchDrag(window, "dragenter", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-auto")).toBe(true);
+  dispatchDrag(fieldset, "dragover", dataTransfer);
+  expect(fieldset.dataset.dragging).toBe("files");
+  dispatchDrag(fieldset, "drop", dataTransfer);
+  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(files);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  expect(fieldset.dataset.dragging).toBeUndefined();
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragleave", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(window, "dragend", dataTransfer);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+});

@@ -18,9 +18,11 @@ import {
   NativeSelectOption,
   Spinner,
 } from "@rakazo/ui-web";
+import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { importChunk } from "../lib/preload-recovery";
+import { fetchFresh, useSpaceQueries } from "../lib/query";
 import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
@@ -36,6 +38,21 @@ export function VoiceSettingsOverlay({
 }) {
   const rpc = useSpaceRpc();
   const spaceId = useBoundSpaceId();
+  const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  // A revisit opens with what this space showed last time and refreshes it in the background.
+  const [cached] = useState(() => {
+    const catalog = queryClient.getQueryData(queries.voice.catalog.queryKey());
+    const credentials = queryClient.getQueryData(queries.voice.credentials.queryKey());
+    const status = queryClient.getQueryData(queries.voice.status.queryKey());
+    if (!catalog || !credentials || !status) return null;
+    const provider = selectedProvider(catalog, [status.provider]);
+    const credential = credentials.find((entry) => entry.provider === provider);
+    const voices = credential
+      ? (queryClient.getQueryData(queries.voice.voices.queryKey({ input: { provider } })) ?? [])
+      : [];
+    return { catalog, credentials, status, provider, credential, voices };
+  });
   const { t } = useLingui();
   const apiKeyId = useId();
   const voiceSelectId = useId();
@@ -44,20 +61,31 @@ export function VoiceSettingsOverlay({
   const ttsModelId = useId();
   const sttModelId = useId();
   const providerSelectId = useId();
-  const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
-  const [credentials, setCredentials] = useState<VoiceCredential[]>([]);
-  const [status, setStatus] = useState<VoiceStatus | null>(null);
-  const [voices, setVoices] = useState<VoiceInfo[]>([]);
-  const [provider, setProvider] = useState("");
+  const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>(cached?.catalog ?? []);
+  const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
+  const [status, setStatus] = useState<VoiceStatus | null>(cached?.status ?? null);
+  const [provider, setProvider] = useState(cached?.provider ?? "");
+  // The provider being edited, read by loads that finish after the user picked another one.
+  const providerRef = useRef(provider);
+  // Fields the user changed since the form was last filled; a background refresh keeps them.
+  const edited = useRef(new Set<EditableField>());
+  // Each list remembers its provider, so one provider's voices never show under another.
+  const [voiceList, setVoiceList] = useState<{ provider: string; voices: VoiceInfo[] }>({
+    provider: cached?.provider ?? "",
+    voices: cached?.voices ?? [],
+  });
+  const voices = voiceList.provider === provider ? voiceList.voices : NO_VOICES;
   const [apiKey, setApiKey] = useState("");
-  const [voiceId, setVoiceId] = useState("");
-  const [speechModel, setSpeechModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [ttsModel, setTtsModel] = useState("");
-  const [sttModel, setSttModel] = useState("");
+  const [voiceId, setVoiceId] = useState(
+    cached?.credential?.voiceId || (cached?.credential ? (cached.voices[0]?.id ?? "") : ""),
+  );
+  const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
+  const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
+  const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const speechModelSave = useRef<string | null>(null);
   const voicesRequest = useRef(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -73,47 +101,61 @@ export function VoiceSettingsOverlay({
     onBusyChange?.(next !== null);
   }
 
-  /** Fill the form from the provider's saved credential; voices load without blocking the form. */
-  function showProvider(nextProvider: string, nextCredentials: VoiceCredential[]) {
+  /**
+   * Fill the form from the provider's saved credential; voices load without blocking the form.
+   * A background refresh of the provider already on screen keeps only the fields the user has
+   * edited; the rest follow the saved settings, which may have changed elsewhere.
+   */
+  function showProvider(
+    nextProvider: string,
+    nextCredentials: VoiceCredential[],
+    keepForm = false,
+  ) {
     const request = ++voicesRequest.current;
-    setProvider(nextProvider);
     const cred = nextCredentials.find((entry) => entry.provider === nextProvider);
     const activeVoice = cred?.voiceId ?? "";
-    setVoiceId(activeVoice);
-    setSpeechModel(cred?.speechModel ?? "");
-    setBaseUrl(cred?.endpoint ?? "");
-    setTtsModel(cred?.ttsModel ?? "");
-    setSttModel(cred?.sttModel ?? "");
-    setVoices([]);
+    const keep = (field: EditableField) => keepForm && edited.current.has(field);
+    if (!keepForm) {
+      edited.current.clear();
+      providerRef.current = nextProvider;
+      setProvider(nextProvider);
+      setVoiceList({ provider: nextProvider, voices: [] });
+    }
+    if (!keep("voiceId")) setVoiceId(activeVoice);
+    if (!keep("speechModel")) setSpeechModel(cred?.speechModel ?? "");
+    if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
+    if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
+    if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
     if (!cred) return Promise.resolve();
-    return rpc.voice.voices({ provider: nextProvider }).then(
-      (listed) => {
-        if (request !== voicesRequest.current) return;
-        setVoices(listed);
-        if (!activeVoice && listed[0]) setVoiceId(listed[0].id);
-      },
-      (err: unknown) => {
-        if (request === voicesRequest.current) throw err;
-      },
-    );
+    return queryClient
+      .fetchQuery(
+        queries.voice.voices.queryOptions({ input: { provider: nextProvider }, staleTime: 0 }),
+      )
+      .then(
+        (listed) => {
+          if (request !== voicesRequest.current) return;
+          setVoiceList({ provider: nextProvider, voices: listed });
+          if (!keep("voiceId") && !activeVoice && listed[0]) setVoiceId(listed[0].id);
+        },
+        (err: unknown) => {
+          if (request === voicesRequest.current) throw err;
+        },
+      );
   }
 
-  async function refresh(nextProvider?: string) {
+  /** After a change (every call but the one on open) it never reuses a read sent before it. */
+  async function refresh(nextProvider?: string, { keepForm = false, reuse = false } = {}) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
-      rpc.voice.catalog(),
-      rpc.voice.credentials(),
-      rpc.voice.status(),
+      fetchFresh(queryClient, queries.voice.catalog.queryOptions(), { reuse }),
+      fetchFresh(queryClient, queries.voice.credentials.queryOptions(), { reuse }),
+      fetchFresh(queryClient, queries.voice.status.queryOptions(), { reuse }),
     ]);
-    const selected =
-      [nextProvider, provider, nextStatus.provider].find((id) =>
-        nextCatalog.some((entry) => entry.id === id),
-      ) ??
-      nextCatalog[0]?.id ??
-      "";
+    const current = providerRef.current;
+    const selected = selectedProvider(nextCatalog, [nextProvider, current, nextStatus.provider]);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setStatus(nextStatus);
-    await showProvider(selected, nextCredentials);
+    await showProvider(selected, nextCredentials, keepForm && selected === current);
   }
 
   function chooseProvider(nextProvider: string) {
@@ -126,7 +168,7 @@ export function VoiceSettingsOverlay({
   }
 
   useEffect(() => {
-    void refresh()
+    void refresh(undefined, { keepForm: Boolean(cached), reuse: true })
       .catch((err: unknown) => setError(errorText(err, t`Could not load voice settings`)))
       .finally(() => setLoading(false));
   }, []);
@@ -191,6 +233,7 @@ export function VoiceSettingsOverlay({
   }
 
   async function chooseVoice(nextVoiceId: string) {
+    edited.current.add("voiceId");
     setVoiceId(nextVoiceId);
     if (!credential) return;
     markPending("voice");
@@ -216,7 +259,12 @@ export function VoiceSettingsOverlay({
     try {
       const saved = await rpc.voice.setSpeechModel({ provider: selected.id, speechModel: next });
       setSpeechModel(saved.speechModel);
-      setCredentials((current) => current.map((entry) => (entry.id === saved.id ? saved : entry)));
+      const update = (current: VoiceCredential[]) =>
+        current.map((entry) => (entry.id === saved.id ? saved : entry));
+      setCredentials(update);
+      queryClient.setQueryData(queries.voice.credentials.queryKey(), (current) =>
+        current ? update(current) : current,
+      );
     } catch (err) {
       setError(errorText(err, t`Could not save that speech model`));
     } finally {
@@ -265,7 +313,7 @@ export function VoiceSettingsOverlay({
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
         <div className="max-w-xl">
-          {loading ? (
+          {loading && !catalog.length ? (
             <p className="text-sm text-muted-foreground">
               <Spinner aria-label={t`Loading voice providers…`} />
             </p>
@@ -319,7 +367,10 @@ export function VoiceSettingsOverlay({
                     autoComplete="off"
                     spellCheck={false}
                     value={baseUrl}
-                    onChange={(event) => setBaseUrl(event.target.value)}
+                    onChange={(event) => {
+                      edited.current.add("baseUrl");
+                      setBaseUrl(event.target.value);
+                    }}
                     placeholder="http://192.168.1.10:8880/v1"
                   />
                 </Field>
@@ -355,7 +406,10 @@ export function VoiceSettingsOverlay({
                       spellCheck={false}
                       value={ttsModel}
                       maxLength={200}
-                      onChange={(event) => setTtsModel(event.target.value)}
+                      onChange={(event) => {
+                        edited.current.add("ttsModel");
+                        setTtsModel(event.target.value);
+                      }}
                       placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
                     />
                   </Field>
@@ -369,7 +423,10 @@ export function VoiceSettingsOverlay({
                       spellCheck={false}
                       value={sttModel}
                       maxLength={200}
-                      onChange={(event) => setSttModel(event.target.value)}
+                      onChange={(event) => {
+                        edited.current.add("sttModel");
+                        setSttModel(event.target.value);
+                      }}
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
@@ -442,7 +499,10 @@ export function VoiceSettingsOverlay({
                         spellCheck={false}
                         disabled={busy}
                         placeholder={t`Optional`}
-                        onChange={(event) => setSpeechModel(event.target.value)}
+                        onChange={(event) => {
+                          edited.current.add("speechModel");
+                          setSpeechModel(event.target.value);
+                        }}
                         onBlur={() => void saveSpeechModel()}
                         onKeyDown={(event) => {
                           if (event.key !== "Enter") return;
@@ -501,3 +561,14 @@ export function VoiceSettingsOverlay({
     </Dialog>
   );
 }
+
+function selectedProvider(
+  catalog: VoiceCatalogEntry[],
+  preferred: Array<string | null | undefined>,
+): string {
+  return preferred.find((id) => catalog.some((entry) => entry.id === id)) ?? catalog[0]?.id ?? "";
+}
+
+const NO_VOICES: VoiceInfo[] = [];
+
+type EditableField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";

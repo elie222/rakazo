@@ -12,7 +12,8 @@ import {
   NativeSelectOption,
   Spinner,
 } from "@rakazo/ui-web";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useId, useMemo, useState } from "react";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
   activityFiltersActive,
@@ -21,8 +22,8 @@ import {
   emptyActivityFilters,
   filterActivityRuns,
 } from "../lib/activity-list-filters";
+import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
-import { rpc } from "../lib/rpc";
 
 export function statusTone(status: RunActivityRow["status"], updatedAt?: string): string {
   if (status === "failed") return "text-destructive";
@@ -32,6 +33,8 @@ export function statusTone(status: RunActivityRow["status"], updatedAt?: string)
   if (updatedAt && isAgedStuckWork(status, updatedAt)) return "text-warning";
   return "text-foreground";
 }
+
+const NO_RUNS: RunActivityRow[] = [];
 
 type ActivityListProps = {
   onOpenRun: (run: RunActivityRow) => void;
@@ -49,60 +52,29 @@ export function ActivityList({
   filtersId,
 }: ActivityListProps) {
   const { t } = useLingui();
-  const [activeRuns, setActiveRuns] = useState<RunActivityRow[]>([]);
-  const [recentRuns, setRecentRuns] = useState<RunActivityRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const reloadRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: number | undefined;
-    let generation = 0;
-
-    const load = () => {
-      const requestId = ++generation;
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-        timer = undefined;
-      }
-      void (async () => {
-        let retry = true;
-        try {
-          const [active, recent] = await Promise.all([
-            rpc.runs.list({ filter: "active" }),
-            rpc.runs.list({ filter: "recent" }),
-          ]);
-          if (cancelled || requestId !== generation) return;
-          setActiveRuns(active.runs);
-          setRecentRuns(recent.runs);
-          setError(null);
-        } catch (err) {
-          retry = isRetryableError(err);
-          if (cancelled || requestId !== generation) return;
-          setError(err instanceof Error ? err.message : t`Could not load activity`);
-        } finally {
-          if (!cancelled && requestId === generation) {
-            setLoading(false);
-            if (retry) timer = window.setTimeout(load, 15_000);
-          }
-        }
-      })();
-    };
-
-    reloadRef.current = () => {
-      setLoading(true);
-      setError(null);
-      load();
-    };
-    load();
-    return () => {
-      cancelled = true;
-      reloadRef.current = null;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [t]);
+  const queries = useSpaceQueries();
+  // Polls while open; a refused request (signed out, forbidden) stops polling.
+  const poll = {
+    refetchInterval: (query: { state: { error: unknown } }) =>
+      query.state.error && !isRetryableError(query.state.error) ? false : 15_000,
+  } as const;
+  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...poll }));
+  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...poll }));
+  const activeRuns = active.data?.runs ?? NO_RUNS;
+  const recentRuns = recent.data?.runs ?? NO_RUNS;
+  // "Try again" shows its progress in place of the error it answers.
+  const [retrying, setRetrying] = useState(false);
+  const loading = active.isPending || recent.isPending || retrying;
+  const failure = retrying ? null : (active.error ?? recent.error);
+  const error = failure
+    ? failure instanceof Error
+      ? failure.message
+      : t`Could not load activity`
+    : null;
+  const retry = () => {
+    setRetrying(true);
+    void Promise.all([active.refetch(), recent.refetch()]).finally(() => setRetrying(false));
+  };
 
   const filteredActive = useMemo(
     () => filterActivityRuns(activeRuns, filters),
@@ -133,7 +105,7 @@ export function ActivityList({
 
       {error ? (
         <div className="px-2.5 pb-2" role="alert">
-          <ActivityError error={error} onRetry={() => reloadRef.current?.()} compact />
+          <ActivityError error={error} onRetry={retry} compact />
         </div>
       ) : null}
 

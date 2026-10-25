@@ -8,6 +8,7 @@ import {
   DialogTitle,
   OptionSelect,
 } from "@rakazo/ui-web";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Brain,
   ChevronLeft,
@@ -27,7 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
 import { desktopBridge } from "../lib/desktop";
-import { rpcForSpace } from "../lib/rpc";
+import { spaceQueries, useQueryUserId, writeSaved } from "../lib/query";
 import { SpaceRpcProvider } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import {
@@ -128,38 +129,20 @@ export function SettingsOverlay({
   const spaceId = spaceScoped ? (space?.id ?? null) : null;
   // The shell only holds the selected space's memory config; another space's loads here.
   const otherSpace = Boolean(spaceId && currentSpaceId && spaceId !== currentSpaceId);
-  // Kept with the space it was loaded for, so a switch never shows the previous space's config.
-  const [otherMemory, setOtherMemory] = useState<
-    { spaceId: string } & (
-      | { config: SpaceMemoryConfig | null; error?: never }
-      | { config?: never; error: string }
-    )
-  >();
-  const [memoryLoadAttempt, setMemoryLoadAttempt] = useState(0);
-  const otherMemoryError = otherMemory?.spaceId === spaceId ? otherMemory.error : undefined;
-  const otherMemoryConfig = otherMemory?.spaceId === spaceId ? otherMemory.config : undefined;
-  const setOtherMemoryConfig = useCallback(
-    (config: SpaceMemoryConfig | null) => {
-      if (spaceId) setOtherMemory({ spaceId, config });
-    },
-    [spaceId],
-  );
-  useEffect(() => {
-    if (section !== "memory" || !otherSpace || !spaceId) return;
-    let cancelled = false;
-    setOtherMemory(undefined);
-    rpcForSpace(spaceId)
-      .memory.providerConfig()
-      .then((config) => {
-        if (!cancelled) setOtherMemory({ spaceId, config });
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setOtherMemory({ spaceId, error: errorText(err) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [section, otherSpace, spaceId, memoryLoadAttempt]);
+  // Cached per space, so a switch never shows the previous space's config.
+  const queryClient = useQueryClient();
+  const otherMemoryOptions = spaceQueries(
+    useQueryUserId(),
+    spaceId,
+  ).memory.providerConfig.queryOptions({ enabled: section === "memory" && otherSpace });
+  const otherMemory = useQuery(otherMemoryOptions);
+  const otherMemoryError =
+    otherMemory.isError && !otherMemory.isFetching && otherMemory.data === undefined
+      ? errorText(otherMemory.error)
+      : undefined;
+  const otherMemoryConfig = otherMemory.data;
+  const setOtherMemoryConfig = (config: SpaceMemoryConfig | null) =>
+    void writeSaved(queryClient, otherMemoryOptions.queryKey, () => config);
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;
@@ -416,10 +399,7 @@ export function SettingsOverlay({
                 {section === "memory" && otherSpace && otherMemoryError ? (
                   <div className="px-6 py-6 sm:px-8">
                     <p className="mb-4 text-sm text-destructive">{otherMemoryError}</p>
-                    <Button
-                      variant="outline"
-                      onClick={() => setMemoryLoadAttempt((attempt) => attempt + 1)}
-                    >
+                    <Button variant="outline" onClick={() => void otherMemory.refetch()}>
                       {t`Retry`}
                     </Button>
                   </div>

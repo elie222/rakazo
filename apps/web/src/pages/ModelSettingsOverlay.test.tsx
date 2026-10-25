@@ -2,6 +2,7 @@
 
 import { i18n } from "@lingui/core";
 import type * as UiWeb from "@rakazo/ui-web";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -29,14 +30,19 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({
-  selectedSpaceId: () => "space-1",
-  rpc: {
+vi.mock("../lib/rpc", () => {
+  const rpc = {
     models,
     bots: { list: vi.fn(async () => []), update: vi.fn() },
     me: vi.fn(),
-  },
-}));
+  };
+  return {
+    selectedSpaceId: () => "space-1",
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+  };
+});
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
@@ -277,12 +283,20 @@ function titles(container: HTMLElement) {
   );
 }
 
-async function renderSettings(embedded = true) {
+function testQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+async function renderSettings(embedded = true, queryClient = testQueryClient()) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <ModelSettingsOverlay embedded={embedded} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
   });
   await act(async () => {
     await Promise.resolve();
@@ -343,6 +357,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.body.replaceChildren();
   vi.clearAllMocks();
+});
+
+it("reopens on cached models without a spinner and refreshes them behind it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  expect(first.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+  await first.unmount();
+
+  const hold = new Promise<never>(() => undefined);
+  models.list.mockReturnValue(hold);
+  models.role.mockReturnValue(hold);
+  models.forRole.mockReturnValue(hold);
+  const listCalls = models.list.mock.calls.length;
+  const roleCalls = models.role.mock.calls.length;
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(view.container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-row-1"]')).not.toBeNull();
+    expect(models.list.mock.calls.length).toBeGreaterThan(listCalls);
+    expect(models.role.mock.calls.length).toBeGreaterThan(roleCalls);
+  } finally {
+    await view.unmount();
+  }
 });
 
 it("shows a stored BYOK key when provider settings reopen", async () => {
@@ -1312,6 +1350,39 @@ it("renames a connection", async () => {
       credentialId: "cred-deepseek-work",
       label: "Client work",
     });
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("shows what a disconnect left, not a read sent before it", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
+  const queryClient = testQueryClient();
+  const first = await renderSettings(true, queryClient);
+  await first.unmount();
+
+  // The revisit's background read still lists Work when the disconnect lands.
+  let releaseStale: () => void = () => undefined;
+  models.credentials
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStale = () => resolve([deepseekCredential, workCredential]);
+        }),
+    )
+    .mockResolvedValue([deepseekCredential]);
+  const providerNames = () =>
+    [...providersSection().querySelectorAll("button")].map((entry) => entry.textContent);
+  const view = await renderSettings(true, queryClient);
+  try {
+    expect(providerNames()).toContain("DeepSeek · Work");
+    await openProvider("DeepSeek · Work");
+    await click(buttons(view.container, "Disconnect")[0]);
+    const confirm = buttons(view.container, "Disconnect");
+    await click(confirm[confirm.length - 1]);
+    await act(async () => releaseStale());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(providerNames()).not.toContain("DeepSeek · Work");
   } finally {
     await view.unmount();
   }

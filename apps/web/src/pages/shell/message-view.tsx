@@ -68,6 +68,7 @@ export const MessageView = memo(function MessageView({
   showToolActivity,
   onReply,
   onMarkUnread,
+  markedUnread = false,
   onReact,
 }: {
   artifactTarget: ArtifactTarget;
@@ -106,6 +107,7 @@ export const MessageView = memo(function MessageView({
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
+  markedUnread?: boolean;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
@@ -186,6 +188,7 @@ export const MessageView = memo(function MessageView({
       side={message.role === "user" ? "start" : "end"}
       onReply={onReply}
       onMarkUnread={onMarkUnread}
+      markedUnread={markedUnread}
       onReact={onReact}
     />
   );

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
 import type { ModelCatalogEntry, ModelRoleView as Settings } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -60,6 +61,7 @@ const onManage = vi.fn();
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let saved: Settings;
+let queryClient: QueryClient;
 const props = {
   userId: "user",
   spaceId: "space",
@@ -72,7 +74,13 @@ const props = {
   onManage,
 };
 async function render(extra: Partial<ComponentProps<typeof ModelRoleSettings>> = {}) {
-  await act(async () => root.render(<ModelRoleSettings {...props} {...extra} />));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <ModelRoleSettings {...props} {...extra} />
+      </QueryClientProvider>,
+    ),
+  );
 }
 function trigger(label: string) {
   return container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
@@ -116,6 +124,7 @@ beforeEach(() => {
   );
   Element.prototype.scrollIntoView = () => undefined;
   saved = { primary: null, backups: [] };
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   onConnect.mockReset();
   onManage.mockReset();
   api.role.mockReset().mockImplementation(async () => saved);
@@ -153,6 +162,21 @@ describe("shared role editor", () => {
     await menu("Jev 1.14", "Remove");
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
+  });
+  it("reopens on the cached list without a spinner while it refreshes", async () => {
+    saved = { primary: chat, backups: [mini] };
+    await render();
+    expect(rows()).toEqual(["Chat· OpenRouter", "Mini· OpenRouter"]);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    const hold = new Promise<never>(() => undefined);
+    api.role.mockReturnValue(hold);
+    api.forRole.mockReturnValue(hold);
+    const loads = api.role.mock.calls.length;
+    await render();
+    expect(container.querySelector('[aria-label="Loading model catalog…"]')).toBeNull();
+    expect(rows()).toEqual(["Chat· OpenRouter", "Mini· OpenRouter"]);
+    expect(api.role.mock.calls.length).toBe(loads + 1);
   });
   it("uses the same add, order and remove controls for main and approval fallbacks", async () => {
     await render();

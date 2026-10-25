@@ -28,10 +28,12 @@ import {
   DropdownMenuTrigger,
   Spinner,
 } from "@rakazo/ui-web";
+import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { thinkingLevelLabel } from "../lib/model-catalog";
+import { spaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import type { ConnectableProvider, RoleModelOption } from "./model-settings/role-model-picker";
 import { RoleModelPicker } from "./model-settings/role-model-picker";
@@ -89,24 +91,40 @@ export function ModelRoleSettings({
   panel,
 }: Props) {
   const rpc = useSpaceRpc();
+  const queryClient = useQueryClient();
   const { t } = useLingui();
-  const controller = useMemo(
-    () =>
-      createModelRoleSettings(
-        {
-          load: () => rpc.models.role({ role, expectedUserId: userId }, { context: { spaceId } }),
-          catalog: () =>
-            rpc.models.forRole({ role, expectedUserId: userId }, { context: { spaceId } }),
-          save: (patch) =>
-            rpc.models.setRole(
-              { role, expectedUserId: userId, ...patch },
-              { context: { spaceId } },
-            ),
+  const controller = useMemo(() => {
+    // The last load is cached per user, space, and role, so a revisit shows it while refreshing.
+    const queries = spaceQueries(userId, spaceId);
+    const input = { role, expectedUserId: userId };
+    const settingsKey = queries.models.role.queryKey({ input });
+    const catalogKey = queries.models.forRole.queryKey({ input });
+    const settings = queryClient.getQueryData(settingsKey);
+    const catalog = queryClient.getQueryData(catalogKey);
+    return createModelRoleSettings(
+      {
+        load: () =>
+          queryClient.fetchQuery({
+            queryKey: settingsKey,
+            queryFn: () => rpc.models.role(input, { context: { spaceId } }),
+            staleTime: 0,
+          }),
+        catalog: () =>
+          queryClient.fetchQuery({
+            queryKey: catalogKey,
+            queryFn: () => rpc.models.forRole(input, { context: { spaceId } }),
+            staleTime: 0,
+          }),
+        save: async (patch) => {
+          const saved = await rpc.models.setRole({ ...input, ...patch }, { context: { spaceId } });
+          queryClient.setQueryData(settingsKey, saved);
+          return saved;
         },
-        JSON.stringify([window.location.origin, userId, spaceId, role]),
-      ),
-    [rpc, userId, spaceId, role],
-  );
+      },
+      JSON.stringify([window.location.origin, userId, spaceId, role]),
+      settings && catalog ? { settings, catalog } : undefined,
+    );
+  }, [queryClient, rpc, userId, spaceId, role]);
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   const [dragging, setDragging] = useState<number | null>(null);
   // After a connection the slot's picker reopens on that provider's models.

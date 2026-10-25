@@ -21,6 +21,7 @@ import { desktopBridge } from "./lib/desktop";
 import { identifyMonitoringUser } from "./lib/monitoring";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { lazyComponent } from "./lib/preload-recovery";
+import { QueryUserProvider, setQueryUser } from "./lib/query";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
 import {
@@ -119,6 +120,9 @@ function SessionApp() {
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
+  useEffect(() => {
+    if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
+  }, [gate, analyticsUserId]);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);
   if (nextHolding !== holdingUnreachable) setHoldingUnreachable(nextHolding);
@@ -145,63 +149,67 @@ function SessionApp() {
 
   const user = session.data?.user;
   return (
-    <div className="h-full" data-rakazo-app-state="ready">
-      <Suspense fallback={<div className="h-full bg-background" />}>
-        <Routes>
-          <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
-          <Route
-            path="/sign-in"
-            element={
-              user ? <Navigate to={signInDestination} replace /> : <AuthPage key="in" mode="in" />
-            }
-          />
-          <Route
-            path="/sign-up"
-            element={user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />}
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              user ? <Navigate to="/app" replace /> : <AuthPage key="forgot" mode="forgot" />
-            }
-          />
-          <Route path="/reset-password" element={<PasswordResetPage />} />
-          <Route
-            path="/mcp/oauth/callback"
-            element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/integrations/setup"
-            element={
-              user ? (
-                <IntegrationSetupPage />
-              ) : (
-                <Navigate to="/sign-in?next=/integrations/setup" replace />
-              )
-            }
-          />
-          <Route
-            element={
-              user ? (
-                <SubscriptionGate fallback={<GateFallback />}>
-                  <Outlet />
-                </SubscriptionGate>
-              ) : (
-                <Navigate to="/sign-in" replace />
-              )
-            }
-          >
-            <Route path="/onboarding/:step?" element={<OnboardingPage />} />
-            <Route path="/app" element={<ShellPage />} />
-            <Route path="/app/g/:groupId" element={<ShellPage />} />
-            <Route path="/app/artifacts" element={<ArtifactsPage />} />
-            <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-            {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
-            <Route path="/app/:botId" element={<ShellPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
-    </div>
+    <QueryUserProvider value={user?.id ?? null}>
+      <div className="h-full" data-rakazo-app-state="ready">
+        <Suspense fallback={<div className="h-full bg-background" />}>
+          <Routes>
+            <Route path="/" element={user ? <Navigate to="/app" replace /> : <WelcomePage />} />
+            <Route
+              path="/sign-in"
+              element={
+                user ? <Navigate to={signInDestination} replace /> : <AuthPage key="in" mode="in" />
+              }
+            />
+            <Route
+              path="/sign-up"
+              element={
+                user ? <Navigate to="/onboarding" replace /> : <AuthPage key="up" mode="up" />
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                user ? <Navigate to="/app" replace /> : <AuthPage key="forgot" mode="forgot" />
+              }
+            />
+            <Route path="/reset-password" element={<PasswordResetPage />} />
+            <Route
+              path="/mcp/oauth/callback"
+              element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
+            />
+            <Route
+              path="/integrations/setup"
+              element={
+                user ? (
+                  <IntegrationSetupPage />
+                ) : (
+                  <Navigate to="/sign-in?next=/integrations/setup" replace />
+                )
+              }
+            />
+            <Route
+              element={
+                user ? (
+                  <SubscriptionGate fallback={<GateFallback />}>
+                    <Outlet />
+                  </SubscriptionGate>
+                ) : (
+                  <Navigate to="/sign-in" replace />
+                )
+              }
+            >
+              <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+              <Route path="/app" element={<ShellPage />} />
+              <Route path="/app/g/:groupId" element={<ShellPage />} />
+              <Route path="/app/artifacts" element={<ArtifactsPage />} />
+              <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
+              {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
+              <Route path="/app/:botId" element={<ShellPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </div>
+    </QueryUserProvider>
   );
 }
 
