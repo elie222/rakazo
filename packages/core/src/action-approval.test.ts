@@ -801,6 +801,42 @@ describe("resolveActionApprovalForTools", () => {
     ).toBe("default");
   });
 
+  it("denies the batch when a deny rule names the wrapper or its connector", () => {
+    const byWrapperName = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_SEND_EMAIL", connectorKind: "gmail" }],
+      denyOnlyTools: [{ name: "COMPOSIO_MULTI_EXECUTE_TOOL", connectorKind: "composio" }],
+      rules: [
+        {
+          effect: "deny" as const,
+          matchKind: "tool" as const,
+          matchValue: "composio_multi_execute_tool",
+        },
+      ],
+    });
+    expect(byWrapperName.decision).toBe("deny");
+    const byConnector = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_SEND_EMAIL", connectorKind: "gmail" }],
+      denyOnlyTools: [{ name: "COMPOSIO_MULTI_EXECUTE_TOOL", connectorKind: "composio" }],
+      rules: [{ effect: "deny" as const, matchKind: "connector" as const, matchValue: "composio" }],
+    });
+    expect(byConnector.decision).toBe("deny");
+  });
+
+  it("never lets a wrapper allow or ask rule cover the batch", () => {
+    const resolved = resolveActionApprovalForTools({
+      tools: [{ name: "GMAIL_SEND_EMAIL", connectorKind: "gmail" }],
+      denyOnlyTools: [{ name: "COMPOSIO_MULTI_EXECUTE_TOOL", connectorKind: "composio" }],
+      rules: [
+        {
+          effect: "always_allow" as const,
+          matchKind: "connector" as const,
+          matchValue: "composio",
+        },
+      ],
+    });
+    expect(resolved.source).toBe("default");
+  });
+
   it("matches connector and category rules against each slug's own kind", () => {
     const emailRule = {
       effect: "require_approval" as const,

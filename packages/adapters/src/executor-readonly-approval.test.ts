@@ -1171,6 +1171,25 @@ describe("composio multi-execute approvals", () => {
     expect(reviewMock).not.toHaveBeenCalled();
     expect(f.results).toEqual([{ error: "A space rule blocks gmail_delete_threads." }]);
   });
+
+  it("blocks the batch when a deny rule names the wrapper or its connector", async () => {
+    for (const rule of [
+      { effect: "deny", matchKind: "tool", matchValue: "composio_multi_execute_tool" },
+      { effect: "deny", matchKind: "connector", matchValue: "composio" },
+    ] as const) {
+      const f = fixture({
+        name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        readOnly: false,
+        rules: [rule],
+      });
+      f.setCalls([{ args: multiExecute(["GMAIL_SEND_EMAIL"]), executionId: "call-1" }]);
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.results[0]).toMatchObject({
+        error: `A space rule blocks ${rule.matchValue}.`,
+      });
+    }
+  });
 });
 
 describe("create_space", () => {

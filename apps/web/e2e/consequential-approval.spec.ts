@@ -35,6 +35,9 @@ test("actions run by default while optional confirmations live in space settings
   await settings.getByRole("button", { name: "Ask before sending external email" }).click();
   await expect(settings.getByText("Ask before email actions", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "52-advanced-action-confirmations");
+  await settings.getByRole("button", { name: "Never send external email" }).click();
+  await expect(settings.getByText("Never run email actions", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "52c-never-send-email-rule");
   const skipApprovals = settings.getByTestId("skip-approvals-toggle");
   await expect(skipApprovals).not.toBeChecked();
   await skipApprovals.click();

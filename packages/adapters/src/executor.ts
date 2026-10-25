@@ -5280,6 +5280,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 connectorKind: connectorKindFromToolName(toolName, connectorProviders),
                 readOnly: declaredReadOnlyFor(toolName),
               })),
+              denyOnlyTools: nestedComposio
+                ? [
+                    {
+                      name,
+                      connectorKind,
+                      readOnly: declaredReadOnlyFor(name),
+                    },
+                  ]
+                : undefined,
               site: fetchSite,
               rules: await loadApprovalRules(),
             });

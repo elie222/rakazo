@@ -418,22 +418,35 @@ export function composioMultiExecuteSlugs(
  */
 export function resolveActionApprovalForTools(input: {
   tools: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
+  /**
+   * Extra identities that may only deny, never allow or ask: a Composio batch is judged by
+   * its wrapped actions, but a deny rule naming the wrapper or the `composio` connector
+   * still blocks the whole batch.
+   */
+  denyOnlyTools?: ReadonlyArray<{ name: string; connectorKind?: string; readOnly?: boolean }>;
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
-  const resolved = input.tools.map((tool) =>
+  const resolve = (tool: { name: string; connectorKind?: string; readOnly?: boolean }) =>
     resolveActionApprovalDetail({
       toolName: tool.name,
       connectorKind: tool.connectorKind,
       readOnly: tool.readOnly,
       site: input.site,
       rules: input.rules,
-    }),
-  );
+    });
+  const resolved = input.tools.map(resolve);
+  const wrapperDenied = (input.denyOnlyTools ?? [])
+    .map(resolve)
+    .find((part) => part.decision === "deny");
   const matchingRules = [
-    ...new Map(resolved.flatMap((part) => part.matchingRules).map((rule) => [rule, rule])).values(),
+    ...new Map(
+      [...resolved, ...(wrapperDenied ? [wrapperDenied] : [])]
+        .flatMap((part) => part.matchingRules)
+        .map((rule) => [rule, rule]),
+    ).values(),
   ];
-  const denied = resolved.find((part) => part.decision === "deny");
+  const denied = resolved.find((part) => part.decision === "deny") ?? wrapperDenied;
   if (denied) return { decision: "deny", source: denied.source, matchingRules };
   const asking = resolved.find((part) => part.decision === "ask");
   if (asking) return { decision: "ask", source: asking.source, matchingRules };
