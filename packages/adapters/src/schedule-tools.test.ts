@@ -312,6 +312,10 @@ describe("schedule tool persistence", () => {
     },
   );
   it("refuses a name already active in the thread, not one in another thread", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "routine-1", name: "Morning joke", threadId: "thread-1" },
+      { id: "routine-2", name: "Evening joke", threadId: "thread-2" },
+    ]);
     const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
       id: "routine-3",
       ...args.data,
@@ -321,10 +325,7 @@ describe("schedule tool persistence", () => {
         user: noTimezone,
         routine: {
           create,
-          findMany: vi.fn(async () => [
-            { id: "routine-1", name: "Morning joke", threadId: "thread-1" },
-            { id: "routine-2", name: "Evening joke", threadId: "thread-2" },
-          ]),
+          findMany,
         },
       },
       events: { append: vi.fn() },
@@ -344,6 +345,10 @@ describe("schedule tool persistence", () => {
     expect(result).toEqual({
       error:
         'An active routine named "Morning joke" already exists (routine-1). Update or cancel it instead.',
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", active: true },
+      select: { id: true, name: true, threadId: true },
     });
     expect(create).not.toHaveBeenCalled();
 
