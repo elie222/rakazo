@@ -46,7 +46,7 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
 > = {
   [CHATGPT_OAUTH_PROVIDER]: {
     mode: "device-code",
-    loginLabel: "Sign in with ChatGPT Plus/Pro",
+    loginLabel: "Sign in with ChatGPT",
     hint: "ChatGPT Plus/Pro",
     billing:
       "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
@@ -65,7 +65,7 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
   },
   [ANTHROPIC_OAUTH_PROVIDER]: {
     mode: "auth-url",
-    loginLabel: "Sign in with Claude Pro/Max",
+    loginLabel: "Sign in with Claude",
     hint: "Claude Pro/Max / key",
     // Button + "Or paste an API key" already explain the choices; no extra paragraph.
     billing: "",
@@ -341,6 +341,7 @@ type LoginFn = (
   providerId: string,
   type: "oauth",
   interaction: AuthInteraction,
+  options?: { codePage?: boolean },
 ) => Promise<Credential>;
 
 type SessionState = "pending" | "ready" | "finalizing" | "consumed";
@@ -872,6 +873,8 @@ export class PiOAuthLogins {
     makeDefault?: boolean;
     settingsScope?: SettingsScope;
     label?: string;
+    /** The client has no loopback listener, so the provider shows the code to paste. */
+    codePage?: boolean;
     signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
     if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
@@ -910,68 +913,73 @@ export class PiOAuthLogins {
 
       const signInStarted = deferred<PiOAuthStarted>();
 
-      const done = this.loginFn(input.provider, "oauth", {
-        signal: abort.signal,
-        async prompt(prompt) {
-          if (prompt.type === "select") {
-            const option = prompt.options.find((entry) => entry.id === "device_code");
-            if (!option) {
-              throw new Error("Device-code sign-in is not available for this provider.");
-            }
-            return option.id;
-          }
-          if (prompt.type === "manual_code") {
-            return new Promise<string>((resolve, reject) => {
-              const signals = [abort.signal, prompt.signal].filter(
-                (signal): signal is AbortSignal => signal !== undefined,
-              );
-              const removeAbortListeners = () => {
-                for (const signal of signals) signal.removeEventListener("abort", onAbort);
-              };
-              const onAbort = (event: Event) => {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                const signal = event.currentTarget as AbortSignal;
-                reject(signal.reason ?? new Error("Sign-in cancelled."));
-              };
-              session.submitCode = (code) => {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                resolve(code);
-              };
-              const aborted = signals.find((signal) => signal.aborted);
-              if (aborted) {
-                removeAbortListeners();
-                session.submitCode = undefined;
-                reject(aborted.reason ?? new Error("Sign-in cancelled."));
-              } else {
-                for (const signal of signals)
-                  signal.addEventListener("abort", onAbort, { once: true });
+      const done = this.loginFn(
+        input.provider,
+        "oauth",
+        {
+          signal: abort.signal,
+          async prompt(prompt) {
+            if (prompt.type === "select") {
+              const option = prompt.options.find((entry) => entry.id === "device_code");
+              if (!option) {
+                throw new Error("Device-code sign-in is not available for this provider.");
               }
-            });
-          }
-          // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
-          if (prompt.type === "text") return "";
-          throw new Error("Unexpected subscription login prompt.");
+              return option.id;
+            }
+            if (prompt.type === "manual_code") {
+              return new Promise<string>((resolve, reject) => {
+                const signals = [abort.signal, prompt.signal].filter(
+                  (signal): signal is AbortSignal => signal !== undefined,
+                );
+                const removeAbortListeners = () => {
+                  for (const signal of signals) signal.removeEventListener("abort", onAbort);
+                };
+                const onAbort = (event: Event) => {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  const signal = event.currentTarget as AbortSignal;
+                  reject(signal.reason ?? new Error("Sign-in cancelled."));
+                };
+                session.submitCode = (code) => {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  resolve(code);
+                };
+                const aborted = signals.find((signal) => signal.aborted);
+                if (aborted) {
+                  removeAbortListeners();
+                  session.submitCode = undefined;
+                  reject(aborted.reason ?? new Error("Sign-in cancelled."));
+                } else {
+                  for (const signal of signals)
+                    signal.addEventListener("abort", onAbort, { once: true });
+                }
+              });
+            }
+            // Copilot asks for a GitHub Enterprise host first. Blank is github.com.
+            if (prompt.type === "text") return "";
+            throw new Error("Unexpected subscription login prompt.");
+          },
+          notify(event) {
+            if (event.type === "device_code") {
+              signInStarted.resolve({
+                mode: "device-code",
+                userCode: event.userCode,
+                verificationUri: httpsAuthorizationUrl(event.verificationUri),
+                expiresInSeconds: event.expiresInSeconds ?? 15 * 60,
+              });
+            }
+            if (event.type === "auth_url") {
+              signInStarted.resolve({
+                mode: "auth-url",
+                verificationUri: httpsAuthorizationUrl(event.url),
+                expiresInSeconds: 15 * 60,
+              });
+            }
+          },
         },
-        notify(event) {
-          if (event.type === "device_code") {
-            signInStarted.resolve({
-              mode: "device-code",
-              userCode: event.userCode,
-              verificationUri: httpsAuthorizationUrl(event.verificationUri),
-              expiresInSeconds: event.expiresInSeconds ?? 15 * 60,
-            });
-          }
-          if (event.type === "auth_url") {
-            signInStarted.resolve({
-              mode: "auth-url",
-              verificationUri: httpsAuthorizationUrl(event.url),
-              expiresInSeconds: 15 * 60,
-            });
-          }
-        },
-      })
+        { codePage: input.codePage },
+      )
         .then((credential) => {
           if (!isOAuthCredential(credential)) {
             throw new Error("Subscription sign-in did not return an OAuth credential.");
@@ -1254,9 +1262,10 @@ function defaultLogin(
   providerId: string,
   type: "oauth",
   interaction: AuthInteraction,
+  options: { codePage?: boolean } = {},
 ): Promise<Credential> {
   if (providerId === ANTHROPIC_OAUTH_PROVIDER) {
-    return createManualAnthropicOAuthLogin()(interaction);
+    return createManualAnthropicOAuthLogin({ codePage: options.codePage })(interaction);
   }
   return builtinModels().login(providerId, type, interaction);
 }

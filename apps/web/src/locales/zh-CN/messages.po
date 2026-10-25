@@ -598,36 +598,17 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "允许 {0} 操作，无需询问"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "允许 {0} 连接器，无需询问"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "允许 {0}，无需询问"
+msgid "Allow"
+msgstr "允许"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "允许跨空间机器人通信"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "允许邮件操作，无需询问"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "允许一次"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "允许购买操作，无需询问"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "审批边界"
 msgid "Approval model"
 msgstr "审批模型"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "审批"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "参数"
 msgid "Artifacts"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "{0} 前询问"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "{0} 操作前询问"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "{0} 连接器前询问"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "邮件操作前询问"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "购买操作前询问"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "购买前询问"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "发送外部邮件前询问"
+msgid "Ask"
+msgstr "询问"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "身份验证失败。"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "授权码或回调 URL"
+msgid "Authorization code"
+msgstr "授权码"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "授权"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "授权此服务器后，Agent 才能使用其工具。将打开弹窗。"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "自动"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Bearer token"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "阻止"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "电脑已休眠"
 msgid "Computer is asleep. Open it to wake."
 msgstr ""
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "电脑已停止"
@@ -1445,11 +1413,6 @@ msgstr "确认密码"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "已连接"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "已连接 {0}。"
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "已连接，下一条消息起即可使用其工具。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "正在查找…"
 msgid "Finish setting up"
 msgstr "完成设置"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "在 <0>{0}</0> 完成登录。最后一页可能无法加载；把 URL 或代码粘贴到这里。"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "请完成订阅登录，然后重新测试。"
@@ -2717,10 +2670,6 @@ msgstr "已完成。"
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "正在完成 MCP 连接…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "标记异常操作"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "分钟"
 msgid "Missed call"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "模式"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr ""
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "需要：{names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "从不询问"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "打开 {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr ""
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr ""
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "排队中"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
 
@@ -4550,10 +4502,6 @@ msgstr "例行任务"
 msgid "Routines that run while you're away"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "无需询问直接执行操作"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "运行时间"
@@ -4899,6 +4847,12 @@ msgstr "登录"
 msgid "Sign in again"
 msgstr "重新登录"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "在 <0>{0}</0> 登录，然后将代码粘贴到这里。"
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "登录 Rakazo"
@@ -5020,6 +4974,10 @@ msgstr "语音模型"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO 暂时不可用，请重试。"
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr ""
 

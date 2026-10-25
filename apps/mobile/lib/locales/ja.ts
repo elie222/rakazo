@@ -1,4 +1,10 @@
 export const JA_MESSAGES: Record<string, string> = {
+  Approvals: "承認",
+  "Never ask": "確認しない",
+  Auto: "自動",
+  Ask: "確認",
+  Block: "ブロック",
+  "Add a model in Settings to use this.": "使用するには設定でモデルを追加してください。",
   "Approval model": "承認モデル",
   "Main model": "メインモデル",
   "Add fallback": "バックアップモデルを追加",
@@ -215,7 +221,6 @@ export const JA_MESSAGES: Record<string, string> = {
   // app/(settings)/space.tsx
   Customize: "カスタマイズ",
   "Customize {setting}": "{setting}をカスタマイズ",
-  Confirmations: "確認",
   "Tap + to create a bot": "+をタップしてボットを作成",
   "This removes the space for everyone.": "このスペースを全員に対して削除します。",
   "Delete {name} and its bot?": "{name} とそのボットを削除しますか？",
@@ -442,8 +447,7 @@ export const JA_MESSAGES: Record<string, string> = {
     "このサーバー自身の{source}認証情報を使って{provider}にアクセスします。",
   "Connect API key": "APIキーを接続",
   "Connect MCP server {name}": "MCPサーバー{name}を接続",
-  "Connected. Its tools are available from your next message.":
-    "接続しました。次のメッセージからツールを使えます。",
+  "Connected.": "接続しました。",
   "Context limit": "コンテキスト上限",
   "Could not connect this provider": "このプロバイダーに接続できませんでした",
   "Could not finish sign-in": "ログインを完了できませんでした",
@@ -486,15 +490,13 @@ export const JA_MESSAGES: Record<string, string> = {
   Submit: "送信",
   "Supports images": "画像に対応",
   "Supports thinking": "思考に対応",
-  "The final page may not load. Paste its URL or code here.":
-    "最後のページが読み込まれない場合があります。そのURLまたはコードをここに貼り付けてください。",
+  "Then paste the code here.": "その後、ここにコードを貼り付けてください。",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
     "このサブスクリプションでのログインはRakazoではまだ利用できません。デプロイの認証情報を使うか、別のプロバイダーを選択してください。",
   "Use a found model": "見つかったモデルを使用",
   "Waiting for sign-in…": "ログインを待っています…",
   "exact-model-id": "exact-model-id",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
   "1 tool": "1個のツール",
   "Account label": "アカウントのラベル",
@@ -631,7 +633,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "スケジュール済みのタスク",
   "Sign out": "ログアウト",
   "Stream replies": "返信をストリーミング",
-  "Run actions without asking": "確認せずにアクションを実行",
   "Load web images automatically": "Web画像を自動で読み込む",
   System: "システム",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":

@@ -789,7 +789,7 @@ function SpaceShell() {
   );
   const readVisibleGroups = useRef(new Set<string>());
   // What the user had read up to when the open chat was opened; the "New" divider
-  // follows it for the rest of the visit. Each open of a chat is a new visit.
+  // follows it until they write in the chat or leave it. Each open of a chat is a new visit.
   const readVisit = useRef<{ chat: string | null; visit: number }>({ chat: null, visit: 0 });
   const [readBoundary, setReadBoundary] = useState<ReadBoundary | null>(null);
   // A chat's markRead calls run one at a time so the request that opened it answers first.
@@ -798,6 +798,10 @@ function SpaceShell() {
     setReadBoundary((current) =>
       settleReadBoundary(current, readVisit.current.visit, { visit, seq }),
     );
+  }, []);
+  // Writing in the chat means the user has caught up, so the divider goes.
+  const clearReadBoundary = useCallback(() => {
+    setReadBoundary({ visit: readVisit.current.visit, seq: null });
   }, []);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
@@ -2302,6 +2306,7 @@ function SpaceShell() {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
+      clearReadBoundary();
       await rpc.threads.answer({
         ...(groupId ? { groupId } : { botId: botId! }),
         runId: message.runId ?? "",
@@ -2424,6 +2429,7 @@ function SpaceShell() {
       sendingRef.current = true;
       setSending(true);
       setSendError(null);
+      clearReadBoundary();
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -2902,6 +2908,23 @@ function SpaceShell() {
       setComputerErrorFromScreen(false);
     }
   }, [computer?.busyBotName]);
+
+  // Opening the computer while its bot was running was refused as busy; boot it once the run
+  // ends, or the open window is left on a stopped computer with nothing to press.
+  const computerBlockedByRun = computerTakeoverBlocked(computer, snapshot?.run?.status);
+  useEffect(() => {
+    if (computerBlockedByRun) return;
+    const botId = computer?.botId;
+    if (!botId || !computerOpenRef.current || computerBotIdRef.current !== botId) return;
+    if (activeBotId.current !== botId) return;
+    if (computer.state !== "stopped" && computer.state !== "suspended") return;
+    void bootComputer({
+      botId,
+      takeControl: false,
+      showProgress: true,
+      force: true,
+    }).catch(() => undefined);
+  }, [computerBlockedByRun]);
 
   useEffect(() => {
     if (panel !== "routine") {
@@ -4338,6 +4361,7 @@ function SpaceShell() {
           onStopRun={() => void stopRun()}
           onRelease={releaseComputer}
           onTakeControl={() => void openComputer(computerBot.id, true)}
+          onStart={() => void openComputer(computerBot.id)}
           onRefreshTeaching={refreshActiveTeaching}
           onRefreshComputer={async () => {
             await refreshComputerFor(computerBot.id);

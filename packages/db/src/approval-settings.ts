@@ -41,9 +41,9 @@ export async function listApprovalRules(
 }
 
 /**
- * Saves a rule once and drops the opposite effect on the same match in the same copy, so a
- * match never has both. Matching ignores case, so the replacement does too; the lock keeps
- * concurrent opposite saves from both landing. Runs inside the caller's transaction.
+ * Saves a rule once and drops any other effect on the same match in the same copy, so a match
+ * has one rule. Matching ignores case, so the replacement does too; the lock keeps concurrent
+ * saves of different effects from both landing. Runs inside the caller's transaction.
  */
 export async function saveApprovalRule(
   tx: ConfirmationsTx,
@@ -58,7 +58,7 @@ export async function saveApprovalRule(
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${owner}:${rule.matchKind}:${value}`}, 0))::text AS "lock"
   `);
-  const opposite = rule.effect === "always_allow" ? "require_approval" : "always_allow";
+  const others = { not: rule.effect };
   // Compared here, not with Prisma's insensitive mode: that is ILIKE, where "_" is a wildcard.
   const sameMatch = (rows: Array<{ id: string; matchValue: string }>) =>
     rows.filter((row) => row.matchValue.toLowerCase() === value).map((row) => row.id);
@@ -66,7 +66,7 @@ export async function saveApprovalRule(
   if (account) {
     const where = { userId: scope.userId, matchKind: rule.matchKind };
     const ids = sameMatch(
-      await tx.userActionApprovalRule.findMany({ where: { ...where, effect: opposite }, select }),
+      await tx.userActionApprovalRule.findMany({ where: { ...where, effect: others }, select }),
     );
     await tx.userActionApprovalRule.deleteMany({ where: { id: { in: ids } } });
     const row = { userId: scope.userId, ...rule };
@@ -82,7 +82,7 @@ export async function saveApprovalRule(
     matchKind: rule.matchKind,
   };
   const ids = sameMatch(
-    await tx.actionApprovalRule.findMany({ where: { ...where, effect: opposite }, select }),
+    await tx.actionApprovalRule.findMany({ where: { ...where, effect: others }, select }),
   );
   await tx.actionApprovalRule.deleteMany({ where: { id: { in: ids } } });
   const row = { spaceId: scope.spaceId, createdByUserId: scope.userId, ...rule };

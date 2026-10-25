@@ -105,7 +105,7 @@ export function McpApprovalCard({
           }}
         >
           {status === "connected"
-            ? t("Connected. Its tools are available from your next message.")
+            ? t("Connected.")
             : t("Dismissed. Reconnect anytime from MCP settings.")}
         </Text>
       ) : !readOnly ? (

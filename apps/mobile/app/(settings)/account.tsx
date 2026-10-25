@@ -30,7 +30,6 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
-import { SkipApprovalsSwitch } from "../../components/skip-approvals-switch";
 import { createAccountNameEditor } from "../../lib/account-name-editor";
 import type { MobileMe } from "../../lib/api";
 import {
@@ -88,7 +87,6 @@ import {
 } from "../../lib/response-streaming";
 import { promptSectionName } from "../../lib/section-name-prompt";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { continueWithSso } from "../../lib/sso";
 import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
@@ -666,6 +664,7 @@ export default function Account() {
               { title: t("Artifacts"), href: "/artifacts" },
               { title: t("Models"), href: "/models" },
               { title: t("Voice"), href: "/voice" },
+              { title: t("Approvals"), href: "/approvals" },
               { title: t("Integrations"), href: "/integrations" },
               { title: t("Messaging"), href: "/messaging" },
               { title: t("AI data sharing"), href: "/ai-data-sharing" },
@@ -708,7 +707,6 @@ export default function Account() {
               onChange={(checked) => void setRemoteImagesPreference(checked ? "on" : "off")}
             />
           ) : null}
-          {advancedOpen ? <SkipApprovalsSwitch target={ACCOUNT_SETTINGS} /> : null}
         </SettingsGroup>
 
         <View style={styles.section}>

@@ -89,7 +89,7 @@ export function computerRoutes(ctx: RouterContext) {
         const manualRunId = `boot:${randomUUID()}`;
         let lease: ComputerExecutionLease | null;
         try {
-          lease = await acquireComputerExecutionLease(deps.prisma, {
+          lease = await acquireBootLease(deps.prisma, {
             computerId: bot.computer.id,
             runId: manualRunId,
             botId: bot.id,
@@ -770,6 +770,41 @@ export function computerRoutes(ctx: RouterContext) {
       }),
     },
   };
+}
+
+const BOOT_LEASE_RETRY_MS = 250;
+const BOOT_LEASE_ATTEMPTS = 20;
+
+/**
+ * A run lets go of its computer in its executor's finally, a moment after the run ends. A boot
+ * sent as the run finishes waits that moment out instead of being refused as busy.
+ */
+async function acquireBootLease(
+  prisma: PrismaClient,
+  input: { computerId: string; runId: string; botId: string },
+): Promise<ComputerExecutionLease | null> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await acquireComputerExecutionLease(prisma, input);
+    } catch (error) {
+      if (!(error instanceof ComputerBusyError) || attempt >= BOOT_LEASE_ATTEMPTS) throw error;
+      if (!(await leaseHeldByFinishedRun(prisma, input))) throw error;
+      await new Promise((resolve) => setTimeout(resolve, BOOT_LEASE_RETRY_MS));
+    }
+  }
+}
+
+async function leaseHeldByFinishedRun(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string },
+): Promise<boolean> {
+  const lease = await prisma.computerExecutionLease.findUnique({
+    where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
+    select: { runId: true, expiresAt: true },
+  });
+  if (!lease || lease.expiresAt.getTime() <= Date.now()) return false;
+  const run = await prisma.run.findUnique({ where: { id: lease.runId }, select: { status: true } });
+  return Boolean(run && !(ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status));
 }
 
 async function computerStatus(

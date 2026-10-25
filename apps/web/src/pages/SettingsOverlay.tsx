@@ -178,7 +178,7 @@ export function SettingsOverlay({
     { id: "general", label: t`General`, icon: Settings },
     { id: "models", label: t`Models`, icon: Cpu },
     { id: "voice", label: t`Voice`, icon: Volume2 },
-    { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
+    { id: "confirmations", label: t`Approvals`, icon: ShieldCheck },
     { id: "space", label: t`Space`, icon: Lock },
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "usage", label: t`Usage`, icon: Gauge },

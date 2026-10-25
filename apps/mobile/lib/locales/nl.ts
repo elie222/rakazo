@@ -1,4 +1,10 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Approvals: "Goedkeuringen",
+  "Never ask": "Nooit vragen",
+  Auto: "Auto",
+  Ask: "Vragen",
+  Block: "Blokkeren",
+  "Add a model in Settings to use this.": "Voeg een model toe in Instellingen om dit te gebruiken.",
   "Approval model": "Goedkeuringsmodel",
   "Main model": "Hoofdmodel",
   "Add fallback": "Back-upmodel toevoegen",
@@ -225,7 +231,6 @@ export const NL_MESSAGES: Record<string, string> = {
   // app/(settings)/space.tsx
   Customize: "Aanpassen",
   "Customize {setting}": "{setting} aanpassen",
-  Confirmations: "Bevestigingen",
   "Tap + to create a bot": "Tik op + om een bot te maken",
   "This removes the space for everyone.": "Hiermee wordt de space voor iedereen verwijderd.",
   "Delete {name} and its bot?": "{name} en de bijbehorende bot verwijderen?",
@@ -450,8 +455,7 @@ export const NL_MESSAGES: Record<string, string> = {
     "Gebruikt de eigen {source}-gegevens van deze server om toegang te krijgen tot {provider}.",
   "Connect API key": "API-sleutel koppelen",
   "Connect MCP server {name}": "MCP-server {name} koppelen",
-  "Connected. Its tools are available from your next message.":
-    "Gekoppeld. Zijn tools zijn beschikbaar vanaf je volgende bericht.",
+  "Connected.": "Gekoppeld.",
   "Context limit": "Contextlimiet",
   "Could not connect this provider": "Deze aanbieder koppelen mislukt",
   "Could not finish sign-in": "Aanmelden afronden mislukt",
@@ -494,15 +498,13 @@ export const NL_MESSAGES: Record<string, string> = {
   Submit: "Versturen",
   "Supports images": "Ondersteunt afbeeldingen",
   "Supports thinking": "Ondersteunt denken",
-  "The final page may not load. Paste its URL or code here.":
-    "De laatste pagina wordt mogelijk niet geladen. Plak de URL of code hier.",
+  "Then paste the code here.": "Plak daarna de code hier.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
     "Deze abonnementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder.",
   "Use a found model": "Een gevonden model gebruiken",
   "Waiting for sign-in…": "Wachten op aanmelding…",
   "exact-model-id": "exact-model-id",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
   "1 tool": "1 tool",
   "Account label": "Accountlabel",
@@ -640,7 +642,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Scheduled tasks": "Geplande taken",
   "Sign out": "Uitloggen",
   "Stream replies": "Antwoorden streamen",
-  "Run actions without asking": "Acties uitvoeren zonder te vragen",
   "Load web images automatically": "Webafbeeldingen automatisch laden",
   System: "Systeem",
   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.":

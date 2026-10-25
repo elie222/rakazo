@@ -598,36 +598,17 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "Permitir acciones de {0} sin preguntar"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "Permitir el conector {0} sin preguntar"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "Permitir {0} sin preguntar"
+msgid "Allow"
+msgstr "Permitir"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "Permitir acciones de correo sin preguntar"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Permitir una vez"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Permitir acciones de compra sin preguntar"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "Límites de aprobación"
 msgid "Approval model"
 msgstr "Modelo de aprobación"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Aprobaciones"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "Argumentos"
 msgid "Artifacts"
 msgstr "Artefactos"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "Preguntar antes de {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "Preguntar antes de acciones de {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "Preguntar antes del conector {0}"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "Preguntar antes de acciones de correo"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Preguntar antes de acciones de compra"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Preguntar antes de compras"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Preguntar antes de enviar correo externo"
+msgid "Ask"
+msgstr "Preguntar"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "Error de autenticación."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Código de autorización o URL de callback"
+msgid "Authorization code"
+msgstr "Código de autorización"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "Autorizar"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Autoriza este servidor para que tus agentes usen sus herramientas. Se abre una ventana emergente."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Auto"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Token Bearer"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Bloquear"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "La computadora está en reposo"
 msgid "Computer is asleep. Open it to wake."
 msgstr "La computadora está en reposo. Ábrela para despertarla."
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "La computadora está detenida"
@@ -1445,11 +1413,6 @@ msgstr "Confirmar contraseña"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Confirma que la URL es accesible desde esta sesión del navegador y vuelve a probar."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "Conectado"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Se conectó {0}."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Conectado: sus herramientas estarán disponibles desde tu próximo mensaje."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "Buscando…"
 msgid "Finish setting up"
 msgstr "Termina la configuración"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "Termina de iniciar sesión en <0>{0}</0>. Es posible que la página final no cargue; pega aquí su URL o código."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Termina el inicio de sesión por suscripción y vuelve a probar."
@@ -2717,10 +2670,6 @@ msgstr "Terminado."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Finalizando conexión MCP…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "Marcar acciones inesperadas"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "minutos"
 msgid "Missed call"
 msgstr "Llamada perdida"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Modo"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr ""
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "Necesita: {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "No preguntar nunca"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "Abrir {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr ""
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr "Abrir llamada"
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "En cola"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
 
@@ -4550,10 +4502,6 @@ msgstr "Rutinas"
 msgid "Routines that run while you're away"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Ejecutar acciones sin preguntar"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Ejecutar a las"
@@ -4899,6 +4847,12 @@ msgstr "Iniciar sesión"
 msgid "Sign in again"
 msgstr "Vuelve a iniciar sesión"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "Inicia sesión en <0>{0}</0> y pega el código aquí."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Inicia sesión en Rakazo"
@@ -5020,6 +4974,10 @@ msgstr "Modelo de habla"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO no está disponible temporalmente. Inténtalo de nuevo."
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr ""
 

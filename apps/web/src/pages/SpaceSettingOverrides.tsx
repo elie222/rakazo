@@ -52,7 +52,7 @@ export function SpaceSettingOverrides({
     },
     {
       id: "confirmations",
-      label: t`Confirmations`,
+      label: t`Approvals`,
       panel: () => <ApprovalRulesSettings scope="space" />,
     },
   ];

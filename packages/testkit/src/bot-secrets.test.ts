@@ -81,6 +81,15 @@ describeIntegration("reusable credential lifecycle", () => {
         });
       try {
         const seeded = await seedRun(`reusable-${requireApproval}`, "Save the API credential");
+        // The owner allowed using and forgetting saved credentials, so only request_secret asks.
+        await db.userActionApprovalRule.createMany({
+          data: ["secret_request", "forget_secret"].map((matchValue) => ({
+            userId: seeded.me.userId,
+            effect: "always_allow",
+            matchKind: "tool",
+            matchValue,
+          })),
+        });
         if (requireApproval) {
           await db.userActionApprovalRule.create({
             data: {

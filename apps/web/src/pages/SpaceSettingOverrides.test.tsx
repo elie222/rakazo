@@ -119,7 +119,7 @@ it("follows the account until a setting is customized, then edits the Space's ow
   await render();
   await vi.waitFor(() => expect(button("Customize Models")).not.toBeNull());
   expect(button("Customize Voice")?.textContent).toBe("Customize");
-  expect(button("Customize Confirmations")).not.toBeNull();
+  expect(button("Customize Approvals")).not.toBeNull();
   expect(container.textContent?.match(/Your defaults/g)).toHaveLength(3);
   expect(panels).toEqual([]);
   // The calls go to the space these settings are bound to, not the selected one.

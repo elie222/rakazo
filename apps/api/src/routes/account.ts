@@ -7,6 +7,7 @@ import {
   PushSessionEndedError,
 } from "@rakazo/adapters";
 import type { ActionApprovalRule, Actor, Me, SettingsScope } from "@rakazo/contracts";
+import { approvalModeFromPreference, approvalPreferenceFromMode } from "@rakazo/core";
 import {
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -165,7 +166,9 @@ export function accountRoutes(ctx: RouterContext) {
           saveAutoReviewPreference(
             tx,
             context.actor,
-            { enabled: input.enabled, skipApprovals: input.skipApprovals },
+            input.mode
+              ? approvalPreferenceFromMode(input.mode)
+              : { enabled: input.enabled, skipApprovals: input.skipApprovals },
             { enabled: deploymentAutoReviewDefault(process.env), skipApprovals: false },
             input.scope,
           ),
@@ -309,10 +312,11 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
   ]);
-  const settings = {
+  const stored = {
     enabled: preference?.enabled ?? deploymentAutoReviewDefault(process.env),
     skipApprovals: preference?.skipApprovals ?? false,
   };
+  const settings = { ...stored, mode: approvalModeFromPreference(stored) };
   const deploymentChecker = role.primarySource === "deployment" ? role.primary : null;
   const memberChoices = [
     ...(deploymentChecker || !role.primary ? [] : [role.primary]),

@@ -1,4 +1,10 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Approvals: "审批",
+  "Never ask": "从不询问",
+  Auto: "自动",
+  Ask: "询问",
+  Block: "阻止",
+  "Add a model in Settings to use this.": "请在设置中添加模型后再使用。",
   "Approval model": "审批模型",
   "Main model": "主模型",
   "Add fallback": "添加备用模型",
@@ -304,8 +310,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
   "Connect Treg": "连接 Treg",
   Connected: "已连接",
-  "Connected. Its tools are available from your next message.":
-    "已连接。从你的下一条消息起即可使用它的工具。",
+  "Connected.": "已连接。",
   Copy: "复制",
   More: "更多",
   "Could not add source": "无法添加来源",
@@ -564,7 +569,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Resetting…": "正在重置…",
   Restore: "恢复",
   "Stream replies": "流式回复",
-  "Run actions without asking": "无需询问直接执行操作",
   "Load web images automatically": "自动加载网络图片",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "恢复上次保存的工作区。电脑上未保存的工作将会丢失。",
@@ -613,7 +617,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   // app/(settings)/space.tsx
   Customize: "自定义",
   "Customize {setting}": "自定义{setting}",
-  Confirmations: "确认",
   "This removes the space for everyone.": "这将为所有人删除此空间。",
   "Delete {name} and its bot?": "要删除 {name} 及其机器人吗？",
   "Delete {name} and its {count} bots?": "要删除 {name} 及其 {count} 个机器人吗？",
@@ -711,7 +714,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Found {count} model.": "找到 {count} 个模型。",
   "Found {count} models.": "找到 {count} 个模型。",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
@@ -754,8 +756,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "No custom sources installed.": "尚未安装自定义来源。",
   "Removing…": "正在移除…",
   "Skill {name}": "技能 {name}",
-  "The final page may not load. Paste its URL or code here.":
-    "最后一页可能无法加载。请将其 URL 或代码粘贴到这里。",
+  "Then paste the code here.": "然后在此粘贴代码。",
   "Chat Settings": "聊天设置",
   "Settings: General": "设置：常规",
   "Settings: Usage": "设置：用量",

@@ -8,13 +8,17 @@ const workflowText = readFileSync(path.join(workflowsDir, "publish-server-image.
 const publisherDir = path.resolve(workflowsDir, "../actions/publish-image");
 const publisherText = readFileSync(path.join(publisherDir, "action.yml"), "utf8");
 interface WorkflowStep {
+  id?: string;
+  if?: string;
   uses?: string;
+  "continue-on-error"?: boolean;
   run?: string;
   with?: Record<string, unknown>;
 }
 interface WorkflowJob {
   if?: string;
   needs?: string | string[];
+  outputs?: Record<string, string>;
   uses?: string;
   "runs-on"?: string;
   permissions?: Record<string, string>;
@@ -64,7 +68,6 @@ describe("server image publish workflow", () => {
     const publish = workflow.jobs.publish;
     expect(publish.needs).toEqual(["build"]);
     expect(publish.if).toContain("needs.build.result == 'success'");
-    expect(publish.if).toContain("vars.DEPOT_PROJECT_ID == ''");
     expect(publish.steps.some((step) => step.uses === publicationAction)).toBe(true);
     expect(publish.permissions?.attestations).toBe("write");
     expect(workflowText).toContain("push-by-digest=true");
@@ -81,12 +84,28 @@ describe("server image publish workflow", () => {
   it("builds on Depot only when the repository names a project, and never for pull requests", () => {
     const depot = workflow.jobs["build-depot"];
     expect(depot.if).toBe("github.event_name != 'pull_request' && vars.DEPOT_PROJECT_ID != ''");
-    expect(workflow.jobs.build.if).toBe(
-      "github.event_name != 'pull_request' && vars.DEPOT_PROJECT_ID == ''",
-    );
+    expect(workflow.jobs.build.if).toContain("github.event_name != 'pull_request'");
+    expect(workflow.jobs.build.if).toContain("vars.DEPOT_PROJECT_ID == ''");
     expect(depot.permissions?.["id-token"]).toBe("write");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal workflow expression
     expect(workflowText).toContain("project: ${{ vars.DEPOT_PROJECT_ID }}");
+  });
+
+  it("rebuilds on GitHub's runners when a Depot build fails", () => {
+    const depot = workflow.jobs["build-depot"];
+    const build = depot.steps.find((step) => step.uses?.startsWith("depot/build-push-action@"));
+    expect(build?.id).toBe("build");
+    expect(build?.["continue-on-error"]).toBe(true);
+    // Every step after the Depot build either reports its outcome or runs only on success.
+    const after = depot.steps.slice(depot.steps.indexOf(build as WorkflowStep) + 1);
+    for (const step of after.filter((step) => step.id !== "depot")) {
+      expect(step.if).toContain("steps.build.outcome == 'success'");
+    }
+    expect(Object.keys(depot.outputs ?? {}).sort()).toEqual(["app", "computer", "updater"]);
+    const fallback = workflow.jobs.build;
+    expect(fallback.needs).toEqual(["build-depot"]);
+    expect(fallback.if).toContain("!cancelled()");
+    expect(fallback.if).toContain("contains(needs.build-depot.outputs.*, 'failed')");
   });
 
   it("checks credentials before publishing Depot tags or making native digests available", () => {

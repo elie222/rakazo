@@ -91,7 +91,10 @@ function fixture({
   fleetBots = [] as { id: string; name: string }[],
   secondResource = false,
   routines = [] as { name: string; prompt: string }[],
+  connectedApps = [] as string[],
 }: {
+  /** Apps connected through Composio. */
+  connectedApps?: string[];
   /** The bot's routines, as the owner wrote them. */
   routines?: { name: string; prompt: string }[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
@@ -297,7 +300,18 @@ function fixture({
       })),
     },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
-    connection: { findMany: vi.fn(async () => []) },
+    connection: {
+      findMany: vi.fn(async () =>
+        connectedApps.map((provider) => ({
+          id: `conn-${provider}`,
+          connectorId: "composio",
+          provider,
+          providerRef: null,
+          displayName: provider,
+          status: "connected",
+        })),
+      ),
+    },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: {
       findFirst: vi.fn(async () =>
@@ -892,7 +906,7 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(reviewMock).not.toHaveBeenCalled();
     });
 
-    it("still asks under the owner's own rule when approvals are skipped", async () => {
+    it("runs past an older ask rule in Never ask, which never waits", async () => {
       const f = fixture({
         catalog,
         name: "demo_send_message",
@@ -900,17 +914,38 @@ describe("connector read-only metadata and approval enforcement", () => {
         rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "demo_send_message" }],
       });
       await f.run();
-      expect(f.execute).not.toHaveBeenCalled();
-      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.execute).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
-    it("still asks for webhook-triggered writes when approvals are skipped", async () => {
+    it("refuses a webhook-triggered write in Never ask instead of asking", async () => {
       const f = fixture({
         catalog,
         name: "demo_send_message",
         trigger: "webhook",
         skipApprovals: true,
       });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("never asks");
+    });
+
+    it("refuses a blocked tool in Never ask without asking or running it", async () => {
+      const f = fixture({
+        catalog,
+        name: "demo_send_message",
+        skipApprovals: true,
+        rules: [{ effect: "deny", matchKind: "tool", matchValue: "demo_send_message" }],
+      });
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(JSON.stringify(f.results[0])).toContain("blocked");
+    });
+
+    it("asks before an unlisted write in Ask mode", async () => {
+      const f = fixture({ catalog, name: "demo_send_message" });
       await f.run();
       expect(f.execute).not.toHaveBeenCalled();
       expect(f.pauseRunForInput).toHaveBeenCalledOnce();
@@ -1032,6 +1067,104 @@ describe("connector read-only metadata and approval enforcement", () => {
   });
 });
 
+describe("Composio batches", () => {
+  beforeEach(() => reviewMock.mockReset());
+  const batch = (...slugs: Array<string | undefined>) => ({
+    tools: slugs.map((slug) =>
+      slug ? { tool_slug: slug, arguments: { to: "a@example.com" } } : { arguments: {} },
+    ),
+  });
+  const batchFixture = (options: Parameters<typeof fixture>[0] = {}) =>
+    fixture({ name: "COMPOSIO_MULTI_EXECUTE_TOOL", readOnly: false, ...options });
+
+  it("runs a batch whose every action is allowed", async () => {
+    const f = batchFixture({
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" }],
+    });
+    f.setCalls([{ args: batch("GMAIL_ARCHIVE_THREAD"), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("asks when one action in the batch is not allowed", async () => {
+    const f = batchFixture({
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" }],
+    });
+    f.setCalls([
+      { args: batch("GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL"), executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("refuses the whole batch when one action is blocked, even in Never ask", async () => {
+    const f = batchFixture({
+      skipApprovals: true,
+      rules: [{ effect: "deny", matchKind: "tool", matchValue: "hubspot_delete_contact" }],
+    });
+    f.setCalls([
+      { args: batch("GMAIL_ARCHIVE_THREAD", "HUBSPOT_DELETE_CONTACT"), executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.results[0])).toContain("blocked");
+  });
+
+  it("never lets an allow rule on the batch tool cover the actions in it", async () => {
+    const f = batchFixture({
+      rules: [
+        { effect: "always_allow", matchKind: "tool", matchValue: "composio_multi_execute_tool" },
+      ],
+    });
+    f.setCalls([{ args: batch("GMAIL_SEND_EMAIL"), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("asks when an entry names no action, even under allow rules", async () => {
+    const f = batchFixture({
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "gmail_archive_thread" }],
+    });
+    f.setCalls([{ args: batch("GMAIL_ARCHIVE_THREAD", undefined), executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("names the actions in the batch on the approval card", async () => {
+    const f = batchFixture();
+    f.setCalls([{ args: batch("GMAIL_SEND_EMAIL", undefined), executionId: "call-1" }]);
+    await f.run();
+    const card = (
+      f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
+    )[0]?.[0].blocks[0];
+    expect(card).toMatchObject({
+      text: "Review before GMAIL_SEND_EMAIL, …",
+      detail: "GMAIL_SEND_EMAIL\nto: a@example.com\n…",
+    });
+  });
+
+  it("keeps read trust to the app a batch reached", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
+    const f = batchFixture({ autoReview: true, connectedApps: ["gmail", "slack"] });
+    f.setCalls([
+      { args: batch("GMAIL_LIST_THREADS"), executionId: "call-1" },
+      { name: "web_search", args: { query: "news" }, executionId: "call-2" },
+      { args: batch("SLACK_LIST_CHANNELS"), executionId: "call-3" },
+    ]);
+    await f.run();
+    // The Gmail read runs untainted. After the search, Slack is a new app, so its read is checked.
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({
+      toolName: "COMPOSIO_MULTI_EXECUTE_TOOL",
+    });
+  });
+});
+
 describe("create_space", () => {
   it("asks by default and skips the card when the owner skips approvals", async () => {
     const asked = fixture({ name: "create_space", builtin: true, autoReview: true });
@@ -1086,12 +1219,12 @@ describe("self instruction proposals", () => {
     expect(f.instructionState.instructionHistory).toHaveLength(1);
     expect(f.effects[0]?.status).toBe("completed");
   });
-  it("still asks when approvals are skipped but outside content entered the run", async () => {
+  it("is refused in Never ask once outside content entered the run", async () => {
     const f = fixture({ name: "propose_instructions_update", builtin: true, skipApprovals: true });
     f.claimedOutsideSteering(true);
     f.setCalls([{ args, executionId: "call-1" }]);
     await f.run();
-    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.instructionState.instructions).toBe("Draft only");
   });
   it("requires human approval even with the legacy self-update setting enabled", async () => {

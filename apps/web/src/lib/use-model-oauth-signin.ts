@@ -145,6 +145,8 @@ export function useModelOAuthSignIn(options: {
           makeDefault: begin.makeDefault,
           ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
+          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
+          codePage: !desktopBridge(),
         },
         { signal: controller.signal },
       );

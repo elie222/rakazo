@@ -1,0 +1,262 @@
+// @vitest-environment jsdom
+
+import type { ReactNode } from "react";
+import { act, createElement, useEffect } from "react";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import Approvals from "../app/(settings)/approvals";
+
+type Rule = {
+  id: string;
+  effect: "always_allow" | "require_approval" | "deny";
+  matchKind: "tool" | "connector" | "category" | "site";
+  matchValue: string;
+  createdAt: string;
+};
+const state = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  spaceId: undefined as string | undefined,
+  settings: { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false },
+  rules: [] as Rule[],
+}));
+const { element } = vi.hoisted(() => ({
+  element:
+    (tag: string) =>
+    ({ children }: { children?: ReactNode }) =>
+      createElement(tag, null, children),
+}));
+
+vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("./native", () => ({
+  native: {},
+  useResolvedAppearance: () => "light",
+  useThemedStyles: (factory: () => unknown) => factory(),
+}));
+vi.mock("./i18n", () => {
+  const i18n = { t: (text: string) => text };
+  return { useI18n: () => i18n };
+});
+vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("./api", () => ({
+  rpc: state.rpc,
+  captureApiRequestContext: async (spaceId: string) => ({ headers: { space: spaceId } }),
+}));
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
+  useLocalSearchParams: () => ({ spaceId: state.spaceId }),
+}));
+vi.mock("react-native", () => ({
+  ScrollView: element("div"),
+  StyleSheet: { create: <T,>(styles: T) => styles },
+  Text: element("p"),
+  View: element("div"),
+}));
+vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    actions,
+    onPressAction,
+    title,
+    children,
+  }: {
+    actions: { id: string; title: string; state?: string }[];
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    title: string;
+    children: ReactNode;
+  }) =>
+    createElement(
+      "div",
+      { "aria-label": title },
+      children,
+      actions.map((action) =>
+        createElement(
+          "button",
+          {
+            key: action.id,
+            type: "button",
+            "aria-pressed": action.state === "on",
+            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
+          },
+          action.title,
+        ),
+      ),
+    ),
+}));
+vi.mock("../components/native-segmented-control", () => ({
+  NativeSegmentedControl: ({
+    options,
+    value,
+    onChange,
+  }: {
+    options: { value: string; label: string }[];
+    value?: string;
+    onChange: (value: string) => void;
+  }) =>
+    createElement(
+      "div",
+      { role: "radiogroup" },
+      options.map((option) =>
+        createElement(
+          "button",
+          {
+            key: option.value,
+            type: "button",
+            role: "radio",
+            "aria-checked": option.value === value,
+            onClick: () => onChange(option.value),
+          },
+          option.label,
+        ),
+      ),
+    ),
+}));
+vi.mock("../components/settings-group", () => ({
+  SettingsFooter: element("small"),
+  SettingsGroup: element("section"),
+  SettingsRow: ({ title, value }: { title: string; value?: string }) =>
+    createElement("span", null, `${title}: ${value}`),
+}));
+
+let root: Root;
+let container: HTMLDivElement;
+const modes = () =>
+  [...container.querySelectorAll('[role="radio"]')].map(
+    (node) => `${node.textContent}${node.getAttribute("aria-checked") === "true" ? "*" : ""}`,
+  );
+const rows = () => [...container.querySelectorAll("span")].map((node) => node.textContent);
+const menu = (title: string) => container.querySelector(`[aria-label="${title}"]`)!;
+const menuButton = (title: string, action: string) =>
+  [...menu(title).querySelectorAll("button")].find((node) => node.textContent === action);
+const rule = (overrides: Partial<Rule> & Pick<Rule, "id">): Rule => ({
+  effect: "always_allow",
+  matchKind: "tool",
+  matchValue: "send_email",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  ...overrides,
+});
+
+async function render() {
+  await act(async () => root.render(createElement(Approvals)));
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.spaceId = undefined;
+  state.settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: false };
+  state.rules = [];
+  state.rpc
+    .mockReset()
+    .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+      if (proc === "autoReview/get") return state.settings;
+      if (proc === "autoReview/set") {
+        state.settings = { ...state.settings, mode: input!.mode as string };
+        return state.settings;
+      }
+      if (proc === "approvalRules/list") return state.rules;
+      if (proc === "approvalRules/set")
+        return rule({
+          id: "saved",
+          effect: input!.effect as Rule["effect"],
+          matchKind: input!.matchKind as Rule["matchKind"],
+          matchValue: input!.matchValue as string,
+        });
+      if (proc === "approvalRules/remove") return { ok: true };
+      throw new Error(`Unexpected RPC: ${proc}`);
+    });
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+it("offers Auto only once an approval model can decide, and saves the chosen mode", async () => {
+  await render();
+  expect(modes()).toEqual(["Never ask", "Ask*"]);
+  expect(rows()).toEqual([]);
+
+  await act(async () => (container.querySelector('[role="radio"]') as HTMLElement).click());
+  expect(state.rpc).toHaveBeenCalledWith("autoReview/set", { scope: "account", mode: "never" });
+  expect(modes()).toEqual(["Never ask*", "Ask"]);
+
+  act(() => root.unmount());
+  root = createRoot(container);
+  state.settings = { ...state.settings, mode: "auto" };
+  await render();
+  expect(modes()).toEqual(["Never ask", "Auto*", "Ask"]);
+  expect(container.querySelector("small")?.textContent).toBe(
+    "Add a model in Settings to use this.",
+  );
+});
+
+it("switches and removes rules, keeping legacy category rules removable only", async () => {
+  state.settings = { ...state.settings, checkerAvailable: true };
+  state.rules = [
+    rule({ id: "tool", matchValue: "send_email" }),
+    rule({ id: "site", effect: "require_approval", matchKind: "site", matchValue: "example.com" }),
+    rule({
+      id: "category",
+      effect: "require_approval",
+      matchKind: "category",
+      matchValue: "email",
+    }),
+  ];
+  await render();
+  expect(modes()).toEqual(["Never ask", "Auto", "Ask*"]);
+  expect(rows()).toEqual(["Send email: Allow", "example.com: Ask", "email: Ask"]);
+  expect(menuButton("Send email", "Allow")?.getAttribute("aria-pressed")).toBe("true");
+  expect(menuButton("email", "Allow")).toBeUndefined();
+
+  await act(async () => menuButton("example.com", "Block")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/set", {
+    scope: "account",
+    effect: "deny",
+    matchKind: "site",
+    matchValue: "example.com",
+  });
+  expect(rows()).toEqual(["Send email: Allow", "example.com: Block", "email: Ask"]);
+
+  await act(async () => menuButton("Send email", "Remove")!.click());
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/remove", { scope: "account", id: "tool" });
+  expect(rows()).toEqual(["example.com: Block", "email: Ask"]);
+});
+
+it("edits a Space's own copy when opened with one", async () => {
+  state.spaceId = "space-1";
+  await render();
+  const spaceContext = { requestContext: { headers: { space: "space-1" } } };
+  expect(state.rpc).toHaveBeenCalledWith("autoReview/get", { scope: "space" }, spaceContext);
+  expect(state.rpc).toHaveBeenCalledWith("approvalRules/list", { scope: "space" }, spaceContext);
+});
+
+it("keeps a saved mode when a read that started before the save lands after it", async () => {
+  const base = state.rpc.getMockImplementation()!;
+  let resolveRead: (value: typeof state.settings) => void = () => undefined;
+  const holdReads = () =>
+    state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) =>
+      proc === "autoReview/get"
+        ? new Promise((resolve) => {
+            resolveRead = resolve;
+          })
+        : base(proc, input),
+    );
+  const stale = { ...state.settings };
+  holdReads();
+  await render();
+  await act(async () => resolveRead(stale));
+  expect(modes()).toEqual(["Never ask", "Ask*"]);
+
+  // Coming back starts a refresh; the owner picks Never ask before it lands with the old mode.
+  holdReads();
+  act(() => root.unmount());
+  root = createRoot(container);
+  await render();
+  await act(async () => (container.querySelector('[role="radio"]') as HTMLElement | null)?.click());
+  await act(async () => resolveRead(stale));
+  expect(modes()).not.toContain("Ask*");
+});

@@ -6,23 +6,23 @@ import type { Bot } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, clickAndWaitForRpc, rpc, signup } from "./helpers";
 
 /** Onboarding shows the model step only while the account needs a model; tests decide when. */
-async function controlNeedsModel(page: Page) {
+async function controlNeedsModel(page: Page, { survey = false } = {}) {
   const state = { needsModel: true };
   await page.route("**/rpc/me", async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json: Record<string, unknown> };
     await route.fulfill({
       response,
-      json: { json: { ...body.json, needsModel: state.needsModel } },
+      json: { json: { ...body.json, needsModel: state.needsModel, needsSignupSurvey: survey } },
     });
   });
   return state;
 }
 
 test("a new user can start from an imported agent instead of Chief", async ({ page }, testInfo) => {
-  const model = await controlNeedsModel(page);
+  const model = await controlNeedsModel(page, { survey: true });
   await signup(page, `onboarding-import-${Date.now()}@rakazo.test`, "password12", "Importer");
-  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible({
     timeout: 20_000,
   });
   const entry = page.getByRole("button", { name: "Import an agent", exact: true });
@@ -91,13 +91,15 @@ test("a new user can start from an imported agent instead of Chief", async ({ pa
       .getByRole("checkbox", { name: "DeepSeek", exact: true }),
   ).toHaveCount(0);
 
-  // The import's own connection (here: the deployment's) completes the model step.
+  // The import's own connection (here: the deployment's) skips the model step.
   model.needsModel = false;
   await clickAndWaitForRpc(
     page,
     preview.getByRole("button", { name: "Create", exact: true }),
     "bots/importCreate",
   );
+  await expect(page.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForURL(/\/app\/[^/]+$/, { timeout: 20_000 });
   await expect(page.getByPlaceholder("Message Pebble")).toBeVisible();
   const botId = activeBotId(page);
@@ -112,7 +114,8 @@ test("a new user who ignores import still starts with Chief", async ({ page }, t
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toBeVisible();
+  // Connecting a model is the one thing this step asks for.
+  await expect(page.getByRole("button", { name: "Import an agent", exact: true })).toHaveCount(0);
   // Connecting a model elsewhere, then opening onboarding again, makes Chief exactly as
   // before. (A linked /onboarding/model stays on the model step on purpose.)
   model.needsModel = false;
@@ -123,41 +126,6 @@ test("a new user who ignores import still starts with Chief", async ({ page }, t
   const bots = await rpc<Bot[]>(page, "bots/list", {});
   expect(bots.map((bot) => bot.name)).toEqual(["Chief"]);
   await captureScreenshot(page, testInfo, "onboarding-chief-without-import");
-});
-
-test("an import that finds a first bot already made says so and lands in that bot", async ({
-  page,
-}, testInfo) => {
-  const model = await controlNeedsModel(page);
-  await signup(page, `onboarding-import-raced-${Date.now()}@rakazo.test`, "password12", "Raced");
-  await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
-    timeout: 20_000,
-  });
-  await page.getByRole("button", { name: "Import an agent", exact: true }).click();
-  const home = testInfo.outputPath("openclaw-raced");
-  mkdirSync(path.join(home, "workspace"), { recursive: true });
-  writeFileSync(path.join(home, "workspace/SOUL.md"), "Calm.\n");
-  writeFileSync(path.join(home, "workspace/IDENTITY.md"), "- **Name:** Pebble\n");
-  const panel = page.getByTestId("agent-import");
-  await panel.getByTestId("agent-import-folder").setInputFiles(home);
-  const preview = panel.getByTestId("agent-import-preview");
-  await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
-  // Another tab or device finishes onboarding first.
-  const chief = await rpc<Bot>(page, "bots/create", {
-    name: "Chief",
-    spawnKey: "onboarding:first",
-  });
-  model.needsModel = false;
-  await preview.getByRole("button", { name: "Create", exact: true }).click();
-  const notice = page.getByTestId("onboarding-not-imported");
-  await expect(notice.getByRole("alert")).toHaveText(
-    "Your first bot already existed, so the agent was not imported.",
-  );
-  await captureScreenshot(page, testInfo, "onboarding-import-not-imported");
-  await notice.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.waitForURL(new RegExp(`/app/${chief.id}$`), { timeout: 20_000 });
-  const bots = await rpc<Bot[]>(page, "bots/list", {});
-  expect(bots.map((bot) => bot.name)).toEqual(["Chief"]);
 });
 
 test("with a model already provided, import is offered before the first bot is made", async ({

@@ -676,7 +676,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
 
   const codex = await openModelConnection(page, "ChatGPT subscription", { search: "ChatGPT" });
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
 
   // The popup is blocked (window.open returned null): the card still carries the
   // code, a copy button, the expiry, and a way to abandon the attempt.
@@ -696,7 +696,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await expect(codex.getByText("TEST-CODE")).toBeHidden();
 
   // A canceled attempt leaves sign-in reusable.
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
   await expect(codex.getByText("TEST-CODE")).toBeVisible();
 
   // Closing the dialog abandons the attempt.
@@ -724,7 +724,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   // offers to connect.
   oauthReady = true;
   await openModelConnection(page, "ChatGPT subscription", { search: "ChatGPT" });
-  await codex.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
+  await codex.getByRole("button", { name: /Sign in with ChatGPT/ }).click();
   await expect(codex).toBeHidden();
   const reopened = page.getByRole("combobox", { name: "Search models" });
   await expect(reopened).toBeVisible();

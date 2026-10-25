@@ -76,6 +76,13 @@ export default function SettingsLayout() {
       <Stack.Screen name="models" options={glassHeaderOptions(t("Models"))} />
       <Stack.Screen name="voice" options={glassHeaderOptions(t("Voice"))} />
       <Stack.Screen
+        name="approvals"
+        options={{
+          ...glassHeaderOptions(t("Approvals")),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
         name="space"
         // Named after the Space it opened from.
         options={({ route }) => ({

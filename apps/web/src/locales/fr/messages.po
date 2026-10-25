@@ -598,36 +598,17 @@ msgstr ""
 msgid "All time"
 msgstr "Toute la période"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "Autoriser les actions {0} sans demander"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "Autoriser le connecteur {0} sans demander"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "Autoriser {0} sans demander"
+msgid "Allow"
+msgstr "Autoriser"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "Autoriser les actions e-mail sans demander"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Autoriser une fois"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Autoriser les actions d'achat sans demander"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "Limites d'approbation"
 msgid "Approval model"
 msgstr "Modèle d’approbation"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Approbations"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "Arguments"
 msgid "Artifacts"
 msgstr "Artefacts"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "Demander avant {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "Demander avant les actions {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "Demander avant le connecteur {0}"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "Demander avant les actions e-mail"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Demander avant les actions d'achat"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Demander avant les achats"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Demander avant d'envoyer un e-mail externe"
+msgid "Ask"
+msgstr "Demander"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "Échec de l'authentification."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Code d'autorisation ou URL de rappel"
+msgid "Authorization code"
+msgstr "Code d'autorisation"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "Autoriser"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Autorisez ce serveur pour que les agents puissent utiliser ses outils. Une fenêtre contextuelle s'ouvre."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Auto"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Jeton porteur"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr ""
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Bloquer"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "L'ordinateur est en veille"
 msgid "Computer is asleep. Open it to wake."
 msgstr "L'ordinateur est en veille. Ouvrez-le pour le réveiller."
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "L'ordinateur est arrêté"
@@ -1445,11 +1413,6 @@ msgstr "Confirmer le mot de passe"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Confirmez que l'URL est accessible depuis cette session du navigateur, puis testez à nouveau."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "Connecté"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Connecté à {0}."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Connecté. Ses outils sont disponibles dès votre prochain message."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "Recherche en cours…"
 msgid "Finish setting up"
 msgstr "Terminer la configuration"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "Terminez la connexion sur <0>{0}</0>. La page finale peut ne pas se charger ; collez son URL ou code ici."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Terminez la connexion par abonnement, puis testez à nouveau."
@@ -2717,10 +2670,6 @@ msgstr "Terminé."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Finalisation de la connexion MCP…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "Signaler les actions inattendues"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "minutes"
 msgid "Missed call"
 msgstr "Appel manqué"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Mode"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr "A besoin de vous"
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "Nécessite : {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "Ne jamais demander"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "Ouvrir {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr ""
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr ""
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr "Ouvrir l’appel"
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "En file d'attente"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
 
@@ -4550,10 +4502,6 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Exécuter les actions sans demander"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Exécuter à"
@@ -4899,6 +4847,12 @@ msgstr "Se connecter"
 msgid "Sign in again"
 msgstr "Se reconnecter"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "Connectez-vous sur <0>{0}</0>, puis collez le code ici."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Connectez-vous à Rakazo"
@@ -5020,6 +4974,10 @@ msgstr "Modèle de parole"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO est temporairement indisponible. Réessayez."
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr ""
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr ""
 

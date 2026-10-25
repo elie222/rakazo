@@ -1,4 +1,10 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Approvals: "Одобрения",
+  "Never ask": "Не спрашивать",
+  Auto: "Авто",
+  Ask: "Спрашивать",
+  Block: "Блокировать",
+  "Add a model in Settings to use this.": "Добавьте модель в настройках, чтобы использовать это.",
   "Approval model": "Модель проверки действий",
   "Main model": "Основная модель",
   "Add fallback": "Добавить резервную модель",
@@ -328,8 +334,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
   "Connect Treg": "Подключить Treg",
   Connected: "Подключено",
-  "Connected. Its tools are available from your next message.":
-    "Подключено. Его инструменты доступны со следующего сообщения.",
+  "Connected.": "Подключено.",
   Copy: "Копировать",
   More: "Ещё",
   "Could not add source": "Не удалось добавить источник",
@@ -596,7 +601,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Resetting…": "Сброс…",
   Restore: "Восстановить",
   "Stream replies": "Потоковые ответы",
-  "Run actions without asking": "Выполнять действия без подтверждения",
   "Load web images automatically": "Автоматически загружать изображения из интернета",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "Восстановить последнее сохранённое рабочее пространство. Несохранённые данные на компьютере будут потеряны.",
@@ -645,7 +649,6 @@ export const RU_MESSAGES: Record<string, string> = {
   // app/(settings)/space.tsx
   Customize: "Настроить",
   "Customize {setting}": "Настроить: {setting}",
-  Confirmations: "Подтверждения",
   "Space created": "Пространство создано",
   "Read replies aloud": "Читать ответы вслух",
   "Speak + transcribe": "Озвучить и расшифровать",
@@ -741,7 +744,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Found {count} model.": "Найдена {count} модель.",
   "Found {count} models.": "Найдено моделей: {count}.",
   "http://127.0.0.1:8000/v1": "http://127.0.0.1:8000/v1",
-  "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
@@ -787,8 +789,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "No custom sources installed.": "Никакие пользовательские источники не установлены.",
   "Removing…": "Удаление…",
   "Skill {name}": "Навык {name}",
-  "The final page may not load. Paste its URL or code here.":
-    "Последняя страница может не загрузиться. Вставьте сюда его URL-адрес или код.",
+  "Then paste the code here.": "Затем вставьте код сюда.",
   "Chat Settings": "Настройки чата",
   "Settings: General": "Настройки: Общие",
   "Settings: Usage": "Настройки: Использование",

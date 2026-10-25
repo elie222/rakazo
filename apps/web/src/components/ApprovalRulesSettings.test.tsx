@@ -20,38 +20,56 @@ vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray) => parts.join("");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
-vi.mock("@rakazo/ui-web", () => ({
-  Button: ({
-    variant: _variant,
-    size: _size,
-    ...props
-  }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
-  Label: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  Switch: ({
-    checked,
-    onCheckedChange,
-    ...props
-  }: Omit<ComponentProps<"button">, "onChange"> & {
-    checked: boolean;
-    onCheckedChange: (checked: boolean) => void;
-  }) => (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onCheckedChange(!checked)}
-      {...props}
-    />
-  ),
-}));
+vi.mock("@rakazo/ui-web", async () => {
+  const { createContext, useContext } = await import("react");
+  const Group = createContext<{ value: string[]; onValueChange: (value: string[]) => void }>({
+    value: [],
+    onValueChange: () => undefined,
+  });
+  return {
+    Button: ({
+      variant: _variant,
+      size: _size,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+    ToggleGroup: ({
+      value,
+      onValueChange,
+      children,
+      spacing: _spacing,
+      ...props
+    }: Omit<ComponentProps<"div">, "onChange"> & {
+      value: string[];
+      onValueChange: (value: string[]) => void;
+      spacing?: number;
+      disabled?: boolean;
+    }) => (
+      <Group.Provider value={{ value, onValueChange }}>
+        <div {...props}>{children}</div>
+      </Group.Provider>
+    ),
+    ToggleGroupItem: ({ value, children }: { value: string; children?: ReactNode }) => {
+      const group = useContext(Group);
+      return (
+        <button
+          type="button"
+          aria-pressed={group.value.includes(value)}
+          onClick={() => group.onValueChange([value])}
+        >
+          {children}
+        </button>
+      );
+    },
+  };
+});
 
 import { ApprovalRulesSettings } from "./ApprovalRulesSettings";
 
-const settings = { enabled: false, skipApprovals: false, checkerAvailable: true };
+const settings = { mode: "ask", enabled: false, skipApprovals: false, checkerAvailable: true };
 
 beforeEach(() => vi.resetAllMocks());
 
-async function render() {
+async function render(scope: "account" | "space" = "account") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
@@ -59,46 +77,36 @@ async function render() {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <ApprovalRulesSettings scope="account" />
+        <ApprovalRulesSettings scope={scope} />
       </QueryClientProvider>,
     );
   });
   return { container, root, client };
 }
 
-it("turns an ask-before preset on and off as a switch", async () => {
+const button = (container: HTMLElement, name: string, within = "") =>
+  [...container.querySelectorAll<HTMLButtonElement>(`${within} button`)].find(
+    (candidate) => candidate.textContent === name,
+  );
+
+it("sets the mode, and lists Auto only when an approval model is there", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const rule = {
-    id: "rule-1",
-    effect: "require_approval",
-    matchKind: "category",
-    matchValue: "email",
-  };
   rpcMock.approvalRules.list.mockResolvedValue([]);
-  rpcMock.autoReview.get.mockResolvedValue(settings);
-  rpcMock.approvalRules.set.mockResolvedValue(rule);
-  rpcMock.approvalRules.remove.mockResolvedValue(undefined);
+  rpcMock.autoReview.get.mockResolvedValue({ ...settings, checkerAvailable: false });
+  rpcMock.autoReview.set.mockResolvedValue({ ...settings, mode: "never", skipApprovals: true });
   const { container, root } = await render();
-  const toggle = () =>
-    container.querySelector<HTMLButtonElement>('[data-testid="ask-before-email-toggle"]');
   try {
-    await vi.waitFor(() => expect(toggle()?.disabled).toBe(false));
-    expect(toggle()?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => toggle()?.click());
-    await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("true"));
-    expect(rpcMock.approvalRules.set).toHaveBeenCalledWith({
-      scope: "account",
-      effect: "require_approval",
-      matchKind: "category",
-      matchValue: "email",
-    });
-    // The preset is the switch, not a second row in the rule list.
-    expect(container.textContent).not.toContain("Remove");
-
-    await act(async () => toggle()?.click());
-    await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("false"));
-    expect(rpcMock.approvalRules.remove).toHaveBeenCalledWith({ scope: "account", id: "rule-1" });
+    await vi.waitFor(() =>
+      expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    expect(button(container, "Auto")).toBeUndefined();
+    await act(async () => button(container, "Never ask")?.click());
+    expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ scope: "account", mode: "never" });
+    await vi.waitFor(() =>
+      expect(button(container, "Never ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    // No rules yet, so the rule list stays out of the way.
+    expect(container.querySelector('[data-testid="approval-rules"]')).toBeNull();
     await act(async () => root.unmount());
   } finally {
     container.remove();
@@ -106,11 +114,74 @@ it("turns an ask-before preset on and off as a switch", async () => {
   }
 });
 
-it("keeps a saved toggle when the revisit's older background read lands after it", async () => {
+it("blocks or removes an allowed tool", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const allowed = {
+    id: "rule-1",
+    effect: "always_allow",
+    matchKind: "tool",
+    matchValue: "GMAIL_SEND_EMAIL",
+    createdAt: "2026-10-25T00:00:00.000Z",
+  };
+  rpcMock.approvalRules.list.mockResolvedValue([allowed]);
+  rpcMock.approvalRules.set.mockResolvedValue({ ...allowed, id: "rule-2", effect: "deny" });
+  rpcMock.approvalRules.remove.mockResolvedValue({ ok: true });
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render();
+  const rules = '[data-testid="approval-rules"]';
+  try {
+    await vi.waitFor(() => expect(container.textContent).toContain("Gmail send email"));
+    expect(button(container, "Allow", rules)?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button(container, "Block", rules)?.click());
+    expect(rpcMock.approvalRules.set).toHaveBeenLastCalledWith({
+      scope: "account",
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "GMAIL_SEND_EMAIL",
+    });
+    await vi.waitFor(() =>
+      expect(button(container, "Block", rules)?.getAttribute("aria-pressed")).toBe("true"),
+    );
+    await act(async () => button(container, "Remove", rules)?.click());
+    expect(rpcMock.approvalRules.remove).toHaveBeenLastCalledWith({
+      scope: "account",
+      id: "rule-2",
+    });
+    await vi.waitFor(() => expect(container.querySelector(rules)).toBeNull());
+    await act(async () => root.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows what older rules do, including email and purchase ones", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.approvalRules.list.mockResolvedValue([
+    { id: "rule-1", effect: "require_approval", matchKind: "tool", matchValue: "send_email" },
+    { id: "rule-2", effect: "require_approval", matchKind: "category", matchValue: "email" },
+    { id: "rule-3", effect: "always_allow", matchKind: "category", matchValue: "purchase" },
+  ]);
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  const { container, root } = await render();
+  const rules = '[data-testid="approval-rules"]';
+  try {
+    await vi.waitFor(() => expect(container.textContent).toContain("Send email"));
+    expect(button(container, "Ask", rules)?.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(rules)?.textContent).toContain("EmailAskRemove");
+    expect(container.querySelector(rules)?.textContent).toContain("PurchaseAllowRemove");
+    await act(async () => root.unmount());
+  } finally {
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a saved mode when the revisit's older background read lands after it", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([]);
   rpcMock.autoReview.get.mockResolvedValueOnce(settings);
-  rpcMock.autoReview.set.mockResolvedValue({ ...settings, skipApprovals: true });
+  rpcMock.autoReview.set.mockResolvedValue({ ...settings, mode: "never", skipApprovals: true });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
@@ -125,11 +196,12 @@ it("keeps a saved toggle when the revisit's older background read lands after it
     });
     return root;
   };
-  const toggle = () =>
-    container.querySelector<HTMLButtonElement>('[data-testid="skip-approvals-toggle"]');
+  const neverAsk = () => button(container, "Never ask");
   try {
     const first = await mount();
-    await vi.waitFor(() => expect(toggle()?.disabled).toBe(false));
+    await vi.waitFor(() =>
+      expect(button(container, "Ask")?.getAttribute("aria-pressed")).toBe("true"),
+    );
     await act(async () => first.unmount());
 
     let resolveRead: (value: typeof settings) => void = () => undefined;
@@ -140,14 +212,14 @@ it("keeps a saved toggle when the revisit's older background read lands after it
         }),
     );
     const second = await mount();
-    // Cached, so the toggle works while the refresh is out.
+    // Cached, so the mode can change while the refresh is out.
     expect(rpcMock.autoReview.get).toHaveBeenCalledTimes(2);
-    await act(async () => toggle()?.click());
-    await vi.waitFor(() => expect(toggle()?.getAttribute("aria-checked")).toBe("true"));
+    await act(async () => neverAsk()?.click());
+    await vi.waitFor(() => expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true"));
     await act(async () => resolveRead(settings));
     // Query updates reach components on a timer; let any late write land.
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-    expect(toggle()?.getAttribute("aria-checked")).toBe("true");
+    expect(neverAsk()?.getAttribute("aria-pressed")).toBe("true");
     await act(async () => second.unmount());
   } finally {
     container.remove();
@@ -155,26 +227,25 @@ it("keeps a saved toggle when the revisit's older background read lands after it
   }
 });
 
-it("reads and writes a Space's own confirmations apart from the account's", async () => {
+it("reads and writes a Space's own approvals apart from the account's", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const rule = {
     id: "rule-1",
-    // Not a preset, so it lists as its own removable rule.
     effect: "always_allow",
     matchKind: "tool",
     matchValue: "send_email",
   };
-  rpcMock.approvalRules.list
-    .mockReset()
-    .mockImplementation(async ({ scope }: { scope: string }) => (scope === "space" ? [rule] : []));
-  rpcMock.approvalRules.remove.mockReset().mockResolvedValue({ ok: true });
-  rpcMock.autoReview.get.mockReset().mockResolvedValue(settings);
-  rpcMock.autoReview.set.mockReset().mockResolvedValue({ ...settings, enabled: true });
+  rpcMock.approvalRules.list.mockImplementation(async ({ scope }: { scope: string }) =>
+    scope === "space" ? [rule] : [],
+  );
+  rpcMock.approvalRules.remove.mockResolvedValue({ ok: true });
+  rpcMock.autoReview.get.mockResolvedValue(settings);
+  rpcMock.autoReview.set.mockResolvedValue({ ...settings, mode: "auto", enabled: true });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const render = (scope: "account" | "space") =>
+  const show = (scope: "account" | "space") =>
     act(async () => {
       root.render(
         <QueryClientProvider client={client}>
@@ -182,31 +253,26 @@ it("reads and writes a Space's own confirmations apart from the account's", asyn
         </QueryClientProvider>,
       );
     });
-  const remove = () =>
-    [...container.querySelectorAll("button")].find((button) => button.textContent === "Remove");
   try {
-    await render("space");
-    await vi.waitFor(() => expect(remove()).toBeDefined());
+    await show("space");
+    await vi.waitFor(() => expect(button(container, "Remove")).toBeDefined());
     expect(rpcMock.autoReview.get).toHaveBeenCalledWith({ scope: "space" }, expect.anything());
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-testid="auto-review-toggle"]')?.click(),
-    );
-    expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ enabled: true, scope: "space" });
-    await act(async () => remove()?.click());
+    await act(async () => button(container, "Auto")?.click());
+    expect(rpcMock.autoReview.set).toHaveBeenLastCalledWith({ scope: "space", mode: "auto" });
+    await act(async () => button(container, "Remove")?.click());
     expect(rpcMock.approvalRules.remove).toHaveBeenLastCalledWith({
       scope: "space",
       id: "rule-1",
     });
 
-    await render("account");
+    await show("account");
     await vi.waitFor(() =>
       expect(rpcMock.approvalRules.list).toHaveBeenCalledWith(
         { scope: "account" },
         expect.anything(),
       ),
     );
-    await vi.waitFor(() => expect(container.querySelector('[role="status"]')).toBeNull());
-    expect(remove()).toBeUndefined();
+    await vi.waitFor(() => expect(button(container, "Remove")).toBeUndefined());
   } finally {
     await act(async () => root.unmount());
     container.remove();

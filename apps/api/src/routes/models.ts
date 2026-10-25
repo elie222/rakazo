@@ -295,6 +295,7 @@ export function modelsRoutes(ctx: RouterContext) {
           makeDefault: input.makeDefault,
           settingsScope: input.scope,
           label: input.label,
+          codePage: input.codePage,
           signal: context.signal,
         });
       }),

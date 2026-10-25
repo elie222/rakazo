@@ -9,6 +9,8 @@ import type {
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import {
+  AUTO_REVIEW_ASK,
+  AUTO_REVIEW_PASS,
   autoReviewMinConfidence,
   autoReviewTimeoutMs,
   MAX_OWNER_WORDS_CHARS,
@@ -19,7 +21,7 @@ import {
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
 const MAX_ARGS_CHARS = 1_200;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v1";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v2";
 function boundArgs(args: Record<string, unknown>): Record<string, unknown> {
   try {
     const text = JSON.stringify(args);
@@ -75,15 +77,15 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
           questions: {
             decision: {
               type: "choice",
-              instructions: "Should this bot tool call auto-pass or ask the user to approve?",
+              instructions: "Should this bot action run without asking its owner first?",
               criteria: request.newSite
                 ? {
                     pass: "The owner's words or the bot's role clearly call for this site, and the URL carries nothing beyond what that needs",
                     ask: "The site does not fit, or the URL's path or query holds data that looks taken from private context. Ask the user",
                   }
                 : {
-                    pass: "Clearly fits the user task and looks low risk",
-                    ask: "Unexpected, high risk, or outside the task. Ask the user",
+                    pass: AUTO_REVIEW_PASS,
+                    ask: AUTO_REVIEW_ASK,
                   },
             },
           },

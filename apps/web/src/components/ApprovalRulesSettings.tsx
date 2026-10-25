@@ -1,47 +1,26 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
   ActionApprovalRule,
   ActionAutoReviewSettings,
+  ApprovalMode,
   SettingsScope,
 } from "@rakazo/contracts";
-import { Button, Label, Switch } from "@rakazo/ui-web";
+import { humanizeToolName } from "@rakazo/core";
+import { Button, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useSpaceQueries, writeSaved } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
-type Preset = "email" | "purchase";
+const segmented = "rounded-lg bg-muted p-1";
+const segment = "h-7 px-3 text-[13px] aria-pressed:bg-background aria-pressed:shadow-sm";
 
-function describeRule(rule: ActionApprovalRule): string {
-  if (rule.effect === "require_approval") {
-    if (rule.matchKind === "category") {
-      if (rule.matchValue === "email") return t`Ask before email actions`;
-      if (rule.matchValue === "purchase") return t`Ask before purchase actions`;
-      return t`Ask before ${rule.matchValue} actions`;
-    }
-    if (rule.matchKind === "connector") return t`Ask before ${rule.matchValue} connector`;
-    return t`Ask before ${rule.matchValue}`;
-  }
-  if (rule.matchKind === "category") {
-    if (rule.matchValue === "email") return t`Allow email actions without asking`;
-    if (rule.matchValue === "purchase") return t`Allow purchase actions without asking`;
-    return t`Allow ${rule.matchValue} actions without asking`;
-  }
-  if (rule.matchKind === "connector") return t`Allow ${rule.matchValue} connector without asking`;
-  return t`Allow ${rule.matchValue} without asking`;
-}
-
-/** Confirmations for the account, or for the bound Space when it overrides them. */
+/** Approvals for the account, or for the bound Space when it customizes them. */
 export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const rpc = useSpaceRpc();
   const { t } = useLingui();
-  const autoReviewId = useId();
-  const skipApprovalsId = useId();
-  const emailPresetId = useId();
-  const purchasePresetId = useId();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const input = { scope };
@@ -51,21 +30,18 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
   const autoReview = autoReviewQuery.data ?? null;
   const loading = rulesQuery.isPending || autoReviewQuery.isPending;
   const loadFailed = rulesQuery.error ?? autoReviewQuery.error;
-  const [savingPreset, setSavingPreset] = useState<Preset | null>(null);
-  const [savingAutoReview, setSavingAutoReview] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [actionError, setError] = useState<string | null>(null);
   const error =
     actionError ?? (loadFailed ? errorText(loadFailed, t`Could not load approval rules`) : null);
-  const presetRule = (preset: Preset) =>
-    rules.find(
-      (rule) =>
-        rule.effect === "require_approval" &&
-        rule.matchKind === "category" &&
-        rule.matchValue === preset,
-    );
-  const otherRules = rules.filter(
-    (rule) => rule !== presetRule("email") && rule !== presetRule("purchase"),
-  );
+  const modes: Array<{ mode: ApprovalMode; label: string }> = [
+    { mode: "never", label: t`Never ask` },
+    // Auto needs an approval model; it stays listed while chosen so the choice is visible.
+    ...(autoReview?.checkerAvailable || autoReview?.mode === "auto"
+      ? [{ mode: "auto" as const, label: t`Auto` }]
+      : []),
+    { mode: "ask", label: t`Ask` },
+  ];
 
   function setRules(update: (current: ActionApprovalRule[]) => ActionApprovalRule[]) {
     return writeSaved(queryClient, queries.approvalRules.list.queryKey({ input }), (current) =>
@@ -77,146 +53,129 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
     return writeSaved(queryClient, queries.autoReview.get.queryKey({ input }), () => next);
   }
 
-  async function setPreset(preset: Preset, on: boolean) {
-    if (loading || savingPreset) return;
-    const existing = presetRule(preset);
-    if (on === Boolean(existing)) return;
-    setSavingPreset(preset);
+  async function save(work: () => Promise<unknown>, failure: string) {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     try {
-      if (existing) {
-        await rpc.approvalRules.remove({ scope, id: existing.id });
-        await setRules((current) => current.filter((rule) => rule.id !== existing.id));
-      } else {
-        const saved = await rpc.approvalRules.set({
-          scope,
-          effect: "require_approval",
-          matchKind: "category",
-          matchValue: preset,
-        });
-        await setRules((current) => [...current, saved]);
-      }
+      await work();
     } catch (err) {
-      setError(errorText(err, t`Could not save rule`));
+      setError(errorText(err, failure));
     } finally {
-      setSavingPreset(null);
+      setSaving(false);
     }
   }
 
-  async function removeRule(id: string) {
-    setError(null);
-    try {
-      await rpc.approvalRules.remove({ scope, id });
-      await setRules((current) => current.filter((rule) => rule.id !== id));
-    } catch (err) {
-      setError(errorText(err, t`Could not remove rule`));
-    }
-  }
+  const setMode = (mode: ApprovalMode) =>
+    save(
+      async () => setAutoReview(await rpc.autoReview.set({ scope, mode })),
+      t`Could not save Auto Review`,
+    );
 
-  async function saveAutoReview(change: { enabled?: boolean; skipApprovals?: boolean }) {
-    if (loading || savingAutoReview) return;
-    setSavingAutoReview(true);
-    setError(null);
-    try {
-      await setAutoReview(await rpc.autoReview.set({ ...change, scope }));
-    } catch (err) {
-      setError(errorText(err, t`Could not save Auto Review`));
-    } finally {
-      setSavingAutoReview(false);
-    }
-  }
+  const setEffect = (rule: ActionApprovalRule, effect: "always_allow" | "deny") =>
+    save(async () => {
+      if (rule.matchKind === "category") return;
+      const saved = await rpc.approvalRules.set({
+        scope,
+        effect,
+        matchKind: rule.matchKind,
+        matchValue: rule.matchValue,
+      });
+      // Saving replaces the rule's other effect on the same match.
+      await setRules((current) => [...current.filter((other) => other.id !== rule.id), saved]);
+    }, t`Could not save rule`);
+
+  const removeRule = (rule: ActionApprovalRule) =>
+    save(async () => {
+      await rpc.approvalRules.remove({ scope, id: rule.id });
+      await setRules((current) => current.filter((other) => other.id !== rule.id));
+    }, t`Could not remove rule`);
 
   return (
-    <div data-testid="action-confirmation-settings" className="space-y-8">
+    <div data-testid="approval-settings" className="space-y-8">
       <SettingsGroup>
         <SettingsRow
-          label={
-            <Label htmlFor={skipApprovalsId} className="text-[14px] font-normal text-foreground">
-              <Trans>Run actions without asking</Trans>
-            </Label>
-          }
+          label={<Trans>Mode</Trans>}
           control={
-            <Switch
-              id={skipApprovalsId}
-              data-testid="skip-approvals-toggle"
-              checked={autoReview?.skipApprovals ?? false}
-              disabled={loading || savingAutoReview || !autoReview}
-              onCheckedChange={(checked) => void saveAutoReview({ skipApprovals: checked })}
-            />
+            <ToggleGroup
+              aria-label={t`Mode`}
+              data-testid="approval-mode"
+              value={autoReview ? [autoReview.mode] : []}
+              onValueChange={([next]) => {
+                if (next && next !== autoReview?.mode) void setMode(next as ApprovalMode);
+              }}
+              disabled={loading || saving || !autoReview}
+              spacing={1}
+              className={segmented}
+            >
+              {modes.map(({ mode, label }) => (
+                <ToggleGroupItem key={mode} value={mode} className={segment}>
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           }
-        />
-        {autoReview?.skipApprovals ? null : (
-          <SettingsRow
-            label={
-              <Label htmlFor={autoReviewId} className="text-[14px] font-normal text-foreground">
-                <Trans>Flag unexpected actions</Trans>
-              </Label>
-            }
-            control={
-              <Switch
-                id={autoReviewId}
-                data-testid="auto-review-toggle"
-                checked={autoReview?.enabled ?? false}
-                disabled={loading || savingAutoReview || !autoReview}
-                onCheckedChange={(checked) => void saveAutoReview({ enabled: checked })}
-              />
-            }
-          >
-            {autoReview?.enabled && !autoReview.checkerAvailable ? (
-              <p className="mt-1 text-[13px] text-muted-foreground">
-                <Trans>Add a model in Settings to use this.</Trans>
-              </p>
-            ) : null}
-          </SettingsRow>
-        )}
-        <SettingsRow
-          label={
-            <Label htmlFor={emailPresetId} className="text-[14px] font-normal text-foreground">
-              <Trans>Ask before sending external email</Trans>
-            </Label>
-          }
-          control={
-            <Switch
-              id={emailPresetId}
-              data-testid="ask-before-email-toggle"
-              checked={Boolean(presetRule("email"))}
-              disabled={loading || savingPreset !== null}
-              onCheckedChange={(checked) => void setPreset("email", checked)}
-            />
-          }
-        />
-        <SettingsRow
-          label={
-            <Label htmlFor={purchasePresetId} className="text-[14px] font-normal text-foreground">
-              <Trans>Ask before purchases</Trans>
-            </Label>
-          }
-          control={
-            <Switch
-              id={purchasePresetId}
-              data-testid="ask-before-purchase-toggle"
-              checked={Boolean(presetRule("purchase"))}
-              disabled={loading || savingPreset !== null}
-              onCheckedChange={(checked) => void setPreset("purchase", checked)}
-            />
-          }
-        />
+        >
+          {autoReview?.mode === "auto" && !autoReview.checkerAvailable ? (
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              <Trans>Add a model in Settings to use this.</Trans>
+            </p>
+          ) : null}
+        </SettingsRow>
       </SettingsGroup>
-      {otherRules.length > 0 ? (
-        <SettingsGroup>
-          {otherRules.map((rule) => (
+      {rules.length > 0 ? (
+        <SettingsGroup data-testid="approval-rules">
+          {rules.map((rule) => (
             <SettingsRow
               key={rule.id}
-              label={describeRule(rule)}
+              label={ruleLabel(rule)}
               control={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={() => void removeRule(rule.id)}
-                >
-                  <Trans>Remove</Trans>
-                </Button>
+                <>
+                  {rule.matchKind === "category" ? (
+                    <span className="text-[13px] text-muted-foreground">
+                      {rule.effect === "always_allow" ? (
+                        <Trans>Allow</Trans>
+                      ) : rule.effect === "deny" ? (
+                        <Trans>Block</Trans>
+                      ) : (
+                        <Trans>Ask</Trans>
+                      )}
+                    </span>
+                  ) : (
+                    <ToggleGroup
+                      aria-label={ruleLabel(rule)}
+                      value={[rule.effect]}
+                      onValueChange={([next]) => {
+                        if (next === "always_allow" || next === "deny") void setEffect(rule, next);
+                      }}
+                      disabled={saving}
+                      spacing={1}
+                      className={segmented}
+                    >
+                      <ToggleGroupItem value="always_allow" className={segment}>
+                        <Trans>Allow</Trans>
+                      </ToggleGroupItem>
+                      {/* An older ask rule keeps showing what it does until it is switched. */}
+                      {rule.effect === "require_approval" ? (
+                        <ToggleGroupItem value="require_approval" className={segment}>
+                          <Trans>Ask</Trans>
+                        </ToggleGroupItem>
+                      ) : null}
+                      <ToggleGroupItem value="deny" className={segment}>
+                        <Trans>Block</Trans>
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    disabled={saving}
+                    onClick={() => void removeRule(rule)}
+                  >
+                    <Trans>Remove</Trans>
+                  </Button>
+                </>
               }
             />
           ))}
@@ -225,4 +184,9 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
     </div>
   );
+}
+
+/** A site reads as itself; a tool, connector or older category by its name. */
+function ruleLabel(rule: ActionApprovalRule): string {
+  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
 }

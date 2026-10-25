@@ -198,10 +198,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["approvalRules/list"],
-      [
-        "approvalRules/set",
-        { effect: "require_approval", matchKind: "category", matchValue: "email" },
-      ],
+      ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
@@ -792,9 +789,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await rpc<unknown[]>(app, member, "approvalRules/list")).toEqual([]);
 
     const memberRule = await rpc<{ id: string }>(app, member, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "category",
-      matchValue: "email",
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "gmail_send_email",
     });
     expect(await rpc<Array<{ id: string }>>(app, owner, "approvalRules/list")).toEqual([
       expect.objectContaining({ id: ownerRule.id }),

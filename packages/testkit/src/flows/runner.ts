@@ -372,7 +372,7 @@ export async function runFlow<World>(
           });
         else if (move.kind === "key")
           await rpc("computer/input", { botId, kind: "key", payload: { key: move.key } });
-        log.did(describeMove(move));
+        log.did(describeMove(move), move.kind === "click" ? move : undefined);
         await new Promise((resolve) => setTimeout(resolve, 1_000));
       }
       await rpc("computer/release", { botId, reason: "skipped" }).catch(() => undefined);

@@ -598,36 +598,17 @@ msgstr "All statuses"
 msgid "All time"
 msgstr "All time"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "Allow {0} actions without asking"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "Allow {0} connector without asking"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "Allow {0} without asking"
+msgid "Allow"
+msgstr "Allow"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Allow cross-space bot communication"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "Allow email actions without asking"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "Allow once"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "Allow purchase actions without asking"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "Approval boundaries"
 msgid "Approval model"
 msgstr "Approval model"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "Approvals"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "Arguments"
 msgid "Artifacts"
 msgstr "Artifacts"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "Ask before {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "Ask before {0} actions"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "Ask before {0} connector"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "Ask before email actions"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "Ask before purchase actions"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "Ask before purchases"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "Ask before sending external email"
+msgid "Ask"
+msgstr "Ask"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "Authentication failed."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "Authorization code or callback URL"
+msgid "Authorization code"
+msgstr "Authorization code"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "Authorize"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Authorize this server so agents can use its tools. A popup opens."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "Auto"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Bearer token"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr "Billing"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "Block"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "Computer is asleep"
 msgid "Computer is asleep. Open it to wake."
 msgstr "Computer is asleep. Open it to wake."
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "Computer is stopped"
@@ -1445,11 +1413,6 @@ msgstr "Confirm password"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Confirm the URL is reachable from this browser session, then test again."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr "Confirmations"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "Connected"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Connected {0}."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "Connected. Its tools are available from your next message."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "Finding…"
 msgid "Finish setting up"
 msgstr "Finish setting up"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Finish subscription sign-in, then test again."
@@ -2717,10 +2670,6 @@ msgstr "Finished."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "Finishing MCP connection…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "Flag unexpected actions"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "minutes"
 msgid "Missed call"
 msgstr "Missed call"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "Mode"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr "Needs you"
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "Needs: {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "Never ask"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "Open {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "Open <0>{0}</0> and enter this code:"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr "Open <0>{0}</0> to finish signing in."
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr "Open call"
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "Queued"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazo credits"
 
@@ -4550,10 +4502,6 @@ msgstr "Routines"
 msgid "Routines that run while you're away"
 msgstr "Routines that run while you're away"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "Run actions without asking"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "Run at"
@@ -4899,6 +4847,12 @@ msgstr "Sign in"
 msgid "Sign in again"
 msgstr "Sign in again"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "Sign in at <0>{0}</0>, then paste the code here."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Sign in to Rakazo"
@@ -5020,6 +4974,10 @@ msgstr "Speech model"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO is temporarily unavailable. Try again."
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr "Start"
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr "Use Protected input for passwords."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr "Use Rakazo credits"
 

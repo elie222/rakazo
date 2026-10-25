@@ -448,7 +448,7 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected`} />
         </div>
       ) : null}
       {state === "dismissed" ? (

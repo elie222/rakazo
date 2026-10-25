@@ -598,36 +598,17 @@ msgstr "すべてのステータス"
 msgid "All time"
 msgstr "全期間"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "{0}の操作を確認なしで許可"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "{0}コネクタを確認なしで許可"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "{0}を確認なしで許可"
+msgid "Allow"
+msgstr "許可"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "スペース間のボット通信を許可"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "メールの操作を確認なしで許可"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "今回のみ許可"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "購入の操作を確認なしで許可"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "承認の範囲"
 msgid "Approval model"
 msgstr "承認モデル"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "承認"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "引数"
 msgid "Artifacts"
 msgstr "成果物"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "{0}の前に確認"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "{0}の操作の前に確認"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "{0}コネクタの前に確認"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "メールの操作の前に確認"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "購入の操作の前に確認"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "購入の前に確認"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "外部へのメール送信の前に確認"
+msgid "Ask"
+msgstr "確認"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "認証に失敗しました。"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "認証コードまたはコールバックURL"
+msgid "Authorization code"
+msgstr "認証コード"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "承認"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "このサーバーを承認すると、エージェントがそのツールを使えるようになります。ポップアップが開きます。"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "自動"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Bearerトークン"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr "請求"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "ブロック"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "コンピューターはスリープ中です"
 msgid "Computer is asleep. Open it to wake."
 msgstr "コンピューターはスリープ中です。開くと起動します。"
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "コンピューターは停止しています"
@@ -1445,11 +1413,6 @@ msgstr "パスワードの確認"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "このブラウザセッションからURLにアクセスできることを確認してから、もう一度テストしてください。"
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr "確認"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "接続済み"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0}を接続しました。"
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "接続しました。次のメッセージからツールを使用できます。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "検索中…"
 msgid "Finish setting up"
 msgstr "セットアップを完了"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "<0>{0}</0>でログインを完了してください。最後のページが読み込まれない場合は、そのURLまたはコードをここに貼り付けてください。"
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "サブスクリプションのログインを完了してから、もう一度テストしてください。"
@@ -2717,10 +2670,6 @@ msgstr "完了しました。"
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP接続を完了しています…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "想定外の操作を警告"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "分"
 msgid "Missed call"
 msgstr "不在着信"
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "モード"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr "対応が必要"
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "必要: {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "確認しない"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "{name}を開く"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "<0>{0}</0>を開いて、このコードを入力してください:"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr "<0>{0}</0>を開いてログインを完了してください。"
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr "通話を開く"
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "待機中"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr "Rakazoクレジット"
 
@@ -4550,10 +4502,6 @@ msgstr "ルーティン"
 msgid "Routines that run while you're away"
 msgstr "不在中に実行されるルーティン"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "確認せずにアクションを実行"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "実行日時"
@@ -4899,6 +4847,12 @@ msgstr "ログイン"
 msgid "Sign in again"
 msgstr "再度ログイン"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "<0>{0}</0> でサインインし、表示されたコードをここに貼り付けてください。"
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Rakazoにログイン"
@@ -5020,6 +4974,10 @@ msgstr "音声モデル"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSOは一時的に利用できません。もう一度お試しください。"
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr "パスワードには保護された入力を使用してください。"
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr "Rakazoクレジットを使用"
 

@@ -598,36 +598,17 @@ msgstr "כל הסטטוסים"
 msgid "All time"
 msgstr "כל הזמנים"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} actions without asking"
-msgstr "לאפשר פעולות {0} בלי לשאול"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} connector without asking"
-msgstr "לאפשר את החיבור {0} בלי לשאול"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow {0} without asking"
-msgstr "לאפשר {0} בלי לשאול"
+msgid "Allow"
+msgstr "לאפשר"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow email actions without asking"
-msgstr "לאפשר פעולות אימייל בלי לשאול"
-
 #: src/components/AskCard.tsx
 msgid "Allow once"
 msgstr "אישור חד-פעמי"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Allow purchase actions without asking"
-msgstr "לאפשר פעולות רכישה בלי לשאול"
 
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 msgid "Allow writing"
@@ -761,6 +742,11 @@ msgstr "גבולות אישור"
 msgid "Approval model"
 msgstr "מודל אישור"
 
+#: src/pages/SettingsOverlay.tsx
+#: src/pages/SpaceSettingOverrides.tsx
+msgid "Approvals"
+msgstr "אישורים"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
@@ -791,36 +777,9 @@ msgstr "ארגומנטים"
 msgid "Artifacts"
 msgstr "תוצרים"
 
-#. placeholder {0}: rule.matchValue
 #: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0}"
-msgstr "לשאול לפני {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} actions"
-msgstr "לשאול לפני פעולות {0}"
-
-#. placeholder {0}: rule.matchValue
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before {0} connector"
-msgstr "לשאול לפני החיבור {0}"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before email actions"
-msgstr "לשאול לפני פעולות אימייל"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchase actions"
-msgstr "לשאול לפני פעולות רכישה"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before purchases"
-msgstr "לשאול לפני רכישות"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Ask before sending external email"
-msgstr "לשאול לפני שליחת אימייל חיצוני"
+msgid "Ask"
+msgstr "לשאול"
 
 #. placeholder {0}: preset.time
 #: src/pages/RoutineSchedule.tsx
@@ -850,8 +809,8 @@ msgstr "האימות נכשל."
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-msgid "Authorization code or callback URL"
-msgstr "קוד הרשאה או URL להחזרה (callback)"
+msgid "Authorization code"
+msgstr "קוד הרשאה"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Authorization parameters (optional)"
@@ -872,6 +831,10 @@ msgstr "מתן הרשאה"
 #: src/pages/shell/message-cards.tsx
 msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "יש לתת הרשאה לשרת הזה כדי שסוכנים יוכלו להשתמש בכלים שלו. ייפתח חלון קופץ."
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Auto"
+msgstr "אוטומטי"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Automated senders"
@@ -930,6 +893,10 @@ msgstr "Bearer token"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr "חיוב"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Block"
+msgstr "לחסום"
 
 #: src/lib/ticket-status.ts
 msgid "Blocked"
@@ -1408,6 +1375,7 @@ msgstr "המחשב במצב שינה"
 msgid "Computer is asleep. Open it to wake."
 msgstr "המחשב במצב שינה. יש לפתוח אותו כדי להעיר אותו."
 
+#: src/pages/shell/computer-overlay.tsx
 #: src/pages/shell/computer-view.tsx
 msgid "Computer is stopped"
 msgstr "המחשב כבוי"
@@ -1445,11 +1413,6 @@ msgstr "אימות סיסמה"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הדפדפן הזה, ואז לבדוק שוב."
-
-#: src/pages/SettingsOverlay.tsx
-#: src/pages/SpaceSettingOverrides.tsx
-msgid "Confirmations"
-msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -1520,10 +1483,6 @@ msgstr "מחובר"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} מחובר."
-
-#: src/pages/shell/message-cards.tsx
-msgid "Connected. Its tools are available from your next message."
-msgstr "מחובר. הכלים שלו יהיו זמינים החל מההודעה הבאה."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -2695,12 +2654,6 @@ msgstr "מחפש…"
 msgid "Finish setting up"
 msgstr "סיום ההגדרה"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
-msgstr "יש להשלים את ההתחברות ב-<0>{0}</0>. ייתכן שהדף האחרון לא ייטען; אפשר להדביק כאן את ה-URL או את הקוד שלו."
-
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "יש להשלים את ההתחברות למנוי ולבדוק שוב."
@@ -2717,10 +2670,6 @@ msgstr "הסתיים."
 #: src/pages/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "משלים את חיבור ה-MCP…"
-
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Flag unexpected actions"
-msgstr "סימון פעולות לא צפויות"
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -3439,6 +3388,10 @@ msgstr "דקות"
 msgid "Missed call"
 msgstr ""
 
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Mode"
+msgstr "מצב"
+
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/model-settings/model-picker.tsx
@@ -3587,6 +3540,10 @@ msgstr "נדרשת פעולה"
 #: src/pages/shell/import-status.ts
 msgid "Needs: {names}"
 msgstr "דורש: {names}"
+
+#: src/components/ApprovalRulesSettings.tsx
+msgid "Never ask"
+msgstr "לא לשאול אף פעם"
 
 #: src/pages/shell/chat-context.tsx
 msgid "New"
@@ -3870,12 +3827,6 @@ msgstr "פתיחת {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "יש לפתוח את <0>{0}</0> ולהזין את הקוד הזה:"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: src/pages/model-settings/connection-controls.tsx
-#: src/pages/Onboarding.tsx
-msgid "Open <0>{0}</0> to finish signing in."
-msgstr "יש לפתוח את <0>{0}</0> כדי להשלים את ההתחברות."
-
 #: src/pages/Shell.tsx
 msgid "Open call"
 msgstr ""
@@ -4152,6 +4103,7 @@ msgid "Queued"
 msgstr "בתור"
 
 #: src/components/ModelCredits.tsx
+#: src/pages/Onboarding.tsx
 msgid "Rakazo credits"
 msgstr ""
 
@@ -4550,10 +4502,6 @@ msgstr "רוטינות"
 msgid "Routines that run while you're away"
 msgstr "רוטינות שרצות גם כשלא נמצאים"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Run actions without asking"
-msgstr "להריץ פעולות בלי לשאול"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Run at"
 msgstr "הרצה ב-"
@@ -4899,6 +4847,12 @@ msgstr "התחברות"
 msgid "Sign in again"
 msgstr "התחברות מחדש"
 
+#. placeholder {0}: new URL(oauth.verificationUri).hostname
+#: src/pages/model-settings/connection-controls.tsx
+#: src/pages/Onboarding.tsx
+msgid "Sign in at <0>{0}</0>, then paste the code here."
+msgstr "התחברו ב-<0>{0}</0> והדביקו כאן את הקוד."
+
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "התחברות ל-Rakazo"
@@ -5020,6 +4974,10 @@ msgstr "מודל דיבור"
 #: src/lib/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO אינו זמין כרגע. אפשר לנסות שוב."
+
+#: src/pages/shell/computer-overlay.tsx
+msgid "Start"
+msgstr ""
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -5614,7 +5572,6 @@ msgid "Use Protected input for passwords."
 msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 
 #: src/components/ModelCredits.tsx
-#: src/pages/Onboarding.tsx
 msgid "Use Rakazo credits"
 msgstr ""
 

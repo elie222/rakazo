@@ -1189,7 +1189,7 @@ it.each([undefined, "api_key", "oauth"])(
         billing: "Subscription",
         auth: "oauth",
         signIn: "device-code",
-        oauthLabel: "Sign in with ChatGPT Plus/Pro",
+        oauthLabel: "Sign in with ChatGPT",
       },
     ]);
     models.credentials.mockResolvedValue(

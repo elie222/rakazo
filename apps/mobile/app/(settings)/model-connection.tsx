@@ -569,6 +569,7 @@ export default function ModelConnection() {
           scope: target.scope,
           label: selected.providerName ?? selected.provider,
           credentialId: credentialIdRef.current,
+          codePage: true,
         },
         { signal: controller.signal },
       );
@@ -1041,17 +1042,13 @@ export default function ModelConnection() {
                   <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
                     <Text style={styles.link}>{oauth.verificationUri}</Text>
                   </Pressable>
-                  <Text style={styles.secondary}>
-                    {t("The final page may not load. Paste its URL or code here.")}
-                  </Text>
+                  <Text style={styles.secondary}>{t("Then paste the code here.")}</Text>
                   <TextInput
                     accessibilityLabel={t("Authorization code")}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    placeholder={t("http://localhost:53692/callback?code=…")}
-                    placeholderTextColor={native.secondaryLabel}
                     style={[styles.keyInput, styles.nestedInput]}
                   />
                   <NativeActionButton

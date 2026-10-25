@@ -5,7 +5,6 @@ import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeSwitch } from "../../components/native-switch";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { SkipApprovalsSwitch } from "../../components/skip-approvals-switch";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
@@ -14,7 +13,7 @@ import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 
 /**
- * A Space follows the account's models, voice and confirmations until one is customized for it.
+ * A Space follows the account's models, voice and approvals until one is customized for it.
  * Customizing opens the same screen the account uses, editing the Space's own copy.
  */
 export default function SpaceSettings() {
@@ -48,15 +47,19 @@ export default function SpaceSettings() {
 
   if (target.scope !== "space") return null;
   const space = target.spaceId;
-  const open = (setting: "models" | "voice") =>
-    router.push({ pathname: `/${setting}`, params: { spaceId: space } });
+  // The "confirmations" setting opens the Approvals screen.
+  const open = (setting: SpaceSetting) =>
+    router.push({
+      pathname: setting === "confirmations" ? "/approvals" : `/${setting}`,
+      params: { spaceId: space },
+    });
 
   async function customize(setting: SpaceSetting, enabled: boolean) {
     setPending(true);
     setError(null);
     try {
       setOverrides(await rpc<SpaceSetting[]>("spaceSettings/setOverride", { setting, enabled }));
-      if (enabled && setting !== "confirmations") open(setting);
+      if (enabled) open(setting);
     } catch (err) {
       setError(errorText(err, t("Could not save that preference")));
     } finally {
@@ -66,14 +69,13 @@ export default function SpaceSettings() {
 
   const row = (setting: SpaceSetting, title: string) => {
     const customized = overrides?.includes(setting) ?? false;
-    const opens = customized && setting !== "confirmations";
     return (
       <SettingsRow
         key={setting}
-        accessibilityRole={opens ? "button" : undefined}
+        accessibilityRole={customized ? "button" : undefined}
         title={title}
-        chevron={opens ? "right" : undefined}
-        onPress={opens ? () => open(setting) : undefined}
+        chevron={customized ? "right" : undefined}
+        onPress={customized ? () => open(setting) : undefined}
         trailing={
           <NativeSwitch
             accessibilityLabel={t("Customize {setting}", { setting: title })}
@@ -101,8 +103,7 @@ export default function SpaceSettings() {
         <SettingsGroup accessibilityLabel={t("Customize")} label={t("Customize")}>
           {row("models", t("Models"))}
           {row("voice", t("Voice"))}
-          {row("confirmations", t("Confirmations"))}
-          {overrides?.includes("confirmations") ? <SkipApprovalsSwitch target={target} /> : null}
+          {row("confirmations", t("Approvals"))}
         </SettingsGroup>
       </ScrollView>
     </SafeAreaView>

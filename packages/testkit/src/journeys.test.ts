@@ -53,6 +53,11 @@ describeJourneys("required product journeys", () => {
   const stamp = Date.now();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-journey-"));
 
+  /** Runs every action without a card, for journeys about something other than approvals. */
+  async function runWithoutAsking(cookie: string) {
+    await rpc(app, cookie, "autoReview/set", { mode: "never" });
+  }
+
   async function sendAndWait(app: App, cookie: string, botId: string, text: string) {
     const { runId } = await rpc<{ runId: string }>(app, cookie, "threads/send", { botId, text });
     let terminal: { status: string; error: string | null } | null = null;
@@ -1532,6 +1537,7 @@ describeJourneys("required product journeys", () => {
       label: "test",
       modelId: "scripted",
     });
+    await runWithoutAsking(cookie);
     await sendAndWait(app, cookie, bot.id, "write this to the destination crm as a note");
     expect(connector.records.length).toBeGreaterThan(before);
     const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
@@ -1540,6 +1546,7 @@ describeJourneys("required product journeys", () => {
 
   it("8: retrying a completed effect does not duplicate the destination write", async () => {
     const cookie = await signup(app, `crash-j-${stamp}@rakazo.test`, "Crash");
+    await runWithoutAsking(cookie);
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -1760,6 +1767,7 @@ describeJourneys("required product journeys", () => {
 
   it("12: a bot can spawn a regular bot and must confirm the name to delete it", async () => {
     const cookie = await signup(app, `spawn-j-${stamp}@rakazo.test`, "Spawn");
+    await runWithoutAsking(cookie);
     const parent = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -3100,7 +3108,7 @@ describeJourneys("required product journeys", () => {
     }
   });
 
-  it("19: destination writes pause for approval before side effects", async () => {
+  it("19: in Ask mode, destination writes pause for approval before side effects", async () => {
     const cookie = await signup(app, `approval-j-${stamp}@rakazo.test`, "Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -3110,11 +3118,6 @@ describeJourneys("required product journeys", () => {
       notifyOnFinish: true,
     });
     const recordsBefore = connector.records.length;
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "destination.write",
-    });
 
     const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
@@ -3177,11 +3180,6 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "destination.write",
-    });
     const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
       text: "write this to the destination crm as a note",
@@ -3203,7 +3201,7 @@ describeJourneys("required product journeys", () => {
     expect(effect.status).toBe("denied");
   });
 
-  it("20: actions run by default and specific exceptions override broad review rules", async () => {
+  it("20: always allow runs a tool without a card, and a block refuses it in every mode", async () => {
     const cookie = await signup(app, `always-j-${stamp}@rakazo.test`, "Always");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -3212,86 +3210,7 @@ describeJourneys("required product journeys", () => {
       instructions: "",
       notifyOnFinish: true,
     });
-    const prompt = "write this to the destination crm as a note";
     const recordsBefore = connector.records.length;
-
-    await sendAndWait(app, cookie, bot.id, prompt);
-    expect(connector.records.length).toBeGreaterThan(recordsBefore);
-    const recordsAfterDefault = connector.records.length;
-
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "connector",
-      matchValue: "destination.write",
-    });
-    const second = await rpc<{ runId: string }>(app, cookie, "threads/send", {
-      botId: bot.id,
-      text: "write this to the destination crm as a note again",
-    });
-    const waiting = await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => snap.run?.status === "waiting_input",
-    );
-    await answerPendingApproval(app, cookie, bot.id, second.runId, "always", waiting);
-    await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
-    );
-    expect(connector.records.length).toBe(recordsAfterDefault + 1);
-
-    await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
-    expect(connector.records.length).toBe(recordsAfterDefault + 2);
-
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "destination.write",
-    });
-    const fourth = await rpc<{ runId: string }>(app, cookie, "threads/send", {
-      botId: bot.id,
-      text: "write this to the destination crm one final time",
-    });
-    const waitingAgain = await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => snap.run?.status === "waiting_input",
-    );
-    expect(connector.records.length).toBe(recordsAfterDefault + 2);
-    await answerPendingApproval(app, cookie, bot.id, fourth.runId, "allow", waitingAgain);
-    await waitFor(
-      app,
-      cookie,
-      bot.id,
-      (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
-    );
-    expect(connector.records.length).toBe(recordsAfterDefault + 3);
-  });
-
-  it("20b: always allow replaces a require-approval rule on the same tool", async () => {
-    const cookie = await signup(app, `always-replaces-j-${stamp}@rakazo.test`, "Always Replaces");
-    const bot = await rpc<Bot>(app, cookie, "bots/create", {
-      name: "Chief",
-      title: "",
-      description: "",
-      instructions: "",
-      notifyOnFinish: true,
-    });
-    const rule = { matchKind: "tool", matchValue: "destination.write" };
-    const effects = async () =>
-      (await rpc<Array<{ effect: string; matchValue: string }>>(app, cookie, "approvalRules/list"))
-        .filter((row) => row.matchValue.toLowerCase() === rule.matchValue)
-        .map((row) => row.effect);
-    // Rules match tool names whatever their case, so the replacement must too.
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "Destination.Write",
-    });
 
     const first = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
@@ -3310,22 +3229,66 @@ describeJourneys("required product journeys", () => {
       bot.id,
       (snap) => !snap.run || ["completed", "failed", "cancelled"].includes(snap.run.status),
     );
+    expect(connector.records.length).toBe(recordsBefore + 1);
+
+    await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
+    expect(connector.records.length).toBe(recordsBefore + 2);
+
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "destination.write",
+    });
+    for (const mode of ["ask", "never"]) {
+      await rpc(app, cookie, "autoReview/set", { mode });
+      const blocked = await sendAndWait(
+        app,
+        cookie,
+        bot.id,
+        `write this to the destination crm while it is blocked in ${mode}`,
+      );
+      expect(blocked.run.status).toBe("completed");
+      expect(connector.records.length).toBe(recordsBefore + 2);
+    }
+  });
+
+  it("20b: allowing a tool replaces its block, and the other way around", async () => {
+    const cookie = await signup(app, `always-replaces-j-${stamp}@rakazo.test`, "Always Replaces");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const rule = { matchKind: "tool", matchValue: "destination.write" };
+    const effects = async () =>
+      (await rpc<Array<{ effect: string; matchValue: string }>>(app, cookie, "approvalRules/list"))
+        .filter((row) => row.matchValue.toLowerCase() === rule.matchValue)
+        .map((row) => row.effect);
+    // Rules match tool names whatever their case, so the replacement must too.
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "Destination.Write",
+    });
+    await rpc(app, cookie, "approvalRules/set", { effect: "always_allow", ...rule });
     expect(await effects()).toEqual(["always_allow"]);
 
     const recordsBefore = connector.records.length;
     await sendAndWait(app, cookie, bot.id, "write this to the destination crm once more");
     expect(connector.records.length).toBe(recordsBefore + 1);
 
-    await rpc(app, cookie, "approvalRules/set", { effect: "require_approval", ...rule });
-    expect(await effects()).toEqual(["require_approval"]);
+    await rpc(app, cookie, "approvalRules/set", { effect: "deny", ...rule });
+    expect(await effects()).toEqual(["deny"]);
   });
 
-  it("20c: opposite rules saved at once leave one rule per match", async () => {
+  it("20c: allow and block saved at once leave one rule per match", async () => {
     const cookie = await signup(app, `rule-race-j-${stamp}@rakazo.test`, "Rule Race");
     const values = Array.from({ length: 8 }, (_, index) => `race.tool.${index}`);
     await Promise.all(
       values.flatMap((matchValue) =>
-        ["always_allow", "require_approval"].map((effect) =>
+        ["always_allow", "deny"].map((effect) =>
           rpc(app, cookie, "approvalRules/set", { effect, matchKind: "tool", matchValue }),
         ),
       ),
@@ -3342,7 +3305,7 @@ describeJourneys("required product journeys", () => {
       matchValue: "toolXa",
     });
     await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
+      effect: "deny",
       matchKind: "tool",
       matchValue: "tool_a",
     });
@@ -3353,11 +3316,11 @@ describeJourneys("required product journeys", () => {
     );
     expect(rows.map((row) => `${row.effect}:${row.matchValue}`).sort()).toEqual([
       "always_allow:toolXa",
-      "require_approval:tool_a",
+      "deny:tool_a",
     ]);
   });
 
-  it("21: routine destination writes pause on the same approval card", async () => {
+  it("21: in Ask mode, routine destination writes pause on the same approval card", async () => {
     const cookie = await signup(app, `routine-approval-j-${stamp}@rakazo.test`, "Routine Approval");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -3365,11 +3328,6 @@ describeJourneys("required product journeys", () => {
       description: "",
       instructions: "",
       notifyOnFinish: true,
-    });
-    await rpc(app, cookie, "approvalRules/set", {
-      effect: "require_approval",
-      matchKind: "tool",
-      matchValue: "destination.write",
     });
     const routine = await rpc<{ id: string }>(app, cookie, "routines/create", {
       botId: bot.id,
