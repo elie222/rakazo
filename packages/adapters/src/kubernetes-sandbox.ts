@@ -238,7 +238,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     // Checked even with no claim configured: a pod started with one still mounts the home
     // until it stops, and exporting over that directory would delete its live files.
     const pod = await this.readPod(this.podId(computer), context.signal);
-    return !!pod && podMountsHome(pod, computer.botId);
+    return !!pod && podMountsHome(pod, computer.botId, this.homeClaim);
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -951,9 +951,13 @@ function homeSubPath(botId: string): string {
   return `homes/${botId}`;
 }
 
-function podMountsHome(pod: V1Pod, homeKey: string): boolean {
+/** With no claim configured, any claim counts, so pods started with one keep their mount. */
+function podMountsHome(pod: V1Pod, homeKey: string, claimName: string | undefined): boolean {
   const claims = new Set(
-    pod.spec?.volumes?.flatMap((entry) => (entry.persistentVolumeClaim ? [entry.name] : [])),
+    pod.spec?.volumes?.flatMap((entry) => {
+      const claim = entry.persistentVolumeClaim?.claimName;
+      return claim && (!claimName || claim === claimName) ? [entry.name] : [];
+    }),
   );
   const container = pod.spec?.containers?.find((entry) => entry.name === CONTAINER_NAME);
   return (

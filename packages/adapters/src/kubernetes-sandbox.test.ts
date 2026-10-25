@@ -458,6 +458,28 @@ describe("KubernetesSandboxProvider", () => {
       },
     );
 
+    it("does not treat another claim as the configured home", async () => {
+      const pod = {
+        ...readyPod,
+        spec: {
+          volumes: [{ name: "home", persistentVolumeClaim: { claimName: "old-claim" } }],
+          containers: [
+            {
+              name: "computer",
+              volumeMounts: [{ name: "home", mountPath: "/home/rakazo", subPath: "homes/bot-a" }],
+            },
+          ],
+        },
+      } as V1Pod;
+      await expect(
+        providerFor(
+          { readNamespacedPod: vi.fn().mockResolvedValue(pod) },
+          vi.fn(),
+          home,
+        ).hasMountedHome(computer, context),
+      ).resolves.toBe(false);
+    });
+
     it("still sees a mounted home after the claim is removed from the configuration", async () => {
       const pod = {
         ...readyPod,
