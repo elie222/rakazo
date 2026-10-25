@@ -13,6 +13,7 @@ import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.j
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { PEER_NOTHING_NEW_REPLY } from "./silent-reply.js";
 import { userProgressClientNonce } from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
@@ -584,6 +585,24 @@ describe("a stray NO_RESPONSE on runs that must reply", () => {
     });
     expect(savedText(finalizeRun)).toBe("The report is ready.");
   });
+
+  it.each(["request", "question"] as const)(
+    "tells the asker there is nothing new instead of relaying a bare sentinel (%s)",
+    async (intent) => {
+      vi.mocked(returnBotMessageOutcome).mockClear();
+      const { finalizeRun } = await runTurn("NO_RESPONSE", true, undefined, [], intent, {
+        trigger: "bot_message",
+      });
+      expect(savedText(finalizeRun)).toBe(PEER_NOTHING_NEW_REPLY);
+      expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        PEER_NOTHING_NEW_REPLY,
+        "result",
+      );
+    },
+  );
 
   it("returns a peer request's result without the sentinel", async () => {
     vi.mocked(returnBotMessageOutcome).mockClear();

@@ -443,6 +443,7 @@ import {
 import {
   isExactNoResponse,
   NO_RESPONSE,
+  peerReplyWithoutSentinel,
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "./silent-reply.js";
@@ -8747,7 +8748,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // Other runs still drop a stray sentinel at the edges of a real reply.
           const silentReply = allowSilentEmptyRun
             ? stripNoResponseReply(assembled, messageSegments)
-            : stripStrayNoResponse(assembled, messageSegments);
+            : (peerMessage?.intent === "request" || peerMessage?.intent === "question") &&
+                !publishedMidTurnUserMessage
+              ? peerReplyWithoutSentinel(assembled, messageSegments)
+              : stripStrayNoResponse(assembled, messageSegments);
           let completionBlocks = silentReply.blocks;
           if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
             // Mid-turn progress already posted durable chat messages; skip the empty
