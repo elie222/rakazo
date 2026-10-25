@@ -2624,6 +2624,25 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "text", text: "from backup" }));
   });
 
+  it("leaves retries to the backup instead of the provider SDK", async () => {
+    vi.stubEnv("MODEL_STREAM_MAX_RETRIES", "1");
+    try {
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [{ type: "text", text: "Ready" }], "stop")),
+      );
+
+      await run(request(backups()));
+      await run(request());
+
+      // A hung primary would otherwise wait out its timeout twice before the switch.
+      expect(providerState.stream.mock.calls.map(([, , options]) => options.maxRetries)).toEqual([
+        0, 1,
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each([["403 forbidden", "403 Forbidden"]])(
     "does not switch to the backup on %s",
     async (_name, error) => {

@@ -3091,8 +3091,9 @@ function fallbackAwareModelStream(
         stream = state.stream(
           sentTarget,
           requestContext(),
+          // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
           state.request.fallbackModels?.length
-            ? { ...attemptOptions, apiKey, reasoning }
+            ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
             : thinkingOverride
               ? { ...attemptOptions, reasoning }
               : attemptOptions,
