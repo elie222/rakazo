@@ -55,6 +55,9 @@ export function sandboxProviderOptionsFromEnv(
   | "kubernetesPodAnnotations"
   | "kubernetesPodLabels"
   | "kubernetesReadyTimeoutMs"
+  | "kubernetesHomeClaim"
+  | "kubernetesHomeColocateNamespace"
+  | "kubernetesHomeColocateLabels"
 > {
   return {
     hostComputerUrl: source.SANDBOX_HOST_URL,
@@ -89,6 +92,14 @@ export function sandboxProviderOptionsFromEnv(
     kubernetesReadyTimeoutMs: positiveInteger(
       source.KUBERNETES_SANDBOX_READY_TIMEOUT_MS,
       "KUBERNETES_SANDBOX_READY_TIMEOUT_MS",
+    ),
+    kubernetesHomeClaim: optional(source.OBJECT_STORAGE_BUCKET)
+      ? undefined
+      : optional(source.KUBERNETES_SANDBOX_HOME_CLAIM),
+    kubernetesHomeColocateNamespace: optional(source.KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE),
+    kubernetesHomeColocateLabels: stringMap(
+      source.KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS,
+      "KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS",
     ),
   };
 }

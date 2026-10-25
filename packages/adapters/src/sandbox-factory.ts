@@ -38,6 +38,9 @@ export interface SandboxProviderOptions {
   kubernetesPodAnnotations?: KubernetesSandboxOptions["podAnnotations"];
   kubernetesPodLabels?: KubernetesSandboxOptions["podLabels"];
   kubernetesReadyTimeoutMs?: number;
+  kubernetesHomeClaim?: string;
+  kubernetesHomeColocateNamespace?: string;
+  kubernetesHomeColocateLabels?: KubernetesSandboxOptions["homeColocateLabels"];
   dataDir?: string;
 }
 
@@ -97,6 +100,9 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         podAnnotations: opts.kubernetesPodAnnotations,
         podLabels: opts.kubernetesPodLabels,
         readyTimeoutMs: opts.kubernetesReadyTimeoutMs,
+        homeClaim: opts.kubernetesHomeClaim,
+        homeColocateNamespace: opts.kubernetesHomeColocateNamespace,
+        homeColocateLabels: opts.kubernetesHomeColocateLabels,
       });
     case "docker":
       return new DockerSandboxProvider(

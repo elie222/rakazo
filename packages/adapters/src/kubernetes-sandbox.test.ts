@@ -340,6 +340,155 @@ describe("KubernetesSandboxProvider", () => {
     ).rejects.toThrow("belongs to another bot");
   });
 
+  describe("mounted home", () => {
+    const home = {
+      homeClaim: "data-claim",
+      homeColocateNamespace: "rakazo",
+      homeColocateLabels: { app: "rakazo-api" },
+    };
+
+    it("mounts only the bot's home directory and pins the pod beside the volume", async () => {
+      const create = vi.fn().mockResolvedValue(readyPod);
+      const provider = providerFor(
+        {
+          readNamespacedPod: vi
+            .fn()
+            .mockRejectedValueOnce(Object.assign(new Error("missing"), { code: 404 }))
+            .mockResolvedValue(readyPod),
+          createNamespacedPod: create,
+        },
+        vi.fn(),
+        home,
+      );
+      await provider.provision({ botId: "team-ab12", homePath: "/data/homes/team-ab12" }, context);
+      expect(create.mock.calls[0]?.[0]?.body.spec).toMatchObject({
+        volumes: [{ name: "home", persistentVolumeClaim: { claimName: "data-claim" } }],
+        securityContext: { fsGroup: 1000 },
+        affinity: {
+          podAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: [
+              {
+                namespaces: ["rakazo"],
+                labelSelector: { matchLabels: { app: "rakazo-api" } },
+                topologyKey: "kubernetes.io/hostname",
+              },
+            ],
+          },
+        },
+        containers: [
+          {
+            volumeMounts: [{ name: "home", mountPath: "/home/rakazo", subPath: "homes/team-ab12" }],
+          },
+        ],
+      });
+      expect(provider.describe().capabilities.persistentHome).toBe(true);
+    });
+
+    it("refuses a bot id that is not a single folder name", async () => {
+      const provider = providerFor(
+        {
+          readNamespacedPod: vi
+            .fn()
+            .mockRejectedValue(Object.assign(new Error("x"), { code: 404 })),
+        },
+        vi.fn(),
+        home,
+      );
+      await expect(
+        provider.provision({ botId: "../other", homePath: "/unused" }, context),
+      ).rejects.toThrow("invalid bot id");
+    });
+
+    it("keeps an unmounted live pod saving until its normal stop", async () => {
+      const legacy = { ...readyPod, spec: { volumes: [] } } as unknown as V1Pod;
+      const del = vi.fn();
+      const create = vi.fn();
+      const provider = providerFor(
+        {
+          readNamespacedPod: vi.fn().mockResolvedValue(legacy),
+          deleteNamespacedPod: del,
+          createNamespacedPod: create,
+        },
+        vi.fn(),
+        home,
+      );
+      await expect(provider.isRunning(computer, context)).resolves.toBe(true);
+      await expect(provider.hasMountedHome(computer, context)).resolves.toBe(false);
+      await expect(
+        provider.provision(
+          { botId: "bot-a", homePath: "/unused", providerKind: "kubernetes", providerRef: "pod" },
+          context,
+        ),
+      ).resolves.toMatchObject({ fresh: false });
+      expect(del).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it.each(["correct", "missing-mount", "wrong-path", "wrong-home"])(
+      "checks the actual home mount (%s)",
+      async (kind) => {
+        const pod = {
+          ...readyPod,
+          spec: {
+            volumes: [{ name: "home", persistentVolumeClaim: { claimName: "data-claim" } }],
+            containers: [
+              {
+                name: "computer",
+                volumeMounts:
+                  kind === "missing-mount"
+                    ? []
+                    : [
+                        {
+                          name: "home",
+                          mountPath: kind === "wrong-path" ? "/other" : "/home/rakazo",
+                          subPath: kind === "wrong-home" ? "homes/other" : "homes/bot-a",
+                        },
+                      ],
+              },
+            ],
+          },
+        } as V1Pod;
+        await expect(
+          providerFor(
+            { readNamespacedPod: vi.fn().mockResolvedValue(pod) },
+            vi.fn(),
+            home,
+          ).hasMountedHome(computer, context),
+        ).resolves.toBe(kind === "correct");
+      },
+    );
+
+    it("keeps a running pod that already mounts the home", async () => {
+      const mounted = {
+        ...readyPod,
+        spec: { volumes: [{ name: "home", persistentVolumeClaim: { claimName: "data-claim" } }] },
+      } as unknown as V1Pod;
+      const del = vi.fn();
+      const create = vi.fn();
+      const result = await providerFor(
+        {
+          readNamespacedPod: vi.fn().mockResolvedValue(mounted),
+          deleteNamespacedPod: del,
+          createNamespacedPod: create,
+        },
+        vi.fn(),
+        home,
+      ).provision(
+        { botId: "bot-a", homePath: "/unused", providerKind: "kubernetes", providerRef: "pod" },
+        context,
+      );
+      expect(del).not.toHaveBeenCalled();
+      expect(create).not.toHaveBeenCalled();
+      expect(result.fresh).toBe(false);
+    });
+
+    it("requires the pod-affinity target", () => {
+      expect(() => new KubernetesSandboxProvider({ homeClaim: "data-claim" })).toThrow(
+        "pod-affinity",
+      );
+    });
+  });
+
   it("rejects a pod carrying another bot's label", async () => {
     const provider = providerFor({
       readNamespacedPod: vi

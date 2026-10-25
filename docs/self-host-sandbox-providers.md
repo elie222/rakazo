@@ -84,6 +84,19 @@ display ports from `6100` upward. Pods are ephemeral: the
 saved workspace is the persistence boundary, as with the remote providers. Kubernetes computers do
 not bill while running, so `COMPUTER_MAX_ACTIVE_MS` does not apply to them.
 
+### Mounted home (optional)
+
+By default each computer's home is copied in when it starts and saved back when it stops. Set
+`KUBERNETES_SANDBOX_HOME_CLAIM` to the PersistentVolumeClaim that holds the API's `DATA_DIR` to
+mount `homes/<home key>` from it at the workspace instead, so the home is never copied, like a
+local Docker computer. The claim must be in the computer namespace, so in practice the computers
+run in the API's namespace. Because a ReadWriteOnce volume is attached to one node,
+`KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE` and `KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS` (a JSON
+object) are required with it and become a required pod affinity to the pods that hold the volume,
+for example `{"app":"rakazo-api"}`. The pod gets `fsGroup: 1000`. An existing pod without the home
+volume keeps copying its files until it is stopped; its next fresh pod mounts the saved home. This applies only to the local home store; with
+`OBJECT_STORAGE_BUCKET` set, the home claim is ignored and homes are copied as usual.
+
 The API and worker service account needs this in the computer namespace:
 
 ```yaml

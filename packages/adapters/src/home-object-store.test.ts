@@ -2,9 +2,11 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
 import { afterEach, describe, expect, it } from "vitest";
+import { checkpointComputerWorkspace, restoreComputerWorkspace } from "./computer-workspace.js";
 import { LocalAgentHomeStore } from "./home.js";
 import {
   createAgentHomeStore,
@@ -499,6 +501,37 @@ describe("ObjectAgentHomeStore", () => {
     );
     expect(await store.readFile("bot-1", "a.txt", context)).toBe("local");
     expect(storage.objects.size).toBe(0);
+  });
+});
+
+describe("object-backed Kubernetes workspaces", () => {
+  it("restores a replacement from object storage when its local cache was lost", async () => {
+    const { store, otherHost } = await setup();
+    await store.commit("bot-1", await staged({ "saved.txt": "stored bytes" }), context);
+    const restored: PortableFile[] = [];
+    const sandbox = {
+      describe: () => ({ capabilities: { persistentHome: true } }),
+      hasMountedHome: async () => true,
+      importWorkspace: async (_computer: unknown, files: AsyncIterable<PortableFile>) => {
+        for await (const file of files) restored.push(file);
+      },
+      exportWorkspace: async function* () {
+        yield { path: "new.txt", content: Buffer.from("new bytes") };
+      },
+    } as unknown as SandboxProvider;
+    const computer = {
+      id: "replacement",
+      botId: "bot-1",
+      providerRef: "replacement",
+      kind: "kubernetes" as const,
+    };
+    const freshCache = await otherHost();
+    await restoreComputerWorkspace(freshCache, sandbox, "bot-1", computer, context);
+    expect(restored.map((file) => [file.path, Buffer.from(file.content).toString()])).toEqual([
+      ["saved.txt", "stored bytes"],
+    ]);
+    await checkpointComputerWorkspace(freshCache, sandbox, "bot-1", computer, context);
+    expect(await (await otherHost()).readFile("bot-1", "new.txt", context)).toBe("new bytes");
   });
 });
 

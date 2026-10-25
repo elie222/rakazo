@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import type * as KubernetesClient from "@kubernetes/client-node";
-import type { CoreV1Api, Exec, V1Pod, V1Status } from "@kubernetes/client-node";
+import type { CoreV1Api, Exec, V1Pod, V1PodSpec, V1Status } from "@kubernetes/client-node";
 import type {
   AdapterContext,
   CommandRequest,
@@ -35,6 +35,7 @@ const CONTAINER_NAME = "computer";
 // Names the bot that owns a computer pod. A pod carrying another bot's value is
 // never reused or replaced.
 const BOT_ID_LABEL = "rakazo-bot-id";
+const HOME_VOLUME = "home";
 const READY_PORT = 6080;
 const DESKTOP_PORT_START = 6100;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
@@ -62,6 +63,16 @@ export interface KubernetesSandboxOptions {
   podAnnotations?: Record<string, string>;
   podLabels?: Record<string, string>;
   readyTimeoutMs?: number;
+  /**
+   * Claim in the sandbox namespace that holds the Rakazo data directory. When
+   * set, each Computer mounts only its own `homes/<bot id>` directory at the
+   * workspace, so the home persists in place and is never copied in or out.
+   * The claim's volume is ReadWriteOnce, so the pod must also be placed with
+   * the pods named by `homeColocateNamespace` and `homeColocateLabels`.
+   */
+  homeClaim?: string;
+  homeColocateNamespace?: string;
+  homeColocateLabels?: Record<string, string>;
 }
 
 export interface KubernetesSandboxSdk {
@@ -80,6 +91,9 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private readonly podAnnotations: Record<string, string>;
   private readonly podLabels: Record<string, string>;
   private readonly readyTimeoutMs: number;
+  private readonly homeClaim: string | undefined;
+  private readonly homeColocateNamespace: string | undefined;
+  private readonly homeColocateLabels: Record<string, string>;
   private clientsValue: KubernetesSandboxSdk | undefined;
 
   private readonly desktops = new LinuxDesktop({
@@ -121,6 +135,15 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     this.podAnnotations = { ...options.podAnnotations };
     this.podLabels = { ...options.podLabels };
     this.readyTimeoutMs = positiveInteger(options.readyTimeoutMs, DEFAULT_READY_TIMEOUT_MS);
+    this.homeClaim = options.homeClaim?.trim() || undefined;
+    this.homeColocateNamespace = options.homeColocateNamespace?.trim() || undefined;
+    this.homeColocateLabels = { ...options.homeColocateLabels };
+    if (
+      this.homeClaim &&
+      (!this.homeColocateNamespace || Object.keys(this.homeColocateLabels).length === 0)
+    ) {
+      throw new Error("a mounted Kubernetes home requires a pod-affinity namespace and labels");
+    }
     this.clientsValue = clients;
   }
 
@@ -134,7 +157,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         pty: true,
         snapshots: true,
         takeover: true,
-        persistentHome: false,
+        persistentHome: this.homeClaim !== undefined,
         multiScreen: true,
       },
     };
@@ -164,6 +187,8 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       pod = undefined;
     }
 
+    // Keep an unmounted live pod until the normal checkpoint and stop save its files.
+    // The next fresh pod will mount that saved home.
     if (pod && isTerminalPod(pod)) {
       await this.deletePod(podName);
       await this.waitForDeletion(podName, context.signal);
@@ -206,6 +231,12 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     if (computer.kind !== "kubernetes") return false;
     const pod = await this.readPod(this.podId(computer), context.signal);
     return pod?.status?.phase === "Running" && !pod.metadata?.deletionTimestamp;
+  }
+
+  async hasMountedHome(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
+    if (computer.kind !== "kubernetes" || !this.homeClaim) return false;
+    const pod = await this.readPod(this.podId(computer), context.signal);
+    return !!pod && podMountsHome(pod, this.homeClaim, computer.botId);
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -571,6 +602,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
         enableServiceLinks: false,
         restartPolicy: "Never",
         terminationGracePeriodSeconds: 10,
+        ...(this.homeClaim ? this.homeSpec(botId) : {}),
         ...(this.runtimeClassName ? { runtimeClassName: this.runtimeClassName } : {}),
         containers: [
           {
@@ -585,9 +617,36 @@ export class KubernetesSandboxProvider implements SandboxProvider {
               timeoutSeconds: 1,
               failureThreshold: Math.ceil(this.readyTimeoutMs / 1_000),
             },
+            ...(this.homeClaim
+              ? {
+                  volumeMounts: [
+                    { name: HOME_VOLUME, mountPath: WORKSPACE, subPath: homeSubPath(botId) },
+                  ],
+                }
+              : {}),
             ...(Object.keys(limits).length ? { resources: { limits } } : {}),
           },
         ],
+      },
+    };
+  }
+
+  private homeSpec(botId: string): Pick<V1PodSpec, "volumes" | "securityContext" | "affinity"> {
+    homeSubPath(botId);
+    return {
+      volumes: [{ name: HOME_VOLUME, persistentVolumeClaim: { claimName: this.homeClaim! } }],
+      // The Computer image runs as uid 1000, the owner of the application data.
+      securityContext: { fsGroup: 1000, fsGroupChangePolicy: "OnRootMismatch" },
+      affinity: {
+        podAffinity: {
+          requiredDuringSchedulingIgnoredDuringExecution: [
+            {
+              namespaces: [this.homeColocateNamespace!],
+              labelSelector: { matchLabels: this.homeColocateLabels },
+              topologyKey: "kubernetes.io/hostname",
+            },
+          ],
+        },
       },
     };
   }
@@ -882,6 +941,28 @@ function podNameForBot(botId: string): string {
     .slice(0, 40);
   const hash = createHash("sha256").update(botId).digest("hex").slice(0, 12);
   return `rakazo-${normalized || "bot"}-${hash}`;
+}
+
+/** The data directory holds `homes/<bot id>`; a bot id must name exactly one folder. */
+function homeSubPath(botId: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(botId)) throw new Error("invalid bot id for a mounted home");
+  return `homes/${botId}`;
+}
+
+function podMountsHome(pod: V1Pod, claimName: string, homeKey: string): boolean {
+  const volume = pod.spec?.volumes?.find(
+    (entry) => entry.persistentVolumeClaim?.claimName === claimName,
+  );
+  const container = pod.spec?.containers?.find((entry) => entry.name === CONTAINER_NAME);
+  return (
+    !!volume &&
+    container?.volumeMounts?.some(
+      (mount) =>
+        mount.name === volume.name &&
+        mount.mountPath === WORKSPACE &&
+        mount.subPath === homeSubPath(homeKey),
+    ) === true
+  );
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {

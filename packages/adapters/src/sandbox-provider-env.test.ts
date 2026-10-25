@@ -127,6 +127,23 @@ describe("sandboxProviderOptionsFromEnv", () => {
     expect(sandboxProviderOptionsFromEnv({}).kubernetesNamespace).toBeUndefined();
   });
 
+  it("loads the Kubernetes home claim and its pod-affinity target", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        KUBERNETES_SANDBOX_HOME_CLAIM: "rakazo-data",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE: "rakazo",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: '{"app":"rakazo-api"}',
+      }),
+    ).toMatchObject({
+      kubernetesHomeClaim: "rakazo-data",
+      kubernetesHomeColocateNamespace: "rakazo",
+      kubernetesHomeColocateLabels: { app: "rakazo-api" },
+    });
+    expect(() =>
+      sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: "rakazo-api" }),
+    ).toThrow("KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS must be a JSON object of string values");
+  });
+
   it("rejects malformed Kubernetes label maps and timeouts", () => {
     expect(() =>
       sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_POD_LABELS: '["bots"]' }),
@@ -137,5 +154,15 @@ describe("sandboxProviderOptionsFromEnv", () => {
     expect(() =>
       sandboxProviderOptionsFromEnv({ KUBERNETES_SANDBOX_READY_TIMEOUT_MS: "0" }),
     ).toThrow("KUBERNETES_SANDBOX_READY_TIMEOUT_MS must be a positive integer");
+  });
+  it("keeps object-backed Kubernetes homes on the copy path", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        OBJECT_STORAGE_BUCKET: "test-homes",
+        KUBERNETES_SANDBOX_HOME_CLAIM: "data",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_NAMESPACE: "test",
+        KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: '{"app":"api"}',
+      }).kubernetesHomeClaim,
+    ).toBeUndefined();
   });
 });
