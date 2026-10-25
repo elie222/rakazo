@@ -1043,4 +1043,18 @@ export const NL_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} tot {to}",
   "Every {day}": "Elke {day}",
   "Every {days} and {last}": "Elke {days} en {last}",
+
+  // Native remote MCP authentication controls.
+  "API key header name": "Naam van API-sleutelheader",
+  "Authorization finishes in your browser using the same Rakazo account.":
+    "Voltooi de autorisatie in je browser met hetzelfde Rakazo-account.",
+  Bearer: "Bearer",
+  "Connect OAuth": "Verbinden via OAuth",
+  "Could not start MCP OAuth": "Kan MCP OAuth niet starten",
+  OAuth: "OAuth",
+  "OAuth client ID (optional)": "OAuth-client-ID (optioneel)",
+  "OAuth client secret (optional)": "OAuth-clientgeheim (optioneel)",
+  "This MCP server has not requested OAuth authorization.":
+    "Deze MCP-server heeft geen OAuth-autorisatie aangevraagd.",
+  "x-api-key": "x-api-key",
 };

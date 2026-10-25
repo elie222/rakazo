@@ -1086,4 +1086,18 @@ export const RU_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} — {to}",
   "Every {day}": "Каждую неделю: {day}",
   "Every {days} and {last}": "Каждую неделю: {days} и {last}",
+
+  // Native remote MCP authentication controls.
+  "API key header name": "Имя заголовка API-ключа",
+  "Authorization finishes in your browser using the same Rakazo account.":
+    "Завершите авторизацию в браузере с той же учётной записью Rakazo.",
+  Bearer: "Bearer",
+  "Connect OAuth": "Подключить через OAuth",
+  "Could not start MCP OAuth": "Не удалось запустить OAuth для MCP",
+  OAuth: "OAuth",
+  "OAuth client ID (optional)": "ID клиента OAuth (необязательно)",
+  "OAuth client secret (optional)": "Секрет клиента OAuth (необязательно)",
+  "This MCP server has not requested OAuth authorization.":
+    "Этот MCP-сервер не запрашивал авторизацию OAuth.",
+  "x-api-key": "x-api-key",
 };

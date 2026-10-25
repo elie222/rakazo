@@ -1047,4 +1047,17 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",
+
+  // Native remote MCP authentication controls.
+  "API key header name": "API 密钥请求头名称",
+  "Authorization finishes in your browser using the same Rakazo account.":
+    "请在浏览器中使用同一个 Rakazo 账户完成授权。",
+  Bearer: "Bearer",
+  "Connect OAuth": "通过 OAuth 连接",
+  "Could not start MCP OAuth": "无法启动 MCP OAuth 授权",
+  OAuth: "OAuth",
+  "OAuth client ID (optional)": "OAuth 客户端 ID（可选）",
+  "OAuth client secret (optional)": "OAuth 客户端密钥（可选）",
+  "This MCP server has not requested OAuth authorization.": "此 MCP 服务器尚未请求 OAuth 授权。",
+  "x-api-key": "x-api-key",
 };

@@ -1078,4 +1078,18 @@ export const JA_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",
+
+  // Native remote MCP authentication controls.
+  "API key header name": "APIキーヘッダー名",
+  "Authorization finishes in your browser using the same Rakazo account.":
+    "同じRakazoアカウントでブラウザーから認証を完了してください。",
+  Bearer: "Bearer",
+  "Connect OAuth": "OAuthで接続",
+  "Could not start MCP OAuth": "MCPのOAuth認証を開始できませんでした",
+  OAuth: "OAuth",
+  "OAuth client ID (optional)": "OAuthクライアントID（任意）",
+  "OAuth client secret (optional)": "OAuthクライアントシークレット（任意）",
+  "This MCP server has not requested OAuth authorization.":
+    "このMCPサーバーからOAuth認証が要求されていません。",
+  "x-api-key": "x-api-key",
 };
