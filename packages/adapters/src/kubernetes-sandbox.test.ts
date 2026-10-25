@@ -3,6 +3,7 @@ import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-
 import { describe, expect, it, vi } from "vitest";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { encodeTarEntry, KubernetesSandboxProvider, TarReader } from "./kubernetes-sandbox.js";
+import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 vi.mock("./computer-workspace.js", () => ({
   shouldSkipPortableWorkspaceFile: (file: string) => file.includes(".browser-profiles/Cache/"),
@@ -70,6 +71,78 @@ function successfulExec(stdoutText = "", stderrText = "", code = 0) {
 }
 
 describe("KubernetesSandboxProvider", () => {
+  it("passes the shared offline sandbox workspace contract", async () => {
+    const files = new Map<string, { content: Buffer; executable: boolean }>();
+    let exportedNames: string[] = [];
+    const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
+      const command = args[3];
+      if (!Array.isArray(command)) throw new Error("expected argv");
+      const stdout = args[4];
+      const stdin = args[6];
+      const finish = () => args[8]?.({ status: "Success" });
+      if (stdin) {
+        const chunks: Buffer[] = [];
+        stdin.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+        stdin.on("end", () => {
+          const content = Buffer.concat(chunks);
+          const write = command.indexOf("rakazo-write");
+          if (write >= 0) {
+            files.set(command[write + 1]!, {
+              content,
+              executable: command[write + 2] === "700",
+            });
+          } else {
+            expect(command).toContain("rakazo-export-list");
+            exportedNames = content.toString().split("\0").filter(Boolean);
+          }
+          finish();
+        });
+      } else {
+        queueMicrotask(() => {
+          if (command.includes("echo")) stdout?.write("graphical-ok\n");
+          else if (command.includes("stat"))
+            stdout?.write(String(files.get(command.at(-1)!)!.content.length));
+          else if (command.includes("cat")) stdout?.write(files.get(command.at(-1)!)!.content);
+          else if (command.includes("find")) {
+            const directory = command[command.indexOf("find") + 1]!;
+            for (const [name, file] of files) {
+              const relative = name.slice(directory.length + 1);
+              if (!name.startsWith(`${directory}/`)) continue;
+              if (command.includes("-maxdepth")) {
+                if (relative.includes("/")) continue;
+                stdout?.write(
+                  `${relative}\0f\0${file.content.length}\0${file.executable ? "700" : "600"}\0`,
+                );
+              } else stdout?.write(`${relative}\0`);
+            }
+          } else if (command.includes("tar")) {
+            for (const name of exportedNames) {
+              const file = files.get(`/home/rakazo/${name}`)!;
+              for (const chunk of encodeTarEntry(name, file.content, file.executable))
+                stdout?.write(chunk);
+            }
+            stdout?.write(TAR_END);
+          } else if (command.some((arg) => arg.includes("RAKAZO_DESKTOP=")))
+            stdout?.write("RAKAZO_DESKTOP=0:offline-view-token\n");
+          else if (command.some((arg) => arg.includes("getmouselocation")))
+            stdout?.write("cG5n\nCURSOR X=1 Y=2\n");
+          finish();
+        });
+      }
+      return { close: vi.fn(), onclose: null, onerror: null } as unknown as Awaited<
+        ReturnType<Exec["exec"]>
+      >;
+    });
+    const provider = providerFor({}, exec);
+    const provisioned = await provisionPrepared(
+      provider,
+      { botId: "bot-a", homePath: "/unused" },
+      context,
+    );
+    await assertSandboxWorkspaceContract(provider, provisioned, context);
+    await provider.destroy(provisioned, context);
+  });
+
   it("validates the immutable computer image without package installation", async () => {
     const exec = successfulExec();
     const provider = providerFor({}, exec);
