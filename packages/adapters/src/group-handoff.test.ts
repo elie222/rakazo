@@ -367,8 +367,8 @@ describe("explicit group destinations", () => {
       "group-handoff:effect-2",
     ]);
     expect(
-      h.tx.task.create.mock.calls.map(
-        ([args]) => (args as { data: { prompt: string } }).data.prompt,
+      (h.tx.task.create.mock.calls as unknown as Array<[{ data: { prompt: string } }]>).map(
+        ([args]) => args.data.prompt,
       ),
     ).toEqual(["Review the plan", "Check the sources"]);
   });
