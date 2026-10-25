@@ -5,9 +5,9 @@ on:
     - cron: "43 6 * * 2"
   workflow_dispatch:
 
-# Configure OPENAI_API_KEY and DEPENDENCY_UPDATE_TOKEN repository secrets.
-# The latter is a repository-scoped token with contents and pull-request write
-# permissions, so the resulting PR's CI starts without manual approval.
+# Configure OPENAI_API_KEY and GH_DEPENDENCY_UPDATES_PAT repository secrets.
+# The latter is a fine-grained GitHub personal access token scoped to this repo,
+# with Contents and Pull requests read/write so PR CI needs no manual approval.
 permissions: {}
 
 concurrency:
@@ -114,7 +114,7 @@ jobs:
           git apply --index "$RUNNER_TEMP/dependency-update/update.patch"
       - name: Open pull request
         env:
-          GH_TOKEN: ${{ secrets.DEPENDENCY_UPDATE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
