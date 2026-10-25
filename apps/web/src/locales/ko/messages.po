@@ -3044,7 +3044,6 @@ msgstr "음성 서비스를 불러오는 중…"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3716,14 +3715,6 @@ msgstr ""
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 호환 서버 주소"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "채팅 여는 중…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "작업공간을 여는 중…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

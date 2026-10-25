@@ -3044,7 +3044,6 @@ msgstr "Stimmanbieter werden geladen…"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3716,14 +3715,6 @@ msgstr ""
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "URL eines OpenAI-kompatiblen Servers"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "Chat wird geöffnet…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "Dein Arbeitsbereich wird geöffnet…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

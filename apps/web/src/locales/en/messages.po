@@ -3044,7 +3044,6 @@ msgstr "Loading voice providers…"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3716,14 +3715,6 @@ msgstr "OpenAI API"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatible server URL"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "Opening chat…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "Opening your Space…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

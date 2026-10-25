@@ -98,6 +98,7 @@ import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { IconTooltip } from "../components/IconTooltip";
+import { PageLoading } from "../components/PageLoading";
 import { PasskeyOffer } from "../components/PasskeyOffer";
 import { SidebarFooter } from "../components/SidebarFooter";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
@@ -4202,7 +4203,8 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  return shell;
+  // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
+  return initialBotsLoaded ? shell : <PageLoading />;
 }
 
 function routineListData(results: Array<{ data?: Routine[] }>) {

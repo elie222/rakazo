@@ -2,11 +2,12 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
+import { clearSpaceSelection } from "../lib/rpc";
 import { AuthPage } from "./Auth";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -89,11 +90,7 @@ async function render(mode: "in" | "up" | "forgot" = "in") {
   await act(async () =>
     root.render(
       <MemoryRouter>
-        <Routes>
-          <Route path="/" element={<AuthPage mode={mode} />} />
-          <Route path="/app" element={<p>App</p>} />
-          <Route path="/onboarding" element={<p>Onboarding</p>} />
-        </Routes>
+        <AuthPage mode={mode} />
       </MemoryRouter>,
     ),
   );
@@ -236,7 +233,9 @@ it("signs in with an emailed code by default", async () => {
     otp: "123456",
     name: undefined,
   });
-  expect(host.textContent).toBe("App");
+  // The session refetch moves a signed-in user on; until then the form stays busy.
+  expect(clearSpaceSelection).toHaveBeenCalled();
+  expect(button("Working…").disabled).toBe(true);
 });
 
 it("names a new account and keeps the email when going back from the code", async () => {
@@ -269,7 +268,9 @@ it("names a new account and keeps the email when going back from the code", asyn
     otp: "222222",
     name: "Ada",
   });
-  expect(host.textContent).toBe("Onboarding");
+  // The session refetch moves a signed-in user on; until then the form stays busy.
+  expect(clearSpaceSelection).toHaveBeenCalled();
+  expect(button("Working…").disabled).toBe(true);
 });
 
 it("sends the code on the first Continue but never submits an unfinished code", async () => {

@@ -3044,7 +3044,6 @@ msgstr "音声プロバイダーを読み込み中…"
 
 #: src/pages/Artifacts.tsx
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/shell/transcript.tsx
@@ -3716,14 +3715,6 @@ msgstr "OpenAI API"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI互換サーバーのURL"
-
-#: src/pages/Onboarding.tsx
-msgid "Opening chat…"
-msgstr "チャットを開いています…"
-
-#: src/App.tsx
-msgid "Opening your Space…"
-msgstr "スペースを開いています…"
 
 #: src/components/SignupSurvey.tsx
 #: src/pages/model-settings/connection-controls.tsx

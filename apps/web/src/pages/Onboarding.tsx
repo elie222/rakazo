@@ -38,7 +38,6 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-  Spinner,
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -48,6 +47,7 @@ import {
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
+import { PageLoading } from "../components/PageLoading";
 import { SignupSurvey } from "../components/SignupSurvey";
 import { useCopyText } from "../lib/copy-text";
 import { providerDisplayName } from "../lib/localized-provider-hint";
@@ -539,14 +539,12 @@ export function OnboardingPage() {
     void createFirstBot();
   }, [step]);
 
+  // Loading, and creating the first bot, both wait on one spinner until the chat opens.
+  if (step === "loading" || (step === "bot" && !error)) return <PageLoading />;
+
   return (
     <div className="min-h-full bg-background px-6 py-12">
       <div className="mx-auto w-full max-w-[560px]">
-        {step === "loading" ? (
-          <p className="text-muted-foreground">
-            <Spinner aria-label={t`Loading…`} />
-          </p>
-        ) : null}
         {step === "survey" ? <SignupSurvey onDone={() => setSurveyDone(true)} /> : null}
         {step === "model" ? (
           <div>
@@ -1034,18 +1032,10 @@ export function OnboardingPage() {
         ) : null}
         {step === "bot" ? (
           <div>
-            {error ? (
-              <div>
-                <p className="text-sm text-destructive">{error}</p>
-                <Button className="mt-4" onClick={() => void createFirstBot()}>
-                  <Trans>Try again</Trans>
-                </Button>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">
-                <Trans>Opening chat…</Trans>
-              </p>
-            )}
+            <p className="text-sm text-destructive">{error}</p>
+            <Button className="mt-4" onClick={() => void createFirstBot()}>
+              <Trans>Try again</Trans>
+            </Button>
           </div>
         ) : null}
       </div>
