@@ -38,6 +38,7 @@ import {
   freeAgentImportMemoryPath,
   parseAgentImport,
   readAgentImportFolder,
+  renameRoutineSkillMentions,
   resolveAgentImportNames,
 } from "@rakazo/core";
 import type { McpServer as McpServerRow, Prisma, PrismaClient, Routine } from "@rakazo/db";
@@ -656,8 +657,20 @@ export async function createImportedBot<PreparedKey>(
         setup.push({ kind: "mcp", serverId: row.id, name: row.slug, needs: status.needs });
       }
     }
+    // A skill renamed on a clash keeps its routines: `@garden` follows it to `garden-2`.
+    const originalNames = new Map(plan.skills.map((item) => [item.id, item.title]));
+    const renamed = new Map(
+      resolved.skills.flatMap((item) => {
+        const from = originalNames.get(item.id);
+        return skillIds.includes(item.id) && from && from !== item.name ? [[from, item.name]] : [];
+      }),
+    );
     for (const routine of routines) {
-      const routineInput = { ...routine, botId };
+      const routineInput = {
+        ...routine,
+        botId,
+        prompt: renameRoutineSkillMentions(routine.prompt, renamed),
+      };
       const row = await tx.routine.create({
         data: services.routineRowData(actor, routineInput, services.routineNextRunAt(routineInput)),
       });

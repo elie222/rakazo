@@ -794,6 +794,42 @@ describeIntegration("agent import", () => {
     expect(await db.secret.count({ where: { userId: owner.userId, kind: "mcp" } })).toBe(0);
   });
 
+  it("points an imported routine at its skill when the skill is renamed on a clash", async () => {
+    const cookie = await signup(app, `import-rename-${stamp}@rakazo.test`, "Rename");
+    await rpc(app, cookie, "agentSkills/create", { content: skill("garden", "Already here") });
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+      {
+        path: ".openclaw/cron/jobs.json",
+        content: JSON.stringify({
+          jobs: [
+            {
+              name: "morning",
+              schedule: { kind: "cron", expr: "0 9 * * *" },
+              payload: { kind: "agentTurn", message: "Run @garden, then report." },
+            },
+          ],
+        }),
+      },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      name: "Renamed",
+      selection: {
+        instructions: plan.instructions.map((item) => item.id),
+        memory: [],
+        skills: plan.skills.map((item) => item.id),
+        mcpServers: [],
+        routines: plan.routines.map((item) => item.id),
+        apiKeys: [],
+      },
+    });
+    const routine = await db.routine.findFirstOrThrow({ where: { botId: bot.id } });
+    expect(routine.prompt).toBe("Run @garden-2, then report.");
+  });
+
   it("keeps an imported skill that another bot's routine mentions", async () => {
     const cookie = await signup(app, `import-undo-used-${stamp}@rakazo.test`, "Used Skill");
     const other = await rpc<Bot>(app, cookie, "bots/create", { name: "Other" });
