@@ -184,7 +184,7 @@ it("opens a linked billing section once billing turns out to be on", async () =>
   }
 });
 
-it("shows the space name without a switcher when there is only one space", async () => {
+it("shows no space label or switcher when there is only one space", async () => {
   const { container, cleanup } = await render({
     space: acme,
     spaces: [acme],
@@ -192,9 +192,7 @@ it("shows the space name without a switcher when there is only one space", async
     section: "models",
   });
   try {
-    const label = container.querySelector('[data-testid="settings-space"]');
-    expect(label?.tagName).toBe("P");
-    expect(label?.textContent).toBe("Acme");
+    expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
   } finally {
     await cleanup();
   }

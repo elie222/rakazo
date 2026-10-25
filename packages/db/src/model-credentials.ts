@@ -355,3 +355,26 @@ export async function findModelCredential(
     }),
   );
 }
+
+/** One connection by id, with this space's model choice for it; null when it is gone. */
+export async function findModelCredentialById(
+  prisma: Pick<PrismaClient, "userModelCredential">,
+  scope: ModelCredentialScope,
+  credentialId: string,
+  provider?: string,
+) {
+  const credential = await prisma.userModelCredential.findFirst({
+    where: {
+      id: credentialId,
+      userId: scope.userId,
+      ...(provider ? { provider: modelCredentialProviderFilter(provider) } : {}),
+    },
+    include: { preferences: { where: { userId: scope.userId, spaceId: scope.spaceId } } },
+  });
+  if (!credential) return null;
+  const { preferences, ...row } = credential;
+  const preference = preferences[0];
+  return preference
+    ? withModelPreference({ ...preference, credential: row })
+    : { ...row, isDefault: false, defaultModel: null, thinkingLevel: null };
+}

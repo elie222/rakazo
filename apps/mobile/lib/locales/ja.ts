@@ -3,6 +3,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "Main model": "メインモデル",
   "Add fallback": "バックアップモデルを追加",
   "Manage {provider}": "{provider} を管理",
+  "Add provider": "プロバイダーを追加",
   "Choose a model": "モデルを選択",
   "The model returned an unusable response. Try again.":
     "モデルが利用できない応答を返しました。もう一度お試しください。",
@@ -444,7 +445,6 @@ export const JA_MESSAGES: Record<string, string> = {
   "Could not reach this model server": "このモデルサーバーに接続できませんでした",
   "Could not start sign-in": "ログインを開始できませんでした",
   Default: "デフォルト",
-  "Deployment default": "デプロイのデフォルト",
   "Enter a whole number from 1 to 1000 for the image limit.":
     "画像の上限には1〜1000の整数を入力してください。",
   "Enter a whole number from 1 to {max} for maximum output tokens.":

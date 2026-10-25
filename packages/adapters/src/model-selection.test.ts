@@ -5,6 +5,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { selectConfiguredModel } from "./model-roles.js";
 import {
+  connectionServesModel,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -22,8 +23,10 @@ import {
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
+import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { providerCatalogCache } from "./pi-live-catalog.js";
 import { listPiCatalog } from "./pi-models.js";
+import { serializeModelSecret } from "./pi-oauth.js";
 
 function credential(provider: string, defaultModel: string | null) {
   return {
@@ -1447,5 +1450,62 @@ describe("live-only catalog validation", () => {
       read.mockRestore();
       enabled.mockRestore();
     }
+  });
+});
+
+describe("connectionServesModel", () => {
+  const signedIn = (accountId: string) =>
+    serializeModelSecret({
+      kind: "oauth",
+      credential: {
+        type: "oauth",
+        access: `fake.${Buffer.from(JSON.stringify({ chatgpt_account_id: accountId })).toString("base64url")}.fake`,
+        refresh: "fake-refresh",
+        expires: Date.now() + 60_000,
+        accountId,
+      },
+    });
+  const plaintexts: Record<string, string> = {
+    "secret-pro": signedIn("acct-pro"),
+    "secret-plus": signedIn("acct-plus"),
+  };
+  const deps = {
+    prisma: {
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: where.id,
+        })),
+      },
+    } as unknown as PrismaClient,
+    secretStore: { load: vi.fn(async (ciphertext: string) => plaintexts[ciphertext]!) },
+    codexCatalog: {
+      read: vi.fn(async (_userId: string, account: { accountId: string }) =>
+        account.accountId === "acct-pro"
+          ? [
+              {
+                slug: "gpt-5.3-codex-spark",
+                reasoningEfforts: [],
+                supportsImages: false,
+                supportsFastTier: false,
+              },
+            ]
+          : [],
+      ),
+    } as unknown as CodexLiveCatalog,
+  };
+
+  it("offers a model only on the account whose own catalog lists it", async () => {
+    const serves = (secretId: string, modelId: string) =>
+      connectionServesModel(deps, "user-1", { secretId }, "openai-codex", modelId);
+    await expect(serves("secret-pro", "gpt-5.3-codex-spark")).resolves.toBe(true);
+    await expect(serves("secret-plus", "gpt-5.3-codex-spark")).resolves.toBe(false);
+    // Models every account can call need no lookup.
+    const shared = listPiCatalog().find(
+      (entry) => entry.provider === "openai-codex" && entry.id !== "gpt-5.3-codex-spark",
+    )!;
+    deps.secretStore.load.mockClear();
+    await expect(serves("secret-plus", shared.id)).resolves.toBe(true);
+    expect(deps.secretStore.load).not.toHaveBeenCalled();
   });
 });

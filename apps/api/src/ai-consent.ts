@@ -10,7 +10,11 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
-import { findDefaultVoiceCredential, findModelCredential } from "@rakazo/db";
+import {
+  findDefaultVoiceCredential,
+  findModelCredential,
+  findModelCredentialById,
+} from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
 import { voiceCredentialServer } from "./voice.js";
@@ -142,12 +146,9 @@ export async function aiConsentStatus(
     // Every purpose's models, fallbacks included, can receive a run's content.
     const roleModels = await Promise.all(
       roleChoices.map(async (choice) => {
-        const credential = await findModelCredential(
-          deps.prisma,
-          actor,
-          choice.provider,
-          choice.modelId,
-        );
+        const credential = choice.credentialId
+          ? await findModelCredentialById(deps.prisma, actor, choice.credentialId)
+          : await findModelCredential(deps.prisma, actor, choice.provider, choice.modelId);
         return credential
           ? { provider: choice.provider, id: choice.modelId, credential, thinkingLevel: null }
           : null;

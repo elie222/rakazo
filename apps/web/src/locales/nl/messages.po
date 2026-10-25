@@ -535,6 +535,10 @@ msgstr "OpenAPI toevoegen"
 msgid "Add passkey"
 msgstr "Passkey toevoegen"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "Aanbieder toevoegen"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Externe MCP-server toevoegen"
@@ -1285,6 +1289,7 @@ msgstr "Bezig met wissen…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1913,6 +1918,7 @@ msgstr "Regel verwijderen mislukt"
 msgid "Could not remove the credential"
 msgstr "De gegevens verwijderen mislukt"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr "Verbinding hernoemen mislukt"
@@ -2208,6 +2214,7 @@ msgid "Decline"
 msgstr "Weigeren"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2306,10 +2313,6 @@ msgstr "Geweigerd"
 msgid "Deny"
 msgstr "Weigeren"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "Standaard van de implementatie"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -2356,10 +2359,9 @@ msgstr "{disconnectName} loskoppelen?"
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr "{0} losgekoppeld."
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} losgekoppeld."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3563,6 +3565,7 @@ msgstr "Gedempt"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -3743,6 +3746,7 @@ msgstr "Geen OpenClaw-, Hermes- of agentdocument gevonden."
 msgid "No remote MCP servers found"
 msgstr "Geen externe MCP-servers gevonden"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4168,6 +4172,10 @@ msgstr "Beveiligde invoer"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "Aanbieder"
+
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "Aanbieders"
 
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
@@ -4626,6 +4634,7 @@ msgstr "Draait wanneer deze bot een geverifieerd bericht van deze aanbieder ontv
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4675,6 +4684,7 @@ msgstr "Bezig met opslaan..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4695,6 +4705,7 @@ msgid "Scopes (optional)"
 msgstr "Scopes (optioneel)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

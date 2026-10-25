@@ -78,6 +78,8 @@ import {
   ModelBackupListSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
+  ModelConnectionLabelSchema,
+  ModelConnectionTargetSchema,
   ModelCredentialSchema,
   ModelCreditAmountSchema,
   ModelOAuthBeginSchema,
@@ -120,7 +122,7 @@ import {
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
 import { ModelHeadersSchema } from "./model-headers.js";
-import { ModelRoleSchema, ModelRoleSettingsSchema, ModelRoleUpdateSchema } from "./model-roles.js";
+import { ModelRoleSchema, ModelRoleUpdateSchema, ModelRoleViewSchema } from "./model-roles.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
@@ -278,10 +280,10 @@ export const appContract = {
       .output(z.array(ModelCatalogEntrySchema)),
     role: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
-      .output(ModelRoleSettingsSchema),
+      .output(ModelRoleViewSchema),
     setRole: oc
       .input(ModelRoleUpdateSchema.extend({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
-      .output(ModelRoleSettingsSchema),
+      .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelBackupChoiceSchema)),
@@ -310,6 +312,8 @@ export const appContract = {
         z.object({
           provider: z.string(),
           label: z.string().optional(),
+          /** Signs an existing connection in again; null adds another, as connect does. */
+          credentialId: ModelConnectionTargetSchema,
           modelId: z.string().optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
           makeDefault: z.boolean().optional(),
@@ -341,8 +345,12 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
+    rename: oc
+      .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+    /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
-      .input(z.object({ provider: z.string().trim().min(1) }))
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
   },
   bots: {

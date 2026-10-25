@@ -498,6 +498,13 @@ describe("run computer provisioning", () => {
     expect(provisionComputer).toHaveBeenCalledOnce();
   });
 
+  it("restarts the idle timer when it asks the user to take over", async () => {
+    const { sleepJobs } = await runRoutine([], { takeover: true });
+
+    // One from starting the computer, one from the takeover request.
+    expect(sleepJobs).toHaveLength(2);
+  });
+
   it("keeps setup-failure retry semantics when the computer cannot start", async () => {
     provisionComputer.mockRejectedValue(new Error("provider unavailable"));
 

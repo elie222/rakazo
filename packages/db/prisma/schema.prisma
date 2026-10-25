@@ -407,6 +407,7 @@ model UserModelCredential {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   preferences SpaceModelPreference[]
+  roleChoices SpaceModelRoleChoice[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -1720,7 +1721,6 @@ model ModelCreditLot {
   @@map("model_credit_lots")
 }
 
-/// Ordered models for each purpose. Position 0 is the purpose's own model; fallbacks follow.
 model SpaceModelRoleChoice {
   spaceId       String
   userId        String
@@ -1730,8 +1730,10 @@ model SpaceModelRoleChoice {
   provider      String
   modelId       String
   thinkingLevel String?
+  credentialId  String?
+  credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
 
   @@id([spaceId, userId, role, position])
-  @@unique([spaceId, userId, role, provider, modelId])
+  @@index([credentialId, userId])
   @@map("space_model_role_choices")
 }

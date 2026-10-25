@@ -35,6 +35,7 @@ vi.mock("./api", () => ({
         defaultModel: "model-fixture",
       };
     if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "models/connect") return { id: "credential-new" };
     if (procedure === "models/forRole") return [];
     if (procedure === "models/list")
       return [
@@ -156,6 +157,7 @@ let root: Root;
 async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
   params.requestId = openModelConnection({
     provider: "openai-compatible",
+    credentialId: "credential-fixture",
     makeDefault: false,
     ...request,
   });
@@ -268,7 +270,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
 });
 
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
-  await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1" }));
+  await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
   expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
   expect(field("API key")?.placeholder).toBe("Ollama API key");
   expect(field("API key")?.type).toBe("password");
@@ -294,6 +296,7 @@ it("hands a connected model back to the slot that asked for it", async () => {
   expect(onConnected).toHaveBeenCalledWith({
     provider: "openai-compatible",
     modelId: "model-fixture",
+    credentialId: "credential-new",
   });
   expect(back).toHaveBeenCalledOnce();
 });

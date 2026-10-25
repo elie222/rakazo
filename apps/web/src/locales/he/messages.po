@@ -535,6 +535,10 @@ msgstr "הוספת OpenAPI"
 msgid "Add passkey"
 msgstr "הוספת מפתח גישה"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "הוספת ספק"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "הוספת שרת MCP מרוחק"
@@ -1285,6 +1289,7 @@ msgstr "מנקה…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1913,6 +1918,7 @@ msgstr "לא ניתן להסיר את הכלל"
 msgid "Could not remove the credential"
 msgstr "לא ניתן להסיר את פרטי הגישה"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr "לא ניתן לשנות את שם החיבור"
@@ -2208,6 +2214,7 @@ msgid "Decline"
 msgstr "דחייה"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2306,10 +2313,6 @@ msgstr "נדחה"
 msgid "Deny"
 msgstr "דחייה"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "ברירת המחדל של ההתקנה"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -2356,10 +2359,9 @@ msgstr "לנתק את {disconnectName}?"
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr "{0} נותק."
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} נותק."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3563,6 +3565,7 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -3743,6 +3746,7 @@ msgstr "לא נמצאו קבצי OpenClaw, Hermes או מסמך סוכן."
 msgid "No remote MCP servers found"
 msgstr "לא נמצאו שרתי MCP מרוחקים"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -4168,6 +4172,10 @@ msgstr "קלט מוגן"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "ספק"
+
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "ספקים"
 
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
@@ -4626,6 +4634,7 @@ msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק ה�
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4675,6 +4684,7 @@ msgstr "שומר..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4695,6 +4705,7 @@ msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

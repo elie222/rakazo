@@ -31,6 +31,18 @@ describe("approval model backups", () => {
     expect(review.mock.calls).toHaveLength(2);
     expect(review).toHaveBeenNthCalledWith(2, candidates[1]);
   });
+  it("tries the same model on another account's connection", async () => {
+    const personal = { provider: "openai-codex", model: "gpt-5", credentialId: "personal" };
+    const work = { ...personal, credentialId: "work" };
+    const review = vi
+      .fn<() => Promise<AutoReviewResult>>()
+      .mockRejectedValueOnce(new Error("usage limit"))
+      .mockResolvedValue({ decision: "pass", model: "gpt-5" });
+    expect(
+      (await reviewWithBackups([personal, work], review, new AbortController().signal)).decision,
+    ).toBe("pass");
+    expect(review).toHaveBeenNthCalledWith(2, work);
+  });
   it("fails closed when all checkers fail and respects cancellation", async () => {
     const review = vi.fn(async () => {
       throw new Error("fake secret");

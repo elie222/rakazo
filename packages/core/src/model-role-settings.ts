@@ -1,12 +1,12 @@
-import type { ModelCatalogEntry, ModelRoleSettings } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelRoleSettings, ModelRoleView } from "@rakazo/contracts";
 
 export interface ModelRoleTransport {
-  load(): Promise<ModelRoleSettings>;
+  load(): Promise<ModelRoleView>;
   catalog(): Promise<ModelCatalogEntry[]>;
-  save(patch: Partial<ModelRoleSettings>): Promise<ModelRoleSettings>;
+  save(patch: Partial<ModelRoleSettings>): Promise<ModelRoleView>;
 }
 export type ModelRoleState = {
-  settings: ModelRoleSettings | null;
+  settings: ModelRoleView | null;
   catalog: ModelCatalogEntry[];
   busy: boolean;
   /** The last load failed, so the shown settings may be outdated and cannot be edited. */
@@ -27,7 +27,7 @@ export function createModelRoleSettings(transport: ModelRoleTransport, scopeKey:
     error: null,
   };
   let generation = 0;
-  let confirmed: ModelRoleSettings | null = null;
+  let confirmed: ModelRoleView | null = null;
   let loading: Promise<void> | null = null;
   const listeners = new Set<() => void>();
   const publish = (patch: Partial<ModelRoleState>) => {

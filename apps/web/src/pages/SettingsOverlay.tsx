@@ -360,10 +360,6 @@ export function SettingsOverlay({
                       if (next !== space.id) leaveSettings(() => onSpaceChange(next));
                     }}
                   />
-                ) : space ? (
-                  <p data-testid="settings-space" className="text-sm text-muted-foreground">
-                    {space.name}
-                  </p>
                 ) : null}
               </div>
               <DialogClose

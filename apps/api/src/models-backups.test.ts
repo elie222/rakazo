@@ -1,4 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -82,6 +83,7 @@ function setup(
     spaceBackupModel,
   };
   const prisma = {
+    deploymentSettings: { findUnique: vi.fn(async () => null) },
     space: {
       findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
     },
@@ -94,6 +96,11 @@ function setup(
         (!where.provider || where.provider === credential.provider)
           ? [credential]
           : [],
+      ),
+      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
+        !options.credits && where.userId === owner.userId && where.id === credential.id
+          ? { ...credential, preferences: [] }
+          : null,
       ),
     },
     spaceModelPreference: {
@@ -375,6 +382,17 @@ describe("model backup settings API", () => {
 });
 
 describe("role-based model settings API", () => {
+  it("accepts a decision model pinned to the provider's only connection", async () => {
+    const { call } = setup();
+    const primary = {
+      provider: "openrouter",
+      modelId: "typesafe/jev-1.14",
+      credentialId: "credential-one",
+    };
+    const { response } = await call("models/setRole", { role: "approval", primary });
+    expect(response.status).toBe(200);
+    expect((await response.json()).json.primary).toMatchObject(primary);
+  });
   it("stores approval choices independently of main backups using the existing connection", async () => {
     const { call, rows, prisma } = setup();
     const primary = { provider: "openrouter", modelId: "typesafe/jev-1.14" };
@@ -427,7 +445,98 @@ describe("role-based model settings API", () => {
     });
     expect(missing.response.status).toBe(400);
     const read = await call("models/role", { role: "approval" });
-    expect((await read.response.json()).json).toEqual({ primary: null, backups: [] });
+    expect((await read.response.json()).json).toMatchObject({ primary: null, backups: [] });
+  });
+  it("lists the same model on two connections, each validated on its own", async () => {
+    const { call, prisma, roles } = setup();
+    const connections = ["credential-personal", "credential-work"];
+    const findFirst = vi.fn(async ({ where }: { where: { id: string; userId: string } }) =>
+      connections.includes(where.id) && where.userId === owner.userId
+        ? {
+            id: where.id,
+            userId: owner.userId,
+            provider: "openrouter",
+            label: where.id,
+            secretId: `${where.id}-secret`,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+            preferences: [],
+          }
+        : null,
+    );
+    Object.assign(prisma.userModelCredential, { findFirst });
+    const model = { provider: availableModel.provider, modelId: availableModel.id };
+    const primary = { ...model, credentialId: "credential-personal" };
+    const backup = { ...model, credentialId: "credential-work" };
+
+    const { response } = await call("models/setRole", {
+      role: "main",
+      primary,
+      backups: [backup],
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).json).toMatchObject({ primary, backups: [backup] });
+    expect(roles().map((row) => [row.position, row.credentialId])).toEqual([
+      [0, "credential-personal"],
+      [1, "credential-work"],
+    ]);
+    for (const id of connections)
+      expect(findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id }) }),
+      );
+
+    // A row may only run on a connection the member still has.
+    const gone = await call("models/setRole", {
+      role: "main",
+      primary: { ...model, credentialId: "credential-removed" },
+    });
+    expect(gone.response.status).toBe(400);
+  });
+  it("offers and accepts a model only on the connections that can run it", async () => {
+    const { call, prisma } = setup();
+    const connection = (id: string) => ({
+      id,
+      userId: owner.userId,
+      provider: "openrouter",
+      label: id,
+      secretId: `${id}-secret`,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      preferences: [],
+    });
+    Object.assign(prisma.userModelCredential, {
+      findMany: vi.fn(async () => [
+        connection("credential-personal"),
+        connection("credential-work"),
+      ]),
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
+    });
+    const serves = vi
+      .spyOn(adapters, "connectionServesModel")
+      .mockImplementation(
+        async (_deps, _userId, credential, _provider, modelId) =>
+          modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
+      );
+    try {
+      const catalog = (await (await call("models/forRole", { role: "main" })).response.json())
+        .json as Array<{ id: string; credentialIds?: string[] }>;
+      expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
+        "credential-personal",
+      ]);
+      const model = { provider: availableModel.provider, modelId: availableModel.id };
+      const wrong = await call("models/setRole", {
+        role: "main",
+        primary: { ...model, credentialId: "credential-work" },
+      });
+      expect(wrong.response.status).toBe(400);
+      const right = await call("models/setRole", {
+        role: "main",
+        primary: { ...model, credentialId: "credential-personal" },
+      });
+      expect(right.response.status).toBe(200);
+    } finally {
+      serves.mockRestore();
+    }
   });
   it("keeps the main model's effort when a list save repeats its primary", async () => {
     const { call, prisma, roles } = setup();
