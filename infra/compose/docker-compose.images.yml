@@ -101,6 +101,8 @@ x-app-environment: &app-environment
   RAKAZO_AUTO_REVIEW_MODEL:
   RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE:
   RAKAZO_AUTO_REVIEW_TIMEOUT_MS:
+  # Optional descriptive Bot role seeding (disabled by default).
+  RAKAZO_BOT_ROLE_AUTOFILL:
   RELEASE_WATCH_EVAL_MODEL:
   FISH_TTS_MODEL:
   FISH_ASR_MODEL:
