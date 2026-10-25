@@ -20,7 +20,7 @@ const buttonVariants = cva(
         text: "text-muted-foreground hover:text-foreground aria-expanded:text-foreground",
         // Floats over scrolling content, so it carries its own frosted surface.
         floating:
-          "rounded-full border-border bg-muted/90 text-foreground/75 backdrop-blur hover:bg-accent data-active:bg-accent aria-pressed:bg-accent",
+          "border-border bg-muted/90 text-foreground/75 backdrop-blur hover:bg-accent data-active:bg-accent aria-pressed:bg-accent",
       },
       size: {
         default:
@@ -43,6 +43,8 @@ const buttonVariants = cva(
         variant: "text",
         className: "px-0 has-data-[icon=inline-end]:pr-0 has-data-[icon=inline-start]:pl-0",
       },
+      // Compound classes come after size classes, so the pill survives sizes that set a radius.
+      { variant: "floating", className: "rounded-full" },
     ],
     defaultVariants: {
       variant: "default",
