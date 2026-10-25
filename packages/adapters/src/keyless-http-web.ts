@@ -8,7 +8,7 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import { fetchSafeWebText, type ResolveHostname } from "./web-ssrf.js";
 
 export {
@@ -115,14 +115,10 @@ export class KeylessHttpWebProvider implements WebProvider {
     });
     if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
     const extracted = extractReadableText(body, url);
-    const truncated = extracted.text.length > maxChars;
     return {
       url,
       title: extracted.title,
-      text: truncated
-        ? `${extracted.text.slice(0, maxChars)}\n\n[Content truncated]`
-        : extracted.text,
-      truncated,
+      ...pageWindow(extracted.text, maxChars, clampOffset(request.offset)),
     };
   }
 }

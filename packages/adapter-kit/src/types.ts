@@ -933,6 +933,8 @@ export interface WebSearchHit {
 export interface WebFetchRequest {
   url: string;
   maxChars?: number;
+  /** Characters of page text to skip, to read on after a truncated fetch. */
+  offset?: number;
   signal?: AbortSignal;
 }
 

@@ -74,7 +74,7 @@ describe("optional Keenable web provider", () => {
     ).toEqual({
       title: "Source",
       url: "https://example.test/page",
-      text: `${"Page text ".repeat(10)}\n\n[Content truncated]`,
+      text: `${"Page text ".repeat(10)}\n\n[Content truncated; continue with offset 100]`,
       truncated: true,
     });
     expect(peer.calls[0]).toEqual({
@@ -83,14 +83,32 @@ describe("optional Keenable web provider", () => {
     });
   });
 
+  it("asks for the text up to the requested window when reading on", async () => {
+    const peer = keenableMcpFixture();
+    const page = await webFetchFromTool(new KeenableWebProvider(peer.network), context, {
+      url: "https://example.test/page",
+      maxChars: 100,
+      offset: 50,
+    });
+    expect(page).toMatchObject({
+      text: `${"Page text ".repeat(10)}\n\n[Content truncated; continue with offset 150]`,
+      truncated: true,
+    });
+    expect(peer.calls[0]?.arguments).toMatchObject({ max_chars: 151 });
+  });
+
   it.each([
     ["x".repeat(100), "x".repeat(100), false],
     [
       `${"x".repeat(101)}\n\n..._This content has been truncated to stay below 101 characters_...`,
-      `${"x".repeat(100)}\n\n[Content truncated]`,
+      `${"x".repeat(100)}\n\n[Content truncated; continue with offset 100]`,
       true,
     ],
-    [`${" ".repeat(101)}body`, `${" ".repeat(100)}\n\n[Content truncated]`, true],
+    [
+      `${" ".repeat(101)}body`,
+      `${" ".repeat(100)}\n\n[Content truncated; continue with offset 100]`,
+      true,
+    ],
   ])(
     "keeps exact-length pages and drops provider truncation notes (%#)",
     async (content, text, truncated) => {

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 
 const ENDPOINT = "https://api.keenable.ai/mcp";
@@ -88,6 +88,7 @@ export class KeenableWebProvider implements WebProvider {
   /** Extract readable page markdown within the shared fetch limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -97,19 +98,17 @@ export class KeenableWebProvider implements WebProvider {
     // Ask for one extra character so a longer page keeps the truncation flag.
     const page = await this.call(
       "fetch_page_content",
-      { url: url.href, max_chars: maxChars + 1 },
+      { url: url.href, max_chars: offset + maxChars + 1 },
       signal,
       pageSchema,
     );
     const pageUrl = publicPageUrl(page.url);
     if (!pageUrl) throw new Error("Keenable returned an invalid page URL");
     if (!/\S/.test(page.content)) throw new Error("Keenable returned empty page content");
-    const truncated = page.content.length > maxChars;
     return {
       url: pageUrl,
       title: page.title?.trim().slice(0, 1_000) || pageUrl,
-      text: truncated ? `${page.content.slice(0, maxChars)}\n\n[Content truncated]` : page.content,
-      truncated,
+      ...pageWindow(page.content, maxChars, offset),
     };
   }
 

@@ -54,7 +54,7 @@ describe("keyless HTTP web provider", () => {
   });
 
   it("fetches readable page text with truncation", async () => {
-    const long = "word ".repeat(100);
+    const long = Array.from({ length: 100 }, (_, i) => `w${i}`).join(" ");
     const html = `<html><head><title>Doc</title></head><body><article><p>${long}</p></article></body></html>`;
     const fetchMock: typeof fetch = async () =>
       new Response(html, { status: 200, headers: { "content-type": "text/html" } });
@@ -66,8 +66,23 @@ describe("keyless HTTP web provider", () => {
     expect(result.title).toBeTruthy();
     expect(result.url).toBe("https://example.test/doc");
     expect(result.truncated).toBe(true);
-    expect(result.text.endsWith("[Content truncated]")).toBe(true);
-    expect(result.text.length).toBeLessThanOrEqual(120 + "\n\n[Content truncated]".length);
+    expect(result.text).toBe(
+      `${long.slice(0, 120)}\n\n[Content truncated; continue with offset 120]`,
+    );
+
+    const next = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 120 },
+      ctx,
+    );
+    expect(next.text).toBe(
+      `${long.slice(120, 240)}\n\n[Content truncated; continue with offset 240]`,
+    );
+
+    const last = await provider.fetch(
+      { url: "https://example.test/doc", maxChars: 120, offset: 360 },
+      ctx,
+    );
+    expect(last).toMatchObject({ text: long.slice(360), truncated: false });
   });
 
   it("falls back to HTML strip when Readability finds nothing", () => {

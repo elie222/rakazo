@@ -12,7 +12,7 @@ import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { callRemoteMcpTool } from "./remote-mcp.js";
-import { clampMaxChars, clampMaxResults } from "./web-limits.js";
+import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "./web-limits.js";
 import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 
 const ENDPOINT = "https://search.parallel.ai/mcp";
@@ -78,6 +78,7 @@ export class ParallelWebProvider implements WebProvider {
   /** Extract readable page text before the shared serialized-envelope limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -90,7 +91,7 @@ export class ParallelWebProvider implements WebProvider {
       context,
       signal,
       1,
-      maxChars,
+      offset + maxChars,
     );
     const page = response.results[0];
     if (!page)
@@ -100,12 +101,10 @@ export class ParallelWebProvider implements WebProvider {
     const pageUrl = publicPageUrl(page.url);
     if (!pageUrl) throw new Error("Parallel returned an invalid page URL");
     const text = page.full_content ?? page.excerpts.join("\n\n");
-    const truncated = text.length > maxChars;
     return {
       url: pageUrl,
       title: page.title?.trim() || pageUrl,
-      text: truncated ? `${text.slice(0, maxChars)}\n\n[Content truncated]` : text,
-      truncated,
+      ...pageWindow(text, maxChars, offset),
     };
   }
 

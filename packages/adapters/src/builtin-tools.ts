@@ -677,6 +677,10 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "number",
           description: "Max characters of body text (default 8000).",
         },
+        offset: {
+          type: "number",
+          description: "Characters to skip, to read on after a truncated fetch (default 0).",
+        },
       },
       required: ["url"],
     },
