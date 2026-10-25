@@ -234,9 +234,11 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   }
 
   async hasMountedHome(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
-    if (computer.kind !== "kubernetes" || !this.homeClaim) return false;
+    if (computer.kind !== "kubernetes") return false;
+    // Checked even with no claim configured: a pod started with one still mounts the home
+    // until it stops, and exporting over that directory would delete its live files.
     const pod = await this.readPod(this.podId(computer), context.signal);
-    return !!pod && podMountsHome(pod, this.homeClaim, computer.botId);
+    return !!pod && podMountsHome(pod, computer.botId);
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -949,18 +951,17 @@ function homeSubPath(botId: string): string {
   return `homes/${botId}`;
 }
 
-function podMountsHome(pod: V1Pod, claimName: string, homeKey: string): boolean {
-  const volume = pod.spec?.volumes?.find(
-    (entry) => entry.persistentVolumeClaim?.claimName === claimName,
+function podMountsHome(pod: V1Pod, homeKey: string): boolean {
+  const claims = new Set(
+    pod.spec?.volumes?.flatMap((entry) => (entry.persistentVolumeClaim ? [entry.name] : [])),
   );
   const container = pod.spec?.containers?.find((entry) => entry.name === CONTAINER_NAME);
   return (
-    !!volume &&
     container?.volumeMounts?.some(
       (mount) =>
-        mount.name === volume.name &&
+        claims.has(mount.name) &&
         mount.mountPath === WORKSPACE &&
-        mount.subPath === homeSubPath(homeKey),
+        mount.subPath === `homes/${homeKey}`,
     ) === true
   );
 }
