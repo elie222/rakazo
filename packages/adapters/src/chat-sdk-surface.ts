@@ -207,9 +207,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   ): Promise<MessagingSendResult> {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
-    // Telegram converts Markdown and retries parse errors as plain text. Keep
-    // other adapters' existing payloads (Slack markdown_text has a lower limit).
+    // Telegram converts Markdown and retries parse errors as plain text;
+    // WhatsApp renders it as its own formatting and Lark posts it as an md
+    // block. Keep the other adapters' plain payloads (Slack markdown_text has
+    // a lower limit, iMessage has no markup).
     const telegram = mounted.adapterName === "telegram";
+    const markdown =
+      telegram || mounted.adapterName === "whatsapp" || mounted.adapterName === "lark";
     const { attachment } = request;
     if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {
       throw new MessagingSendError(new Error("File is larger than Telegram accepts"), {
@@ -219,7 +223,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     }
     const message = attachment
       ? attachmentMessage(telegram, request.body, attachment)
-      : telegram
+      : markdown
         ? { markdown: request.body }
         : request.body;
     try {
