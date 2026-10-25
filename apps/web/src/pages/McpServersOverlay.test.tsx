@@ -184,3 +184,43 @@ it("opens a server's form and saves it in place, sending blank values to keep wh
     await act(async () => root.unmount());
   }
 });
+
+it("keeps a stdio server's arguments intact when they were not edited", async () => {
+  const server = {
+    id: "srv_2",
+    slug: "files",
+    name: "files",
+    description: "",
+    transport: "stdio",
+    endpoint: null,
+    command: "npx",
+    args: ["-y", "files-server", "/Users/me/My Documents"],
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    oauthStatus: "none",
+    oauthClientId: null,
+    hasSecret: false,
+    health: { status: "unknown" },
+    enabled: true,
+  } as unknown as McpServer;
+  mocks.list.mockReset().mockResolvedValue([server]);
+  mocks.update.mockReset().mockResolvedValue(server);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(<McpServersOverlay editServerId="srv_2" onClose={() => {}} />),
+    );
+    const save = Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save",
+    );
+    await act(async () => save?.click());
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: "srv_2",
+      config: expect.objectContaining({ args: ["-y", "files-server", "/Users/me/My Documents"] }),
+    });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

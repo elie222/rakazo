@@ -270,7 +270,11 @@ export function McpServersOverlay({
               name: name.trim(),
               transport,
               command: command.trim(),
-              args: args.split(/\s+/).filter(Boolean),
+              // Untouched arguments keep their boundaries, spaces included.
+              args:
+                editing && args === editing.args.join(" ")
+                  ? editing.args
+                  : args.split(/\s+/).filter(Boolean),
               env: envEntries(false),
               files: envEntries(true),
               secret: secret || undefined,
