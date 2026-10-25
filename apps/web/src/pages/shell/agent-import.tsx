@@ -260,6 +260,7 @@ export function AgentImportForm({
   async function toggleSecrets(checked: boolean) {
     if (!source) return;
     const read = ++latestRead.current;
+    setBusy(true);
     try {
       const chosen = await chooseAgentImportFiles(source.paths, source.read, {
         includeSecrets: checked,
@@ -272,7 +273,9 @@ export function AgentImportForm({
         keepChoices: true,
       });
     } catch (err) {
-      if (read === latestRead.current) setError(readError(err));
+      if (read !== latestRead.current) return;
+      setError(readError(err));
+      setBusy(false);
     }
   }
 
