@@ -623,6 +623,8 @@ function SpaceShell() {
   const bootsInFlight = useRef(new Map<string, symbol>());
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(Boolean(seed));
+  // A failed first load falls back to the shell, whose polling and footer can still recover.
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null | undefined>(seed?.me);
   const callsEnabledRef = useRef(false);
   useEffect(() => {
@@ -1301,7 +1303,9 @@ function SpaceShell() {
       .catch(() => {
         if (cancelled) return;
         if (!seed) setBootstrapMe(null);
-        void refreshBots(true).catch(() => undefined);
+        void refreshBots(true).catch(() => {
+          if (!cancelled) setInitialLoadFailed(true);
+        });
       });
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
@@ -4204,7 +4208,7 @@ function SpaceShell() {
   );
 
   // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
-  return initialBotsLoaded ? shell : <PageLoading />;
+  return initialBotsLoaded || initialLoadFailed ? shell : <PageLoading />;
 }
 
 function routineListData(results: Array<{ data?: Routine[] }>) {
