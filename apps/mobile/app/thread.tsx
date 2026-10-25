@@ -1813,6 +1813,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   function followOwnSend() {
+    // Writing in the chat means the user has caught up, so the "New" divider goes.
+    setReadBoundary({ visit: readVisit.current.visit, seq: null });
     if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
     performScroll(scrollBehavior.current.onOwnSend());
     publishThreadScrollState(scrollBehavior.current.state());
@@ -1967,6 +1969,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       const targetBotId = botId;
       const targetGroupId = groupId;
       if (readOnly || (!targetBotId && !targetGroupId) || !message.runId) return;
+      setReadBoundary({ visit: readVisit.current.visit, seq: null });
       await rpc("threads/answer", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         runId: message.runId,
