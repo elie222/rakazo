@@ -6,7 +6,8 @@ import { assertHostCommandsAllowed, DesktopSandboxProvider } from "./desktop-san
 import { DockerSandboxProvider } from "./docker-sandbox.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { type KubernetesSandboxOptions, KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
+import type { KubernetesSandboxOptions } from "./kubernetes-sandbox.js";
+import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 

@@ -83,15 +83,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   private clientsValue: KubernetesSandboxSdk | undefined;
 
   private readonly desktops = new LinuxDesktop({
-    environment: async () => ({
-      homeDir: WORKSPACE,
-      workspaceDir: WORKSPACE,
-      browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
-      displayStart: 20,
-      portStart: DESKTOP_PORT_START,
-      // The web pod reaches the screen relay over the pod network, not loopback.
-      bindHost: "0.0.0.0",
-    }),
+    environment: async (computer) => {
+      const pod = await this.readPod(this.podId(computer), AbortSignal.timeout(10_000));
+      return {
+        homeDir: WORKSPACE,
+        workspaceDir: WORKSPACE,
+        browserProfilesDir: `${WORKSPACE}/.browser-profiles`,
+        displayStart: 20,
+        portStart: DESKTOP_PORT_START,
+        // The relay must use the address family the web pod connects to.
+        bindHost: pod?.status?.podIP?.includes(":") ? "::" : "0.0.0.0",
+      };
+    },
     run: async (computer, command, context) => {
       const result = await this.run(computer, ["bash", "-c", command], context);
       return { code: result.code, stdout: result.stdout, stderr: result.stderr };
@@ -156,6 +159,11 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       throw new Error(`Kubernetes pod ${podName} belongs to another bot`);
     }
 
+    if (pod?.metadata?.deletionTimestamp) {
+      await this.waitForDeletion(podName, context.signal);
+      pod = undefined;
+    }
+
     if (pod && isTerminalPod(pod)) {
       await this.deletePod(podName);
       await this.waitForDeletion(podName, context.signal);
@@ -197,7 +205,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     if (computer.kind !== "kubernetes") return false;
     const pod = await this.readPod(this.podId(computer), context.signal);
-    return pod?.status?.phase === "Running";
+    return pod?.status?.phase === "Running" && !pod.metadata?.deletionTimestamp;
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -274,7 +282,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     context: AdapterContext,
     controlToken?: string,
   ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
+    try {
+      await this.desktops.setScreenControl(computer, interactive, context, controlToken);
+    } catch (error) {
+      let pod: V1Pod | undefined;
+      try {
+        pod = await this.readPod(this.podId(computer), context.signal);
+      } catch {
+        throw error;
+      }
+      if (pod && !isTerminalPod(pod) && !pod.metadata?.deletionTimestamp) throw error;
+      throw sandboxGone(this.podId(computer), error);
+    }
   }
 
   async sendInput(
@@ -431,7 +450,20 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       for await (const event of this.execRaw(
         computer,
         withTimeout(
-          ["tar", "-c", "-C", WORKSPACE, "--null", "--no-recursion", "-T", listPath, "-f", "-"],
+          [
+            "tar",
+            "--format=pax",
+            "--hard-dereference",
+            "-c",
+            "-C",
+            WORKSPACE,
+            "--null",
+            "--no-recursion",
+            "-T",
+            listPath,
+            "-f",
+            "-",
+          ],
           BULK_TRANSFER_TIMEOUT_MS,
         ),
         context.signal,
@@ -579,6 +611,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     while (true) {
       const pod = await this.readPod(name, signal);
       if (!pod) throw new Error(`Kubernetes pod ${name} disappeared while starting`);
+      if (pod.metadata?.deletionTimestamp) throw sandboxGone(name);
       if (isTerminalPod(pod)) {
         throw new Error(`Kubernetes pod ${name} entered phase ${pod.status?.phase ?? "Unknown"}`);
       }
@@ -684,6 +717,10 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     let done = false;
     let failure: unknown;
     let socket: Awaited<ReturnType<KubernetesSandboxSdk["exec"]["exec"]>> | undefined;
+    let settled!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
     const push = (event: RawExecEvent) => {
       if (done) return;
       queue.push(event);
@@ -694,6 +731,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       if (done) return;
       queue.push({ type: "exit", code });
       done = true;
+      settled();
       wake?.();
       wake = undefined;
     };
@@ -701,6 +739,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       if (done) return;
       failure = error;
       done = true;
+      settled();
       wake?.();
       wake = undefined;
     };
@@ -729,7 +768,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       if (signal.aborted) {
         abort();
       } else {
-        socket = await this.clients().exec.exec(
+        const connecting = this.clients().exec.exec(
           this.namespace,
           this.podId(computer),
           CONTAINER_NAME,
@@ -740,8 +779,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
           tty,
           (status) => finish(exitCode(status)),
         );
-        socket.onclose = () => finish(1);
-        socket.onerror = (event) => fail(event.error ?? new Error("Kubernetes exec failed"));
+        await Promise.race([
+          connecting.then((connected) => {
+            socket = connected;
+            if (done) {
+              connected.close();
+              return;
+            }
+            connected.onclose = () => finish(1);
+            connected.onerror = (event) => fail(event.error ?? new Error("Kubernetes exec failed"));
+          }, fail),
+          completed,
+        ]);
       }
       while (!done || queue.length) {
         if (!queue.length) await new Promise<void>((resolve) => (wake = resolve));
@@ -802,6 +851,12 @@ function podNameForBot(botId: string): string {
     .slice(0, 40);
   const hash = createHash("sha256").update(botId).digest("hex").slice(0, 12);
   return `rakazo-${normalized || "bot"}-${hash}`;
+}
+
+function sandboxGone(name: string, cause?: unknown): Error {
+  const error = new Error(`Kubernetes computer ${name} no longer exists`, { cause });
+  error.name = "SandboxNotFoundError";
+  return error;
 }
 
 function isTerminalPod(pod: V1Pod): boolean {

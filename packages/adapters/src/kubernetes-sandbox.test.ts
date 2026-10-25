@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { link, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
@@ -730,7 +734,7 @@ describe("KubernetesSandboxProvider", () => {
         provider.connectScreen(computer, { view: "stream", interactive: false }, context),
       ).resolves.toMatchObject({ url: expect.stringContaining("/embed.html") });
       const commands = exec.mock.calls.map((call) => (call[3] as string[]).join(" ")).join("\n");
-      expect(commands).toContain("0.0.0.0:6100");
+      expect(commands).toContain(`${ip.includes(":") ? "::" : "0.0.0.0"}:6100`);
     }
     await expect(
       providerFor(
@@ -776,4 +780,156 @@ describe("KubernetesSandboxProvider", () => {
       },
     });
   });
+  it("waits for a terminating pod before creating its replacement", async () => {
+    const dying = {
+      ...readyPod,
+      metadata: { ...readyPod.metadata, deletionTimestamp: new Date() },
+    };
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce(dying)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(readyPod);
+    const create = vi.fn().mockResolvedValue(readyPod);
+    const provider = providerFor({ readNamespacedPod: read, createNamespacedPod: create });
+    await expect(provider.isRunning(computer, context)).resolves.toBe(false);
+    read
+      .mockReset()
+      .mockResolvedValueOnce(dying)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(readyPod);
+    await expect(
+      provider.provision(
+        { botId: "bot-a", homePath: "/unused", providerKind: "kubernetes", providerRef: "pod" },
+        context,
+      ),
+    ).resolves.toMatchObject({ fresh: true });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("does not return a pod that starts terminating during readiness", async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce(readyPod)
+      .mockResolvedValue({
+        ...readyPod,
+        metadata: { ...readyPod.metadata, deletionTimestamp: new Date() },
+      });
+    await expect(
+      providerFor({ readNamespacedPod: read }).provision(
+        { botId: "bot-a", homePath: "/unused", providerRef: "pod", providerKind: "kubernetes" },
+        context,
+      ),
+    ).rejects.toMatchObject({ name: "SandboxNotFoundError" });
+  });
+
+  it.each(["abort", "timeout"])(
+    "finishes %s while exec is connecting and closes a late socket",
+    async (mode) => {
+      vi.useFakeTimers();
+      try {
+        let connect!: (socket: Awaited<ReturnType<Exec["exec"]>>) => void;
+        const exec = vi.fn(
+          () =>
+            new Promise<Awaited<ReturnType<Exec["exec"]>>>((resolve) => {
+              connect = resolve;
+            }),
+        );
+        const controller = new AbortController();
+        const consume = async () => {
+          const events: ProcessEvent[] = [];
+          for await (const event of providerFor({}, exec).execute(
+            computer,
+            { argv: ["sleep", "10"], timeoutMs: 1_000 },
+            { ...context, signal: controller.signal },
+          ))
+            events.push(event);
+          return events;
+        };
+        const result = consume();
+        await vi.advanceTimersByTimeAsync(0);
+        if (mode === "abort") controller.abort();
+        else await vi.advanceTimersByTimeAsync(11_000);
+        expect(await result).toContainEqual({ type: "exit", code: mode === "abort" ? 130 : 124 });
+        const socket = { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
+        connect(socket);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(socket.close).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each([undefined, { ...readyPod, status: { phase: "Failed" } }])(
+    "reports confirmed pod loss during control cleanup",
+    async (pod) => {
+      const read = vi.fn().mockResolvedValue(pod);
+      await expect(
+        providerFor(
+          { readNamespacedPod: read },
+          successfulExec("", "desktop broke", 1),
+        ).setScreenControl(computer, false, context, "control-token"),
+      ).rejects.toMatchObject({ name: "SandboxNotFoundError" });
+    },
+  );
+
+  it("does not classify a desktop error on a live pod as pod loss", async () => {
+    await expect(
+      providerFor({}, successfulExec("", "desktop broke", 1)).setScreenControl(
+        computer,
+        false,
+        context,
+        "control-token",
+      ),
+    ).rejects.toThrow("desktop broke");
+  });
+
+  it("does not classify an API outage as pod loss", async () => {
+    const provider = providerFor({
+      readNamespacedPod: vi.fn().mockRejectedValue(new Error("API offline")),
+    });
+    await expect(
+      provider.setScreenControl(computer, false, context, "control-token"),
+    ).rejects.toThrow("API offline");
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "exports real GNU tar long paths and hardlinks intact",
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-tar-"));
+      try {
+        const long = `nested/${"a".repeat(110)}.txt`;
+        await mkdir(path.join(root, "nested"));
+        await writeFile(path.join(root, long), "long file");
+        await link(path.join(root, long), path.join(root, "linked.txt"));
+        const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
+          const argv = args[3] as string[];
+          queueMicrotask(() => {
+            if (argv.includes("find")) args[4]?.write(`${long}\0linked.txt\0`);
+            else if (args[6]) {
+              args[6].resume();
+            } else if (argv.includes("tar")) {
+              const command = argv.slice(argv.indexOf("tar") + 1);
+              command[command.indexOf("-C") + 1] = root;
+              command.splice(command.indexOf("-T"), 2, long, "linked.txt");
+              args[4]?.write(execFileSync("tar", command));
+            }
+            args[8]?.({ status: "Success" });
+          });
+          return { close: vi.fn() } as unknown as Awaited<ReturnType<Exec["exec"]>>;
+        });
+        const exported = [];
+        for await (const file of providerFor({}, exec).exportWorkspace(computer, context))
+          exported.push(file);
+        expect(exported.map((file) => file.path)).toEqual([long, "linked.txt"]);
+        expect(exported.map((file) => Buffer.from(file.content).toString())).toEqual([
+          "long file",
+          "long file",
+        ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
