@@ -155,9 +155,12 @@ function isTeamRootPath(value: string): boolean {
   );
 }
 
-// A leading ~ means the workspace root, the same as a leading /.
+// A leading ~ or /home/rakazo means the workspace root, the same as a leading /.
 function expandHomePrefix(value: string): string {
-  return value.replace(/^~([\\/]|$)/, (_, separator: string) => separator || "/");
+  return value.replace(
+    /^(?:~|[\\/]home[\\/]rakazo)([\\/]|$)/,
+    (_, separator: string) => separator || "/",
+  );
 }
 
 function stripVirtualWorkspaceRoot(value: string): string | null {
