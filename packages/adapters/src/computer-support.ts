@@ -88,8 +88,16 @@ export function normalizeSandboxFilePath(value: string, homePrefixes: readonly s
   return normalizeWorkspacePath(value);
 }
 
-/** `/home/rakazo` is the Docker home; every provider's cwd mapping already strips it. */
-const SANDBOX_HOME_PREFIXES = ["/home/rakazo"] as const;
+/**
+ * Homes a Team Computer may spell absolutely: the Docker home and the hosted
+ * providers' workspace roots. Every provider's cwd mapping strips its own entry.
+ * Daytona's root varies by image user, so it cannot be listed statically.
+ */
+const SANDBOX_HOME_PREFIXES = [
+  "/home/rakazo",
+  "/home/user/rakazo-home",
+  "/home/desktop/rakazo-home",
+] as const;
 
 function stripSandboxHomePrefix(value: string): string {
   const portable = value.replace(/\\/g, "/");

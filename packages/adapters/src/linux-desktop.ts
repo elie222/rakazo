@@ -32,6 +32,7 @@ import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
+  normalizeSandboxFilePath,
   workspacePath,
 } from "./computer-support.js";
 import {
@@ -244,7 +245,7 @@ function browserActionCommand(
     return `nohup ${browserLauncherPath(layout.displayNumber)} ${shellQuote(browser)} </dev/null >/tmp/rakazo/browser-open-${layout.displayNumber}.log 2>&1 &`;
   }
   const workspace = env.workspaceDir;
-  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action.kind === "open" ? { ...action, path: workspacePath(workspace, action.path) } : action)}`;
+  return `cd ${shellQuote(workspace)}\n${extraDisplayActionCommand(layout, action.kind === "open" ? { ...action, path: workspacePath(workspace, normalizeSandboxFilePath(action.path, [workspace, "/home/rakazo"])) } : action)}`;
 }
 
 // Chrome-family WM_CLASS components. Matched whole, so "xterm" does not raise "uxterm".

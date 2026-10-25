@@ -464,6 +464,16 @@ describe("E2B computer backend", () => {
       expect.stringContaining("/home/user/rakazo-home/notes/readme.md"),
       expect.anything(),
     );
+
+    await provider.act(
+      computer,
+      { actions: [{ kind: "open", path: "/home/rakazo/notes/readme.md" }], observe: false },
+      context,
+    );
+    expect(command).toHaveBeenLastCalledWith(
+      expect.stringContaining("/home/user/rakazo-home/notes/readme.md"),
+      expect.anything(),
+    );
   });
 
   it("opens a terminal in the workspace root or the Team bot folder", async () => {

@@ -53,6 +53,15 @@ describe("Team Computer bot folders", () => {
     );
   });
 
+  it("treats hosted workspace roots as the workspace root on Team Computers", () => {
+    expect(resolveBotWorkspacePath("team", "bot-1", "/home/user/rakazo-home/notes/x.md")).toBe(
+      "notes/x.md",
+    );
+    expect(
+      resolveBotWorkspacePath("team", "bot-1", "/home/desktop/rakazo-home/shared/brief.md"),
+    ).toBe("shared/brief.md");
+  });
+
   it("treats a leading ~ as the workspace root", () => {
     expect(resolveBotWorkspacePath("team", "bot-1", "~")).toBe("");
     expect(resolveBotWorkspacePath("team", "bot-1", "~/notes/x.md")).toBe("notes/x.md");
