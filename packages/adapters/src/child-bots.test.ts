@@ -409,7 +409,10 @@ describe("destroyBot", () => {
           .mockResolvedValueOnce([{ id: "run-1", userId: "user-1", spaceId: "workspace-1" }]),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-      externalEffect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      externalEffect: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       secret: { deleteMany: deleteSecrets },
       routine: { findMany: vi.fn().mockResolvedValue([]) },
       $transaction: transaction,
@@ -463,7 +466,10 @@ describe("destroyBot", () => {
     ]);
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+        externalEffect: {
+          deleteMany: vi.fn(async () => ({ count: 0 })),
+          updateMany: vi.fn(async () => ({ count: 0 })),
+        },
         $queryRaw: queryRaw,
         chatGroup: {
           findMany: vi.fn().mockResolvedValue([
@@ -1819,7 +1825,10 @@ describe("archiveBot", () => {
     const deleteSecrets = vi.fn().mockResolvedValue({ count: 1 });
     const transaction = vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
       callback({
-        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+        externalEffect: {
+          deleteMany: vi.fn(async () => ({ count: 0 })),
+          updateMany: vi.fn(async () => ({ count: 0 })),
+        },
         ...groupCleanup,
         run: {
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),

@@ -2767,6 +2767,41 @@ describeJourneys("required product journeys", () => {
     expect(deniedEffect?.status).toBe("denied");
   });
 
+  it("19b: stopping a run with an open approval card settles its effect", async () => {
+    const cookie = await signup(app, `approval-stop-j-${stamp}@rakazo.test`, "ApprovalStop");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "approvalRules/set", {
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "destination.write",
+    });
+    const sent = await rpc<{ runId: string }>(app, cookie, "threads/send", {
+      botId: bot.id,
+      text: "write this to the destination crm as a note",
+    });
+    await waitFor(app, cookie, bot.id, (snap) => snap.run?.status === "waiting_input");
+    expect(
+      (
+        await prisma.externalEffect.findFirstOrThrow({
+          where: { runId: sent.runId, kind: "destination.write" },
+        })
+      ).status,
+    ).toBe("intended");
+
+    await rpc(app, cookie, "threads/stop", { botId: bot.id });
+
+    const effect = await prisma.externalEffect.findFirstOrThrow({
+      where: { runId: sent.runId, kind: "destination.write" },
+    });
+    expect(effect.status).toBe("denied");
+  });
+
   it("20: actions run by default and specific exceptions override broad review rules", async () => {
     const cookie = await signup(app, `always-j-${stamp}@rakazo.test`, "Always");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

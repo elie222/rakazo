@@ -5,7 +5,10 @@ import { clearEndedRunState } from "./run-secrets.js";
 describe("clearEndedRunState", () => {
   it("drops each cancelled run's checkpoint and waiting one-time answer", async () => {
     const prisma = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 2 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 2 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       run: {
         findMany: vi.fn(async () => [
           { id: "run-1", userId: "user-1", spaceId: "space-1" },
@@ -27,9 +30,22 @@ describe("clearEndedRunState", () => {
     });
   });
 
+  it("denies the cancelled runs' open approval effects", async () => {
+    const prisma = {
+      externalEffect: { deleteMany: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
+      run: { findMany: vi.fn(async () => []) },
+      secret: { deleteMany: vi.fn() },
+    };
+    await clearEndedRunState(prisma as unknown as PrismaClient, ["run-1"]);
+    expect(prisma.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["run-1"] }, status: "intended" },
+      data: { status: "denied" },
+    });
+  });
+
   it("does nothing without runs", async () => {
     const prisma = {
-      externalEffect: { deleteMany: vi.fn() },
+      externalEffect: { deleteMany: vi.fn(), updateMany: vi.fn(async () => ({ count: 0 })) },
       run: { findMany: vi.fn() },
       secret: { deleteMany: vi.fn() },
     };

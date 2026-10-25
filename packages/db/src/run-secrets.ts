@@ -27,8 +27,9 @@ export async function deleteRunSecretsInTransaction(
 }
 
 /**
- * Clear what cancelled runs kept for resuming: the turn checkpoint and any waiting one-time
- * answer. Paths that cancel by id read each run's user and space here for the secrets index.
+ * Clear what cancelled runs kept for resuming: the turn checkpoint, any waiting one-time
+ * answer, and open approval effects, which a dead run can no longer settle. Paths that cancel
+ * by id read each run's user and space here for the secrets index.
  */
 export async function clearEndedRunState(
   prisma: Pick<PrismaClient, "run" | "externalEffect" | "secret">,
@@ -36,6 +37,10 @@ export async function clearEndedRunState(
 ): Promise<void> {
   if (runIds.length === 0) return;
   await clearRunTurnCheckpoints(prisma, runIds);
+  await prisma.externalEffect.updateMany({
+    where: { runId: { in: [...runIds] }, status: "intended" },
+    data: { status: "denied" },
+  });
   const runs = await prisma.run.findMany({
     where: { id: { in: [...runIds] } },
     select: { id: true, userId: true, spaceId: true },

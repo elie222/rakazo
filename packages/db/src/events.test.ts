@@ -95,7 +95,10 @@ describe("finalizeRun", () => {
       const conflict = Object.assign(new Error("serialization conflict"), { code: "P2034" });
       const createEvent = vi.fn(async () => ({ threadId: "thread-1", seq: 0 }));
       const tx = {
-        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+        externalEffect: {
+          deleteMany: vi.fn(async () => ({ count: 0 })),
+          updateMany: vi.fn(async () => ({ count: 0 })),
+        },
         $queryRaw: vi.fn(async () => []),
         run: {
           findUnique: vi.fn(async () => ({ status: "running", userId: "user-1" })),
@@ -154,7 +157,10 @@ describe("finalizeRun", () => {
 
   it("saves the reply a failure cut short before the error, as no answer to steering", async () => {
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "failed", startedAt: null })),
@@ -229,7 +235,10 @@ describe("finalizeRun", () => {
   it("saves no message for a failure without a partial reply", async () => {
     const create = vi.fn();
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "failed", startedAt: null })),
@@ -273,7 +282,10 @@ describe("finalizeRun", () => {
 
   it("resumes a held messaging inbound as a messaging run", async () => {
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -341,7 +353,10 @@ describe("finalizeRun", () => {
 
   it("pins the continuation when every waited message chose the same model", async () => {
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -421,7 +436,10 @@ describe("finalizeRun", () => {
       text: "What is the status?",
     };
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       $queryRaw: vi.fn(async () => []),
       run: {
         findUnique: vi.fn(async () => ({ status: "running", startedAt: null })),
@@ -3851,7 +3869,10 @@ describe("clearThread", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       thread: {
         update: vi
           .fn()
@@ -3922,7 +3943,10 @@ describe("clearThread", () => {
   it("scopes group clear lease cleanup to cancelled run ids", async () => {
     const fanout = new TestFanout();
     const tx = {
-      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
       thread: {
         update: vi
           .fn()
