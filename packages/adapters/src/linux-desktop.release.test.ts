@@ -9,6 +9,7 @@ const context = {
   spaceId: "workspace-1",
   userId: "user-1",
   botId: "bot-1",
+  screenLeaseId: "run-1:1",
   signal: new AbortController().signal,
 } as AdapterContext;
 
@@ -19,7 +20,9 @@ const computer = {
   providerRef: "sandbox-1",
 } as ComputerRef;
 
-function host(result: { code: number; stdout: string; stderr?: string }) {
+type Result = { code: number; stdout: string; stderr?: string };
+
+function host(result: Result | ((command: string) => Result), commands: string[] = []) {
   return {
     environment: async () => ({
       homeDir: "/home/rakazo",
@@ -27,10 +30,15 @@ function host(result: { code: number; stdout: string; stderr?: string }) {
       browserProfilesDir: "/home/rakazo/.browser-profiles",
       displayStart: 1,
     }),
-    run: async () => result,
+    run: async (_computer: ComputerRef, command: string) => {
+      commands.push(command);
+      return typeof result === "function" ? result(command) : result;
+    },
     screenUrl: async () => "http://screen.example",
   };
 }
+
+const releasesBrowser = (command: string) => command.includes("RAKAZO_DESKTOP_RELEASED");
 
 describe("LinuxDesktop.releaseScreen", () => {
   it("reports the browser stopped when slot cleanup fails after the release marker", async () => {
@@ -49,5 +57,48 @@ describe("LinuxDesktop.releaseScreen", () => {
     );
 
     await expect(desktop.releaseScreen(computer, context)).rejects.toThrow("browser still running");
+  });
+
+  it.each([0, 75])(
+    "revokes only control for a completed run and keeps its browser (exit %s)",
+    async (code) => {
+      const commands: string[] = [];
+      const desktop = new LinuxDesktop(host({ code, stdout: "" }, commands));
+
+      await desktop.releaseScreen(computer, { ...context, keepScreenWarm: true });
+
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toContain("run-1:1");
+      expect(commands[0]).toContain("control-token-");
+      expect(releasesBrowser(commands[0]!)).toBe(false);
+    },
+  );
+
+  it("tears the screen down when control revocation fails", async () => {
+    const commands: string[] = [];
+    const desktop = new LinuxDesktop(
+      host(
+        (command) =>
+          releasesBrowser(command) ? { code: 0, stdout: "" } : { code: 1, stdout: "", stderr: "x" },
+        commands,
+      ),
+    );
+
+    await desktop.releaseScreen(computer, { ...context, keepScreenWarm: true });
+
+    expect(commands.map(releasesBrowser)).toEqual([false, true]);
+  });
+
+  it.each<[string, Partial<AdapterContext>]>([
+    ["canceled", { keepScreenWarm: true, cancelRunWork: true }],
+    ["aborted", { keepScreenWarm: true, signal: AbortSignal.abort() }],
+    ["failed", {}],
+  ])("tears down the browser for a %s run", async (_name, overrides) => {
+    const commands: string[] = [];
+    const desktop = new LinuxDesktop(host({ code: 0, stdout: "" }, commands));
+
+    await desktop.releaseScreen(computer, { ...context, ...overrides });
+
+    expect(commands.map(releasesBrowser)).toEqual([true]);
   });
 });

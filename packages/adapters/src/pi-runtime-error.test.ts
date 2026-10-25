@@ -105,6 +105,7 @@ describe("Pi runtime errors", () => {
   it.each([
     "Provider finish_reason: error",
     "Provider stopped with: MALFORMED_FUNCTION_CALL",
+    "Unhandled stop reason: MALFORMED_RESPONSE",
     "Provider returned an empty response",
     "Failed to parse tool call arguments as JSON",
     "Tool call validation failed: attempted to call tool 'commentary' which was not in request.tools",

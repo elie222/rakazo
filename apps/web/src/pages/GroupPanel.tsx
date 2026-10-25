@@ -237,6 +237,17 @@ export function GroupSettings({
   const nameId = useId();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
+  // The panel can open on a cached group. A refreshed one replaces whatever was not edited, so a
+  // save does not send the cached name or members back as a change.
+  const [shownGroup, setShownGroup] = useState(group);
+  if (group !== shownGroup) {
+    setShownGroup(group);
+    if (name === shownGroup.name) setName(group.name);
+    const shownMembers = shownGroup.members.map((member) => member.botId);
+    if (sameMembers(selected, shownMembers)) {
+      setSelected(group.members.map((member) => member.botId));
+    }
+  }
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);

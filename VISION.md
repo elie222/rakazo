@@ -49,7 +49,7 @@ Implementation complexity is acceptable only when it protects a real boundary or
 
 Spaces are authorization boundaries across which private chats, files, memory, computers, and integrations do not mix implicitly.
 Sharing a bot transfers an intentional configuration, not its computer, credentials, files, private memory, or history.
-Consequential actions respect explicit approval policy, and uncertain automated review fails toward asking rather than silently acting.
+Consequential actions follow the owner's approval mode and lists, and an automated review that errors or is unsure asks rather than silently acting.
 Authentication, secret handling, sandbox boundaries, host commands, and integrations are treated as security-sensitive product behavior.
 Important effects are verified independently, recovery preserves known-good user state, and core tests remain deterministic and offline by default.
 
@@ -63,6 +63,11 @@ One bot has one continuous visible thread because continuity is part of its iden
 Team Computers share a persisted browser identity and isolate simultaneous live desktops when supported because shared login state and safe concurrency are both required.
 Private Computers isolate the entire working home because some trust boundaries must be stronger than collaboration convenience.
 Connections belong to the user or space rather than requiring repetitive per-bot setup because bots differ through role and state, not account plumbing.
+Settings such as models, voice and approvals are account defaults that every space follows, and a space customizes one only as a deliberate exception, because few people want a different setup per space and spaces exist to separate work, not configuration.
+Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
+Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
+Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask and are refused in Never ask, which cannot wait for anyone.
+The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Scope
 

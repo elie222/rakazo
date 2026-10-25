@@ -275,11 +275,8 @@ export function nextCronDate(cron: string, from: Date, timezone = "UTC"): Date {
   return next;
 }
 
-// Uneven interval steps recur from the scheduled fire instead of resetting at
-// cron field boundaries. Even steps keep cron's local wall-clock positions.
-// Creation/editing still uses nextCronDate for the initial anchor.
-export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
-  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+/** The preset of an interval step that recurs from the scheduled fire, or undefined. */
+export function unevenInterval(cron: string): CronPreset | undefined {
   const preset = presetFromCron(cron);
   if (
     cron.trim().split(/\s+/).length !== 5 ||
@@ -289,8 +286,18 @@ export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezo
     (preset.unit === "hours" && 24 % preset.n === 0) ||
     (preset.unit === "days" && preset.n === 1)
   ) {
-    return nextCronDate(cron, from, timezone);
+    return undefined;
   }
+  return preset;
+}
+
+// Uneven interval steps recur from the scheduled fire instead of resetting at
+// cron field boundaries. Even steps keep cron's local wall-clock positions.
+// Creation/editing still uses nextCronDate for the initial anchor.
+export function nextRoutineRunDate(cron: string, anchor: Date, now: Date, timezone = "UTC"): Date {
+  const from = new Date(Math.max(anchor.getTime(), now.getTime()));
+  const preset = unevenInterval(cron);
+  if (!preset) return nextCronDate(cron, from, timezone);
   if (preset.unit !== "days") {
     const gap = preset.n * (preset.unit === "hours" ? 3_600_000 : 60_000);
     const steps = Math.floor((from.getTime() - anchor.getTime()) / gap) + 1;
@@ -382,6 +389,58 @@ export function nextCronDateAcrossStrict(
     if (!earliest || next < earliest) earliest = next;
   }
   return earliest;
+}
+
+const OFFSET_SUFFIX = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/;
+
+/**
+ * An ISO date or datetime as an instant. One with an offset (or Z) is taken as written; a date
+ * or wall-clock time without one is read in `timezone`, so "2026-11-02T10:00" is 10:00 there.
+ * A time skipped by a daylight-saving change moves forward by the gap. Null when invalid.
+ */
+export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
+  const text = value.trim();
+  const wall = WALL_CLOCK.exec(text);
+  if (!wall) {
+    if (!OFFSET_SUFFIX.test(text) || !/\d{2}:\d{2}/.test(text)) return null;
+    const instant = new Date(text);
+    return Number.isFinite(instant.getTime()) ? instant : null;
+  }
+  const [year, month, day, hour, minute, second] = wall
+    .slice(1, 7)
+    .map((part) => (part === undefined ? 0 : Number(part)));
+  const ms = wall[7] ? Math.floor(Number(`0.${wall[7]}`) * 1000) : 0;
+  const check = new Date(
+    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, second ?? 0),
+  );
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== (month ?? 1) - 1 ||
+    check.getUTCDate() !== day ||
+    check.getUTCHours() !== hour ||
+    check.getUTCMinutes() !== minute ||
+    check.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+  const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
+  local.year = check.getUTCFullYear();
+  local.month = check.getUTCMonth();
+  local.day = check.getUTCDate();
+  local.hour = check.getUTCHours();
+  local.minute = check.getUTCMinutes();
+  local.second = check.getUTCSeconds();
+  local.ms = 0;
+  // Keep any fraction so a time just after an occurrence does not include it.
+  return new Date(local.getDate().getTime() + ms);
+}
+
+/** The local date and time of `instant` in `timezone`, as zonedDateTime reads it back. */
+export function wallClock(instant: Date, timezone = "UTC"): string {
+  const local = new CronDate(instant, validTimezoneOrUtc(timezone));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${local.year}-${pad(local.month + 1)}-${pad(local.day)}T${pad(local.hour)}:${pad(local.minute)}:${pad(local.second)}`;
 }
 
 function validTimezoneOrUtc(timezone: string): string {

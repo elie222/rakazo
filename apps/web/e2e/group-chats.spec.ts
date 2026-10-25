@@ -88,7 +88,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
     });
   });
   await page.reload();
-  // Anchor ^ so Now/Recent activity rows ("Bot · Draft team, …") do not match.
+  // Anchor ^ so Now/Recent activity rows ("Bot, Draft team, …") do not match.
   const groupAvatar = page
     .locator("aside")
     .first()

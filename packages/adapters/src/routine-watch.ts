@@ -16,6 +16,7 @@ import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  listApprovalRules,
   parseComputerMode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -519,9 +520,9 @@ async function readTool(
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
     readOnly: resolved.tool.readOnly,
-    rules: (await deps.prisma.actionApprovalRule.findMany({
-      where: { spaceId: routine.spaceId, createdByUserId: routine.userId },
-      select: { effect: true, matchKind: true, matchValue: true },
+    rules: (await listApprovalRules(deps.prisma, {
+      userId: routine.userId,
+      spaceId: routine.spaceId,
     })) as ActionApprovalRule[],
   });
   if (refusal) throw new RoutineWatchError(refusal);

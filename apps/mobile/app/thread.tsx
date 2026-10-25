@@ -1813,6 +1813,8 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   }
 
   function followOwnSend() {
+    // Writing in the chat means the user has caught up, so the "New" divider goes.
+    setReadBoundary({ visit: readVisit.current.visit, seq: null });
     if (pinnedAroundRef.current || jumpScrollTarget.current) showLatest();
     performScroll(scrollBehavior.current.onOwnSend());
     publishThreadScrollState(scrollBehavior.current.state());
@@ -1967,6 +1969,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       const targetBotId = botId;
       const targetGroupId = groupId;
       if (readOnly || (!targetBotId && !targetGroupId) || !message.runId) return;
+      setReadBoundary({ visit: readVisit.current.visit, seq: null });
       await rpc("threads/answer", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         runId: message.runId,
@@ -3286,7 +3289,7 @@ function previewMessageText(message: MobileMessage): string {
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
         return [
-          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+          `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`,
         ];
       }
       if (block.kind === "text" && block.text) {
@@ -4124,8 +4127,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         {...actionProps}
         style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
       >
+        <Text style={{ color: tokens.mutedForeground, fontSize: 12, textAlign: "center" }}>
+          {messagingProviderLabel(channelMessage.provider, channelMessage.transport)}
+        </Text>
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
-          {messagingProviderLabel(channelMessage.provider, channelMessage.transport)} ·{" "}
           {channelMessage.fromLabel}: {channelMessage.text}
         </Text>
       </Pressable>
@@ -4229,6 +4234,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               ) : canAnswer && onAnswer ? (
                 <AskActions
                   actions={askBlock.actions}
+                  site={askBlock.site}
+                  approval={isApprovalAskBlock(askBlock)}
                   instructions={askBlock.instructionUpdate?.after}
                   accessibilityActions={actionProps.accessibilityActions}
                   onAccessibilityAction={actionProps.onAccessibilityAction}
@@ -4276,7 +4283,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
         return [
-          `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`,
+          `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`,
         ];
       }
       return block.kind === "text" && block.text ? [block.text] : [];

@@ -24,6 +24,10 @@ const payloadSchemas = {
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
+  "messaging.credential-cleanup": z.object({
+    installationId: z.string().min(1),
+    ref: z.string().min(1),
+  }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
   "push.receipt": z.object({
     userId: z.string().min(1),

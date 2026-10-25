@@ -4,6 +4,7 @@ import { formatSkillRunPrompt } from "@rakazo/core";
 import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { BuiCard } from "../ai/primitives";
 
 type SkillDraftBlock = {
   kind: "skill_draft";
@@ -68,10 +69,7 @@ export function SkillDraftCard({
   const skillName = name || block.name || block.goal.slice(0, 80);
 
   return (
-    <div
-      data-testid="skill-draft-card"
-      className="w-[520px] max-w-full rounded-2xl border border-border bg-card px-5 py-4"
-    >
+    <BuiCard data-testid="skill-draft-card" className="w-[520px] max-w-full px-5 py-4">
       <div className="text-[15px] font-medium text-foreground">
         <Trans>Draft skill</Trans>
       </div>
@@ -152,6 +150,6 @@ export function SkillDraftCard({
           <Trans>Add to routine</Trans>
         </Button>
       </div>
-    </div>
+    </BuiCard>
   );
 }

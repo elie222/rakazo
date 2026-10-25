@@ -195,8 +195,9 @@ button {
   gap: 8px;
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 999px;
-  padding: 7px 14px;
+  min-height: 42px;
+  border-radius: 14px;
+  padding: 0 16px;
   color: #525252;
   font-size: 14px;
   white-space: nowrap;

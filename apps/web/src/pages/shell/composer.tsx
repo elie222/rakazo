@@ -1,7 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
-import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
-import type { ComposerMention, SlashActionId } from "@rakazo/core";
+import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
@@ -20,9 +19,9 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../../components/composer/HoldToTalk";
-import type { DroppedAgent } from "../../lib/agent-drop";
 import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
+import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
 import { newClientId } from "../../lib/client-id";
 import {
@@ -45,7 +44,7 @@ import {
 } from "./composer-mentions";
 import { useComposerLayout } from "./use-composer-layout";
 
-const ATTACHMENT_ACCEPT = [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip"].join(",");
+const ATTACHMENT_ACCEPT = attachmentPickerAccept(navigator.userAgent);
 export const Composer = memo(function Composer({
   artifactTarget,
   activeName,
@@ -111,7 +110,7 @@ export const Composer = memo(function Composer({
   draftKey: string;
   enterToSend: boolean;
   /** When set, a dropped OpenClaw or Hermes folder or backup offers Import or Attach. */
-  onImportAgent?: (agent: DroppedAgent) => void;
+  onImportAgent?: (agent: AgentImportReader) => void;
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
@@ -141,7 +140,7 @@ export const Composer = memo(function Composer({
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
   const [agentDrop, setAgentDrop] = useState<{
-    agent: DroppedAgent;
+    agent: AgentImportReader;
     files: readonly File[];
   } | null>(null);
   useEffect(

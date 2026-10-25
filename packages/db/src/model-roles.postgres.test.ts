@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
@@ -11,36 +8,6 @@ const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
   process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
 
-const migration = readFileSync(
-  join(
-    dirname(fileURLToPath(import.meta.url)),
-    "../prisma/migrations/20261024150000_model_roles/migration.sql",
-  ),
-  "utf8",
-);
-/** The migration's copy of each member's main model, without the table it creates. */
-const backfill = migration
-  .slice(migration.indexOf("INSERT INTO"))
-  .split(/;\s*\n/)
-  .map((statement) => statement.trim())
-  .filter(Boolean);
-
-/** Carries what a rolled-back transaction saw out of it. */
-class Rollback extends Error {
-  constructor(
-    readonly rows: Array<{
-      spaceId: string;
-      role: string;
-      position: number;
-      provider: string;
-      modelId: string;
-    }>,
-    readonly main: unknown,
-  ) {
-    super("rollback");
-  }
-}
-
 describePostgres("model roles (PostgreSQL)", () => {
   const suffix = `${process.pid}-${Date.now()}`;
   const userId = `model-roles-user-${suffix}`;
@@ -49,7 +16,8 @@ describePostgres("model roles (PostgreSQL)", () => {
   const otherSpaceId = `model-roles-other-space-${suffix}`;
   const anthropic = `model-roles-anthropic-${suffix}`;
   const compatible = `model-roles-compatible-${suffix}`;
-  const scope = { userId, spaceId };
+  // A Space's own copy; see the account test below for the member's defaults.
+  const scope = { userId, spaceId, scope: "space" as const };
   let prisma: PrismaClient;
   let close: () => Promise<void>;
 
@@ -59,17 +27,6 @@ describePostgres("model roles (PostgreSQL)", () => {
       orderBy: { position: "asc" },
       select: { position: true, provider: true, modelId: true, thinkingLevel: true },
     });
-  const legacy = async () => ({
-    defaults: await prisma.spaceModelPreference.findMany({
-      where: { userId, spaceId, isDefault: true },
-      select: { credentialId: true, modelId: true, thinkingLevel: true },
-    }),
-    backups: await prisma.spaceBackupModel.findMany({
-      where: { userId, spaceId },
-      orderBy: { position: "asc" },
-      select: { provider: true, modelId: true },
-    }),
-  });
 
   beforeAll(async () => {
     const db = createDb(databaseUrl!);
@@ -116,8 +73,7 @@ describePostgres("model roles (PostgreSQL)", () => {
 
   beforeEach(async () => {
     await prisma.spaceModelRoleChoice.deleteMany({ where: { userId } });
-    await prisma.spaceModelPreference.deleteMany({ where: { userId } });
-    await prisma.spaceBackupModel.deleteMany({ where: { userId } });
+    await prisma.userModelRoleChoice.deleteMany({ where: { userId } });
   });
 
   afterAll(async () => {
@@ -127,82 +83,7 @@ describePostgres("model roles (PostgreSQL)", () => {
     await close();
   });
 
-  it("backfills the main model from the default preference and the backup list", async () => {
-    await prisma.spaceModelPreference.createMany({
-      data: [
-        {
-          spaceId,
-          userId,
-          credentialId: anthropic,
-          modelId: " gpt-5 ",
-          thinkingLevel: "high",
-          isDefault: true,
-        },
-        { spaceId, userId, credentialId: compatible, modelId: "llama", isDefault: false },
-        // Nothing to copy: the previous release ran the provider's catalog default here.
-        {
-          spaceId: otherSpaceId,
-          userId,
-          credentialId: anthropic,
-          modelId: "null",
-          isDefault: true,
-        },
-      ],
-    });
-    await prisma.spaceBackupModel.createMany({
-      data: [
-        { spaceId, userId, position: 0, provider: "openai-compatible", modelId: "llama" },
-        { spaceId, userId, position: 1, provider: "azure", modelId: "gpt-5" },
-        { spaceId, userId, position: 2, provider: "xai", modelId: "grok" },
-        { spaceId: otherSpaceId, userId, position: 0, provider: "xai", modelId: "grok" },
-      ],
-    });
-
-    const copied = await prisma
-      .$transaction(async (tx) => {
-        for (const statement of backfill) await tx.$executeRawUnsafe(statement);
-        const rows = await tx.spaceModelRoleChoice.findMany({
-          where: { userId },
-          orderBy: [{ spaceId: "asc" }, { position: "asc" }],
-          select: { spaceId: true, role: true, position: true, provider: true, modelId: true },
-        });
-        const main = await getModelRole(tx, scope, "main");
-        throw new Rollback(rows, main);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Rollback) return error;
-        throw error;
-      });
-
-    expect(copied.main).toEqual({
-      primary: { provider: "azure", modelId: "gpt-5", thinkingLevel: "high" },
-      backups: [
-        { provider: "openai-compatible", modelId: "llama" },
-        { provider: "xai", modelId: "grok" },
-      ],
-    });
-    // The other Space's default had no usable model, so only its fallback moves, still first.
-    expect(copied.rows).toContainEqual({
-      spaceId: otherSpaceId,
-      role: "main",
-      position: 1,
-      provider: "xai",
-      modelId: "grok",
-    });
-    expect(copied.rows.filter((row) => row.spaceId === otherSpaceId)).toHaveLength(1);
-    // The backfill ran in a rolled-back transaction.
-    expect(await mainRows()).toEqual([]);
-  });
-
-  it("writes the main model only to the role table and leaves the legacy rows frozen", async () => {
-    await prisma.spaceModelPreference.create({
-      data: { userId, spaceId, credentialId: anthropic, modelId: "gpt-5", isDefault: true },
-    });
-    await prisma.spaceBackupModel.create({
-      data: { userId, spaceId, provider: "xai", modelId: "grok", position: 0 },
-    });
-    const before = await legacy();
-
+  it("writes the main model to the role table", async () => {
     await updateModelRole(prisma, scope, "main", {
       primary: { provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },
       backups: [{ provider: "azure-openai-responses", modelId: "gpt-5" }],
@@ -212,7 +93,28 @@ describePostgres("model roles (PostgreSQL)", () => {
       { position: 0, provider: "openai-compatible", modelId: "llama", thinkingLevel: "low" },
       { position: 1, provider: "azure", modelId: "gpt-5", thinkingLevel: null },
     ]);
-    expect(await legacy()).toEqual(before);
+  });
+
+  it("keeps the account's models apart from a Space's own copy", async () => {
+    const account = { userId, spaceId, scope: "account" as const };
+    await updateModelRole(prisma, account, "main", {
+      primary: { provider: "azure", modelId: "gpt-5", thinkingLevel: "high" },
+    });
+    await updateModelRole(prisma, scope, "main", {
+      primary: { provider: "openai-compatible", modelId: "llama" },
+    });
+
+    await expect(getModelRole(prisma, account, "main")).resolves.toEqual({
+      primary: { provider: "azure", modelId: "gpt-5", thinkingLevel: "high" },
+      backups: [],
+    });
+    await expect(
+      getModelRole(prisma, { ...account, spaceId: otherSpaceId }, "main"),
+    ).resolves.toMatchObject({ primary: { modelId: "gpt-5" } });
+    await expect(getModelRole(prisma, scope, "main")).resolves.toMatchObject({
+      primary: { modelId: "llama" },
+    });
+    expect(await mainRows(otherSpaceId)).toEqual([]);
   });
 
   it("keeps a model's effort when the list is reordered", async () => {

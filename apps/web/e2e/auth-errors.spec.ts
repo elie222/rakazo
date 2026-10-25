@@ -18,7 +18,7 @@ test("sign-in shows translated password and callback errors", async ({ page }, t
   await page.goto("/sign-in");
   await page.getByLabel("Email", { exact: true }).fill("user@example.test");
   await page.getByLabel("Password", { exact: true }).fill("password12");
-  await page.getByRole("button", { name: "Continue with email" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
     page
       .getByRole("alert")
@@ -27,7 +27,7 @@ test("sign-in shows translated password and callback errors", async ({ page }, t
   await captureScreenshot(page, testInfo, "sign-in-password-auth-disabled");
 
   await page.goto("/sign-in?error=REGISTRATION_CLOSED");
-  await expect(page.getByRole("button", { name: "Continue with email" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await expect(
     page.getByRole("alert").getByText("Registration is closed", { exact: true }),
   ).toBeVisible();

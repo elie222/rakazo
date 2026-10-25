@@ -7,6 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointComputerWorkspace,
+  deletedTeamBotFolders,
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
   removeDeletedBotWorkspaces,
@@ -75,6 +76,63 @@ describe("provider-neutral computer workspace", () => {
     );
   });
 
+  it("leaves deleted bots' folders and browser profiles out of a Team Computer checkpoint", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision({ botId: "team", homePath: "/ignored" }, context);
+    for (const file of [
+      "bots/gone/notes.txt",
+      `.browser-profiles/${teamBrowserProfileName("gone")}/Cookies`,
+      "bots/gone-too/notes.txt",
+      "bots/kept/notes.txt",
+      `.browser-profiles/${teamBrowserProfileName("kept")}/Cookies`,
+      "shared/bots/gone/plan.txt",
+    ]) {
+      await provider.writeFile(
+        computer,
+        { path: file, content: new TextEncoder().encode(file) },
+        context,
+      );
+    }
+    const deleted = [{ id: "gone" }];
+    const findMany = vi.fn(async () => deleted);
+    // A bot deleted while the export is in flight is left out too.
+    const exportWorkspace = provider.exportWorkspace.bind(provider);
+    vi.spyOn(provider, "exportWorkspace").mockImplementation(async function* (...args) {
+      yield* exportWorkspace(...args);
+      deleted.push({ id: "gone-too" });
+    });
+
+    await checkpointComputerWorkspace(home, provider, "team", computer, context, () =>
+      deletedTeamBotFolders({ botDeletion: { findMany } } as never, {
+        scope: "team",
+        spaceId: "workspace",
+      }),
+    );
+
+    const saved: string[] = [];
+    for await (const file of home.exportHome("team", context)) saved.push(file.path);
+    expect(saved.sort()).toEqual(
+      [
+        `.browser-profiles/${teamBrowserProfileName("kept")}/Cookies`,
+        "bots/kept/notes.txt",
+        "shared/bots/gone/plan.txt",
+      ].sort(),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "workspace" },
+      select: { id: true },
+    });
+    await expect(
+      deletedTeamBotFolders({ botDeletion: { findMany } } as never, {
+        scope: "dedicated",
+        spaceId: "workspace",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("restores a checkpoint into a replacement provider machine", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-store-"));
     roots.push(root);
@@ -116,10 +174,14 @@ describe("Team run checkpoints", () => {
     const { checkpointRunComputerWorkspace } = await import("./computer-workspace.js");
     const exportWorkspace = vi.fn();
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const deps = { sandbox: { exportWorkspace }, home: {}, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox: { exportWorkspace },
+      home: {},
+      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+    };
     const result = await checkpointRunComputerWorkspace(
       deps as never,
-      { id: "team", homeKey: "team", scope: "team" },
+      { id: "team", homeKey: "team", scope: "team", spaceId: "workspace-1" },
       { id: "remote", providerRef: "remote", kind: "e2b", botId: "team" },
       { ...context, botId: "writer", screenLeaseId: "run-a:2" },
     );
@@ -145,11 +207,15 @@ describe("Team run checkpoints", () => {
       await Promise.reject(new Error("export failed"));
       yield { path: "unreachable", content: new Uint8Array() };
     });
-    const deps = { sandbox: { exportWorkspace }, home: {}, prisma: { computer: { updateMany } } };
+    const deps = {
+      sandbox: { exportWorkspace },
+      home: {},
+      prisma: { computer: { updateMany }, botDeletion: { findMany: async () => [] } },
+    };
     await expect(
       checkpointRunComputerWorkspace(
         deps as never,
-        { id: "team", homeKey: "team", scope: "team" },
+        { id: "team", homeKey: "team", scope: "team", spaceId: "workspace-1" },
         { id: "remote", providerRef: "remote", kind: "boat", botId: "team" },
         { ...context, botId: "writer", screenLeaseId: "run-a:2" },
       ),

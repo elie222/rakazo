@@ -276,8 +276,8 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   }
   await preview.getByRole("button", { name: "Not imported", exact: true }).click();
   await expect(preview.getByTestId("agent-import-skipped").getByRole("listitem")).toHaveText([
-    "IDENTITY.md: Emoji · Not used by Rakazo",
-    "TOOLS.md · Not used by Rakazo",
+    /IDENTITY\.md: Emoji\s*Not used by Rakazo/,
+    /TOOLS\.md\s*Not used by Rakazo/,
   ]);
   // IDENTITY.md names and describes the bot; it is not part of its instructions.
   await expect(preview.getByRole("textbox", { name: "Name" })).toHaveValue("Pebble");
@@ -678,11 +678,11 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   const instructions = panel.getByTestId("agent-import-instructions");
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
   await expect(
-    instructions.getByText("Persona · Default from OpenClaw", { exact: true }),
+    instructions.getByText("Persona, Default from OpenClaw", { exact: true }),
   ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await expect(
-    instructions.getByText("Working instructions · Mentions OpenClaw features", { exact: true }),
+    instructions.getByText("Working instructions, Mentions OpenClaw features", { exact: true }),
   ).toBeVisible();
   await instructions.getByRole("button", { name: "AGENTS.md", exact: true }).click();
   await expect(instructions.getByText("Mentions: Session Startup, BOOTSTRAP.md")).toBeVisible();
@@ -701,7 +701,7 @@ test("untouched defaults start unticked, and OpenClaw runtime references are fla
   await panel.getByTestId("agent-import-archive").setInputFiles(hermes);
   await expect(instructions.getByRole("checkbox", { name: "SOUL.md" })).not.toBeChecked();
   await expect(
-    instructions.getByText("Persona · Default from Hermes", { exact: true }),
+    instructions.getByText("Persona, Default from Hermes", { exact: true }),
   ).toBeVisible();
   await expect(instructions.getByRole("checkbox", { name: "AGENTS.md" })).toBeChecked();
   await captureScreenshot(page, testInfo, "agent-import-defaults-hermes");
@@ -921,7 +921,12 @@ test("an agent dropped into a chat is offered for import, never uploaded first",
   await expect(picker.getByRole("option", { name: chief!.name })).toHaveCount(1);
   await destination.getByRole("button", { name: "New bot" }).click();
   await captureScreenshot(page, testInfo, "agent-import-drop-preview");
-  await page.getByRole("button", { name: "Cancel new bot" }).click();
+  // Back leaves the preview, then closes the panel: a drop never came from the New bot dialog.
+  const importPanel = page.getByTestId("agent-import");
+  await importPanel.getByRole("button", { name: "Back", exact: true }).click();
+  await importPanel.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(importPanel).toHaveCount(0);
+  await expect(page.getByTestId("create-bot-dialog")).toHaveCount(0);
 
   // A backup can still be attached as a file, as before.
   const backup = Buffer.from(

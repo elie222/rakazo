@@ -160,7 +160,7 @@ export default function ArtifactDetailScreen() {
       more: t("More"),
       colorScheme,
       actions: versions.map((version) => ({
-        text: `v${version.version} · ${formatActivityRelativeTime(version.createdAt)}`,
+        text: `v${version.version} (${formatActivityRelativeTime(version.createdAt)})`,
         onPress: () => setSelectedVersionId(version.id),
       })),
     });
@@ -235,7 +235,7 @@ export default function ArtifactDetailScreen() {
       <View style={styles.pillRow}>
         <Pressable accessibilityRole="button" onPress={pickVersion} style={styles.pill}>
           <Text style={styles.pillText}>
-            {`v${content.artifact.version} · ${formatActivityRelativeTime(content.artifact.createdAt)}`}
+            {`v${content.artifact.version} (${formatActivityRelativeTime(content.artifact.createdAt)})`}
           </Text>
           <NativeSymbol
             ios="chevron.down"

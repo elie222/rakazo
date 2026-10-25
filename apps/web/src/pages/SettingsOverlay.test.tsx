@@ -108,8 +108,23 @@ vi.mock("./SpaceSettingsPanel", () => ({
     </button>
   ),
 }));
-vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: () => null }));
-vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: () => null }));
+const { scopes, recordScope } = vi.hoisted(() => {
+  const scopes: string[] = [];
+  return {
+    scopes,
+    recordScope:
+      (name: string) =>
+      ({ scope }: { scope: string }) => {
+        scopes.push(`${name}:${scope}`);
+        return null;
+      },
+  };
+});
+vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: recordScope("models") }));
+vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: recordScope("voice") }));
+vi.mock("../components/ApprovalRulesSettings", () => ({
+  ApprovalRulesSettings: recordScope("confirmations"),
+}));
 vi.mock("../components/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -163,7 +178,7 @@ it("names the space a space-scoped section acts on and switches it in place", as
     space: acme,
     spaces,
     onSpaceChange,
-    section: "models",
+    section: "memory",
   });
   try {
     const trigger = container.querySelector<HTMLButtonElement>('[data-testid="settings-space"]');
@@ -195,10 +210,14 @@ it("opens the Space section for the space it acts on, with the space picker", as
     const nav = [...container.querySelectorAll('[data-testid^="settings-nav-"]')].map((item) =>
       item.getAttribute("data-testid"),
     );
-    expect(nav.slice(0, 3)).toEqual([
+    // The account's sections come first; the per-space ones sit together under the picker.
+    expect(nav.slice(0, 6)).toEqual([
       "settings-nav-general",
-      "settings-nav-space",
       "settings-nav-models",
+      "settings-nav-voice",
+      "settings-nav-confirmations",
+      "settings-nav-space",
+      "settings-nav-memory",
     ]);
     expect(container.querySelector('[data-testid="settings-space"]')?.textContent).toBe("Acme");
     const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
@@ -244,7 +263,7 @@ it("shows no space label or switcher when there is only one space", async () => 
     space: acme,
     spaces: [acme],
     onSpaceChange: vi.fn(),
-    section: "models",
+    section: "space",
   });
   try {
     expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
@@ -262,6 +281,23 @@ it("shows no space picker on sections that are not per space", async () => {
   });
   try {
     expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
+  } finally {
+    await cleanup();
+  }
+});
+
+it("edits the account's models, voice, and confirmations with no space picker", async () => {
+  scopes.length = 0;
+  const props = { space: acme, spaces, onSpaceChange: vi.fn() };
+  const { container, rerender, cleanup } = await render({ ...props, section: "models" });
+  try {
+    for (const section of ["models", "voice", "confirmations"] as const) {
+      await rerender({ ...props, section });
+      expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
+    }
+    expect(new Set(scopes)).toEqual(
+      new Set(["models:account", "voice:account", "confirmations:account"]),
+    );
   } finally {
     await cleanup();
   }

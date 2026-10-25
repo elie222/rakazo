@@ -51,7 +51,16 @@ export function connectionDisplayName(
   )
     return provider;
   if (label.toLowerCase().startsWith(providerName.toLowerCase())) return label;
-  return `${provider} · ${label}`;
+  return `${provider} (${label})`;
+}
+
+/**
+ * "Model (OpenRouter)", folding a named connection in so it reads "Model (OpenRouter, Work)"
+ * instead of nesting brackets.
+ */
+export function withConnectionName(label: string, connection: string): string {
+  const named = connection.match(/^(.+) \((.+)\)$/);
+  return `${label} (${named ? `${named[1]}, ${named[2]}` : connection})`;
 }
 
 /**

@@ -147,6 +147,7 @@ async function runWithModel(
         return { count: 1 };
       }),
     },
+    chatGroup: { findMany: vi.fn(async () => []) },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
@@ -186,18 +187,18 @@ async function runWithModel(
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })) },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
-    spaceModelPreference: {
+    userModelPreference: {
       findFirst: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
         async () => null,
       ),
     },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
-    spaceModelRoleChoice: {
+    userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) => {
         if (where.role !== "main") return [];
         // The run reads its main model first and its fallbacks just before the model call.
-        if (backupReadFails && prisma.spaceModelRoleChoice.findMany.mock.calls.length > 1)
+        if (backupReadFails && prisma.userModelRoleChoice.findMany.mock.calls.length > 1)
           throw new Error("Backup list unavailable");
         return switchModel ? [{ ...switchModel, position: 1, thinkingLevel: null }] : [];
       }),
@@ -215,8 +216,9 @@ async function runWithModel(
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
-    actionApprovalRule: { findMany: vi.fn(async () => []) },
-    actionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
+    spaceSettingOverride: { findUnique: async () => null },
+    userActionApprovalRule: { findMany: vi.fn(async () => []) },
+    userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     artifact: {
       findMany: vi.fn(async () => [
         { id: "art-1", storageKey: "shot.png", size: 4, mimeType: "image/png", name: "shot.png" },
@@ -326,15 +328,15 @@ describe("recent turn images follow model vision", () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, true);
     expect(request.fallbackModels).toEqual([]);
     expect(request.resolveFallbackModel).toBeUndefined();
-    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "user-1", spaceId: "space-1", role: "main" } }),
+    expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1", role: "main" } }),
     );
   });
 
   it("does not read or configure backups for scripted runs", async () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, true);
     // Only the main model itself is read.
-    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledTimes(1);
     expect(request.fallbackModels).toEqual([]);
     expect(request.resolveFallbackModel).toBeUndefined();
   });
@@ -345,9 +347,8 @@ describe("recent turn images follow model vision", () => {
     expect(request.model.apiKey).toBe("fake-deployment-key");
     const resolve = request.resolveFallbackModel;
     if (!resolve) throw new Error("Backup resolver is missing");
-    prisma.spaceModelPreference.findFirst.mockResolvedValue({
+    prisma.userModelPreference.findFirst.mockResolvedValue({
       modelId: backup.modelId,
-      isDefault: false,
       thinkingLevel: null,
       credential: {
         id: "backup-credential",
@@ -364,10 +365,9 @@ describe("recent turn images follow model vision", () => {
       await expect(resolve(backup.provider, backup.modelId)).rejects.toThrow(
         "Backup model credential is no longer available",
       );
-      expect(prisma.spaceModelPreference.findFirst).toHaveBeenCalledWith(
+      expect(prisma.userModelPreference.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            spaceId: "space-1",
             userId: "user-1",
             modelId: backup.modelId,
             credential: { provider: backup.provider },
@@ -404,9 +404,9 @@ describe("recent turn images follow model vision", () => {
       secretId: "work-secret",
       createdAt: new Date(0),
       updatedAt: new Date(0),
-      preferences: [],
+      userPreferences: [],
     } as never);
-    prisma.spaceModelPreference.findFirst.mockClear();
+    prisma.userModelPreference.findFirst.mockClear();
     // The same model without its connection is not a configured backup.
     await expect(resolve(backup.provider, backup.modelId)).rejects.toThrow(
       "Backup model is not selected",
@@ -419,7 +419,7 @@ describe("recent turn images follow model vision", () => {
         where: { id: "work-credential", userId: "user-1", provider: backup.provider },
       }),
     );
-    expect(prisma.spaceModelPreference.findFirst).not.toHaveBeenCalled();
+    expect(prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
     expect(prisma.secret.findFirst).toHaveBeenCalledWith({
       where: { id: "work-secret", userId: "user-1", spaceId: null },
     });

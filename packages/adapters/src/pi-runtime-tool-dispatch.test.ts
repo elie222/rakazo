@@ -9,6 +9,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "two-boundaries"
     | "silent-continuation"
     | "subagent-limit"
+    | "two-subagents"
     | "parent-limit"
     | "parent-parallel"
     | "ask-pause"
@@ -311,6 +312,16 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       }
 
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
+      if (delegation && fakeAgentState.mode === "two-subagents") {
+        await Promise.all(
+          ["a", "b"].map((name) => {
+            const args = { name, task: "keep calling shell" };
+            this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+            return delegation.execute(`delegate-${name}`, args);
+          }),
+        );
+        return;
+      }
       if (delegation) {
         const args = { name: "loop", task: "keep calling shell" };
         this.emit({
@@ -1781,6 +1792,54 @@ describe("Pi connector tool dispatch", () => {
           "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
       }),
     );
+  });
+
+  it("caps a parent and two concurrent subagents at one total, then gives a later run a fresh budget", async () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "50";
+    fakeAgentState.mode = "two-subagents";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const runtime = new PiAgentRuntime();
+    const request = {
+      botId: "b",
+      threadId: "t",
+      runId: "tree-limited",
+      prompt: "delegate twice",
+      instructions: "Use run_subagent.",
+      history: [],
+      tools: [
+        {
+          name: "run_subagent",
+          description: "Delegate work",
+          inputSchema: { type: "object", properties: {} },
+        },
+        shellTool,
+      ],
+      model: { provider: "test", id: "dispatch-test-model" },
+      executeTool,
+    };
+    const context = {
+      operationId: "2j",
+      traceId: "2j",
+      spaceId: "w",
+      userId: "u",
+      signal: new AbortController().signal,
+    };
+    const stopText =
+      "I stopped after reaching the limit of 50 tool calls in this turn. Send another message to continue.";
+
+    const first: unknown[] = [];
+    for await (const event of runtime.run(request, context)) first.push(event);
+    // 2 run_subagent calls + shell calls from both children never exceed the cap in total.
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(first.at(-1)).toEqual({ type: "done", text: stopText });
+    expect(first.filter((e) => (e as { status?: string }).status === "failed")).toHaveLength(0);
+
+    // The budget was released: the same run id starts at zero again.
+    executeTool.mockClear();
+    const second: unknown[] = [];
+    for await (const event of runtime.run(request, context)) second.push(event);
+    expect(executeTool).toHaveBeenCalledTimes(48);
+    expect(second.at(-1)).toEqual({ type: "done", text: stopText });
   });
 
   it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {

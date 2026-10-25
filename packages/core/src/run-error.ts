@@ -156,11 +156,12 @@ export type RunErrorKind =
   | "output";
 
 /**
- * Fixed failure strings from the model runtime's stop-reason mapping and from provider APIs
- * that reject a model's malformed tool call or empty reply. Never matched against model prose.
+ * Fixed failure strings from the model runtime's stop-reason mapping (including a stop reason
+ * it does not know yet, such as Gemini's MALFORMED_RESPONSE) and from provider APIs that reject
+ * a model's malformed tool call or empty reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|Tool call validation failed\b)/;
 
 /** The provider says the selected model is gone or cannot serve this kind of request. */
 const MODEL_UNAVAILABLE =

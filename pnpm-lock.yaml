@@ -166,6 +166,9 @@ importers:
       '@sentry/react-native':
         specifier: 7.11.0
         version: 7.11.0(expo@57.0.31)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      '@tanstack/react-query':
+        specifier: 5.104.5
+        version: 5.104.5(@types/react@19.2.18)(react@19.2.3)
       expo:
         specifier: 57.0.31
         version: 57.0.31(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.17)(expo-router@57.0.29)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-webview@13.16.1(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
@@ -284,6 +287,9 @@ importers:
       '@react-native/metro-config':
         specifier: 0.86.3
         version: 0.86.3(@babel/core@7.29.7)
+      '@sentry/cli':
+        specifier: 2.58.4
+        version: 2.58.4
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3

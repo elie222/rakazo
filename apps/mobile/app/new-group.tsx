@@ -84,7 +84,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen
         options={{
-          title: t("New group"),
+          title: t("New group chat"),
           headerTransparent: true,
           headerStyle: { backgroundColor: "transparent" },
           headerBackVisible: false,

@@ -46,6 +46,14 @@ describe("messagingPlatformsFromEnv", () => {
     expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
   });
 
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
+  });
+
   it("requires all four sendblue values", () => {
     for (const key of [
       "sendblueApiKeyId",

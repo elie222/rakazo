@@ -21,3 +21,17 @@ export function messagingProviderLabel(provider: string, transport?: string): st
   }
   return messagingProviderName(provider);
 }
+
+/** One connection option per app; workspace authorization replaces Slack's code setup. */
+export function messagingConnectOptions(
+  providers: readonly string[],
+  slackInstallAvailable: boolean,
+) {
+  const available = new Set(providers);
+  if (slackInstallAvailable) available.add("slack");
+  return [...available].map((provider) => ({
+    provider,
+    method:
+      provider === "slack" && slackInstallAvailable ? ("install" as const) : ("link" as const),
+  }));
+}

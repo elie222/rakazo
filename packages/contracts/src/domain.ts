@@ -20,6 +20,7 @@ import {
 import { ModelHeadersSchema } from "./model-headers.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
+import { SettingsScopeSchema } from "./settings-scope.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
@@ -738,17 +739,22 @@ export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
 
 export const ActionApprovalRuleSchema = z.object({
   id: Id,
-  effect: z.enum(["always_allow", "require_approval"]),
+  effect: z.enum(["always_allow", "require_approval", "deny"]),
   matchKind: z.enum(["tool", "connector", "category", "site"]),
   matchValue: z.string(),
   createdAt: z.string(),
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+/** How much a space asks before acting; see VISION.md. */
+export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
+export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
+
 export const ActionAutoReviewSettingsSchema = z.object({
+  mode: ApprovalModeSchema,
+  /** The stored form of `mode`, kept for clients that predate it. */
   enabled: z.boolean(),
   checkerAvailable: z.boolean(),
-  /** Run every action that would ask, except the ones that always need a person. */
   skipApprovals: z.boolean(),
 });
 export type ActionAutoReviewSettings = z.infer<typeof ActionAutoReviewSettingsSchema>;
@@ -1037,10 +1043,27 @@ export const MessagingLinkedIdentitySchema = z.object({
 });
 export type MessagingLinkedIdentity = z.infer<typeof MessagingLinkedIdentitySchema>;
 
+export const MessagingInstallationSummarySchema = z.object({
+  id: Id,
+  provider: z.string(),
+  workspaceName: z.string(),
+  botId: Id,
+});
+export type MessagingInstallationSummary = z.infer<typeof MessagingInstallationSummarySchema>;
+export const MessagingInstallationsStatusSchema = z.object({
+  available: z.boolean(),
+  /** A workspace in this space accepts personal links, including for non-owner members. */
+  personalLinkAvailable: z.boolean().optional(),
+  installations: z.array(MessagingInstallationSummarySchema),
+});
+export type MessagingInstallationsStatus = z.infer<typeof MessagingInstallationsStatusSchema>;
+
 export const MessagingStatusSchema = z.object({
   enabled: z.boolean(),
   /** Messaging platforms mounted on this deployment (sendblue, slack, …). */
   providers: z.array(z.string()),
+  /** Where to send a link code, by provider, for platforms reached through one line. */
+  addresses: z.record(z.string(), z.string()).optional(),
   /** True when unknown senders auto-provision their own accounts. */
   openSignup: z.boolean(),
   /** The caller's linked chat apps, one entry per (provider, address). */
@@ -1273,8 +1296,10 @@ export const ModelConnectInputSchema = z
     modelId: z.string().optional(),
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
-    /** False keeps the space's current default model; omitted means true. */
+    /** False keeps the current main model; omitted means true. */
     makeDefault: z.boolean().optional(),
+    /** Where makeDefault sets the main model; omitted means whichever applies in the Space. */
+    scope: SettingsScopeSchema.optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),

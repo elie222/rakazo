@@ -932,6 +932,8 @@ describe("ChatSdkMessagingSurface shape", () => {
     ]);
     expect(surface.describe().capabilities).toEqual({ providers: ["mock"] });
     expect(providerOfThreadId("mock:C1:9")).toBe("mock");
+    expect(providerOfThreadId("slack~installation-a:C1:9")).toBe("slack");
+    expect(providerOfThreadId("telegram-work:42")).toBe("telegram-work");
   });
 
   it("retries initialize after a failure and stops polling on shutdown", async () => {

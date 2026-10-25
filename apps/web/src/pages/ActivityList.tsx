@@ -329,7 +329,7 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
 
 function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
   const { t } = useLingui();
-  const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
+  const title = run.groupName ? `${run.botName}, ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
   const tone = statusTone(run.status, run.updatedAt);
@@ -347,7 +347,12 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{title}</span>
+          <span className="flex min-w-0 gap-2 text-sm font-medium">
+            <span className="truncate text-foreground">{run.botName}</span>
+            {run.groupName ? (
+              <span className="truncate text-muted-foreground">{run.groupName}</span>
+            ) : null}
+          </span>
           <span className="shrink-0 text-xs text-muted-foreground/80">
             {formatRelativeTime(run.updatedAt)}
           </span>

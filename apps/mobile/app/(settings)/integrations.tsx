@@ -1022,8 +1022,9 @@ export default function Integrations() {
                   <View key={source.id} style={styles.row}>
                     <View style={styles.grow}>
                       <Text style={styles.title}>{source.name}</Text>
+                      <Text style={styles.secondary}>{source.kind.toUpperCase()}</Text>
                       <Text numberOfLines={1} style={styles.secondary}>
-                        {source.kind.toUpperCase()} · {source.source}
+                        {source.source}
                       </Text>
                     </View>
                     <NativeActionButton

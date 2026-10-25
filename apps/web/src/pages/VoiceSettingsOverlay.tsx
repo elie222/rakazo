@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
+import type {
+  SettingsScope,
+  VoiceCatalogEntry,
+  VoiceCredential,
+  VoiceInfo,
+  VoiceStatus,
+} from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -30,26 +36,34 @@ export function VoiceSettingsOverlay({
   onClose,
   embedded = false,
   onBusyChange,
+  scope,
 }: {
   onClose: () => void;
-  /** Render panel body only for the shared Settings shell. */
+  /** Render the content only, inside the shared Settings shell's scroller. */
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  /**
+   * The account's voice, or the bound Space's own when it overrides it. Connections are
+   * account-wide, so a Space only picks among them and connects missing ones.
+   */
+  scope: SettingsScope;
 }) {
   const rpc = useSpaceRpc();
   const spaceId = useBoundSpaceId();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
-  // A revisit opens with what this space showed last time and refreshes it in the background.
+  const scoped = { input: { scope } };
+  // A revisit opens with what this scope showed last time and refreshes it in the background.
   const [cached] = useState(() => {
     const catalog = queryClient.getQueryData(queries.voice.catalog.queryKey());
-    const credentials = queryClient.getQueryData(queries.voice.credentials.queryKey());
-    const status = queryClient.getQueryData(queries.voice.status.queryKey());
+    const credentials = queryClient.getQueryData(queries.voice.credentials.queryKey(scoped));
+    const status = queryClient.getQueryData(queries.voice.status.queryKey(scoped));
     if (!catalog || !credentials || !status) return null;
     const provider = selectedProvider(catalog, [status.provider]);
     const credential = credentials.find((entry) => entry.provider === provider);
     const voices = credential
-      ? (queryClient.getQueryData(queries.voice.voices.queryKey({ input: { provider } })) ?? [])
+      ? (queryClient.getQueryData(queries.voice.voices.queryKey({ input: { provider, scope } })) ??
+        [])
       : [];
     return { catalog, credentials, status, provider, credential, voices };
   });
@@ -129,7 +143,10 @@ export function VoiceSettingsOverlay({
     if (!cred) return Promise.resolve();
     return queryClient
       .fetchQuery(
-        queries.voice.voices.queryOptions({ input: { provider: nextProvider }, staleTime: 0 }),
+        queries.voice.voices.queryOptions({
+          input: { provider: nextProvider, scope },
+          staleTime: 0,
+        }),
       )
       .then(
         (listed) => {
@@ -147,8 +164,8 @@ export function VoiceSettingsOverlay({
   async function refresh(nextProvider?: string, { keepForm = false, reuse = false } = {}) {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
       fetchFresh(queryClient, queries.voice.catalog.queryOptions(), { reuse }),
-      fetchFresh(queryClient, queries.voice.credentials.queryOptions(), { reuse }),
-      fetchFresh(queryClient, queries.voice.status.queryOptions(), { reuse }),
+      fetchFresh(queryClient, queries.voice.credentials.queryOptions(scoped), { reuse }),
+      fetchFresh(queryClient, queries.voice.status.queryOptions(scoped), { reuse }),
     ]);
     const current = providerRef.current;
     const selected = selectedProvider(nextCatalog, [nextProvider, current, nextStatus.provider]);
@@ -184,6 +201,8 @@ export function VoiceSettingsOverlay({
   );
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
+  // Connections are managed from the account; a Space can still connect one it lacks.
+  const managesConnection = scope === "account" || !credential;
   const canConnect = selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8;
 
   async function connectKey() {
@@ -193,6 +212,7 @@ export function VoiceSettingsOverlay({
     markPending("connect");
     try {
       await rpc.voice.connect({
+        scope,
         provider: selected.id,
         apiKey: apiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
@@ -239,7 +259,7 @@ export function VoiceSettingsOverlay({
     markPending("voice");
     setError(null);
     try {
-      await rpc.voice.setVoice({ voiceId: nextVoiceId, provider: selected?.id });
+      await rpc.voice.setVoice({ scope, voiceId: nextVoiceId, provider: selected?.id });
       await refresh(selected?.id);
     } catch (err) {
       setError(errorText(err, t`Could not save that voice`));
@@ -257,12 +277,16 @@ export function VoiceSettingsOverlay({
     setError(null);
     markPending("voice");
     try {
-      const saved = await rpc.voice.setSpeechModel({ provider: selected.id, speechModel: next });
+      const saved = await rpc.voice.setSpeechModel({
+        scope,
+        provider: selected.id,
+        speechModel: next,
+      });
       setSpeechModel(saved.speechModel);
       const update = (current: VoiceCredential[]) =>
         current.map((entry) => (entry.id === saved.id ? saved : entry));
       setCredentials(update);
-      queryClient.setQueryData(queries.voice.credentials.queryKey(), (current) =>
+      queryClient.setQueryData(queries.voice.credentials.queryKey(scoped), (current) =>
         current ? update(current) : current,
       );
     } catch (err) {
@@ -279,7 +303,10 @@ export function VoiceSettingsOverlay({
     markPending("test");
     try {
       const { speaker } = await importChunk(() => import("../lib/tts.js"));
-      await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, { spaceId });
+      await speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
+        spaceId,
+        scope,
+      });
       if (speaker.state.error) {
         setError(speaker.state.error);
         return;
@@ -292,69 +319,55 @@ export function VoiceSettingsOverlay({
     }
   }
 
-  const body = (
+  const content = (
     <>
-      {!embedded ? (
-        <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
-          <div>
-            <DialogTitle className="text-heading2 font-medium text-foreground">
-              <Trans>Voice</Trans>
-            </DialogTitle>
-          </div>
-          <DialogClose
-            aria-label={t`Close voice settings`}
-            disabled={busy}
-            render={<Button variant="ghost" size="icon-sm" />}
-          >
-            <XIcon />
-          </DialogClose>
-        </div>
+      {loading && !catalog.length ? (
+        <p className="text-sm text-muted-foreground">
+          <Spinner aria-label={t`Loading voice providers…`} />
+        </p>
       ) : null}
-
-      <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-        <div className="max-w-xl">
-          {loading && !catalog.length ? (
-            <p className="text-sm text-muted-foreground">
-              <Spinner aria-label={t`Loading voice providers…`} />
-            </p>
-          ) : null}
-          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
-          {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
-          {catalog.length ? (
-            <Field>
-              <FieldLabel htmlFor={providerSelectId}>
-                <Trans>Provider</Trans>
-              </FieldLabel>
-              <NativeSelect
-                id={providerSelectId}
-                className="w-full"
-                value={provider}
-                disabled={busy}
-                onChange={(event) => chooseProvider(event.target.value)}
-              >
-                {catalog.map((entry) => {
-                  const connected = credentials.some((cred) => cred.provider === entry.id);
-                  return (
-                    <NativeSelectOption key={entry.id} value={entry.id}>
-                      {entry.name}
-                      {entry.transcribe ? "" : ` · ${t`Speak only`}`}
-                      {connected ? ` · ${t`Connected`}` : ""}
-                    </NativeSelectOption>
-                  );
-                })}
-              </NativeSelect>
-            </Field>
-          ) : null}
-          {hiddenSelfHosted ? (
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void disconnectProvider(OPENAI_COMPATIBLE_PROVIDER_ID)}
-            >
-              <Trans>Disconnect Self-hosted</Trans>
-            </Button>
-          ) : null}
-          {selected ? (
+      {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+      {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
+      {catalog.length ? (
+        <Field>
+          <FieldLabel htmlFor={providerSelectId}>
+            <Trans>Provider</Trans>
+          </FieldLabel>
+          <NativeSelect
+            id={providerSelectId}
+            className="w-full"
+            value={provider}
+            disabled={busy}
+            onChange={(event) => chooseProvider(event.target.value)}
+          >
+            {catalog.map((entry) => {
+              const connected = credentials.some((cred) => cred.provider === entry.id);
+              const notes = [
+                ...(entry.transcribe ? [] : [t`Speak only`]),
+                ...(connected ? [t`Connected`] : []),
+              ];
+              return (
+                <NativeSelectOption key={entry.id} value={entry.id}>
+                  {entry.name}
+                  {notes.length ? ` (${notes.join(", ")})` : ""}
+                </NativeSelectOption>
+              );
+            })}
+          </NativeSelect>
+        </Field>
+      ) : null}
+      {hiddenSelfHosted && scope === "account" ? (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void disconnectProvider(OPENAI_COMPATIBLE_PROVIDER_ID)}
+        >
+          <Trans>Disconnect Self-hosted</Trans>
+        </Button>
+      ) : null}
+      {selected ? (
+        <>
+          {managesConnection ? (
             <>
               {selfHosted ? (
                 <Field className="mt-5">
@@ -464,76 +477,76 @@ export function VoiceSettingsOverlay({
                   )}
                 </Button>
               ) : null}
-
-              {credential ? (
-                <>
-                  <Field className="mt-6">
-                    <FieldLabel htmlFor={voiceSelectId}>
-                      <Trans>Voice</Trans>
-                    </FieldLabel>
-                    <NativeSelect
-                      id={voiceSelectId}
-                      className="w-full"
-                      value={voiceId}
-                      disabled={busy}
-                      onChange={(event) => void chooseVoice(event.target.value)}
-                    >
-                      {voiceOptions.map((voice) => (
-                        <NativeSelectOption key={voice.id} value={voice.id}>
-                          {voice.label}
-                          {voice.description ? ` · ${voice.description}` : ""}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  {selected.id === "fish-audio" ? (
-                    <Field className="mt-6">
-                      <FieldLabel htmlFor={speechModelId}>
-                        <Trans>Speech model</Trans>
-                      </FieldLabel>
-                      <Input
-                        id={speechModelId}
-                        value={speechModel}
-                        maxLength={64}
-                        autoComplete="off"
-                        spellCheck={false}
-                        disabled={busy}
-                        placeholder={t`Optional`}
-                        onChange={(event) => {
-                          edited.current.add("speechModel");
-                          setSpeechModel(event.target.value);
-                        }}
-                        onBlur={() => void saveSpeechModel()}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter") return;
-                          event.preventDefault();
-                          event.currentTarget.blur();
-                        }}
-                      />
-                    </Field>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="mt-4"
-                    disabled={busy || !status?.ready}
-                    onClick={() => void testVoice()}
-                  >
-                    {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
-                  </Button>
-                </>
-              ) : null}
             </>
           ) : null}
-        </div>
-      </div>
+
+          {credential ? (
+            <>
+              <Field className="mt-6">
+                <FieldLabel htmlFor={voiceSelectId}>
+                  <Trans>Voice</Trans>
+                </FieldLabel>
+                <NativeSelect
+                  id={voiceSelectId}
+                  className="w-full"
+                  value={voiceId}
+                  disabled={busy}
+                  onChange={(event) => void chooseVoice(event.target.value)}
+                >
+                  {voiceOptions.map((voice) => (
+                    <NativeSelectOption key={voice.id} value={voice.id}>
+                      {voice.label}
+                      {voice.description ? ` (${voice.description})` : ""}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+              {selected.id === "fish-audio" ? (
+                <Field className="mt-6">
+                  <FieldLabel htmlFor={speechModelId}>
+                    <Trans>Speech model</Trans>
+                  </FieldLabel>
+                  <Input
+                    id={speechModelId}
+                    value={speechModel}
+                    maxLength={64}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={busy}
+                    placeholder={t`Optional`}
+                    onChange={(event) => {
+                      edited.current.add("speechModel");
+                      setSpeechModel(event.target.value);
+                    }}
+                    onBlur={() => void saveSpeechModel()}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }}
+                  />
+                </Field>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-4"
+                disabled={busy || !status?.ready}
+                onClick={() => void testVoice()}
+              >
+                {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
+              </Button>
+            </>
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 
   if (embedded) {
     return (
-      <div data-testid="voice-settings" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {body}
+      <div data-testid="voice-settings" className="max-w-xl">
+        {content}
       </div>
     );
   }
@@ -556,7 +569,21 @@ export function VoiceSettingsOverlay({
         showCloseButton={false}
         className="flex h-[min(680px,calc(100%-2rem))] w-[920px] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:h-[min(680px,calc(100%-5rem))] sm:max-w-[calc(100%-5rem)]"
       >
-        {body}
+        <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
+          <DialogTitle className="text-heading2 font-medium text-foreground">
+            <Trans>Voice</Trans>
+          </DialogTitle>
+          <DialogClose
+            aria-label={t`Close voice settings`}
+            disabled={busy}
+            render={<Button variant="ghost" size="icon-sm" />}
+          >
+            <XIcon />
+          </DialogClose>
+        </div>
+        <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+          <div className="max-w-xl">{content}</div>
+        </div>
       </DialogContent>
     </Dialog>
   );

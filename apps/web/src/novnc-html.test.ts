@@ -54,10 +54,19 @@ describe("noVNC storage shim gate", () => {
 
   it("puts the shim before the first script", () => {
     const headed = injectNovncStorageShim("<html><head><title>x</title>");
-    expect(headed).toMatch(/^<html><head><script>/);
+    expect(headed).toMatch(/^<html><head><style>[^<]*<\/style><script>/);
     expect(headed.indexOf("localStorage")).toBeLessThan(headed.indexOf("<title>"));
     const bare = injectNovncStorageShim('<!doctype html><script src="app.js"></script>');
     expect(bare.indexOf("localStorage")).toBeLessThan(bare.indexOf('src="app.js"'));
+  });
+
+  it("hides noVNC's status bar, and its side panel while the screen is view only", () => {
+    const view = injectNovncStorageShim("<head>", { viewOnly: true });
+    const control = injectNovncStorageShim("<head>");
+    expect(view).toContain("#noVNC_status{display:none!important}");
+    expect(view).toContain("#noVNC_control_bar_anchor{display:none!important}");
+    expect(control).toContain("#noVNC_status{display:none!important}");
+    expect(control).not.toContain("noVNC_control_bar_anchor");
   });
 
   function runShim() {

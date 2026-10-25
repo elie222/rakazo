@@ -428,8 +428,11 @@ describeIntegration("agent import", () => {
     expect(await db.mcpServer.count({ where: owner })).toBe(0);
     expect(await db.routine.count({ where: owner })).toBe(0);
 
+    // The space follows the account's models, so the main model is the account's.
     const mainModel = () =>
-      db.spaceModelRoleChoice.findMany({ where: { ...owner, role: "main", position: 0 } });
+      db.userModelRoleChoice.findMany({
+        where: { userId: owner.userId, role: "main", position: 0 },
+      });
     expect((await mainModel()).map((row) => row.credentialId)).toEqual([existing.id]);
 
     const response = await raw(app, cookie, "bots/importCreate", {

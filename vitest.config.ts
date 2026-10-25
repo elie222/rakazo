@@ -1,9 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { markdownLinguiTestPlugins } from "./apps/web/lingui-test-plugin.ts";
 
 export default defineConfig({
-  plugins: markdownLinguiTestPlugins(),
   resolve: {
     alias: [
       {

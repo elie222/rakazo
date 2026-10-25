@@ -68,8 +68,13 @@ export function rewrittenNovncHeaders(headers: IncomingHttpHeaders): IncomingHtt
  * soon as it runs and then follows noVNC's connection classes (which Rakazo's own embed page
  * sets as well) and its status bar.
  */
-export function injectNovncStorageShim(html: string) {
-  const shim = `<script>
+export function injectNovncStorageShim(html: string, { viewOnly = false } = {}) {
+  // The app shows the screen's state itself, and noVNC's status bar names the provider's host.
+  // Its side panel only has controls to offer while the user has control.
+  const chrome = `<style>#noVNC_status{display:none!important}${
+    viewOnly ? "#noVNC_control_bar_anchor{display:none!important}" : ""
+  }</style>`;
+  const shim = `${chrome}<script>
 (() => {
   const memoryStorage = () => {
     const items = new Map();

@@ -23,14 +23,13 @@ import {
   OPENCLAW_TITLE,
   OPENCLAW_UPDATED,
 } from "../guide";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { githubStarsLabel } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
 import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import { vsCard } from "../vs-points";
 
-const stars = await fetchGithubStars();
-const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const starsLabel = await githubStarsLabel();
 const structuredData = faqPageStructuredData(OPENCLAW_FAQS);
 const card = vsCard("openclaw-alternative");
 ---

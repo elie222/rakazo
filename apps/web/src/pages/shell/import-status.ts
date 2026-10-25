@@ -39,7 +39,7 @@ export function useImportStatusText() {
       case "ready":
         return t`Ready`;
       case "needs_setup":
-        return value.needs.map(need).join(" · ");
+        return value.needs.map(need).join(", ");
       case "needs_review":
         return t`Contains code to run`;
       case "unsupported":
