@@ -15,6 +15,24 @@ test.afterEach(async ({ page }) => {
 test("messaging settings show linked chat apps, channels, connections, and team conversations", async ({
   page,
 }, testInfo) => {
+  await page.route("**/rpc/messaging/installations/list", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: {
+          available: true,
+          installations: [
+            {
+              id: "install-test",
+              provider: "slack",
+              workspaceName: "Example workspace",
+              botId: "bot-1",
+            },
+          ],
+        },
+      }),
+    }),
+  );
   await page.route("**/rpc/messaging/status", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -22,6 +40,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
         json: {
           enabled: true,
           providers: ["sendblue", "slack", "whatsapp", "telegram", "telegram-work", "lark"],
+          addresses: { sendblue: "+15550001111" },
           openSignup: false,
           identities: [
             {
@@ -160,11 +179,11 @@ test("messaging settings show linked chat apps, channels, connections, and team 
 
   const messagingSettings = page.getByTestId("messaging-settings");
   await expect(messagingSettings).toBeVisible();
-  await expect(
-    messagingSettings.getByRole("heading", { name: "Team conversations" }),
-  ).toBeVisible();
+  await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
+  await expect(messagingSettings.getByText("Example workspace", { exact: false })).toBeVisible();
+  await captureScreenshot(page, testInfo, "messaging-slack-workspace");
+  await expect(messagingSettings.getByRole("heading", { name: "Conversations" })).toBeVisible();
   await expect(messagingSettings.getByText("#launch")).toBeVisible();
-  await expect(messagingSettings.getByText("Slack", { exact: true })).toBeVisible();
   await messagingSettings.getByRole("button", { name: "Settings", exact: true }).click();
   const conversationSettings = page.getByTestId("external-conversation-settings");
   await expect(conversationSettings).toBeVisible();
@@ -183,26 +202,97 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await settings.getByRole("button", { name: "관리", exact: true }).click();
 
   await expect(page.getByTestId("messaging-settings")).toBeVisible();
-  await expect(
-    page.getByText("iMessage · Slack · WhatsApp · Telegram · Telegram (work) · Feishu"),
-  ).toBeVisible();
-  await expect(page.getByText("iMessage · +15551230001")).toBeVisible();
-  await expect(page.getByText("→ Chief")).toBeVisible();
-  await expect(page.getByText("Telegram (work) · 424242")).toBeVisible();
-  await expect(page.getByText("→ Lead")).toBeVisible();
-  await expect(page.getByRole("button", { name: "연결 해제" })).toHaveCount(2);
+  await expect(page.getByText("+15551230001, Chief")).toBeVisible();
+  await expect(page.getByText("424242, Lead")).toBeVisible();
   await expect(page.getByText("Family")).toBeVisible();
   await expect(page.getByText("Dana's Assistant")).toBeVisible();
   await expect(page.getByRole("button", { name: "승인" })).toHaveCount(2);
 
-  // Linking flow: pick a bot, request a code, read it back.
-  await page.getByLabel("연결할 Bot").selectOption({ index: 1 });
+  // Linking flow: pick a chat app, request a code, read it back.
   await page.getByRole("button", { name: "채팅 앱 연결" }).click();
-  await expect(page.getByTestId("messaging-link-code")).toContainText(
-    "채팅 앱에서 연결할 회선으로 ABCD-2345를 보내세요.",
-  );
+  await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
+  await expect(page.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
+  await expect(page.getByTestId("messaging-link-code")).toContainText("+15550001111");
   await captureScreenshot(page, testInfo, "messaging-settings-ko");
 
   await page.getByRole("button", { name: "메시징 설정 닫기" }).click();
   await expect(page.getByTestId("messaging-settings")).toHaveCount(0);
+});
+
+test("Slack setup has one Connect Slack action that opens workspace authorization", async ({
+  page,
+}, testInfo) => {
+  const fixture = (json: unknown) => ({
+    contentType: "application/json",
+    body: JSON.stringify({ json }),
+  });
+  await page.route("**/rpc/messaging/status", (route) =>
+    route.fulfill(
+      fixture({
+        enabled: true,
+        providers: ["slack"],
+        identities: [],
+        openSignup: false,
+      }),
+    ),
+  );
+  let personalLinkAvailable = false;
+  await page.route("**/rpc/messaging/installations/list", (route) =>
+    route.fulfill(fixture({ available: true, installations: [], personalLinkAvailable })),
+  );
+  await page.route("**/rpc/messaging/channels/list", (route) => route.fulfill(fixture([])));
+  await page.route("**/rpc/messaging/connections/list", (route) => route.fulfill(fixture([])));
+  await page
+    .context()
+    .route("**/slack-test-authorize", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Slack authorization</h1>" }),
+    );
+  let installs = 0;
+  let codeRequests = 0;
+  await page.route("**/rpc/messaging/installations/start", (route) => {
+    installs++;
+    return route.fulfill(fixture({ url: new URL("/slack-test-authorize", page.url()).href }));
+  });
+  await page.route("**/rpc/messaging/link/start", (route) => {
+    codeRequests++;
+    return route.fulfill(
+      fixture({ code: "ABCD-2345", expiresAt: new Date(Date.now() + 600_000).toISOString() }),
+    );
+  });
+  const stamp = Date.now();
+  const name = `Slack setup ${stamp}`;
+  await signup(page, `slack-setup-${stamp}@rakazo.test`, "password12", name);
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: new RegExp(name) }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page
+    .getByTestId("user-settings")
+    .getByRole("button", { name: "Manage", exact: true })
+    .click();
+  const settings = page.getByTestId("messaging-settings");
+  const connect = settings.getByRole("button", { name: "Connect Slack", exact: true });
+  await expect(connect).toBeEnabled();
+  await expect(
+    settings.getByRole("button", { name: "Connect a chat app", exact: true }),
+  ).toHaveCount(0);
+  await expect(settings.getByText("Slack workspace", { exact: true })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Link DMs", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "messaging-connect-slack");
+  const popupPromise = page.waitForEvent("popup");
+  await connect.click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole("heading", { name: "Slack authorization" })).toBeVisible();
+  expect(installs).toBe(1);
+  expect(codeRequests).toBe(0);
+  await popup.close();
+
+  // A teammate installed the workspace: personal linking works without installation ownership.
+  personalLinkAvailable = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(settings.getByRole("button", { name: "Link DMs", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "messaging-slack-member-link");
+  await settings.getByRole("button", { name: "Link DMs", exact: true }).click();
+  await expect(settings.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
+  expect(installs).toBe(1);
+  expect(codeRequests).toBe(1);
 });

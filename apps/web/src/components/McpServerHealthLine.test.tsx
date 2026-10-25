@@ -20,6 +20,12 @@ const base: McpServerHealth = {
   toolCount: null,
   checkedAt: null,
 };
+/** The words a reader sees, with each element's text as its own word. */
+const visibleText = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 const render = (health: Partial<McpServerHealth>) =>
   renderToStaticMarkup(<McpServerHealthLine health={{ ...base, ...health }} />);
 
@@ -27,9 +33,9 @@ describe("McpServerHealthLine", () => {
   it("shows the tool count and when it was checked when the server works", () => {
     const html = render({ status: "ok", toolCount: 12, checkedAt: "2026-10-21T10:00:00.000Z" });
     expect(html).toContain('data-status="ok"');
-    expect(html).toContain("Running · 12 tools");
+    expect(visibleText(html)).toContain("Running 12 tools");
     expect(html).toContain("5m ago");
-    expect(render({ status: "ok", toolCount: 1 })).toContain("Running · 1 tool");
+    expect(visibleText(render({ status: "ok", toolCount: 1 }))).toContain("Running 1 tool");
   });
 
   it("says a test is checking the connection until the server reports installing", () => {

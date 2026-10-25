@@ -93,7 +93,7 @@ test("approval models reuse connections and persist independent fallbacks", asyn
   await connection.getByRole("textbox", { name: "Name", exact: true }).fill("Work");
   await connection.getByRole("button", { name: "Save", exact: true }).click();
   // The renamed row collapses its form when clicked again.
-  await providers.getByRole("button", { name: "OpenRouter · Work", exact: true }).click();
+  await providers.getByRole("button", { name: "OpenRouter (Work)", exact: true }).click();
   await expect(connection).toBeHidden();
   // Its models are offered as a group of their own.
   await page
@@ -101,7 +101,7 @@ test("approval models reuse connections and persist independent fallbacks", asyn
     .getByRole("button", { name: "Add fallback", exact: true })
     .click();
   await expect(
-    page.getByRole("listbox", { name: "Model options" }).getByText("OpenRouter · Work"),
+    page.getByRole("listbox", { name: "Model options" }).getByText("OpenRouter (Work)"),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await providers.scrollIntoViewIfNeeded();

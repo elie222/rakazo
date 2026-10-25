@@ -2380,7 +2380,10 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
     return Type.Array(jsonField(definition.items), arrayOptions) as never;
   }
   if (type === "object") return jsonSchemaParameters(definition, options) as never;
-  return Type.String(options);
+  return Type.String({
+    ...options,
+    ...(typeof definition.maxLength === "number" ? { maxLength: definition.maxLength } : {}),
+  });
 }
 
 export function serializeToolResult(
@@ -3088,8 +3091,9 @@ function fallbackAwareModelStream(
         stream = state.stream(
           sentTarget,
           requestContext(),
+          // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
           state.request.fallbackModels?.length
-            ? { ...attemptOptions, apiKey, reasoning }
+            ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
             : thinkingOverride
               ? { ...attemptOptions, reasoning }
               : attemptOptions,

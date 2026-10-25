@@ -314,3 +314,45 @@ it("keeps a connector code card open to others in the chat, without Dismiss", as
   expect(button("Save")).toBeDefined();
   expect(button("Dismiss")).toBeUndefined();
 });
+
+it("offers import on the unanswered first-run focus card only", async () => {
+  const focus = {
+    kind: "choice" as const,
+    question: "What do you want me on first?",
+    options: [{ id: "inbox", letter: "A", label: "Inbox & email" }],
+  };
+  const onImportAgent = vi.fn();
+  const link = () =>
+    [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === "Import an agent",
+    );
+  await act(async () =>
+    root.render(
+      <ChoiceCard
+        botId="bot"
+        block={focus}
+        onBotChanged={async () => {}}
+        onImportAgent={onImportAgent}
+      />,
+    ),
+  );
+  await act(async () => link()!.click());
+  expect(onImportAgent).toHaveBeenCalledTimes(1);
+  // Not once the question is answered, and never on another choice card.
+  for (const block of [
+    { ...focus, answerId: "inbox" },
+    { ...focus, question: "Which city?" },
+  ]) {
+    await act(async () =>
+      root.render(
+        <ChoiceCard
+          botId="bot"
+          block={block}
+          onBotChanged={async () => {}}
+          onImportAgent={onImportAgent}
+        />,
+      ),
+    );
+    expect(link()).toBeUndefined();
+  }
+});

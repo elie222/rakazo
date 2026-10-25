@@ -12,6 +12,7 @@ import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  composioBatchActions,
   instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
@@ -27,6 +28,7 @@ import {
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
+import { saveApprovalRule } from "./approval-settings.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -888,21 +890,20 @@ async function commitAnswerRunInput(
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
     });
-    // "Always" on a fetch card allows that site, never every site the tool can reach.
+    // "Always" on a fetch card allows that site, never every site the tool can reach, and on a
+    // Composio batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
+    const batch = composioBatchActions(approvalEffect!.kind, approvalEffect!.request);
+    const tools = batch ? (batch.complete ? batch.slugs : []) : [approvalEffect!.kind];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
-      const rule = {
-        spaceId: input.spaceId,
-        createdByUserId: approvalUserId!,
-        effect: "always_allow",
-        matchKind: site ? "site" : "tool",
-        matchValue: site ?? approvalEffect!.kind,
-      };
-      await tx.actionApprovalRule.upsert({
-        where: { spaceId_createdByUserId_effect_matchKind_matchValue: rule },
-        create: rule,
-        update: {},
-      });
+      // Saved where the member's confirmations apply in this Space: the account or its override.
+      for (const tool of site ? [site] : tools) {
+        await saveApprovalRule(
+          tx,
+          { userId: approvalUserId!, spaceId: input.spaceId },
+          { effect: "always_allow", matchKind: site ? "site" : "tool", matchValue: tool },
+        );
+      }
     }
   } else if (dismissed) {
     // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed
@@ -1582,6 +1583,10 @@ export function completedRunBlocks(
   );
 }
 
+// The thread lock is shared with snapshot reads that may hold it for up to 15s. Prisma's 5s
+// default counts that wait, and expiring would fail a run whose work already finished.
+const FINALIZE_TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 20_000 };
+
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
@@ -1725,7 +1730,7 @@ async function finalizeRunOnce(
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId, firstResponse };
-  });
+  }, FINALIZE_TRANSACTION_OPTIONS);
 }
 
 export async function discardAnsweredSteering(

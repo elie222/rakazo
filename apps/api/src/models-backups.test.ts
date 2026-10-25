@@ -19,8 +19,10 @@ function setup(
     actor?: Actor;
     credits?: boolean;
     existing?: Array<Record<string, unknown>>;
-    /** An openai-compatible connection with this stored list and space default. */
+    /** An openai-compatible connection with this stored list and own model. */
     compatible?: { enabledModelIds: string[]; defaultModel: string };
+    /** Spaces whose member keeps their own models instead of the account's. */
+    overrides?: Array<{ userId: string; spaceId: string }>;
   } = {},
 ) {
   const credential = {
@@ -32,32 +34,66 @@ function setup(
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
-  // `existing` describes the main model's fallbacks, positioned after its primary.
+  // `existing` describes the main model's fallbacks, positioned after its primary. A row
+  // with a spaceId is that Space's own copy; one without is the account's.
   let roleRows: Array<Record<string, unknown>> = (options.existing ?? []).map((row) => ({
     ...row,
     role: "main",
     position: Number(row.position) + 1,
     thinkingLevel: null,
   }));
-  const spaceModelRoleChoice = {
-    findMany: vi.fn(async ({ where }: { where: Record<string, string> }) =>
-      roleRows
-        .filter((row) => Object.entries(where).every(([key, value]) => row[key] === value))
-        .sort((left, right) => Number(left.position) - Number(right.position)),
+  const roleTable = (copy: "account" | "space") => {
+    const owns = (row: Record<string, unknown>, where: Record<string, string>) =>
+      (copy === "space") === (row.spaceId !== undefined) &&
+      Object.entries(where).every(([key, value]) => row[key] === value);
+    return {
+      findMany: vi.fn(async ({ where }: { where: Record<string, string> }) =>
+        roleRows
+          .filter((row) => owns(row, where))
+          .sort((left, right) => Number(left.position) - Number(right.position)),
+      ),
+      deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
+        roleRows = roleRows.filter((row) => !owns(row, where));
+        return { count: 0 };
+      }),
+      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        roleRows.push(...data);
+        return { count: data.length };
+      }),
+    };
+  };
+  const userModelRoleChoice = roleTable("account");
+  const spaceModelRoleChoice = roleTable("space");
+  type OverrideKey = { spaceId: string; userId: string; setting: string };
+  let overrides: OverrideKey[] = (options.overrides ?? []).map((row) => ({
+    ...row,
+    setting: "models",
+  }));
+  const sameOverride = (left: OverrideKey, right: OverrideKey) =>
+    left.spaceId === right.spaceId &&
+    left.userId === right.userId &&
+    left.setting === right.setting;
+  const spaceSettingOverride = {
+    findUnique: vi.fn(
+      async ({ where }: { where: { spaceId_userId_setting: OverrideKey } }) =>
+        overrides.find((row) => sameOverride(row, where.spaceId_userId_setting)) ?? null,
     ),
-    deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
-      roleRows = roleRows.filter(
-        (row) => !Object.entries(where).every(([key, value]) => row[key] === value),
-      );
-      return { count: 0 };
+    findMany: vi.fn(async ({ where }: { where: { spaceId: string; userId: string } }) =>
+      overrides.filter((row) => row.spaceId === where.spaceId && row.userId === where.userId),
+    ),
+    create: vi.fn(async ({ data }: { data: OverrideKey }) => {
+      overrides.push(data);
+      return data;
     }),
-    createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-      roleRows.push(...data);
-      return { count: data.length };
+    delete: vi.fn(async ({ where }: { where: { spaceId_userId_setting: OverrideKey } }) => {
+      overrides = overrides.filter((row) => !sameOverride(row, where.spaceId_userId_setting));
+      return where.spaceId_userId_setting;
     }),
   };
   const tx = {
+    userModelRoleChoice,
     spaceModelRoleChoice,
+    spaceSettingOverride,
     $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
   };
   const prisma = {
@@ -65,7 +101,9 @@ function setup(
     space: {
       findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
     },
+    userModelRoleChoice,
     spaceModelRoleChoice,
+    spaceSettingOverride,
     userModelCredential: {
       findMany: vi.fn(async ({ where }: { where: { userId: string; provider?: string } }) =>
         !options.credits &&
@@ -76,19 +114,17 @@ function setup(
       ),
       findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
         !options.credits && where.userId === owner.userId && where.id === credential.id
-          ? { ...credential, preferences: [] }
+          ? { ...credential, userPreferences: [] }
           : null,
       ),
     },
-    spaceModelPreference: {
+    userModelPreference: {
       findMany: vi.fn().mockResolvedValue(
         options.compatible
           ? [
               {
-                id: "preference-one",
                 modelId: options.compatible.defaultModel,
                 thinkingLevel: null,
-                isDefault: true,
                 updatedAt: new Date(0),
                 credential,
               },
@@ -106,7 +142,7 @@ function setup(
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
   } as unknown as PrismaClient;
   Object.assign(tx, {
-    spaceModelPreference: prisma.spaceModelPreference,
+    userModelPreference: prisma.userModelPreference,
     userModelCredential: prisma.userModelCredential,
   });
   const deps = {
@@ -159,7 +195,7 @@ function setup(
         modelId,
         position: Number(position) - 1,
       }));
-  return { rows, roles, prisma, spaceModelRoleChoice, call };
+  return { rows, roles, prisma, userModelRoleChoice, spaceModelRoleChoice, call };
 }
 
 const availableModel = listPiCatalog().find(
@@ -168,40 +204,28 @@ const availableModel = listPiCatalog().find(
 
 describe("model backup settings API", () => {
   it("rejects a compatible catalog placeholder outside the enabled list", async () => {
-    const { call, spaceModelRoleChoice } = setup({
+    const { call, userModelRoleChoice } = setup({
       compatible: { enabledModelIds: ["enabled"], defaultModel: "enabled" },
     });
     const { response } = await call("models/setBackups", [
       { provider: "openai-compatible", modelId: "custom" },
     ]);
     expect(response.status).toBe(400);
-    expect(spaceModelRoleChoice.createMany).not.toHaveBeenCalled();
+    expect(userModelRoleChoice.createMany).not.toHaveBeenCalled();
   });
 
-  it("returns an empty list for a new user and reads only that user's active Space", async () => {
+  it("reads the member's account list, ignoring stale Space copies and other users", async () => {
     const { call, prisma } = setup({
       existing: [
+        { userId: "user-one", provider: "openrouter", modelId: "first", position: 0 },
         {
           userId: "user-one",
           spaceId: "space-one",
           provider: "openrouter",
-          modelId: "first",
+          modelId: "stale-space-copy",
           position: 0,
         },
-        {
-          userId: "user-one",
-          spaceId: "space-two",
-          provider: "openrouter",
-          modelId: "other-space",
-          position: 0,
-        },
-        {
-          userId: "user-two",
-          spaceId: "space-one",
-          provider: "openrouter",
-          modelId: "other-user",
-          position: 0,
-        },
+        { userId: "user-two", provider: "openrouter", modelId: "other-user", position: 0 },
       ],
     });
 
@@ -211,11 +235,52 @@ describe("model backup settings API", () => {
     await expect(response.json()).resolves.toEqual({
       json: [{ provider: "openrouter", modelId: "first" }],
     });
-    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { userId: owner.userId, spaceId: owner.spaceId, role: "main" },
-      }),
+    expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: owner.userId, role: "main" } }),
     );
+  });
+
+  it("reads and writes a Space's own list while it overrides the account's", async () => {
+    const { call, rows } = setup({
+      overrides: [{ userId: owner.userId, spaceId: owner.spaceId }],
+      existing: [
+        { userId: owner.userId, provider: "openrouter", modelId: "account", position: 0 },
+        {
+          userId: owner.userId,
+          spaceId: owner.spaceId,
+          provider: "openrouter",
+          modelId: "space-own",
+          position: 0,
+        },
+      ],
+    });
+
+    const legacy = await call("models/backups", null);
+    expect((await legacy.response.json()).json).toEqual([
+      { provider: "openrouter", modelId: "space-own" },
+    ]);
+    const account = await call("models/role", { role: "main", scope: "account" });
+    expect((await account.response.json()).json.backups).toEqual([
+      expect.objectContaining({ modelId: "account" }),
+    ]);
+
+    const input = [{ provider: availableModel.provider, modelId: availableModel.id }];
+    expect((await call("models/setBackups", input)).response.status).toBe(200);
+    expect(rows()).toEqual([
+      expect.objectContaining({ modelId: "account" }),
+      expect.objectContaining({ spaceId: owner.spaceId, modelId: availableModel.id }),
+    ]);
+
+    // An explicit account write leaves the Space's copy alone.
+    const accountWrite = await call("models/setRole", {
+      role: "main",
+      scope: "account",
+      backups: [],
+    });
+    expect(accountWrite.response.status).toBe(200);
+    expect(rows()).toEqual([
+      expect.objectContaining({ spaceId: owner.spaceId, modelId: availableModel.id }),
+    ]);
   });
 
   it("persists an ordered list for a connected usable model without changing the primary", async () => {
@@ -232,7 +297,6 @@ describe("model backup settings API", () => {
     expect(rows()).toEqual([
       {
         userId: owner.userId,
-        spaceId: owner.spaceId,
         provider: availableModel.provider,
         modelId: availableModel.id,
         position: 0,
@@ -240,12 +304,12 @@ describe("model backup settings API", () => {
     ]);
     const preferences = (
       prisma as unknown as {
-        spaceModelPreference: {
+        userModelPreference: {
           upsert: ReturnType<typeof vi.fn>;
           updateMany: ReturnType<typeof vi.fn>;
         };
       }
-    ).spaceModelPreference;
+    ).userModelPreference;
     expect(preferences.upsert).not.toHaveBeenCalled();
     expect(preferences.updateMany).not.toHaveBeenCalled();
   });
@@ -256,13 +320,13 @@ describe("model backup settings API", () => {
       { provider: "not-connected", modelId: "unknown-model" },
     ]);
     expect(invalid.response.status).toBeGreaterThanOrEqual(400);
-    expect(disconnected.spaceModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+    expect(disconnected.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
 
     const duplicate = setup();
     const repeated = { provider: availableModel.provider, modelId: availableModel.id };
     const duplicateResponse = await duplicate.call("models/setBackups", [repeated, repeated]);
     expect(duplicateResponse.response.status).toBeGreaterThanOrEqual(400);
-    expect(duplicate.spaceModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+    expect(duplicate.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
 
     const oversized = setup();
     const tooMany = Array.from({ length: 11 }, (_, index) => ({
@@ -271,7 +335,7 @@ describe("model backup settings API", () => {
     }));
     const oversizedResponse = await oversized.call("models/setBackups", tooMany);
     expect(oversizedResponse.response.status).toBeGreaterThanOrEqual(400);
-    expect(oversized.spaceModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+    expect(oversized.userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
   });
 
   it("rejects a known catalog model when its provider is disconnected without replacing saved backups", async () => {
@@ -280,12 +344,11 @@ describe("model backup settings API", () => {
     )!;
     const existing = {
       userId: owner.userId,
-      spaceId: owner.spaceId,
       provider: availableModel.provider,
       modelId: availableModel.id,
       position: 0,
     };
-    const { call, spaceModelRoleChoice, rows } = setup({ existing: [existing] });
+    const { call, userModelRoleChoice, rows } = setup({ existing: [existing] });
 
     const { response } = await call("models/setBackups", [
       { provider: disconnectedModel.provider, modelId: disconnectedModel.id },
@@ -295,8 +358,8 @@ describe("model backup settings API", () => {
     await expect(response.json()).resolves.toMatchObject({
       json: { message: "Connect that model provider first" },
     });
-    expect(spaceModelRoleChoice.deleteMany).not.toHaveBeenCalled();
-    expect(spaceModelRoleChoice.createMany).not.toHaveBeenCalled();
+    expect(userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+    expect(userModelRoleChoice.createMany).not.toHaveBeenCalled();
     expect(rows()).toEqual([existing]);
   });
 
@@ -316,7 +379,7 @@ describe("model backup settings API", () => {
   });
 
   it("rejects a backup on an openai-compatible model outside the enabled list", async () => {
-    const { call, spaceModelRoleChoice } = setup({
+    const { call, userModelRoleChoice } = setup({
       compatible: { enabledModelIds: ["local-a"], defaultModel: "local-a" },
     });
 
@@ -328,43 +391,55 @@ describe("model backup settings API", () => {
     await expect(response.json()).resolves.toMatchObject({
       json: { message: "Unknown model for that provider" },
     });
-    expect(spaceModelRoleChoice.deleteMany).not.toHaveBeenCalled();
+    expect(userModelRoleChoice.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("isolates writes between users and Spaces", async () => {
+  it("isolates writes between users", async () => {
     const actor: Actor = {
       ...owner,
       userId: "user-two",
       spaceId: "space-two",
       email: "two@rakazo.test",
     };
-    const { rows, call, spaceModelRoleChoice } = setup({
-      actor,
-      existing: [
-        {
-          userId: owner.userId,
-          spaceId: owner.spaceId,
-          provider: "openrouter",
-          modelId: "keep",
-          position: 0,
-        },
-      ],
-    });
+    const kept = { userId: owner.userId, provider: "openrouter", modelId: "keep", position: 0 };
+    const { rows, call, userModelRoleChoice } = setup({ actor, existing: [kept] });
 
     await call("models/setBackups", []);
 
-    expect(rows()).toEqual([
-      {
-        userId: owner.userId,
-        spaceId: owner.spaceId,
-        provider: "openrouter",
-        modelId: "keep",
-        position: 0,
-      },
-    ]);
-    expect(spaceModelRoleChoice.deleteMany).toHaveBeenCalledWith({
-      where: { userId: actor.userId, spaceId: actor.spaceId, role: "main" },
+    expect(rows()).toEqual([kept]);
+    expect(userModelRoleChoice.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, role: "main" },
     });
+  });
+});
+
+describe("Space model overrides", () => {
+  it("starts a Space's own models from the account's and drops them when it follows again", async () => {
+    const { call, rows } = setup({
+      existing: [{ userId: owner.userId, provider: "openrouter", modelId: "account", position: 0 }],
+    });
+    const overrides = async () =>
+      (await (await call("spaceSettings/overrides", null)).response.json()).json;
+    expect(await overrides()).toEqual([]);
+
+    const customize = await call("spaceSettings/setOverride", { setting: "models", enabled: true });
+    expect((await customize.response.json()).json).toEqual(["models"]);
+    expect(rows()).toEqual([
+      expect.objectContaining({ modelId: "account" }),
+      expect.objectContaining({ spaceId: owner.spaceId, modelId: "account" }),
+    ]);
+
+    // Changes now land in the Space's copy only.
+    expect((await call("models/setBackups", [])).response.status).toBe(200);
+    expect(rows()).toEqual([expect.objectContaining({ modelId: "account" })]);
+
+    const reset = await call("spaceSettings/setOverride", { setting: "models", enabled: false });
+    expect((await reset.response.json()).json).toEqual([]);
+    expect(await overrides()).toEqual([]);
+    const legacy = await call("models/backups", null);
+    expect((await legacy.response.json()).json).toEqual([
+      { provider: "openrouter", modelId: "account" },
+    ]);
   });
 });
 
@@ -391,10 +466,8 @@ describe("role-based model settings API", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.json.primary).toEqual(primary);
-    expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { userId: owner.userId, spaceId: owner.spaceId, role: "approval" },
-      }),
+    expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: owner.userId, role: "approval" } }),
     );
     const read = await call("models/role", { role: "approval" });
     expect((await read.response.json()).json).toEqual(body.json);
@@ -447,7 +520,7 @@ describe("role-based model settings API", () => {
             secretId: `${where.id}-secret`,
             createdAt: new Date(0),
             updatedAt: new Date(0),
-            preferences: [],
+            userPreferences: [],
           }
         : null,
     );
@@ -489,7 +562,7 @@ describe("role-based model settings API", () => {
       secretId: `${id}-secret`,
       createdAt: new Date(0),
       updatedAt: new Date(0),
-      preferences: [],
+      userPreferences: [],
     });
     Object.assign(prisma.userModelCredential, {
       findMany: vi.fn(async () => [
@@ -539,7 +612,7 @@ describe("role-based model settings API", () => {
       primary: { ...primary, thinkingLevel: "high" },
     });
     expect(first.response.status).toBe(200);
-    const preferences = prisma.spaceModelPreference as unknown as {
+    const preferences = prisma.userModelPreference as unknown as {
       upsert: ReturnType<typeof vi.fn>;
     };
     preferences.upsert.mockClear();
@@ -555,7 +628,7 @@ describe("role-based model settings API", () => {
   });
 
   it("serves a compatible main model from the connection that enables it", async () => {
-    // Connection A is the space default; model B is enabled only on connection B.
+    // Connection A owns the model; model B is enabled only on connection B.
     const { call, prisma, roles } = setup({
       compatible: { enabledModelIds: ["model-a"], defaultModel: "model-a" },
     });
@@ -571,19 +644,17 @@ describe("role-based model settings API", () => {
     const [connectionA, connectionB] = [connection("a"), connection("b")];
     const client = prisma as unknown as {
       userModelCredential: { findMany: ReturnType<typeof vi.fn> };
-      spaceModelPreference: {
+      userModelPreference: {
         findMany: ReturnType<typeof vi.fn>;
         upsert: ReturnType<typeof vi.fn>;
       };
       secret: { findFirst: ReturnType<typeof vi.fn> };
     };
     client.userModelCredential.findMany.mockResolvedValue([connectionA, connectionB]);
-    client.spaceModelPreference.findMany.mockResolvedValue([
+    client.userModelPreference.findMany.mockResolvedValue([
       {
-        id: "preference-a",
         modelId: "model-a",
         thinkingLevel: null,
-        isDefault: true,
         updatedAt: new Date(0),
         credential: connectionA,
       },
@@ -605,7 +676,7 @@ describe("role-based model settings API", () => {
     expect(roles()).toEqual([
       expect.objectContaining({ position: 0, provider: "openai-compatible", modelId: "model-b" }),
     ]);
-    expect(client.spaceModelPreference.upsert).not.toHaveBeenCalled();
+    expect(client.userModelPreference.upsert).not.toHaveBeenCalled();
   });
 
   it("retains backwards-compatible main backup storage", async () => {
@@ -630,7 +701,7 @@ it("lets a deployment-managed model lead the main model like any other purpose",
     const main = await call("models/setRole", { role: "main", primary });
     expect(main.response.status).toBe(200);
     expect(roles()).toEqual([expect.objectContaining({ role: "main", position: 0 })]);
-    const preferences = prisma.spaceModelPreference as unknown as {
+    const preferences = prisma.userModelPreference as unknown as {
       upsert: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
     };

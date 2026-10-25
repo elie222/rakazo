@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
+import type { Me, ModelHeaderRow, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareModelRouting,
@@ -68,7 +68,8 @@ export type ModelConnectIntent = {
   }) => void | Promise<void>;
 };
 
-export function useModelSettings(onClose: () => void) {
+/** `scope` is where a connection made for an empty main model becomes that model. */
+export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const rpc = useSpaceRpc();
   const intentRef = useRef<ModelConnectIntent | null>(null);
   // Sign-in finishes later; it keeps the slot it was started for even if the dialog closes.
@@ -638,7 +639,7 @@ export function useModelSettings(onClose: () => void) {
               contextWindow: parsedContextWindow,
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
-              ...(intent ? { makeDefault: intent.makeDefault } : {}),
+              ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
               apiKey: apiKey.trim() || undefined,
               label: selected.providerName ?? selected.provider,
               credentialId: credential?.id ?? null,
@@ -654,7 +655,7 @@ export function useModelSettings(onClose: () => void) {
               ...(!savingLimitOnly || modelChanged || thinkingDirty
                 ? { thinkingLevel: stagedThinking }
                 : {}),
-              ...(intent ? { makeDefault: intent.makeDefault } : {}),
+              ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
               maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
               credentialId: credential?.id ?? null,
@@ -721,7 +722,7 @@ export function useModelSettings(onClose: () => void) {
       provider: selected.provider,
       credentialId: credential?.id ?? null,
       modelId: selected.id,
-      ...(intent ? { makeDefault: intent.makeDefault } : {}),
+      ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,

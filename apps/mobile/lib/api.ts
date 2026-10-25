@@ -60,6 +60,7 @@ import { t } from "./i18n";
 import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
 import { reportMobileError } from "./monitoring";
+import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import {
   clearSessionToken,
   currentSessionGeneration,
@@ -74,7 +75,6 @@ import {
 import { clearUnsentSends } from "./thread-feedback";
 import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-error";
 
-const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
 const SPACE_ROLLBACK_KEY = "rakazo.space_rollback";
 const RPC_TIMEOUT_MS = 8_000;
@@ -485,10 +485,13 @@ export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string 
   return [requestContext.apiBase, requestContext.headers["x-rakazo-space-id"] ?? ""].join("\u0000");
 }
 
-export async function captureApiRequestContext(): Promise<ApiRequestContext> {
+/** Pins a request to the current server and session, and to a Space (the selected one by default). */
+export async function captureApiRequestContext(
+  spaceId: string | null = selectedSpaceId(),
+): Promise<ApiRequestContext> {
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
-  const headers = await authHeaders(selectedSpaceId());
+  const headers = await authHeaders(spaceId);
   if (apiBase !== currentApiBase()) {
     throw new Error(t("The server changed while starting the request"));
   }
@@ -794,18 +797,22 @@ export async function rpc<T>(
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
   const uses = aiDataUsesForProcedure(proc, body);
+  const consentTarget = aiConsentTarget(body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
   await ensureAiDataConsent({
     uses,
     status: () =>
+      rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
+    prompt: promptAiConsent,
+    allow: (input) =>
       rpc(
-        "aiConsent/status",
-        { uses, ...aiConsentTarget(body) },
+        "aiConsent/allow",
+        consentTarget.settingsScope
+          ? { ...input, settingsScope: consentTarget.settingsScope }
+          : input,
         { requestContext: consentContext },
       ),
-    prompt: promptAiConsent,
-    allow: (input) => rpc("aiConsent/allow", input, { requestContext: consentContext }),
     coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
   });
   // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
@@ -1159,12 +1166,21 @@ export function prependMobileMessagePage(
 
 export { messagingProviderLabel };
 
+function channelMessageLine(block: {
+  provider: Parameters<typeof messagingProviderLabel>[0];
+  transport?: Parameters<typeof messagingProviderLabel>[1];
+  fromLabel: string;
+  text: string;
+}): string {
+  return `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`;
+}
+
 /** The message's text exactly as written, for a view that selects part of it. */
 export function selectableMobileMessageText(message: MobileMessage): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
+        return channelMessageLine(block);
       }
       if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
         return block.text;
@@ -1182,7 +1198,7 @@ export function blockText(message: MobileMessage) {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
-        return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
+        return channelMessageLine(block);
       }
       if (block.kind === "cloud_agent")
         return `${block.title}: ${block.status}${block.prUrl ? ` ${block.prUrl}` : ""}`;
@@ -1200,7 +1216,7 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "steps") {
         return (block.steps ?? [])
           .map((step) => `${step.label}${step.count > 1 ? ` ×${step.count}` : ""}`)
-          .join(" · ");
+          .join(", ");
       }
       return ("text" in block ? block.text : "state" in block ? block.state : "") ?? "";
     })

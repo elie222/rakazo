@@ -119,7 +119,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByTestId("call-view").getByText("Calling…")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hang up" })).toBeVisible();
   await captureScreenshot(page, testInfo, "outgoing-ringing");
-  await expect(page.getByTestId("call-view").getByText(/· Listening/)).toBeVisible();
+  await expect(page.getByTestId("call-view").getByText("Listening", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "voice-call");
   await page.getByRole("button", { name: "Minimize call" }).click();
   await expect(page.getByTestId("call-view")).toHaveCount(0);

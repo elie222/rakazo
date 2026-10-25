@@ -71,7 +71,7 @@ export default function PeerChat() {
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <Stack.Screen options={glassHeaderOptions(`${botName} · ${peerName}`)} />
+      <Stack.Screen options={glassHeaderOptions(`${botName}, ${peerName}`)} />
       {state.kind === "loading" ? (
         <View style={styles.center}>
           <ActivityIndicator color={tokens.mutedForeground} />

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { AgentImportSetupItemSchema } from "./agent-import-setup.js";
 import { botSecretDestinationSchema } from "./bot-secrets.js";
 import { Id } from "./ids.js";
 import { McpTransportSchema } from "./mcp.js";
@@ -259,6 +260,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
     status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
+  }),
+  z.object({
+    kind: z.literal("import_setup"),
+    items: z.array(AgentImportSetupItemSchema),
+    /** Set by Undo, which also empties `items`; the checklist is then hidden. */
+    undone: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("image"),

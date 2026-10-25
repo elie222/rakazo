@@ -40,7 +40,8 @@ describe("sidebarGroupsForSpaces", () => {
       expect.objectContaining({ emptySpaceId: "space-2", title: "Support" }),
       expect.objectContaining({
         sectionId: "saved",
-        title: "Support · Archived projects",
+        title: "Support",
+        subtitle: "Archived projects",
         bots: [],
         emptySpaceId: undefined,
       }),

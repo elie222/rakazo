@@ -208,7 +208,7 @@ const codeCapabilities: AuthCapabilities = {
   emailCode: true,
 };
 
-it("signs in with an emailed code by default", async () => {
+it("signs in with an emailed code when the password is blank", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
   vi.mocked(authClient.emailOtp.sendVerificationOtp).mockResolvedValue({
     data: { success: true },
@@ -216,7 +216,6 @@ it("signs in with an emailed code by default", async () => {
   } as never);
   vi.mocked(authClient.signIn.emailOtp).mockResolvedValue({ data: {}, error: null } as never);
   await render();
-  expect(host.querySelector('input[type="password"]')).toBeNull();
   await enter(host.querySelector('input[name="email"]'), " person@example.com ");
   expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Continue");
   await submit();
@@ -294,21 +293,29 @@ it("sends the code on the first Continue but never submits an unfinished code", 
   expect(authClient.emailOtp.sendVerificationOtp).toHaveBeenCalledTimes(1);
 });
 
-it("keeps password sign-in one step away", async () => {
+it("signs in with a typed password and emails a code when it is blank", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  vi.mocked(authClient.signIn.email).mockResolvedValue({ data: {}, error: null } as never);
   await render();
-  await act(async () => button("Use password").click());
-  expect(host.querySelector('input[type="password"]')).not.toBeNull();
-  expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Continue with email");
-  await act(async () => button("Use email code").click());
-  expect(host.querySelector('input[type="password"]')).toBeNull();
+  const password = host.querySelector<HTMLInputElement>('input[type="password"]')!;
+  expect(password.required).toBe(false);
+  expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Continue");
+  expect(host.textContent).not.toContain("Use password");
+  await enter(host.querySelector('input[name="email"]'), "person@example.com");
+  await enter(password, "example-password");
+  expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
+  await submit();
+  expect(authClient.signIn.email).toHaveBeenCalledWith({
+    email: "person@example.com",
+    password: "example-password",
+  });
+  expect(authClient.emailOtp.sendVerificationOtp).not.toHaveBeenCalled();
 });
 
 it("leaves the password form unchanged without email codes", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...codeCapabilities, emailCode: false });
   await render();
   expect(host.querySelector('input[type="password"]')).not.toBeNull();
-  expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Continue with email");
-  expect(host.textContent).not.toContain("Use email code");
-  expect(host.textContent).not.toContain("Use password");
+  expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.required).toBe(true);
+  expect(host.querySelector('button[type="submit"]')!.textContent).toBe("Sign in");
 });

@@ -63,7 +63,8 @@ function fixture(
               },
             }
           : undefined,
-      actionApprovalRule: {
+      spaceSettingOverride: { findUnique: async () => null },
+      userActionApprovalRule: {
         findMany: async () => [
           {
             effect: requireApproval ? "require_approval" : "allow",

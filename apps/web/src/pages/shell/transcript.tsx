@@ -35,6 +35,7 @@ import { quoteDraftForSelection } from "../../lib/quote-selection";
 import { messageHasVisibleBlocks } from "../../lib/tool-activity-view";
 import { transcriptIsNearEnd, transcriptMovedDown } from "../../lib/transcript-scroll";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
+import type { ImportSetupTarget } from "./import-setup-card";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
 
@@ -80,6 +81,8 @@ export const Transcript = memo(function Transcript({
   speakingMessageId,
   onSpeak,
   onOpenComputer,
+  onOpenImportSetup,
+  onOpenImport,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollRequest: { messageId: string; nonce: number } | null;
@@ -123,6 +126,8 @@ export const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
+  onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenImport?: () => void;
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
@@ -537,6 +542,8 @@ export const Transcript = memo(function Transcript({
                       speaking={speakingMessageId === message.id}
                       onSpeak={() => onSpeak(message)}
                       onOpenComputer={onOpenComputer}
+                      onOpenImportSetup={onOpenImportSetup}
+                      onOpenImport={onOpenImport}
                       showToolActivity={showToolActivity}
                       onReply={onReply}
                       onMarkUnread={onMarkUnread}

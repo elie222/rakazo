@@ -37,18 +37,26 @@ test("onboarding requires a model and uses compact model selects without mislead
   await captureScreenshot(page, testInfo, "onboarding-choose-provider");
   await provider.click();
   await page.getByRole("option", { name: "ChatGPT subscription", exact: true }).click();
+  // Signing in is the one step; the model is not asked before the account is connected.
+  await expect(
+    page.getByRole("button", { name: "Sign in with ChatGPT", exact: true }),
+  ).toBeVisible();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "onboarding-subscription-sign-in");
+  await provider.click();
+  await page.getByRole("option", { name: "OpenAI API", exact: true }).click();
+  await expect(model).toHaveCount(0);
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
   await expect(model).toHaveText("GPT-6 Luna");
   await captureScreenshot(page, testInfo, "onboarding-luna-default");
   await provider.click();
-  await page.getByRole("option", { name: "OpenAI API", exact: true }).click();
-  await expect(model).toHaveText("GPT-6 Luna");
-  await provider.click();
   await page.getByRole("option", { name: "OpenRouter", exact: true }).click();
-  await expect(model).toContainText("GPT-6 Luna");
   await page.getByLabel("API key", { exact: true }).fill("   ");
+  await expect(model).toHaveCount(0);
   await expect(continueButton).toBeDisabled();
   await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  await expect(model).toContainText("GPT-6 Luna");
   await expect(continueButton).toBeEnabled();
   await page.getByLabel("API key", { exact: true }).fill("");
   await captureScreenshot(page, testInfo, "onboarding-model-required");
@@ -81,10 +89,11 @@ test("onboarding requires a model and uses compact model selects without mislead
   await captureScreenshot(page, testInfo, "onboarding-provider-menu");
   await page.getByRole("option", { name: "Anthropic API", exact: true }).click();
   await expect(provider).toContainText("Anthropic API");
-  await expect(model).toHaveText("Claude Haiku 5.5");
-  await captureScreenshot(page, testInfo, "onboarding-haiku-default");
   await expect(page.getByRole("button", { name: /Sign in with Claude/ })).toHaveCount(0);
   await expect(page.getByLabel(/API key/)).toHaveValue("");
+  await page.getByLabel("API key", { exact: true }).fill("fake-test-key");
+  await expect(model).toHaveText("Claude Haiku 5.5");
+  await captureScreenshot(page, testInfo, "onboarding-haiku-default");
 
   const models = page.getByRole("combobox", { name: "Model", exact: true });
   await models.click();

@@ -1,0 +1,174 @@
+name: Weekly dependency updates
+
+on:
+  schedule:
+    - cron: "43 6 * * 2"
+  workflow_dispatch:
+
+permissions: {}
+
+# One serialized auth stream preserves Codex's rotating refresh token.
+concurrency:
+  group: weekly-dependencies
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+      base: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Skip when an update PR is already open
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --base main --state open --limit 1000 --json headRefName,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false and (.headRefName | startswith("deps/weekly-dependencies-")))] | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+      - name: Record base revision
+        id: base
+        if: steps.existing.outputs.count == '0'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        if: steps.existing.outputs.count == '0'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.existing.outputs.count == '0'
+        with:
+          node-version: 22
+      - name: Prepare isolated Codex user
+        id: prepare
+        if: steps.existing.outputs.count == '0'
+        run: |
+          set -euo pipefail
+          npm install --global @openai/codex@0.164.0
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends age
+          sudo useradd --create-home --shell /bin/bash codex-updater
+          # Bubblewrap needs user namespaces on GitHub's Ubuntu image.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          control="$RUNNER_TEMP/dependency-updater-control"
+          install -d -m 700 "$control"
+          install -d -m 700 "$RUNNER_TEMP/dependency-update"
+          install -m 500 .github/scripts/codex-subscription-auth.py "$control/auth.py"
+          sudo install -d -o codex-updater -g codex-updater -m 700 /home/codex-updater/.codex
+          sudo chown -R codex-updater:codex-updater "$GITHUB_WORKSPACE"
+      - name: Restore subscription login
+        id: auth
+        if: steps.existing.outputs.count == '0'
+        env:
+          CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          control="$RUNNER_TEMP/dependency-updater-control"
+          printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 "$control/auth.py" "$control/auth.json"
+          # Verify write-back access before Codex can rotate the refresh token.
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$control/auth.json"
+          sudo install -o codex-updater -g codex-updater -m 600 "$control/auth.json" /home/codex-updater/.codex/auth.json
+      - name: Run dependency update prompt
+        if: steps.auth.outcome == 'success'
+        timeout-minutes: 42
+        run: |
+          set -euo pipefail
+          umask 077
+          # Neither Codex nor package lifecycle scripts can read the runner user's
+          # later secret-write/publishing token. Keep session logs private, too.
+          timeout --kill-after=30s 40m sudo -n -H -u codex-updater env \
+            -u OPENAI_API_KEY -u CODEX_API_KEY -u CODEX_ACCESS_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+            PATH="$PATH" VALIDATION_NODE="$(command -v node)" \
+            codex exec --ephemeral --sandbox workspace-write \
+            -c 'approval_policy="never"' -c 'model_provider="openai"' \
+            -c 'forced_login_method="chatgpt"' -c 'cli_auth_credentials_store="file"' \
+            -c 'sandbox_workspace_write.network_access=true' \
+            --output-last-message /home/codex-updater/pr.md \
+            - < .github/prompts/weekly-dependencies.md \
+            > "$RUNNER_TEMP/dependency-updater-control/session.log" 2>&1
+      - name: Persist refreshed subscription login
+        if: always() && steps.auth.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          control="$RUNNER_TEMP/dependency-updater-control"
+          # Read with the agent's privileges, so a substituted symlink cannot
+          # make the privileged helper read a runner-only file.
+          timeout 10s sudo -n -H -u codex-updater env -u GH_TOKEN \
+            head -c 65537 /home/codex-updater/.codex/auth.json \
+            | python3 "$control/auth.py" "$control/auth.json"
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$control/auth.json"
+      - name: Collect dependency patch
+        id: patch
+        if: success() && steps.auth.outcome == 'success'
+        env:
+          UPDATE_BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Git in this checkout also runs as the agent user: its config is untrusted.
+          sudo -n -H -u codex-updater env UPDATE_BASE="$UPDATE_BASE" \
+            bash -e -o pipefail -c 'git add -N .; git diff --no-ext-diff --binary "$UPDATE_BASE"' \
+            > "$RUNNER_TEMP/dependency-update/update.patch"
+          if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then
+            sudo -n -H -u codex-updater cat /home/codex-updater/pr.md > "$RUNNER_TEMP/dependency-update/pr.md"
+            test -s "$RUNNER_TEMP/dependency-update/pr.md"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: weekly-dependency-update
+          path: |
+            ${{ runner.temp }}/dependency-update/update.patch
+            ${{ runner.temp }}/dependency-update/pr.md
+          retention-days: 1
+          if-no-files-found: error
+      - name: Remove login cache
+        if: always() && steps.prepare.outcome == 'success'
+        run: |
+          sudo rm -rf /home/codex-updater/.codex
+          rm -rf "$RUNNER_TEMP/dependency-updater-control"
+
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.update.outputs.base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: weekly-dependency-update
+          path: ${{ runner.temp }}/dependency-update
+      - name: Validate and apply patch
+        run: bash .github/scripts/apply-dependency-update.sh "$RUNNER_TEMP/dependency-update/update.patch"
+      - name: Push branch and open PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          git config core.hooksPath /dev/null
+          git config commit.gpgsign false
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          branch="deps/weekly-dependencies-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git commit -m 'Update dependencies'
+          gh auth setup-git
+          git push --set-upstream origin "$branch"
+          gh pr create --base main --head "$branch" --title 'Update dependencies' \
+            --body-file "$RUNNER_TEMP/dependency-update/pr.md"

@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { isToolActivityBlock } from "@rakazo/core";
+import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 
 /**
  * Compact human duration for a tool-activity card summary.
@@ -33,14 +33,17 @@ export function shouldRenderToolCard(block: MessageBlock, showToolActivity: bool
   return showToolActivity && block.kind === "steps";
 }
 
-/** Blocks that survive into a message render: everything except hidden tool activity. */
+/** Blocks that survive into a message render. */
 export function renderableMessageBlocks(
   blocks: readonly MessageBlock[],
   showToolActivity: boolean,
 ): MessageBlock[] {
-  return blocks.filter(
-    (block) => !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity),
-  );
+  return blocks.filter((block) => isShown(block, showToolActivity));
+}
+
+function isShown(block: MessageBlock, showToolActivity: boolean): boolean {
+  if (isRetiredImportSetup(block)) return false;
+  return !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity);
 }
 
 /**
@@ -61,7 +64,5 @@ export function messageHasVisibleBlocks(
   blocks: readonly MessageBlock[],
   showToolActivity: boolean,
 ): boolean {
-  return blocks.some(
-    (block) => !isToolActivityBlock(block) || shouldRenderToolCard(block, showToolActivity),
-  );
+  return blocks.some((block) => isShown(block, showToolActivity));
 }

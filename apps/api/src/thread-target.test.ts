@@ -60,6 +60,7 @@ describe("queued run supersession", () => {
           .mockResolvedValueOnce([{ id: "run-old", userId: "user-1", spaceId: "space-1" }]),
         updateMany: vi.fn(),
       },
+      message: { findMany: vi.fn(async () => []) },
       task: { updateMany: vi.fn() },
       secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     };
@@ -3700,7 +3701,9 @@ describe("stopThreadRuns", () => {
       thread: {
         update: vi.fn(async () => ({ nextEventSeq: ++nextEventSeq })),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
+        findMany: vi.fn().mockResolvedValue([]),
         updateManyAndReturn: vi.fn().mockResolvedValue([
           { id: "run-a", botId: "bot-a" },
           { id: "run-b", botId: "bot-b" },
@@ -3841,7 +3844,9 @@ describe("stopThreadRuns", () => {
       thread: {
         update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
+        findMany: vi.fn().mockResolvedValue([]),
         updateManyAndReturn: vi.fn().mockResolvedValue([{ id: "run-a", botId: "bot-a" }]),
         findUnique: vi.fn().mockResolvedValue({ status: "cancelled" }),
       },
@@ -3950,7 +3955,12 @@ describe("stopThreadRuns", () => {
       thread: {
         update: vi.fn(async () => ({ nextEventSeq: ++nextEventSeq })),
       },
+      message: { findMany: vi.fn(async () => []) },
       run: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "run-a", userId: "user-1", spaceId: "workspace-1" },
+          { id: "run-b", userId: "user-1", spaceId: "workspace-1" },
+        ]),
         updateManyAndReturn: vi.fn().mockResolvedValue([
           { id: "run-a", botId: "bot-a", userId: "user-1", spaceId: "workspace-1" },
           { id: "run-b", botId: "bot-b", userId: "user-1", spaceId: "workspace-1" },

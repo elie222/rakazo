@@ -14,6 +14,15 @@ const SENSITIVE_FORWARD_HEADERS = new Set([
   "proxy-authorization",
 ]);
 
+/**
+ * Stock noVNC builds its socket URL as host + "/" + path, so the absolute capability path arrives
+ * as "//novnc/...". Collapse leading slashes so that socket reaches the proxy instead of hanging.
+ */
+export function novncRequestPath(url: string | undefined): string | null {
+  const path = url?.replace(/^\/{2,}/, "/");
+  return path?.startsWith("/novnc/") ? path : null;
+}
+
 /** Fail closed when the authoritative lifecycle check is unavailable. */
 export async function resolveNovncTarget(
   url: string | undefined,
@@ -65,8 +74,16 @@ function isHttp2PseudoHeader(key: string) {
   return key.startsWith(":");
 }
 
-export function safeProxyHeaders(headers: IncomingHttpHeaders) {
-  return Object.fromEntries(
+/**
+ * Headers for the provider request. The provider's own credentials replace the browser's, and the
+ * browser's Origin becomes the provider's: Boat refuses cross-origin WebSockets, and this proxy has
+ * already authorized the request with the sealed capability.
+ */
+export function safeProxyHeaders(
+  headers: IncomingHttpHeaders,
+  target?: Pick<ScreenProxyTarget, "protocol" | "hostname" | "port" | "headers">,
+) {
+  const forwarded: IncomingHttpHeaders = Object.fromEntries(
     Object.entries(headers).filter(([key, value]) => {
       return (
         value != null &&
@@ -75,6 +92,13 @@ export function safeProxyHeaders(headers: IncomingHttpHeaders) {
       );
     }),
   );
+  if (target && forwarded.origin) forwarded.origin = screenTargetOrigin(target);
+  return { ...forwarded, ...target?.headers };
+}
+
+function screenTargetOrigin(target: Pick<ScreenProxyTarget, "protocol" | "hostname" | "port">) {
+  const defaultPort = target.protocol === "https:" ? 443 : 80;
+  return `${target.protocol}//${target.hostname}${target.port === defaultPort ? "" : `:${target.port}`}`;
 }
 
 /** Recheck streams as well as new requests; no positive authorization cache. */

@@ -87,3 +87,28 @@ describe("tool-only narration", () => {
     expect(isToolOnlyNarration([liveActivity], true)).toBe(false);
   });
 });
+
+describe("a retired import checklist", () => {
+  const item = { kind: "routine" as const, routineId: "routine-1", name: "morning" };
+  const retired: MessageBlock[] = [
+    // As Undo leaves it now, and as a marked one written before items were emptied.
+    { kind: "import_setup", items: [], undone: true },
+    { kind: "import_setup", items: [item], undone: true },
+    { kind: "import_setup", items: [] },
+  ];
+
+  it("gives its message no row, in either tool-activity mode", () => {
+    for (const block of retired) {
+      for (const showToolActivity of [true, false]) {
+        expect(messageHasVisibleBlocks([block], showToolActivity)).toBe(false);
+        expect(renderableMessageBlocks([block], showToolActivity)).toEqual([]);
+      }
+    }
+  });
+
+  it("still shows a live checklist and anything beside a retired one", () => {
+    const live: MessageBlock = { kind: "import_setup", items: [item] };
+    expect(messageHasVisibleBlocks([live], false)).toBe(true);
+    expect(renderableMessageBlocks([retired[0]!, textBlock], false)).toEqual([textBlock]);
+  });
+});

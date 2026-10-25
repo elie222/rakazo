@@ -97,7 +97,7 @@ describe("app version footer helpers", () => {
           Object.hasOwn(values, key) ? String(values[key]) : match,
         );
       }),
-    ).toBe("production · a1b2c3d4 · 2026-09-10");
+    ).toBe("production a1b2c3d4, 2026-09-10");
   });
 
   it("treats disabled updates as embedded", async () => {

@@ -118,7 +118,8 @@ const bots = [
 
 async function render(
   options: {
-    onSave?: () => Promise<void>;
+    onSave?: ComponentProps<typeof GroupSettings>["onSave"];
+    group?: Group;
     onRemove?: () => Promise<void>;
     covered?: boolean;
     instance?: string;
@@ -132,7 +133,7 @@ async function render(
     root.render(
       <GroupSettings
         key={options.instance}
-        group={group}
+        group={options.group ?? group}
         bots={options.bots ?? bots}
         onSave={options.onSave ?? (async () => undefined)}
         onRemove={onRemove}
@@ -182,6 +183,28 @@ afterEach(async () => {
 });
 
 describe("GroupSettings", () => {
+  it("follows a refreshed group in fields not edited and keeps the ones that were", async () => {
+    const onSave = vi.fn(async () => undefined);
+    await render({ onSave });
+    const name = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+        name,
+        "My edit",
+      );
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const refreshed = {
+      ...group,
+      name: "Renamed elsewhere",
+      members: [...group.members, { botId: "bot-3", name: "Runner", color: "blue" }],
+    };
+    await render({ onSave, group: refreshed });
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("My edit");
+    await click("Save");
+    expect(onSave).toHaveBeenCalledWith({ name: "My edit", botIds: undefined });
+  });
+
   it("closes from the header button", async () => {
     const { onClose } = await render();
     await click("Close panel");

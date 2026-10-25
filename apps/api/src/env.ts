@@ -101,6 +101,8 @@ export interface AppEnv {
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
   emailEmulator: boolean;
+  slackClientId?: string;
+  slackClientSecret?: string;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
   whatsappAccessToken: string | undefined;
@@ -260,6 +262,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
+    slackClientId: optional(source.SLACK_CLIENT_ID),
+    slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
     whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),

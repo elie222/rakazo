@@ -3,6 +3,7 @@ import {
   canonicalPiProviderId,
   normalizeOpenAiCompatibleBaseUrl,
   selectCompatibleModelCredential,
+  withConnectionName,
 } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
@@ -216,7 +217,7 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
     key: modelOptionKey(credential.provider, modelId),
     provider: credential.provider,
     modelId,
-    label: `${credential.label} · ${modelId}`,
+    label: withConnectionName(modelId, credential.label),
     providerLabel: credential.label,
     modelLabel: modelId,
   };
@@ -229,7 +230,7 @@ function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedMo
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
-      label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+      label: withConnectionName(entry.label, entry.providerName ?? entry.provider),
       providerLabel: entry.providerName ?? entry.provider,
       modelLabel: entry.label,
       images: entry.images,
@@ -350,7 +351,9 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
     // The catalog has no vendor field. Its display convention is "Vendor: Model".
     const vendor = choice.modelLabel?.match(/^([^:]+): (.+)$/);
     const heading = choice.providerLabel
-      ? [choice.providerLabel, vendor?.[1]].filter(Boolean).join(" · ")
+      ? vendor?.[1]
+        ? withConnectionName(vendor[1], choice.providerLabel)
+        : choice.providerLabel
       : undefined;
     const key = heading ? `provider:${heading}` : "ungrouped";
     let section = sections.find((entry) => entry.key === key);

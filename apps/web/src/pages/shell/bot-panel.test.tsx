@@ -3,14 +3,15 @@
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot } from "@rakazo/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../lib/rpc", () => ({
-  rpc: {
+vi.mock("../../lib/rpc", () => {
+  const rpc = {
     bots: { get: vi.fn(), update: vi.fn(), restoreInstructions: vi.fn() },
     voice: { voices: vi.fn().mockResolvedValue([]) },
     models: {
@@ -18,8 +19,14 @@ vi.mock("../../lib/rpc", () => ({
       list: vi.fn().mockResolvedValue([]),
     },
     me: vi.fn().mockResolvedValue(null),
-  },
-}));
+  };
+  return {
+    rpc,
+    rpcForSpace: () => rpc,
+    createSpaceRpc: () => rpc,
+    selectedSpaceId: () => null,
+  };
+});
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
@@ -93,6 +100,7 @@ vi.mock("../KnowledgeSection", () => ({
 }));
 
 import { InstructionSettings } from "../../components/InstructionSettings";
+import { spaceQueries } from "../../lib/query";
 import { rpc } from "../../lib/rpc";
 import { BotSettings } from "./bot-panel";
 
@@ -138,6 +146,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
@@ -150,18 +159,20 @@ async function render(
 ) {
   await act(async () => {
     root.render(
-      <BotSettings
-        onOpenConnections={() => undefined}
-        focusModel={focusModel}
-        bot={bot(description, overrides)}
-        memoryProviderConfigured={memoryProviderConfigured}
-        onSkillsChange={() => undefined}
-        onSave={onSave}
-        onExport={async () => undefined}
-        onClear={() => undefined}
-      />,
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          onOpenConnections={() => undefined}
+          focusModel={focusModel}
+          bot={bot(description, overrides)}
+          memoryProviderConfigured={memoryProviderConfigured}
+          onSave={onSave}
+          onExport={async () => undefined}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
     );
   });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 }
 
 async function expandAdvanced() {
@@ -214,10 +225,12 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  queryClient.clear();
   container.remove();
   vi.unstubAllGlobals();
 });
@@ -667,4 +680,35 @@ it("saves a color change back to the initial value after a successful automatic 
   await act(async () => control().click());
   await act(async () => control().click());
   expect(onSave.mock.lastCall?.[0]).toHaveProperty("color", "ink");
+});
+
+describe("BotSettings cached data", () => {
+  it("shows cached voices at once and refreshes them in the background", async () => {
+    queryClient.setQueryData(spaceQueries(null, null).voice.voices.queryKey({ input: {} }), [
+      { id: "cached-voice", label: "Cached voice" },
+    ]);
+    vi.mocked(rpc.voice.voices)
+      .mockClear()
+      .mockReturnValueOnce(new Promise(() => undefined));
+    await render();
+    await expandAdvanced();
+    expect(container.querySelector('[id$="-voice"]')?.textContent).toContain("Cached voice");
+    expect(rpc.voice.voices).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows a newer bot in fields not edited and keeps the ones that were", async () => {
+    await render("Billing", { computerMode: "team" });
+    await setDescription("Invoices");
+    await render("Remote edit", {
+      name: "Grace",
+      computerMode: "dedicated",
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    });
+    expect(container.querySelector('[aria-label="Edit name"]')?.textContent).toBe("Grace");
+    expect(descriptionField().value).toBe("Invoices");
+    await clickSave();
+    const patch = onSave.mock.lastCall?.[0];
+    expect(patch).toMatchObject({ description: "Invoices", computerMode: "dedicated" });
+    expect(patch).not.toHaveProperty("name");
+  });
 });

@@ -65,12 +65,15 @@
     "croner": "10.0.1",
     "d3-dsv": "3.0.1",
     "dotenv": "17.4.2",
+    "fflate": "0.8.3",
     "hast-util-to-text": "4.0.2",
+    "json5": "2.2.3",
     "mdast-util-to-hast": "13.2.1",
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
-    "tldts": "7.4.10",
-    "unified": "11.0.5"
+    "tldts": "7.4.19",
+    "unified": "11.0.5",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@types/d3-dsv": "3.0.7",

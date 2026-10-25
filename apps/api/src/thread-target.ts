@@ -28,11 +28,9 @@ import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   clearEndedRunState,
-  clearRunTurnCheckpoints,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
-  deleteRunSecretsInTransaction,
   expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
@@ -1284,8 +1282,7 @@ export async function stopThreadRuns(
       select: { id: true, botId: true, userId: true, spaceId: true },
     });
     const ids = cancelled.map((run) => run.id);
-    await clearRunTurnCheckpoints(tx, ids);
-    await deleteRunSecretsInTransaction(tx, cancelled);
+    await clearEndedRunState(tx, ids);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },

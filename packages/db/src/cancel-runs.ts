@@ -1,10 +1,12 @@
 import type { Prisma } from "./client.js";
-import { deleteRunSecretsInTransaction } from "./run-secrets.js";
-import { RUN_TURN_CHECKPOINT_KIND } from "./run-turn-checkpoint.js";
+import { clearEndedRunState } from "./run-secrets.js";
 
 /** The caller selects authorized runs and owns the surrounding transaction and cleanup. */
 export async function cancelRunsInTransaction(
-  tx: Pick<Prisma.TransactionClient, "run" | "attempt" | "task" | "externalEffect" | "secret">,
+  tx: Pick<
+    Prisma.TransactionClient,
+    "run" | "attempt" | "task" | "externalEffect" | "secret" | "message"
+  >,
   runs: ReadonlyArray<{ id: string; taskId: string; userId: string; spaceId: string }>,
   cancelledAt: Date,
 ): Promise<void> {
@@ -19,13 +21,7 @@ export async function cancelRunsInTransaction(
       leaseExpiresAt: null,
     },
   });
-  await tx.externalEffect.deleteMany({
-    where: {
-      runId: { in: runIds },
-      kind: RUN_TURN_CHECKPOINT_KIND,
-      status: RUN_TURN_CHECKPOINT_KIND,
-    },
-  });
+  await clearEndedRunState(tx, runIds);
   await tx.attempt.updateMany({
     where: { runId: { in: runIds }, status: "running" },
     data: { status: "cancelled", finishedAt: cancelledAt },
@@ -34,5 +30,4 @@ export async function cancelRunsInTransaction(
     where: { id: { in: runs.map((run) => run.taskId) } },
     data: { status: "cancelled" },
   });
-  await deleteRunSecretsInTransaction(tx, runs);
 }

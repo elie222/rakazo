@@ -9,13 +9,17 @@ const settingsScreens = new Set([
   "billing",
   "account",
   "ai-data-sharing",
+  "approvals",
   "archived-bots",
   "change-password",
   "integration-setup",
   "integrations",
+  "messaging",
   "language",
   "models",
   "signup-survey",
+  "space",
+  "team-conversation",
   "voice",
 ]);
 

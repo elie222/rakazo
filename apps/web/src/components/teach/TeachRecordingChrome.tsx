@@ -52,8 +52,13 @@ export function TeachRecordingChrome({
         <div className="truncate text-[13px] text-foreground">
           <Trans>Recording: {recording.goal}</Trans>
         </div>
-        <div className="text-[12px] text-muted-foreground">
-          <Trans>{remaining} left · bot is watching, not acting</Trans>
+        <div className="flex flex-wrap gap-x-2 text-[12px] text-muted-foreground">
+          <span>
+            <Trans>{remaining} left</Trans>
+          </span>
+          <span>
+            <Trans>Bot is watching, not acting</Trans>
+          </span>
         </div>
         <div className="text-[12px] text-muted-foreground">
           <Trans>Use Protected input for passwords.</Trans>
@@ -71,8 +76,13 @@ export function TeachRecordingChrome({
       <div className="text-[14px] text-foreground">
         <Trans>Recording: {recording.goal}</Trans>
       </div>
-      <div className="mt-1 text-[13px] text-muted-foreground">
-        <Trans>{remaining} left · bot is watching, not acting</Trans>
+      <div className="mt-1 flex flex-wrap gap-x-2 text-[13px] text-muted-foreground">
+        <span>
+          <Trans>{remaining} left</Trans>
+        </span>
+        <span>
+          <Trans>Bot is watching, not acting</Trans>
+        </span>
       </div>
       <div className="mt-2 text-[13px] text-muted-foreground">
         <Trans>Use Protected input for passwords.</Trans>

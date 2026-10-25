@@ -31,6 +31,7 @@
     "test:evals": "tsx packages/testkit/src/cli/evals.ts",
     "test:computer-replay": "tsx packages/testkit/src/cli/computer-replay.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
+    "test:flows": "tsx packages/testkit/src/cli/flows.ts",
     "perf:desktop": "tsx packages/testkit/src/cli/desktop-performance.ts",
     "perf:compare": "tsx packages/testkit/src/cli/compare-performance.ts",
     "compose:up": "docker compose --env-file .env -f infra/compose/docker-compose.yml up --build",
@@ -42,7 +43,7 @@
     "cross-env": "10.1.0",
     "esbuild": "0.28.2",
     "tsx": "4.23.15",
-    "turbo": "2.11.9",
+    "turbo": "2.11.10",
     "typescript": "7.0.2",
     "vitest": "4.1.12"
   },

@@ -52,7 +52,7 @@ export function BotsSidebarLayout({
             data-testid="bots-sidebar-edge"
             aria-label={t`Resize bots sidebar`}
             style={{ insetInlineStart: width - 4 }}
-            className={`absolute inset-y-0 z-50 m-0 hidden h-full w-2 border-0 cursor-col-resize touch-none select-none after:absolute after:start-1/2 after:top-1/2 after:h-8 after:w-0.5 after:-translate-y-1/2 after:rounded-full after:bg-sidebar-border hover:bg-sidebar-border focus-visible:bg-sidebar-border focus-visible:outline-none md:block ${resizing ? "" : "transition-[inset-inline-start] duration-200 ease-out motion-reduce:transition-none"}`}
+            className={`absolute inset-y-0 z-50 m-0 hidden h-full w-2 border-0 cursor-col-resize touch-none select-none hover:bg-sidebar-border focus-visible:bg-sidebar-border focus-visible:outline-none md:block ${resizing ? "" : "transition-[inset-inline-start] duration-200 ease-out motion-reduce:transition-none"}`}
           />
         )}
       </SidebarProvider>

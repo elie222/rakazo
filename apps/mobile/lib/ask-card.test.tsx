@@ -270,6 +270,8 @@ it("closes the current sheet and keeps the card saved when refresh fails", async
     rpc,
     isCurrentTarget: () => true,
     refresh,
+    setReadBoundary: vi.fn(),
+    readVisit: { current: { visit: 1 } },
   };
   const answerMessage = new Function(
     ...Object.keys(handlerScope),

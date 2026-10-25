@@ -17,7 +17,7 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 export type ShellOverlay =
   | { kind: "settings"; section: SettingsSection; spaceId: string | null }
   | { kind: "integrations" }
-  | { kind: "mcp" }
+  | { kind: "mcp"; serverId?: string }
   | { kind: "messaging" }
   | null;
 
@@ -37,7 +37,10 @@ export function readShellOverlay(params: URLSearchParams): ShellOverlay {
     };
   }
   if (params.has("integrations")) return { kind: "integrations" };
-  if (params.has("mcp")) return { kind: "mcp" };
+  if (params.has("mcp")) {
+    const serverId = params.get("mcp");
+    return serverId ? { kind: "mcp", serverId } : { kind: "mcp" };
+  }
   if (params.has("messaging")) return { kind: "messaging" };
   return null;
 }
@@ -49,6 +52,8 @@ export function withShellOverlay(params: URLSearchParams, overlay: ShellOverlay)
   if (overlay?.kind === "settings") {
     next.set("settings", overlay.section);
     if (overlay.spaceId) next.set("space", overlay.spaceId);
+  } else if (overlay?.kind === "mcp") {
+    next.set("mcp", overlay.serverId ?? "");
   } else if (overlay) {
     next.set(overlay.kind, "");
   }

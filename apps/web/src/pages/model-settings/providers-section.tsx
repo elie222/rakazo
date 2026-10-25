@@ -35,7 +35,7 @@ export function ProvidersSection({
   credentials: ModelCredential[];
   /** Every provider that can be connected, connected ones included. */
   providers: ConnectableProvider[];
-  /** A connection's name, such as "OpenAI" or "OpenAI · Work". */
+  /** A connection's name, such as "OpenAI" or "OpenAI (Work)". */
   name: (credential: ModelCredential) => string;
   disabled?: boolean;
   onAdd: (provider: ConnectableProvider) => void;

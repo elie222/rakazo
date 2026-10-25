@@ -15,13 +15,13 @@
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
-    "@better-auth/expo": "1.7.11",
-    "@better-auth/passkey": "1.7.11",
+    "@better-auth/expo": "1.7.12",
+    "@better-auth/passkey": "1.7.12",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "better-auth": "1.7.11",
+    "better-auth": "1.7.12",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-email": "6.11.3"

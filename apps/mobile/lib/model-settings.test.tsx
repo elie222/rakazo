@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -8,25 +9,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ModelConnection from "../app/(settings)/model-connection";
 import Models from "../app/(settings)/models";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { openModelConnection } from "./model-connection-request";
+import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
+import { queryClient } from "./query";
 
 const savedEndpoint = "https://models.example.test/v1";
 const { push, back, params, rpcCalls, saved } = vi.hoisted(() => ({
   push: vi.fn(),
   back: vi.fn(),
-  params: {} as { requestId?: string },
-  rpcCalls: [] as [string, unknown][],
-  saved: { baseUrl: "https://models.example.test/v1", hasKey: false },
+  params: {} as { requestId?: string; spaceId?: string },
+  rpcCalls: [] as [string, unknown, { requestContext?: { headers: object } }?][],
+  saved: {
+    baseUrl: "https://models.example.test/v1",
+    hasKey: false,
+    label: "Fixture",
+    held: null as Promise<void> | null,
+  },
 }));
 
+vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
-  captureApiRequestContext: async () => ({ headers: {} }),
+  captureApiRequestContext: async (spaceId = "space-fixture") => ({
+    headers: { "x-rakazo-space-id": spaceId },
+  }),
   selectedSpaceId: () => "space-fixture",
-  rpc: async (procedure: string, input?: unknown) => {
-    rpcCalls.push([procedure, input]);
+  rpc: async (
+    procedure: string,
+    input?: unknown,
+    options?: { requestContext?: { headers: object } },
+  ) => {
+    rpcCalls.push([procedure, input, options]);
+    if (saved.held) await saved.held;
     if (procedure === "me")
       return {
         userId: "user-fixture",
@@ -59,7 +74,7 @@ vi.mock("./api", () => ({
           baseUrl: saved.baseUrl,
           hasKey: saved.hasKey,
           headerNames: ["x-session"],
-          label: "Fixture",
+          label: saved.label,
         },
       ];
     return [];
@@ -111,7 +126,7 @@ vi.mock("react-native", () => {
   const view = ({ children }: { children?: ReactNode }) => createElement("div", {}, children);
   return {
     AccessibilityInfo: { announceForAccessibility: vi.fn() },
-    ActivityIndicator: () => null,
+    ActivityIndicator: () => createElement("span", {}, "Loading"),
     Alert: { alert: vi.fn() },
     Keyboard: { dismiss: vi.fn() },
     Platform: { OS: "ios" },
@@ -151,6 +166,9 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
 }));
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -159,6 +177,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
     provider: "openai-compatible",
     credentialId: "credential-fixture",
     makeDefault: false,
+    target: { scope: "account" },
     ...request,
   });
   await act(async () => root.render(createElement(ModelConnection)));
@@ -166,7 +185,9 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  queryClient.clear();
   rpcCalls.length = 0;
+  delete params.spaceId;
   back.mockClear();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -292,6 +313,7 @@ it("hands a connected model back to the slot that asked for it", async () => {
     provider: "openai-compatible",
     modelId: "model-fixture",
     makeDefault: true,
+    scope: "account",
   });
   expect(onConnected).toHaveBeenCalledWith({
     provider: "openai-compatible",
@@ -299,6 +321,49 @@ it("hands a connected model back to the slot that asked for it", async () => {
     credentialId: "credential-new",
   });
   expect(back).toHaveBeenCalledOnce();
+});
+
+describe("a Space's model override", () => {
+  const otherSpace = { headers: { "x-rakazo-space-id": "space-other" } };
+
+  it("edits that Space's lists in that Space and leaves connections to the account", async () => {
+    params.spaceId = "space-other";
+    await notConnectedChoices();
+    expect(rpcCalls).toContainEqual([
+      "models/role",
+      { role: "main", expectedUserId: "user-fixture", scope: "space" },
+      { requestContext: otherSpace },
+    ]);
+    expect(container.textContent).not.toContain("Add provider");
+    const picker = modelPickerRequest(
+      (push.mock.calls.at(-1)![0] as { params: { requestId: string } }).params.requestId,
+    )!;
+    const connect = picker.continueTo?.(picker.connectChoices![0]!) as unknown as {
+      params: { requestId: string };
+    };
+    expect(modelConnectionRequest(connect.params.requestId)?.target).toEqual({
+      scope: "space",
+      spaceId: "space-other",
+    });
+  });
+
+  it("connects through that Space so a new main model lands in its override", async () => {
+    const onConnected = vi.fn(async () => undefined);
+    await remount(() =>
+      renderConnection({
+        makeDefault: true,
+        target: { scope: "space", spaceId: "space-other" },
+        onConnected,
+      }),
+    );
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    await act(async () => save.click());
+    const connect = rpcCalls.find(([procedure]) => procedure === "models/connect");
+    expect(connect?.[1]).toMatchObject({ makeDefault: true, scope: "space" });
+    expect(connect?.[2]).toEqual({ requestContext: otherSpace });
+  });
 });
 
 it("keeps setup help and API key collapsible for generic compatible servers", async () => {
@@ -338,3 +403,30 @@ it.each(["https://ollama.com", "https://ollama.com/v1/"])(
     }
   },
 );
+
+it("paints a revisit from cache without a spinner and refreshes behind it", async () => {
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  expect(container.textContent).toContain("Fixture");
+  let release!: () => void;
+  saved.held = new Promise((resolve) => {
+    release = resolve;
+  });
+  saved.label = "Renamed fixture";
+  try {
+    rpcCalls.length = 0;
+    await remount(async () => {
+      await act(async () => root.render(createElement(Models)));
+    });
+    expect(container.textContent).not.toContain("Loading");
+    expect(container.textContent).not.toContain("Renamed fixture");
+    expect(rpcCalls.map(([procedure]) => procedure)).toContain("models/credentials");
+
+    await act(async () => release());
+    expect(container.textContent).toContain("Renamed fixture");
+  } finally {
+    saved.held = null;
+    saved.label = "Fixture";
+  }
+});

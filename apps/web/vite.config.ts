@@ -40,6 +40,7 @@ import {
 } from "./src/novnc-html.js";
 import { rakazoPwa } from "./src/pwa/plugin.js";
 import {
+  novncRequestPath,
   resolveNovncTarget,
   safeProxyHeaders,
   watchScreenAuthorization,
@@ -95,10 +96,12 @@ function attachDesktopStackProbe(
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
   server.middlewares.use(async (req, res, next) => {
-    if (!req.url?.startsWith("/novnc/")) {
+    const path = novncRequestPath(req.url);
+    if (!path) {
       next();
       return;
     }
+    req.url = path;
     const connectionId = randomUUID();
     const bindings = {
       "screen.connection_id": connectionId,
@@ -117,7 +120,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       res.end("Invalid or expired screen capability");
       return;
     }
-    const forwarded = safeProxyHeaders(req.headers);
+    const forwarded = safeProxyHeaders(req.headers, target);
     const headers = {
       // The storage shim rewrites the page, so ask for all of it, uncompressed.
       ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
@@ -252,7 +255,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
-    if (!req.url?.startsWith("/novnc/")) return;
+    const path = novncRequestPath(req.url);
+    if (!path) return;
+    req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();
     const bindings = {
@@ -315,7 +320,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
         `Host: ${target.hostname}:${target.port}`,
       ];
-      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers))) {
+      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers, target))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);
       }
       upstream.write(`${headerLines.join("\r\n")}\r\n\r\n`);
