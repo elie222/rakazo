@@ -3988,7 +3988,7 @@ msgstr "Пароль"
 
 #: src/lib/user-error.ts
 msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
-msgstr ""Пароль должен содержать не более {MAX_PASSWORD_LENGTH} символов"
+msgstr "Пароль должен содержать не более {MAX_PASSWORD_LENGTH} символов"
 
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
