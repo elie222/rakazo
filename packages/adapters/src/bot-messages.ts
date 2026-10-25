@@ -110,13 +110,16 @@ export async function messageBot(
   if (target.id === sender.id) return { ok: false as const, error: "a bot cannot message itself" };
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };
+  // This run is answering the target's own request or question.
+  const answersTarget =
+    sourceContext?.fromBotId === target.id &&
+    (sourceContext.intent === undefined ||
+      sourceContext.intent === "request" ||
+      sourceContext.intent === "question");
   const returnsToSender =
     options?.allowTerminalSource === true &&
     (intent === "result" || intent === "status") &&
-    (sourceContext?.intent === undefined ||
-      sourceContext.intent === "request" ||
-      sourceContext.intent === "question") &&
-    sourceContext?.fromBotId === target.id;
+    answersTarget;
   if (botMessageHopExhausted(hop) && !returnsToSender) {
     return {
       ok: false as const,
@@ -127,11 +130,15 @@ export async function messageBot(
 
   const targetThreadId = target.thread.id;
   // Teammates that share exactly one group coordinate there, where the user can
-  // see it. A result returned to the delegating bot still goes back to its chat.
+  // see it. An answer to the target's own request still goes back to its chat.
   const group =
-    options?.allowTerminalSource || sourceContext?.fromBotId === target.id
+    options?.allowTerminalSource || answersTarget
       ? undefined
       : await sharedGroup(deps.prisma, run, sender.id, target.id);
+  const replyCandidate =
+    sourceContext?.fromBotId === target.id && intent !== "fyi"
+      ? sourceContext.returnToMessageId
+      : undefined;
   const deliveryThreadId = group?.threadId ?? targetThreadId;
 
   // A tool call can be re-executed after a lease expiry, so a delivery has to be
@@ -275,15 +282,23 @@ export async function messageBot(
               intent,
               returnToMessageId: outbound.id,
             };
+        // An answer keeps its link to the request. Any other reply link must point
+        // into the chat this message is written to, which can now be a group.
+        const replyToMessageId =
+          replyCandidate && !answersTarget
+            ? (
+                await tx.message.findFirst({
+                  where: { id: replyCandidate, threadId: deliveryThreadId },
+                  select: { id: true },
+                })
+              )?.id
+            : replyCandidate;
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: deliveryThreadId,
           role: group ? "bot" : "user",
           blocks: [inboundBlock],
           botId: group ? sender.id : undefined,
-          replyToMessageId:
-            sourceContext?.fromBotId === target.id && intent !== "fyi"
-              ? sourceContext.returnToMessageId
-              : undefined,
+          replyToMessageId,
           clientNonce: deliveryKey,
           markUnread: group ? undefined : options?.forceUnread === true,
         });

@@ -2860,6 +2860,129 @@ describeJourneys("required product journeys", () => {
     );
   });
 
+  it("54d: a follow-up after a teammate's result is posted in the shared group too", async () => {
+    const cookie = await signup(app, `group-follow-up-${stamp}@rakazo.test`, "Group Follow Up");
+    const me = await rpc<Me>(app, cookie, "me");
+    const chief = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const researcher = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Researcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
+      name: "Launch desk",
+      botIds: [chief.id, researcher.id],
+    });
+    const threadOf = async (botId: string) =>
+      (await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } })).id;
+    const chiefThreadId = await threadOf(chief.id);
+    const researcherThreadId = await threadOf(researcher.id);
+    type Received = Extract<MessageBlock, { kind: "bot_message_received" }>;
+    const receivedOf = (message: { blocks: unknown }) =>
+      (message.blocks as MessageBlock[]).find(
+        (block): block is Received => block.kind === "bot_message_received",
+      );
+    const settled = async () =>
+      (await prisma.run.count({
+        where: {
+          botId: { in: [chief.id, researcher.id] },
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+      })) === 0;
+
+    // Researcher answers Chief's request in the group; its result returns to Chief's chat.
+    await sendAndWait(app, cookie, chief.id, "message the bot named Researcher saying find venues");
+    let result: { id: string; blocks: unknown } | undefined;
+    await waitForDatabase(async () => {
+      result = (
+        await prisma.message.findMany({
+          where: { threadId: chiefThreadId, role: "user" },
+          select: { id: true, blocks: true },
+        })
+      ).find((message) => receivedOf(message)?.fromBotId === researcher.id);
+      return Boolean(result);
+    });
+    await waitForDatabase(settled);
+    const researcherEcho = await prisma.message.findUniqueOrThrow({
+      where: { id: receivedOf(result!)!.returnToMessageId! },
+    });
+    expect(researcherEcho.threadId).toBe(group.threadId);
+
+    // Chief's run woken by that result asks Researcher for more.
+    const task = await prisma.task.create({
+      data: {
+        spaceId: chief.spaceId,
+        botId: chief.id,
+        threadId: chiefThreadId,
+        userId: me.userId,
+        prompt: "relay the venues",
+        status: "running",
+      },
+    });
+    const woken = await prisma.run.create({
+      data: {
+        spaceId: chief.spaceId,
+        botId: chief.id,
+        threadId: chiefThreadId,
+        taskId: task.id,
+        userId: me.userId,
+        status: "running",
+        trigger: "bot_message",
+        sourceMessageId: result!.id,
+      },
+    });
+    const followUp = (message: string) =>
+      runAsSystem("background job run.continue", () =>
+        messageBot(
+          { prisma: appPrisma, events: createThreadEvents(appPrisma), jobs },
+          woken,
+          { id: chief.id, name: "Chief" },
+          { bot_id: researcher.id, message, intent: "request" },
+        ),
+      );
+    const postedInGroup = async (text: string) =>
+      (
+        await prisma.message.findMany({ where: { threadId: group.threadId, botId: chief.id } })
+      ).filter((message) =>
+        (message.blocks as MessageBlock[]).some(
+          (block) => block.kind === "handoff" && block.text === text,
+        ),
+      );
+
+    await expect(followUp("book the second venue")).resolves.toMatchObject({
+      ok: true,
+      botId: researcher.id,
+    });
+    const posted = await postedInGroup("book the second venue");
+    expect(posted).toHaveLength(1);
+    // Threaded under Researcher's result, which sits in the same chat.
+    expect(posted[0]!.replyToMessageId).toBe(researcherEcho.id);
+    expect(await prisma.message.count({ where: { threadId: researcherThreadId } })).toBe(0);
+
+    // With a second shared group it goes to Researcher's own chat, without a link into the group.
+    await rpc(app, cookie, "groups/create", {
+      name: "Second desk",
+      botIds: [chief.id, researcher.id],
+    });
+    await expect(followUp("book the third venue")).resolves.toMatchObject({ ok: true });
+    const direct = await prisma.message.findFirstOrThrow({
+      where: { threadId: researcherThreadId, role: "user" },
+    });
+    expect(receivedOf(direct)).toMatchObject({ text: "book the third venue" });
+    expect(direct.replyToMessageId).toBeNull();
+
+    await prisma.run.update({ where: { id: woken.id }, data: { status: "cancelled" } });
+    await waitForDatabase(settled);
+  });
+
   it("17: teach a task end to end", async () => {
     const cookie = await signup(app, `teach-j-${stamp}@rakazo.test`, "Teach Ada");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

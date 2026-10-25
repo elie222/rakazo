@@ -250,6 +250,19 @@ describe("group members roster", () => {
     expect(context).not.toContain("message_bot");
     expect(context).not.toContain("Chief of Staff");
     expect(context).not.toContain("orchestrator");
+
+    // A run without handoff_to_bot (a teammate's request posted here) finishes the work itself.
+    const answering = renderGroupMembersContext(
+      "Launch desk",
+      [{ id: "b_1", name: "Researcher" }],
+      { id: "b_1", name: "Researcher" },
+      { handoffOffered: false },
+    );
+    expect(answering).toContain("Researcher (id: b_1)");
+    expect(answering).not.toContain("handoff_to_bot");
+    expect(answering).toContain(
+      "Complete the request yourself and post the result in this thread.",
+    );
   });
 
   it("reuses the same roster line formatting as the teammate directory", () => {
