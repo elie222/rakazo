@@ -34,6 +34,7 @@ import {
 import type { SkillFiles } from "@rakazo/core";
 import {
   combineImportedInstructions,
+  extractRoutineSkillMentions,
   freeAgentImportMemoryPath,
   parseAgentImport,
   readAgentImportFolder,
@@ -831,11 +832,33 @@ async function undoPlan(
     select: { serverId: true },
   });
   const sharedServers = new Set(assignedElsewhere.map((row) => row.serverId));
+  const routineSplit = split(
+    routines,
+    (row) => row.updatedAt.toISOString() !== routineTimes.get(row.id),
+  );
+  // Skills are shared: one a surviving routine mentions stays, or that routine loses its steps.
+  const survivingRoutines = await db.routine.findMany({
+    where: {
+      ...owner,
+      NOT: existingBot ? { id: { in: ids(routineSplit.remove) } } : { botId },
+    },
+    select: { prompt: true },
+  });
+  const skillNames = skills.map((row) => row.name);
+  const usedSkills = new Set(
+    survivingRoutines.flatMap((row) =>
+      extractRoutineSkillMentions(row.prompt, skillNames).map((name) => name.toLowerCase()),
+    ),
+  );
   const plan = {
     existingBot,
     record,
     found,
-    skills: split(skills, (row) => contentHash(row.content) !== hashes.get(row.id)),
+    skills: split(
+      skills,
+      (row) =>
+        contentHash(row.content) !== hashes.get(row.id) || usedSkills.has(row.name.toLowerCase()),
+    ),
     spaceMemory: split(documents, (row) => row.revision !== revisions.get(row.id)),
     mcpServers: split(
       servers,
@@ -844,7 +867,7 @@ async function undoPlan(
     addedBotMemory: existingBot
       ? split(botMemory, (row) => row.revision !== revisions.get(row.id))
       : { remove: [], keep: [] },
-    routines: split(routines, (row) => row.updatedAt.toISOString() !== routineTimes.get(row.id)),
+    routines: routineSplit,
     // Edited memory of a new bot is archived to space memory, as "keep memories" would.
     botMemoryChanged:
       !existingBot && botMemory.some((row) => row.revision !== revisions.get(row.id)),

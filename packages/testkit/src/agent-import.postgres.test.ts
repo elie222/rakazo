@@ -801,6 +801,45 @@ describeIntegration("agent import", () => {
     expect(await db.secret.count({ where: { userId: owner.userId, kind: "mcp" } })).toBe(0);
   });
 
+  it("keeps an imported skill that another bot's routine mentions", async () => {
+    const cookie = await signup(app, `import-undo-used-${stamp}@rakazo.test`, "Used Skill");
+    const other = await rpc<Bot>(app, cookie, "bots/create", { name: "Other" });
+    const files = [
+      { path: ".openclaw/workspace/SOUL.md", content: "Calm.\n" },
+      { path: ".openclaw/skills/garden/SKILL.md", content: skill("garden", "Water plants") },
+    ];
+    const plan = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", { files });
+    const bot = await rpc<Bot>(app, cookie, "bots/importCreate", {
+      files,
+      name: "Imported",
+      selection: {
+        instructions: plan.instructions.map((item) => item.id),
+        memory: [],
+        skills: plan.skills.map((item) => item.id),
+        mcpServers: [],
+        routines: [],
+        apiKeys: [],
+      },
+    });
+    await rpc(app, cookie, "routines/create", {
+      botId: other.id,
+      name: "Morning",
+      prompt: "Run @garden before nine.",
+      crons: ["0 9 * * 1"],
+      timezone: "UTC",
+      notify: false,
+      active: false,
+    });
+
+    const undone = await undoShown(app, cookie, bot.id);
+    expect(undone.keep.skills).toEqual(["garden"]);
+    const owner = await db.bot.findUniqueOrThrow({
+      where: { id: other.id },
+      select: { spaceId: true, userId: true },
+    });
+    expect(await db.agentSkill.count({ where: { ...owner, name: "garden" } })).toBe(1);
+  });
+
   it("decides Undo again after locking, keeping a server edited or assigned meanwhile", async () => {
     const cookie = await signup(app, `import-undo-race-${stamp}@rakazo.test`, "Race User");
     const files = [
