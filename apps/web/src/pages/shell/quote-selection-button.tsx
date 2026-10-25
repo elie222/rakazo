@@ -72,7 +72,7 @@ export const QuoteSelectionButton = memo(function QuoteSelectionButton({
         className="px-3 shadow-md"
       >
         <TextQuote strokeWidth={2} />
-        {t`Quote`}
+        {t`Reply`}
       </Button>
     </div>,
     document.body,

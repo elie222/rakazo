@@ -530,6 +530,10 @@ msgstr "Agregar OpenAPI"
 msgid "Add passkey"
 msgstr "Añadir llave de acceso"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "Añadir proveedor"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Agregar servidor MCP remoto"
@@ -1218,6 +1222,7 @@ msgstr "Borrando…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1826,6 +1831,7 @@ msgstr "No se pudo quitar la regla"
 msgid "Could not remove the credential"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr ""
@@ -2111,6 +2117,7 @@ msgid "Decline"
 msgstr "Rechazar"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2201,10 +2208,6 @@ msgstr "Denegado"
 msgid "Deny"
 msgstr "Denegar"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "Predeterminado del despliegue"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2250,10 +2253,9 @@ msgstr ""
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr ""
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} desconectado."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3368,6 +3370,7 @@ msgstr "Silenciado"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3530,6 +3533,7 @@ msgstr "No hay modelos en la lista."
 msgid "No remote MCP servers found"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3913,6 +3917,10 @@ msgstr ""
 msgid "Provider"
 msgstr "Proveedor"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "Proveedores"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "Solicitud de incorporación"
@@ -3920,10 +3928,6 @@ msgstr "Solicitud de incorporación"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "En cola"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -4167,6 +4171,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "Responder"
 
@@ -4357,6 +4362,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4406,6 +4412,7 @@ msgstr ""
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4426,6 +4433,7 @@ msgid "Scopes (optional)"
 msgstr "Ámbitos (opcional)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

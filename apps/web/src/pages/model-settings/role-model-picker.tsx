@@ -20,6 +20,12 @@ import type { ModelCatalogEntry } from "../../lib/model-auth";
 /** `baseUrl` presets an OpenAI-compatible server, such as Ollama Cloud. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
 
+/** A model on one connection; `providerName` is that connection's name. */
+export type RoleModelOption = ModelCatalogEntry & { credentialId?: string };
+
+const optionValue = (option: RoleModelOption) =>
+  `${option.provider}:${option.id}:${option.credentialId ?? ""}`;
+
 /**
  * One picker for every model a role can use: connected models pick directly, and
  * providers that still need a connection hand off to the connect dialog.
@@ -38,12 +44,12 @@ export function RoleModelPicker({
 }: {
   trigger: ReactElement;
   label: string;
-  options: ModelCatalogEntry[];
+  options: RoleModelOption[];
   providers: ConnectableProvider[];
-  /** Clears the slot back to the deployment's own choice. */
+  /** The deployment's model, offered to clear the slot back to it. */
   defaultOption?: string;
   disabled?: boolean;
-  onPick: (option: ModelCatalogEntry | null) => void;
+  onPick: (option: RoleModelOption | null) => void;
   onConnect: (provider: ConnectableProvider) => void;
   /** Opens the picker searching for `query`, e.g. a provider that just connected. */
   reopen?: { query: string; key: number };
@@ -58,8 +64,8 @@ export function RoleModelPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const groups = useMemo(() => {
-    const grouped = new Map<string, ModelCatalogEntry[]>();
-    for (const option of filterModelCatalog(options, query)) {
+    const grouped = new Map<string, RoleModelOption[]>();
+    for (const option of filterModelCatalog(options, query) as RoleModelOption[]) {
       const name = option.providerName ?? option.provider;
       grouped.set(name, [...(grouped.get(name) ?? []), option]);
     }
@@ -71,7 +77,7 @@ export function RoleModelPicker({
   );
   const values = [
     ...(defaultOption && !needle ? ["default"] : []),
-    ...groups.flatMap(([, entries]) => entries.map((option) => `${option.provider}:${option.id}`)),
+    ...groups.flatMap(([, entries]) => entries.map(optionValue)),
     ...matchingProviders.map((provider) => `connect:${provider.id}:${provider.baseUrl ?? ""}`),
   ];
   // The first row is active whenever the list changes, so Enter always picks something.
@@ -152,7 +158,10 @@ export function RoleModelPicker({
                     close();
                   }}
                 >
-                  {defaultOption}
+                  <span className="min-w-0 truncate">{defaultOption}</span>
+                  <CommandShortcut className="text-[13px] tracking-normal">
+                    <Trans>Default</Trans>
+                  </CommandShortcut>
                 </CommandItem>
               </CommandGroup>
             ) : null}
@@ -160,8 +169,8 @@ export function RoleModelPicker({
               <CommandGroup key={name} heading={name}>
                 {entries.map((option) => (
                   <CommandItem
-                    key={`${option.provider}:${option.id}`}
-                    value={`${option.provider}:${option.id}`}
+                    key={optionValue(option)}
+                    value={optionValue(option)}
                     onSelect={() => {
                       onPick(option);
                       close();

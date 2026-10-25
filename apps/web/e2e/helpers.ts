@@ -215,11 +215,11 @@ export async function openUserSettings(
   return settings;
 }
 
-/** The connection dialog for a provider, titled "Connect X" until it is connected and "X" after. */
+/** The connection page for a provider, titled "Connect X" until it is connected and "X" after. */
 export function modelConnectionDialog(page: Page, provider: string) {
   const name = provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return page
-    .getByRole("dialog")
+    .getByTestId("model-connection")
     .filter({ has: page.getByRole("heading", { name: new RegExp(`^(Connect )?${name}$`) }) });
 }
 
@@ -319,4 +319,16 @@ export async function chooseOption(trigger: Locator, option: string | { index: n
     ? trigger.page().getByRole("option", { name: option, exact: true })
     : options.nth(option.index)
   ).click();
+}
+
+/** Presents a deployment default the offline E2E server cannot run, as host credentials would. */
+export async function presentMainDeploymentDefault(page: Page, provider: string, modelId: string) {
+  await page.route("**/rpc/models/role", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: { role: string } };
+    if (json.role !== "main") return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.deploymentPrimary = { provider, modelId };
+    await route.fulfill({ response, json: body });
+  });
 }

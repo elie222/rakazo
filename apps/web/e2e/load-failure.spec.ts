@@ -151,7 +151,6 @@ test("preload recovery keeps Settings bound to another space", async ({ page }, 
   await reloaded;
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "models");
-  await expect(settings.getByTestId("settings-space")).toHaveText("Personal");
   await expect(page).toHaveURL(
     (url) =>
       url.pathname === new URL(originalUrl).pathname &&

@@ -1,5 +1,10 @@
 import type { ModelRole, ModelRoleChoice, ModelRoleSettings } from "@rakazo/contracts";
-import { backupChoiceKey, canonicalPiProviderId, ThinkingLevelSchema } from "@rakazo/contracts";
+import {
+  backupChoiceKey,
+  canonicalPiProviderId,
+  modelRoleChoiceKey,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { writeSpaceBackupModels } from "./model-backups.js";
@@ -15,8 +20,9 @@ type RoleWriteClient = Pick<
 
 export type ModelRoleWriteOptions = {
   /**
-   * The connection serving a newly written main model, or null for a deployment-managed one.
-   * The previous release reads the main model from that connection's default preference.
+   * The connection serving a newly written main model that names none, or null for a
+   * deployment-managed one. The previous release reads the main model from that
+   * connection's default preference.
    */
   primaryCredentialId?: string | null;
 };
@@ -30,7 +36,13 @@ export async function getModelRole(
   const rows = await prisma.spaceModelRoleChoice.findMany({
     where: { userId: scope.userId, spaceId: scope.spaceId, role },
     orderBy: { position: "asc" },
-    select: { position: true, provider: true, modelId: true, thinkingLevel: true },
+    select: {
+      position: true,
+      provider: true,
+      modelId: true,
+      thinkingLevel: true,
+      credentialId: true,
+    },
   });
   const choice = (row: (typeof rows)[number]): ModelRoleChoice => {
     const thinkingLevel = ThinkingLevelSchema.safeParse(row.thinkingLevel);
@@ -38,6 +50,7 @@ export async function getModelRole(
       provider: row.provider,
       modelId: row.modelId,
       ...(thinkingLevel.success ? { thinkingLevel: thinkingLevel.data } : {}),
+      ...(row.credentialId ? { credentialId: row.credentialId } : {}),
     };
   };
   const primary = rows.find((row) => row.position === 0);
@@ -84,21 +97,39 @@ export async function writeModelRole(
   const scoped = { userId: scope.userId, spaceId: scope.spaceId };
   const current = await getModelRole(tx, scope, role);
   const saved = [...(current.primary ? [current.primary] : []), ...current.backups];
-  const withThinking = (choice: ModelRoleChoice): ModelRoleChoice => ({
-    ...choice,
-    provider: canonicalPiProviderId(choice.provider),
-    thinkingLevel:
-      choice.thinkingLevel !== undefined
-        ? choice.thinkingLevel
-        : (saved.find((item) => backupChoiceKey(item) === backupChoiceKey(choice))?.thinkingLevel ??
-          null),
-  });
+  // The same row first, then the same model on another connection.
+  const savedThinking = (choice: ModelRoleChoice) =>
+    (
+      saved.find((item) => modelRoleChoiceKey(item) === modelRoleChoiceKey(choice)) ??
+      saved.find((item) => backupChoiceKey(item) === backupChoiceKey(choice))
+    )?.thinkingLevel ?? null;
+  // Apps that predate connections send rows without one; a row keeps the connection its
+  // model already ran on when only one connection did.
+  const savedConnection = (choice: ModelRoleChoice) => {
+    const owners = saved.filter((item) => backupChoiceKey(item) === backupChoiceKey(choice));
+    return owners.length === 1 ? owners[0]!.credentialId : undefined;
+  };
+  const withThinking = (choice: ModelRoleChoice): ModelRoleChoice => {
+    const credentialId =
+      choice.credentialId !== undefined ? choice.credentialId : savedConnection(choice);
+    return {
+      ...choice,
+      provider: canonicalPiProviderId(choice.provider),
+      ...(credentialId ? { credentialId } : {}),
+      thinkingLevel:
+        choice.thinkingLevel !== undefined ? choice.thinkingLevel : savedThinking(choice),
+    };
+  };
   const primary =
     patch.primary === undefined ? current.primary : patch.primary && withThinking(patch.primary);
   // The primary already runs first, so a matching fallback would never be tried.
   const backups = (patch.backups ?? current.backups)
-    .filter((backup) => !primary || backupChoiceKey(backup) !== backupChoiceKey(primary))
-    .map(withThinking);
+    .map(withThinking)
+    .filter(
+      (backup, index, list) =>
+        (!primary || modelRoleChoiceKey(backup) !== modelRoleChoiceKey(primary)) &&
+        list.findIndex((item) => modelRoleChoiceKey(item) === modelRoleChoiceKey(backup)) === index,
+    );
   await tx.spaceModelRoleChoice.deleteMany({ where: { ...scoped, role } });
   await tx.spaceModelRoleChoice.createMany({
     data: [
@@ -111,14 +142,24 @@ export async function writeModelRole(
       provider: row.provider,
       modelId: row.modelId,
       thinkingLevel: row.thinkingLevel ?? null,
+      credentialId: row.credentialId ?? null,
     })),
   });
   if (role === "main") {
     await mirrorPreviousMainModel(
       tx,
       scope,
-      { primary: patch.primary === undefined ? undefined : primary, backups },
-      options.primaryCredentialId ?? null,
+      {
+        primary: patch.primary === undefined ? undefined : primary,
+        // The previous release lists each model once, whichever connection runs it.
+        backups: backups.filter(
+          (backup, index) =>
+            (!primary || backupChoiceKey(backup) !== backupChoiceKey(primary)) &&
+            backups.findIndex((item) => backupChoiceKey(item) === backupChoiceKey(backup)) ===
+              index,
+        ),
+      },
+      primary?.credentialId ?? options.primaryCredentialId ?? null,
     );
   }
   return getModelRole(tx, scope, role);

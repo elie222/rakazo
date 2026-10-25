@@ -530,6 +530,10 @@ msgstr "Добавить OpenAPI"
 msgid "Add passkey"
 msgstr "Добавить ключ доступа"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "Добавить поставщика"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Добавить удалённый MCP-сервер"
@@ -1218,6 +1222,7 @@ msgstr "Очистка…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1826,6 +1831,7 @@ msgstr "Не удалось удалить правило"
 msgid "Could not remove the credential"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr "Не удалось переименовать соединение"
@@ -2111,6 +2117,7 @@ msgid "Decline"
 msgstr "Отклонить"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2201,10 +2208,6 @@ msgstr "Отклонено"
 msgid "Deny"
 msgstr "Запретить"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "Развертывание по умолчанию"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2250,10 +2253,9 @@ msgstr ""
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr ""
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName}: отключено."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3368,6 +3370,7 @@ msgstr "микрофон выключен"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3530,6 +3533,7 @@ msgstr "Модели не перечислены."
 msgid "No remote MCP servers found"
 msgstr "Удаленные MCP-серверы не найдены"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3913,6 +3917,10 @@ msgstr ""
 msgid "Provider"
 msgstr "Поставщик"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "Поставщики"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "Запрос на слияние"
@@ -3920,10 +3928,6 @@ msgstr "Запрос на слияние"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "В очереди"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -4167,6 +4171,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "Ответить"
 
@@ -4357,6 +4362,7 @@ msgstr "Запускается, когда этот бот получает пр
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4406,6 +4412,7 @@ msgstr "Сохранение..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4426,6 +4433,7 @@ msgid "Scopes (optional)"
 msgstr "Области доступа (необязательно)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

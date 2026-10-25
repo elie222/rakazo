@@ -3681,6 +3681,7 @@ describe("model credential persistence", () => {
     // Connect loads any previous credential on the root client before the write transaction.
     const userModelCredential = {
       findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn().mockImplementation(async ({ data }: { data: { provider: string } }) => ({
         id: "cred-1",
         userId: actor.userId,
@@ -3879,7 +3880,8 @@ describe("model credential persistence", () => {
     expect(response.status).toBe(200);
     expect(update).toHaveBeenCalledWith({
       where: { id: existing.id },
-      data: { label: "azure", secretId: "new-secret" },
+      // An older app's connect replaces the provider's connection and keeps its name.
+      data: { secretId: "new-secret" },
     });
     expect(deps.prisma.userModelCredential.create).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
@@ -4170,6 +4172,156 @@ describe("model credential persistence", () => {
     );
   });
 
+  it("adds another connection when the save names none, numbering its name", async () => {
+    const { deps, handler } = persistDeps();
+    const existing = {
+      id: "cred-personal",
+      userId: actor.userId,
+      provider: "anthropic",
+      label: "Anthropic",
+      secretId: "secret-personal",
+    };
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockResolvedValue(existing);
+    credentials.findMany!.mockResolvedValue([{ label: "Anthropic" }]);
+    credentials.update = vi.fn();
+
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      label: "Anthropic",
+      credentialId: null,
+      makeDefault: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(credentials.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ provider: "anthropic", label: "Anthropic 2" }),
+    });
+    expect(credentials.update).not.toHaveBeenCalled();
+  });
+
+  it("replaces only the connection a save names", async () => {
+    const { deps, handler } = persistDeps();
+    const work = {
+      id: "cred-work",
+      userId: actor.userId,
+      provider: "anthropic",
+      label: "Work",
+      secretId: "secret-work",
+    };
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === work.id ? work : null,
+    );
+    credentials.update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...work,
+      ...data,
+    }));
+    credentials.count = vi.fn().mockResolvedValue(0);
+    Object.assign(deps.prisma, { secret: { findFirst: vi.fn().mockResolvedValue(null) } });
+    const transaction = deps.prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+    transaction.mockImplementation(async (fn) =>
+      fn(
+        withMainRole({
+          userModelCredential: credentials,
+          userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
+          spaceModelPreference: deps.prisma.spaceModelPreference,
+          secret: {
+            create: vi.fn().mockResolvedValue({ id: "new-secret" }),
+            deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+        }),
+      ),
+    );
+
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      credentialId: work.id,
+      makeDefault: false,
+    });
+    expect(response.status).toBe(200);
+    expect(credentials.update).toHaveBeenCalledWith({
+      where: { id: work.id },
+      data: { secretId: "new-secret" },
+    });
+    expect(credentials.create).not.toHaveBeenCalled();
+
+    const missing = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+      credentialId: "cred-removed",
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("binds an older app's sign-in to the provider's newest connection when it begins", async () => {
+    const { deps, handler } = persistDeps();
+    const begin = vi.fn(async () => ({
+      loginId: "login-1",
+      provider: "openai-codex",
+      mode: "auth-url" as const,
+      verificationUri: "https://auth.example.com/authorize",
+      expiresInSeconds: 60,
+    }));
+    Object.assign(deps.oauthLogins, { begin });
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockResolvedValue({
+      id: "cred-newest",
+      userId: actor.userId,
+      provider: "openai-codex",
+      label: "ChatGPT",
+      secretId: "secret-newest",
+    });
+
+    expect((await call(handler, "models/beginOAuth", { provider: "openai-codex" })).status).toBe(
+      200,
+    );
+    expect(begin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ credentialId: "cred-newest" }),
+    );
+
+    // A new account stays a new account.
+    await call(handler, "models/beginOAuth", { provider: "openai-codex", credentialId: null });
+    expect(begin).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: null }));
+  });
+
+  it("names a second subscription account by the email it signed in with", async () => {
+    const { finish, deps, handler } = persistDeps();
+    const access = `fake.${Buffer.from(
+      JSON.stringify({ "https://api.openai.com/profile": { email: "work@example.com" } }),
+    ).toString("base64url")}.fake`;
+    finish.mockImplementation(async (_loginId, _actor, persist) => ({
+      status: "connected" as const,
+      value: await persist({
+        status: "connected",
+        provider: "openai-codex",
+        credentialId: null,
+        credential: { type: "oauth", access, refresh: "refresh-token", expires: Date.now() + 1 },
+        signal: new AbortController().signal,
+      }),
+    }));
+
+    const response = await call(handler, "models/finishOAuth", { loginId: "login-1" });
+
+    expect(response.status).toBe(200);
+    expect(deps.prisma.userModelCredential.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provider: "openai-codex", label: "work@example.com" }),
+      }),
+    );
+  });
+
   it.each([
     ["github-copilot", "GitHub Copilot"],
     ["openai-codex", "OpenAI Codex"],
@@ -4199,6 +4351,107 @@ describe("model credential persistence", () => {
         data: expect.objectContaining({ provider, label }),
       }),
     );
+  });
+});
+
+describe("model disconnect", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const connection = (id: string) => ({
+    id,
+    userId: actor.userId,
+    provider: "openai-codex",
+    label: id,
+    secretId: `${id}-secret`,
+  });
+
+  function disconnectDeps() {
+    const connections = [connection("personal"), connection("work")];
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ bypass: null }]),
+      spaceModelRoleChoice: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      spaceBackupModel: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      spaceModelPreference: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      userModelCredential: {
+        findMany: vi.fn(async () => connections),
+        deleteMany: vi.fn(async () => ({ count: 1 })),
+        count: vi.fn(async () => 0),
+      },
+      userVoiceCredential: { count: vi.fn(async () => 0) },
+      secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+    };
+    const cancelProvider = vi.fn(async () => undefined);
+    const deps = {
+      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      oauthLogins: { cancelProvider },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        agentRuntime: "pi",
+      },
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = async (body: unknown) =>
+      (
+        await handler.handle(
+          new Request("http://127.0.0.1/rpc/models/disconnect", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ json: body }),
+          }),
+          { prefix: "/rpc", context: { actor } },
+        )
+      ).response;
+    return { tx, cancelProvider, call };
+  }
+
+  it("removes one connection and its rows, keeping the other account's", async () => {
+    const { tx, cancelProvider, call } = disconnectDeps();
+    const response = await call({ provider: "openai-codex", credentialId: "work" });
+    expect(response.status).toBe(200);
+    expect(cancelProvider).toHaveBeenCalledWith({
+      userId: actor.userId,
+      provider: "openai-codex",
+      credentialId: "work",
+    });
+    expect(tx.spaceModelRoleChoice.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: actor.userId,
+        provider: "openai-codex",
+        OR: [{ credentialId: { in: ["work"] } }],
+      },
+    });
+    // The previous release's fallbacks still run on the remaining connection.
+    expect(tx.spaceBackupModel.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, id: { in: ["work"] } },
+    });
+    expect(tx.secret.deleteMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "work-secret" },
+    });
+  });
+
+  it("removes every connection of the provider for an app that names none", async () => {
+    const { tx, call } = disconnectDeps();
+    expect((await call({ provider: "openai-codex" })).status).toBe(200);
+    expect(tx.spaceModelRoleChoice.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: actor.userId,
+        provider: "openai-codex",
+        OR: [{ credentialId: { in: ["personal", "work"] } }, { credentialId: null }],
+      },
+    });
+    expect(tx.spaceBackupModel.deleteMany).toHaveBeenCalled();
+    expect(tx.userModelCredential.deleteMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, id: { in: ["personal", "work"] } },
+    });
   });
 });
 

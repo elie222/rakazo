@@ -3,6 +3,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Main model": "Hauptmodell",
   "Add fallback": "Backup-Modell hinzufügen",
   "Manage {provider}": "{provider} verwalten",
+  "Add provider": "Anbieter hinzufügen",
   "Choose a model": "Modell auswählen",
   "Use 80 characters or fewer": "Höchstens 80 Zeichen verwenden",
   "Could not update name": "Name konnte nicht aktualisiert werden",
@@ -470,7 +471,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not reach this model server": "Modellserver konnte nicht erreicht werden",
   "Could not start sign-in": "Anmeldung konnte nicht gestartet werden",
   Default: "Standard",
-  "Deployment default": "Bereitstellungsstandard",
   "Enter a whole number from 1 to 1000 for the image limit.":
     "Gib eine ganze Zahl von 1 bis 1000 für das Bilderlimit ein.",
   "Enter a whole number from 1 to {max} for maximum output tokens.":

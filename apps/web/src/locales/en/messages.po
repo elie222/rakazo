@@ -530,6 +530,10 @@ msgstr "Add OpenAPI"
 msgid "Add passkey"
 msgstr "Add passkey"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "Add provider"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Add remote MCP server"
@@ -1218,6 +1222,7 @@ msgstr "Clearing…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1826,6 +1831,7 @@ msgstr "Could not remove rule"
 msgid "Could not remove the credential"
 msgstr "Could not remove the credential"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr "Could not rename connection"
@@ -2111,6 +2117,7 @@ msgid "Decline"
 msgstr "Decline"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2201,10 +2208,6 @@ msgstr "Denied"
 msgid "Deny"
 msgstr "Deny"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "Deployment default"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2250,10 +2253,9 @@ msgstr "Disconnect {disconnectName}?"
 msgid "Disconnect Self-hosted"
 msgstr "Disconnect Self-hosted"
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr "Disconnected {0}."
+msgid "Disconnected {disconnectName}."
+msgstr "Disconnected {disconnectName}."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3368,6 +3370,7 @@ msgstr "Muted"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3530,6 +3533,7 @@ msgstr "No models listed."
 msgid "No remote MCP servers found"
 msgstr "No remote MCP servers found"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3913,6 +3917,10 @@ msgstr "Protected input"
 msgid "Provider"
 msgstr "Provider"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "Providers"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "Pull request"
@@ -3920,10 +3928,6 @@ msgstr "Pull request"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "Queued"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr "Quote"
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -4167,6 +4171,7 @@ msgid "Replace value"
 msgstr "Replace value"
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "Reply"
 
@@ -4357,6 +4362,7 @@ msgstr "Runs when this bot receives a verified message from this provider."
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4406,6 +4412,7 @@ msgstr "Saving..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4426,6 +4433,7 @@ msgid "Scopes (optional)"
 msgstr "Scopes (optional)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

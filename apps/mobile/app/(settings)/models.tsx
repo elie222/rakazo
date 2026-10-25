@@ -10,6 +10,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api";
@@ -95,38 +96,91 @@ export default function Models() {
     return { pathname: "/model-connection", params: { requestId } };
   }
 
+  // Connecting from a picker always adds a connection.
   const connectRoute = (provider: ConnectableProvider, intent: ModelConnectIntent) =>
-    connectionRoute({ provider: provider.id, baseUrl: provider.baseUrl, ...intent });
-  const manage = (provider: string) =>
-    router.push(connectionRoute({ provider, makeDefault: false }));
+    connectionRoute({
+      provider: provider.id,
+      baseUrl: provider.baseUrl,
+      credentialId: null,
+      ...intent,
+    });
+  const manage = (credential: MobileModelCredential) =>
+    router.push(
+      connectionRoute({
+        provider: credential.provider,
+        credentialId: credential.id,
+        makeDefault: false,
+      }),
+    );
 
-  const providers = useMemo(() => {
-    const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
-    // Deployment-funded providers stay listed so people can still add their own key.
+  /** Every provider, popular first, plus the Ollama Cloud preset of the compatible one. */
+  const allProviders = useMemo(() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
-      if (connected.has(canonicalPiProviderId(entry.provider)) || grouped.has(entry.provider))
-        continue;
+      if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
         name: entry.providerName ?? entry.provider,
       });
     }
-    const unconnected = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
-    const compatible = credentials.find(
-      (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
-    );
-    if (
-      catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID) &&
-      !isOllamaCloudBaseUrl(compatible?.baseUrl)
-    )
-      unconnected.push({
+    const all = popularModelProvidersFirst([...grouped.values()], (group) => group.id);
+    if (catalog.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
+      all.push({
         id: OPENAI_COMPATIBLE_PROVIDER_ID,
         name: t("Ollama Cloud"),
         baseUrl: OLLAMA_CLOUD_BASE_URL,
       });
-    return unconnected;
-  }, [catalog, credentials, t]);
+    return all;
+  }, [catalog, t]);
+
+  // Deployment-funded providers stay listed so people can still add their own key.
+  const providers = useMemo(() => {
+    const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
+    const ollama = credentials.some(
+      (entry) =>
+        entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID && isOllamaCloudBaseUrl(entry.baseUrl),
+    );
+    return allProviders.filter((provider) =>
+      provider.baseUrl ? !ollama : !connected.has(canonicalPiProviderId(provider.id)),
+    );
+  }, [allProviders, credentials]);
+
+  const providerKey = (provider: ConnectableProvider) =>
+    `connect:${provider.id}:${provider.baseUrl ?? ""}`;
+  /** Adds a connection, even for a provider that has one, without touching any list. */
+  function addProvider() {
+    pushModelPicker({
+      title: t("Add provider"),
+      selectedKey: "",
+      choices: allProviders.map((provider) => ({
+        key: providerKey(provider),
+        label: provider.name,
+        modelLabel: provider.name,
+      })),
+      onSelect: () => undefined,
+      continueTo: (choice) => {
+        const provider = allProviders.find((entry) => providerKey(entry) === choice.key);
+        return provider
+          ? connectionRoute({
+              provider: provider.id,
+              baseUrl: provider.baseUrl,
+              credentialId: null,
+              makeDefault: false,
+            })
+          : undefined;
+      },
+    });
+  }
+
+  async function changeConnection(action: () => Promise<unknown>, failure: string) {
+    try {
+      await action();
+      setError(null);
+    } catch (err) {
+      setError(errorText(err, failure));
+    }
+    await load();
+  }
 
   if (loading && !me) {
     return (
@@ -164,9 +218,7 @@ export default function Models() {
               spaceId={me.spaceId}
               modelRole="main"
               title={t("Main model")}
-              defaultLabel={
-                me.hostCredentialProvider ? t("Deployment default") : t("Choose a model")
-              }
+              defaultLabel={t("Choose a model")}
               onChanged={() => void load()}
             />
             <ModelRoleSettings
@@ -175,7 +227,29 @@ export default function Models() {
               spaceId={me.spaceId}
               modelRole="approval"
               title={t("Approval model")}
-              defaultLabel={t("Deployment default")}
+              defaultLabel={t("Choose a model")}
+            />
+            <ModelProviders
+              catalog={catalog}
+              credentials={credentials}
+              onManage={manage}
+              onAdd={addProvider}
+              onRename={(credential, label) =>
+                void changeConnection(
+                  () => rpc("models/rename", { credentialId: credential.id, label }),
+                  t("Could not update name"),
+                )
+              }
+              onDisconnect={(credential) =>
+                void changeConnection(
+                  () =>
+                    rpc("models/disconnect", {
+                      provider: credential.provider,
+                      credentialId: credential.id,
+                    }),
+                  t("Could not disconnect this provider"),
+                )
+              }
             />
           </>
         ) : null}

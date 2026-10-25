@@ -530,6 +530,10 @@ msgstr "Ajouter OpenAPI"
 msgid "Add passkey"
 msgstr "Ajouter une clé d’accès"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "Ajouter un fournisseur"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Ajouter un serveur MCP distant"
@@ -1218,6 +1222,7 @@ msgstr "Effacement en cours…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1826,6 +1831,7 @@ msgstr "Impossible de retirer la règle"
 msgid "Could not remove the credential"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr "Impossible de renommer la connexion"
@@ -2111,6 +2117,7 @@ msgid "Decline"
 msgstr "Refuser"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2201,10 +2208,6 @@ msgstr "Refusé"
 msgid "Deny"
 msgstr "Refuser"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "Défaut du déploiement"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2250,10 +2253,9 @@ msgstr ""
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr ""
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} déconnecté."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3368,6 +3370,7 @@ msgstr "Micro coupé"
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3530,6 +3533,7 @@ msgstr "Aucun modèle listé."
 msgid "No remote MCP servers found"
 msgstr "Aucun serveur MCP distant trouvé"
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3913,6 +3917,10 @@ msgstr ""
 msgid "Provider"
 msgstr "Fournisseur"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "Fournisseurs"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "Demande de fusion"
@@ -3920,10 +3928,6 @@ msgstr "Demande de fusion"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "En file d'attente"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr "Citer"
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -4167,6 +4171,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "Répondre"
 
@@ -4357,6 +4362,7 @@ msgstr "S'exécute lorsque ce bot reçoit un message vérifié de ce fournisseur
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4406,6 +4412,7 @@ msgstr "Enregistrement..."
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4426,6 +4433,7 @@ msgid "Scopes (optional)"
 msgstr "Portées (facultatif)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx

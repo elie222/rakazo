@@ -530,6 +530,10 @@ msgstr "OpenAPI 추가"
 msgid "Add passkey"
 msgstr "패스키 추가"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Add provider"
+msgstr "서비스 추가"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "원격 MCP 서버 추가"
@@ -1218,6 +1222,7 @@ msgstr "비우는 중…"
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1826,6 +1831,7 @@ msgstr "확인 규칙을 삭제하지 못했습니다."
 msgid "Could not remove the credential"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
 msgstr ""
@@ -2111,6 +2117,7 @@ msgid "Decline"
 msgstr "거절"
 
 #: src/pages/model-settings/compatible-model-fields.tsx
+#: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2201,10 +2208,6 @@ msgstr "거부됨"
 msgid "Deny"
 msgstr "거부"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Deployment default"
-msgstr "서버 기본값"
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
@@ -2250,10 +2253,9 @@ msgstr ""
 msgid "Disconnect Self-hosted"
 msgstr ""
 
-#. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/model-settings/use-model-settings.ts
-msgid "Disconnected {0}."
-msgstr ""
+msgid "Disconnected {disconnectName}."
+msgstr "{disconnectName} 연결을 해제했습니다."
 
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -3368,6 +3370,7 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3530,6 +3533,7 @@ msgstr "나열된 모델이 없습니다."
 msgid "No remote MCP servers found"
 msgstr ""
 
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
@@ -3913,6 +3917,10 @@ msgstr ""
 msgid "Provider"
 msgstr "서비스"
 
+#: src/pages/model-settings/providers-section.tsx
+msgid "Providers"
+msgstr "서비스"
+
 #: src/components/CloudAgentCard.tsx
 msgid "Pull request"
 msgstr "풀 리퀘스트"
@@ -3920,10 +3928,6 @@ msgstr "풀 리퀘스트"
 #: src/pages/ActivityList.tsx
 msgid "Queued"
 msgstr "대기 중"
-
-#: src/pages/shell/quote-selection-button.tsx
-msgid "Quote"
-msgstr ""
 
 #: src/components/ModelCredits.tsx
 msgid "Rakazo credits"
@@ -4167,6 +4171,7 @@ msgid "Replace value"
 msgstr ""
 
 #: src/pages/shell/message-hover-actions.tsx
+#: src/pages/shell/quote-selection-button.tsx
 msgid "Reply"
 msgstr "답장"
 
@@ -4357,6 +4362,7 @@ msgstr ""
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -4406,6 +4412,7 @@ msgstr ""
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/model-settings/connection-controls.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -4426,6 +4433,7 @@ msgid "Scopes (optional)"
 msgstr "범위 (선택 사항)"
 
 #: src/pages/model-settings/model-picker.tsx
+#: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
