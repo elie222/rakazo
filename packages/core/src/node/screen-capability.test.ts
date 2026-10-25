@@ -250,7 +250,7 @@ describe("sealed screen capabilities", () => {
         .hostname,
     ).toBe(host);
   });
-  it.each(["2001:db8::1", "fe80::1", "::ffff:127.0.0.1", "::"])(
+  it.each(["2001:db8::1", "fe80::1", "::ffff:127.0.0.1", "::", "fc::1"])(
     "rejects other IPv6 HTTP screen targets (%s)",
     (host) => {
       expect(

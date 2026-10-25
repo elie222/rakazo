@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
-import type { V1Pod, V1Status } from "@kubernetes/client-node";
-import { ApiException, CoreV1Api, Exec, KubeConfig, Observable } from "@kubernetes/client-node";
+import type * as KubernetesClient from "@kubernetes/client-node";
+import type { CoreV1Api, Exec, V1Pod, V1Status } from "@kubernetes/client-node";
 import type {
   AdapterContext,
   CommandRequest,
@@ -173,7 +173,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     let fresh = false;
     if (!pod) {
       try {
-        await this.clients().core.createNamespacedPod({
+        await (await this.clients()).core.createNamespacedPod({
           namespace: this.namespace,
           body: this.pod(podName, request.botId),
         });
@@ -535,13 +535,15 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     await this.deletePod(this.podId(computer));
   }
 
-  private clients(): KubernetesSandboxSdk {
+  private async clients(): Promise<KubernetesSandboxSdk> {
     if (this.clientsValue) return this.clientsValue;
-    const config = new KubeConfig();
+    const kubernetes = await loadKubernetes();
+    if (this.clientsValue) return this.clientsValue;
+    const config = new kubernetes.KubeConfig();
     config.loadFromDefault();
     this.clientsValue = {
-      core: config.makeApiClient(CoreV1Api),
-      exec: new Exec(config),
+      core: config.makeApiClient(kubernetes.CoreV1Api),
+      exec: new kubernetes.Exec(config),
     };
     return this.clientsValue;
   }
@@ -598,20 +600,23 @@ export class KubernetesSandboxProvider implements SandboxProvider {
     signal.throwIfAborted();
     try {
       const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
-      const request = this.clients().core.readNamespacedPod(
-        { name, namespace: this.namespace },
-        {
-          middlewareMergeStrategy: "append",
-          middleware: [
+      const request = Promise.all([loadKubernetes(), this.clients()]).then(
+        ([{ Observable }, clients]) =>
+          clients.core.readNamespacedPod(
+            { name, namespace: this.namespace },
             {
-              pre: (request) => {
-                request.setSignal(requestSignal);
-                return new Observable(Promise.resolve(request));
-              },
-              post: (response) => new Observable(Promise.resolve(response)),
+              middlewareMergeStrategy: "append",
+              middleware: [
+                {
+                  pre: (request) => {
+                    request.setSignal(requestSignal);
+                    return new Observable(Promise.resolve(request));
+                  },
+                  post: (response) => new Observable(Promise.resolve(response)),
+                },
+              ],
             },
-          ],
-        },
+          ),
       );
       const pod = await abortableRequest(request, requestSignal);
       signal.throwIfAborted();
@@ -658,7 +663,7 @@ export class KubernetesSandboxProvider implements SandboxProvider {
 
   private async deletePod(name: string): Promise<void> {
     try {
-      await this.clients().core.deleteNamespacedPod({
+      await (await this.clients()).core.deleteNamespacedPod({
         name,
         namespace: this.namespace,
         gracePeriodSeconds: 0,
@@ -784,16 +789,18 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       if (signal.aborted) {
         abort();
       } else {
-        const connecting = this.clients().exec.exec(
-          this.namespace,
-          this.podId(computer),
-          CONTAINER_NAME,
-          command,
-          stdout,
-          stderr ?? null,
-          stdin ?? null,
-          tty,
-          (status) => finish(exitCode(status)),
+        const connecting = this.clients().then((clients) =>
+          clients.exec.exec(
+            this.namespace,
+            this.podId(computer),
+            CONTAINER_NAME,
+            command,
+            stdout,
+            stderr ?? null,
+            stdin ?? null,
+            tty,
+            (status) => finish(exitCode(status)),
+          ),
         );
         await Promise.race([
           connecting.then((connected) => {
@@ -822,6 +829,14 @@ export class KubernetesSandboxProvider implements SandboxProvider {
       stderr?.destroy();
     }
   }
+}
+
+let kubernetesModule: Promise<typeof KubernetesClient> | undefined;
+
+/** Deferred so deployments that never select this provider do not load the SDK at boot. */
+function loadKubernetes(): Promise<typeof KubernetesClient> {
+  kubernetesModule ??= import("@kubernetes/client-node");
+  return kubernetesModule;
 }
 
 function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {
@@ -887,10 +902,8 @@ function exitCode(status: V1Status): number {
 }
 
 function isApiStatus(error: unknown, code: number): boolean {
-  return (
-    (error instanceof ApiException && error.code === code) ||
-    (typeof error === "object" && error !== null && "code" in error && error.code === code)
-  );
+  // ApiException carries the HTTP status as `code`.
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
