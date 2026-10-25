@@ -364,7 +364,7 @@ describe("unsafe archives", () => {
     );
   });
 
-  it("stops keeping tar data at the read budget, below the inflate and ratio caps", async () => {
+  it("stops keeping tar data at the memory cap, below the inflate and ratio caps", async () => {
     // Many small files an import would read, varied so they barely compress.
     const many = Array.from({ length: 40 }, (_, n) => ({
       name: `memory/2026-01-${String(n).padStart(2, "0")}.md`,
@@ -374,9 +374,9 @@ describe("unsafe archives", () => {
       ).join("\n"),
     }));
     const archive = tarGz(many);
-    const budget = { ...AGENT_IMPORT_ARCHIVE_LIMITS, readBytes: 16 * 1024 };
+    const budget = { ...AGENT_IMPORT_ARCHIVE_LIMITS, retainedBytes: 16 * 1024 };
     expect(gunzipSync(archive).length).toBeLessThan(budget.inflatedBytes);
-    // Opening the archive is enough: the stream stops before buffering past the budget.
+    // Opening the archive is enough: the stream stops before buffering past the cap.
     await fails(async () => openAgentImportArchive(archive, budget), "too_large");
     // Files no import reads are listed, never kept, so they do not count.
     const docs = tarGz(
@@ -386,6 +386,21 @@ describe("unsafe archives", () => {
       })),
     );
     expect(() => openAgentImportArchive(docs, budget)).not.toThrow();
+  });
+
+  it("charges only the agent's own files against the read budget", async () => {
+    const others = Array.from({ length: 40 }, (_, n) => ({
+      name: `other/memory/${n}.md`,
+      content: `${n}`.repeat(1024),
+    }));
+    const backup = tarGz([
+      { name: "home/openclaw.json", content: "{}" },
+      { name: "home/workspace/SOUL.md", content: "Calm.\n" },
+      ...others,
+    ]);
+    const budget = { ...AGENT_IMPORT_ARCHIVE_LIMITS, readBytes: 16 * 1024 };
+    const { files } = await read(backup, budget);
+    expect(files.get(".openclaw/workspace/SOUL.md")).toBe("Calm.\n");
   });
 });
 

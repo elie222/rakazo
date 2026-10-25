@@ -17,6 +17,11 @@ export const AGENT_IMPORT_ARCHIVE_LIMITS = {
   fileBytes: 1024 * 1024,
   /** Everything read, before the upload's own total cap. */
   readBytes: 8 * 1024 * 1024,
+  /**
+   * Everything a tar stream keeps in memory, before the agent's home is known: a backup can
+   * hold other agents' files that are never read.
+   */
+  retainedBytes: 64 * 1024 * 1024,
   /** Everything a gzip stream inflates to, including skipped entries. */
   inflatedBytes: 512 * 1024 * 1024,
   /** Inflated size per compressed byte above which data is treated as a bomb. */
@@ -389,7 +394,7 @@ class TarStream {
       this.keep = read && size <= this.limits.fileBytes;
       if (this.keep) {
         this.retained += size;
-        if (this.retained > this.limits.readBytes) throw tooLarge();
+        if (this.retained > this.limits.retainedBytes) throw tooLarge();
       }
       if (path) this.entries.push({ path, size });
     } else {

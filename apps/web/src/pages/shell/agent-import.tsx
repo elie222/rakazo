@@ -141,6 +141,8 @@ export function AgentImportForm({
   const [reply, setReply] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Bumped by every new read, so a slower earlier one never lands over it.
+  const latestRead = useRef(0);
   const [error, setError] = useState<string | null>(null);
 
   function failure(err: unknown, fallback: string) {
@@ -157,14 +159,14 @@ export function AgentImportForm({
   }
 
   async function preview(
+    read: number,
     next: AgentImportFile[],
-    secrets = false,
-    keepChoices = false,
-    siblings = skillFiles,
+    { secrets = false, keepChoices = false, siblings = skillFiles } = {},
   ) {
     setError(null);
     if (next.length === 0) {
       setError(notFound());
+      setBusy(false);
       return;
     }
     setBusy(true);
@@ -174,6 +176,7 @@ export function AgentImportForm({
         includeSecrets: secrets,
         skillFiles: siblings,
       });
+      if (read !== latestRead.current) return;
       setFiles(next);
       setIncludeSecrets(secrets);
       // Anything that runs or acts (skills, MCP servers, routines) starts unticked, as do
@@ -214,9 +217,9 @@ export function AgentImportForm({
       }
       setPlan(found);
     } catch (err) {
-      failure(err, t`Could not read these files`);
+      if (read === latestRead.current) failure(err, t`Could not read these files`);
     } finally {
-      setBusy(false);
+      if (read === latestRead.current) setBusy(false);
     }
   }
 
@@ -235,12 +238,15 @@ export function AgentImportForm({
    * and `.env`/`auth.json` are not read, and only the files an import uses leave the device.
    */
   async function loadSource(next: AgentImportSource) {
+    const read = ++latestRead.current;
     setError(null);
+    setBusy(true);
     try {
       const chosen = await chooseAgentImportFiles(next.paths, next.read, {
         includeSecrets: false,
         size: next.size,
       });
+      if (read !== latestRead.current) return;
       const siblings = agentImportSkillFiles(
         next.paths,
         new Map(chosen.entries.map((entry) => [entry.path, entry.home])),
@@ -250,14 +256,13 @@ export function AgentImportForm({
       setHasSecretFiles(chosen.hasSecretFiles);
       setSkillFiles(siblings);
       importKey.current = crypto.randomUUID();
-      await preview(
-        agentImportUpload(chosen.entries, { includeSecrets: false }),
-        false,
-        false,
+      await preview(read, agentImportUpload(chosen.entries, { includeSecrets: false }), {
         siblings,
-      );
+      });
     } catch (err) {
+      if (read !== latestRead.current) return;
       setError(readError(err));
+      setBusy(false);
     }
   }
 
@@ -267,15 +272,20 @@ export function AgentImportForm({
   /** The opt-in reads `.env`/`auth.json` now, and sends only their allowlisted entries. */
   async function toggleSecrets(checked: boolean) {
     if (!source) return;
+    const read = ++latestRead.current;
     try {
       const chosen = await chooseAgentImportFiles(source.paths, source.read, {
         includeSecrets: checked,
         size: source.size,
       });
+      if (read !== latestRead.current) return;
       setFolder(chosen.entries);
-      await preview(agentImportUpload(chosen.entries, { includeSecrets: checked }), checked, true);
+      await preview(read, agentImportUpload(chosen.entries, { includeSecrets: checked }), {
+        secrets: checked,
+        keepChoices: true,
+      });
     } catch (err) {
-      setError(readError(err));
+      if (read === latestRead.current) setError(readError(err));
     }
   }
 
@@ -318,12 +328,13 @@ export function AgentImportForm({
 
   /** A pasted or chosen document: no folder, no secrets. */
   async function previewDocument(content: string) {
+    const read = ++latestRead.current;
     setSource(null);
     setFolder([]);
     setHasSecretFiles(false);
     setSkillFiles({});
     importKey.current = crypto.randomUUID();
-    await preview([{ path: "agent.md", content }], false, false, {});
+    await preview(read, [{ path: "agent.md", content }], { siblings: {} });
   }
 
   async function pickDocument(list: FileList | null) {

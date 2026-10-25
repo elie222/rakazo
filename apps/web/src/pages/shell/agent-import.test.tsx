@@ -182,3 +182,35 @@ describe("an item whose text looks like it contains a key", () => {
     expect(labels.join("\n")).not.toContain(key);
   });
 });
+
+describe("choosing another agent while the first is still being read", () => {
+  it("shows only the latest choice", async () => {
+    let finishFirst: (value: AgentImportPlan) => void = () => undefined;
+    importPreview
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = resolve)))
+      .mockResolvedValueOnce({ ...plan, suggestedName: "Second" });
+    const source = (soul: string) => ({
+      paths: [".openclaw/workspace/SOUL.md"],
+      read: () => soul,
+      size: () => soul.length,
+    });
+    const form = (initialSource: ReturnType<typeof source>) => (
+      <AgentImportForm
+        onBack={() => undefined}
+        onCancel={() => undefined}
+        onCreated={() => undefined}
+        initialSource={initialSource}
+      />
+    );
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root!.render(form(source("First."))));
+    await act(async () => root!.render(form(source("Second."))));
+    await act(async () => finishFirst({ ...plan, suggestedName: "First" }));
+
+    const names = [...container.querySelectorAll("input")].map((input) => input.value);
+    expect(names).toContain("Second");
+    expect(names).not.toContain("First");
+  });
+});
