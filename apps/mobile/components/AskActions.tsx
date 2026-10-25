@@ -3,26 +3,12 @@ import { useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
+import type { AskAction } from "../lib/ask-action-label";
+import { askActionLabel } from "../lib/ask-action-label";
 import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
-
-type AskAction = { id: string; label: string; outcome?: "created" | "cancelled" };
-
-function askActionLabel(
-  action: AskAction,
-  site: string | undefined,
-  t: (message: string, values?: Record<string, string | number>) => string,
-): string {
-  if (action.outcome === "created") return t("Create space");
-  if (action.outcome === "cancelled") return t("Cancel");
-  if (action.id === "allow") return t("Allow once");
-  if (action.id === "always")
-    return site ? t("Always allow {site}", { site }) : t("Always allow this tool");
-  if (action.id === "deny") return t("Deny");
-  return action.label;
-}
 
 export function AskActions({
   actions,
@@ -137,9 +123,7 @@ export function AskActions({
               >
                 {pendingAction === action.id
                   ? t("Sending…")
-                  : approval
-                    ? askActionLabel(action, site, t)
-                    : action.label}
+                  : askActionLabel(action, { approval, site }, t)}
               </Text>
             </Pressable>
           );
