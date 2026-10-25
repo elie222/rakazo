@@ -23,6 +23,25 @@ type TicketToolDeps = {
   onTicketChange?: TicketChangeNotifier;
 };
 const STATUS_ERROR = `status must be one of ${TicketStatusSchema.options.join(", ")}.`;
+
+/**
+ * A bare "Invalid ticket." leaves the model guessing which field broke the
+ * limit, so validation failures name the field and the bound, the way the
+ * scratchpad tools do.
+ */
+function invalidInputMessage(error: {
+  issues: Array<{ code: string; path: PropertyKey[]; message: string; maximum?: unknown }>;
+}): string {
+  return error.issues
+    .map((issue) => {
+      const field = issue.path.join(".") || "input";
+      if (issue.code === "too_big" && typeof issue.maximum === "number") {
+        return `${field} must be at most ${issue.maximum} characters.`;
+      }
+      return issue.path.length ? `${field}: ${issue.message}` : issue.message;
+    })
+    .join("; ");
+}
 function coerceInputStatus(value: string) {
   const parsed = TicketStatusSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
@@ -166,7 +185,7 @@ export async function createTicket(
     ...input,
     assigneeBotId: input.ownerBotId ?? input.botId,
   });
-  if (!parsed.success) return { error: "Invalid ticket." };
+  if (!parsed.success) return { error: invalidInputMessage(parsed.error) };
   const data = parsed.data;
   if (!(await ownBotInSpace(deps, input, data.assigneeBotId))) return { error: "Unknown bot." };
   const board = await ensureBoard(deps.prisma, input.spaceId);
@@ -212,7 +231,7 @@ export async function updateTicket(
 ) {
   if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = UpdateTicketInput.safeParse({ ...input, assigneeBotId: input.ownerBotId });
-  if (!parsed.success) return { error: "Invalid ticket." };
+  if (!parsed.success) return { error: invalidInputMessage(parsed.error) };
   const data = parsed.data;
   if (data.assigneeBotId && !(await ownBotInSpace(deps, input, data.assigneeBotId)))
     return { error: "Unknown bot." };
@@ -268,7 +287,7 @@ export async function commentTicket(
 ) {
   if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const parsed = CommentTicketInput.safeParse({ ticketId: input.id, body: input.body });
-  if (!parsed.success) return { error: "Invalid comment." };
+  if (!parsed.success) return { error: invalidInputMessage(parsed.error) };
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const ticket = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!ticket) return { error: "Ticket not found." };

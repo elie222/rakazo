@@ -317,6 +317,34 @@ describe("ticket mutations", () => {
     expect(s.prisma.$transaction).not.toHaveBeenCalled();
     expect(s.changes).not.toHaveBeenCalled();
   });
+  it("names the field and limit when input fails validation", async () => {
+    const s = mutationDeps();
+    await expect(
+      createTicket(s.deps, {
+        spaceId: "ws",
+        userId: "user-1",
+        botId: "bot-1",
+        title: "x".repeat(201),
+      }),
+    ).resolves.toEqual({ error: "title must be at most 200 characters." });
+    await expect(
+      commentTicket(s.deps, {
+        spaceId: "ws",
+        botId: "bot-1",
+        id: "t1",
+        body: "x".repeat(10_001),
+      }),
+    ).resolves.toEqual({ error: "body must be at most 10000 characters." });
+    await expect(
+      updateTicket(s.deps, {
+        spaceId: "ws",
+        userId: "user-1",
+        id: "t1",
+        description: "x".repeat(20_001),
+      }),
+    ).resolves.toEqual({ error: "description must be at most 20000 characters." });
+    expect(s.prisma.$transaction).not.toHaveBeenCalled();
+  });
   it("rejects invalid input and foreign owners before a write", async () => {
     const s = mutationDeps();
     await expect(
