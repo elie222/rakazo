@@ -586,6 +586,7 @@ export function PluginsOverlay({
               <Input
                 value={labelDrafts[row.id] ?? row.displayName}
                 aria-label={t`Account label`}
+                maxLength={80}
                 className="h-9 rounded-lg border-transparent bg-transparent px-2 text-[14px] shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
                 onChange={(event) =>
                   setLabelDrafts((current) => ({ ...current, [row.id]: event.target.value }))

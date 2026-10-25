@@ -17,6 +17,7 @@ const NETWORK_CODES = new Set([
 /** Implementation detail that should never reach the screen as-is. */
 const TECHNICAL_MESSAGE = [
   /\[(?:body|query|params|headers)(?:\.[^\]]*)?\]/, // validation issue paths
+  /^input validation failed$/i, // oRPC input validation
   /\w+Exception\b/,
   /^\w*Error:/,
   /\(at \S+:\d+|\bat \S+ \(\S+:\d+(?::\d+)?\)|\.(?:swift|kt|java|mm?|[cm]?[jt]sx?):\d+/, // stack frames

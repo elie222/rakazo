@@ -101,6 +101,16 @@ describe("isTechnicalErrorMessage", () => {
 });
 
 describe("userErrorMessage", () => {
+  it("uses the caller's localized fallback for RPC input validation failures", () => {
+    const translatedCopy = {
+      fallback: "Impossible de créer le groupe",
+      offline: "Impossible de joindre le serveur",
+    };
+    expect(userErrorMessage(new Error("Input validation failed"), translatedCopy)).toBe(
+      translatedCopy.fallback,
+    );
+  });
+
   it("says the server is unreachable for transport failures", () => {
     expect(userErrorMessage(new TypeError("Failed to fetch"), copy)).toBe(copy.offline);
     expect(userErrorMessage(Object.assign(new Error("Bad Gateway"), { status: 502 }), copy)).toBe(

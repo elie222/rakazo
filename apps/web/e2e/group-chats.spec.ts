@@ -12,6 +12,44 @@ async function createBot(page: Page, name: string) {
   return createNamedBot(page, name);
 }
 
+test("group names stop at 80 characters when creating and renaming", async ({ page }, testInfo) => {
+  await signup(page, `group-name-limit-${Date.now()}@rakazo.test`, "password12", "Group Names");
+  await completeOnboarding(page);
+  await createBot(page, "Researcher");
+  await createBot(page, "Writer");
+
+  await openNewGroup(page);
+  const panel = page.getByTestId("side-panel");
+  const name = panel.getByRole("textbox", { name: "Name", exact: true });
+  const createdName = "Research team ".padEnd(80, "x");
+  await name.pressSequentially(`${createdName}overflow`);
+  await expect(name).toHaveValue(createdName);
+  await panel.getByRole("checkbox", { name: "Add Researcher to the group" }).click();
+  await panel.getByRole("checkbox", { name: "Add Writer to the group" }).click();
+  await captureScreenshot(page, testInfo, "group-name-limit-create");
+  await panel.getByRole("button", { name: "Create group", exact: true }).click();
+  await page.waitForURL(/\/app\/g\/[^/]+$/);
+  const groupId = new URL(page.url()).pathname.split("/").at(-1)!;
+  await expect(page.getByRole("combobox", { name: `Message ${createdName}` })).toBeVisible();
+  expect(await rpc(page, "groups/list", {})).toContainEqual(
+    expect.objectContaining({ id: groupId, name: createdName }),
+  );
+
+  await page.getByTestId("bot-settings-trigger").click();
+  const renamedName = "Review team ".padEnd(80, "y");
+  await name.fill("");
+  await name.pressSequentially(`${renamedName}overflow`);
+  await expect(name).toHaveValue(renamedName);
+  await captureScreenshot(page, testInfo, "group-name-limit-settings");
+  await panel.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(panel).toHaveAttribute("data-panel", "closed");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: `Message ${renamedName}` })).toBeVisible();
+  expect(await rpc(page, "groups/list", {})).toContainEqual(
+    expect.objectContaining({ id: groupId, name: renamedName }),
+  );
+});
+
 test("create group from + and see two bots in one transcript", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `group-${stamp}@rakazo.test`, "password12", "Group E2E");

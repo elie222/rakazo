@@ -86,6 +86,7 @@ export default function GroupSettingsScreen() {
         <TextInput
           value={name}
           onChangeText={setName}
+          maxLength={80}
           placeholder={t("Group name")}
           placeholderTextColor={tokens.mutedForeground}
           returnKeyType="done"

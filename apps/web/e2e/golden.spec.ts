@@ -201,13 +201,16 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await detail.getByRole("button", { name: "Add another", exact: true }).click();
   await expect(detail.getByLabel("Account label")).toHaveCount(2);
-  await detail.getByLabel("Account label").nth(1).fill("Work");
+  const accountName = "Work account ".padEnd(80, "x");
+  await detail.getByLabel("Account label").nth(1).fill("");
+  await detail.getByLabel("Account label").nth(1).pressSequentially(`${accountName}overflow`);
+  await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   const renamed = page.waitForResponse(
     (response) => response.url().includes("connections/rename") && response.ok(),
   );
   await detail.getByLabel("Account label").nth(1).blur();
   await renamed;
-  await expect(detail.getByLabel("Account label").nth(1)).toHaveValue("Work");
+  await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
   await page
@@ -225,7 +228,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await gmailTileAgain.click();
   const detailAgain = page.getByTestId("connection-detail");
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(2);
-  await expect(detailAgain.getByLabel("Account label").nth(1)).toHaveValue("Work");
+  await expect(detailAgain.getByLabel("Account label").nth(1)).toHaveValue(accountName);
 
   await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);

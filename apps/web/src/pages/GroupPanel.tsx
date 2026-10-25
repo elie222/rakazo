@@ -191,6 +191,7 @@ export function CreateGroupForm({
         <Input
           id={nameId}
           value={name}
+          maxLength={80}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
           className="mt-2"
@@ -314,6 +315,7 @@ export function GroupSettings({
         <Input
           id={nameId}
           value={name}
+          maxLength={80}
           onChange={(e) => setName(e.target.value)}
           className="mt-2"
         />
