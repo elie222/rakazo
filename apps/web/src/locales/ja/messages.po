@@ -131,6 +131,10 @@ msgstr "{botName}のコンピューター"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable}は予約済みのため、コマンド変数として使用できません。別の名前を選んでください。"
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# 行} other {# 行}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr "{count}日"
@@ -150,6 +154,10 @@ msgstr "{count}年"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}日前"
+
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{total} 行中 {from}–{to}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -1350,6 +1358,10 @@ msgstr "パネルを閉じる"
 msgid "Close preview"
 msgstr "プレビューを閉じる"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "テーブルを閉じる"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "ユーザー設定を閉じる"
@@ -1616,6 +1628,7 @@ msgid "Continue with email"
 msgstr "メールで続行"
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1635,6 +1648,18 @@ msgstr ".env の例をコピー"
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "プロンプトをコピー"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "コードをコピー"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "ダイアグラムのソースをコピー"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "行をコピー"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2454,6 +2479,10 @@ msgstr "{0}をダウンロード"
 msgid "Download {name}"
 msgstr "{name}をダウンロード"
 
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV をダウンロード"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr "ダウンロード中…"
@@ -2627,6 +2656,10 @@ msgstr "{0}を展開"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label}を展開"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "テーブルを拡大"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -3313,6 +3346,10 @@ msgstr "未読にする"
 msgid "Mark as Unread"
 msgstr "未読にする"
 
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown テーブル"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3674,6 +3711,10 @@ msgstr "新しいスペース"
 msgid "New ticket"
 msgstr "新しいチケット"
 
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "次のページ"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr "次の設定セクション"
@@ -3770,6 +3811,10 @@ msgstr "リモートMCPサーバーが見つかりません"
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "結果なし"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "行なし"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -4005,6 +4050,10 @@ msgstr "出力"
 msgid "Owner"
 msgstr "オーナー"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "{page} / {count} ページ"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDutyインシデント"
@@ -4149,6 +4198,10 @@ msgstr "{0}をプレビュー"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "このファイル形式はプレビューできません。ダウンロードして表示してください。"
+
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "前のページ"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -4585,6 +4638,10 @@ msgstr "ルーティン"
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr "不在中に実行されるルーティン"
+
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "行"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Run actions without asking"
@@ -5023,6 +5080,22 @@ msgstr "同じ名前のものが追加されたところです。もう一度お
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "選択した項目の一部はここでは使えません。チェックを外してもう一度お試しください。"
 
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "{column} で並べ替え"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "並べ替えを解除"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "{column} で並べ替え済み、昇順"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "{column} で並べ替え済み、降順"
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5158,6 +5231,10 @@ msgstr "切り替え中…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "システム"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "テーブル"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"

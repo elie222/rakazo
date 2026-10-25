@@ -131,6 +131,10 @@ msgstr "המחשב של {botName}"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable} שמור ואי אפשר להשתמש בו כמשתנה פקודה. יש לבחור שם אחר."
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# שורה} other {# שורות}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr "{count} ימים"
@@ -150,6 +154,10 @@ msgstr "{count} שנים"
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "לפני {days} ימים"
+
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{from}–{to} מתוך {total} שורות"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -1350,6 +1358,10 @@ msgstr "סגירת החלונית"
 msgid "Close preview"
 msgstr "סגירת התצוגה המקדימה"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "סגירת טבלה"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "סגירת הגדרות המשתמש"
@@ -1616,6 +1628,7 @@ msgid "Continue with email"
 msgstr "המשך עם אימייל"
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
@@ -1635,6 +1648,18 @@ msgstr "העתקת דוגמת .env"
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "העתקת ההנחיה"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "העתקת קוד"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "העתקת מקור הדיאגרמה"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "העתקת שורות"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2454,6 +2479,10 @@ msgstr "הורדת {0}"
 msgid "Download {name}"
 msgstr "הורדת {name}"
 
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "הורדת CSV"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr "מוריד…"
@@ -2627,6 +2656,10 @@ msgstr "הרחבת {0}"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "הרחבת {label}"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "הרחבת טבלה"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -3313,6 +3346,10 @@ msgstr "סימון כלא נקראה"
 msgid "Mark as Unread"
 msgstr "סימון כלא נקראה"
 
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "טבלת Markdown"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3674,6 +3711,10 @@ msgstr "מרחב חדש"
 msgid "New ticket"
 msgstr "כרטיס חדש"
 
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "העמוד הבא"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -3770,6 +3811,10 @@ msgstr "לא נמצאו שרתי MCP מרוחקים"
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "אין תוצאות"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "אין שורות"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -4005,6 +4050,10 @@ msgstr "פלט"
 msgid "Owner"
 msgstr "בעלים"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "עמוד {page} מתוך {count}"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "תקרית PagerDuty"
@@ -4149,6 +4198,10 @@ msgstr "תצוגה מקדימה של {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "תצוגה מקדימה אינה זמינה לסוג הקובץ הזה — אפשר להוריד אותו כדי לצפות בו."
+
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "העמוד הקודם"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -4585,6 +4638,10 @@ msgstr "רוטינות"
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr "רוטינות שרצות גם כשלא נמצאים"
+
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "שורה"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Run actions without asking"
@@ -5023,6 +5080,22 @@ msgstr "משהו עם אותו שם נוסף זה עתה. יש לנסות שוב
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "משהו שבחרת לא יכול לעבוד כאן. יש לבטל את הסימון ולנסות שוב."
 
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "מיון לפי {column}"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "המיון נוקה"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "מוין לפי {column}, בסדר עולה"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "מוין לפי {column}, בסדר יורד"
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5158,6 +5231,10 @@ msgstr "מחליף…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "מערכת"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "טבלה"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"

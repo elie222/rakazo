@@ -131,6 +131,10 @@ msgstr "{botName}의 컴퓨터"
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable}은(는) 예약되어 있어 명령 변수로 사용할 수 없습니다. 다른 이름을 선택하세요."
 
+#: src/components/markdown-copy.tsx
+msgid "{count, plural, one {# row} other {# rows}}"
+msgstr "{count, plural, one {# 행} other {# 행}}"
+
 #: src/lib/billing.ts
 msgid "{count} days"
 msgstr ""
@@ -150,6 +154,10 @@ msgstr ""
 #: src/lib/relative-time.ts
 msgid "{days}d ago"
 msgstr "{days}일 전"
+
+#: src/components/markdown-copy.tsx
+msgid "{from}–{to} of {total} rows"
+msgstr "{total}개 행 중 {from}–{to}"
 
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
@@ -1350,6 +1358,10 @@ msgstr "패널 닫기"
 msgid "Close preview"
 msgstr "미리보기 닫기"
 
+#: src/components/markdown-copy.tsx
+msgid "Close table"
+msgstr "표 닫기"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Close user settings"
 msgstr "계정 설정 닫기"
@@ -1616,11 +1628,12 @@ msgid "Continue with email"
 msgstr "이메일로 계속하기"
 
 #: src/components/ComputersUnavailableHint.tsx
+#: src/components/markdown-copy.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Copied"
-msgstr ""
+msgstr "복사됨"
 
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
@@ -1635,6 +1648,18 @@ msgstr ""
 #: src/pages/shell/agent-import.tsx
 msgid "Copy prompt"
 msgstr "프롬프트 복사"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy code"
+msgstr "코드 복사"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy diagram source"
+msgstr "다이어그램 소스 복사"
+
+#: src/components/markdown-copy.tsx
+msgid "Copy rows"
+msgstr "행 복사"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Cost"
@@ -2454,6 +2479,10 @@ msgstr "{0} 다운로드"
 msgid "Download {name}"
 msgstr "{name} 다운로드"
 
+#: src/components/markdown-copy.tsx
+msgid "Download CSV"
+msgstr "CSV 다운로드"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Downloading…"
 msgstr ""
@@ -2627,6 +2656,10 @@ msgstr "{0} 펼치기"
 #: src/pages/shell/message-view.tsx
 msgid "Expand {label}"
 msgstr "{label} 펼치기"
+
+#: src/components/markdown-copy.tsx
+msgid "Expand table"
+msgstr "표 확장"
 
 #: src/components/CloudAgentCard.tsx
 msgid "expired"
@@ -3313,6 +3346,10 @@ msgstr "읽지 않음으로 표시"
 msgid "Mark as Unread"
 msgstr "읽지 않음으로 표시"
 
+#: src/components/markdown-copy.tsx
+msgid "Markdown table"
+msgstr "Markdown 표"
+
 #: src/pages/model-settings/compatible-model-fields.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -3674,6 +3711,10 @@ msgstr "새 스페이스"
 msgid "New ticket"
 msgstr ""
 
+#: src/components/markdown-copy.tsx
+msgid "Next page"
+msgstr "다음 페이지"
+
 #: src/pages/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr ""
@@ -3770,6 +3811,10 @@ msgstr ""
 #: src/pages/SpaceSearch.tsx
 msgid "No results"
 msgstr "검색 결과가 없습니다"
+
+#: src/components/markdown-copy.tsx
+msgid "No rows"
+msgstr "행 없음"
 
 #: src/pages/ActivityList.tsx
 msgid "No runs match these filters."
@@ -4005,6 +4050,10 @@ msgstr "출력"
 msgid "Owner"
 msgstr "소유자"
 
+#: src/components/markdown-copy.tsx
+msgid "Page {page} of {count}"
+msgstr "{page} / {count}페이지"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 인시던트"
@@ -4149,6 +4198,10 @@ msgstr "{0} 미리보기"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr ""
+
+#: src/components/markdown-copy.tsx
+msgid "Previous page"
+msgstr "이전 페이지"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -4585,6 +4638,10 @@ msgstr "자동 실행"
 #: src/pages/Paywall.tsx
 msgid "Routines that run while you're away"
 msgstr ""
+
+#: src/components/markdown-copy.tsx
+msgid "Row"
+msgstr "행"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Run actions without asking"
@@ -5023,6 +5080,22 @@ msgstr "같은 이름의 항목이 방금 추가되었습니다. 다시 시도�
 msgid "Something you chose cannot work here. Untick it and try again."
 msgstr "선택한 항목 중 여기서 작동하지 않는 것이 있습니다. 선택을 해제하고 다시 시도하세요."
 
+#: src/components/markdown-copy.tsx
+msgid "Sort by {column}"
+msgstr "{column} 기준 정렬"
+
+#: src/components/markdown-copy.tsx
+msgid "Sort cleared"
+msgstr "정렬 해제됨"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, ascending"
+msgstr "{column} 기준 정렬됨, 오름차순"
+
+#: src/components/markdown-copy.tsx
+msgid "Sorted by {column}, descending"
+msgstr "{column} 기준 정렬됨, 내림차순"
+
 #: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
@@ -5158,6 +5231,10 @@ msgstr "전환 중…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "시스템"
+
+#: src/components/markdown-copy.tsx
+msgid "Table"
+msgstr "표"
 
 #: src/pages/shell/computer-overlay.tsx
 msgid "Take control"
