@@ -91,7 +91,8 @@ export class ParallelWebProvider implements WebProvider {
       context,
       signal,
       1,
-      offset + maxChars,
+      maxChars,
+      offset,
     );
     const page = response.results[0];
     if (!page)
@@ -122,6 +123,7 @@ export class ParallelWebProvider implements WebProvider {
     signal: AbortSignal,
     maxResults: number,
     maxChars?: number,
+    offset = 0,
   ) {
     signal.throwIfAborted();
     // Scope conversation accounting to this deployment without disclosing raw IDs.
@@ -161,12 +163,15 @@ export class ParallelWebProvider implements WebProvider {
                 excerpts: [
                   joinPrefix(
                     page.excerpts,
-                    maxChars === undefined ? MAX_SNIPPET_CHARS : maxChars + 1,
-                  ),
+                    maxChars === undefined ? MAX_SNIPPET_CHARS : offset + maxChars + 1,
+                  ).slice(offset),
                 ],
-                // Keep one extra character to preserve the fetch truncation flag.
+                // Drop the skipped prefix before the result size limit, and keep one extra
+                // character to preserve the fetch truncation flag.
                 full_content:
-                  maxChars === undefined ? undefined : page.full_content?.slice(0, maxChars + 1),
+                  maxChars === undefined
+                    ? undefined
+                    : page.full_content?.slice(offset, offset + maxChars + 1),
               })),
             errors: response.errors
               ?.slice(0, 1)

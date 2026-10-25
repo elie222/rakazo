@@ -46,12 +46,13 @@ export class FakeWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, _context: AdapterContext): Promise<WebFetchResult> {
     this.lastFetch = request;
     if (this.fetchError) throw this.fetchError;
-    const maxChars = request.maxChars ?? this.fetchResult.text.length;
-    const truncated = this.fetchResult.text.length > maxChars;
+    const rest = this.fetchResult.text.slice(request.offset ?? 0);
+    const maxChars = request.maxChars ?? rest.length;
+    const truncated = rest.length > maxChars;
     return {
       ...this.fetchResult,
       url: request.url || this.fetchResult.url,
-      text: truncated ? this.fetchResult.text.slice(0, maxChars) : this.fetchResult.text,
+      text: truncated ? rest.slice(0, maxChars) : rest,
       truncated: truncated || this.fetchResult.truncated,
     };
   }

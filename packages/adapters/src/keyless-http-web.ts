@@ -105,6 +105,7 @@ export class KeylessHttpWebProvider implements WebProvider {
 
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
+    const offset = clampOffset(request.offset);
     const { url, body } = await fetchSafeWebText(request.url, {
       fetch: this.fetchImpl,
       resolveHostname: this.resolveHostname,
@@ -118,7 +119,7 @@ export class KeylessHttpWebProvider implements WebProvider {
     return {
       url,
       title: extracted.title,
-      ...pageWindow(extracted.text, maxChars, clampOffset(request.offset)),
+      ...pageWindow(extracted.text.slice(offset), maxChars, offset),
     };
   }
 }

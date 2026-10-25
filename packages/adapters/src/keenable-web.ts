@@ -16,6 +16,8 @@ import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 const ENDPOINT = "https://api.keenable.ai/mcp";
 const USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)";
 const MAX_SNIPPET_CHARS = 8_000;
+// Even escaped multibyte text stays inside the transport's 1 MB result limit.
+const KEENABLE_MAX_READ_CHARS = 100_000;
 const searchSchema = z.object({
   results: z.array(
     z.object({
@@ -89,6 +91,12 @@ export class KeenableWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
     const offset = clampOffset(request.offset);
+    // Keenable has no offset, so the skipped prefix still crosses the transport's size limit.
+    if (offset + maxChars > KEENABLE_MAX_READ_CHARS) {
+      throw new Error(
+        `Keenable can read the first ${KEENABLE_MAX_READ_CHARS} characters of a page.`,
+      );
+    }
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -108,7 +116,7 @@ export class KeenableWebProvider implements WebProvider {
     return {
       url: pageUrl,
       title: page.title?.trim().slice(0, 1_000) || pageUrl,
-      ...pageWindow(page.content, maxChars, offset),
+      ...pageWindow(page.content.slice(offset), maxChars, offset),
     };
   }
 

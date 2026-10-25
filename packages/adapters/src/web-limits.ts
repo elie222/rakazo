@@ -15,14 +15,13 @@ export function clampOffset(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
-/** One window of page text; a cut says where the next call should start. */
-export function pageWindow(text: string, maxChars: number, offset = 0) {
-  const end = offset + maxChars;
-  const truncated = text.length > end;
+/** One window of page text, given the text from `offset` on; a cut says where to continue. */
+export function pageWindow(rest: string, maxChars: number, offset = 0) {
+  const truncated = rest.length > maxChars;
   return {
     text: truncated
-      ? `${text.slice(offset, end)}\n\n[Content truncated; continue with offset ${end}]`
-      : text.slice(offset),
+      ? `${rest.slice(0, maxChars)}\n\n[Content truncated; continue with offset ${offset + maxChars}]`
+      : rest,
     truncated,
   };
 }
