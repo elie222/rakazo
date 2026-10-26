@@ -41,8 +41,6 @@ export const JA_MESSAGES: Record<string, string> = {
   Export: "エクスポート",
   "Edit avatar": "アバターを編集",
   "Add open work": "未完了の作業を追加",
-  "Can edit and organise bots it creates": "自分が作成したボットを編集・整理できます",
-  "How other bots see it": "他のボットからの見え方",
   Permissions: "権限",
   "Open work": "未完了の作業",
   "When it finishes or needs input": "完了時または入力が必要なとき",

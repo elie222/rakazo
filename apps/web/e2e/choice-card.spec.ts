@@ -13,7 +13,7 @@ test("onboarding choices show borderless rows in both themes", async ({ page }, 
       (value) => document.documentElement.setAttribute("data-theme", value),
       theme,
     );
-    await expect(option).toHaveCSS("border-top-width", "0px");
+    await expect(option).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
     // Rows only fill on hover.
     await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
@@ -78,10 +78,10 @@ test("renders tappable choice buttons and submits the offered action id", async 
   expect(torontoBox!.y).toBeGreaterThan(seoulBox!.y + seoulBox!.height - 2);
   expect(Math.abs(berlinBox!.x - seoulBox!.x)).toBeLessThan(2);
   expect(Math.abs(berlinBox!.width - seoulBox!.width)).toBeLessThan(2);
-  const optionList = berlin.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
-  const listBox = await optionList.boundingBox();
+  // Rows bleed past the list so the hover fill frames the letter and label.
+  const listBox = await berlin.locator("xpath=..").boundingBox();
   expect(listBox).toBeTruthy();
-  expect(Math.abs(berlinBox!.width - listBox!.width)).toBeLessThan(2);
+  expect(berlinBox!.width).toBeGreaterThanOrEqual(listBox!.width);
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });

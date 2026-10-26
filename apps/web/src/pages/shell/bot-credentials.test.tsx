@@ -138,7 +138,7 @@ describe("BotCredentialsSection", () => {
     expect(container.querySelectorAll("input")).toHaveLength(0);
   });
 
-  it("keeps the explanation and add action when no credentials are saved", async () => {
+  it("shows only the add action until there is something to list", async () => {
     botSecrets.list.mockResolvedValue([]);
     await render();
     const add = byTestId("credential-add");
@@ -146,12 +146,12 @@ describe("BotCredentialsSection", () => {
     expect(add.textContent).toBe("");
     expect(add.querySelector("svg")).not.toBeNull();
     expect(container.querySelector("h3")?.textContent).toBe("Credentials");
-    const card = byTestId("bot-credentials-card");
-    expect(card.textContent).toBe("Encrypted and never shown again");
-    expect(card.contains(add)).toBe(false);
-    expect(container.querySelector('[data-testid="credential-add-form"]')).toBeNull();
+    expect(container.querySelector('[data-testid="bot-credentials-card"]')).toBeNull();
     await click("credential-add");
-    expect(card.querySelector('[data-testid="credential-add-form"]')).not.toBeNull();
+    const form = byTestId("bot-credentials-card").querySelector(
+      '[data-testid="credential-add-form"]',
+    );
+    expect(form?.textContent).toContain("Encrypted and never shown again");
   });
 
   it("adds a header credential and clears the value, then refetches", async () => {

@@ -35,8 +35,7 @@ test("bot and command credentials add, replace and remove without leaking values
     credentials.getByRole("heading", { name: "Credentials", exact: true }),
   ).toBeVisible();
   const card = credentials.getByTestId("bot-credentials-card");
-  await expect(card.getByText("Encrypted and never shown again", { exact: true })).toBeVisible();
-  await expect(card.getByTestId("credential-add-form")).toHaveCount(0);
+  await expect(card).toHaveCount(0);
   await add.hover();
   await expect(
     page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Add credential" }),
@@ -45,6 +44,7 @@ test("bot and command credentials add, replace and remove without leaking values
   // Add: a password field holds the value, which is cleared once the save starts.
   await credentials.getByTestId("credential-add").click();
   const addForm = credentials.getByTestId("credential-add-form");
+  await expect(addForm.getByText("Encrypted and never shown again", { exact: true })).toBeVisible();
   await addForm.getByTestId("credential-name").fill(CREDENTIAL_NAME);
   await addForm.getByTestId("credential-origin").fill("https://api.example.test");
   const valueInput = addForm.getByTestId("credential-value");

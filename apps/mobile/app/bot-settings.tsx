@@ -737,16 +737,9 @@ export default function BotSettingsScreen() {
                 />
               </View>
               <View style={styles.row}>
-                <View style={{ gap: 4, flex: 1 }}>
-                  <Text
-                    style={[styles.rowLabel, { color: tokens.foreground, flex: 0, flexShrink: 1 }]}
-                  >
-                    {t("Manage the bots it creates")}
-                  </Text>
-                  <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>
-                    {t("Can edit and organise bots it creates")}
-                  </Text>
-                </View>
+                <Text style={[styles.rowLabel, { color: tokens.foreground }]}>
+                  {t("Manage the bots it creates")}
+                </Text>
                 <NativeSwitch
                   accessibilityLabel={t("Manage the bots it creates")}
                   onValueChange={(value) => {
@@ -759,9 +752,6 @@ export default function BotSettingsScreen() {
               </View>
             </SettingsGroup>
             <SettingsGroup label={t("Description")}>
-              <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>
-                {t("How other bots see it")}
-              </Text>
               <GrowingTextInput
                 label={t("Description")}
                 value={description}
