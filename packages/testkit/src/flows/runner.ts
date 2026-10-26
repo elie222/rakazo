@@ -75,6 +75,7 @@ export type FlowResult = {
 type Settled =
   | { kind: "idle" }
   | { kind: "ask"; runId: string; messageId: string; ask: PendingAsk }
+  | { kind: "mcp"; threadId: string; serverId: string; needsOAuth: boolean; ask: PendingAsk }
   | { kind: "takeover" };
 
 class FlowStop extends Error {
@@ -152,6 +153,7 @@ export async function runFlow<World>(
   /** Reads new bot messages into the transcript and returns the pending card, if any. */
   const readThread = async (wake?: number) => {
     const snapshot = await rpc<{
+      threadId: string;
       messages: Array<{
         id: string;
         role: string;
@@ -160,10 +162,20 @@ export async function runFlow<World>(
         blocks: MessageBlock[];
       }>;
     }>("threads/get", { botId });
-    let pending: Extract<Settled, { kind: "ask" }> | undefined;
+    let pending: Extract<Settled, { kind: "ask" | "mcp" }> | undefined;
     for (const message of snapshot.messages) {
       if (message.role !== "bot") continue;
       for (const block of message.blocks) {
+        if (block.kind === "mcp_approval" && block.status === "pending") {
+          pending = {
+            kind: "mcp",
+            threadId: snapshot.threadId,
+            serverId: block.serverId,
+            needsOAuth: block.needsOAuth,
+            ask: mcpApprovalAsk(block),
+          };
+          continue;
+        }
         if (block.kind !== "ask" || block.status === "answered" || block.dismissed) continue;
         if (!message.runId) continue;
         pending = {
@@ -187,20 +199,12 @@ export async function runFlow<World>(
           block.kind === "text"
             ? [block.text ?? ""]
             : block.kind === "ask"
-              ? [
-                  [
-                    `[card] ${block.text}`,
-                    block.detail,
-                    block.actions?.length
-                      ? `(buttons: ${block.actions.map((action) => action.label).join(", ")})`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join("\n"),
-                ]
-              : block.kind === "computer"
-                ? [`[screen] ${block.text}`]
-                : [],
+              ? [cardText({ text: block.text, detail: block.detail, actions: block.actions })]
+              : block.kind === "mcp_approval"
+                ? [cardText(mcpApprovalAsk(block))]
+                : block.kind === "computer"
+                  ? [`[screen] ${block.text}`]
+                  : [],
         )
         .join("\n")
         .trim();
@@ -388,9 +392,10 @@ export async function runFlow<World>(
           state = await settle(wake);
           continue;
         }
+        const card = state.kind === "idle" ? undefined : state.ask;
         const move: UserMove = await user(
           transcript,
-          state.kind === "ask" ? { kind: "card", ask: state.ask } : { kind: "chat" },
+          card ? { kind: "card", ask: card } : { kind: "chat" },
           abort.signal,
         );
         options.log(`user: ${describeMove(move)}`);
@@ -410,6 +415,18 @@ export async function runFlow<World>(
                     : "",
             ...(move.kind === "secret" && move.username ? { username: move.username } : {}),
           });
+        } else if (state.kind === "mcp" && move.kind === "choose") {
+          // The web card makes these same calls; an OAuth card first needs a browser popup.
+          // Stopping still grades the run: the bot most likely dropped the token it was given.
+          if (move.actionId === "approve" && state.needsOAuth) {
+            options.log("cannot complete an MCP OAuth popup");
+            throw new FlowStop("error");
+          }
+          await rpc(`mcp/assignments/${move.actionId}`, {
+            botId,
+            serverId: state.serverId,
+            threadId: state.threadId,
+          });
         } else if (move.kind === "say") {
           await rpc("threads/send", { botId, text: move.text });
         } else {
@@ -423,7 +440,7 @@ export async function runFlow<World>(
             move.kind === "say"
               ? move.text
               : move.kind === "choose"
-                ? `[pressed ${state.kind === "ask" ? (state.ask.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId) : move.actionId}]`
+                ? `[pressed ${card?.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId}]`
                 : "[filled secret]",
           ...(wake ? { wake } : {}),
         });
@@ -584,6 +601,31 @@ export function wakeIsDue(nextRunAt: Date | null, now: number, horizonMs?: numbe
 const MAX_SCREEN_STEPS = 30;
 const FRAME_INTERVAL_MS = 2_500;
 const JUDGE_TIMEOUT_MS = 180_000;
+
+/** An MCP approval card as the web shows it: the server, its address and two buttons. */
+export function mcpApprovalAsk(block: Extract<MessageBlock, { kind: "mcp_approval" }>): PendingAsk {
+  return {
+    text: `Connect MCP server “${block.name}”`,
+    detail: block.endpoint ?? `stdio (${block.transport})`,
+    actions: [
+      { id: "approve", label: block.needsOAuth ? "Authorize" : "Approve" },
+      { id: "dismiss", label: "Not now" },
+    ],
+  };
+}
+
+/** A card as the person reads it in the transcript. */
+export function cardText(ask: PendingAsk) {
+  return [
+    `[card] ${ask.text}`,
+    ask.detail,
+    ask.actions?.length
+      ? `(buttons: ${ask.actions.map((action) => action.label).join(", ")})`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function describeMove(move: UserMove) {
   if (move.kind === "say") return move.text.replace(/\n/g, " ");

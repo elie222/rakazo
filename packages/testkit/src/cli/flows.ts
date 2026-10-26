@@ -91,6 +91,8 @@ async function main() {
       COMPOSIO_API_KEY: "",
       CLOUD_AGENT_PROVIDER: "",
       EMAIL_PROVIDER: "none",
+      // Flow MCP servers, such as connect-mcp's task tracker, listen on loopback in this process.
+      MCP_ALLOW_PRIVATE_ENDPOINT: "true",
       // Billing would require a funded credits account; flows pay the model directly.
       STRIPE_SECRET_KEY: "",
       STRIPE_WEBHOOK_SECRET: "",
