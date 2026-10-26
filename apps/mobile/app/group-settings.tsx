@@ -30,10 +30,8 @@ export default function GroupSettingsScreen() {
   useEffect(() => {
     if (!groupId) return;
     void Promise.all([
-      rpc<MobileGroup[]>("groups/list").then(
-        (groups) => groups.find((row) => row.id === groupId) ?? null,
-      ),
-      rpc<MobileBot[]>("bots/list"),
+      rpc("groups/list").then((groups) => groups.find((row) => row.id === groupId) ?? null),
+      rpc("bots/list"),
     ])
       .then(([nextGroup, nextBots]) => {
         if (!nextGroup) throw new Error(t("Group not found"));

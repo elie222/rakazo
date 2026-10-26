@@ -6,14 +6,21 @@ export interface ExtraDisplayLayout {
 }
 
 export function observeExtraDisplayCommand(layout: ExtraDisplayLayout): string {
-  const imagePath = `/tmp/rakazo/observe-${layout.displayNumber}.png`;
+  const n = layout.displayNumber;
+  // Fresh files per call: concurrent observations of one display (a bot and its subagent, a
+  // viewer snapshot) shared one path, so one could read the other's half-written screenshot.
   return [
-    `DISPLAY=${layout.display} xdotool getmouselocation --shell >/tmp/rakazo/cursor-${layout.displayNumber}.txt || true`,
-    `DISPLAY=${layout.display} scrot -o ${imagePath} 2>/dev/null || DISPLAY=${layout.display} import -window root ${imagePath}`,
-    `test -s ${imagePath}`,
-    `base64 -w0 ${imagePath} 2>/dev/null || base64 ${imagePath}`,
+    "mkdir -p /tmp/rakazo",
+    `dir=$(mktemp -d /tmp/rakazo/observe-${n}-XXXXXX)`,
+    `trap 'rm -rf "$dir"' EXIT`,
+    'image="$dir/screen.png"; cursor="$dir/cursor.txt"',
+    `DISPLAY=${layout.display} xdotool getmouselocation --shell >"$cursor" || true`,
+    `DISPLAY=${layout.display} scrot -o "$image" 2>/dev/null || DISPLAY=${layout.display} import -window root "$image"`,
+    `test -s "$image"`,
+    // One unwrapped line on GNU, BSD and busybox base64 alike; the parser reads one line.
+    `base64 <"$image" | tr -d '\\n'`,
     `printf '\\nCURSOR '`,
-    `tr '\\n' ' ' </tmp/rakazo/cursor-${layout.displayNumber}.txt 2>/dev/null || true`,
+    `tr '\\n' ' ' <"$cursor" 2>/dev/null || true`,
   ].join("; ");
 }
 

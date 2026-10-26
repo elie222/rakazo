@@ -55,9 +55,20 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("desktop", {}).describe().id).toBe("desktop");
   });
 
+  it("returns the Kubernetes provider without contacting the cluster", () => {
+    const sandbox = createSandboxProvider("kubernetes", {
+      kubernetesNamespace: "rakazo-computers",
+      kubernetesRuntimeClassName: "kata",
+    });
+    expect(sandbox.describe()).toMatchObject({
+      id: "kubernetes",
+      capabilities: { graphical: true, pty: true, persistentHome: false },
+    });
+  });
+
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | kubernetes | desktop | fake.',
     );
   });
 });

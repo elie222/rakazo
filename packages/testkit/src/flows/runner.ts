@@ -21,7 +21,7 @@ import { asSystem } from "../system-db.js";
 import type { Criterion, Flow, FlowComputer, FlowEvidence, TranscriptEntry } from "./flow.js";
 import { check } from "./flow.js";
 import type { PendingAsk, Situation, UserMove } from "./simulated-user.js";
-import { createSimulatedUser } from "./simulated-user.js";
+import { createSimulatedUser, screenStepLog } from "./simulated-user.js";
 
 export type FlowApp = {
   app: { request: (input: string, init?: RequestInit) => Promise<Response> | Response };
@@ -108,6 +108,8 @@ export async function runFlow<World>(
   let cookie = "";
   let world: World | undefined;
   let endedBy: FlowEvidence<unknown>["endedBy"] = "user-done";
+  let wakesRan = 0;
+  let wakesNotDue = 0;
   let computer: FlowComputer | undefined;
   let recorder: NodeJS.Timeout | undefined;
   let recording: Promise<void> | undefined;
@@ -330,17 +332,18 @@ export async function runFlow<World>(
     /** The person takes the screen through the product's takeover path, acts, and hands it back. */
     const takeOver = async (wake?: number) => {
       await rpc("computer/takeover", { botId });
-      const steps: string[] = [];
+      const log = screenStepLog();
       for (let step = 0; step < MAX_SCREEN_STEPS; step += 1) {
         await withinLimits();
         const frame = await handles.sandbox.observe(ref, context);
         await record(frame);
+        log.saw(frame.image);
         const situation: Situation = {
           kind: "screen",
           image: { name: "screen.png", mimeType: frame.mimeType, data: frame.image },
           width: frame.width,
           height: frame.height,
-          steps,
+          steps: log.steps,
         };
         const move = await user(transcript, situation, abort.signal);
         options.log(`user at screen: ${describeMove(move)}`);
@@ -349,7 +352,7 @@ export async function runFlow<World>(
           transcript.push({
             from: "user",
             at: new Date().toISOString(),
-            text: `[took the screen: ${steps.join("; ")}]`,
+            text: `[took the screen: ${log.steps.join("; ")}]`,
             ...(wake ? { wake } : {}),
           });
           return;
@@ -369,7 +372,7 @@ export async function runFlow<World>(
           });
         else if (move.kind === "key")
           await rpc("computer/input", { botId, kind: "key", payload: { key: move.key } });
-        steps.push(describeMove(move));
+        log.did(describeMove(move), move.kind === "click" ? move : undefined);
         await new Promise((resolve) => setTimeout(resolve, 1_000));
       }
       await rpc("computer/release", { botId, reason: "skipped" }).catch(() => undefined);
@@ -440,6 +443,16 @@ export async function runFlow<World>(
           orderBy: { createdAt: "asc" },
         });
         if (!routine) break;
+        observations[`before-wake-${wake}`] = {
+          nextRunAt: routine.nextRunAt?.toISOString() ?? null,
+          crons: routine.crons,
+          timezone: routine.timezone,
+        };
+        if (!wakeIsDue(routine.nextRunAt, Date.now(), flow.wakeHorizonMs)) {
+          options.log(`routine "${routine.name}" is not due soon; not waking it early`);
+          wakesNotDue += 1;
+          break;
+        }
         options.log(`waking routine "${routine.name}" (${wake})`);
         // Stand in for the calendar passing, not for the bot's work.
         const scheduledFor = new Date(Date.now() - 1_000);
@@ -458,6 +471,7 @@ export async function runFlow<World>(
         }
         await converse(wake);
         observations[`wake-${wake}`] = await flow.observe(computer, world);
+        wakesRan += 1;
       }
     } catch (error) {
       if (!(error instanceof FlowStop)) throw error;
@@ -494,6 +508,8 @@ export async function runFlow<World>(
       prompt: routine.prompt,
       crons: routine.crons,
       active: routine.active,
+      timezone: routine.timezone,
+      nextRunAt: routine.nextRunAt?.toISOString() ?? null,
     }));
     const evidence: FlowEvidence<World> = {
       world,
@@ -503,7 +519,6 @@ export async function runFlow<World>(
       observations,
       endedBy,
     };
-    const wakesRan = Object.keys(observations).filter((key) => key.startsWith("wake-")).length;
     const failedRuns = result.runs.filter((run) => run.status === "failed");
     result.criteria = [
       ...flow.grade(evidence),
@@ -511,8 +526,8 @@ export async function runFlow<World>(
         ? [
             check(
               "requested-wakes-ran",
-              wakesRan === flow.routineWakes,
-              `${wakesRan} of ${flow.routineWakes}`,
+              wakesRan + wakesNotDue === flow.routineWakes,
+              `${wakesRan} ran, ${wakesNotDue} not due, of ${flow.routineWakes}`,
             ),
           ]
         : []),
@@ -554,6 +569,16 @@ export async function runFlow<World>(
         .catch((error: unknown) => options.log(`computer cleanup failed: ${String(error)}`));
   }
   return result;
+}
+
+/**
+ * Whether to force a routine's next run now. The bot's clock does not move, so only a run due
+ * within the flow's horizon stands in for time passing; a later start the bot chose is kept.
+ */
+export function wakeIsDue(nextRunAt: Date | null, now: number, horizonMs?: number) {
+  return (
+    Boolean(nextRunAt) && nextRunAt!.getTime() <= now + (horizonMs ?? Number.POSITIVE_INFINITY)
+  );
 }
 
 const MAX_SCREEN_STEPS = 30;

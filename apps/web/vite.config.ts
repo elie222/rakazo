@@ -39,9 +39,17 @@ import {
   shouldInjectNovncStorageShim,
 } from "./src/novnc-html.js";
 import { rakazoPwa } from "./src/pwa/plugin.js";
+import type { ScreenTargetFailure } from "./src/screen-proxy.js";
 import {
+  checkScreenAuthorization,
+  novncRequestPath,
   resolveNovncTarget,
   safeProxyHeaders,
+  screenCapabilityExpiry,
+  screenProbePath,
+  screenProbeStatus,
+  screenRefusal,
+  screenUpstreamReachable,
   watchScreenAuthorization,
 } from "./src/screen-proxy.js";
 
@@ -95,16 +103,23 @@ function attachDesktopStackProbe(
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string, api: string) {
   server.middlewares.use(async (req, res, next) => {
-    if (!req.url?.startsWith("/novnc/")) {
+    const path = novncRequestPath(req.url);
+    if (!path) {
       next();
       return;
     }
+    req.url = path;
     const connectionId = randomUUID();
     const bindings = {
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
-    const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
+    const confirmedAt = performance.now();
+    // A status-only probe is answered here, after the same access check, and never forwarded.
+    const probe = screenProbePath(req.url);
+    let refusal: ScreenTargetFailure | undefined;
+    const target = await resolveNovncTarget(probe ?? req.url, secret, api, (reason) => {
+      refusal = reason;
       screenLog.warn("screen.proxy.target_rejected", {
         ...bindings,
         "screen.transport": "http",
@@ -112,16 +127,26 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       });
     });
     if (res.destroyed) return;
-    if (!target) {
-      res.statusCode = 403;
-      res.end("Invalid or expired screen capability");
+    if (probe) {
+      // Only a connection attempt reaches the computer; the proxy writes the whole answer.
+      const reachable = target ? await screenUpstreamReachable(target) : false;
+      if (res.destroyed) return;
+      res.statusCode = screenProbeStatus(target, refusal, reachable);
+      res.setHeader("cache-control", "no-store");
+      res.end();
       return;
     }
-    const forwarded = safeProxyHeaders(req.headers, target.headers);
+    if (!target) {
+      const { status, body } = screenRefusal(refusal);
+      res.statusCode = status;
+      res.end(body);
+      return;
+    }
+    const forwarded = safeProxyHeaders(req.headers, target);
     const headers = {
       // The storage shim rewrites the page, so ask for all of it, uncompressed.
       ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
-      host: `${target.hostname}:${target.port}`,
+      host: `${target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
     let upstream: ClientRequest | undefined;
@@ -199,7 +224,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
               .then((html) => {
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
-                const body = injectNovncStorageShim(html);
+                const body = injectNovncStorageShim(html, { viewOnly: !target.interactive });
                 res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })
@@ -237,11 +262,24 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else req.pipe(upstream);
     }
     stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
-      () => {
-        screenLog.warn("screen.proxy.http_revoked", bindings);
+      () => checkScreenAuthorization(req.url, secret, api, target),
+      (reason) => {
+        screenLog.warn("screen.proxy.http_revoked", {
+          ...bindings,
+          "screen.revoke_reason": reason,
+        });
         upstream?.destroy();
         res.destroy();
+      },
+      {
+        confirmedAt,
+        expiresAt: screenCapabilityExpiry(req.url),
+        onUnavailable: (consecutive) =>
+          screenLog.warn("screen.proxy.recheck_unavailable", {
+            ...bindings,
+            "screen.transport": "http",
+            "screen.consecutive": consecutive,
+          }),
       },
     );
     res.once("close", () => {
@@ -252,13 +290,16 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 
   server.httpServer?.on("upgrade", async (req, socket, head) => {
-    if (!req.url?.startsWith("/novnc/")) return;
+    const path = novncRequestPath(req.url);
+    if (!path) return;
+    req.url = path;
     const connectionId = randomUUID();
     const startedAt = Date.now();
     const bindings = {
       "screen.connection_id": connectionId,
       "screen.policy": screenPolicy(req.url),
     };
+    const confirmedAt = performance.now();
     const target = await resolveNovncTarget(req.url, secret, api, (reason) => {
       screenLog.warn("screen.proxy.target_rejected", {
         ...bindings,
@@ -292,12 +333,25 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       else screenLog.info("screen.proxy.websocket_closed", details);
     };
     const stopChecking = watchScreenAuthorization(
-      async () => Boolean(await resolveNovncTarget(req.url, secret, api)),
-      () => {
-        screenLog.warn("screen.proxy.websocket_revoked", bindings);
+      () => checkScreenAuthorization(req.url, secret, api, target),
+      (reason) => {
+        screenLog.warn("screen.proxy.websocket_revoked", {
+          ...bindings,
+          "screen.revoke_reason": reason,
+        });
         closeInitiator ??= "revoked";
         socket.destroy();
         upstream.destroy();
+      },
+      {
+        confirmedAt,
+        expiresAt: screenCapabilityExpiry(req.url),
+        onUnavailable: (consecutive) =>
+          screenLog.warn("screen.proxy.recheck_unavailable", {
+            ...bindings,
+            "screen.transport": "websocket",
+            "screen.consecutive": consecutive,
+          }),
       },
     );
     socket.once("close", () => {
@@ -313,9 +367,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
     upstream.once(target.protocol === "https:" ? "secureConnect" : "connect", () => {
       const headerLines = [
         `${req.method ?? "GET"} ${target.path} HTTP/1.1`,
-        `Host: ${target.hostname}:${target.port}`,
+        `Host: ${target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname}:${target.port}`,
       ];
-      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers, target.headers))) {
+      for (const [key, value] of Object.entries(safeProxyHeaders(req.headers, target))) {
         headerLines.push(`${key}: ${Array.isArray(value) ? value.join(",") : value}`);
       }
       upstream.write(`${headerLines.join("\r\n")}\r\n\r\n`);

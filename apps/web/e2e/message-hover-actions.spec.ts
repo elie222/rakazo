@@ -1,4 +1,5 @@
-import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 /** Submit from the Send control so an in-flight prior send cannot swallow Enter. */

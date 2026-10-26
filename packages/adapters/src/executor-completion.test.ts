@@ -1,28 +1,32 @@
 import { describe, expect, it } from "vitest";
+import { runIdentityInstruction } from "./run-instructions.js";
+import { mayOpenModelStream } from "./run-lifecycle.js";
 import {
   completionMarksUnread,
-  completionMessageSegments,
   completionNotificationBody,
   completionNotificationPreview,
+  runSendsFinishNotification,
+  secretAskNotification,
+  subagentMarksUnread,
+} from "./run-notifications.js";
+import {
+  completionMessageSegments,
   DELEGATED_EMPTY_NOTICE,
   emptyDelegatedToolTurnShouldFail,
-  isExactNoResponse,
   longWorkProgressGuidance,
-  mayOpenModelStream,
-  NO_RESPONSE,
   REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
-  runIdentityInstruction,
   runPromotesMidTurnNarration,
   runReplyGuidance,
-  runSendsFinishNotification,
-  secretAskNotification,
+  TICKET_SILENT_REPLY_GUIDANCE,
+} from "./run-replies.js";
+import {
+  isExactNoResponse,
+  NO_RESPONSE,
   stripNoResponseReply,
   stripStrayNoResponse,
-  subagentMarksUnread,
-  TICKET_SILENT_REPLY_GUIDANCE,
-} from "./executor.js";
+} from "./silent-reply.js";
 import { finalBlocksAfterMidTurnProgress } from "./user-progress.js";
 
 describe("completionMessageSegments", () => {

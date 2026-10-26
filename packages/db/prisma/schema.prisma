@@ -45,6 +45,11 @@ model User {
   botSections                 BotSection[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
+  modelRoleChoices            UserModelRoleChoice[]
+  modelPreferences            UserModelPreference[]
+  voicePreferences            UserVoicePreference[]
+  approvalRules               UserActionApprovalRule[]
+  autoReviewPreference        UserActionAutoReviewPreference?
   createdSpaces               Space[]                      @relation("SpaceCreator")
   botSecrets BotSecret[]
   agentSecrets               AgentSecret[]
@@ -52,6 +57,7 @@ model User {
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
   signupSurvey                SignupSurvey?
+  computerRuns                ComputerRun[]
 
   @@unique([email])
   @@map("user")
@@ -283,10 +289,12 @@ model Space {
   artifacts                   Artifact[]
   notificationPreferences     NotificationPreference[]
   computers                   Computer[]
+  computerRuns                ComputerRun[]
   externalEffects             ExternalEffect[]
   mcpServers                  McpServer[]
   mcpOAuthSessions            McpOAuthSession[]
-  botMcpServers               BotMcpServer[]
+  modelOAuthSessions          ModelOAuthSession[]
+  botMcpServers              BotMcpServer[]
   messagingIdentities         MessagingIdentity[]
   actionApprovalRules         ActionApprovalRule[]
   actionAutoReviewPreferences ActionAutoReviewPreference[]
@@ -337,6 +345,7 @@ model SpaceMember {
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
   modelRoleChoices SpaceModelRoleChoice[]
+  settingOverrides SpaceSettingOverride[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -411,6 +420,8 @@ model UserModelCredential {
   updatedAt   DateTime               @updatedAt
   preferences SpaceModelPreference[]
   roleChoices SpaceModelRoleChoice[]
+  userPreferences UserModelPreference[]
+  userRoleChoices UserModelRoleChoice[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -426,6 +437,7 @@ model UserVoiceCredential {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   preferences SpaceVoicePreference[]
+  userPreferences UserVoicePreference[]
 
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
@@ -446,7 +458,6 @@ model SpaceModelPreference {
 
   @@unique([spaceId, userId, credentialId])
   @@index([credentialId])
-  // The unused legacy isDefault column and its indexes stay in the table until the next release.
   @@map("space_model_preferences")
 }
 
@@ -663,6 +674,7 @@ model Message {
   @@unique([threadId, clientNonce])
   @@index([threadId, seq])
   @@index([replyToMessageId])
+  @@index([runId, seq])
   @@index([searchTokens], type: Gin)
   @@map("messages")
 }
@@ -761,6 +773,8 @@ model Run {
   @@index([trigger, status, messagingMirroredAt, updatedAt])
   @@index([trigger, status, teamChatMirroredAt, updatedAt])
   @@index([spaceId, botId])
+  @@index([botId])
+  @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
   @@index([routineId])
@@ -891,6 +905,8 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
+  accountFailures Int      @default(0)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]
@@ -1112,6 +1128,9 @@ model Computer {
   homeRevision            String                   @default("empty")
   /// When the sandbox was read for `homeRevision`; null when an older release saved it.
   homeRevisionAt          DateTime?
+  /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
+  /// until a later save shows the computer works again.
+  autoRecoveredAt         DateTime?
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique
@@ -1144,6 +1163,34 @@ model Computer {
   @@map("computers")
 }
 
+/// One stretch a computer ran at its provider, from `computers.runningSince` until it stopped,
+/// attributed to the computer's owning user and space. Run time is what sandbox providers bill.
+///
+/// `computerId` is deliberately not a relation, so the row outlives a deleted computer. Deleting
+/// the user or space anonymises the row instead of erasing the run time it records.
+model ComputerRun {
+  id         String    @id @default(cuid())
+  computerId String
+  spaceId    String?
+  space      Space?    @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// The provider kind, such as docker or e2b.
+  kind       String
+  /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
+  providerRef String?
+  startedAt  DateTime
+  /// Null while running. When the end was not seen as it happened, this is when it was detected.
+  endedAt    DateTime?
+  /// How it ended; see `ComputerRunEnd` in packages/db/src/computer-runs.ts.
+  endReason  String?
+
+  @@unique([computerId, startedAt])
+  @@index([spaceId, userId, startedAt])
+  // computer_runs_open_idx (open runs by computer) is raw SQL: Prisma cannot express partial indexes.
+  @@map("computer_runs")
+}
+
 model ComputerExecutionLease {
   id         String   @id @default(cuid())
   computerId String
@@ -1158,6 +1205,7 @@ model ComputerExecutionLease {
   @@unique([computerId, botId])
   @@index([runId])
   @@index([computerId, expiresAt])
+  @@index([botId, expiresAt])
   @@map("computer_execution_leases")
 }
 
@@ -1334,6 +1382,25 @@ model McpOAuthSession {
 
   @@index([spaceId, userId, createdAt])
   @@map("mcp_oauth_sessions")
+}
+
+/// A subscription sign-in waiting for its pasted code, so whichever API process
+/// receives the code can finish it. The ciphertext holds the PKCE verifier.
+model ModelOAuthSession {
+  id         String   @id
+  spaceId    String
+  space      Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId     String
+  provider   String
+  /// The connection it signs in to; a newer sign-in for the same one replaces it.
+  scope      String
+  ciphertext String
+  createdAt  DateTime @default(now())
+
+  @@index([userId, provider])
+  @@index([scope])
+  @@index([createdAt])
+  @@map("model_oauth_sessions")
 }
 
 model BotMcpServer {
@@ -1724,6 +1791,97 @@ model SpaceModelRoleChoice {
   @@id([spaceId, userId, role, position])
   @@index([credentialId, userId])
   @@map("space_model_role_choices")
+}
+
+/// Which of a member's account-wide settings a Space replaces with its own. Without a row the
+/// Space follows the account: "models" covers every model role, "voice" the voice choices,
+/// "confirmations" the approval rules and auto review.
+model SpaceSettingOverride {
+  spaceId     String
+  userId      String
+  spaceMember SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  setting     String
+  createdAt   DateTime    @default(now())
+
+  @@id([spaceId, userId, setting])
+  @@map("space_setting_overrides")
+}
+
+/// The member's account-wide models per purpose; position 0 runs, the rest take over in order.
+model UserModelRoleChoice {
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          String
+  position      Int
+  provider      String
+  modelId       String
+  thinkingLevel String?
+  credentialId  String?
+  credential    UserModelCredential? @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+
+  @@id([userId, role, position])
+  @@index([credentialId, userId])
+  // Unique index user_model_role_choices_model_connection_key (NULLS NOT DISTINCT) is created in SQL.
+  @@map("user_model_role_choices")
+}
+
+/// A connection's own model and effort, which belong to the connection in every Space.
+model UserModelPreference {
+  userId        String
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId  String
+  credential    UserModelCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+  modelId       String?
+  thinkingLevel String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@id([userId, credentialId])
+  @@map("user_model_preferences")
+}
+
+/// The member's account-wide voice per voice connection; one is the default.
+model UserVoicePreference {
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String
+  credential   UserVoiceCredential @relation(fields: [credentialId, userId], references: [id, userId], onDelete: Cascade)
+  voiceId      String              @default("")
+  // Fish speech-model override. Null keeps the deployment default.
+  speechModel  String?
+  isDefault    Boolean             @default(false)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@id([userId, credentialId])
+  // Partial unique index user_voice_preferences_default_key is created in SQL.
+  @@map("user_voice_preferences")
+}
+
+/// The member's account-wide action approval rules.
+model UserActionApprovalRule {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  effect     String
+  matchKind  String
+  matchValue String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, effect, matchKind, matchValue])
+  @@map("user_action_approval_rules")
+}
+
+/// The member's account-wide auto review and skip-approvals choice.
+model UserActionAutoReviewPreference {
+  userId        String   @id
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled       Boolean  @default(false)
+  skipApprovals Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("user_action_auto_review_preferences")
 }
 
 model MessagingInstallation {

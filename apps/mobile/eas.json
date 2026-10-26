@@ -24,7 +24,8 @@
       "extends": "production",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "environment": "production"
     },
     "diagnostic": {
       "extends": "production",

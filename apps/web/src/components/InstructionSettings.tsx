@@ -68,9 +68,10 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
                 <div key={version.id} className="mt-2 text-sm">
                   <Disclosure
                     summary={
-                      <>
-                        {new Date(version.createdAt).toLocaleString()} · {version.reason}
-                      </>
+                      <span className="inline-flex flex-wrap gap-x-2">
+                        <span>{new Date(version.createdAt).toLocaleString()}</span>
+                        <span className="text-muted-foreground">{version.reason}</span>
+                      </span>
                     }
                   >
                     <pre className="whitespace-pre-wrap">{version.instructions}</pre>

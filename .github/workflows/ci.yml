@@ -101,6 +101,10 @@ jobs:
       - run: pnpm test
       - name: Host operations safety tests
         run: python3 infra/compose/host-safeguards.test.py
+      - name: Codex subscription auth safety tests
+        run: python3 .github/scripts/codex-subscription-auth.test.py
+      - name: Dependency update patch safety tests
+        run: python3 .github/scripts/dependency-update-patch.test.py
 
   native-computer:
     name: Native computer (${{ matrix.os }})

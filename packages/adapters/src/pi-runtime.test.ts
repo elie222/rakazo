@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeToolActivity } from "./pi-runtime.js";
+import { describeToolActivity } from "./pi-runtime-tools.js";
 
 describe("describeToolActivity", () => {
   it("summarizes builtin tools with their most informative argument", () => {

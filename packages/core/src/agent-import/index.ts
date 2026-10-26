@@ -32,7 +32,7 @@ import {
   parseOpenClaw,
 } from "./openclaw.js";
 import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
+import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
 
 export {
   AGENT_IMPORT_ARCHIVE_LIMITS,
@@ -56,7 +56,7 @@ export {
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export { bundledSkillNames } from "./hermes.js";
-export type { SkillFiles } from "./shared.js";
+export type { AgentImportReader, SkillFiles } from "./shared.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
@@ -413,22 +413,7 @@ export function resolveAgentImportNames(
   };
 }
 
-const NAME_MAX_LENGTH = 80;
-
 /** Adds the result to `used` (lowercase), so several imported documents never share a path. */
 export function freeAgentImportMemoryPath(path: string, used: Set<string>): string {
   return freeName(path, used, ".md");
-}
-
-function freeName(value: string, used: Set<string>, extension: string): string {
-  const hasExtension = extension && value.toLowerCase().endsWith(extension);
-  const base = hasExtension ? value.slice(0, -extension.length) : value;
-  const suffix = hasExtension ? value.slice(-extension.length) : "";
-  let candidate = value;
-  for (let n = 2; used.has(candidate.toLowerCase()); n += 1) {
-    const tail = `-${n}${suffix}`;
-    candidate = `${base.slice(0, Math.max(1, NAME_MAX_LENGTH - tail.length))}${tail}`;
-  }
-  used.add(candidate.toLowerCase());
-  return candidate;
 }

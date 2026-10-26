@@ -11,18 +11,23 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   load: vi.fn(),
   save: vi.fn(),
+  params: {} as { spaceId?: string },
   held: null as Promise<void> | null,
 }));
 const t = (text: string) => text;
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
+  useLocalSearchParams: () => state.params,
 }));
 vi.mock("./api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId?: string) => ({
+    apiBase: "https://app.example.test",
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./device-voice", () => ({
@@ -134,6 +139,7 @@ async function click(label: string) {
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.params = {};
   queryClient.clear();
   activeProvider = "fish-audio";
   state.load.mockReset().mockResolvedValue(true);
@@ -240,6 +246,7 @@ it("saves device voice off before activating a connected provider's saved voice"
   expect(state.rpc).toHaveBeenCalledWith("voice/setVoice", {
     provider: "other",
     voiceId: "other-voice",
+    scope: "account",
   });
   selected("Other provider");
   unselected("This device");
@@ -311,6 +318,32 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).not.toContain("fish-audio voice");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save).not.toHaveBeenCalled();
+});
+
+it("edits a Space's override in that Space, leaving this device's voice and sounds out", async () => {
+  state.params = { spaceId: "space-other" };
+  await render();
+  const spaceContext = {
+    requestContext: {
+      apiBase: "https://app.example.test",
+      headers: { "x-rakazo-space-id": "space-other" },
+    },
+  };
+  // Reads also carry an abort signal.
+  const spaceRead = expect.objectContaining(spaceContext);
+  expect(state.rpc).toHaveBeenCalledWith("voice/status", { scope: "space" }, spaceRead);
+  expect(state.rpc).toHaveBeenCalledWith("voice/credentials", { scope: "space" }, spaceRead);
+  expect(state.load).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("This device");
+  expect(container.textContent).not.toContain("Call sounds");
+  selected("Fish Audio");
+  await click("Other provider");
+  expect(state.rpc).toHaveBeenCalledWith(
+    "voice/setVoice",
+    { provider: "other", voiceId: "other-voice", scope: "space" },
+    spaceContext,
+  );
+  selected("Other provider");
 });
 
 async function revisit() {
@@ -402,6 +435,7 @@ it("keeps a saved speech model when an opening read started before the save land
   });
   expect(state.rpc).toHaveBeenCalledWith("voice/setSpeechModel", {
     provider: "fish-audio",
+    scope: "account",
     speechModel: "saved-model",
   });
   await act(async () => releaseCatalog());

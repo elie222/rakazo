@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { createServer, type ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 

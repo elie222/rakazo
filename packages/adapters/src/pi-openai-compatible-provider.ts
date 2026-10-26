@@ -1,27 +1,22 @@
 import { lookup } from "node:dns/promises";
-import { isIP, type LookupFunction } from "node:net";
-import {
-  createProvider,
-  type Model,
-  type MutableModels,
-  type Provider,
-  type ProviderStreams,
-} from "@earendil-works/pi-ai";
+import type { LookupFunction } from "node:net";
+import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  ipVersion,
+  isCloudMetadataAddress,
+  isLinkLocalAddress,
+  isNonPublicAddress,
+  MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
 import { Agent } from "undici";
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";
-import {
-  createAddressCheckedLookup,
-  isCloudMetadataAddress,
-  isLinkLocalAddress,
-  isPrivateAddress,
-  type ResolveHostname,
-} from "./network-address.js";
+import type { ResolveHostname } from "./network-address.js";
+import { createAddressCheckedLookup } from "./network-address.js";
 import type { OpenAiCompatibleUrlPolicy } from "./openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
@@ -151,8 +146,8 @@ export function createOpenAiCompatibleLookup(
       if (
         addresses.some(
           (entry) =>
-            isIP(entry.address) === 0 ||
-            !isPrivateAddress(entry.address) ||
+            ipVersion(entry.address) === 0 ||
+            !isNonPublicAddress(entry.address) ||
             isLinkLocalAddress(entry.address),
         )
       ) {
@@ -160,7 +155,7 @@ export function createOpenAiCompatibleLookup(
       }
       return;
     }
-    if (addresses.some((entry) => isPrivateAddress(entry.address))) {
+    if (addresses.some((entry) => isNonPublicAddress(entry.address))) {
       throw new Error("Public model server hostname resolved to a private address");
     }
   });
@@ -204,7 +199,7 @@ export function createOpenAiCompatibleFetch(
     const dispatcher = new Agent({
       connect: {
         timeout: MODEL_CONNECT_TIMEOUT_MS,
-        ...(isIP(hostname) === 0
+        ...(ipVersion(hostname) === 0
           ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
           : {}),
       },
@@ -477,7 +472,7 @@ export async function verifyOpenAiCompatibleApiKey(
   signal?: AbortSignal,
 ): Promise<void> {
   if (new URL(input.baseUrl).hostname !== "ollama.com") return;
-  if (!input.apiKey?.trim()) throw new Error("API key was rejected by the provider.");
+  if (!input.apiKey?.trim()) throw new Error(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
@@ -494,7 +489,7 @@ export async function verifyOpenAiCompatibleApiKey(
   }
   await response.body?.cancel().catch(() => undefined);
   if (response.status === 401 || response.status === 403) {
-    throw new Error("API key was rejected by the provider.");
+    throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }

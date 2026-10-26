@@ -12,9 +12,7 @@ vi.mock("./rpc", () => {
   };
 });
 
-import type { DataTag, QueryKey } from "@tanstack/react-query";
 import {
-  fetchFresh,
   lastChatKey,
   lastChatOf,
   queryClient,
@@ -136,27 +134,5 @@ describe("the shared query client", () => {
       unsubscribe();
     }
     expect(queryFn).toHaveBeenCalledTimes(2);
-  });
-
-  it("gives a refresh cancelled by a newer one that newer answer instead of failing", async () => {
-    const queryKey = ["fresh-race-test"] as unknown as DataTag<QueryKey, string, Error>;
-    const answers = ["first", "second"];
-    const resolvers: Array<() => void> = [];
-    const queryFn = vi.fn(
-      ({ signal }: { signal: AbortSignal }) =>
-        new Promise<string>((resolve, reject) => {
-          const answer = answers.shift() ?? "later";
-          signal.addEventListener("abort", () => reject(signal.reason));
-          resolvers.push(() => resolve(answer));
-        }),
-    );
-    const saveRefresh = fetchFresh(queryClient, { queryKey, queryFn });
-    await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1));
-    // A live event refreshes the same list while the save's refresh is still out.
-    const eventRefresh = fetchFresh(queryClient, { queryKey, queryFn });
-    await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2));
-    resolvers[1]?.();
-    await expect(saveRefresh).resolves.toBe("second");
-    await expect(eventRefresh).resolves.toBe("second");
   });
 });

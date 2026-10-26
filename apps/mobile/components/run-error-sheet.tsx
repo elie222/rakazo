@@ -5,13 +5,9 @@ import { Platform, ScrollView, Text, useWindowDimensions, View } from "react-nat
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import {
-  parseRunDiagnostic,
-  runErrorExplanation,
-  runErrorWhatHappened,
-} from "../lib/run-error-presentation";
+import { parseRunDiagnostic, runErrorWhatHappened } from "../lib/run-error-presentation";
 import { NativeSymbol } from "./native-symbol";
-import { RunErrorActions, RunErrorTextAction } from "./run-error-actions";
+import { RunErrorAction, RunErrorTextAction } from "./run-error-actions";
 import { RunErrorSheetContainer } from "./run-error-sheet-container";
 import { SheetCloseButton } from "./sheet-close-button";
 
@@ -49,13 +45,12 @@ export function useRunError(details: string | null, includeReset = true) {
 export function RunErrorSheet({
   details,
   onClose,
-  onConnection,
-  onModel,
+  action,
 }: {
   details: string | null;
   onClose: () => void;
-  onConnection: () => void;
-  onModel?: () => void;
+  /** The one action that fixes the failure. */
+  action?: { label: string; onPress: () => void } | null;
 }) {
   const { t, locale } = useI18n();
   const tokens = useMobileTokens();
@@ -66,11 +61,6 @@ export function RunErrorSheet({
   useEffect(() => setTechnical(false), [details]);
   if (!error) return null;
   const diagnostic = parseRunDiagnostic(error.details, locale);
-  const explanation = runErrorExplanation(
-    t,
-    error.recovery === "connection",
-    !!error.recovery && !!onModel,
-  );
   const textStyle = { color: tokens.foreground, fontSize: 16, lineHeight: 24 };
   return (
     <RunErrorSheetContainer onClose={onClose} expanded={technical} label={error.summary}>
@@ -125,22 +115,10 @@ export function RunErrorSheet({
               <SheetCloseButton onPress={onClose} />
             </View>
           </View>
-          <View style={{ gap: 8 }}>
-            {explanation ? (
-              <Text style={{ color: tokens.mutedForeground, fontSize: 15, lineHeight: 21 }}>
-                {explanation}
-              </Text>
-            ) : null}
-            <Text style={{ color: tokens.mutedForeground, fontSize: 15, lineHeight: 21 }}>
-              {runErrorWhatHappened(t, error)}
-            </Text>
-          </View>
-          {error.recovery ? (
-            <RunErrorActions
-              onConnection={error.recovery === "connection" ? onConnection : undefined}
-              onModel={onModel}
-            />
-          ) : null}
+          <Text style={{ color: tokens.mutedForeground, fontSize: 15, lineHeight: 21 }}>
+            {runErrorWhatHappened(t, error)}
+          </Text>
+          {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
           <RunErrorTextAction
             label={t("Technical details")}
             expanded={technical}

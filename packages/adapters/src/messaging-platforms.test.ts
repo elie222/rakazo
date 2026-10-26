@@ -4,11 +4,11 @@ import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import { Domain } from "./lark/thread-id.js";
+import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
   enrichSlackTeamRoom,
   isMessagingEnabled,
   isMessagingSurfaceEnabled,
-  type MessagingEnvironmentValues,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatuses,
@@ -44,6 +44,14 @@ describe("messagingPlatformsFromEnv", () => {
   it("mounts nothing without credentials and everything with full credentials", () => {
     expect(providers({})).toEqual([]);
     expect(providers(fullEnv)).toEqual(["sendblue", "slack", "whatsapp", "telegram", "lark"]);
+  });
+
+  it("publishes the iMessage line so people know where to send a link code", () => {
+    const addresses = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform.address]),
+    );
+    expect(addresses.sendblue).toBe("+15550009999");
+    expect(addresses.slack).toBeUndefined();
   });
 
   it("requires all four sendblue values", () => {

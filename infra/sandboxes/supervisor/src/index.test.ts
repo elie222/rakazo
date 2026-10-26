@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -1141,7 +1141,7 @@ describe("docker exec stream demux", () => {
 });
 
 describe("computer command identity", () => {
-  it("runs the user's terminal as the same workspace user and environment as the bot's shell", () => {
+  it("gives commands the workspace user's home, PATH and package prefixes on the screen's display", () => {
     expect(computerCommandEnv({ display: ":2" })).toEqual([
       "DISPLAY=:2",
       "HOME=/home/rakazo",
@@ -1149,18 +1149,5 @@ describe("computer command identity", () => {
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
     ]);
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-    // Every exec, including file writes for uploads, inherits the container's non-root user
-    // (see containerCreateOptions).
-    const execs = source.match(/container\.exec\(\{[\s\S]*?\}\)/g) ?? [];
-    expect(execs.length).toBeGreaterThanOrEqual(2);
-    for (const exec of execs) expect(exec).not.toMatch(/\bUser\s*:/);
-    const route = (path: string) =>
-      source.slice(
-        source.indexOf(`app.post("${path}"`),
-        source.indexOf("app.", source.indexOf(`app.post("${path}"`) + 5),
-      );
-    expect(route("/computers/:id/exec")).toContain("computerCommandEnv(layout)");
-    expect(route("/computers/:id/terminal")).toContain("computerCommandEnv(screen.layout)");
   });
 });

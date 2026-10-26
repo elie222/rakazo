@@ -40,7 +40,13 @@ IRSA or EC2 instance role, opt in with `PI_DEFAULT_CREDENTIALS=host` and set
 `PI_DEFAULT_PROVIDER=amazon-bedrock`, `PI_DEFAULT_MODEL` and `AWS_REGION`. With an instance
 role, keep [restricted computer egress](#restricted-computer-egress) on so bot computers
 cannot read the role's credentials from the metadata endpoint.
-Auto Review is opt-in. In **Settings → Models → Approval model**, each user can select a model
+Approvals have three modes in **Settings → Approvals**: Never ask runs every action, Auto lets an
+approval model pass actions that fit the request, and Ask asks before any change. A space starts
+in Ask, or in Auto when `RAKAZO_AUTO_REVIEW=1` is set and an approval model is available. Each
+person can allow or block single tools and sites in every mode, and a space can customize its
+approvals apart from the account.
+
+In **Settings → Models → Approval model**, each user can select a model
 from an existing connection and add ordered backups, independently of their main model. Personal
 connections use their own credentials; hosted calls follow the same Rakazo credit rules as chat.
 Backups are tried only when a checker fails. An explicit ask, including an uncertain decision,
@@ -974,11 +980,11 @@ settings so other workspaces can install it. Enable Slack Events API delivery to
 message/history, channel/user lookup, file read and write, and reaction-write scopes it uses;
 reinstall the Slack app after changing scopes. Socket Mode is not used.
 
-In Messaging settings, choose the bot for shared channel conversations and select
-**Connect Slack workspace**. Each Slack workspace belongs to one Rakazo space and
-one installation owner; installing it from another space is rejected. DMs stay
-personal: choose a personal bot, select **Link a chat app**, and send the code in a
-DM to the Slack app. Link codes must belong to the installation's Rakazo space.
+In Messaging settings, select **Connect** on the Slack row. The workspace answers as
+the first bot in your default space, whichever space is open. Each Slack workspace
+belongs to one Rakazo space and one installation owner; installing it from another
+space is rejected. To DM that bot, use **Link DMs** and send the code in a DM to the
+Slack app. Teammates in the same space can link their own bots the same way.
 Invite the Slack app to channels and mention it to receive replies there. The
 bot's external conversations offer **Mentions only**, **Listen**, and room guidance.
 Workspace setup and personal linking are available on web, desktop and mobile.
@@ -1174,7 +1180,14 @@ objects within the hour, along with any revision an interrupted save left behind
 **The cache.** `DATA_DIR/homes` holds a copy of homes in use. A copy whose revision matches the
 bucket is downloaded again whenever it is missing, so you can remove it. Docker computers work
 directly in their copy until their next save, so only remove the copy of a Docker computer that
-is stopped. Remote computers' copies always match the bucket once saved.
+is stopped. Remote computers save straight from their files to the bucket; the worker removes
+their copies after an hour unread. Homes never saved to the bucket keep their only copy.
+
+**Saving large homes.** A save streams files through `DATA_DIR/staging` on the data volume,
+so memory use does not grow with file or home size. A computer with more than 20 GiB or a
+million files, or more than the volume has free, is not saved and keeps running; the worker logs
+`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Staging left by a killed
+process is removed at startup and by the worker within minutes.
 
 ### Moving existing homes
 
@@ -1448,6 +1461,16 @@ before moving anything. Switching the tree alone does not roll back the database
 
 Plaintext snapshots use `cat` in place of `age -d` and the filenames `rakazo.dump` and
 `appdata.tgz`. Use the same clean-directory procedure.
+
+To restore into a new stack, create the `rakazo_app` role before the procedure above. The dump
+grants to it, and on a new stack only the migration step would create it, so `pg_restore`
+stops without it. Do not run the migrations first: tables newer than the snapshot would block
+the restore. The procedure's final start applies them.
+
+```bash
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait postgres"
+ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE exec -T postgres sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -c \"CREATE ROLE rakazo_app NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE\"'"
+```
 
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
@@ -2036,6 +2059,10 @@ PASSKEY_ANDROID_CERT_SHA256=AA:BB:...:FF
 Until a platform's setting is set, the native app on that platform hides passkeys for this
 server. Both files are served through the web origin, so a reverse proxy in front of the web container
 must pass `/.well-known/` through to it.
+
+## Spoken summaries
+
+Off by default. Set `VOICE_SUMMARY_MIN_CHARS` (for example `600`) to have a voice read a bot reply longer than that many characters as a short summary written by that bot's own model. Each summary is an extra model call billed to the bot. The chat keeps the full reply, and if the summary call fails the full reply is read.
 
 ## Upload size
 

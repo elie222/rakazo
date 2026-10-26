@@ -243,6 +243,22 @@ describe("nextSort", () => {
 });
 
 describe("columnSortLabel", () => {
+  it("localizes generated names and collisions while preserving literal headers", () => {
+    const copy = {
+      columnFallback: (index: number) => `Spalte ${index}`,
+      columnDuplicate: (header: string, index: number) => `${header}, Spalte ${index}`,
+      columnCollision: (label: string) => `${label}, leer`,
+    };
+    expect(columnSortLabel(["", "Spalte 1", "Spalte 1, leer"], 0, copy)).toBe(
+      "Spalte 1, leer, leer",
+    );
+    expect(columnSortLabel(["", "Spalte 1"], 1, copy)).toBe("Spalte 1");
+    expect(columnSortLabel(["Name", "Name", "Name, Spalte 1"], 0, copy)).toBe(
+      "Name, Spalte 1, leer",
+    );
+    expect(columnSortLabel(["Name", "Name"], 1, copy)).toBe("Name, Spalte 2");
+  });
+
   it("returns the header when unique and non-empty", () => {
     expect(columnSortLabel(["Item", "Qty"], 0)).toBe("Item");
   });

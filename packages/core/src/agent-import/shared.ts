@@ -242,3 +242,26 @@ function skillRequirements(front: Record<string, unknown>): {
       otherPlatform(front.platforms),
   };
 }
+
+const NAME_MAX_LENGTH = 80;
+
+/** `value`, or `value-2`, `value-3`… before `extension`; adds the result to `used` (lowercase). */
+export function freeName(value: string, used: Set<string>, extension: string): string {
+  const hasExtension = extension && value.toLowerCase().endsWith(extension);
+  const base = hasExtension ? value.slice(0, -extension.length) : value;
+  const suffix = hasExtension ? value.slice(-extension.length) : "";
+  let candidate = value;
+  for (let n = 2; used.has(candidate.toLowerCase()); n += 1) {
+    const tail = `-${n}${suffix}`;
+    candidate = `${base.slice(0, Math.max(1, NAME_MAX_LENGTH - tail.length))}${tail}`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/** A chosen folder or opened backup: its paths, and its files read on demand. */
+export type AgentImportReader = {
+  paths: string[];
+  read: (path: string) => Promise<string> | string;
+  size: (path: string) => number | undefined;
+};

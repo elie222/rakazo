@@ -6,13 +6,14 @@ import {
   commandVariableProblem,
   encodeLoginSecret,
 } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RotateCcw, X } from "lucide-react";
 import { useId, useState } from "react";
 import { InfoTooltip } from "../../components/InfoTooltip";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { errorText } from "../../lib/user-error";
 
@@ -321,17 +322,21 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                     </div>
                   ) : null}
                   {readableAuth === null ? (
-                    <div className="text-[12px] text-destructive">
-                      <Trans>These saved settings can't be read. Remove it and add it again.</Trans>{" "}
-                      · {t`Updated ${updated}`}
+                    <div className="flex flex-wrap gap-x-2 text-[12px]">
+                      <span className="text-destructive">
+                        <Trans>
+                          These saved settings can't be read. Remove it and add it again.
+                        </Trans>
+                      </span>
+                      <span className="text-muted-foreground/70">{t`Updated ${updated}`}</span>
                     </div>
                   ) : (
-                    <div className="text-[12px] text-muted-foreground/70">
-                      {authLabel(readableAuth)}
-                      {readableAuth.type === "command"
-                        ? ` · $${commandVariableName(secret.name)}`
-                        : null}{" "}
-                      · {t`Updated ${updated}`}
+                    <div className="flex flex-wrap gap-x-2 text-[12px] text-muted-foreground/70">
+                      <span>{authLabel(readableAuth)}</span>
+                      {readableAuth.type === "command" ? (
+                        <span>${commandVariableName(secret.name)}</span>
+                      ) : null}
+                      <span>{t`Updated ${updated}`}</span>
                     </div>
                   )}
                   {readableAuth !== null && replacing === secret.name ? (

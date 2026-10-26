@@ -46,12 +46,17 @@ describe("server address normalization", () => {
     expect(normalizeServerUrl("http://rakazo.example.com")).toBeNull();
     expect(normalizeServerUrl("http://10.0.0.8:3100")).toBe("http://10.0.0.8:3100");
     expect(normalizeServerUrl("http://[fd00::1]:3100")).toBe("http://[fd00::1]:3100");
+    expect(normalizeServerUrl("100.101.102.103:3100")).toBe("http://100.101.102.103:3100");
   });
 
   it("rejects cleartext link-local addresses used by cloud metadata endpoints", () => {
     expect(normalizeServerUrl("http://169.254.169.254")).toBeNull();
     expect(normalizeServerUrl("http://169.254.1.1:80")).toBeNull();
     expect(normalizeServerUrl("http://[fe80::1]:3100")).toBeNull();
+    expect(normalizeServerUrl("http://100.100.100.200")).toBeNull();
+    expect(normalizeServerUrl("http://[fd00:ec2::254]")).toBeNull();
+    // fd::1 is 00fd::1, not unique-local.
+    expect(normalizeServerUrl("http://[fd::1]:3100")).toBeNull();
     // HTTPS to link-local still normalizes; the health probe must match Rakazo.
     expect(normalizeServerUrl("https://169.254.169.254")).toBe("https://169.254.169.254");
   });

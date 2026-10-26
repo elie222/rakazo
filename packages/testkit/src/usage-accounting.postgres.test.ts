@@ -85,7 +85,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-usage-fixture-"));
     let stop: (() => Promise<void>) | undefined;
     try {
-      const { createApp } = await import("../../../apps/api/src/app.ts");
+      const { createApp } = await import("@rakazo/api/app");
       const handles = await createApp({
         databaseUrl: process.env.DATABASE_URL!,
         realtimeDatabaseUrl: process.env.DATABASE_URL!,

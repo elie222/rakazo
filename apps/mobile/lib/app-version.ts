@@ -81,10 +81,10 @@ function resolveUpdateIdentity(): AppUpdateIdentity {
 export function formatUpdateLabel(update: AppUpdateIdentity, t: Translate): string {
   if (update.kind === "embedded") return t("Embedded");
   const { id, channel, createdAt } = update;
-  if (channel && createdAt) return t("{channel} · {id} · {date}", { channel, id, date: createdAt });
-  if (channel) return t("{channel} · {id}", { channel, id });
-  if (createdAt) return t("OTA · {id} · {date}", { id, date: createdAt });
-  return t("OTA · {id}", { id });
+  if (channel && createdAt) return t("{channel} {id}, {date}", { channel, id, date: createdAt });
+  if (channel) return t("{channel} {id}", { channel, id });
+  if (createdAt) return t("OTA {id}, {date}", { id, date: createdAt });
+  return t("OTA {id}", { id });
 }
 
 /** Read native store version and OTA identity for the account footer. */

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { displayName } from "@rakazo/core";
-import { bootstrapUserSpace, type SignupPolicyEnv } from "./bootstrap-user.js";
+import type { SignupPolicyEnv } from "./bootstrap-user.js";
+import { bootstrapUserSpace } from "./bootstrap-user.js";
 import type { PrismaClient } from "./client.js";
 import { createRepos } from "./repos.js";
 

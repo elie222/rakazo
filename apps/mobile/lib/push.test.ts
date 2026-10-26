@@ -44,7 +44,6 @@ vi.mock("expo-notifications", () => ({
 
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import type { MobileMe } from "./api";
 import { rpc, selectInitialSpace } from "./api";
 import { registerPushToken } from "./push";
 import { restoreSessionToken } from "./session";
@@ -98,7 +97,7 @@ describe("push registration on iOS", () => {
     void registerPushToken();
 
     // The inbox's first load: the space list and account, then the default space.
-    const loaded = Promise.all([rpc("spaces/list"), rpc<MobileMe>("me")]).then(async ([, me]) =>
+    const loaded = Promise.all([rpc("spaces/list"), rpc("me")]).then(async ([, me]) =>
       selectInitialSpace(me.spaceId),
     );
 

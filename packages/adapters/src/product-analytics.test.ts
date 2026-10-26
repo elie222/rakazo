@@ -129,5 +129,22 @@ describe("content-free product analytics", () => {
         failure: "private provider error",
       }).success,
     ).toBe(false);
+    expect(
+      AnalyticsEvent.safeParse({
+        name: "run_failed",
+        trigger: "user",
+        errorKind: "Invalid API key sk-private",
+      }).success,
+    ).toBe(false);
+    for (const provider of ["https://private.example.test/v1", "My Gateway", ""]) {
+      expect(
+        AnalyticsEvent.safeParse({ name: "model_connected", method: "compatible", provider })
+          .success,
+      ).toBe(false);
+    }
+    expect(
+      AnalyticsEvent.safeParse({ name: "model_connected", method: "api_key", provider: "openai" })
+        .success,
+    ).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
   createMessagingInboundHandler,
-  type MessagingInboundDeps,
   teamChatSenderCanWakeMessageRoutines,
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
@@ -1233,6 +1233,28 @@ describe("createMessagingInboundHandler channel routing", () => {
       ([job]: [{ name: string }]) => job.name === "run.continue",
     );
     expect(runJobs).toHaveLength(2);
+  });
+
+  it("labels a sender with a placeholder account name by their address", async () => {
+    const deps = createDeps({
+      members: [
+        {
+          id: "cm-1",
+          channelId: "ch-1",
+          address: "+15551111111",
+          identityId: "mi-1",
+          status: "approved",
+        },
+      ],
+    });
+    deps.prisma.user.findUnique = vi.fn(async () => ({ id: "user-1", name: "__PrbLMrkR__" }));
+    const handle = createMessagingInboundHandler(deps);
+    await handle(groupEvent);
+
+    const [input] = deps.sendUserMessage.mock.calls.map(([call]) => call) as Array<{
+      blocks: Array<{ fromLabel?: string }>;
+    }>;
+    expect(input?.blocks[0]?.fromLabel).toBe(groupEvent.from);
   });
 
   it("wakes matching routines only after a channel member is approved", async () => {

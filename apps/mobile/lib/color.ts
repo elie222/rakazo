@@ -4,6 +4,13 @@ export function transparentColor(color: string): string {
   return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, 0)`;
 }
 
+/** The colour's own hue at the given opacity (0–1), whatever opacity it had. */
+export function translucentColor(color: string, alpha: number): string {
+  const channels = colorChannels(color.trim());
+  if (!channels) return color;
+  return `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${alpha})`;
+}
+
 function colorChannels(color: string): [number, number, number] | null {
   const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color);
   if (hex) {

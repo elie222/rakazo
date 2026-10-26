@@ -36,6 +36,7 @@ import {
   sanitizeMarkdownUrl,
   useLinkFavicon,
 } from "./markdown";
+import { useMarkdownCopy } from "./markdown-copy";
 import { useMarkdownLinkCopy } from "./markdown-link-prompt";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
@@ -60,6 +61,7 @@ function preserveSkippedTableText() {
 }
 
 function CopyButton({ read, label }: { read: () => string; label: string }) {
+  const copy = useMarkdownCopy();
   const resetTimerRef = useRef<number | undefined>(undefined);
   const [copied, setCopied] = useState(false);
 
@@ -80,7 +82,7 @@ function CopyButton({ read, label }: { read: () => string; label: string }) {
       type="button"
       className="rk-chat-markdown-copy"
       onClick={handleCopy}
-      aria-label={copied ? "Copied" : label}
+      aria-label={copied ? copy.copied : label}
     >
       {copied ? <CheckIcon /> : <CopyIcon />}
     </button>
@@ -91,6 +93,7 @@ function CodeBlock({
   copyable,
   ...props
 }: React.ComponentPropsWithoutRef<"pre"> & { copyable: boolean }) {
+  const copy = useMarkdownCopy();
   const preRef = useRef<HTMLPreElement>(null);
   // The parser ends a fence's code with a newline the author didn't write.
   const readCode = useCallback(() => (preRef.current?.textContent ?? "").replace(/\n$/, ""), []);
@@ -98,7 +101,7 @@ function CodeBlock({
   return (
     <div className="rk-chat-markdown-pre-wrap">
       <pre {...props} ref={preRef} />
-      {copyable ? <CopyButton read={readCode} label="Copy code" /> : null}
+      {copyable ? <CopyButton read={readCode} label={copy.copyCode} /> : null}
     </div>
   );
 }
@@ -129,6 +132,7 @@ function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined 
 }
 
 function MermaidDiagram({ source, fallback }: { source: string; fallback: ReactNode }) {
+  const copy = useMarkdownCopy();
   const svg = useMermaidSvg(source);
   const readSource = useCallback(() => source, [source]);
   const image = svg ? mermaidSvgImage(svg) : undefined;
@@ -146,7 +150,7 @@ function MermaidDiagram({ source, fallback }: { source: string; fallback: ReactN
           style={{ "--rk-diagram-width": `${image.width}px` } as CSSProperties}
         />
       </figure>
-      <CopyButton read={readSource} label="Copy diagram source" />
+      <CopyButton read={readSource} label={copy.copyDiagramSource} />
     </div>
   );
 }
@@ -590,5 +594,6 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
 export { LinkFaviconsContext, RemoteImagesContext, withBlockMentions } from "./markdown";
-
+export type { MarkdownCopy } from "./markdown-copy";
+export { defaultMarkdownCopy, MarkdownCopyProvider } from "./markdown-copy";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

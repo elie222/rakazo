@@ -74,7 +74,7 @@ test("billing paywall holds the app until the subscription is active", async ({
   await expect(settings).toHaveAttribute("data-settings-section", "billing");
   const billing = settings.getByTestId("billing-settings");
   await expect(billing.getByRole("heading", { name: "Active", exact: true })).toBeVisible();
-  await expect(billing.getByText("$12 / month · 3 seats")).toBeVisible();
+  await expect(billing.getByText(/\$12 \/ month\s*3 seats/)).toBeVisible();
   await expect(billing.getByText(/^Renews /)).toBeVisible();
   await expect(billing.getByRole("button", { name: "Manage" })).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-billing");

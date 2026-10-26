@@ -52,6 +52,8 @@ export interface MessagingPlatform {
    * the adapter keeps its native ones. Defaults to `provider`.
    */
   adapterName?: string;
+  /** The line people message to reach this deployment (a phone number), when it has one. */
+  address?: string;
   /** Deterministic 1:1 thread id for platforms without openDM (sendblue). */
   directThreadId?: (address: string) => string;
   /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts, WhatsApp statuses). */
@@ -188,6 +190,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return [...this.byProvider.values()].map(({ platform }) => ({
       provider: platform.provider,
       capabilities: platform.capabilities,
+      address: platform.address,
     }));
   }
 

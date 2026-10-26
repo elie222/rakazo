@@ -7,6 +7,7 @@ import { messagingDeliverJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
+  displayName,
   messageBlockForArtifact,
   parseMessagingCommand,
   promptTextForAttachments,
@@ -786,6 +787,6 @@ async function ownerFirstName(
   fallback: string,
 ): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-  const first = user?.name.trim().split(/\s+/)[0];
+  const first = displayName(user?.name, "").split(/\s+/)[0];
   return first ? sanitizeMessagingLabel(first) : fallback;
 }

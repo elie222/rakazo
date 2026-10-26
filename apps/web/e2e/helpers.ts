@@ -89,16 +89,8 @@ export async function signupThroughForm(
   if (testInfo) await captureScreenshot(page, testInfo, "01-sign-up");
   await page.getByPlaceholder("Your name").fill(name);
   await page.getByPlaceholder("Your email address").fill(email);
-  await showPasswordForm(page);
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
-}
-
-/** With email delivery the auth form opens on the emailed-code flow; switch to the password form. */
-export async function showPasswordForm(page: Page) {
-  const usePassword = page.getByRole("button", { name: "Use password" });
-  await expect(usePassword.or(page.getByPlaceholder("Password"))).toBeVisible();
-  if (await usePassword.isVisible()) await usePassword.click();
 }
 
 /** Open Advanced through its trigger, preserving an already-expanded section. */

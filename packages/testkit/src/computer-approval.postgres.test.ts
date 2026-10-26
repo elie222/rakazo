@@ -6,7 +6,8 @@ import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rak
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
-import { type ModelEmulatorStep, startModelEmulator } from "./model-emulator.js";
+import type { ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -74,7 +75,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-computer-approval-"));
       let stop: (() => Promise<void>) | undefined;
       try {
-        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const { createApp } = await import("@rakazo/api/app");
         const handles = await createApp({
           databaseUrl: process.env.DATABASE_URL!,
           realtimeDatabaseUrl: process.env.DATABASE_URL!,
@@ -128,10 +129,9 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           modelId: model.model.id,
         });
         const storedBot = await db.bot.findUniqueOrThrow({ where: { id: bot.id } });
-        await db.actionApprovalRule.create({
+        await db.userActionApprovalRule.create({
           data: {
-            spaceId: storedBot.spaceId,
-            createdByUserId: storedBot.userId,
+            userId: storedBot.userId,
             effect: "require_approval",
             matchKind: "tool",
             matchValue: "computer_act",

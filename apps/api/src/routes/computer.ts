@@ -42,8 +42,9 @@ import {
   foldComputerCommands,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
-import { createRepos, IsolationError, parseComputerMode } from "@rakazo/db";
+import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
+import type { ComputerRunEnd, PrismaClient } from "@rakazo/db";
+import { createRepos, IsolationError, parseComputerMode, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
   executionBlocksUserTakeover,
@@ -51,7 +52,6 @@ import {
   toComputerStatus,
 } from "../computer-status.js";
 import type { RouterDeps } from "../router.js";
-import { addScreenProxyCapability } from "../screen-proxy.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, isRecordNotFound } from "./shared.js";
 
@@ -89,7 +89,7 @@ export function computerRoutes(ctx: RouterContext) {
         const manualRunId = `boot:${randomUUID()}`;
         let lease: ComputerExecutionLease | null;
         try {
-          lease = await acquireComputerExecutionLease(deps.prisma, {
+          lease = await acquireBootLease(deps.prisma, {
             computerId: bot.computer.id,
             runId: manualRunId,
             botId: bot.id,
@@ -165,6 +165,7 @@ export function computerRoutes(ctx: RouterContext) {
           where: { computerId: bot.computer.id, botId: bot.id },
         });
         try {
+          let end: ComputerRunEnd = "stopped";
           if (bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
@@ -174,6 +175,7 @@ export function computerRoutes(ctx: RouterContext) {
             } catch (error) {
               // The sandbox is already gone: nothing left to checkpoint or stop.
               if (!isSandboxGoneError(error)) throw error;
+              end = "gone";
             }
           }
           await deps.prisma.computer.update({
@@ -187,6 +189,7 @@ export function computerRoutes(ctx: RouterContext) {
               controlRunId: null,
             },
           });
+          await recordComputerRunEnd(deps.prisma, bot.computer, end);
         } catch (error) {
           await deps.prisma.computer
             .updateMany({
@@ -772,6 +775,41 @@ export function computerRoutes(ctx: RouterContext) {
   };
 }
 
+const BOOT_LEASE_RETRY_MS = 250;
+const BOOT_LEASE_ATTEMPTS = 20;
+
+/**
+ * A run lets go of its computer in its executor's finally, a moment after the run ends. A boot
+ * sent as the run finishes waits that moment out instead of being refused as busy.
+ */
+async function acquireBootLease(
+  prisma: PrismaClient,
+  input: { computerId: string; runId: string; botId: string },
+): Promise<ComputerExecutionLease | null> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await acquireComputerExecutionLease(prisma, input);
+    } catch (error) {
+      if (!(error instanceof ComputerBusyError) || attempt >= BOOT_LEASE_ATTEMPTS) throw error;
+      if (!(await leaseHeldByFinishedRun(prisma, input))) throw error;
+      await new Promise((resolve) => setTimeout(resolve, BOOT_LEASE_RETRY_MS));
+    }
+  }
+}
+
+async function leaseHeldByFinishedRun(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string },
+): Promise<boolean> {
+  const lease = await prisma.computerExecutionLease.findUnique({
+    where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
+    select: { runId: true, expiresAt: true },
+  });
+  if (!lease || lease.expiresAt.getTime() <= Date.now()) return false;
+  const run = await prisma.run.findUnique({ where: { id: lease.runId }, select: { status: true } });
+  return Boolean(run && !(ACTIVE_RUN_STATUSES as readonly string[]).includes(run.status));
+}
+
 async function computerStatus(
   deps: RouterDeps,
   actor: Actor,
@@ -1042,15 +1080,16 @@ async function computerScreenContext(
  */
 async function clearGoneSandbox(
   deps: RouterDeps,
-  computer: { id: string; providerRef: string | null },
+  computer: { id: string; providerRef: string | null; runningSince?: Date | null },
   error: unknown,
 ): Promise<null> {
   if (!isSandboxGoneError(error)) throw error;
   getLogger().error(`computer ${computer.id} sandbox ${computer.providerRef} is gone`, error);
-  await deps.prisma.computer.updateMany({
+  const cleared = await deps.prisma.computer.updateMany({
     where: { id: computer.id, providerRef: computer.providerRef },
     data: { state: "stopped", providerRef: null },
   });
+  if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
   return null;
 }
 

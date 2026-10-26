@@ -214,7 +214,7 @@ describe("scoped mobile outbox", () => {
       await feedback.send(second);
     });
     expect(request).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     expect(disk.save).toHaveBeenLastCalledWith([first, second]);
     reachable = true;
     await act(async () => {
@@ -241,7 +241,7 @@ describe("scoped mobile outbox", () => {
     expect(attempt.state).toBe("failed");
     expect(attempt.payload.attachments).toHaveLength(1);
     expect(attempt.artifactIds.size).toBe(1);
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     await act(async () => {
       await feedback.send(attempt, true);
     });
@@ -268,7 +268,7 @@ describe("scoped mobile outbox", () => {
         await feedback.send(attempt);
       });
       expect(attempt.imageConfirmation).toBe(true);
-      expect(container.textContent).toContain("Not sent · Tap for options");
+      expect(container.textContent).toContain("Not sent. Tap for options");
       act(() =>
         container
           .querySelector("button")!
@@ -386,7 +386,7 @@ describe("scoped mobile outbox", () => {
         await feedback.send(attempt);
       });
       expect(attempt.state).toBe("failed");
-      expect(container.textContent).toContain("Not sent · No model");
+      expect(container.textContent).toContain("Not sent. No model");
       expect(container.textContent).not.toContain("Tap to retry");
       act(() =>
         container
@@ -471,11 +471,11 @@ describe("scoped mobile outbox", () => {
     });
     needsModel = true;
     act(() => root.render(<Probe threadKey="bot-1" />));
-    expect(container.textContent).toContain("Not sent · No model");
+    expect(container.textContent).toContain("Not sent. No model");
     expect(container.textContent).not.toContain("Tap to retry");
     needsModel = false;
     act(() => root.render(<Probe threadKey="bot-1" />));
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     expect(container.textContent).not.toContain("No model");
     act(() =>
       container
@@ -527,7 +527,7 @@ describe("scoped mobile outbox", () => {
       await feedback.send(attempt);
     });
     expect(attempt.state).toBe("failed");
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     act(() => container.querySelector("button")!.click());
     expect(retry).toHaveBeenCalledOnce();
     await act(async () => {
@@ -811,7 +811,7 @@ describe("a send and its echo", () => {
     await act(async () => {
       await feedback.send(attempt);
     });
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     reachable = true;
     await act(async () => {
       await sendWaitingMessages();
@@ -840,7 +840,7 @@ describe("a send and its echo", () => {
     );
     expect(frames.at(-1)).toEqual({ echoed: 0, bubbles: 1 });
     expect(container.querySelectorAll("button")).toHaveLength(1);
-    expect(container.textContent).toContain("Not sent · Tap to retry");
+    expect(container.textContent).toContain("Not sent. Tap to retry");
     await act(async () => {
       container.querySelector("button")!.click();
       await vi.waitFor(() => expect(attempt.acceptedSeq).toBe(42));

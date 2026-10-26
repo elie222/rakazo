@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "gallery": "pnpm --filter @rakazo/web dev --open /e2e/fixtures/gallery.html",
     "build": "turbo build",
     "check": "turbo check",
     "lint": "biome check .",

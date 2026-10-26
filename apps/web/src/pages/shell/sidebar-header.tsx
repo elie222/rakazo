@@ -43,7 +43,6 @@ export function SidebarHeader({
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
-  setPickerInfoTopic,
 }: {
   mini?: boolean;
   createMenuOpen: boolean;
@@ -59,7 +58,6 @@ export function SidebarHeader({
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
-  setPickerInfoTopic: (topic: "group" | "space") => void;
 }) {
   const { t } = useLingui();
   const hasWindowChrome = Boolean(desktopBridge());
@@ -160,16 +158,6 @@ export function SidebarHeader({
                   setCreateMenuOpen(false);
                   setMobileSidebarOpen(false);
                   setNewSpaceOpen(true);
-                }}
-                onShowGroupInfo={() => {
-                  setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
-                  setPickerInfoTopic("group");
-                }}
-                onShowSpaceInfo={() => {
-                  setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
-                  setPickerInfoTopic("space");
                 }}
               />
             </PopoverContent>

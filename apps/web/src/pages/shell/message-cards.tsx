@@ -60,7 +60,7 @@ export function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="relative w-[420px] max-w-full rounded-[20px] bg-card px-[18px] py-[14px]">
+      <BuiCard className="relative w-[420px] max-w-full px-[18px] py-[14px]">
         {!block.answerId ? (
           <Button
             variant="ghost"
@@ -118,7 +118,7 @@ export function ChoiceCard({
             <Trans>Import an agent</Trans>
           </Button>
         ) : null}
-      </div>
+      </BuiCard>
     </div>
   );
 }
@@ -412,7 +412,7 @@ export function McpApprovalCard({
     }
   }
 
-  const summary = endpoint ?? `stdio · ${transport}`;
+  const summary = endpoint ?? `stdio (${transport})`;
   return (
     <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
       <div className="flex items-center gap-2">
@@ -448,7 +448,7 @@ export function McpApprovalCard({
       ) : null}
       {state === "connected" ? (
         <div className="mt-3">
-          <SuccessPop label={t`Connected. Its tools are available from your next message.`} />
+          <SuccessPop label={t`Connected`} />
         </div>
       ) : null}
       {state === "dismissed" ? (
@@ -569,7 +569,7 @@ export function ArtifactImage({
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-border bg-muted px-4 py-3 text-[14px] text-muted-foreground">
+        <div className="rounded-[20px] bg-muted px-4 py-3 text-[14px] text-muted-foreground">
           {name}
         </div>
       )}

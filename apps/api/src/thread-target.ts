@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type { JobPublisher, ProductAnalytics, SandboxProvider } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { cancelComputerRunWork, screenLeaseIdForRun, toComputerRef } from "@rakazo/adapters";
 import type {
@@ -29,11 +29,9 @@ import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   clearEndedRunState,
-  clearRunTurnCheckpoints,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
-  deleteRunSecretsInTransaction,
   eligibleWaitingTextAnswer,
   expireComputerExecutionLeases,
   IsolationError,
@@ -668,6 +666,7 @@ export async function sendThreadMessage(
     events: ThreadEvents;
     jobs: JobPublisher;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
+    analytics?: ProductAnalytics;
   },
   actor: Actor,
   target: ThreadTarget,
@@ -1197,6 +1196,11 @@ export async function sendThreadMessage(
     throw error;
   });
   if ("replay" in committed) return committed.replay;
+  deps.analytics?.capture(
+    actor.userId,
+    { name: "message_sent", trigger: "user" },
+    { id: committed.message.id, at: committed.message.createdAt },
+  );
   await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
@@ -1452,8 +1456,7 @@ export async function stopThreadRuns(
       select: { id: true, botId: true, userId: true, spaceId: true },
     });
     const ids = cancelled.map((run) => run.id);
-    await clearRunTurnCheckpoints(tx, ids);
-    await deleteRunSecretsInTransaction(tx, cancelled);
+    await clearEndedRunState(tx, ids);
     await tx.steeringMessage.deleteMany({
       where: {
         botId: { in: target.kind === "bot" ? [target.botId] : target.memberBotIds },

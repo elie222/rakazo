@@ -3,6 +3,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, Bot } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,7 +44,7 @@ import { SandboxedHtmlViewer } from "../components/SandboxedHtmlViewer";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../lib/artifact-open";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { desktopBridge } from "../lib/desktop";
-import { useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useObjectUrl } from "../lib/use-object-url";
@@ -726,8 +727,7 @@ function ArtifactRow({
           {bot ? (
             <>
               <BotAvatar color={bot.color} identity={bot.id} size={14} status={bot.status} />
-              <span className="max-w-[140px] truncate">{bot.name}</span>
-              <span aria-hidden="true">·</span>
+              <span className="me-1 max-w-[140px] truncate">{bot.name}</span>
             </>
           ) : null}
           <span>{formatRelativeTime(artifact.createdAt)}</span>
@@ -853,7 +853,7 @@ function PreviewPane({
           >
             {versions.map((entry) => (
               <NativeSelectOption key={entry.id} value={entry.id}>
-                {`v${entry.version} · ${formatRelativeTime(entry.createdAt)}`}
+                {`v${entry.version} (${formatRelativeTime(entry.createdAt)})`}
               </NativeSelectOption>
             ))}
           </NativeSelect>

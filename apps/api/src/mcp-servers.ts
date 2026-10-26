@@ -1,9 +1,10 @@
 import { ORPCError } from "@orpc/server";
-import type { McpOAuthBroker, McpOAuthSummary } from "@rakazo/adapters";
+import type { McpOAuthBroker, McpOAuthSummary, McpStdioPolicy } from "@rakazo/adapters";
 import {
   assertSafeRemoteUrl,
   buildMcpCredentialBlob,
   mcpServerHealthDto,
+  mcpStdioRefusal,
   recordMcpServerHealth,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
@@ -77,6 +78,19 @@ export const MCP_OAUTH_PENDING_MESSAGE = "Connect this server's account to check
 /** Private server endpoints require explicit operator configuration. */
 export function mayUsePrivateEndpoint(deps: Pick<RouterDeps, "env">): boolean {
   return deps.env.mcpAllowPrivateEndpoint === true;
+}
+
+export function mcpStdioPolicy(deps: Pick<RouterDeps, "env">): McpStdioPolicy {
+  return {
+    stdioEnabled: deps.env.mcpStdioEnabled,
+    allowedCommands: deps.env.mcpStdioAllowedCommands,
+  };
+}
+
+/** Refuse a stdio server this deployment would never run. */
+export function assertMcpStdioCommand(command: string, deps: Pick<RouterDeps, "env">): void {
+  const refusal = mcpStdioRefusal(command, mcpStdioPolicy(deps));
+  if (refusal) throw new ORPCError("BAD_REQUEST", { message: refusal });
 }
 
 export async function assertMcpRemoteEndpoint(
@@ -258,6 +272,7 @@ export function createMcpServers(
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
     if (input.transport === "stdio") {
+      assertMcpStdioCommand(input.command, deps);
       assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
       await assertMcpRemoteEndpoint(input.oauthClient?.authorizationServer, deps);
     }

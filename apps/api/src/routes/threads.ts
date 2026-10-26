@@ -364,9 +364,14 @@ export function threadsRoutes(ctx: RouterContext) {
             payload: { messageId: message.id, role: "user", blocks },
           });
           await touchGroupUpdatedAt(tx, target.groupId);
-          return { runId: run?.id, eventSeq: event.seq };
+          return { runId: run?.id, eventSeq: event.seq, message };
         });
         if (committed) {
+          deps.analytics?.capture(
+            context.actor.userId,
+            { name: "message_sent", trigger: "follow_up" },
+            { id: committed.message.id, at: committed.message.createdAt },
+          );
           await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
             getLogger().error("group follow-up realtime notification", error);
           });

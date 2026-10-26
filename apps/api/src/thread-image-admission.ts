@@ -7,14 +7,14 @@ import {
   modelIdSupportsImages,
   parseModelSecret,
   resolveMemberMainModel,
-  resolveRuntimeModel,
   runModelChoice,
+  runtimeModelAcceptsImages,
   selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR, MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { findModelCredential, getModelRole } from "@rakazo/db";
+import { appliedModelRole, findModelCredential, findModelCredentialById } from "@rakazo/db";
 
 type ModelChoice = {
   modelProvider: string | null;
@@ -103,9 +103,7 @@ export async function assertThreadImageInput(
       }
     }
   }
-  const unknownInput =
-    supportsImages === undefined &&
-    !resolveRuntimeModel({ provider, id }).model?.input.includes("image");
+  const unknownInput = supportsImages === undefined && !runtimeModelAcceptsImages(provider, id);
   if (supportsImages === false || unknownInput)
     throw new ORPCError("CONFLICT", {
       message: unknownInput ? MODEL_IMAGE_INPUT_UNKNOWN : MODEL_IMAGE_INPUT_ERROR,
@@ -115,10 +113,12 @@ export async function assertThreadImageInput(
 
 /** The main model as resolveMemberMainModel picks it, without reading secrets. */
 async function mainModelWithoutSecrets(prisma: PrismaClient, actor: Actor) {
-  const { primary } = await getModelRole(prisma, actor, "main");
+  const { primary } = await appliedModelRole(prisma, actor, "main");
   if (!primary) return null;
   return {
     ...primary,
-    credential: await findModelCredential(prisma, actor, primary.provider, primary.modelId),
+    credential: primary.credentialId
+      ? await findModelCredentialById(prisma, actor, primary.credentialId, primary.provider)
+      : await findModelCredential(prisma, actor, primary.provider, primary.modelId),
   };
 }

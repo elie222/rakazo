@@ -2199,11 +2199,18 @@ describe("answerRunInput", () => {
   });
 
   it.each([
-    ["destination.write", {}, "tool", "destination.write"],
-    ["web_fetch", { url: "https://docs.example.com/a?b=c" }, "site", "example.com"],
+    ["destination.write", {}, "tool", "destination.write", false],
+    ["web_fetch", { url: "https://docs.example.com/a?b=c" }, "site", "example.com", true],
+    [
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }] },
+      "tool",
+      "GMAIL_SEND_EMAIL",
+      false,
+    ],
   ])(
     "approves %s and upserts always-allow without overwriting the task prompt",
-    async (kind, request, matchKind, matchValue) => {
+    async (kind, request, matchKind, matchValue, spaceOverridesConfirmations) => {
       const fanout = new TestFanout();
       const tx = {
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
@@ -2238,11 +2245,23 @@ describe("answerRunInput", () => {
             .mockResolvedValue({ id: "effect-1", status: "intended", kind, request }),
           update: vi.fn().mockResolvedValue({ id: "effect-1" }),
         },
+        spaceSettingOverride: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue(spaceOverridesConfirmations ? { setting: "confirmations" } : null),
+        },
         actionApprovalRule: {
           findMany: vi.fn().mockResolvedValue([
             { id: "rule-0", matchValue: matchValue.toUpperCase() },
             { id: "rule-other", matchValue: `${matchValue}.other` },
           ]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+          upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
+        },
+        userActionApprovalRule: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: "account-rule-0", matchValue: matchValue.toUpperCase() }]),
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
           upsert: vi.fn().mockResolvedValue({ id: "rule-1" }),
         },
@@ -2278,28 +2297,41 @@ describe("answerRunInput", () => {
         where: { id: "effect-1" },
         data: { status: "approved" },
       });
-      expect(tx.actionApprovalRule.deleteMany).toHaveBeenCalledWith({
-        where: { id: { in: ["rule-0"] } },
-      });
-      expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
+      expect(tx.spaceSettingOverride.findUnique).toHaveBeenCalledWith({
         where: {
-          spaceId_createdByUserId_effect_matchKind_matchValue: {
+          spaceId_userId_setting: {
             spaceId: "workspace-1",
-            createdByUserId: "user-1",
-            effect: "always_allow",
-            matchKind,
-            matchValue,
+            userId: "user-1",
+            setting: "confirmations",
           },
         },
-        create: {
-          spaceId: "workspace-1",
-          createdByUserId: "user-1",
-          effect: "always_allow",
-          matchKind,
-          matchValue,
-        },
-        update: {},
+        select: { setting: true },
       });
+      const rule = { effect: "always_allow", matchKind, matchValue };
+      if (spaceOverridesConfirmations) {
+        const row = { spaceId: "workspace-1", createdByUserId: "user-1", ...rule };
+        // The opposite rule on the same match goes, ignoring case.
+        expect(tx.actionApprovalRule.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ["rule-0"] } },
+        });
+        expect(tx.actionApprovalRule.upsert).toHaveBeenCalledWith({
+          where: { spaceId_createdByUserId_effect_matchKind_matchValue: row },
+          create: row,
+          update: {},
+        });
+        expect(tx.userActionApprovalRule.upsert).not.toHaveBeenCalled();
+      } else {
+        const row = { userId: "user-1", ...rule };
+        expect(tx.userActionApprovalRule.deleteMany).toHaveBeenCalledWith({
+          where: { id: { in: ["account-rule-0"] } },
+        });
+        expect(tx.userActionApprovalRule.upsert).toHaveBeenCalledWith({
+          where: { userId_effect_matchKind_matchValue: row },
+          create: row,
+          update: {},
+        });
+        expect(tx.actionApprovalRule.upsert).not.toHaveBeenCalled();
+      }
     },
   );
 
@@ -2335,6 +2367,7 @@ describe("answerRunInput", () => {
           .mockResolvedValue({ id: "effect-1", status: "intended", kind: "destination.write" }),
       },
       actionApprovalRule: { upsert: vi.fn() },
+      userActionApprovalRule: { upsert: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -2353,6 +2386,7 @@ describe("answerRunInput", () => {
 
     expect(tx.run.updateMany).not.toHaveBeenCalled();
     expect(tx.actionApprovalRule.upsert).not.toHaveBeenCalled();
+    expect(tx.userActionApprovalRule.upsert).not.toHaveBeenCalled();
   });
 
   it("does not queue a run when an approval card has no matching effect", async () => {
@@ -3871,7 +3905,7 @@ describe("clearThread", () => {
       secret: { deleteMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn() },
+      message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -3941,7 +3975,7 @@ describe("clearThread", () => {
       secret: { deleteMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn() },
+      message: { deleteMany: vi.fn(), findMany: vi.fn(async () => []) },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -3995,7 +4029,7 @@ describe("clearThread", () => {
 });
 
 describe("appendEvent", () => {
-  it("exports only committed run metadata without reading error text", async () => {
+  it("exports only committed run metadata and a coarse error kind, never error text", async () => {
     const created = { ...event(4), type: "run.failed", runId: "run-1" };
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
@@ -4006,7 +4040,7 @@ describe("appendEvent", () => {
     const run = {
       userId: "user-1",
       trigger: "user",
-      error: "No API key: private@example.test",
+      error: '401: {"error":{"message":"Invalid API key for private@example.test"}}',
       createdAt: at,
       startedAt: at,
       completedAt: at,
@@ -4031,7 +4065,7 @@ describe("appendEvent", () => {
     );
     expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
       "user-1",
-      { name: "run_failed", trigger: "user" },
+      { name: "run_failed", trigger: "user", errorKind: "auth" },
       { id: "run-1", at },
     );
     expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("private@example.test");
@@ -4040,6 +4074,7 @@ describe("appendEvent", () => {
       select: {
         userId: true,
         trigger: true,
+        error: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,

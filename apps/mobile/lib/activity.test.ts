@@ -1,10 +1,30 @@
 import type { RunActivityRow } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activityPreview } from "./activity";
+import { activityPreview, formatActivityRelativeTime } from "./activity";
 import { resetI18nForTests } from "./i18n";
 
 vi.mock("./api", () => ({ rpc: vi.fn() }));
 afterEach(() => resetI18nForTests());
+
+describe("formatActivityRelativeTime", () => {
+  const now = new Date("2026-01-01T12:00:00.000Z");
+
+  it.each([
+    { seconds: 0, label: "just now" },
+    { seconds: 44, label: "just now" },
+    { seconds: 45, label: "just now" },
+    { seconds: 59, label: "just now" },
+    { seconds: 59.999, label: "just now" },
+    { seconds: 60, label: "1m ago" },
+    { seconds: 3_599, label: "59m ago" },
+    { seconds: 3_600, label: "1h ago" },
+    { seconds: 86_400, label: "1d ago" },
+  ])("formats $seconds seconds ago as $label", ({ seconds, label }) => {
+    const iso = new Date(now.getTime() - seconds * 1_000).toISOString();
+    expect(formatActivityRelativeTime(iso, now)).toBe(label);
+  });
+});
+
 describe("activity preview", () => {
   it("composes translated activity labels, including empty text and sender fallbacks", () => {
     const run = {

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { CORRELATION_TAG_KEYS } from "./monitoring.js";
 import { isMonitoringUserId, monitoringPseudonymSecret, monitoringUserId } from "./pseudonym.js";
 import { redactSensitiveText } from "./redaction.js";
+import { errorSummary } from "./serialize-error.js";
 import { reportSinkError } from "./sink-guard.js";
 import type { LogEvent, LogSink, SerializedError } from "./types.js";
 
@@ -157,7 +158,7 @@ function releaseFromGitSha(sha: string | undefined): string | undefined {
 
 /** The logger hands sinks a serialized error; rebuild one Sentry can parse, cause chain included. */
 function rebuildError(serialized: SerializedError): Error {
-  const message = reportedMessage(redactSensitiveText(serialized.message), serialized.code);
+  const message = errorSummary(redactSensitiveText(serialized.message), serialized.code);
   const error = new Error(message);
   error.name = redactSensitiveText(serialized.name);
   error.stack = serialized.stack
@@ -165,23 +166,6 @@ function rebuildError(serialized: SerializedError): Error {
     : `${error.name}: ${message}`;
   if (serialized.cause) error.cause = rebuildError(serialized.cause);
   return error;
-}
-
-const PRISMA_INVOCATION = /^Invalid `(?:\w+\.)*(\w+\.\w+)\(\)` invocation/;
-
-/**
- * The collector titles an issue by the first line of the message. Prisma's errors start with a
- * blank line and name the failing call only in their body, so every one arrived untitled; lead
- * with the error code and the model operation instead.
- */
-function reportedMessage(message: string, code: string | undefined): string {
-  const lines = message
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const call = lines[0]?.match(PRISMA_INVOCATION)?.[1];
-  const summary = call ? `${call}: ${lines.slice(1).join(" ")}` : message.trimStart();
-  return code && !summary.includes(code) ? `${code} ${summary}` : summary;
 }
 
 function redactEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {

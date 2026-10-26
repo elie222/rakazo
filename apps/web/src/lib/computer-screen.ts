@@ -1,3 +1,4 @@
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -37,7 +38,7 @@ export function embeddableScreenUrl(url: string | null): string | null {
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
       return null;
@@ -134,7 +135,8 @@ export async function probeScreen(
       redirect: "manual",
     });
     if (response.ok) return null;
-    if (response.type === "opaqueredirect") return fallback;
+    // The proxy couldn't reach the API to check the screen: that's a connection problem.
+    if (response.type === "opaqueredirect" || response.status === 503) return fallback;
     const contentType = response.headers?.get("content-type") ?? "";
     const body = (await response.text().catch(() => "")).trim();
     // Only the proxy's own short plain-text reasons are worth showing; an upstream HTML error
@@ -145,4 +147,50 @@ export async function probeScreen(
   } catch {
     return fallback;
   }
+}
+
+/**
+ * The screen page's status through the proxy's access check, or null if it couldn't be asked.
+ * Only the status is read; the body is dropped unread.
+ */
+export async function probeScreenStatus(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  try {
+    const response = await fetchImpl(url, {
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "manual",
+      signal,
+    });
+    void response.body?.cancel().catch(() => undefined);
+    return response.type === "opaqueredirect" ? 0 : response.status;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a reconnected screen takes the keyboard back: only a screen that had it when it
+ * dropped, and only if the user hasn't moved on. Focus anywhere else in the app, or the screen
+ * failing, forgets it, and it happens at most once per drop.
+ */
+export function createScreenRefocus() {
+  let pending = false;
+  return {
+    dropped(hadFocus: boolean) {
+      pending = hadFocus;
+    },
+    forget() {
+      pending = false;
+    },
+    /** On a reconnected screen's "connected": whether to give it the keyboard now. */
+    connected(active: Element | null, frame: Element, body: Element | null): boolean {
+      if (!pending) return false;
+      pending = false;
+      return !active || active === body || active === frame;
+    },
+  };
 }

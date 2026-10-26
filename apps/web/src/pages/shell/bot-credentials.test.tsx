@@ -401,7 +401,7 @@ describe("BotCredentialsSection command variables", () => {
     botSecrets.put.mockResolvedValue(commandRow);
     await render();
     const row = byTestId("bot-credential-row");
-    expect(row.textContent).toContain("Command variable · $NETBIRD_SETUP_KEY");
+    expect(row.textContent).toContain("Command variable$NETBIRD_SETUP_KEY");
     await click("credential-replace-netbird-setup-key");
     await type("credential-replace-value", FAKE_VALUE);
     await click("credential-replace-save");

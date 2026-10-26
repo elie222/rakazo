@@ -410,6 +410,56 @@ export function createRoutineRetryNoticeReconciler(
   };
 }
 
+export const DEAD_JOB_RETENTION_DAYS = 7;
+const DEAD_JOB_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+const DEAD_JOB_PRUNE_BATCH = 1_000;
+const DEAD_JOB_PRUNE_MAX_BATCHES = 50;
+
+/**
+ * Graphile keeps a job that exhausted its retries forever, and its own maintenance scans them.
+ * Delete them once they are old enough that nobody is still diagnosing the failure. Exhausted
+ * `routine.retry` rows are notice requests, which their reconciler deletes after delivery.
+ *
+ * Graphile's `cleanup` task deletes every exhausted job regardless of age or task, and
+ * `completeJobs` deletes by id without rechecking, so a keyed job replaced back to life between
+ * a select and the delete would go with it. This deletes in one statement that rechecks.
+ */
+export function createDeadJobPruner(
+  pool: Pick<Pool, "query">,
+  options: { retentionDays?: number; intervalMs?: number } = {},
+): () => Promise<void> {
+  const retentionDays = options.retentionDays ?? DEAD_JOB_RETENTION_DAYS;
+  const intervalMs = options.intervalMs ?? DEAD_JOB_PRUNE_INTERVAL_MS;
+  let lastRun: number | undefined;
+  return async () => {
+    const now = Date.now();
+    if (lastRun !== undefined && now - lastRun < intervalMs) return;
+    lastRun = now;
+    let removed = 0;
+    for (let batch = 0; batch < DEAD_JOB_PRUNE_MAX_BATCHES; batch += 1) {
+      const { rowCount } = await pool.query(
+        `delete from graphile_worker._private_jobs as jobs
+         where jobs.id in (
+           select dead.id
+           from graphile_worker._private_jobs as dead
+           join graphile_worker._private_tasks as tasks on tasks.id = dead.task_id
+           where dead.attempts >= dead.max_attempts and dead.locked_at is null
+             and dead.updated_at < now() - make_interval(days => $1::int)
+             and tasks.identifier <> 'routine.retry'
+           order by dead.id
+           limit $2
+           for update of dead skip locked
+         )
+         and jobs.attempts >= jobs.max_attempts and jobs.locked_at is null`,
+        [retentionDays, DEAD_JOB_PRUNE_BATCH],
+      );
+      removed += rowCount ?? 0;
+      if ((rowCount ?? 0) < DEAD_JOB_PRUNE_BATCH) break;
+    }
+    if (removed > 0) getLogger().info("jobs.dead_pruned", { "jobs.removed": removed });
+  };
+}
+
 /** Graphile's default when a job sets no cap. */
 const DEFAULT_JOB_MAX_ATTEMPTS = 25;
 

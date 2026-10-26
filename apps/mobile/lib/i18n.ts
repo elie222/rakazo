@@ -4,15 +4,13 @@ import { JA_MESSAGES } from "./locales/ja";
 import { NL_MESSAGES } from "./locales/nl";
 import { RU_MESSAGES } from "./locales/ru";
 import { ZH_MESSAGES } from "./locales/zh";
-import {
-  htmlLangForLocale,
-  resolveUiLocale,
-  UI_LOCALE_STORAGE_KEY,
-  type UiLocale,
-} from "./ui-locale";
+import { ZH_TW_MESSAGES } from "./locales/zh-TW";
+import type { UiLocale } from "./ui-locale";
+import { htmlLangForLocale, resolveUiLocale, UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
 const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   "zh-CN": ZH_MESSAGES,
+  "zh-TW": ZH_TW_MESSAGES,
   ru: RU_MESSAGES,
   de: DE_MESSAGES,
   nl: NL_MESSAGES,
@@ -71,7 +69,7 @@ export function activateUiLocale(locale: UiLocale): UiLocale {
 
 async function applyDirection(locale: UiLocale): Promise<void> {
   try {
-    // Direction follows the active UI locale only (en / zh-CN / ru / de / nl / ja → LTR), never the
+    // Direction follows the active UI locale only (en / zh-CN / zh-TW / ru / de / nl / ja → LTR), never the
     // device language. Applying device RTL here would fight this and reload-loop.
     const { applyMobileUiDirection } = await import("./ui-direction");
     applyMobileUiDirection(htmlLangForLocale(locale));
@@ -83,6 +81,7 @@ async function applyDirection(locale: UiLocale): Promise<void> {
 export async function bootstrapI18n(): Promise<UiLocale> {
   let stored: string | null = null;
   let deviceLanguage: string | null = readDeviceLanguage();
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
   try {
     const SecureStore = await import("expo-secure-store");
     stored = await SecureStore.getItemAsync(UI_LOCALE_STORAGE_KEY);

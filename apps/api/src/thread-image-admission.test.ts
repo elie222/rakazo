@@ -32,8 +32,9 @@ function fixture(group = false) {
         ]),
     },
     bot: { findFirst: vi.fn().mockResolvedValue({ id: "bot-1", ...model }) },
-    spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
-    spaceModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+    userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+    userModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+    spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
     userModelCredential: {
       findFirst: vi.fn().mockResolvedValue({
         id: "credential-1",
@@ -268,7 +269,7 @@ describe("current image send admission", () => {
       modelProvider: "openai-compatible",
       modelId: stored,
     });
-    tx.spaceModelPreference.findFirst.mockResolvedValue({
+    tx.userModelPreference.findFirst.mockResolvedValue({
       id: "preference-1",
       modelId: stored,
       isDefault: true,
@@ -389,7 +390,7 @@ describe("current image send admission", () => {
       defaultModelProvider: "openrouter",
       defaultModelId: "openai/gpt-4o",
     });
-    tx.spaceModelRoleChoice.findMany.mockResolvedValue([
+    tx.userModelRoleChoice.findMany.mockResolvedValue([
       {
         position: 0,
         provider: "openrouter",

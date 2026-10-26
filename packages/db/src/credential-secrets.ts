@@ -101,9 +101,7 @@ export async function retireModelCredential(
           )
             return false;
         }
-        await tx.spaceModelPreference.deleteMany({
-          where: { userId: input.userId, credentialId: credential.id },
-        });
+        // Its own model and the role rows pinned to it go with it.
         await tx.userModelCredential.delete({ where: { id: credential.id } });
         await deleteUnreferencedCredentialSecret(tx, {
           credentialKind: "model",

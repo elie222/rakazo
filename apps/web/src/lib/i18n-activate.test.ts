@@ -50,6 +50,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
@@ -84,6 +85,9 @@ describe("activateUiLocale", () => {
       },
       "pt-BR": async () => {
         throw new Error("pt-BR missing");
+      },
+      "zh-TW": async () => {
+        throw new Error("zh-TW missing");
       },
       "zh-CN": async () => {
         throw new Error("zh-CN missing");
@@ -127,6 +131,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
@@ -159,6 +164,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
@@ -196,6 +202,7 @@ describe("activateUiLocale", () => {
       hi: async () => ({ messages: { Settings: "सेटिंग्स" } }),
       "pt-BR": async () => ({ messages: { Settings: "Configurações" } }),
       "zh-CN": async () => ({ messages: { Settings: "设置" } }),
+      "zh-TW": async () => ({ messages: { Settings: "設定" } }),
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),

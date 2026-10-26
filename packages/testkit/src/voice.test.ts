@@ -27,7 +27,7 @@ describeVoice("voice credentials and speech HTTP", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-voice-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -176,6 +176,9 @@ describeVoice("voice credentials and speech HTTP", () => {
     ).resolves.toBeNull();
     await expect(
       prisma.spaceVoicePreference.count({ where: { credentialId: stored.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.userVoicePreference.count({ where: { credentialId: stored.id } }),
     ).resolves.toBe(0);
     await expect(prisma.secret.findUnique({ where: { id: stored.secretId } })).resolves.toBeNull();
 

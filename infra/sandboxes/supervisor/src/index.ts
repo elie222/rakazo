@@ -17,7 +17,8 @@ import { getLogger, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
-import { Hono, type MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { ComputerEgressMode } from "./computer-spec.js";
@@ -25,6 +26,7 @@ import {
   assertVolumeSubpathSupport,
   COMPUTER_GID,
   COMPUTER_IMAGE,
+  COMPUTER_IMAGE_CONTEXT_FILES,
   COMPUTER_UID,
   COMPUTER_USER,
   computerBridgeNameFor,
@@ -58,6 +60,7 @@ import {
 } from "./computer-spec.js";
 import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
+import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -85,7 +88,6 @@ import {
   quiesceBrowserProfilesCommand,
   releaseAssignedScreen,
   resetManagedScreensCommand,
-  type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
   screenReleaseStopCommand,
@@ -1168,22 +1170,7 @@ async function ensureComputerImage() {
       const stream = await docker.buildImage(
         {
           context: computerContext,
-          src: [
-            "Dockerfile",
-            "start.sh",
-            "user-env.sh",
-            "control.py",
-            "xcapture.c",
-            "rakazo-browser",
-            "rakazo-page-browser",
-            "rakazo-browser.desktop",
-            "embed.html",
-            "clipboard-bridge.js",
-            "mobile-keyboard.js",
-            "fluxbox.init",
-            "fluxbox.apps",
-            "fluxbox.menu",
-          ],
+          src: [...COMPUTER_IMAGE_CONTEXT_FILES],
         },
         { t: COMPUTER_IMAGE },
       );

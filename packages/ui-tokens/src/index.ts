@@ -275,6 +275,9 @@ export const typeScale = {
  */
 export const MAX_FONT_SCALE = 23 / typeScale.body.fontSize;
 
+/** The ink of a drawn bot's eyes, the same on every body colour and in both themes. */
+export const botEyeColor = "#101014";
+
 export const botColors = [
   "#3EC5A8",
   "#F5A03C",

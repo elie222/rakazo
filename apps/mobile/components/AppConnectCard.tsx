@@ -48,7 +48,7 @@ export function AppConnectCard({
     setBusy(true);
     setError(null);
     try {
-      const started = await rpc<{ connectionId: string; authorizationUrl: string | null }>(
+      const started = await rpc(
         "connections/begin",
         {
           connectorId: block.connectorId,
@@ -61,8 +61,7 @@ export function AppConnectCard({
       if (started.authorizationUrl) await Linking.openURL(started.authorizationUrl);
       const result = await waitForConnection(
         started.connectionId,
-        (input) =>
-          rpc<{ status: string }>("connections/complete", input, { signal: controller.signal }),
+        (input) => rpc("connections/complete", input, { signal: controller.signal }),
         { signal: controller.signal, attempts: 60 },
       );
       if (result.status === "aborted") return;

@@ -1,21 +1,18 @@
-import { isIP } from "node:net";
+import { lookup } from "node:dns/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import {
+  ipVersion,
+  isCloudMetadataAddress,
+  isLocalhostOrLoopbackIp,
+  isNonPublicAddress,
+} from "@rakazo/contracts";
 import { Agent } from "undici";
 import { combineSignals } from "./connector-safety.js";
-import {
-  createAddressCheckedLookup,
-  isCloudMetadataAddress,
-  isPrivateAddress,
-  type ResolvedAddress,
-  type ResolveHostname,
-} from "./network-address.js";
-import {
-  createSafeRemoteFetch,
-  type RemoteTransportDependencies,
-  type SafeRemoteFetch,
-} from "./remote-mcp.js";
+import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
+import { createAddressCheckedLookup } from "./network-address.js";
+import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
+import { createSafeRemoteFetch } from "./remote-mcp.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 import { isBlockedHostname } from "./web-ssrf.js";
 
@@ -102,8 +99,8 @@ function hostnameOf(url: URL): string {
 export function serenityEndpointRequiresPrivateEndpoint(endpoint: string): boolean {
   const url = parseSerenityEndpoint(endpoint);
   const host = hostnameOf(url);
-  if (isLocalMcpHost(host) || isBlockedHostname(host)) return true;
-  if (isIP(host) !== 0) return isPrivateAddress(host);
+  if (isLocalhostOrLoopbackIp(host) || isBlockedHostname(host)) return true;
+  if (ipVersion(host) !== 0) return isNonPublicAddress(host);
   // Unresolved public-looking hostnames may still be LAN DNS over HTTP.
   return url.protocol === "http:";
 }
@@ -120,11 +117,7 @@ export async function classifySerenityEndpointTrust(
   if (serenityEndpointRequiresPrivateEndpoint(url.href)) return "private";
   const host = hostnameOf(url);
   const resolve =
-    resolveHostname ??
-    (async (hostname: string) => {
-      const { lookup } = await import("node:dns/promises");
-      return lookup(hostname, { all: true, verbatim: true });
-    });
+    resolveHostname ?? ((hostname: string) => lookup(hostname, { all: true, verbatim: true }));
   const addresses = await resolve(host);
   if (addresses.length === 0) {
     throw new Error("Serenity endpoint did not resolve to an address.");
@@ -132,7 +125,7 @@ export async function classifySerenityEndpointTrust(
   if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
     throw new Error("Serenity endpoint targets a blocked address.");
   }
-  if (addresses.some((entry) => isPrivateAddress(entry.address))) return "private";
+  if (addresses.some((entry) => isNonPublicAddress(entry.address))) return "private";
   return "public";
 }
 
@@ -143,7 +136,7 @@ function assertAllowedSerenityEndpoint(url: URL): void {
   }
   if (url.protocol === "http:") {
     // Bearer tokens stay on the wire; only loopback may use cleartext HTTP.
-    if (!isLocalMcpHost(host)) {
+    if (!isLocalhostOrLoopbackIp(host)) {
       throw new Error(
         "Serenity HTTP endpoints are limited to loopback (localhost / 127.0.0.1 / ::1); use HTTPS for LAN or public hosts.",
       );
@@ -224,16 +217,13 @@ function serenityFetchPath(
   url: URL,
 ): "private-literal" | "private-dns" | "public" {
   if (config.endpointTrust === "private" || serenityEndpointRequiresPrivateEndpoint(url.href)) {
-    return isIP(hostnameOf(url)) !== 0 ? "private-literal" : "private-dns";
+    return ipVersion(hostnameOf(url)) !== 0 ? "private-literal" : "private-dns";
   }
   return "public";
 }
 
 function defaultResolveHostname(): ResolveHostname {
-  return async (hostname: string) => {
-    const { lookup } = await import("node:dns/promises");
-    return lookup(hostname, { all: true, verbatim: true });
-  };
+  return (hostname: string) => lookup(hostname, { all: true, verbatim: true });
 }
 
 function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
@@ -243,7 +233,7 @@ function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
   if (addresses.some((entry) => isCloudMetadataAddress(entry.address))) {
     throw new Error("Serenity endpoint targets a blocked address.");
   }
-  if (addresses.some((entry) => !isPrivateAddress(entry.address))) {
+  if (addresses.some((entry) => !isNonPublicAddress(entry.address))) {
     throw new Error("Serenity endpoint no longer resolves to a private address.");
   }
 }

@@ -7,21 +7,17 @@ import type {
 } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, skillTeachingExpireJobKey } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
+import type { SkillPlaybook, TeachRecordingEvent, TeachSnapshot } from "@rakazo/core";
 import {
   buildPlaybookFromRecording,
   computerInputForDomKey,
-  type SkillPlaybook,
   sanitizeTeachRecordingEvent,
-  type TeachRecordingEvent,
-  type TeachSnapshot,
 } from "@rakazo/core";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
   IsolationError,
-  type Prisma,
-  type PrismaClient,
-  type ThreadEvents,
 } from "@rakazo/db";
 import { revokeScreenControl } from "./computer-control.js";
 import { scheduleComputerSleep } from "./computer-idle.js";

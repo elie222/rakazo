@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { ScriptedAgentRuntime } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import { answerRunInput, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { asSystem } from "./system-db.js";
 
@@ -32,7 +32,7 @@ describeIntegration("reusable credential lifecycle", () => {
   });
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,
@@ -81,11 +81,19 @@ describeIntegration("reusable credential lifecycle", () => {
         });
       try {
         const seeded = await seedRun(`reusable-${requireApproval}`, "Save the API credential");
+        // The owner allowed using and forgetting saved credentials, so only request_secret asks.
+        await db.userActionApprovalRule.createMany({
+          data: ["secret_request", "forget_secret"].map((matchValue) => ({
+            userId: seeded.me.userId,
+            effect: "always_allow",
+            matchKind: "tool",
+            matchValue,
+          })),
+        });
         if (requireApproval) {
-          await db.actionApprovalRule.create({
+          await db.userActionApprovalRule.create({
             data: {
-              spaceId: seeded.me.spaceId,
-              createdByUserId: seeded.me.userId,
+              userId: seeded.me.userId,
               effect: "require_approval",
               matchKind: "tool",
               matchValue: "request_secret",

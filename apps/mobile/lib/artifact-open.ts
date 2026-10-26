@@ -1,4 +1,3 @@
-import type { Me } from "@rakazo/contracts";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { Image } from "react-native";
@@ -70,7 +69,7 @@ function artifactScope(): Promise<ArtifactScope> {
       selectionId !== selectedSpaceId()
     )
       throw new Error("Artifact session changed");
-    const me = await rpc<Pick<Me, "userId">>("me", {}, { requestContext: context });
+    const me = await rpc("me", {}, { requestContext: context });
     if (generation !== currentSessionGeneration()) throw new Error("Artifact session changed");
     if (!me.userId) throw new Error("Missing artifact owner");
     const result = {
@@ -130,7 +129,7 @@ async function cacheMobileArtifact(
       // A corrupt sidecar is a cache miss.
     }
   }
-  const artifact = await rpc<{ contentBase64: string }>(
+  const artifact = await rpc(
     "artifacts/get",
     { ...target, artifactId },
     { timeoutMs: ARTIFACT_DOWNLOAD_TIMEOUT_MS, requestContext: scope.context },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Situation } from "./simulated-user.js";
-import { parseMove } from "./simulated-user.js";
+import { parseMove, screenStepLog } from "./simulated-user.js";
 
 const chat: Situation = { kind: "chat" };
 const approval: Situation = {
@@ -69,5 +69,36 @@ describe("simulated user moves", () => {
     expect(() => parseMove('{"kind":"say","text":"  "}', chat)).toThrow();
     expect(() => parseMove('{"kind":"wave"}', chat)).toThrow();
     expect(() => parseMove("no json", chat)).toThrow();
+  });
+
+  it("marks only the step that left the screen unchanged, per takeover", () => {
+    const a = new Uint8Array([1]);
+    const b = new Uint8Array([2]);
+    const log = screenStepLog();
+    log.saw(a);
+    log.did("click 1,1");
+    log.saw(a);
+    log.did("typed 3 characters");
+    log.saw(b);
+    log.did("pressed Return");
+    log.saw(b);
+    expect(log.steps).toEqual([
+      "click 1,1 (nothing on screen changed)",
+      "typed 3 characters",
+      "pressed Return (nothing on screen changed)",
+    ]);
+    log.did("pressed Return");
+    expect(log.steps.at(-1)).toBe("pressed Return");
+    log.did("click 10,20", { x: 10, y: 20 });
+    log.did("click 10,200", { x: 10, y: 200 });
+    log.did("click 10,200", { x: 10, y: 200 });
+    expect(log.steps.slice(-3)).toEqual([
+      "click 10,20",
+      "click 10,200",
+      "click 10,200 (same click as your previous step)",
+    ]);
+    const next = screenStepLog();
+    next.saw(b);
+    expect(next.steps).toEqual([]);
   });
 });

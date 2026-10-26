@@ -34,11 +34,11 @@ export function FailedSendBubble({
   const caption = sending
     ? t("Sending…")
     : attempt.imageConfirmation
-      ? t("Not sent · Tap for options")
+      ? t("Not sent. Tap for options")
       : modelRequired
-        ? t("Not sent · No model")
+        ? t("Not sent. No model")
         : retryable
-          ? t("Not sent · Tap to retry")
+          ? t("Not sent. Tap to retry")
           : t("Not sent");
   const messageLabel = [payload.displayText, ...payload.attachments.map(({ name }) => name)]
     .filter(Boolean)

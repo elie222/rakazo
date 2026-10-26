@@ -3,7 +3,7 @@ import { createRunExecutor, createWebProvider, PiAgentRuntime } from "@rakazo/ad
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycle from "../../adapters/src/computer-lifecycle.js";
 import { parallelMcpFixture } from "../../adapters/src/parallel-web.test-support.js";
-import { resolveRuntimeModel } from "../../adapters/src/pi-runtime.js";
+import { resolveRuntimeModel } from "../../adapters/src/pi-runtime-models.js";
 import { startModelEmulator } from "./model-emulator.js";
 
 vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
@@ -72,8 +72,10 @@ function executorFixture(
       }),
     },
     connection: { findMany: async () => [] },
-    spaceModelPreference: { findFirst: async () => null },
-    spaceModelRoleChoice: { findMany: async () => [] },
+    chatGroup: { findMany: async () => [] },
+    userModelPreference: { findFirst: async () => null },
+    spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+    userModelRoleChoice: { findMany: async () => [] },
     userModelCredential: { findFirst: async () => null },
     deploymentSettings: {
       findUnique: async () => ({ defaultModelProvider: "scripted", defaultModelId: "scripted" }),
@@ -83,8 +85,8 @@ function executorFixture(
     botSecret: { findMany: async () => [] },
     agentSkill: { findMany: async () => [] },
     scratchpadItem: { findMany: async () => [] },
-    actionApprovalRule: { findMany: async () => [] },
-    actionAutoReviewPreference: { findUnique: async () => ({ enabled: false }) },
+    userActionApprovalRule: { findMany: async () => [] },
+    userActionAutoReviewPreference: { findUnique: async () => ({ enabled: false }) },
     externalEffect: { findMany: async () => [] },
     usageRecord: { createMany: async () => ({ count: 1 }) },
     modelCreditEntry: { findUnique: async () => null },

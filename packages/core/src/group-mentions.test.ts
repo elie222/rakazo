@@ -3,6 +3,7 @@ import {
   hasMentionToken,
   inferHandoffTargetBotId,
   inferHandoffTargetName,
+  memberName,
   resolveGroupTargetBotIds,
 } from "./group-mentions.js";
 
@@ -117,5 +118,15 @@ describe("inferHandoffTargetBotId", () => {
         { id: "research", name: "Research Writer" },
       ]),
     ).toBe("research");
+  });
+});
+
+describe("memberName", () => {
+  it("finds a member's roster name by bot id", () => {
+    const members = [{ botId: "b1", name: "Chief" }];
+    expect(memberName(members, "b1")).toBe("Chief");
+    expect(memberName(members, "b2")).toBeUndefined();
+    expect(memberName(members, undefined)).toBeUndefined();
+    expect(memberName(undefined, "b1")).toBeUndefined();
   });
 });

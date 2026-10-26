@@ -1,4 +1,5 @@
-import { type ClassValue, clsx } from "clsx";
+import type { ClassValue } from "clsx";
+import { clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
 // The web type scale in styles.css. Registered as font sizes so `text-heading2 text-foreground`

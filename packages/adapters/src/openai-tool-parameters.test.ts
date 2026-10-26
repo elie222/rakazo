@@ -5,7 +5,7 @@ import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
 } from "./openai-tool-parameters.js";
-import { parametersFor } from "./pi-runtime.js";
+import { parametersFor } from "./pi-runtime-tool-parameters.js";
 
 describe("normalizeOpenAiToolParameters", () => {
   it("conjoins referenced fields with sibling constraints and follows local reference chains", () => {

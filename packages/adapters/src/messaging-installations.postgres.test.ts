@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -97,6 +98,66 @@ describePostgres("messaging workspace installation (PostgreSQL)", () => {
       [],
     );
     expect((await manager.get("slack", "T-TEST"))?.credential).toBe("fake-install-token");
+  });
+
+  it("exposes personal link availability only to current space members without exposing installation ownership", async () => {
+    const memberActor = { ...actors[1]!, spaceId: actors[0]!.spaceId };
+    expect(await runAsTenant(actors[1]!, () => manager.canLinkPersonalMessages(actors[1]!))).toBe(
+      false,
+    );
+    expect(await manager.canLinkPersonalMessages(memberActor)).toBe(false);
+    const space = await asSystem(prisma).space.findUniqueOrThrow({
+      where: { id: memberActor.spaceId },
+    });
+    const memberId = randomUUID();
+    let membershipId: string = randomUUID();
+    await asSystem(prisma).member.create({
+      data: {
+        id: memberId,
+        organizationId: space.organizationId,
+        userId: memberActor.userId,
+        role: "member",
+        createdAt: new Date(),
+      },
+    });
+    try {
+      const membership = await asSystem(prisma).spaceMember.upsert({
+        where: { spaceId_userId: { spaceId: space.id, userId: memberActor.userId } },
+        update: {},
+        create: {
+          id: membershipId,
+          organizationId: space.organizationId,
+          spaceId: space.id,
+          userId: memberActor.userId,
+          role: "member",
+          createdAt: new Date(),
+        },
+      });
+      membershipId = membership.id;
+      expect(
+        await runAsTenant(memberActor, () => manager.canLinkPersonalMessages(memberActor)),
+      ).toBe(true);
+      expect(await runAsTenant(memberActor, () => manager.list(memberActor))).toEqual([]);
+      const ownerMembership = await asSystem(prisma).spaceMember.findUniqueOrThrow({
+        where: { spaceId_userId: { spaceId: space.id, userId: actors[0]!.userId } },
+      });
+      await asSystem(prisma).spaceMember.delete({ where: { id: ownerMembership.id } });
+      try {
+        expect(
+          await runAsTenant(memberActor, () => manager.canLinkPersonalMessages(memberActor)),
+        ).toBe(false);
+      } finally {
+        await asSystem(prisma).spaceMember.create({ data: ownerMembership });
+      }
+      expect(
+        await runAsTenant(memberActor, () => manager.canLinkPersonalMessages(memberActor)),
+      ).toBe(true);
+      await asSystem(prisma).spaceMember.delete({ where: { id: membershipId } });
+      expect(await manager.canLinkPersonalMessages(memberActor)).toBe(false);
+    } finally {
+      await asSystem(prisma).spaceMember.deleteMany({ where: { id: membershipId } });
+      await asSystem(prisma).member.delete({ where: { id: memberId } });
+    }
   });
 
   it("cannot move another tenant's workspace or disconnect its installation", async () => {

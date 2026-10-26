@@ -87,7 +87,7 @@ describe("visible thread snapshot publication", () => {
       { members: [] },
       {
         computer: {
-          state: "ready",
+          state: "running",
           controlHolder: "bot",
           screenAvailable: true,
           mode: "team",

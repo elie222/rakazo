@@ -3,24 +3,40 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import { RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
 import {
   cronFromPreset,
+  formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
   nextCronDate,
+  nextCronDateAcross,
   ONCE_ROUTINE_CRON,
+  unevenInterval,
+  wallClock,
+  zonedDateTime,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 
+import { localDateTime } from "./current-time.js";
 import { validateRoutineWatch } from "./routine-watch.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
-export const SCHEDULE_TOOL_NAMES = new Set(["schedule_create", "schedule_list", "schedule_cancel"]);
+export const SCHEDULE_TOOL_NAMES = new Set([
+  "schedule_create",
+  "schedule_list",
+  "schedule_update",
+  "schedule_cancel",
+]);
+
+/** A routine run may list or cancel routines, but not write new unattended work. */
+const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_create", "schedule_update"]);
 
 export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],
   runTrigger: string,
 ): T[] {
-  return runTrigger === "routine" ? tools.filter((tool) => tool.name !== "schedule_create") : tools;
+  return runTrigger === "routine"
+    ? tools.filter((tool) => !ROUTINE_RUN_HIDDEN_TOOLS.has(tool.name))
+    : tools;
 }
 
 /** Keep cross-bot messaging thread-specific while exposing schedules in DMs and groups. */
@@ -30,10 +46,9 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
 ): T[] {
   return tools.filter(
     (tool) =>
-      (groupId || tool.name !== "handoff_to_bot") &&
       // In a group the room is the shared surface: hand the stage to a member
       // rather than starting a private thread off to one side.
-      (!groupId || tool.name !== "message_bot"),
+      !groupId || tool.name !== "message_bot",
   );
 }
 
@@ -68,6 +83,7 @@ export function resolveScheduleTiming(
     runAt?: unknown;
     delayMinutes?: unknown;
     delaySeconds?: unknown;
+    startAt?: unknown;
   },
   timezone = "UTC",
 ): ResolvedSchedule {
@@ -101,6 +117,10 @@ export function resolveScheduleTiming(
     };
   }
 
+  if (hasOneShot && isScheduleValueProvided(input.startAt)) {
+    return { ok: false, error: "startAt is only for repeating schedules." };
+  }
+
   if (hasOneShot) {
     const oneShotFields = [input.runAt, input.delayMinutes, input.delaySeconds].filter(
       isScheduleValueProvided,
@@ -126,16 +146,28 @@ export function resolveScheduleTiming(
       }
       nextRunAt = new Date(Date.now() + delayMinutes * 60_000);
     } else {
-      const parsed = new Date(String(input.runAt ?? ""));
-      if (!Number.isFinite(parsed.getTime())) {
-        return { ok: false, error: "runAt must be a valid ISO datetime." };
-      }
+      const parsed = zonedDateTime(String(input.runAt), timezone);
+      if (!parsed) return { ok: false, error: "runAt must be a valid ISO datetime." };
       nextRunAt = parsed;
     }
     if (nextRunAt.getTime() <= Date.now()) {
-      return { ok: false, error: "One-shot schedules must run in the future." };
+      return { ok: false, error: `One-shot schedules must run in the future. ${nowIn(timezone)}` };
     }
     return { ok: true, cron: ONCE_ROUTINE_CRON, nextRunAt, oneShot: true };
+  }
+
+  // The first run is the first occurrence at or after startAt.
+  let from = new Date();
+  if (isScheduleValueProvided(input.startAt)) {
+    const startAt = zonedDateTime(String(input.startAt), timezone);
+    if (!startAt) return { ok: false, error: "startAt must be an ISO date or datetime." };
+    if (startAt.getTime() < Date.now()) {
+      return {
+        ok: false,
+        error: `startAt is in the past; omit it to start now. ${nowIn(timezone)}`,
+      };
+    }
+    from = new Date(startAt.getTime() - 1);
   }
 
   if (hasCron) {
@@ -150,7 +182,7 @@ export function resolveScheduleTiming(
     const intervalError = validateRepeatingCron(cron);
     if (intervalError) return { ok: false, error: intervalError };
     try {
-      const nextRunAt = nextCronDate(cron, new Date(), timezone);
+      const nextRunAt = nextCronDate(cron, from, timezone);
       return { ok: true, cron, nextRunAt, oneShot: false };
     } catch {
       return { ok: false, error: "cron must be a valid 5-field cron expression." };
@@ -175,11 +207,31 @@ export function resolveScheduleTiming(
   const intervalError = validateRepeatingCron(cron);
   if (intervalError) return { ok: false, error: intervalError };
   try {
-    const nextRunAt = nextCronDate(cron, new Date(), timezone);
+    const nextRunAt = nextCronDate(cron, from, timezone);
     return { ok: true, cron, nextRunAt, oneShot: false };
   } catch {
     return { ok: false, error: "every/unit produced an invalid cron expression." };
   }
+}
+
+function nowIn(timezone: string): string {
+  const now = new Date();
+  return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
+}
+
+/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
+export function describeRoutineTiming(row: {
+  crons: string[];
+  timezone: string;
+  nextRunAt: Date | null;
+}) {
+  return {
+    timezone: row.timezone,
+    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
+    nextRun: row.nextRunAt
+      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
+      : null,
+  };
 }
 
 function validateRepeatingCron(cron: string): string | null {
@@ -210,6 +262,9 @@ export async function userTimeZone(prisma: PrismaClient, userId: string): Promis
   return timezone && TimeZoneSchema.safeParse(timezone).success ? timezone : "UTC";
 }
 
+/** Each routine is an unattended model run, so a looping bot must not stack them. */
+export const MAX_ACTIVE_ROUTINES_PER_BOT = 50;
+
 /** Persist and enqueue a bot routine that wakes in the originating thread. */
 export async function createScheduleFromTool(
   deps: ScheduleToolDeps,
@@ -231,6 +286,26 @@ export async function createScheduleFromTool(
   const prompt = input.prompt.trim();
   if (!name) return { error: "name is required." };
   if (!prompt) return { error: "prompt is required." };
+
+  const active = await deps.prisma.routine.findMany({
+    where: { spaceId: input.spaceId, botId: routineBotId, active: true },
+    select: { id: true, name: true, threadId: true },
+  });
+  // Match per thread: schedule_update in a group only reaches this thread's routines.
+  const sameName = active.find(
+    (row) =>
+      row.threadId === routineThreadId && row.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (sameName) {
+    return {
+      error: `An active routine named "${sameName.name}" already exists (${sameName.id}). Update or cancel it instead.`,
+    };
+  }
+  if (active.length >= MAX_ACTIVE_ROUTINES_PER_BOT) {
+    return {
+      error: `This bot already has ${MAX_ACTIVE_ROUTINES_PER_BOT} active routines. Cancel one before adding another.`,
+    };
+  }
 
   const parsedTimezone = TimeZoneSchema.safeParse(
     input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
@@ -295,6 +370,7 @@ export async function createScheduleFromTool(
     cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     oneShot: resolved.oneShot,
+    ...describeRoutineTiming(row),
   };
 }
 
@@ -408,8 +484,172 @@ export async function listSchedulesFromTool(
       active: row.active,
       nextRunAt: row.nextRunAt?.toISOString() ?? null,
       oneShot: isOneShotRoutineCrons(row.crons),
+      ...describeRoutineTiming(row),
       ...(row.watch ? { watch: row.watch, lastCheck: row.watchState ?? null } : {}),
     })),
+  };
+}
+
+const TIMING_FIELDS = ["cron", "every", "unit", "runAt", "delayMinutes", "delaySeconds"] as const;
+
+/**
+ * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
+ * Scoped like cancel, so another bot's or another thread's routine reads as not found.
+ */
+export async function updateScheduleFromTool(
+  deps: ScheduleToolDeps,
+  input: {
+    spaceId: string;
+    botId: string;
+    userId: string;
+    /** The thread the change is announced in. */
+    threadId: string;
+    /** In a group, only that thread's routines. */
+    scopeThreadId?: string;
+    routineId: string;
+    name?: string;
+    prompt?: string;
+    active?: boolean;
+    timezone?: string;
+    schedule: Record<string, unknown>;
+  },
+) {
+  const routineId = input.routineId.trim();
+  if (!routineId) return { error: "routineId is required." };
+  const name = input.name?.trim();
+  const prompt = input.prompt?.trim();
+  if (input.name !== undefined && !name) return { error: "name cannot be empty." };
+  if (input.prompt !== undefined && !prompt) return { error: "prompt cannot be empty." };
+
+  const scope = {
+    spaceId: input.spaceId,
+    botId: input.botId,
+    userId: input.userId,
+    ...(input.scopeThreadId ? { threadId: input.scopeThreadId } : {}),
+  };
+  const existing = await deps.prisma.routine.findFirst({
+    where: { ...scope, id: routineId, bot: { archivedAt: null } },
+  });
+  if (!existing) return { error: "Schedule not found." };
+
+  let timezone = existing.timezone;
+  if (input.timezone !== undefined) {
+    const parsed = TimeZoneSchema.safeParse(input.timezone);
+    if (!parsed.success) {
+      return { error: parsed.error.issues.map((issue) => issue.message).join("; ") };
+    }
+    timezone = parsed.data;
+  }
+  const hasTiming = TIMING_FIELDS.some((field) => isScheduleValueProvided(input.schedule[field]));
+  const retime =
+    hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
+  if (!retime && name === undefined && prompt === undefined && input.active === undefined) {
+    return { error: "Nothing to update." };
+  }
+  if (retime && existing.watch != null) {
+    return { error: "A watch checks on its own interval; cancel it and create a schedule." };
+  }
+
+  const active = input.active ?? existing.active;
+  let crons = existing.crons;
+  let nextRunAt = existing.nextRunAt;
+  let carried: Date | undefined;
+  const oneShot = isOneShotRoutineCrons(existing.crons);
+  if (retime) {
+    let timing = input.schedule;
+    if (!hasTiming) {
+      // startAt or a new timezone alone keeps the current repeat.
+      if (existing.crons.length !== 1 || oneShot) {
+        return {
+          error: oneShot
+            ? "Give runAt to move a one-time schedule."
+            : "Give cron or every/unit along with startAt or timezone.",
+        };
+      }
+      const cron = existing.crons[0] ?? "";
+      timing = { ...input.schedule, cron };
+      // A new timezone alone keeps the next run's local time, so a start set for later holds.
+      // In a timezone behind, the first run is the first one from when it was due, so none is
+      // skipped. An uneven step recurs from its last run: by its fixed gap, which no timezone
+      // moves, or by local days, so it keeps its local time either way.
+      const due = existing.nextRunAt;
+      if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
+        const local = zonedDateTime(wallClock(due, existing.timezone), timezone);
+        const step = unevenInterval(cron);
+        if (step && step.unit !== "days") carried = due;
+        else if (local && (step || local <= due)) {
+          if (local.getTime() > Date.now()) carried = local;
+        } else timing = { ...timing, startAt: due.toISOString() };
+      }
+    }
+    const resolved = resolveScheduleTiming(timing, timezone);
+    if (!resolved.ok) return { error: resolved.error };
+    crons = [resolved.cron];
+    nextRunAt = carried ?? resolved.nextRunAt;
+  } else if (active && !(existing.active && existing.nextRunAt)) {
+    // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
+    if (existing.watch != null) nextRunAt = new Date(Date.now() + 2_000);
+    else if (oneShot) {
+      if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
+        return { error: "This one-time schedule has no time left; give a new runAt." };
+      }
+    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
+  }
+  if (!active) nextRunAt = null;
+  const timingChanged =
+    retime || active !== existing.active || nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
+
+  // The scope is part of the write, so the routine cannot change hands between the read and it.
+  // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
+  // a timing edit applies only if no run advanced the routine since the read.
+  const { count } = await deps.prisma.routine.updateMany({
+    where: {
+      ...scope,
+      id: existing.id,
+      bot: { archivedAt: null },
+      ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
+    },
+    data: {
+      ...(name === undefined ? {} : { name }),
+      ...(prompt === undefined ? {} : { prompt }),
+      ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+    },
+  });
+  if (count === 0) {
+    return {
+      error: timingChanged
+        ? "The schedule changed while saving. Call schedule_list and try again."
+        : "Schedule not found.",
+    };
+  }
+
+  if (timingChanged) {
+    if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
+    else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
+  }
+
+  try {
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: existing.threadId ?? input.threadId,
+      botId: input.botId,
+      type: "routine.updated",
+      payload: { routineId: existing.id, active },
+    });
+  } catch {
+    // The change is saved even if the thread signal fails.
+  }
+
+  return {
+    ok: true as const,
+    routineId: existing.id,
+    name: name ?? existing.name,
+    prompt: prompt ?? existing.prompt,
+    active,
+    crons,
+    nextRunAt: nextRunAt?.toISOString() ?? null,
+    oneShot: isOneShotRoutineCrons(crons),
+    ...describeRoutineTiming({ crons, timezone, nextRunAt }),
   };
 }
 

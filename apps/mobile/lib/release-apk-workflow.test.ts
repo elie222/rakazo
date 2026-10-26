@@ -31,6 +31,7 @@ describe("Android APK release workflow", () => {
     expect(easConfig.build["android-apk"]).toEqual({
       extends: "production",
       android: { buildType: "apk" },
+      environment: "production",
     });
     expect(workflow).toContain("--profile android-apk");
     expect(workflow).toContain("--latest=false");

@@ -26,20 +26,23 @@ import {
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  appliedModelRole,
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
+  modelRoleTarget,
   newestModelCredentialOrder,
   Prisma,
   runAsSystemInTransaction,
-  saveSpaceModelPreference,
+  saveModelPreference,
   updateModelRole,
   writeModelRole,
 } from "@rakazo/db";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
+import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
   modelConnectionTarget,
   persistModelCredential,
@@ -69,11 +72,7 @@ export function modelsRoutes(ctx: RouterContext) {
         const [rows, main] = await Promise.all([
           deps.prisma.userModelCredential.findMany({
             where: { userId: context.actor.userId },
-            include: {
-              preferences: {
-                where: { userId: context.actor.userId, spaceId: context.actor.spaceId },
-              },
-            },
+            include: { userPreferences: { where: { userId: context.actor.userId } } },
             orderBy: newestModelCredentialOrder,
           }),
           resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, context.actor),
@@ -91,13 +90,13 @@ export function modelsRoutes(ctx: RouterContext) {
         const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
         const preferenceRanks = new Map(
           rows
-            .flatMap((row) => row.preferences)
+            .flatMap((row) => row.userPreferences)
             .sort(comparePreferenceOrder)
-            .map((preference, index) => [preference.id, index]),
+            .map((preference, index) => [preference.credentialId, index]),
         );
         return Promise.all(
-          rows.map(async (row) => {
-            const preference = row.preferences[0];
+          rows.map(async ({ userPreferences, ...row }) => {
+            const preference = userPreferences[0];
             const own = {
               ...row,
               defaultModel: preference?.modelId ?? null,
@@ -128,7 +127,9 @@ export function modelsRoutes(ctx: RouterContext) {
                       ],
                     }
                   : {}),
-                ...(preference ? { preferenceRank: preferenceRanks.get(preference.id) } : {}),
+                ...(preference
+                  ? { preferenceRank: preferenceRanks.get(preference.credentialId) }
+                  : {}),
               };
             };
             const ciphertext = ciphertextById.get(row.secretId);
@@ -151,35 +152,58 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("FORBIDDEN");
         return withDeploymentDefault(
           input.role,
-          await getModelRole(deps.prisma, context.actor, input.role),
+          await getModelRole(
+            deps.prisma,
+            await modelRoleTarget(deps.prisma, context.actor, input.scope),
+            input.role,
+          ),
         );
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        const { role, primary, backups } = input;
+        const { role, primary, backups, scope } = input;
         await validateRoleChoices(context.actor, role, [
           ...(primary ? [primary] : []),
           ...(backups ?? []),
         ]);
         return withDeploymentDefault(
           role,
-          await updateModelRole(deps.prisma, context.actor, role, { primary, backups }),
+          await updateModelRole(
+            deps.prisma,
+            { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+            role,
+            { primary, backups },
+          ),
         );
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
-        (await getModelRole(deps.prisma, context.actor, "main")).backups.map(
+        (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
           ({ provider, modelId }) => ({ provider, modelId }),
         ),
       ),
       setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
         await validateRoleChoices(context.actor, "main", input);
-        await updateModelRole(deps.prisma, context.actor, "main", { backups: input });
+        await updateModelRole(
+          deps.prisma,
+          { userId: context.actor.userId, spaceId: context.actor.spaceId },
+          "main",
+          { backups: input },
+        );
         return { ok: true as const };
       }),
-      connect: authed.models.connect.handler(async ({ context, input }) =>
-        connectModelCredential(context.actor, input, context.signal),
-      ),
+      connect: authed.models.connect.handler(async ({ context, input }) => {
+        const record = await firstModelConnectAnalytics(deps, context.actor, "api_key");
+        record(input.provider, { name: "model_connect_started" });
+        try {
+          const saved = await connectModelCredential(context.actor, input, context.signal);
+          record(input.provider, { name: "model_connected" });
+          return saved;
+        } catch (error) {
+          record(input.provider, { name: "model_connect_failed", error });
+          throw error;
+        }
+      }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
@@ -271,17 +295,26 @@ export function modelsRoutes(ctx: RouterContext) {
           input.provider,
           input.credentialId,
         );
-        return deps.oauthLogins.begin({
-          userId: context.actor.userId,
-          spaceId: context.actor.spaceId,
-          provider: input.provider,
-          credentialId: target?.id ?? null,
-          modelId: input.modelId,
-          thinkingLevel: input.thinkingLevel,
-          makeDefault: input.makeDefault,
-          label: input.label,
-          signal: context.signal,
-        });
+        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+        record(input.provider, { name: "model_connect_started" });
+        return deps.oauthLogins
+          .begin({
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            provider: input.provider,
+            credentialId: target?.id ?? null,
+            modelId: input.modelId,
+            thinkingLevel: input.thinkingLevel,
+            makeDefault: input.makeDefault,
+            settingsScope: input.scope,
+            label: input.label,
+            codePage: input.codePage,
+            signal: context.signal,
+          })
+          .catch((error: unknown) => {
+            record(input.provider, { name: "model_connect_failed", error });
+            throw error;
+          });
       }),
       submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
@@ -291,14 +324,20 @@ export function modelsRoutes(ctx: RouterContext) {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
         });
+        if (result.status === "error") {
+          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
+          return { status: "error" as const, error: result.error };
+        }
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
-        const result = await deps.oauthLogins.finish(
-          input.loginId,
-          context.actor,
-          async (login) => {
+        let provider: string | undefined;
+        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+        const result = await deps.oauthLogins
+          .finish(input.loginId, context.actor, async (login) => {
+            provider = login.provider;
             const target = await modelConnectionTarget(
               deps,
               context.actor,
@@ -320,18 +359,24 @@ export function modelsRoutes(ctx: RouterContext) {
                 modelId: login.modelId,
                 thinkingLevel: login.thinkingLevel,
                 makeDefault: login.makeDefault,
+                scope: login.settingsScope,
                 signal: login.signal,
               },
               codexCatalog,
             );
-          },
-        );
+          })
+          .catch((error: unknown) => {
+            record(provider, { name: "model_connect_failed", error });
+            throw error;
+          });
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
+          record(provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
+        record(provider, { name: "model_connected" });
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
@@ -343,20 +388,24 @@ export function modelsRoutes(ctx: RouterContext) {
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the
         // chosen connection first, then on another, as writeModelRole does.
-        const savedChoices = async (client: Pick<PrismaClient, "spaceModelRoleChoice">) => {
-          const main = await getModelRole(client, context.actor, "main");
+        const savedChoices = async (
+          client: Pick<
+            PrismaClient,
+            "spaceModelRoleChoice" | "userModelRoleChoice" | "spaceSettingOverride"
+          >,
+        ) => {
+          const main = await appliedModelRole(client, context.actor, "main");
           const key = backupChoiceKey({ provider: input.provider, modelId });
           return [...(main.primary ? [main.primary] : []), ...main.backups].filter(
             (choice) => backupChoiceKey(choice) === key,
           );
         };
-        const loadSpaceModelState = async (
-          client: Pick<PrismaClient, "spaceModelPreference" | "userModelCredential">,
+        const loadModelState = async (
+          client: Pick<PrismaClient, "userModelPreference" | "userModelCredential">,
         ) => {
           const [preferences, credentials] = await Promise.all([
-            client.spaceModelPreference.findMany({
+            client.userModelPreference.findMany({
               where: {
-                spaceId: context.actor.spaceId,
                 userId: context.actor.userId,
                 credential: { provider: modelCredentialProviderFilter(input.provider) },
               },
@@ -380,7 +429,7 @@ export function modelsRoutes(ctx: RouterContext) {
           };
         };
         await withSerializableRetry(async () => {
-          const preparedState = await loadSpaceModelState(deps.prisma);
+          const preparedState = await loadModelState(deps.prisma);
           const preparedAuth = new Map(
             await Promise.all(
               preparedState.candidates.map(
@@ -428,7 +477,7 @@ export function modelsRoutes(ctx: RouterContext) {
           }
           return deps.prisma.$transaction(
             async (tx) => {
-              const { preferences, candidates } = await loadSpaceModelState(tx);
+              const { preferences, candidates } = await loadModelState(tx);
               if (candidates.length === 0) {
                 throw new ORPCError("NOT_FOUND", {
                   message: `No model credential is connected for ${input.provider}.`,
@@ -496,7 +545,7 @@ export function modelsRoutes(ctx: RouterContext) {
                 }
                 thinkingLevel = clampCatalogThinkingLevel(thinkingLevel, thinking.allowed);
               }
-              await writeModelRole(tx, context.actor, "main", {
+              await writeModelRole(tx, await modelRoleTarget(tx, context.actor), "main", {
                 primary: {
                   provider: input.provider,
                   modelId,
@@ -505,13 +554,7 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               });
               // Older apps edit one model per connection here, so it becomes the connection's own.
-              await saveSpaceModelPreference(
-                tx,
-                context.actor,
-                credentialId,
-                modelId,
-                thinkingLevel,
-              );
+              await saveModelPreference(tx, context.actor, credentialId, modelId, thinkingLevel);
             },
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           );
@@ -555,32 +598,30 @@ export function modelsRoutes(ctx: RouterContext) {
               if (input.credentialId && existing.length === 0) return;
               const ids = existing.map((row) => row.id);
               const lastConnection = existing.length === connections.length;
-              // Its models leave every purpose in every Space, like the connection itself;
-              // the tenant scope would otherwise limit these deletes to the active Space.
+              const roleRows = {
+                userId: context.actor.userId,
+                provider,
+                OR: [
+                  { credentialId: { in: ids } },
+                  // Rows that name no connection ran on the provider's last one.
+                  ...(lastConnection ? [{ credentialId: null }] : []),
+                ],
+              };
+              // Its models leave every purpose in the account's models and every Space's,
+              // like the connection itself; the tenant scope would otherwise limit the
+              // Space deletes to the active Space.
+              await tx.userModelRoleChoice.deleteMany({ where: roleRows });
               await runAsSystemInTransaction(
                 tx,
                 "disconnect a model connection from every Space",
                 async () => {
-                  await tx.spaceModelRoleChoice.deleteMany({
-                    where: {
-                      userId: context.actor.userId,
-                      provider,
-                      OR: [
-                        { credentialId: { in: ids } },
-                        // Rows that name no connection ran on the provider's last one.
-                        ...(lastConnection ? [{ credentialId: null }] : []),
-                      ],
-                    },
-                  });
+                  await tx.spaceModelRoleChoice.deleteMany({ where: roleRows });
                 },
               );
               if (existing.length === 0) return;
               // Credentials belong to the account, not the space — disconnecting
-              // removes them everywhere, matching voice.disconnect. Linked
-              // preferences in other spaces go with their credential.
-              await tx.spaceModelPreference.deleteMany({
-                where: { userId: context.actor.userId, credentialId: { in: ids } },
-              });
+              // removes them everywhere, matching voice.disconnect. Their own models
+              // go with them.
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });

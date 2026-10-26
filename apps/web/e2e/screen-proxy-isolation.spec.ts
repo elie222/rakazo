@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { createServer as createHttpServer, type Server } from "node:http";
+import type { Server } from "node:http";
+import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo, Server as NetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
-import { openScreenCapability } from "@rakazo/core/node/screen-capability";
-import { createServer, type Plugin, preview, type ViteDevServer } from "vite";
-import { addScreenProxyCapability } from "../../api/src/screen-proxy";
+import {
+  addScreenProxyCapability,
+  openScreenCapability,
+} from "@rakazo/core/node/screen-capability";
+import { screenProbeUrl } from "@rakazo/core/screen-reconnect";
+import type { Plugin, ViteDevServer } from "vite";
+import { createServer, preview } from "vite";
 
 const scope = {
   botId: "bot",
@@ -77,10 +82,12 @@ for (const mode of ["development", "preview"] as const) {
 
     let authorized = true;
     let assetAttempts = 0;
+    let upstreamRequests = 0;
     test.beforeAll(async () => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-screen-test-"));
       await mkdir(path.join(root, "dist"));
       const upstream = createHttpServer((req, res) => {
+        upstreamRequests += 1;
         if (req.headers.cookie !== providerHeaders.cookie) {
           res.writeHead(403).end("Provider authentication required");
           return;
@@ -262,6 +269,25 @@ for (const mode of ["development", "preview"] as const) {
       expect(response.headers()["cache-control"]).toBe("no-store, no-transform");
       expect(response.headers()["last-modified"]).toBeUndefined();
       expect(await response.text()).toContain("const items = new Map()");
+    });
+
+    test("a status-only probe is answered after the access check and never reaches the computer", async ({
+      request,
+    }) => {
+      const before = upstreamRequests;
+      const allowed = await request.get(screenProbeUrl(screenUrl), { maxRedirects: 0 });
+      expect(allowed.status()).toBe(204);
+      expect(allowed.headers()["cache-control"]).toBe("no-store");
+      expect(await allowed.body()).toHaveLength(0);
+      authorized = false;
+      try {
+        const refused = await request.get(screenProbeUrl(screenUrl), { maxRedirects: 0 });
+        expect(refused.status()).toBe(403);
+        expect(await refused.body()).toHaveLength(0);
+      } finally {
+        authorized = true;
+      }
+      expect(upstreamRequests).toBe(before);
     });
 
     test("HTML that is not a noVNC page is passed through unchanged", async ({ page }) => {

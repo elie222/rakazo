@@ -1,3 +1,4 @@
+import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
@@ -6,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureApiRequestContext, currentApiBase, rpc } from "./api";
 import {
   getVoicePlaybackState,
-  MAX_VOICE_AUDIO_BYTES,
   pauseVoicePlayback,
   playMpeg,
   resumeVoicePlayback,
@@ -16,7 +16,6 @@ import {
   speakWithDeviceVoice,
   stopVoicePlayback,
   subscribeVoicePlayback,
-  VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
 vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: "en-US" }] }));

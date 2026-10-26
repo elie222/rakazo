@@ -184,9 +184,6 @@ x-app-environment: &app-environment
   DAYTONA_SNAPSHOT:
   BOAT_API_KEY:
   BOAT_API_URL:
-  BOX_API_KEY:
-  BOX_API_URL:
-  BOX_BASE_URL:
   RAILWAY_API_TOKEN:
   RAILWAY_ENVIRONMENT_ID:
   RAILWAY_SANDBOX_REGION:
@@ -356,6 +353,7 @@ services:
       TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
+      VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"
     volumes:

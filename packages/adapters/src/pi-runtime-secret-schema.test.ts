@@ -2,12 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { builtinAgentTools } from "./builtin-tools.js";
 import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
-import {
-  jsonField,
-  jsonSchemaParameters,
-  parametersFor,
-  prepareRequestSecretArguments,
-} from "./pi-runtime.js";
+import { jsonField, jsonSchemaParameters, parametersFor } from "./pi-runtime-tool-parameters.js";
+import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";
 
 /**
  * `pi-runtime` used to re-declare `request_secret`'s parameters by hand, and the

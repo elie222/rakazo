@@ -1,4 +1,5 @@
-import { type CSSProperties, memo } from "react";
+import type { CSSProperties } from "react";
+import { memo } from "react";
 import { BotAvatar } from "./bot-avatar.js";
 import { cn } from "./lib/utils.js";
 

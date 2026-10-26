@@ -35,7 +35,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           "Run through the computer-replay CLI to create an isolated supervisor environment",
         );
       }
-      const { supervisorApp } = await import("../../../infra/sandboxes/supervisor/src/index.js");
+      const { supervisorApp } = await import("@rakazo/sandbox-supervisor");
       const server = serve({ fetch: supervisorApp.fetch, hostname: "127.0.0.1", port: 0 });
       try {
         if (!server.listening)
@@ -65,7 +65,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           // Docker rejects overlapping subnets; only this test's unique network is touched.
           if (process.env.COMPUTER_REPLAY_SUBNET) {
             const { computerNetworkNameFor } = await import(
-              "../../../infra/sandboxes/supervisor/src/computer-spec.js"
+              "@rakazo/sandbox-supervisor/computer-spec"
             );
             const name = computerNetworkNameFor(context.botId);
             execFileSync(

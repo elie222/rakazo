@@ -1,4 +1,6 @@
-import { formatCron } from "./cron.js";
+import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { CronLabels } from "./cron.js";
+import { ENGLISH_CRON_LABELS, formatCron } from "./cron.js";
 import { displayName } from "./display-name.js";
 import { hasMentionToken } from "./group-mentions.js";
 
@@ -35,6 +37,41 @@ export type MentionPickerConnector = {
   authStatus: "connected" | "needs_auth";
   connectionId?: string;
 };
+
+/**
+ * Connected apps first, then catalog apps the user could still connect. A catalog
+ * entry already covered by a connected row (same provider or name) is skipped.
+ */
+export function mentionConnectorsFrom(
+  connections: readonly Pick<Connection, "id" | "displayName" | "provider" | "status">[],
+  catalog: readonly Pick<
+    ConnectionCatalogItem,
+    "connectorId" | "slug" | "name" | "connected" | "noAuth"
+  >[],
+): MentionPickerConnector[] {
+  const connected = connections.filter((row) => row.status === "connected");
+  const options: MentionPickerConnector[] = connected.map((row) => ({
+    id: row.id,
+    name: row.displayName,
+    authStatus: "connected",
+    connectionId: row.id,
+  }));
+  for (const item of catalog) {
+    if (item.connected || item.noAuth) continue;
+    const covered = connected.some(
+      (row) =>
+        row.provider.toLowerCase() === item.slug.toLowerCase() ||
+        row.displayName.toLowerCase() === item.name.toLowerCase(),
+    );
+    if (covered) continue;
+    options.push({
+      id: `catalog:${item.connectorId}:${item.slug}`,
+      name: item.name,
+      authStatus: "needs_auth",
+    });
+  }
+  return options;
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -138,10 +175,14 @@ export function appendConnectorIntent(text: string, names: readonly string[]): s
   return trimmed ? `${trimmed}\n\n${line}` : line;
 }
 
-export function routineScheduleSubtitle(crons: readonly string[], botName?: string): string {
-  const schedule = crons.map((cron) => formatCron(cron)).join(" · ");
+export function routineScheduleSubtitle(
+  crons: readonly string[],
+  botName?: string,
+  labels: CronLabels = ENGLISH_CRON_LABELS,
+): string {
+  const schedule = crons.map((cron) => formatCron(cron, labels)).join(", ");
   const name = displayName(botName, "");
-  if (name) return `${schedule} · ${name}`;
+  if (name) return `${schedule} (${name})`;
   return schedule;
 }
 
@@ -153,6 +194,8 @@ export function buildComposerMentionOptions(input: {
   connectors: readonly MentionPickerConnector[];
   currentGroupId?: string | null;
   includeEveryone?: boolean;
+  /** Localized schedule words for routine subtitles; English when omitted. */
+  cronLabels?: CronLabels;
   /** When omitted, return every match (catalog build). When set, apply after query filter. */
   limit?: number;
 }): ComposerMention[] {
@@ -209,7 +252,11 @@ export function buildComposerMentionOptions(input: {
       id: routine.id,
       name,
       botId: routine.botId,
-      subtitle: routineScheduleSubtitle(routine.crons, duplicate ? routine.botName : undefined),
+      subtitle: routineScheduleSubtitle(
+        routine.crons,
+        duplicate ? routine.botName : undefined,
+        input.cronLabels,
+      ),
     });
   }
 

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { bootstrapI18n, getActiveUiLocale } from "../lib/i18n";
 import { resolveUiLocale } from "../lib/ui-locale";
+import { MarkdownChrome } from "./markdown-copy";
 import { MarkdownLinkPrompt } from "./markdown-link-prompt";
 
 export function I18nBootstrap({ children }: { children: ReactNode }) {
@@ -34,7 +35,9 @@ export function I18nBootstrap({ children }: { children: ReactNode }) {
   return (
     <I18nProvider i18n={i18n}>
       <KitLabels>
-        <MarkdownLinkPrompt>{children}</MarkdownLinkPrompt>
+        <MarkdownLinkPrompt>
+          <MarkdownChrome>{children}</MarkdownChrome>
+        </MarkdownLinkPrompt>
       </KitLabels>
     </I18nProvider>
   );

@@ -1,12 +1,13 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { foldPeerReplies } from "@rakazo/core";
+import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { DEFAULT_BOT_AVATAR_COLOR } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
 import { reduceThreadSnapshot } from "../../src/lib/thread-events";
 import { Transcript } from "../../src/pages/shell/transcript";
 
-const BOT = { botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR };
+export const BOT = { botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR };
 const NO_IDS = new Set<string>();
 const noop = () => {};
 const resolved = async () => {};
@@ -49,17 +50,24 @@ export function FixtureTranscript({
   running,
   showToolActivity,
   header,
+  answerableAskIds = NO_IDS,
+  bots = [BOT],
 }: {
   messages: readonly ThreadMessage[];
   running: boolean;
   showToolActivity: boolean;
   header?: ReactNode;
+  /** Messages whose ask cards take answers; the rest render as no longer active. */
+  answerableAskIds?: Set<string>;
+  /** The chat's own bot first, then any peers it mentions or hands off to. */
+  bots?: GroupAvatarMember[];
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcript = useMemo(
     () => foldPeerReplies(messages, { includePeerReceipts: true }),
     [messages],
   );
+  const bot = (botId: string | undefined) => bots.find((member) => member.botId === botId);
   return (
     <main className="flex h-dvh flex-col bg-background text-foreground">
       {header}
@@ -73,10 +81,10 @@ export function FixtureTranscript({
         olderCursor={null}
         unreadAfterSeq={null}
         loadingOlder={false}
-        answerableAskIds={NO_IDS}
-        dismissableAskIds={NO_IDS}
+        answerableAskIds={answerableAskIds}
+        dismissableAskIds={answerableAskIds}
         running={running}
-        workingBots={running ? [BOT] : []}
+        workingBots={running ? [bots[0]!] : []}
         onLoadOlder={noop}
         onOpenBot={noop}
         onAnswer={resolved}
@@ -86,7 +94,8 @@ export function FixtureTranscript({
         onReact={resolved}
         onJumpToMessage={noop}
         onOpenPeerMessages={noop}
-        peerBot={() => BOT}
+        memberName={(botId) => bot(botId)?.name}
+        peerBot={(botId) => bot(botId) ?? BOT}
         onRefresh={resolved}
         onBotChanged={resolved}
         onAddRoutine={noop}

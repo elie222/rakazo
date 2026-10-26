@@ -21,7 +21,15 @@ export type TranscriptEntry = {
 export type FlowEvidence<World> = {
   world: World;
   transcript: TranscriptEntry[];
-  routines: Array<{ name: string; prompt: string; crons: string[]; active: boolean }>;
+  routines: Array<{
+    name: string;
+    prompt: string;
+    crons: string[];
+    active: boolean;
+    timezone: string;
+    /** When the routine next runs, as stored; a start date the bot chose lives here. */
+    nextRunAt: string | null;
+  }>;
   toolNames: string[];
   /** Site or computer state the flow reads after each phase, keyed by phase name. */
   observations: Record<string, unknown>;
@@ -45,6 +53,11 @@ export type Flow<World = unknown> = {
   liveFacts?(computer: FlowComputer, world: World): Promise<string | undefined>;
   /** Routine wakes to force after the conversation, standing in for real time passing. */
   routineWakes?: number;
+  /**
+   * Only force a wake when the routine is due this soon. The bot's clock does not move, so a
+   * routine the bot scheduled further out is left alone rather than run early.
+   */
+  wakeHorizonMs?: number;
   /** Called after the conversation and after each wake; returns state to keep as evidence. */
   observe(computer: FlowComputer, world: World): Promise<unknown>;
   grade(evidence: FlowEvidence<World>): Criterion[];

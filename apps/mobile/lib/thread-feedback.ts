@@ -1,4 +1,4 @@
-import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, RpcPath } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
 import {
   isImageInputConfirmation,
@@ -6,7 +6,7 @@ import {
   isServerUnreachable,
 } from "@rakazo/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { rpc } from "./api";
+import type { RpcOptions, rpc } from "./api";
 import { t } from "./i18n";
 import type { PickedAttachment } from "./pick-attachments";
 
@@ -79,7 +79,7 @@ export async function deliverSend(
   for (const [index, pending] of attachments.entries()) {
     let id = attempt.artifactIds.get(pending.id);
     if (!id) {
-      const artifact = await request<{ id: string }>(
+      const artifact = await request(
         "artifacts/create",
         {
           ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
@@ -95,7 +95,7 @@ export async function deliverSend(
     }
     artifactIds.push(id);
   }
-  const sent = await request<{ seq: number }>("threads/send", {
+  const sent = await request("threads/send", {
     ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
     clientNonce: attempt.clientNonce,
     imageHandling: attempt.imageHandling ?? "confirm",
@@ -118,12 +118,12 @@ export type UnsentDisk = {
   clear(): void;
 };
 type Config = {
-  request<T>(
-    proc: string,
+  request(
+    proc: RpcPath,
     body: unknown,
-    options: Parameters<typeof rpc>[2],
+    options: RpcOptions | undefined,
     spaceId: string | null,
-  ): Promise<T>;
+  ): Promise<unknown>;
   scope(): OutboxScope | null;
   serverReachable(): boolean;
   disk: UnsentDisk;
@@ -232,9 +232,9 @@ export function sendWaitingMessages(force = false): Promise<void> {
         attempt.state = "pending";
         changed();
         try {
-          const request = ((...args: Parameters<typeof rpc>) => {
+          const request = ((proc: RpcPath, body?: unknown, options?: RpcOptions) => {
             if (!inScope(attempt)) throw new Error("Session changed");
-            return config!.request(args[0], args[1], args[2], attempt.spaceId);
+            return config!.request(proc, body, options, attempt.spaceId);
           }) as typeof rpc;
           await config.disk.hydrate(attempt);
           const seq = await deliverSend(attempt.payload, attempt, request);

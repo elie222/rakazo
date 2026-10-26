@@ -1,0 +1,21 @@
+appId: com.rakazo.app
+name: Traditional Chinese language selection persists
+# Run against a signed-in test account on an English device.
+---
+- launchApp
+- openLink: "rakazo:///language"
+- extendedWaitUntil:
+    visible: "Language"
+    timeout: 10000
+- assertVisible: "简体中文"
+- tapOn: "繁體中文"
+- assertVisible: "語言"
+- takeScreenshot: "ui-locale-zh-tw"
+- stopApp
+- launchApp
+- openLink: "rakazo:///language"
+- extendedWaitUntil:
+    visible: "語言"
+    timeout: 10000
+- tapOn: "English"
+- assertVisible: "Language"

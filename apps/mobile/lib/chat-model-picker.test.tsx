@@ -624,7 +624,7 @@ describe("chat settings model row", () => {
     await act(async () => root.render(<BotSettingsScreen />));
     expect(mocks.setParams).toHaveBeenCalledWith({ model: undefined });
     const row = container.querySelector('button[aria-label="Model"]');
-    expect(row?.getAttribute("aria-valuetext")).toBe("OpenRouter · Model 3");
+    expect(row?.getAttribute("aria-valuetext")).toBe("Model 3 (OpenRouter)");
     expect(mocks.update).not.toHaveBeenCalled();
     const save = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Save",
@@ -758,6 +758,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
         : "openrouter",
     credentialId: mocks.connected ? CREDENTIAL_ID : null,
     makeDefault: false,
+    target: { scope: "account" },
     ...request,
   });
   await renderStack("connection", { requestId });
@@ -923,6 +924,7 @@ describe("provider connection limit saves", () => {
       provider: "openrouter",
       modelId: "vendor/model-1",
       makeDefault: false,
+      scope: "account",
       maxTokens: 2000,
       label: "OpenRouter",
       // A save on a managed connection updates that connection only.
@@ -1024,7 +1026,12 @@ describe("model role lists", () => {
           procedure === "models/setRole" && (input as { role: string }).role === role,
       )
       .map(([, input]) => {
-        const { role: _role, expectedUserId: _user, ...patch } = input as Record<string, unknown>;
+        const {
+          role: _role,
+          expectedUserId: _user,
+          scope: _scope,
+          ...patch
+        } = input as Record<string, unknown>;
         return patch;
       });
   const menuAction = async (title: string, action: string) =>
@@ -1042,7 +1049,7 @@ describe("model role lists", () => {
     expect(container.querySelector('button[aria-label="Provider"]')).toBeNull();
     const main = section("Main model");
     expect([...main.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      "1Model 1OpenRouter · Thinking: High",
+      "1Model 1OpenRouter, Thinking: High",
       "2Model 2OpenRouter",
       "Add fallback",
     ]);
@@ -1609,7 +1616,12 @@ describe("several connections for one provider", () => {
     mocks.rpc.mock.calls
       .filter(([procedure]) => procedure === "models/setRole")
       .map(([, input]) => {
-        const { role: _role, expectedUserId: _user, ...patch } = input as Record<string, unknown>;
+        const {
+          role: _role,
+          expectedUserId: _user,
+          scope: _scope,
+          ...patch
+        } = input as Record<string, unknown>;
         return patch;
       });
   const lastRequest = (mock: typeof mocks.push) =>
@@ -1628,14 +1640,14 @@ describe("several connections for one provider", () => {
     );
     expect([...container.querySelectorAll("h2")].map((heading) => heading.textContent)).toEqual([
       "OpenRouter",
-      "OpenRouter · Work",
+      "OpenRouter (Work)",
     ]);
     // The running model is offered again on the other account.
     const picker = modelPickerRequest(mocks.params.requestId!)!;
     expect(picker.choices.filter((choice) => choice.modelId === "vendor/model-1")).toHaveLength(1);
     const work = picker.choices.find(
       (choice) =>
-        choice.providerLabel === "OpenRouter · Work" && choice.modelId === "vendor/model-1",
+        choice.providerLabel === "OpenRouter (Work)" && choice.modelId === "vendor/model-1",
     )!;
     await act(async () => picker.onSelect(work));
     expect(roleSaves()).toEqual([{ backups: [model(1, WORK_CREDENTIAL_ID)] }]);
@@ -1647,7 +1659,7 @@ describe("several connections for one provider", () => {
     await renderModels();
     expect(
       [...section("Main model").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter · Work", "Add fallback"]);
+    ).toEqual(["1Model 1OpenRouter", "2Model 1OpenRouter (Work)", "Add fallback"]);
     const menu = [...mocks.menus.entries()].filter(([title]) => title === "Model 1");
     expect(menu).toHaveLength(1);
     await act(async () =>
@@ -1664,15 +1676,15 @@ describe("several connections for one provider", () => {
     await renderModels();
     expect(
       [...section("Providers").querySelectorAll("button")].map((button) => button.textContent),
-    ).toEqual(["OpenRouter", "OpenRouter · Work", "Add provider"]);
-    expect(mocks.menus.get("OpenRouter · Work")!.actions.map((action) => action.title)).toEqual([
+    ).toEqual(["OpenRouter", "OpenRouter (Work)", "Add provider"]);
+    expect(mocks.menus.get("OpenRouter (Work)")!.actions.map((action) => action.title)).toEqual([
       "Rename",
       "Replace API key",
       "Disconnect",
     ]);
 
     await act(async () =>
-      mocks.menus.get("OpenRouter · Work")!.onPressAction({ nativeEvent: { event: "rename" } }),
+      mocks.menus.get("OpenRouter (Work)")!.onPressAction({ nativeEvent: { event: "rename" } }),
     );
     const [, , buttons, , current] = mocks.prompt.mock.lastCall!;
     expect(current).toBe("Work");
@@ -1683,10 +1695,10 @@ describe("several connections for one provider", () => {
     });
 
     await act(async () =>
-      mocks.menus.get("OpenRouter · Work")!.onPressAction({ nativeEvent: { event: "disconnect" } }),
+      mocks.menus.get("OpenRouter (Work)")!.onPressAction({ nativeEvent: { event: "disconnect" } }),
     );
     const [title, , choices] = mocks.alert.mock.lastCall!;
-    expect(title).toBe("Disconnect OpenRouter · Work?");
+    expect(title).toBe("Disconnect OpenRouter (Work)?");
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",

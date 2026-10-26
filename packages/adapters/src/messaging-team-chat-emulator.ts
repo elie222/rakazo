@@ -9,7 +9,8 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-import { type MessagingPlatform, providerOfThreadId } from "./chat-sdk-surface.js";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { providerOfThreadId } from "./chat-sdk-surface.js";
 
 export interface TeamChatEmulatorInbound {
   handle?: string;

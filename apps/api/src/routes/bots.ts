@@ -27,6 +27,7 @@ import {
   commitBotUpdate,
   InstructionConflictError,
   IsolationError,
+  recordComputerRunEnd,
   restoreBotUnderComputerQuota,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
@@ -176,7 +177,7 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
     }),
   ]);
   const prompt = botIntroPrompt({
-    userName: user?.name.trim() ?? "",
+    userName: displayName(user?.name, ""),
     spaceName: space && !space.isDefault ? space.name.trim() || null : null,
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
   });
@@ -450,6 +451,7 @@ export function botsRoutes(ctx: RouterContext) {
                 executionLeaseExpiresAt: null,
               },
             });
+            await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
           }
           return await repos.setBotComputer(context.actor, bot.id, input.mode);
         } catch (error) {

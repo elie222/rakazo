@@ -20,7 +20,7 @@ export function InstructionUndo({
   const [restored, setRestored] = useState(false);
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <Text style={{ color: tokens.foreground }}>{t("Instructions updated")} ·</Text>
+      <Text style={{ color: tokens.foreground }}>{t("Instructions updated")}</Text>
       <NativeActionButton
         label={t(restored ? "Restored" : "Undo")}
         prominence="plain"

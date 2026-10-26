@@ -1,4 +1,10 @@
-import type { ModelCatalogEntry, ModelRoleSettings, ModelRoleView } from "@rakazo/contracts";
+import type {
+  ModelCatalogEntry,
+  ModelRoleChoice,
+  ModelRoleSettings,
+  ModelRoleView,
+} from "@rakazo/contracts";
+import { modelRoleChoiceKey } from "@rakazo/contracts";
 
 export interface ModelRoleTransport {
   load(): Promise<ModelRoleView>;
@@ -108,4 +114,19 @@ export function createModelRoleSettings(
       if (queue.tail === write) pendingWrites.delete(scopeKey);
     },
   };
+}
+
+/**
+ * The save for a purpose's reordered list, whose first row runs. With a primary set, the
+ * primary is sent only when it changes, so editing fallbacks never rewrites the main model.
+ */
+export function modelRoleListPatch(
+  current: ModelRoleSettings,
+  list: ModelRoleChoice[],
+): Partial<ModelRoleSettings> {
+  if (!current.primary) return { backups: list };
+  const primary = list[0] ?? null;
+  return primary && modelRoleChoiceKey(primary) === modelRoleChoiceKey(current.primary)
+    ? { backups: list.slice(1) }
+    : { primary, backups: list.slice(1) };
 }

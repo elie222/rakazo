@@ -27,6 +27,19 @@ describe("parseTicketRef", () => {
       expect(parseTicketRef(value)).toBeNull();
     }
   });
+
+  it("accepts the largest ticket number the database can store", () => {
+    expect(parseTicketRef("RAK-2147483647")).toEqual({ prefix: "RAK", number: 2147483647 });
+  });
+
+  it.each([
+    ["above the database maximum", "2147483648"],
+    ["outside JavaScript integer precision", "9007199254740993"],
+    ["within the API reference length limit", "9".repeat(115)],
+    ["converted to infinity", "9".repeat(400)],
+  ])("rejects a ticket number outside the database range: %s", (_label, number) => {
+    expect(parseTicketRef(`RAK-${number}`)).toBeNull();
+  });
 });
 
 describe("ticket contracts", () => {
