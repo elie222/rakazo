@@ -478,6 +478,9 @@ export function routineModelIssues(
   }
 }
 
+/** Maximum parent count in one routine mention lookup. */
+export const ROUTINE_MENTION_BATCH_MAX = 100;
+
 export const RoutineSchema = z.object({
   id: Id,
   botId: Id,

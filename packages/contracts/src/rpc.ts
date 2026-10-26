@@ -94,6 +94,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
+  ROUTINE_MENTION_BATCH_MAX,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -661,6 +662,9 @@ export const appContract = {
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
   },
   routines: {
+    listForMentions: oc
+      .input(z.object({ botIds: z.array(Id).min(1).max(ROUTINE_MENTION_BATCH_MAX) }))
+      .output(z.array(z.object({ botId: Id, routines: z.array(RoutineSchema) }))),
     list: oc.input(botId).output(z.array(RoutineSchema)),
     history: oc
       .input(z.object({ routineId: Id, before: RoutineRunCursorSchema.optional() }))

@@ -1,6 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Connection, ConnectionCatalogItem, Group, Routine } from "@rakazo/contracts";
-import { buildComposerMentionOptions, mentionConnectorsFrom } from "@rakazo/core";
+import {
+  buildComposerMentionOptions,
+  createRoutineMentionBatcher,
+  mentionConnectorsFrom,
+} from "@rakazo/core";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { connectedAppMarks } from "../../lib/connected-apps";
@@ -40,8 +44,19 @@ export function useComposerMentions({
   initialBotsLoaded: boolean;
 }) {
   const { i18n } = useLingui();
+  const loadRoutineMentions = useMemo(
+    () =>
+      createRoutineMentionBatcher(
+        (botIds, signal) => rpc.routines.listForMentions({ botIds }, { signal }),
+        (botId, signal) => rpc.routines.list({ botId }, { signal }),
+      ),
+    [rpc],
+  );
   const routineLists = useQueries({
-    queries: bots.map((bot) => queries.routines.list.queryOptions({ input: { botId: bot.id } })),
+    queries: bots.map((bot) => ({
+      ...queries.routines.list.queryOptions({ input: { botId: bot.id } }),
+      queryFn: ({ signal }: { signal: AbortSignal }) => loadRoutineMentions(bot.id, signal),
+    })),
     combine: routineListData,
   });
   const mentionRoutines = useMemo(
