@@ -109,6 +109,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "AgentSecret",
   "UserModelCredential",
   "UserVoiceCredential",
+  "TrustedLinkSite",
   "TaughtSkill",
   "AgentSkill",
   "AgentImport",

@@ -56,6 +56,7 @@ model User {
   createdTickets              Ticket[]                     @relation("TicketCreatorUser")
   ticketComments              TicketComment[]              @relation("TicketCommentAuthorUser")
   pushToken                   PushToken?
+  trustedLinkSites            TrustedLinkSite[]
   signupSurvey                SignupSurvey?
   computerRuns                ComputerRun[]
 
@@ -426,6 +427,20 @@ model UserModelCredential {
   @@unique([id, userId])
   @@index([userId, provider, updatedAt])
   @@map("user_model_credentials")
+}
+
+/// A site one user opens from chat links without the external-link prompt, in every space.
+/// Never consulted for what a bot may fetch: those are action approval rules.
+model TrustedLinkSite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The registrable domain the server computed from a link (`hostSite`).
+  site      String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, site])
+  @@map("trusted_link_sites")
 }
 
 model UserVoiceCredential {

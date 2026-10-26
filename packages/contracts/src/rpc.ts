@@ -1016,6 +1016,19 @@ export const appContract = {
       .input(settingsScopeInput.extend({ id: Id }))
       .output(z.object({ ok: z.literal(true) })),
   },
+  /**
+   * Sites the signed-in user opens from chat links without the external-link prompt, in every
+   * space. The server computes each site from a link; bot fetches never read this list.
+   */
+  trustedLinkSites: {
+    list: oc.output(z.array(z.string())),
+    trust: oc
+      .input(z.object({ url: z.string().min(1).max(8192) }))
+      .output(z.object({ site: z.string() })),
+    remove: oc
+      .input(z.object({ site: z.string().min(1).max(253) }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
   autoReview: {
     get: oc.input(settingsScopeInput.optional()).output(ActionAutoReviewSettingsSchema),
     set: oc
