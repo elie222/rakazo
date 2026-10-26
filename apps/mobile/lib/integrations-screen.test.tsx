@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   scope: vi.fn(),
   persisted: vi.fn(),
   focused: true,
+  appStateChange: null as null | ((state: string) => void),
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
@@ -43,6 +44,23 @@ vi.mock("./i18n", () => ({
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../components/menu-picker", () => ({
+  MenuPicker: ({
+    choices,
+    onChange,
+  }: {
+    choices: { key: string; label: string }[];
+    onChange: (key: string) => void;
+  }) => (
+    <div>
+      {choices.map(({ key, label }) => (
+        <button key={key} type="button" onClick={() => onChange(key)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  ),
 }));
 vi.mock("../components/native-action-button", () => ({
   NativeActionButton: ({
@@ -103,6 +121,12 @@ vi.mock("react-native", () => {
     useWindowDimensions: () => ({ width: 390 }),
     Alert: { alert: vi.fn() },
     Linking: { openURL: vi.fn() },
+    AppState: {
+      addEventListener: vi.fn((_event: string, callback: (value: string) => void) => {
+        state.appStateChange = callback;
+        return { remove: vi.fn() };
+      }),
+    },
   };
 });
 
@@ -131,6 +155,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.current = true;
   state.focused = true;
+  state.appStateChange = null;
   state.scope.mockReset().mockResolvedValue({ userId: "user-a", spaceId: "space-a" });
   state.persisted.mockReset().mockResolvedValue(null);
   state.read.mockReset().mockReturnValue(null);
@@ -642,9 +667,16 @@ it("registers an OAuth MCP server and starts the existing browser callback flow"
       headers: {},
     }),
   );
-  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", {
-    serverId: "oauth-server",
-    redirectUri: "https://rakazo.test/mcp/oauth/callback",
-  });
+  // The API chooses the verified Web callback, even when API and Web have different origins.
+  expect(state.rpc).toHaveBeenCalledWith("mcp/oauth/begin", { serverId: "oauth-server" });
   expect(Linking.openURL).toHaveBeenCalledWith("https://identity.example.test/authorize");
+
+  // Opening a browser does not complete OAuth: resync when the app returns.
+  const initialReads = state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length;
+  await act(async () => {
+    state.appStateChange?.("active");
+  });
+  expect(
+    state.rpc.mock.calls.filter(([proc]) => proc === "mcp/servers/list").length,
+  ).toBeGreaterThan(initialReads);
 });

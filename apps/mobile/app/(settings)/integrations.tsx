@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -32,9 +33,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectorIcon } from "../../components/connector-icon";
+import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { Chevron } from "../../components/row-accessories";
-import { currentApiBase, rpc } from "../../lib/api";
+import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import { useI18n } from "../../lib/i18n";
 import type { IntegrationsCacheScope, IntegrationsSnapshot } from "../../lib/integrations-cache";
@@ -48,11 +50,8 @@ import {
 import { loadLastBotId } from "../../lib/last-bot";
 import { native, useThemedStyles } from "../../lib/native";
 import { useSideInsets } from "../../lib/side-insets";
-import {
-  nativeMcpSlug,
-  type SourceAuthentication,
-  sourceCredentialAuth,
-} from "../../lib/source-auth";
+import type { SourceAuthentication } from "../../lib/source-auth";
+import { nativeMcpSlug, sourceCredentialAuth } from "../../lib/source-auth";
 import { errorText } from "../../lib/user-error";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
@@ -95,6 +94,7 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const oauthBrowserPending = useRef(false);
 
   const cacheScope = useRef<IntegrationsCacheScope | null>(null);
   const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
@@ -180,6 +180,22 @@ export default function Integrations() {
     );
   }, [catalog, detailKey]);
 
+  function resetSourceForm() {
+    // A credential from one space must never remain in the form for another.
+    setSourceKind(null);
+    setAdvancedOpen(false);
+    setSourceError(null);
+    setName("");
+    setUrl("");
+    setCredential("");
+    setSourceAuth("bearer");
+    setApiKeyHeader("x-api-key");
+    setOauthClientId("");
+    setOauthClientSecret("");
+    setOauthSetupServerId(null);
+    oauthBrowserPending.current = false;
+  }
+
   function clearStaleScope() {
     if (!cacheScope.current || isIntegrationsScopeCurrent(cacheScope.current)) return;
     cacheScope.current = null;
@@ -190,7 +206,7 @@ export default function Integrations() {
     setSources([]);
     setMcpServers([]);
     setMcpError(null);
-    setOauthSetupServerId(null);
+    resetSourceForm();
     setDetailKey(null);
     setLabelDrafts({});
     setPending(null);
@@ -223,6 +239,7 @@ export default function Integrations() {
       setSources([]);
       setMcpServers([]);
       setMcpError(null);
+      resetSourceForm();
       setDetailKey(null);
       setLabelDrafts({});
     }
@@ -330,10 +347,22 @@ export default function Integrations() {
         refreshGeneration.current += 1;
         sourcesGeneration.current += 1;
         connectionAttempt.current?.abort();
+        oauthBrowserPending.current = false;
         setPending(null);
       };
     }, []),
   );
+
+  useEffect(() => {
+    // Opening an external browser is not the same as completing OAuth.
+    // Refresh after returning to the foreground, not only after openURL resolves.
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" || !oauthBrowserPending.current || !mounted.current) return;
+      oauthBrowserPending.current = false;
+      void retryRefresh();
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!detailKey) {
@@ -530,31 +559,36 @@ export default function Integrations() {
   }
 
   async function authorizeMcp(serverId: string) {
+    const isCurrent = captureConnectionScope();
+    if (!isCurrent()) return;
     setPending(`oauth:${serverId}`);
     setMcpError(null);
     try {
-      // The API binds its OAuth client to the Web callback; never use an
-      // arbitrary provider-supplied redirect or an app deep-link here.
-      const redirectUri = new URL("/mcp/oauth/callback", currentApiBase()).toString();
+      // The API knows its configured Web origin and selects the callback itself.
       const result = await rpc<
         | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
         | { status: "already_connected" | "authorization_not_requested" }
-      >("mcp/oauth/begin", { serverId, redirectUri });
+      >("mcp/oauth/begin", { serverId });
+      if (!isCurrent()) return;
       if (result.status === "authorization_required") {
+        oauthBrowserPending.current = true;
         await Linking.openURL(result.authorizationUrl);
+        if (!isCurrent()) return;
       } else if (result.status === "authorization_not_requested") {
         setMcpError(t("This MCP server has not requested OAuth authorization."));
       }
-      await refresh();
+      if (isCurrent()) await refresh();
     } catch (reason) {
-      setMcpError(errorText(reason, t("Could not start MCP OAuth")));
+      if (isCurrent()) setMcpError(errorText(reason, t("Could not start MCP OAuth")));
     } finally {
-      setPending(null);
+      if (isCurrent()) setPending(null);
     }
   }
 
   async function addSource() {
     if (!sourceKind) return;
+    const isCurrent = captureConnectionScope();
+    if (!isCurrent()) return;
     setPending("source");
     setSourceError(null);
     try {
@@ -583,6 +617,7 @@ export default function Integrations() {
               }
             : undefined,
         });
+        if (!isCurrent()) return;
         setCredential("");
         setOauthClientSecret("");
         setOauthSetupServerId(server.id);
@@ -614,13 +649,14 @@ export default function Integrations() {
                 ? { auth }
                 : { preset: "custom", auth },
       });
+      if (!isCurrent()) return;
       setCredential("");
       setSourceKind(null);
       await refresh();
     } catch (reason) {
-      setSourceError(errorText(reason, t("Could not add source")));
+      if (isCurrent()) setSourceError(errorText(reason, t("Could not add source")));
     } finally {
-      setPending(null);
+      if (isCurrent()) setPending(null);
     }
   }
 
@@ -1050,37 +1086,30 @@ export default function Integrations() {
                       />
                     ) : null}
                     {sourceKind !== "treg" && sourceKind !== "executor" ? (
-                      <View style={styles.authChoices}>
-                        {(
+                      <MenuPicker
+                        label={t("Authentication")}
+                        value={sourceAuth}
+                        choices={(
                           [
                             "none",
                             "bearer",
                             "api_key",
                             ...(sourceKind === "mcp" ? ["oauth"] : []),
                           ] as SourceAuthentication[]
-                        ).map((mode) => (
-                          <Pressable
-                            key={mode}
-                            accessibilityRole="radio"
-                            accessibilityState={{ selected: sourceAuth === mode }}
-                            onPress={() => setSourceAuth(mode)}
-                            style={[
-                              styles.authChoice,
-                              sourceAuth === mode ? styles.authSelected : null,
-                            ]}
-                          >
-                            <Text style={styles.secondary}>
-                              {mode === "none"
-                                ? t("No auth")
-                                : mode === "bearer"
-                                  ? t("Bearer")
-                                  : mode === "api_key"
-                                    ? t("API key")
-                                    : t("OAuth")}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
+                        ).map((mode) => ({
+                          key: mode,
+                          label:
+                            mode === "none"
+                              ? t("No auth")
+                              : mode === "bearer"
+                                ? t("Bearer")
+                                : mode === "api_key"
+                                  ? t("API key")
+                                  : t("OAuth"),
+                        }))}
+                        onChange={(mode) => setSourceAuth(mode as SourceAuthentication)}
+                        plain
+                      />
                     ) : null}
                     {sourceAuth === "api_key" &&
                     sourceKind !== "treg" &&
@@ -1121,11 +1150,6 @@ export default function Integrations() {
                             style={styles.input}
                           />
                         ) : null}
-                        <Text style={styles.secondary}>
-                          {t(
-                            "Authorization finishes in your browser using the same Rakazo account.",
-                          )}
-                        </Text>
                       </>
                     ) : sourceAuth !== "none" ||
                       sourceKind === "treg" ||
@@ -1211,17 +1235,6 @@ function createIntegrationsStyles() {
       paddingHorizontal: 14,
       fontSize: 15,
     },
-    authChoices: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    authChoice: {
-      minHeight: 42,
-      minWidth: 64,
-      justifyContent: "center",
-      alignItems: "center",
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      backgroundColor: native.fillPressed,
-    },
-    authSelected: { borderWidth: 1, borderColor: mobileTokens().border },
     catalogGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     catalogStack: { gap: 8 },
     catalogCell: { flexGrow: 1, flexBasis: "47%", maxWidth: "49%" },
