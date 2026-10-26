@@ -37,8 +37,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Export: "Exporteren",
   "Edit avatar": "Avatar bewerken",
   "Add open work": "Open taak toevoegen",
-  "Can edit and organise bots it creates": "Kan gemaakte bots bewerken en ordenen",
-  "How other bots see it": "Hoe andere bots deze zien",
   Permissions: "Machtigingen",
   "Open work": "Open taken",
   "When it finishes or needs input": "Als de bot klaar is of invoer nodig heeft",

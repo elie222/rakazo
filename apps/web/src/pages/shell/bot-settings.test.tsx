@@ -188,7 +188,6 @@ describe("BotSettings help", () => {
     expect(speechRow?.firstElementChild?.textContent).toBe("Read replies aloud");
     expect(speechRow?.lastElementChild).toBe(speechToggle);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
-    expect(container.textContent).toContain("Can edit and organise bots it creates");
     expect(container.querySelector('[aria-label="About Manage the bots it creates"]')).toBeNull();
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();

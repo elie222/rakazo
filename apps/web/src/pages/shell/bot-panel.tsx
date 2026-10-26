@@ -641,7 +641,7 @@ export function BotSettings({
                 ) : null}
               </div>
             </div>
-            <SettingsGroup label={t`Computer`}>
+            <SettingsGroup label={t`Computer`} plain>
               <ComputerModePicker value={computerMode} onChange={setComputerMode} />
               {memoryProviderConfigured ? (
                 <div className="mt-4 text-sm text-foreground">
@@ -723,14 +723,9 @@ export function BotSettings({
                 />
               </div>
               <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
-                <div>
-                  <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
-                    <Trans>Manage the bots it creates</Trans>
-                  </label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <Trans>Can edit and organise bots it creates</Trans>
-                  </p>
-                </div>
+                <label htmlFor={`${ids}-fleet-management`} className={rowLabelClass}>
+                  <Trans>Manage the bots it creates</Trans>
+                </label>
                 <Switch
                   id={`${ids}-fleet-management`}
                   checked={fleetManagement}
@@ -742,25 +737,22 @@ export function BotSettings({
                 />
               </div>
             </SettingsGroup>
-            <SettingsGroup label={t`Description`}>
-              <label htmlFor={`${ids}-description`} className="block text-xs text-muted-foreground">
-                <Trans>How other bots see it</Trans>
-                <Textarea
-                  id={`${ids}-description`}
-                  aria-label={t`Description`}
-                  value={description}
-                  maxLength={BOT_DESCRIPTION_MAX_LENGTH}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={() => void enqueueSave()}
-                  placeholder={t`What this bot is for`}
-                  rows={2}
-                  className="mt-2 min-h-16 resize-none field-sizing-content border-0 bg-transparent p-0 text-foreground shadow-none"
-                />
-              </label>
+            <SettingsGroup label={t`Description`} plain>
+              <Textarea
+                id={`${ids}-description`}
+                aria-label={t`Description`}
+                value={description}
+                maxLength={BOT_DESCRIPTION_MAX_LENGTH}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={() => void enqueueSave()}
+                placeholder={t`What this bot is for`}
+                rows={2}
+                className="min-h-16 resize-none field-sizing-content"
+              />
             </SettingsGroup>
-            <SettingsGroup label={t`Tools`}>
+            <SettingsGroup label={t`Tools`} plain>
               <section data-testid="bot-settings-tools">
-                <div className="space-y-4 [&>*]:mt-0">
+                <div className="space-y-2 [&>*]:mt-0">
                   <div>
                     <NativeSelect
                       id={`${ids}-disabled-tools`}
@@ -930,11 +922,22 @@ function InlineProfileField({
   );
 }
 
-function SettingsGroup({ label, children }: { label: string; children: ReactNode }) {
+/** `plain` drops the card for a section whose single control already draws its own frame. */
+function SettingsGroup({
+  label,
+  plain = false,
+  children,
+}: {
+  label: string;
+  plain?: boolean;
+  children: ReactNode;
+}) {
   return (
     <section>
       <h3 className="mb-2 text-xs font-medium text-muted-foreground">{label}</h3>
-      <div className="space-y-3 rounded-xl bg-muted/50 p-4 [&>*]:mt-0">{children}</div>
+      <div className={`space-y-3 [&>*]:mt-0 ${plain ? "" : "rounded-xl bg-muted/50 p-4"}`}>
+        {children}
+      </div>
     </section>
   );
 }

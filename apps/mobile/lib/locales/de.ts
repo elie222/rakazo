@@ -40,8 +40,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Export: "Exportieren",
   "Edit avatar": "Avatar bearbeiten",
   "Add open work": "Offene Aufgabe hinzufügen",
-  "Can edit and organise bots it creates": "Kann erstellte Bots bearbeiten und organisieren",
-  "How other bots see it": "So sehen andere Bots ihn",
   Permissions: "Berechtigungen",
   "Open work": "Offene Aufgaben",
   "When it finishes or needs input": "Wenn der Bot fertig ist oder Eingaben benötigt",

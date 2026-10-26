@@ -1027,10 +1027,6 @@ msgstr ""
 msgid "Calls"
 msgstr "호출"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "자신이 만든 봇을 편집하고 정리할 수 있음"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "서버에 연결할 수 없습니다."
@@ -2917,10 +2913,6 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "실행 주기"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "다른 봇이 이 봇을 보는 방식"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

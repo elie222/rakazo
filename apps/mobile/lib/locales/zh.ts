@@ -35,8 +35,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Export: "导出",
   "Edit avatar": "编辑头像",
   "Add open work": "添加待办事项",
-  "Can edit and organise bots it creates": "可编辑和整理它创建的机器人",
-  "How other bots see it": "其他机器人如何了解它",
   Permissions: "权限",
   "Open work": "待办事项",
   "When it finishes or needs input": "完成或需要输入时",

@@ -1027,10 +1027,6 @@ msgstr "Anruf läuft…"
 msgid "Calls"
 msgstr "Aufrufe"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "Kann erstellte Bots bearbeiten und organisieren"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "Server nicht erreichbar."
@@ -2917,10 +2913,6 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Wie oft"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "So sehen andere Bots ihn"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

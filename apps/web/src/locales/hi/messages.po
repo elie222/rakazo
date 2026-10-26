@@ -1027,10 +1027,6 @@ msgstr "कॉल हो रही है…"
 msgid "Calls"
 msgstr "कॉल"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "अपने बनाए बॉट को संपादित और व्यवस्थित कर सकता है"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "सर्वर तक नहीं पहुंचा जा सका।"
@@ -2917,10 +2913,6 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "कितनी बार"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "दूसरे बॉट इसे कैसे देखते हैं"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

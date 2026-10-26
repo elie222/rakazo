@@ -1027,10 +1027,6 @@ msgstr ""
 msgid "Calls"
 msgstr "Chamadas"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "Pode editar e organizar os bots que cria"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "Não é possível acessar o servidor."
@@ -2917,10 +2913,6 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Com que frequência"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "Como outros bots o veem"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

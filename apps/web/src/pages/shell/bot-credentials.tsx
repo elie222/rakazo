@@ -242,299 +242,309 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
           </TooltipContent>
         </Tooltip>
       </div>
-      <div data-testid="bot-credentials-card" className="rounded-xl bg-muted/50 p-4">
-        <p className="text-xs text-muted-foreground">
-          <Trans>Encrypted and never shown again</Trans>
-        </p>
-        {loadFailed ? (
-          <p className="mt-3 text-[13px] text-destructive">
-            <Trans>Could not load credentials.</Trans>
-          </p>
-        ) : null}
-        {secrets?.length ? (
-          <ul className="mt-4 space-y-4">
-            {secrets.map((secret) => {
-              const secretName = secret.name;
-              const updated = new Date(secret.updatedAt).toLocaleDateString();
-              // A readable auth on a name outside the current pattern cannot be replaced:
-              // only the loose remove input accepts it, so show the unreadable row instead.
-              const readableAuth =
-                secret.auth !== null && BotSecretName.safeParse(secret.name).success
-                  ? secret.auth
-                  : null;
-              return (
-                <li key={secret.name} data-testid="bot-credential-row">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 truncate text-[13.5px] font-medium text-foreground">
-                      {secret.name}
-                    </div>
-                    {replacing !== secret.name && confirmingRemove !== secret.name ? (
-                      <div className="-mt-0.5 flex shrink-0 gap-1">
-                        {readableAuth !== null ? (
+      {loadFailed || secrets?.length || error || adding ? (
+        <div
+          data-testid="bot-credentials-card"
+          className="rounded-xl bg-muted/50 p-4 [&>:first-child]:mt-0"
+        >
+          {loadFailed ? (
+            <p className="mt-3 text-[13px] text-destructive">
+              <Trans>Could not load credentials.</Trans>
+            </p>
+          ) : null}
+          {secrets?.length ? (
+            <ul className="mt-4 space-y-4">
+              {secrets.map((secret) => {
+                const secretName = secret.name;
+                const updated = new Date(secret.updatedAt).toLocaleDateString();
+                // A readable auth on a name outside the current pattern cannot be replaced:
+                // only the loose remove input accepts it, so show the unreadable row instead.
+                const readableAuth =
+                  secret.auth !== null && BotSecretName.safeParse(secret.name).success
+                    ? secret.auth
+                    : null;
+                return (
+                  <li key={secret.name} data-testid="bot-credential-row">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 truncate text-[13.5px] font-medium text-foreground">
+                        {secret.name}
+                      </div>
+                      {replacing !== secret.name && confirmingRemove !== secret.name ? (
+                        <div className="-mt-0.5 flex shrink-0 gap-1">
+                          {readableAuth !== null ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={<Button variant="ghost" size="icon-xs" />}
+                                type="button"
+                                aria-label={t`Replace value`}
+                                className="text-muted-foreground"
+                                data-testid={`credential-replace-${secret.name}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  clearProtectedFields();
+                                  setConfirmingRemove(null);
+                                  setAdding(false);
+                                  setReplacing(secret.name);
+                                }}
+                              >
+                                <RotateCcw className="size-4" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <Trans>Replace value</Trans>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : null}
                           <Tooltip>
                             <TooltipTrigger
                               render={<Button variant="ghost" size="icon-xs" />}
                               type="button"
-                              aria-label={t`Replace value`}
+                              aria-label={t`Remove`}
                               className="text-muted-foreground"
-                              data-testid={`credential-replace-${secret.name}`}
+                              data-testid={`credential-remove-${secret.name}`}
                               disabled={busy}
                               onClick={() => {
                                 clearProtectedFields();
-                                setConfirmingRemove(null);
-                                setAdding(false);
-                                setReplacing(secret.name);
+                                setReplacing(null);
+                                setConfirmingRemove(secret.name);
                               }}
                             >
-                              <RotateCcw className="size-4" />
+                              <X className="size-4" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              <Trans>Replace value</Trans>
+                              <Trans>Remove</Trans>
                             </TooltipContent>
                           </Tooltip>
+                        </div>
+                      ) : null}
+                    </div>
+                    {secret.origin ? (
+                      <div className="break-all text-[12.5px] text-muted-foreground">
+                        {secret.origin}
+                      </div>
+                    ) : null}
+                    {readableAuth === null ? (
+                      <div className="flex flex-wrap gap-x-2 text-[12px]">
+                        <span className="text-destructive">
+                          <Trans>
+                            These saved settings can't be read. Remove it and add it again.
+                          </Trans>
+                        </span>
+                        <span className="text-muted-foreground/70">{t`Updated ${updated}`}</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-x-2 text-[12px] text-muted-foreground/70">
+                        <span>{authLabel(readableAuth)}</span>
+                        {readableAuth.type === "command" ? (
+                          <span>${commandVariableName(secret.name)}</span>
                         ) : null}
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={<Button variant="ghost" size="icon-xs" />}
+                        <span>{t`Updated ${updated}`}</span>
+                      </div>
+                    )}
+                    {readableAuth !== null && replacing === secret.name ? (
+                      <form
+                        className="mt-1"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitReplace(secret);
+                        }}
+                      >
+                        {loginFields(readableAuth.type, "credential-replace")}
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            type="submit"
+                            size="sm"
+                            data-testid="credential-replace-save"
+                            disabled={busy || !valueReady(readableAuth.type)}
+                          >
+                            <Trans>Save new value</Trans>
+                          </Button>
+                          <Button
                             type="button"
-                            aria-label={t`Remove`}
-                            className="text-muted-foreground"
-                            data-testid={`credential-remove-${secret.name}`}
-                            disabled={busy}
+                            size="sm"
+                            variant="ghost"
                             onClick={() => {
                               clearProtectedFields();
                               setReplacing(null);
-                              setConfirmingRemove(secret.name);
                             }}
                           >
-                            <X className="size-4" />
-                          </TooltipTrigger>
-                          <TooltipContent>
+                            <Trans>Cancel</Trans>
+                          </Button>
+                        </div>
+                      </form>
+                    ) : confirmingRemove === secret.name ? (
+                      <div className="mt-2">
+                        <p className="text-[13px] text-foreground">
+                          <Trans>
+                            Remove {secretName}? This bot will no longer be able to use it.
+                          </Trans>
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:text-destructive"
+                            data-testid={`credential-remove-confirm-${secret.name}`}
+                            disabled={busy}
+                            onClick={() => void confirmRemove(secret.name)}
+                          >
                             <Trans>Remove</Trans>
-                          </TooltipContent>
-                        </Tooltip>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setConfirmingRemove(null)}
+                          >
+                            <Trans>Cancel</Trans>
+                          </Button>
+                        </div>
                       </div>
                     ) : null}
-                  </div>
-                  {secret.origin ? (
-                    <div className="break-all text-[12.5px] text-muted-foreground">
-                      {secret.origin}
-                    </div>
-                  ) : null}
-                  {readableAuth === null ? (
-                    <div className="flex flex-wrap gap-x-2 text-[12px]">
-                      <span className="text-destructive">
-                        <Trans>
-                          These saved settings can't be read. Remove it and add it again.
-                        </Trans>
-                      </span>
-                      <span className="text-muted-foreground/70">{t`Updated ${updated}`}</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-x-2 text-[12px] text-muted-foreground/70">
-                      <span>{authLabel(readableAuth)}</span>
-                      {readableAuth.type === "command" ? (
-                        <span>${commandVariableName(secret.name)}</span>
-                      ) : null}
-                      <span>{t`Updated ${updated}`}</span>
-                    </div>
-                  )}
-                  {readableAuth !== null && replacing === secret.name ? (
-                    <form
-                      className="mt-1"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void submitReplace(secret);
-                      }}
-                    >
-                      {loginFields(readableAuth.type, "credential-replace")}
-                      <div className="mt-3 flex gap-2">
-                        <Button
-                          type="submit"
-                          size="sm"
-                          data-testid="credential-replace-save"
-                          disabled={busy || !valueReady(readableAuth.type)}
-                        >
-                          <Trans>Save new value</Trans>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            clearProtectedFields();
-                            setReplacing(null);
-                          }}
-                        >
-                          <Trans>Cancel</Trans>
-                        </Button>
-                      </div>
-                    </form>
-                  ) : confirmingRemove === secret.name ? (
-                    <div className="mt-2">
-                      <p className="text-[13px] text-foreground">
-                        <Trans>
-                          Remove {secretName}? This bot will no longer be able to use it.
-                        </Trans>
-                      </p>
-                      <div className="mt-2 flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive hover:text-destructive"
-                          data-testid={`credential-remove-confirm-${secret.name}`}
-                          disabled={busy}
-                          onClick={() => void confirmRemove(secret.name)}
-                        >
-                          <Trans>Remove</Trans>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setConfirmingRemove(null)}
-                        >
-                          <Trans>Cancel</Trans>
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-        {error ? (
-          <p role="alert" className="mt-2 text-[13px] text-destructive">
-            {error}
-          </p>
-        ) : null}
-        {adding ? (
-          <form
-            data-testid="credential-add-form"
-            className="mt-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitAdd();
-            }}
-          >
-            <div className={fieldLabelClass}>
-              <div className="flex items-center gap-1">
-                <label htmlFor={`${ids}-name`}>
-                  <Trans>Name</Trans>
-                </label>
-                <InfoTooltip label={t`Name`}>
-                  {t`Lowercase letters, numbers, hyphens and underscores, starting with a letter.`}
-                </InfoTooltip>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          {error ? (
+            <p role="alert" className="mt-2 text-[13px] text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {adding ? (
+            <form
+              data-testid="credential-add-form"
+              className="mt-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAdd();
+              }}
+            >
+              <p className="mb-3 text-xs text-muted-foreground">
+                <Trans>Encrypted and never shown again</Trans>
+              </p>
+              <div className={fieldLabelClass}>
+                <div className="flex items-center gap-1">
+                  <label htmlFor={`${ids}-name`}>
+                    <Trans>Name</Trans>
+                  </label>
+                  <InfoTooltip label={t`Name`}>
+                    {t`Lowercase letters, numbers, hyphens and underscores, starting with a letter.`}
+                  </InfoTooltip>
+                </div>
+                <Input
+                  id={`${ids}-name`}
+                  data-testid="credential-name"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={64}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="github"
+                  className="mt-1.5"
+                />
+                {commandVariableError ? (
+                  <span
+                    data-testid="credential-command-variable-error"
+                    className="mt-1 block text-[12px] text-destructive"
+                  >
+                    {commandVariableError}
+                  </span>
+                ) : commandVariable ? (
+                  <span
+                    data-testid="credential-command-variable"
+                    className="mt-1 block text-[12px] text-muted-foreground"
+                  >
+                    {t`Available to this bot's shell commands as ${commandVariable}`}
+                  </span>
+                ) : null}
               </div>
-              <Input
-                id={`${ids}-name`}
-                data-testid="credential-name"
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={64}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="github"
-                className="mt-1.5"
-              />
-              {commandVariableError ? (
-                <span
-                  data-testid="credential-command-variable-error"
-                  className="mt-1 block text-[12px] text-destructive"
+              {authType === "command" ? null : (
+                <label htmlFor={`${ids}-origin`} className={fieldLabelClass}>
+                  <Trans>Site</Trans>
+                  <Input
+                    id={`${ids}-origin`}
+                    data-testid="credential-origin"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={origin}
+                    onChange={(event) => setOrigin(event.target.value)}
+                    placeholder="https://api.example.com"
+                    className="mt-1.5"
+                  />
+                </label>
+              )}
+              <label htmlFor={`${ids}-auth`} className={fieldLabelClass}>
+                <Trans>Type</Trans>
+                <NativeSelect
+                  id={`${ids}-auth`}
+                  data-testid="credential-auth-type"
+                  className="mt-1.5 w-full"
+                  value={authType}
+                  onChange={(event) => setAuthType(event.target.value as CredentialAuthType)}
                 >
-                  {commandVariableError}
-                </span>
-              ) : commandVariable ? (
-                <span
-                  data-testid="credential-command-variable"
-                  className="mt-1 block text-[12px] text-muted-foreground"
-                >
-                  {t`Available to this bot's shell commands as ${commandVariable}`}
-                </span>
+                  <NativeSelectOption value="bearer">{t`Bearer token`}</NativeSelectOption>
+                  <NativeSelectOption value="header">{t`Custom header`}</NativeSelectOption>
+                  <NativeSelectOption value="basic">{t`Basic auth`}</NativeSelectOption>
+                  <NativeSelectOption value="login">{t`Website login`}</NativeSelectOption>
+                  <NativeSelectOption value="command">{t`Command variable`}</NativeSelectOption>
+                </NativeSelect>
+              </label>
+              {authType === "header" ? (
+                <label htmlFor={`${ids}-header`} className={fieldLabelClass}>
+                  <Trans>Header name</Trans>
+                  <Input
+                    id={`${ids}-header`}
+                    data-testid="credential-header-name"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={headerName}
+                    onChange={(event) => setHeaderName(event.target.value)}
+                    placeholder="X-Api-Key"
+                    className="mt-1.5"
+                  />
+                </label>
               ) : null}
-            </div>
-            {authType === "command" ? null : (
-              <label htmlFor={`${ids}-origin`} className={fieldLabelClass}>
-                <Trans>Site</Trans>
-                <Input
-                  id={`${ids}-origin`}
-                  data-testid="credential-origin"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={origin}
-                  onChange={(event) => setOrigin(event.target.value)}
-                  placeholder="https://api.example.com"
-                  className="mt-1.5"
-                />
-              </label>
-            )}
-            <label htmlFor={`${ids}-auth`} className={fieldLabelClass}>
-              <Trans>Type</Trans>
-              <NativeSelect
-                id={`${ids}-auth`}
-                data-testid="credential-auth-type"
-                className="mt-1.5 w-full"
-                value={authType}
-                onChange={(event) => setAuthType(event.target.value as CredentialAuthType)}
-              >
-                <NativeSelectOption value="bearer">{t`Bearer token`}</NativeSelectOption>
-                <NativeSelectOption value="header">{t`Custom header`}</NativeSelectOption>
-                <NativeSelectOption value="basic">{t`Basic auth`}</NativeSelectOption>
-                <NativeSelectOption value="login">{t`Website login`}</NativeSelectOption>
-                <NativeSelectOption value="command">{t`Command variable`}</NativeSelectOption>
-              </NativeSelect>
-            </label>
-            {authType === "header" ? (
-              <label htmlFor={`${ids}-header`} className={fieldLabelClass}>
-                <Trans>Header name</Trans>
-                <Input
-                  id={`${ids}-header`}
-                  data-testid="credential-header-name"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={headerName}
-                  onChange={(event) => setHeaderName(event.target.value)}
-                  placeholder="X-Api-Key"
-                  className="mt-1.5"
-                />
-              </label>
-            ) : null}
-            {authType === "basic" ? (
-              <label htmlFor={`${ids}-basic-username`} className={fieldLabelClass}>
-                <Trans>Username</Trans>
-                <Input
-                  id={`${ids}-basic-username`}
-                  data-testid="credential-basic-username"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={basicUsername}
-                  onChange={(event) => setBasicUsername(event.target.value)}
-                  className="mt-1.5"
-                />
-              </label>
-            ) : null}
-            {loginFields(authType, "credential")}
-            <div className="mt-3 flex gap-2">
-              <Button type="submit" size="sm" data-testid="credential-add-save" disabled={!canAdd}>
-                {busy ? <Trans>Saving…</Trans> : <Trans>Save credential</Trans>}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  clearProtectedFields();
-                  setAdding(false);
-                }}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          </form>
-        ) : null}
-      </div>
+              {authType === "basic" ? (
+                <label htmlFor={`${ids}-basic-username`} className={fieldLabelClass}>
+                  <Trans>Username</Trans>
+                  <Input
+                    id={`${ids}-basic-username`}
+                    data-testid="credential-basic-username"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={basicUsername}
+                    onChange={(event) => setBasicUsername(event.target.value)}
+                    className="mt-1.5"
+                  />
+                </label>
+              ) : null}
+              {loginFields(authType, "credential")}
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  data-testid="credential-add-save"
+                  disabled={!canAdd}
+                >
+                  {busy ? <Trans>Saving…</Trans> : <Trans>Save credential</Trans>}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    clearProtectedFields();
+                    setAdding(false);
+                  }}
+                >
+                  <Trans>Cancel</Trans>
+                </Button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

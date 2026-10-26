@@ -1027,10 +1027,6 @@ msgstr "発信中…"
 msgid "Calls"
 msgstr "呼び出し"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "自分が作成したボットを編集・整理できます"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "サーバーに接続できません。"
@@ -2917,10 +2913,6 @@ msgstr "Rakazoを何で知りましたか？"
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "頻度"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "他のボットからの見え方"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"

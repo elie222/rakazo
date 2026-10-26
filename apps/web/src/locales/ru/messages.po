@@ -1027,10 +1027,6 @@ msgstr "Вызов…"
 msgid "Calls"
 msgstr "Вызовы"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Can edit and organise bots it creates"
-msgstr "Может редактировать и упорядочивать созданных ботов"
-
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "Не удаётся связаться с сервером."
@@ -2917,10 +2913,6 @@ msgstr ""
 #: src/pages/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Как часто"
-
-#: src/pages/shell/bot-panel.tsx
-msgid "How other bots see it"
-msgstr "Как его видят другие боты"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
