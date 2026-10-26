@@ -22,6 +22,24 @@ export function resolveComputerImage(
 }
 
 export const COMPUTER_IMAGE = resolveComputerImage();
+
+/** The files from infra/sandboxes/computer the supervisor sends when it builds the image locally. */
+export const COMPUTER_IMAGE_CONTEXT_FILES = [
+  "Dockerfile",
+  "start.sh",
+  "user-env.sh",
+  "control.py",
+  "xcapture.c",
+  "rakazo-browser",
+  "rakazo-page-browser",
+  "rakazo-browser.desktop",
+  "embed.html",
+  "clipboard-bridge.js",
+  "mobile-keyboard.js",
+  "fluxbox.init",
+  "fluxbox.apps",
+  "fluxbox.menu",
+] as const;
 export const COMPUTER_UID = 1000;
 export const COMPUTER_GID = 1000;
 export const COMPUTER_USER = `${COMPUTER_UID}:${COMPUTER_GID}`;

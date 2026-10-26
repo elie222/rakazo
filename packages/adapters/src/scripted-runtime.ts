@@ -668,6 +668,10 @@ function scriptedFailure(prompt: string): string {
   if (/\bfixed context\b/i.test(prompt)) return MODEL_CONTEXT_TOO_SMALL_ERROR;
   if (/\bunrun approval\b/i.test(prompt)) return APPROVED_ACTION_NOT_RUN_ERROR;
   if (/\bunreachable\b/i.test(prompt)) return "Connection error.";
+  if (/\bout of credits\b/i.test(prompt)) {
+    return '402: {"message":"You have no credits remaining. Add credits to continue."}';
+  }
+  if (/\brejected key\b/i.test(prompt)) return '401: {"message":"Invalid API key"}';
   if (/\bexhausted backups\b/i.test(prompt)) {
     return modelFallbackFailure('429: {"message":"Too many requests"}', [
       {

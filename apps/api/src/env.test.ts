@@ -42,6 +42,18 @@ describe("loadEnv", () => {
       expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
     expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
   });
+  it("loads operator menu links and refuses to start on a bad value", () => {
+    expect(loadEnv(base).navLinks).toEqual([]);
+    expect(
+      loadEnv({
+        ...base,
+        RAKAZO_NAV_LINKS: '[{"id":"clients","label":"Clients","path":"/ext/clients/"}]',
+      }).navLinks,
+    ).toEqual([{ id: "clients", label: "Clients", path: "/ext/clients/", trusted: false }]);
+    expect(() =>
+      loadEnv({ ...base, RAKAZO_NAV_LINKS: '[{"id":"x","label":"X","path":"/api/me"}]' }),
+    ).toThrow("RAKAZO_NAV_LINKS");
+  });
   it("defaults the product path to Pi, Docker, and Graphile Worker", () => {
     const env = loadEnv(base);
     expect(env.agentRuntime).toBe("pi");

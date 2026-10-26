@@ -97,7 +97,10 @@ function setup(
     $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
   };
   const prisma = {
-    deploymentSettings: { findUnique: vi.fn(async () => null) },
+    deploymentSettings: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
+    // Saved choices that keep a model listed after new users stop being offered it.
+    bot: { findMany: vi.fn(async () => []) },
+    routine: { findMany: vi.fn(async () => []) },
     space: {
       findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
     },
@@ -201,6 +204,28 @@ function setup(
 const availableModel = listPiCatalog().find(
   (entry) => entry.provider === "openrouter" && !entry.placeholder,
 )!;
+
+describe("model catalog offered to pickers", () => {
+  it("leaves out models agents cannot run but keeps one the account saved", async () => {
+    const { call, prisma } = setup();
+    const saved = "openai/gpt-5.5-pro:batch";
+    vi.mocked(prisma.bot.findMany).mockResolvedValue([
+      { modelProvider: "openrouter", modelId: saved },
+    ] as never);
+
+    const { response } = await call("models/list", null);
+
+    expect(response?.status).toBe(200);
+    const { json } = (await response!.json()) as {
+      json: Array<{ provider: string; id: string }>;
+    };
+    const openrouter = json.filter((entry) => entry.provider === "openrouter");
+    expect(
+      openrouter.filter((entry) => entry.id.endsWith(":batch")).map((entry) => entry.id),
+    ).toEqual([saved]);
+    expect(openrouter.some((entry) => entry.id === "anthropic/claude-haiku-5.5")).toBe(true);
+  });
+});
 
 describe("model backup settings API", () => {
   it("rejects a compatible catalog placeholder outside the enabled list", async () => {

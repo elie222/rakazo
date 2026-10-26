@@ -117,7 +117,7 @@ export default function Account() {
     t,
     errorText,
     updateAccountName,
-    refresh: () => rpc<MobileMe>("me"),
+    refresh: () => rpc("me"),
     onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
     onRefreshed: setMe,
     setNameDraft,
@@ -188,10 +188,10 @@ export default function Account() {
   const versionAccessibility = [versionInfo.nativeLabel, updateLabel].filter(Boolean).join(". ");
 
   useEffect(() => {
-    void rpc<MobileMe>("me")
+    void rpc("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<UsageSummary>("usage/summary")
+    void rpc("usage/summary")
       .then(setUsage)
       .catch(() => undefined);
     if (Platform.OS === "android") {

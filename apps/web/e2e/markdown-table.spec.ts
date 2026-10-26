@@ -101,6 +101,36 @@ test("markdown tables render as an interactive card", async ({ page }, testInfo)
   await expect(card.getByRole("button", { name: "Expand table" })).toBeFocused();
 });
 
+test("table image descriptions survive HTML attributes and copying", async ({ page }, testInfo) => {
+  await page.goto(`${fixture}?stream=1`);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const card = page.getByTestId("table-card");
+  await expect(card).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("rk-table-stream-update", {
+        detail: {
+          markdown: [
+            "| Description |",
+            "| --- |",
+            '| <img alt="Chart" data-alt="Decorative"> |',
+            '| <img title="1 > 0" alt="Graph"> |',
+          ].join("\n"),
+        },
+      }),
+    );
+  });
+  await expect(card.locator("tbody .rk-table-cell-text")).toHaveText(["Chart", "Graph"]);
+  await expect(card.locator("img")).toHaveCount(0);
+  await card.getByRole("button", { name: "Copy rows" }).click();
+  await expect
+    .poll(async () =>
+      (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n"),
+    )
+    .toBe("Description\nChart\nGraph");
+  await captureScreenshot(page, testInfo, "markdown-table-image-descriptions");
+});
+
 test("rich table links participate in dialog keyboard navigation", async ({ page }) => {
   await page.goto(`${fixture}?rich=1`);
   const card = page.getByTestId("table-card");

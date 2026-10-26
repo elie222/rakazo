@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
 import { Id } from "./ids.js";
+import { isCloudMetadataHost, isPrivateNetworkHost } from "./network-host.js";
 
 // An opaque reference handle: matched exactly by secret_request/forget_secret,
 // displayed in list_secrets. Never interpolated into shells, env, or URLs, so
@@ -144,32 +145,6 @@ function commandVariableNameIssue(credentialName: string): string | undefined {
   }
   if (problem === "invalid") return `$${variable} is not a valid environment variable name`;
   return undefined;
-}
-
-/** Hosts inside a deployment's own network (loopback, RFC1918, CGNAT, .local). */
-export function isPrivateNetworkHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host === "localhost" || host === "::1") return true;
-  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (host.endsWith(".local")) return true;
-  if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
-  if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host)) return true;
-  return false;
-}
-
-/** Provider metadata endpoints that must never become credential targets,
- * even though they sit inside otherwise-private ranges (CGNAT / link-local). */
-export function isCloudMetadataHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return (
-    host === "169.254.169.254" ||
-    host === "169.254.170.2" ||
-    host === "100.100.100.200" ||
-    host === "metadata.google.internal" ||
-    host === "metadata.goog"
-  );
 }
 
 function botSecretOriginSchema(allowPrivateHttpOrigin: boolean) {

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   desktopProtectionGuardMessage,
   isProtectedComputerLifecycleCommand,
-  protectedActivateScriptWriteRefusal,
   protectedComputerLifecycleRefusal,
-} from "./executor.js";
+} from "./desktop-command-guard.js";
+import { protectedActivateScriptWriteRefusal } from "./desktop-guard-words.js";
 
 describe("computer lifecycle command guard", () => {
   it("rejects commands that can destroy a graphical bot's desktop", () => {

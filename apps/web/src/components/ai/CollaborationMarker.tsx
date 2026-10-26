@@ -1,4 +1,5 @@
-import { BotAvatar, Button, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
+import type { GroupAvatarMember } from "@rakazo/ui-web";
+import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 
 /**

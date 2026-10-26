@@ -41,13 +41,13 @@ msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minu
 msgstr "{0, plural, one {等待登入中 — 連結將在約 # 分鐘後失效。} other {等待登入中 — 連結將在約 # 分鐘後失效。}}"
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0}（最多 {ATTACHMENT_MAX_COUNT} 個附件）"
 
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (over {1})"
 msgstr "{0}（超過 {1}）"
 
@@ -212,8 +212,8 @@ msgstr "{name} 已停止"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
-msgid "{provider} could not find the requested model."
-msgstr "{provider} 找不到請求的模型。"
+msgid "{provider} can't run this model."
+msgstr "{provider} 無法執行此模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -357,6 +357,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "每月 ${0}"
@@ -421,7 +422,7 @@ msgstr "{name} 的帳號選單"
 msgid "Actions for {0}"
 msgstr "{0} 的操作"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr "空間操作"
 
@@ -602,7 +603,7 @@ msgstr "進階"
 msgid "Advanced..."
 msgstr "進階..."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Agent computer"
 msgstr "代理程式電腦"
 
@@ -707,11 +708,6 @@ msgstr "回答"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "已回答"
-
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "已回答：{0}"
 
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
@@ -887,6 +883,7 @@ msgstr "頭像工作室"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -933,8 +930,8 @@ msgstr "受阻"
 msgid "Board"
 msgstr "看板"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Booting live desktop…"
 msgstr "正在啟動即時桌面…"
 
@@ -1006,7 +1003,7 @@ msgstr "瀏覽 MCP 伺服器"
 msgid "Built-in"
 msgstr "內建"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "通話"
 
@@ -1102,6 +1099,10 @@ msgstr "更改 {name}"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "更改 {title}"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "更換模型"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1200,6 +1201,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "選擇機器人形狀和顏色，或上傳圖片"
 
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "選擇模型"
 
@@ -1225,6 +1227,7 @@ msgid "Choose folder"
 msgstr "選擇資料夾"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "選擇 Rakazo 的使用方式"
 
@@ -1295,12 +1298,12 @@ msgstr "關閉記憶設定"
 msgid "Close model settings"
 msgstr "關閉模型設定"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "關閉導覽"
 
 #: src/pages/GroupPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "關閉面板"
 
@@ -1395,8 +1398,8 @@ msgstr "已完成"
 msgid "Computer"
 msgstr "電腦"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "電腦啟動失敗"
 
@@ -1466,8 +1469,14 @@ msgid "Connect a chat app"
 msgstr "連結聊天應用程式"
 
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "連線模型"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect a model in Settings before running bots."
+msgstr "執行機器人前，請先在設定中連接模型。"
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -1504,6 +1513,11 @@ msgstr "請先連結此模型的供應商。"
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "連線 Treg"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
+msgstr "請在「模型」中連接你自己的 API 金鑰，或在「帳務」中選擇 Rakazo 點數。"
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
@@ -1679,7 +1693,7 @@ msgstr "無法連接此供應商"
 msgid "Could not connect this voice provider"
 msgstr "無法連接此語音供應商"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
 msgstr "無法連線至電腦螢幕"
 
@@ -1690,7 +1704,7 @@ msgstr "無法連線至電腦螢幕"
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not continue"
 msgstr "無法繼續"
 
@@ -1937,8 +1951,8 @@ msgstr "無法執行例行任務"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "無法儲存"
 
@@ -2019,7 +2033,7 @@ msgstr "無法提交此回答"
 msgid "Could not switch {failedNames}. Try again."
 msgstr "無法切換 {failedNames}，請再試一次。"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not take control"
 msgstr "無法接管"
 
@@ -2051,7 +2065,7 @@ msgstr "無法更新電腦"
 msgid "Could not update name"
 msgstr "無法更新姓名"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Could not update reaction"
 msgstr "無法更新反應"
 
@@ -2273,7 +2287,7 @@ msgstr "同時刪除記憶"
 msgid "Delete section"
 msgstr "刪除分組"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "刪除空間"
@@ -2666,11 +2680,11 @@ msgstr "失敗"
 msgid "Failed"
 msgstr "失敗"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to send message"
 msgstr "傳送訊息失敗"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to stop"
 msgstr "停止失敗"
 
@@ -2712,7 +2726,7 @@ msgid "Filter by date"
 msgstr "依日期篩選"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "篩選器"
 
@@ -2756,6 +2770,10 @@ msgstr "忘記密碼？"
 msgid "Free"
 msgstr "免費"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "免費方案將於 {day} 結束"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "週五"
@@ -2796,7 +2814,8 @@ msgstr "Git 事件"
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Group"
 msgstr "群組"
 
@@ -2923,6 +2942,15 @@ msgstr "如果聽到了，說明語音已就緒。"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "忽略"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未設定圖片輸入。"
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "此模型尚未設定圖片輸入。"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -3056,7 +3084,7 @@ msgstr "隔離"
 msgid "Isolated preview — no access to your account"
 msgstr "隔離預覽 — 無法存取你的帳號"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "其中的機器人和群組會保留，並移出該分組。"
 
@@ -3936,7 +3964,7 @@ msgstr "開啟 {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "開啟 <0>{0}</0> 並輸入以下代碼："
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open call"
 msgstr "開啟通話"
 
@@ -3957,7 +3985,7 @@ msgstr "開啟外部連結？"
 msgid "Open in full window"
 msgstr "在完整視窗中開啟"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "開啟導覽"
 
@@ -4460,6 +4488,7 @@ msgstr "替換 API 金鑰"
 msgid "Replace its instructions"
 msgstr "取代其指示"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "替換金鑰"
@@ -4570,7 +4599,7 @@ msgstr "重試"
 msgid "Retry now"
 msgstr "立即重試"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Retry screen"
 msgstr "重新連線螢幕"
 
@@ -4738,14 +4767,18 @@ msgstr "排程例行任務"
 msgid "Scopes (optional)"
 msgstr "範圍（選填）"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "螢幕未連線"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "搜尋"
@@ -4777,7 +4810,7 @@ msgstr "搜尋 integrations.sh"
 msgid "Search models"
 msgstr "搜尋模型"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Search runs"
 msgstr "搜尋執行紀錄"
 
@@ -4795,7 +4828,7 @@ msgstr "正在搜尋…"
 msgid "Security"
 msgstr "安全"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
 msgstr "選擇機器人"
 
@@ -4818,6 +4851,10 @@ msgstr "請在 10 分鐘內從 {linkApp} 將 <0>{linkCode}</0> 傳送到 <1>{lin
 #: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "傳送回答"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "以檔案傳送"
 
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
@@ -4843,6 +4880,10 @@ msgstr "按 Enter 傳送"
 msgid "Sending…"
 msgstr "正在傳送…"
 
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
 msgstr "Sentry 警示"
@@ -4867,7 +4908,7 @@ msgstr "伺服器 URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "設定"
 
@@ -4913,7 +4954,7 @@ msgstr "顯示全部"
 msgid "Show bots"
 msgstr "顯示機器人"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show computer"
 msgstr "顯示電腦"
 
@@ -4935,7 +4976,7 @@ msgstr "顯示密碼"
 msgid "Show selected"
 msgstr "顯示已選取項目"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show settings"
 msgstr "顯示設定"
 
@@ -5024,7 +5065,7 @@ msgid "Skip or deploy key"
 msgstr "跳過或使用部署金鑰"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Skipped {0}"
 msgstr "已跳過 {0}"
 
@@ -5192,6 +5233,11 @@ msgstr "提交"
 msgid "Subscribe"
 msgstr "訂閱"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "以每月 ${0} 訂閱"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "需要訂閱"
@@ -5284,6 +5330,10 @@ msgstr "正在測試…"
 msgid "The bot and what its import added will be removed."
 msgstr "此機器人及其匯入新增的內容將被移除。"
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "機器人可以使用這個檔案，但看不到圖片內容。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "連線超時。"
@@ -5301,6 +5351,18 @@ msgstr "模型回傳了無法使用的回覆，請再試一次。"
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "供應商正在限制請求頻率。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "螢幕連線已關閉。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "螢幕沒有回應。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "螢幕連結已過期。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5396,6 +5458,15 @@ msgstr "此匯入已使用過。請重新選擇檔案。"
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "這臺 Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型無法讀取圖片。請選擇支援圖片的模型。"
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "此模型無法讀取圖片。請選擇支援圖片的模型。"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5613,7 +5684,7 @@ msgid "Unpin"
 msgstr "取消置頂"
 
 #. placeholder {0}: pending.file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "不支援的檔案類型：{0}"
 
@@ -5669,6 +5740,10 @@ msgstr "正在更新團隊電腦"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "正在更新…"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "升級"
 
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
@@ -5766,6 +5841,10 @@ msgstr "使用此伺服器自己的 {hostCredentialSource} 憑證存取 {selecte
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr "使用你的 API 金鑰"
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "正在使用你的 API 金鑰。免費方案將於 {freeUntil} 結束。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -5944,6 +6023,7 @@ msgstr "昨天"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "You"
 msgstr "你"
 

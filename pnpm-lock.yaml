@@ -594,8 +594,8 @@ importers:
         specifier: 3.1127.0
         version: 3.1127.0
       '@boatdev/sdk':
-        specifier: 1.10.0
-        version: 1.10.0
+        specifier: 1.11.0
+        version: 1.11.0
       '@chat-adapter/slack':
         specifier: 4.43.0
         version: 4.43.0(zod@4.6.7)
@@ -864,6 +864,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tanstack/query-core':
+        specifier: 5.104.5
+        version: 5.104.5
       croner:
         specifier: 10.0.1
         version: 10.0.1
@@ -1019,6 +1022,12 @@ importers:
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      '@rakazo/api':
+        specifier: workspace:*
+        version: link:../../apps/api
+      '@rakazo/sandbox-supervisor':
+        specifier: workspace:*
+        version: link:../../infra/sandboxes/supervisor
       '@types/pngjs':
         specifier: 6.0.5
         version: 6.0.5
@@ -1926,8 +1935,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@boatdev/sdk@1.10.0':
-    resolution: {integrity: sha512-e4z4eXwflU8YMEqgjxa8fjnzvOqW2yxhuul29ubTbIWBmbRDQBw2IvpMwwBhWnpg+3xX8zEg9ZUNXVQYu/p+dA==}
+  '@boatdev/sdk@1.11.0':
+    resolution: {integrity: sha512-2pQc6zBGsLg0PgVx3z4QYTGnRhzZhKxZVyhvjz6ahyZ3L9bdYZpm/DneIxcohyfKyn6SNn+HlKT1GUunn1sFkg==}
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
@@ -12101,7 +12110,7 @@ snapshots:
   '@biomejs/cli-win32-x64@2.5.15':
     optional: true
 
-  '@boatdev/sdk@1.10.0': {}
+  '@boatdev/sdk@1.11.0': {}
 
   '@braintree/sanitize-url@7.1.2': {}
 

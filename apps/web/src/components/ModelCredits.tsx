@@ -25,7 +25,8 @@ import {
   Separator,
 } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatBillingDate } from "../lib/billing";
 import { rpc } from "../lib/rpc";
 import { useSignOut } from "../lib/sign-out";
 
@@ -72,7 +73,13 @@ export function CreditAmountSelect({
   );
 }
 
-export function CreditChoice({ status }: { status: BillingStatus }) {
+export function CreditChoice({
+  status,
+  dismissible = false,
+}: {
+  status: BillingStatus;
+  dismissible?: boolean;
+}) {
   const { t } = useLingui();
   const features = [
     t`Bots and browser automation`,
@@ -86,19 +93,32 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
     () => window.location.assign("/sign-in"),
     () => setError(true),
   );
+  // A choice that answers after the plans were closed must not leave the app.
+  const closed = useRef(false);
+  useEffect(() => {
+    closed.current = false;
+    return () => {
+      closed.current = true;
+    };
+  }, []);
+  function go(url: string) {
+    if (!closed.current) window.location.assign(url);
+  }
   async function choose(ownKey: boolean) {
     setPending(true);
     setError(false);
     try {
-      if (ownKey) {
-        await rpc.billing.selectFunding({ funding: "byok" });
-        window.location.assign("/onboarding");
+      if (ownKey && status.byokFreeUntil) {
+        go((await rpc.billing.checkout()).url);
+      } else if (ownKey) {
+        const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+        go(url ?? "/onboarding");
       } else {
         const { url } = await rpc.billing.purchaseCredits({
           amountCents: amount,
           monthly: true,
         });
-        window.location.assign(url);
+        go(url);
       }
     } catch {
       setError(true);
@@ -110,14 +130,16 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
       data-testid="billing-paywall"
       className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center gap-8 px-6 py-12"
     >
-      <Button
-        className="fixed top-4 right-6"
-        variant="text"
-        disabled={pending || signingOut}
-        onClick={() => void logOut()}
-      >
-        <Trans>Log out</Trans>
-      </Button>
+      {dismissible ? null : (
+        <Button
+          className="fixed top-4 right-6"
+          variant="text"
+          disabled={pending || signingOut}
+          onClick={() => void logOut()}
+        >
+          <Trans>Log out</Trans>
+        </Button>
+      )}
       <h1 className="text-heading1 font-medium">
         <Trans>Choose how to use Rakazo</Trans>
       </h1>
@@ -130,7 +152,11 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-4">
             <p className="flex h-12 items-center text-3xl font-medium tracking-tight">
-              <Trans>Free</Trans>
+              {status.byokPriceCents ? (
+                t`$${status.byokPriceCents / 100} / month`
+              ) : (
+                <Trans>Free</Trans>
+              )}
             </p>
             <p className="text-sm text-muted-foreground">
               <Trans>ChatGPT, Claude, or any model provider.</Trans>
@@ -151,7 +177,7 @@ export function CreditChoice({ status }: { status: BillingStatus }) {
               disabled={pending || !status.canManage}
               onClick={() => void choose(true)}
             >
-              <Trans>Connect my own</Trans>
+              {status.byokFreeUntil ? <Trans>Subscribe</Trans> : <Trans>Connect my own</Trans>}
             </Button>
           </CardFooter>
         </Card>
@@ -239,6 +265,9 @@ export function ModelCreditsSettings({
   }
   const recurring =
     status.monthlyAmountCents && !["canceled", "none", "incomplete"].includes(status.state);
+  const freeUntil = status.byokFreeUntil
+    ? formatBillingDate(status.byokFreeUntil, i18n.locale || "en")
+    : null;
   return (
     <div data-testid="model-credits" className="space-y-5">
       <div className="rounded-xl border border-border p-5">
@@ -258,20 +287,37 @@ export function ModelCreditsSettings({
         </div>
         <p className="mt-2 text-3xl font-medium tabular-nums">{balance}</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          {status.funding === "byok" ? (
+          {status.funding === "byok" && freeUntil ? (
+            <Trans>Using your API key. Free plan ends {freeUntil}.</Trans>
+          ) : status.funding === "byok" ? (
             <Trans>Using your API key</Trans>
           ) : (
             <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>
           )}
         </p>
         {status.canManage ? (
-          <Button
-            className="mt-5"
-            disabled={!status.creditPurchasesEnabled}
-            onClick={() => setPurchaseOpen(true)}
-          >
-            <Trans>Add credits</Trans>
-          </Button>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {freeUntil && status.byokPriceCents ? (
+              <Button
+                disabled={pending}
+                onClick={() =>
+                  void action(async () => {
+                    const { url } = await rpc.billing.checkout();
+                    window.location.assign(url);
+                  })
+                }
+              >
+                <Trans>Subscribe for ${status.byokPriceCents / 100} / month</Trans>
+              </Button>
+            ) : null}
+            <Button
+              variant={freeUntil ? "secondary" : "default"}
+              disabled={!status.creditPurchasesEnabled}
+              onClick={() => setPurchaseOpen(true)}
+            >
+              <Trans>Add credits</Trans>
+            </Button>
+          </div>
         ) : null}
       </div>
       {status.canManage ? (
@@ -353,8 +399,8 @@ export function ModelCreditsSettings({
           disabled={pending}
           onClick={() =>
             void action(async () => {
-              await rpc.billing.selectFunding({ funding: "byok" });
-              window.location.assign("/onboarding");
+              const { url } = await rpc.billing.selectFunding({ funding: "byok" });
+              window.location.assign(url ?? "/onboarding");
             })
           }
         >

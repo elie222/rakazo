@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants } from "node:fs";
+import { mkdir, open, rm, statfs } from "node:fs/promises";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -7,17 +7,33 @@ import type {
   ComputerRef,
   PortableFile,
   SandboxProvider,
+  StreamedPortableFile,
   WorkspaceDirectoryRequest,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { parseScreenLeaseId } from "@rakazo/core";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./computer-support.js";
-import { LocalAgentHomeStore } from "./home.js";
+import { createStagingDirectory, LocalAgentHomeStore } from "./home.js";
+import { isSandboxDamagedError } from "./sandbox-errors.js";
 
 export const PORTABLE_TRANSFER_BATCH_BYTES = 8 * 1024 * 1024;
+
+/** The most one save copies; a larger workspace keeps running unsaved. */
+export const WORKSPACE_SAVE_LIMITS: WorkspaceExportLimits = {
+  maxBytes: 20 * 1024 ** 3,
+  maxFiles: 1_000_000,
+};
+/** Disk a save leaves free for everything else on the data volume. */
+const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
+/** How often, in bytes written, a save checks the volume's free space again. */
+const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
+/** Disk a file costs beyond its contents, so many small files still trigger the check. */
+const FILE_DISK_OVERHEAD_BYTES = 4096;
 
 /** Browser profile directories the browser rebuilds on its own; exports skip them. */
 export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set([
@@ -54,7 +70,8 @@ export const SKIPPED_BROWSER_PROFILE_DIRECTORIES: ReadonlySet<string> = new Set(
   "WidevineCdm",
   "ZxcvbnData",
 ]);
-const skippedBrowserProfileFiles = new Set([
+/** Browser profile files that are transient locks and metrics; exports skip them. */
+export const SKIPPED_BROWSER_PROFILE_FILES: ReadonlySet<string> = new Set([
   "BrowserMetrics",
   "BrowserMetrics-spare.pma",
   "DevToolsActivePort",
@@ -72,7 +89,7 @@ export function shouldSkipPortableWorkspaceFile(relative: string) {
   const name = segments.at(-1) ?? "";
   return (
     segments.some((segment) => SKIPPED_BROWSER_PROFILE_DIRECTORIES.has(segment)) ||
-    skippedBrowserProfileFiles.has(name)
+    SKIPPED_BROWSER_PROFILE_FILES.has(name)
   );
 }
 
@@ -349,6 +366,7 @@ export async function checkpointComputerWorkspace(
   context: AdapterContext,
   /** Read after the export, just before saving, so a deletion during the export still counts. */
   excludedFolders?: () => Promise<ReadonlySet<string> | undefined>,
+  saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
 ): Promise<string> {
   if (
     home instanceof LocalAgentHomeStore &&
@@ -356,18 +374,55 @@ export async function checkpointComputerWorkspace(
   ) {
     return home.revise(homeKey);
   }
-  const staging = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-"));
+  // On the data volume, never a container's own disk, and removed later if this process dies.
+  const staging =
+    home instanceof LocalAgentHomeStore
+      ? await home.createStaging()
+      : await createStagingDirectory();
   try {
-    for await (const file of sandbox.exportWorkspace(computer, context)) {
-      await writePortableFile(staging, file);
+    const limits = await withinFreeDisk(saveLimits, staging.path);
+    const copied = { bytes: 0, files: 0, unchecked: 0 };
+    // Other saves share the volume, so free space is checked again as the disk use grows.
+    const use = async (diskBytes: number) => {
+      copied.unchecked += diskBytes;
+      if (copied.unchecked < FREE_DISK_CHECK_BYTES) return;
+      copied.unchecked = 0;
+      if ((await freeDisk(staging.path)) < 0) throw new WorkspaceTooLargeError("bytes");
+    };
+    const count = async (bytes: number) => {
+      copied.bytes += bytes;
+      if (copied.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+      await use(bytes);
+    };
+    for await (const file of sandbox.exportWorkspace(computer, context, limits)) {
+      if (++copied.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      // Even an empty file takes an inode and usually a block.
+      await use(FILE_DISK_OVERHEAD_BYTES);
+      await writePortableFile(staging.path, file, count);
     }
     for (const folder of (await excludedFolders?.()) ?? []) {
-      await rm(path.join(staging, folder), { recursive: true, force: true });
+      await rm(path.join(staging.path, folder), { recursive: true, force: true });
     }
-    return await home.commit(homeKey, staging, context);
+    return await home.commit(homeKey, staging.path, context);
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    await staging.remove();
   }
+}
+
+/** The save limits, lowered to the disk space left on the volume that stages the files. */
+async function withinFreeDisk(
+  limits: WorkspaceExportLimits,
+  directory: string,
+): Promise<WorkspaceExportLimits> {
+  const free = await freeDisk(directory);
+  return { ...limits, maxBytes: Math.max(0, Math.min(limits.maxBytes, free)) };
+}
+
+/** Bytes free on the volume beyond the reserve; unlimited where the platform cannot tell. */
+async function freeDisk(directory: string) {
+  const disk = await statfs(directory).catch(() => undefined);
+  if (!disk) return Number.POSITIVE_INFINITY;
+  return Number(disk.bavail) * Number(disk.bsize) - SAVE_DISK_RESERVE_BYTES;
 }
 
 /** Remote exports quiesce browsers, so a run must not checkpoint while peers are driving them. */
@@ -437,7 +492,32 @@ export async function checkpointAndRecordComputerWorkspace(
   return revision;
 }
 
-async function writePortableFile(root: string, file: PortableFile) {
+/**
+ * Saves the computer's workspace, then stops it. Nothing on a damaged computer can be read, so it
+ * stops without the save and keeps the provider's last good copy; any other save failure throws.
+ */
+export async function checkpointAndStopComputer(
+  deps: { home: AgentHomeStore; sandbox: SandboxProvider; prisma: PrismaClient },
+  computerRecord: { id: string; homeKey: string; scope: string; spaceId: string },
+  computer: ComputerRef,
+  context: AdapterContext,
+): Promise<void> {
+  try {
+    await checkpointAndRecordComputerWorkspace(deps, computerRecord, computer, context);
+  } catch (error) {
+    if (!isSandboxDamagedError(error)) throw error;
+    await deps.sandbox.stop(computer, context, { discardUnsaved: true });
+    return;
+  }
+  await deps.sandbox.stop(computer, context);
+}
+
+/** Writes one exported file; a streamed one goes to disk chunk by chunk. */
+async function writePortableFile(
+  root: string,
+  file: PortableFile | StreamedPortableFile,
+  count: (bytes: number) => Promise<void>,
+) {
   const relative = normalizeWorkspacePath(file.path);
   if (!relative) throw new Error("Workspace snapshots cannot contain an empty file path");
   const target = path.resolve(root, relative);
@@ -446,7 +526,22 @@ async function writePortableFile(root: string, file: PortableFile) {
     throw new Error("Workspace snapshot path escapes its staging directory");
   }
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, file.content, { mode: file.executable ? 0o700 : 0o600 });
+  const handle = await open(
+    target,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0),
+    file.executable ? 0o700 : 0o600,
+  );
+  try {
+    for await (const chunk of "body" in file ? file.body : [file.content]) {
+      await count(chunk.byteLength);
+      for (let offset = 0; offset < chunk.byteLength; ) {
+        const { bytesWritten } = await handle.write(chunk, offset, chunk.byteLength - offset);
+        offset += bytesWritten;
+      }
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Route directory intents through native providers while preserving the Unix fallback. */

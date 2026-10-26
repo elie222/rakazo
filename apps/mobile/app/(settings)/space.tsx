@@ -32,7 +32,7 @@ export default function SpaceSettings() {
     useCallback(() => {
       if (target.scope !== "space") return;
       let current = true;
-      void rpc<SpaceSetting[]>("spaceSettings/overrides")
+      void rpc("spaceSettings/overrides")
         .then((next) => {
           if (current) setOverrides(next);
         })
@@ -58,7 +58,7 @@ export default function SpaceSettings() {
     setPending(true);
     setError(null);
     try {
-      setOverrides(await rpc<SpaceSetting[]>("spaceSettings/setOverride", { setting, enabled }));
+      setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled) open(setting);
     } catch (err) {
       setError(errorText(err, t("Could not save that preference")));

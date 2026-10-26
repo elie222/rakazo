@@ -4,10 +4,10 @@ import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
-  type MessagingPlatform,
   providerOfThreadId,
 } from "./chat-sdk-surface.js";
 import { enrichSlackTeamRoom } from "./messaging-platforms.js";

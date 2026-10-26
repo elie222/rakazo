@@ -1,14 +1,15 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import {
+  ipVersion,
+  isCloudMetadataHost,
+  isInternalHostname,
+  isNonPublicAddress,
+  normalizeHost,
+} from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import { Agent } from "undici";
-import {
-  createAddressCheckedLookup,
-  egressRefused,
-  isPrivateAddress,
-  type ResolvedAddress,
-  type ResolveHostname,
-} from "./network-address.js";
+import type { ResolvedAddress, ResolveHostname } from "./network-address.js";
+import { createAddressCheckedLookup, egressRefused } from "./network-address.js";
 import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -82,19 +83,9 @@ export async function assertSafeWebUrl(
 }
 
 export function isBlockedHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/\.$/, "");
-  if (
-    normalized === "localhost" ||
-    normalized.endsWith(".localhost") ||
-    normalized.endsWith(".local") ||
-    normalized.endsWith(".internal") ||
-    normalized === "metadata.google.internal" ||
-    normalized === "metadata.goog"
-  ) {
-    return true;
-  }
-  if (isIP(normalized) !== 0) return isPrivateAddress(normalized);
-  return false;
+  const host = normalizeHost(hostname);
+  if (isInternalHostname(host) || isCloudMetadataHost(host)) return true;
+  return ipVersion(host) !== 0 && isNonPublicAddress(host);
 }
 
 type SafeWebResponse<Body> = { url: string; body: Body; contentType: string | null };
@@ -285,7 +276,7 @@ async function readBodyPrefix(
 }
 
 function assertPublicAddresses(addresses: ResolvedAddress[]): void {
-  if (addresses.length === 0 || addresses.some((entry) => isPrivateAddress(entry.address))) {
+  if (addresses.length === 0 || addresses.some((entry) => isNonPublicAddress(entry.address))) {
     throw new Error("URL resolves to a private address");
   }
 }

@@ -9,6 +9,7 @@ import {
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
 import { isRetryableError, retryDelayMs } from "@rakazo/core";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
   buttonVariants,
@@ -25,7 +26,7 @@ import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useTicketPriorityLabels } from "../lib/ticket-priority";

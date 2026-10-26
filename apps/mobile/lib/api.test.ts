@@ -1,5 +1,6 @@
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 
+import type { RpcInput } from "@rakazo/contracts";
 import { isServerUnreachable, withLiveStreamingProgress } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -244,7 +245,7 @@ describe("mobile API authentication", () => {
   it("deletes unsent messages left on disk when a new account signs in", async () => {
     const clear = vi.fn();
     configureUnsentSends({
-      request: rpc,
+      request: vi.fn(),
       serverReachable: () => true,
       scope: () => null,
       disk: { clear, save: vi.fn() } as unknown as UnsentDisk,
@@ -825,7 +826,7 @@ describe("mobile API authentication", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const pending = rpc<{ ok: boolean }>("computer/boot", { botId: "bot" }, { timeoutMs: 120_000 });
+    const pending = rpc("computer/boot", { botId: "bot" }, { timeoutMs: 120_000 });
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(pending).resolves.toEqual({ ok: true });
   });
@@ -844,7 +845,7 @@ describe("mobile API authentication", () => {
     try {
       expect(isServerUnreachable(await rpc("bots/list").catch((error) => error))).toBe(true);
       expect(isServerReachable()).toBe(false);
-      await expect(rpc("bots/get")).rejects.toThrow("Bot does not exist");
+      await expect(rpc("bots/get", { botId: "bot-1" })).rejects.toThrow("Bot does not exist");
       expect(isServerReachable()).toBe(true);
       expect(changed).toHaveBeenCalledTimes(2);
     } finally {
@@ -996,7 +997,7 @@ describe("mobile API authentication", () => {
       .mockResolvedValueOnce(rpcErrorResponse(404, "NOT_FOUND", "Bot does not exist"));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(rpc<{ ok: boolean }>("bots/get", { botId: "bot-1" })).resolves.toEqual({
+    await expect(rpc("bots/get", { botId: "bot-1" })).resolves.toEqual({
       ok: true,
     });
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -1060,10 +1061,10 @@ describe("mobile API authentication", () => {
       modelId: "custom",
       headers: { "x-session": "fake-session-secret" },
     };
-    expect(await rpc<MobileModelCredential>("models/connect", input)).toEqual(credential);
+    expect(await rpc("models/connect", input)).toEqual(credential);
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ json: input });
     fetchMock.mockResolvedValueOnce(jsonResponse({ json: [credential] }));
-    const listed = await rpc<MobileModelCredential[]>("models/credentials");
+    const listed = await rpc("models/credentials");
     expect(listed[0]?.headerNames).toEqual(["x-session"]);
     expect(JSON.stringify(listed)).not.toContain("fake-session-secret");
     await rpc("models/connect", { ...input, headers: undefined });
@@ -1093,9 +1094,9 @@ describe("mobile API authentication", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(rpc("models/probeOpenAiCompatible", {})).rejects.toThrow(
-      "Model server returned 401 Unauthorized",
-    );
+    await expect(
+      rpc("models/probeOpenAiCompatible", { baseUrl: "https://models.example.test" }),
+    ).rejects.toThrow("Model server returned 401 Unauthorized");
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(selectedSpaceId()).toBe("space-support");
     expect(store.get("rakazo.space_id")).toBe("space-support");
@@ -1115,10 +1116,9 @@ describe("mobile API authentication", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    for (const proc of ["threads/send", "artifacts/create", "routines/create"]) {
-      await expect(rpc(proc, { botId: "bot-1", text: "private content" })).rejects.toThrow(
-        "AI data sharing",
-      );
+    for (const proc of ["threads/send", "artifacts/create", "routines/create"] as const) {
+      const body = { botId: "bot-1", text: "private content" } as RpcInput<typeof proc>;
+      await expect(rpc(proc, body)).rejects.toThrow("AI data sharing");
     }
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const [url, init] of fetchMock.mock.calls) {
@@ -1275,7 +1275,9 @@ describe("mobile API authentication", () => {
       ),
     );
 
-    await expect(rpc("bots/get")).rejects.toThrow(new Error("Something went wrong. Try again."));
+    await expect(rpc("bots/get", { botId: "bot-1" })).rejects.toThrow(
+      new Error("Something went wrong. Try again."),
+    );
   });
 
   it("shares the selected space with direct API requests", async () => {

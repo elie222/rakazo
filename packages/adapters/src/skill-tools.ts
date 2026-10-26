@@ -1,11 +1,10 @@
+import type { SkillRecord, SkillSource } from "@rakazo/core";
 import {
   buildSkillMd,
   findSkillByName,
   isSkillReadOnly,
   mergeBuiltinSkills,
   parseSkillMd,
-  type SkillRecord,
-  type SkillSource,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.js";

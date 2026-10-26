@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
@@ -24,7 +24,7 @@ describeWithDatabase("structured @ mention targets", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-mention-targets-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,

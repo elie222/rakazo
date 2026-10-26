@@ -1,4 +1,5 @@
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type * as CoreModule from "@rakazo/core";
 import {
   callIdFromClientNonce,
   groupVoiceChats,
@@ -19,7 +20,7 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/core")>()),
+  ...(await importOriginal<typeof CoreModule>()),
   runThreadSubscription: vi.fn(async () => undefined),
 }));
 

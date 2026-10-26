@@ -69,5 +69,8 @@ export function searchString(params: URLSearchParams): string {
 
 /** Only the overlay params, for redirects that change the route but should keep the overlay open. */
 export function shellOverlaySearch(params: URLSearchParams): string {
-  return searchString(withShellOverlay(new URLSearchParams(), readShellOverlay(params)));
+  const next = withShellOverlay(new URLSearchParams(), readShellOverlay(params));
+  // The plan choice opens above the shell from its own link, so it survives the redirect too.
+  if (params.has("plans")) next.set("plans", "");
+  return searchString(next);
 }

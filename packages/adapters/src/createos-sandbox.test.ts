@@ -141,6 +141,7 @@ function createosFixture(
 ) {
   const statuses = [...(options.statuses ?? ["running"])];
   const calls: string[] = [];
+  const bodies: Array<{ route: string; body: unknown }> = [];
   const execs: ExecCall[] = [];
   const events: string[] = [];
   const failConnects = new Set(options.failConnectScreenIds ?? []);
@@ -157,6 +158,7 @@ function createosFixture(
     const method = init?.method ?? "GET";
     const route = `${method} ${url.pathname}`;
     calls.push(route);
+    if (typeof init?.body === "string") bodies.push({ route, body: JSON.parse(init.body) });
 
     if (route === "POST /v1/sandboxes") {
       return jsonResponse({ id: "sbx-1", status: statuses[0] ?? "running" });
@@ -233,7 +235,7 @@ function createosFixture(
     return jsonResponse({});
   }) as typeof fetch;
 
-  return { calls, execs, events, fetchImpl };
+  return { calls, bodies, execs, events, fetchImpl };
 }
 
 function provider(fixture: ReturnType<typeof createosFixture>) {
@@ -472,6 +474,60 @@ describe("CreateOSSandboxProvider", () => {
     unlinkSync(socket);
     symlinkSync("socket:[100]", socket);
     expect(() => probe([profile, String(port), root])).toThrow();
+  });
+
+  it("moves the pointer to a scroll's point before turning the wheel", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      {
+        actions: [{ kind: "scroll", direction: "down", amount: 4, x: 600, y: 420 }],
+        observe: false,
+      },
+      context,
+    );
+    const mouse = fixture.bodies.filter(({ route }) => route.includes("/computer/mouse/"));
+    expect(mouse).toEqual([
+      { route: expect.stringMatching(/\/mouse\/move$/), body: { x: 600, y: 420 } },
+      {
+        route: expect.stringMatching(/\/mouse\/scroll$/),
+        body: { direction: "down", amount: 4 },
+      },
+    ]);
+  });
+
+  it("caps a scroll at twenty notches and refuses sideways scrolling it can't do", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      { actions: [{ kind: "scroll", direction: "down", amount: 50 }], observe: false },
+      context,
+    );
+    expect(fixture.bodies.find(({ route }) => route.endsWith("/mouse/scroll"))?.body).toEqual({
+      direction: "down",
+      amount: 20,
+    });
+    await expect(
+      target.act(
+        computer,
+        { actions: [{ kind: "scroll", direction: "left", amount: 2 }], observe: false },
+        context,
+      ),
+    ).rejects.toThrow("CreateOS computers can only scroll up or down");
+  });
+
+  it("scrolls where the pointer is when a scroll has no point", async () => {
+    const fixture = createosFixture();
+    const target = provider(fixture);
+    await target.act(
+      computer,
+      { actions: [{ kind: "scroll", direction: "up" }], observe: false },
+      context,
+    );
+    expect(fixture.calls.some((route) => route.endsWith("/mouse/move"))).toBe(false);
+    expect(fixture.calls.some((route) => route.endsWith("/mouse/scroll"))).toBe(true);
   });
 
   it("exports the workspace after a graphical action alone", async () => {

@@ -100,6 +100,7 @@ export * from "./messaging-installations.js";
 export * from "./messaging-platforms.js";
 export * from "./messaging-team-chat-emulator.js";
 export * from "./model-connect.js";
+export * from "./model-connect-check.js";
 export { hostedModelCreditObserver } from "./model-credit-observer.js";
 export * from "./model-credit-reconciler.js";
 export * from "./model-roles.js";

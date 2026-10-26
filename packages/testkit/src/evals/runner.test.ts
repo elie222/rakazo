@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { cleanupActors, type EvalActor, type EvalApp } from "./runner.js";
+import type { EvalActor, EvalApp } from "./runner.js";
+import { cleanupActors } from "./runner.js";
 
 const actors: EvalActor[] = [
   {

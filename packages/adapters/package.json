@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1127.0",
-    "@boatdev/sdk": "1.10.0",
+    "@boatdev/sdk": "1.11.0",
     "@chat-adapter/slack": "4.43.0",
     "@chat-adapter/state-memory": "4.43.0",
     "@chat-adapter/telegram": "4.43.0",

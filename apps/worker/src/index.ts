@@ -205,6 +205,7 @@ async function main() {
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = createAgentHomeStore(dataDir, prisma);
+  void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
   const artifacts = createArtifactStore(dataDir, prisma);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher =

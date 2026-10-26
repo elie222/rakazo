@@ -49,13 +49,10 @@ describe("Android call foreground service", () => {
     }
   });
 
-  it("is exposed to the JS bridge and used by the call card instead of keep-awake", () => {
+  // call-card-keep-awake.test.tsx covers the call card starting the service instead of keep-awake.
+  it("is exposed to the JS bridge", () => {
     const module = source("java/com/rakazo/notifications/RakazoNotificationsModule.kt");
     expect(module).toContain('AsyncFunction("startCall")');
     expect(module).toContain('AsyncFunction("stopCall")');
-    const callCard = readFileSync(resolve(mobileRoot, "components/CallCard.tsx"), "utf8");
-    expect(callCard).toContain("startCallBackground");
-    expect(callCard).toContain("stopCallBackground");
-    expect(callCard).toContain('Platform.OS !== "android"');
   });
 });

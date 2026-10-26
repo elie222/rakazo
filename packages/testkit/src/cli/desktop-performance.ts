@@ -1,4 +1,5 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -6,22 +7,17 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import { serve } from "@hono/node-server";
-import {
-  type CDPSession,
-  type ElectronApplication,
-  _electron as electron,
-  expect,
-  type Page,
-} from "@playwright/test";
+import type { CDPSession, ElectronApplication, Page } from "@playwright/test";
+import { _electron as electron, expect } from "@playwright/test";
+import type { createApp } from "@rakazo/api/app";
 import { abortableDelay } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { createThreadMessage, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { createThreadMessage } from "@rakazo/db";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import type { createApp } from "../../../../apps/api/src/app.ts";
+import type { NumericSummary, PerformanceReport } from "../performance-report.js";
 import {
-  type NumericSummary,
   PERFORMANCE_REPORT_SCHEMA_VERSION,
-  type PerformanceReport,
   parseTcpPort,
   roundMetric,
   summarize,
@@ -65,7 +61,7 @@ try {
   if (!skipBuild) buildProductionArtifacts(benchmarkEnv);
   migrateDatabase(benchmarkEnv);
 
-  const { createApp } = await import("../../../../apps/api/src/app.ts");
+  const { createApp } = await import("@rakazo/api/app");
   handles = await createApp({ databaseUrl, prisma: undefined });
   server = serve({
     fetch: (request) => handles!.app.fetch(request),

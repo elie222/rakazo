@@ -23,7 +23,7 @@ import {
   serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { MODEL_KEY_FORMAT_ERROR, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { AnswerTooLongError, runProviderTransaction } from "@rakazo/db";
@@ -3293,7 +3293,11 @@ describe("computer screen url", () => {
 
   it("returns a recoverable conflict when the screen is temporarily busy", async () => {
     const { response, updateMany } = await callScreenUrl(() =>
-      Promise.reject(new ComputerScreenUnavailableError()),
+      Promise.reject(
+        new ComputerScreenUnavailableError(
+          "cannot allocate another screen: private provider detail",
+        ),
+      ),
     );
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
@@ -4513,6 +4517,52 @@ describe("model credential persistence", () => {
       "sk-test-key-123",
       expect.objectContaining({ userId: actor.userId }),
     );
+  });
+
+  it("checks the chosen model with the new key before saving it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => {
+      throw new Error("Your model provider denied access to this model.");
+    });
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "groq",
+      apiKey: "fixture-groq-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { code: "BAD_REQUEST", message: "Your model provider denied access to this model." },
+    });
+    // No model chosen: the provider's recommended default is the one checked.
+    expect(check).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "groq",
+        id: "openai/gpt-oss-120b",
+        apiKey: "fixture-groq-key",
+      }),
+      expect.any(Object),
+    );
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("refuses a pasted key that is not a header-safe token before checking it", async () => {
+    const { deps, handler } = persistDeps();
+    const check = vi.fn(async () => undefined);
+    Object.assign(deps, { modelConnectionCheck: check });
+
+    const response = await call(handler, "models/connect", {
+      provider: "deepseek",
+      apiKey: "sk-fixture-你好-key",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: MODEL_KEY_FORMAT_ERROR },
+    });
+    expect(check).not.toHaveBeenCalled();
+    expect(deps.secrets.put).not.toHaveBeenCalled();
   });
 
   it("adds another connection when the save names none, numbering its name", async () => {
@@ -6429,6 +6479,55 @@ describe("routine live Codex model validation", () => {
       expect(save).toHaveBeenCalledOnce();
     },
   );
+});
+
+describe("routines.list", () => {
+  it("marks routines another Space member created as not editable", async () => {
+    // Listing reads only the user and Space.
+    const actor = { userId: "user-1", spaceId: "space-1" };
+    const row = (id: string, userId: string) => ({
+      id,
+      botId: "bot-1",
+      spaceId: "space-1",
+      userId,
+      name: id,
+      prompt: "Check changes",
+      crons: ["0 9 * * *"],
+      timezone: "UTC",
+      active: true,
+      notify: false,
+      webhookEnabled: false,
+      githubEnabled: false,
+      messageProvider: null,
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      watch: null,
+      watchState: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          bot: { findFirst: vi.fn(async () => ({ id: "bot-1", thread: null, computer: null })) },
+          routine: {
+            findMany: vi.fn(async () => [row("mine", "user-1"), row("theirs", "user-2")]),
+          },
+        },
+        env: { sandboxProvider: "fake" },
+      } as unknown as RouterDeps),
+      { context: { actor } as never },
+    );
+
+    const routines = await client.routines.list({ botId: "bot-1" });
+    expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
+      { id: "mine", editable: true },
+      { id: "theirs", editable: false },
+    ]);
+    expect(routines[0]).not.toHaveProperty("userId");
+  });
 });
 
 describe("routines.update", () => {

@@ -40,13 +40,13 @@ msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minu
 msgstr "{0, plural, one {ממתין להתחברות — הקישור יפוג בעוד כ-# דקה.} other {ממתין להתחברות — הקישור יפוג בעוד כ-# דקות.}}"
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (עד {ATTACHMENT_MAX_COUNT} קבצים מצורפים)"
 
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (over {1})"
 msgstr "{0} (מעל {1})"
 
@@ -211,8 +211,8 @@ msgstr "{name} נעצר"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
-msgid "{provider} could not find the requested model."
-msgstr "{provider} לא מצא את המודל המבוקש."
+msgid "{provider} can't run this model."
+msgstr "{provider} לא יכול להריץ את המודל הזה."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -420,7 +421,7 @@ msgstr "תפריט החשבון של {name}"
 msgid "Actions for {0}"
 msgstr "פעולות עבור {0}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr "פעולות למרחב"
 
@@ -601,7 +602,7 @@ msgstr "מתקדם"
 msgid "Advanced..."
 msgstr "מתקדם..."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Agent computer"
 msgstr "מחשב הסוכן"
 
@@ -706,11 +707,6 @@ msgstr "תשובה"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "נענה"
-
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "נענה: {0}"
 
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatar Studio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -932,8 +929,8 @@ msgstr "חסום"
 msgid "Board"
 msgstr "לוח"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Booting live desktop…"
 msgstr "מפעיל שולחן עבודה חי…"
 
@@ -1005,7 +1002,7 @@ msgstr "עיון בשרתי MCP"
 msgid "Built-in"
 msgstr "מובנה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr ""
 
@@ -1101,6 +1098,10 @@ msgstr "שינוי {name}"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "שינוי {title}"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "החלפת מודל"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1199,6 +1200,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "בחירת צורה או צבע לבוט, או העלאת תמונה"
 
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "בחירת מודל"
 
@@ -1224,6 +1226,7 @@ msgid "Choose folder"
 msgstr "בחירת תיקייה"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -1294,12 +1297,12 @@ msgstr "סגירת הגדרות הזיכרון"
 msgid "Close model settings"
 msgstr "סגירת הגדרות המודל"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "סגירת הניווט"
 
 #: src/pages/GroupPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "סגירת החלונית"
 
@@ -1394,8 +1397,8 @@ msgstr "הושלם"
 msgid "Computer"
 msgstr "מחשב"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "הפעלת המחשב נכשלה"
 
@@ -1465,8 +1468,14 @@ msgid "Connect a chat app"
 msgstr ""
 
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "חיבור מודל"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect a model in Settings before running bots."
+msgstr "חבר מודל בהגדרות לפני הפעלת בוטים."
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -1503,6 +1512,11 @@ msgstr "יש לחבר קודם את הספק של המודל הזה."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "חיבור Treg"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
+msgstr "חבר מפתח API משלך במודלים או בחר בקרדיטים של Rakazo בחיוב."
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
@@ -1678,7 +1692,7 @@ msgstr "לא ניתן לחבר את הספק הזה"
 msgid "Could not connect this voice provider"
 msgstr "לא ניתן לחבר את ספק הקול הזה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
 msgstr "לא ניתן להתחבר למסך המחשב"
 
@@ -1689,7 +1703,7 @@ msgstr "לא ניתן להתחבר למסך המחשב"
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not continue"
 msgstr "לא ניתן להמשיך"
 
@@ -1936,8 +1950,8 @@ msgstr "לא ניתן להריץ את הרוטינה"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "השמירה נכשלה"
 
@@ -2018,7 +2032,7 @@ msgstr "לא ניתן לשלוח את התשובה"
 msgid "Could not switch {failedNames}. Try again."
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not take control"
 msgstr "לא ניתן להשתלט"
 
@@ -2050,7 +2064,7 @@ msgstr "לא ניתן לעדכן את המחשב"
 msgid "Could not update name"
 msgstr "לא ניתן לעדכן את השם"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Could not update reaction"
 msgstr "לא ניתן לעדכן את האמוג׳י"
 
@@ -2272,7 +2286,7 @@ msgstr "מחיקת הזיכרונות גם כן"
 msgid "Delete section"
 msgstr "מחיקת המקטע"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "מחיקת המרחב"
@@ -2665,11 +2679,11 @@ msgstr "נכשל"
 msgid "Failed"
 msgstr "נכשל"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to send message"
 msgstr "שליחת ההודעה נכשלה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to stop"
 msgstr "העצירה נכשלה"
 
@@ -2711,7 +2725,7 @@ msgid "Filter by date"
 msgstr "סינון לפי תאריך"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "מסננים"
 
@@ -2755,6 +2769,10 @@ msgstr "שכחת סיסמה?"
 msgid "Free"
 msgstr "חינם"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "התוכנית החינמית מסתיימת ב-{day}"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "יום שישי"
@@ -2795,7 +2813,8 @@ msgstr "אירוע Git"
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Group"
 msgstr "קבוצה"
 
@@ -2922,6 +2941,15 @@ msgstr "אם שמעת את זה, הקול מוכן."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "התעלמות"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -3055,7 +3083,7 @@ msgstr "מבודד"
 msgid "Isolated preview — no access to your account"
 msgstr "תצוגה מקדימה מבודדת — ללא גישה לחשבון"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "הבוטים והקבוצות שבו יישמרו ויוצאו מהמקטע."
 
@@ -3935,7 +3963,7 @@ msgstr "פתיחת {name}"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "יש לפתוח את <0>{0}</0> ולהזין את הקוד הזה:"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open call"
 msgstr ""
 
@@ -3956,7 +3984,7 @@ msgstr "לפתוח קישור חיצוני?"
 msgid "Open in full window"
 msgstr "פתיחה בחלון מלא"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "פתיחת הניווט"
 
@@ -4459,6 +4487,7 @@ msgstr "החלפת מפתח API"
 msgid "Replace its instructions"
 msgstr "החלפת ההוראות שלו"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "החלפת מפתח"
@@ -4569,7 +4598,7 @@ msgstr "לנסות שוב"
 msgid "Retry now"
 msgstr "לנסות שוב עכשיו"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Retry screen"
 msgstr "טעינת המסך מחדש"
 
@@ -4737,14 +4766,18 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "המסך אינו מחובר"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "חיפוש"
@@ -4776,7 +4809,7 @@ msgstr "חיפוש ב-integrations.sh"
 msgid "Search models"
 msgstr "חיפוש מודלים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Search runs"
 msgstr "חיפוש הרצות"
 
@@ -4794,7 +4827,7 @@ msgstr "מחפש…"
 msgid "Security"
 msgstr "אבטחה"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
 msgstr "בחירת בוט"
 
@@ -4817,6 +4850,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "שליחת תשובה"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "שליחה כקובץ"
 
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
@@ -4842,6 +4879,10 @@ msgstr "שליחה ב-Enter"
 msgid "Sending…"
 msgstr "שולח…"
 
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
 msgstr "התראת Sentry"
@@ -4866,7 +4907,7 @@ msgstr "URL של השרת"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "הגדרות"
 
@@ -4912,7 +4953,7 @@ msgstr ""
 msgid "Show bots"
 msgstr "הצגת בוטים"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show computer"
 msgstr "הצגת המחשב"
 
@@ -4934,7 +4975,7 @@ msgstr "הצגת סיסמה"
 msgid "Show selected"
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show settings"
 msgstr "הצגת הגדרות"
 
@@ -5023,7 +5064,7 @@ msgid "Skip or deploy key"
 msgstr "דילוג או מפתח התקנה"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Skipped {0}"
 msgstr "דולגו: {0}"
 
@@ -5191,6 +5232,11 @@ msgstr "שליחה"
 msgid "Subscribe"
 msgstr "הרשמה למנוי"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "הרשמה במחיר ${0} לחודש"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "נדרש מנוי"
@@ -5283,6 +5329,10 @@ msgstr "בודק…"
 msgid "The bot and what its import added will be removed."
 msgstr "הבוט ומה שהייבוא שלו הוסיף יוסרו."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "תם הזמן הקצוב לחיבור."
@@ -5300,6 +5350,18 @@ msgstr "המודל החזיר תשובה שאי אפשר להשתמש בה. אפ
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "הספק מגביל את קצב הבקשות."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "החיבור למסך נסגר."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "המסך לא הגיב."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "קישור המסך פג."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5395,6 +5457,15 @@ msgstr "הייבוא הזה כבר נוצל. יש לבחור את הקבצים �
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ה-Mac הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5612,7 +5683,7 @@ msgid "Unpin"
 msgstr "ביטול הצמדה"
 
 #. placeholder {0}: pending.file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "סוג קובץ לא נתמך: {0}"
 
@@ -5668,6 +5739,10 @@ msgstr "מעדכן את מחשב הצוות"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "מעדכן…"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "שדרוג"
 
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
@@ -5765,6 +5840,10 @@ msgstr "משתמש בפרטי הגישה של {hostCredentialSource} של השר
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "נעשה שימוש במפתח ה-API שלך. התוכנית החינמית מסתיימת ב-{freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -5943,6 +6022,7 @@ msgstr "אתמול"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "You"
 msgstr "אני"
 

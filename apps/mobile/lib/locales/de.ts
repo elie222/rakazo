@@ -1,4 +1,16 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "Nicht gesendet. Tippen für Optionen",
+  "Image input is not configured for this model.":
+    "Bildeingabe ist für dieses Modell nicht konfiguriert.",
+  "Send as file": "Als Datei senden",
+  "The bot can use the file but won't see the picture.":
+    "Der Bot kann die Datei nutzen, sieht das Bild aber nicht.",
+  "This model cannot read images. Choose a model that supports images.":
+    "Dieses Modell kann keine Bilder lesen. Wähle ein Modell, das Bilder unterstützt.",
+  "Could not connect to the computer screen":
+    "Verbindung zum Computerbildschirm konnte nicht hergestellt werden",
+  "Retry screen": "Bildschirm erneut verbinden",
+  "The screen connection closed.": "Die Bildschirmverbindung wurde geschlossen.",
   Approvals: "Freigaben",
   "Never ask": "Nie fragen",
   Auto: "Auto",
@@ -63,10 +75,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Limit: "Limit",
   "Provider message": "Anbieternachricht",
   Status: "Status",
-  "Set your own key": "Eigenen Schlüssel hinterlegen",
-  "Add your own key or pick another model.":
-    "Füge deinen eigenen Schlüssel hinzu oder wähle ein anderes Modell.",
-  "Choose another model to keep chatting.": "Wähle ein anderes Modell, um weiterzuchatten.",
   "Resets {date}.": "Wird am {date} zurückgesetzt.",
 
   "Model provider": "Modellanbieter",
@@ -98,14 +106,17 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your OpenAI": "Dein OpenAI",
   "Your Anthropic": "Dein Anthropic",
   "Your model provider": "Dein Modellanbieter",
+  "Connect a model in Settings before running bots.":
+    "Verbinde ein Modell in den Einstellungen, bevor du Bots ausführst.",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "Verbinde deinen eigenen API-Schlüssel unter Modelle oder wähle Rakazo-Guthaben unter Abrechnung.",
   "The model provider returned an error.": "Der Modellanbieter hat einen Fehler zurückgegeben.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} begrenzt die Anfragerate. Versuche es gleich noch einmal.",
   "{summary} Resets {date}.": "{summary} Zurücksetzung am {date}.",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} hat den API-Schlüssel abgelehnt. Prüfe deine Verbindungseinstellungen.",
-  "{provider} could not find the requested model.":
-    "{provider} konnte das angeforderte Modell nicht finden.",
+  "{provider} can't run this model.": "{provider} kann dieses Modell nicht ausführen.",
   "{provider} denied access to this model.":
     "{provider} hat den Zugriff auf dieses Modell verweigert.",
   "The model returned an unusable response. Try again.":
@@ -439,6 +450,18 @@ export const DE_MESSAGES: Record<string, string> = {
   Profile: "Profil",
   Routines: "Routinen",
   "Could not load routines": "Routinen konnten nicht geladen werden",
+  "{count} on": "{count} aktiv",
+  "Ask this Bot in chat to set up a routine.":
+    "Bitte diesen Bot im Chat, eine Routine einzurichten.",
+  "{name}, On": "{name}, Ein",
+  "{name}, Off": "{name}, Aus",
+  "Active: {name}": "Aktiv: {name}",
+  "Delete {name}": "{name} löschen",
+  "Delete this routine?": "Diese Routine löschen?",
+  "This permanently deletes the routine and its run history.":
+    "Die Routine und ihr Ausführungsverlauf werden endgültig gelöscht.",
+  "Could not delete routine": "Routine konnte nicht gelöscht werden",
+  "Could not update routine": "Routine konnte nicht aktualisiert werden",
   "Get notified when this Bot finishes or needs input":
     "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht",
   // app/computer.tsx
@@ -1010,6 +1033,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "Dein Abo oder API-Schlüssel",
   "Free. ChatGPT, Claude, or any model provider.":
     "Kostenlos. ChatGPT, Claude oder ein beliebiger Modellanbieter.",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "{price} / Monat. ChatGPT, Claude oder ein beliebiger Modellanbieter.",
+  "Free plan ends": "Kostenloser Tarif endet",
+  Subscribe: "Abonnieren",
   "Use my subscription or API key": "Mein Abo oder meinen API-Schlüssel verwenden",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Monatliches Guthaben verfällt bei Verlängerung. Einmalige Aufladungen verfallen nicht.",
@@ -1089,6 +1116,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "am 1. um {time}",
   "on day {day} at {time}": "am {day}. um {time}",
   "Every hour at :{minute}": "Jede Stunde um :{minute}",
+  "Every {n} hours at :{minute}": "Alle {n} Stunden um :{minute}",
   "{from} to {to}": "{from} bis {to}",
   "Every {day}": "Jeden {day}",
   "Every {days} and {last}": "Jeden {days} und {last}",

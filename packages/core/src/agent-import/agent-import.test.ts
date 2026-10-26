@@ -220,6 +220,49 @@ describe("any other agent document", () => {
     expect(result.memory.map((item) => item.path)).toEqual(["MEMORY.md"]);
   });
 
+  it.each([
+    ["C#", "C#"],
+    ["F#", "F#"],
+    ["C##", "C##"],
+    ["C#   ", "C#"],
+    ["C# ##", "C#"],
+    ["C#\t###\t", "C#"],
+    ["Projects ###", "Projects"],
+    ["Ticket #123", "Ticket #123"],
+    ["Projects ###x", "Projects ###x"],
+  ])("preserves literal hashes in memory heading %j", (heading, title) => {
+    const result = plan([
+      { path: "agent.md", content: `# Memory\n## ${heading}\nSynthetic notes.\n` },
+    ]);
+    expect(result.memory).toHaveLength(1);
+    expect(result.memory[0]).toMatchObject({
+      title,
+      content: `# ${title}\n\nSynthetic notes.\n`,
+    });
+  });
+
+  it("preserves literal trailing hashes in skill names", () => {
+    const result = plan([
+      {
+        path: "agent.md",
+        content: "# Skills\n## c#\nDescribe a task.\n1. Do the task.\n",
+      },
+    ]);
+    expect(result.skills.map((item) => item.name)).toEqual(["c#"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("accepts whitespace-separated closing hashes in skill headings", () => {
+    const result = plan([
+      {
+        path: "agent.md",
+        content: "# Skills\n## trip-planner ###\nPlan a trip.\n1. Ask for dates.\n",
+      },
+    ]);
+    expect(result.skills.map((item) => item.name)).toEqual(["trip-planner"]);
+    expect(result.skipped).toEqual([]);
+  });
+
   it("asks for the same sections the parser reads", () => {
     for (const heading of ["# Name", "# Instructions", "# Memory", "# Skills"]) {
       expect(AGENT_IMPORT_PROMPT).toContain(`\n${heading}\n`);
@@ -657,7 +700,7 @@ describe("secret stripping", () => {
     expect([...without.files.keys()]).toEqual(["SOUL.md", "openclaw.json"]);
     expect(JSON.stringify([...without.files])).not.toMatch(/placeholder/);
     const opted = readAgentImportFolder(files, { includeSecrets: true })!;
-    expect(opted.files.get(".env")).toBe('OPENROUTER_API_KEY="placeholder-env-key"\n');
+    expect(opted.files.get(".env")).toBe("OPENROUTER_API_KEY=placeholder-env-key\n");
     expect(opted.files.get("openclaw.json")).not.toContain("placeholder-gateway-token");
   });
 
@@ -697,7 +740,7 @@ describe("secret stripping", () => {
       },
     );
     expect(files[".openclaw/.env"]).toBe(
-      'GROQ_API_KEY="placeholder-groq"\nGROQ_BASE_URL="https://gateway.example.com"\n',
+      "GROQ_API_KEY=placeholder-groq\nGROQ_BASE_URL=https://gateway.example.com\n",
     );
   });
 
@@ -937,6 +980,27 @@ describe("which MCP servers an import keeps", () => {
     );
     expect(JSON.stringify(upload)).not.toContain(sentinel);
     expect(JSON.stringify(upload)).toContain("OPENROUTER_API_KEY");
+  });
+});
+
+describe("dotenv parsing", () => {
+  it.each([
+    ['"placeholder-key" # comment', "placeholder-key"],
+    ["'placeholder-key' # comment", "placeholder-key"],
+    ['"placeholder-key" # "quoted comment"', "placeholder-key"],
+    ["'placeholder-key' # 'quoted comment'", "placeholder-key"],
+    [String.raw`'placeholder\' # comment'`, "placeholder\\"],
+    ['"placeholder-key"# comment', "placeholder-key"],
+    ['"placeholder # key" # comment', "placeholder # key"],
+    ["'placeholder # key' # comment", "placeholder # key"],
+    ['"" # comment', ""],
+    ["'' # comment", ""],
+    ['"placeholder-key"', "placeholder-key"],
+    ["'placeholder-key'", "placeholder-key"],
+    ["placeholder-key # comment", "placeholder-key"],
+    ["placeholder#key", "placeholder#key"],
+  ])("reads OPENAI_API_KEY=%s", (value, expected) => {
+    expect(parseDotEnv(`OPENAI_API_KEY=${value}`)).toEqual({ OPENAI_API_KEY: expected });
   });
 });
 

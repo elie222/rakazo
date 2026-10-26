@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeToolResult } from "./pi-runtime.js";
+import { serializeToolResult } from "./pi-runtime-tools.js";
 
 describe("serializeToolResult", () => {
   const skill = {

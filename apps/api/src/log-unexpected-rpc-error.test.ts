@@ -1,10 +1,12 @@
 import { ORPCError, onError, os } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   VoiceAccountError,
 } from "@rakazo/adapter-kit";
+import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +26,18 @@ describe("logUnexpectedRpcError", () => {
       "readFile",
     ]);
 
+    expect(sink.events).toEqual([]);
+  });
+
+  it("keeps an image send the model cannot read out of error reports", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const rejection = new ORPCError("CONFLICT", {
+      message: MODEL_IMAGE_INPUT_ERROR,
+      data: { reason: "model_image_input_unsupported" },
+    });
+
+    expect(() => handleRpcError(rejection, ["threads", "send"])).not.toThrow();
     expect(sink.events).toEqual([]);
   });
 
@@ -90,6 +104,25 @@ describe("logUnexpectedRpcError", () => {
         message: "rpc computer/boot computer unavailable",
         reason: "sandbox did not become ready",
       }),
+    ]);
+  });
+
+  it("returns a damaged computer's Recover message as a conflict without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxDamagedError();
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "CONFLICT", status: 409, message: error.message });
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc computer/boot computer damaged"],
     ]);
   });
 

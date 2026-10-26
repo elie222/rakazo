@@ -1169,9 +1169,14 @@ export class PiOAuthLogins {
   }
 
   /** Take over a sign-in another API process started, once, within its lifetime. */
-  private async resume(loginId: string, actor: SignInActor): Promise<Session | undefined> {
+  private async resume(
+    loginId: string,
+    { userId, spaceId }: SignInActor,
+  ): Promise<Session | undefined> {
     const handoff = this.handoff;
     if (!handoff) return undefined;
+    // Callers pass their whole actor; only these two are columns.
+    const actor = { userId, spaceId };
     const row = await runAsTenant(actor, () =>
       handoff.prisma.modelOAuthSession.findFirst({
         where: {

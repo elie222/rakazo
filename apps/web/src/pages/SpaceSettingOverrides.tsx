@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceSetting } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { Button } from "@rakazo/ui-web";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
-import { useSpaceQueries, writeSaved } from "../lib/query";
+import { useSpaceQueries } from "../lib/query";
 import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
