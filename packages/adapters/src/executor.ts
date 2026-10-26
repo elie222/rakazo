@@ -413,6 +413,7 @@ import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "./turn-che
 
 export { selectRunConnections } from "./connection-context.js";
 
+import { parsePeerJobNonce } from "./local-group-dispatch.js";
 import { isGroupGoalScopedRun, scopeToGroupGoal } from "./local-group-history.js";
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
@@ -3682,6 +3683,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
         ...(run.userId ? { "user.id": run.userId } : {}),
       });
       if (isTerminal(run.status as RunStatus)) return;
+      const groupPeer = parsePeerJobNonce(run.clientNonce);
+      if (groupPeer) {
+        // A queued worker must not start an obsolete assignment after a newer
+        // user request. Recheck just before claiming the run, not only when
+        // the coordinator schedules its next stage.
+        const root = await deps.prisma.run.findUnique({
+          where: { id: groupPeer.rootId },
+          select: { id: true, createdAt: true, threadId: true, spaceId: true },
+        });
+        const superseded =
+          !root ||
+          root.threadId !== run.threadId ||
+          root.spaceId !== run.spaceId ||
+          Boolean(
+            await deps.prisma.message.findFirst({
+              where: {
+                threadId: root.threadId,
+                role: "user",
+                createdAt: { gt: root.createdAt },
+              },
+              select: { id: true },
+            }),
+          );
+        if (superseded) {
+          await deps.prisma.run.updateMany({
+            where: {
+              id: runId,
+              status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+            },
+            data: { status: "cancelled", completedAt: new Date() },
+          });
+          return;
+        }
+      }
       let { resumeCheckpoint, heldForTakeover, resumeHeldLease, takeoverResume } =
         takeoverContinuePlan(run);
 

@@ -136,7 +136,18 @@ export async function advanceGroupTeam(
         },
       },
     });
-    if (!group || group.archivedAt || group.members.length < 2) return { handled: false };
+    // An archived group cannot schedule more work. Consume terminal peers so they
+    // do not monopolize the review queue forever after archiving.
+    if (!group || group.archivedAt) {
+      await tx.run.update({
+        where: { id: current.id },
+        data: { groupReviewScheduledAt: new Date() },
+      });
+      return { handled: true, stage: "ineligible", scheduledIds: [] as string[] };
+    }
+    // A root needs at least two current members for its *initial* fanout.
+    // Existing peers must finish using their recorded participation snapshot.
+    if (!fromPeer && group.members.length < 2) return { handled: false };
     const rootId = fromPeer?.rootId ?? current.id;
     const root = await tx.run.findUnique({
       where: { id: rootId },
@@ -178,6 +189,26 @@ export async function advanceGroupTeam(
       select: { id: true },
     });
     if (superseded || Date.now() - root.createdAt.getTime() > MAX_AGE_MS) {
+      // Cancel queued peer work from the replaced request. Already executing
+      // workers are fenced by their run status and the executor's early guard.
+      const unfinished = await tx.run.findMany({
+        where: {
+          spaceId: root.spaceId,
+          clientNonce: { startsWith: `${FANOUT_NONCE_PREFIX}${root.id}:` },
+          status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+        },
+        select: { id: true },
+      });
+      if (unfinished.length) {
+        await tx.run.updateMany({
+          where: { id: { in: unfinished.map((run) => run.id) } },
+          data: {
+            status: "cancelled",
+            completedAt: new Date(),
+            groupReviewScheduledAt: new Date(),
+          },
+        });
+      }
       await mark(current.id);
       return {
         handled: true,
@@ -185,12 +216,12 @@ export async function advanceGroupTeam(
         scheduledIds: [] as string[],
       };
     }
-    const groupRoster = group.members.map((member) => member.bot);
-    const requested = requestedGroupParticipants(root.sourceMessage?.blocks, groupRoster);
-    const teammates = chooseGroupTeammates(groupRoster, root.botId, requested);
-    if (!teammates.length) return { handled: false };
     const pendingIds: string[] = [];
     if (!fromPeer) {
+      const groupRoster = group.members.map((member) => member.bot);
+      const requested = requestedGroupParticipants(root.sourceMessage?.blocks, groupRoster);
+      const teammates = chooseGroupTeammates(groupRoster, root.botId, requested);
+      if (!teammates.length) return { handled: false };
       // Do not override any deliberate handoff selected by the owner.
       const delegated = await tx.event.findFirst({
         where: { runId: root.id, type: "group.handoff" },
@@ -234,18 +265,19 @@ export async function advanceGroupTeam(
       await mark(root.id);
       return { handled: true, stage: "team", scheduledIds: pendingIds };
     }
-    // Guard against a spoofed or obsolete peer with an invalid membership.
-    if (!teammates.some((m) => m.id === current.botId && m.id === fromPeer.botId))
-      return { handled: false };
+    // Membership can change during work. Use the immutable set of peer runs
+    // actually scheduled for this goal, rather than the live group roster.
+    if (current.botId !== fromPeer.botId) return { handled: false };
     const peers = await tx.run.findMany({
       where: {
         spaceId: root.spaceId,
-        clientNonce: { in: teammates.map((m) => peerJobNonce(root.id, m.id)) },
+        threadId: root.threadId,
+        clientNonce: { startsWith: `${FANOUT_NONCE_PREFIX}${root.id}:` },
       },
       select: { id: true, status: true },
     });
     if (
-      peers.length !== teammates.length ||
+      !peers.some((peer) => peer.id === current.id) ||
       peers.some((r) => !["completed", "failed", "cancelled"].includes(r.status))
     ) {
       return { handled: true, stage: "waiting", scheduledIds: [] as string[] };

@@ -133,6 +133,7 @@ export function createJobReconciler(
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
+  let groupReviewCursor: string | undefined;
   let controlScanDeadline: Date | undefined;
 
   const reconcileOnce = async () => {
@@ -375,9 +376,17 @@ export function createJobReconciler(
             thread: { groupId: { not: null } },
           },
           orderBy: [{ completedAt: "asc" }, { id: "asc" }],
+          // Resume after the previous page instead of retrying the same waiting
+          // peers, which could permanently starve newly completed requests.
+          ...(groupReviewCursor ? { cursor: { id: groupReviewCursor }, skip: 1 } : {}),
           take: batchSize,
           select: { id: true, clientNonce: true },
         });
+        // Sweep the entire eligible set across reconciliation passes, then wrap.
+        groupReviewCursor =
+          finishedPeers.length === batchSize
+            ? finishedPeers[finishedPeers.length - 1]?.id
+            : undefined;
         for (const finished of finishedPeers) {
           try {
             const groupStage = await advanceGroupTeam(

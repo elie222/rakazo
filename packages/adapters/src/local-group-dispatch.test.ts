@@ -41,6 +41,7 @@ function harness(
     count?: number;
     roster?: typeof bots;
     sourceBlocks?: unknown;
+    archived?: boolean;
   } = {},
 ) {
   const members = opts.roster ?? bots.slice(0, opts.count ?? 4);
@@ -74,6 +75,7 @@ function harness(
       findMany: vi.fn(async () =>
         (opts.statuses ?? []).map((status, i) => ({ id: `peer${i}`, status })),
       ),
+      updateMany: vi.fn(async () => ({ count: opts.statuses?.length ?? 0 })),
       create: vi.fn(
         async (args: { data: { clientNonce: string; botId: string; sourceMessageId: string } }) => {
           created.push(args);
@@ -87,7 +89,7 @@ function harness(
     chatGroup: {
       findUnique: vi.fn(async () => ({
         name: "株探索",
-        archivedAt: null,
+        archivedAt: opts.archived ? new Date() : null,
         members: members.map((bot) => ({ bot })),
       })),
     },
@@ -232,6 +234,37 @@ describe("generic, bounded group collaboration", () => {
       botId: "lead",
     });
     expect(h.jobs.enqueue).toHaveBeenCalledTimes(1);
+  });
+  it("does not wait for teammates added after initial dispatch", async () => {
+    const roster = [
+      ...bots,
+      { id: "late", name: "New colleague", title: "New role", description: "Joined later" },
+    ];
+    const h = harness({ peer: true, roster, statuses: ["completed", "completed", "completed"] });
+    expect(await advanceGroupTeam(h.deps as never, "peer1")).toMatchObject({
+      stage: "synthesis",
+      scheduled: 1,
+    });
+  });
+  it("consumes orphaned peer completions after archiving", async () => {
+    const h = harness({ peer: true, archived: true });
+    expect(await advanceGroupTeam(h.deps as never, "peer1")).toMatchObject({
+      handled: true,
+      stage: "ineligible",
+    });
+    expect(h.marked).toEqual(["peer1"]);
+  });
+  it("cancels unfinished peer runs when the original request was replaced", async () => {
+    const h = harness({ peer: true, superseded: true, statuses: ["queued", "running"] });
+    expect(await advanceGroupTeam(h.deps as never, "peer1")).toMatchObject({
+      handled: true,
+      stage: "superseded",
+    });
+    expect(h.tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "cancelled" }),
+      }),
+    );
   });
   it("does not deadlock after one peer fails", async () => {
     const h = harness({ peer: true, statuses: ["completed", "failed", "completed"] });
