@@ -700,7 +700,7 @@ describe("secret stripping", () => {
     expect([...without.files.keys()]).toEqual(["SOUL.md", "openclaw.json"]);
     expect(JSON.stringify([...without.files])).not.toMatch(/placeholder/);
     const opted = readAgentImportFolder(files, { includeSecrets: true })!;
-    expect(opted.files.get(".env")).toBe('OPENROUTER_API_KEY="placeholder-env-key"\n');
+    expect(opted.files.get(".env")).toBe("OPENROUTER_API_KEY=placeholder-env-key\n");
     expect(opted.files.get("openclaw.json")).not.toContain("placeholder-gateway-token");
   });
 
@@ -740,7 +740,7 @@ describe("secret stripping", () => {
       },
     );
     expect(files[".openclaw/.env"]).toBe(
-      'GROQ_API_KEY="placeholder-groq"\nGROQ_BASE_URL="https://gateway.example.com"\n',
+      "GROQ_API_KEY=placeholder-groq\nGROQ_BASE_URL=https://gateway.example.com\n",
     );
   });
 
@@ -980,6 +980,27 @@ describe("which MCP servers an import keeps", () => {
     );
     expect(JSON.stringify(upload)).not.toContain(sentinel);
     expect(JSON.stringify(upload)).toContain("OPENROUTER_API_KEY");
+  });
+});
+
+describe("dotenv parsing", () => {
+  it.each([
+    ['"placeholder-key" # comment', "placeholder-key"],
+    ["'placeholder-key' # comment", "placeholder-key"],
+    ['"placeholder-key" # "quoted comment"', "placeholder-key"],
+    ["'placeholder-key' # 'quoted comment'", "placeholder-key"],
+    [String.raw`'placeholder\' # comment'`, "placeholder\\"],
+    ['"placeholder-key"# comment', "placeholder-key"],
+    ['"placeholder # key" # comment', "placeholder # key"],
+    ["'placeholder # key' # comment", "placeholder # key"],
+    ['"" # comment', ""],
+    ["'' # comment", ""],
+    ['"placeholder-key"', "placeholder-key"],
+    ["'placeholder-key'", "placeholder-key"],
+    ["placeholder-key # comment", "placeholder-key"],
+    ["placeholder#key", "placeholder#key"],
+  ])("reads OPENAI_API_KEY=%s", (value, expected) => {
+    expect(parseDotEnv(`OPENAI_API_KEY=${value}`)).toEqual({ OPENAI_API_KEY: expected });
   });
 });
 
