@@ -62,22 +62,25 @@ dbTests("model credit billing service", () => {
     expect(provider.creditCheckouts.size).toBe(0);
     expect(await billingAccountForOrganization(prisma, organizationId)).toBeNull();
   });
-  it("starts with a funding choice, and BYOK requires no billing customer", async () => {
+  it("starts with a funding choice, and BYOK opens the plan checkout", async () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       funding: null,
       balanceUsd: 0,
     });
-    await service.selectFunding(actor, "byok");
+    await expect(service.selectFunding(actor, "byok")).resolves.toMatchObject({
+      url: expect.stringContaining("/byok/"),
+    });
     await expect(service.status(actor)).resolves.toMatchObject({
-      access: true,
-      funding: "byok",
-      hasCustomer: false,
+      access: false,
+      funding: null,
+      byokPriceCents: 1000,
+      byokFreeUntil: null,
     });
   });
   it("does not grant credits for checkout creation, grants a paid monthly invoice once", async () => {
     await service.purchaseCredits(actor, { amountCents: 1000, monthly: true });
-    await expect(service.status(actor)).resolves.toMatchObject({ funding: "byok", balanceUsd: 0 });
+    await expect(service.status(actor)).resolves.toMatchObject({ funding: null, balanceUsd: 0 });
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
     provider.completeCreditCheckout(customer);
     await service.sync(customer);

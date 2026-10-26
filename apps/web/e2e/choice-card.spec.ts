@@ -14,17 +14,15 @@ test("onboarding choices show borderless rows in both themes", async ({ page }, 
       theme,
     );
     await expect(option).toHaveCSS("border-top-width", "0px");
-    const rowColor = await option.evaluate((element) => getComputedStyle(element).backgroundColor);
-    const cardColor = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
-    expect(rowColor).not.toBe(cardColor);
+    // Rows only fill on hover.
+    await expect(option).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     await captureScreenshot(page, testInfo, `onboarding-choice-rows-${theme}`);
   }
   await option.focus();
   await expect(option).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(card.getByRole("button")).toHaveCount(1);
   await expect(option).toBeDisabled();
-  await expect(option).toContainText("✓");
+  await expect(option).toHaveAttribute("aria-pressed", "true");
   await captureScreenshot(page, testInfo, "onboarding-choice-rows-answered");
 });
 
@@ -100,10 +98,8 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await page.setViewportSize({ width: 1280, height: 720 });
   await seoul.click();
 
-  await expect(page.getByText("Answered: Seoul", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByRole("button", { name: "Seoul", exact: true })).toHaveCount(0);
+  await expect(seoul).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect(seoul).toBeDisabled();
 
   await expect
     .poll(
@@ -166,8 +162,11 @@ test("a typed reply answers the latest question and resumes its run", async ({
   await composer.fill("Paris");
   await page.keyboard.press("Enter");
 
-  await expect(page.getByText("Answered: Paris", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(seoul).toHaveCount(0);
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(seoul).toBeDisabled();
+  await expect(seoul).not.toHaveAttribute("aria-pressed");
   await expect
     .poll(async () => {
       const snapshot = await rpc<{

@@ -176,7 +176,22 @@ describe("classifyDockerFailure", () => {
     ["docker: 'compose' is not a docker command.", "compose-missing"],
     ["Error response from daemon: manifest unknown", "image-not-found"],
     ["pull access denied for ghcr.io/x/y, repository does not exist", "image-not-found"],
+    [
+      'Error response from daemon: failed to resolve reference "ghcr.io/elie222/rakazo/computer:v0.3.5": ghcr.io/elie222/rakazo/computer:v0.3.5: not found',
+      "image-not-found",
+    ],
     ["Get https://ghcr.io/v2/: dial tcp: lookup ghcr.io: no such host", "network"],
+    [
+      'failed to resolve reference "ghcr.io/example/image:latest": dial tcp: lookup ghcr.io: no such host',
+      "network",
+    ],
+    ['failed to resolve reference "ghcr.io/example/image:latest": i/o timeout', "network"],
+    [
+      'failed to resolve reference "ghcr.io/example/image:latest": TLS handshake timeout',
+      "network",
+    ],
+    ['failed to resolve reference "ghcr.io/example/image:latest": connection refused', "network"],
+    ['failed to resolve reference "ghcr.io/example/image:latest"', "other"],
     ["net/http: TLS handshake timeout", "network"],
     ["Bind for 127.0.0.1:5173 failed: port is already allocated", "port-in-use"],
     ["listen tcp 127.0.0.1:3100: bind: address already in use", "port-in-use"],

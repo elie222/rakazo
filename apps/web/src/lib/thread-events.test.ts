@@ -19,6 +19,8 @@ import {
   reconcileRefreshedThread,
   reduceComputerStatus,
   reduceThreadSnapshot,
+  screenMissing,
+  screenReadLoaded,
   threadRunError,
   userHoldsComputerControl,
 } from "./thread-events.js";
@@ -1739,6 +1741,24 @@ describe("computer event reduction", () => {
     expect(computerPanelNeedsScreen("suspended")).toBe(false);
   });
 
+  it("waits for this computer's screen read before diagnosing a missing screen", () => {
+    const options = {
+      state: "running" as const,
+      kind: undefined,
+      booting: false,
+      screenUrlLoaded: false,
+      embeddedUrl: null,
+    };
+    expect(screenMissing(options)).toBe(false);
+    expect(screenMissing({ ...options, screenUrlLoaded: true })).toBe(true);
+    expect(
+      screenMissing({ ...options, screenUrlLoaded: true, embeddedUrl: "https://screen.example" }),
+    ).toBe(false);
+    expect(screenMissing({ ...options, screenUrlLoaded: true, booting: true })).toBe(false);
+    expect(screenMissing({ ...options, screenUrlLoaded: true, kind: "desktop" })).toBe(false);
+    expect(screenMissing({ ...options, screenUrlLoaded: true, state: "error" })).toBe(false);
+  });
+
   it("shows maintenance only for an errored computer that is not booting", () => {
     expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
     expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
@@ -1875,5 +1895,13 @@ describe("stale helper projection", () => {
     expect(next?.messages.find((m) => m.id === "subagent:resumed")?.blocks[0]).toMatchObject({
       status: "running",
     });
+  });
+});
+
+describe("screen read ownership", () => {
+  it("does not promote a booting read into a running-screen failure", () => {
+    expect(screenReadLoaded("booting", "running")).toBe(false);
+    expect(screenReadLoaded("running", "booting")).toBe(false);
+    expect(screenReadLoaded("running", "running")).toBe(true);
   });
 });

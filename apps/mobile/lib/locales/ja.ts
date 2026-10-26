@@ -1,4 +1,14 @@
 export const JA_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "未送信。タップしてオプションを表示",
+  "Image input is not configured for this model.": "このモデルでは画像入力が設定されていません。",
+  "Send as file": "ファイルとして送信",
+  "The bot can use the file but won't see the picture.":
+    "ボットはファイルを利用できますが、画像の内容は見えません。",
+  "This model cannot read images. Choose a model that supports images.":
+    "このモデルは画像を読み取れません。画像に対応したモデルを選択してください。",
+  "Could not connect to the computer screen": "コンピューター画面に接続できませんでした",
+  "Retry screen": "画面を再接続",
+  "The screen connection closed.": "画面の接続が閉じられました。",
   Approvals: "承認",
   "Never ask": "確認しない",
   Auto: "自動",
@@ -414,6 +424,18 @@ export const JA_MESSAGES: Record<string, string> = {
   Profile: "プロフィール",
   Routines: "ルーティン",
   "Could not load routines": "ルーティンを読み込めませんでした",
+  "{count} on": "{count}件オン",
+  "Ask this Bot in chat to set up a routine.":
+    "チャットでこのBotにルーティンの設定を頼んでください。",
+  "{name}, On": "{name}、オン",
+  "{name}, Off": "{name}、オフ",
+  "Active: {name}": "有効: {name}",
+  "Delete {name}": "{name}を削除",
+  "Delete this routine?": "このルーティンを削除しますか？",
+  "This permanently deletes the routine and its run history.":
+    "ルーティンとその実行履歴が完全に削除されます。",
+  "Could not delete routine": "ルーティンを削除できませんでした",
+  "Could not update routine": "ルーティンを更新できませんでした",
   Bot: "ボット",
   "Close computer": "コンピューターを閉じる",
   "Computer keyboard": "コンピューターのキーボード",
@@ -952,6 +974,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "ご自身のサブスクリプションまたはAPIキー",
   "Free. ChatGPT, Claude, or any model provider.":
     "無料。ChatGPT、Claude、または任意のモデルプロバイダー。",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "月額 {price}。ChatGPT、Claude、または任意のモデルプロバイダー。",
+  "Free plan ends": "無料プランの終了日",
+  Subscribe: "登録する",
   "Use my subscription or API key": "自分のサブスクリプションまたはAPIキーを使用",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "月間クレジットは更新時に失効します。追加購入分は失効しません。",
@@ -1075,6 +1101,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "1日 {time}",
   "on day {day} at {time}": "{day}日 {time}",
   "Every hour at :{minute}": "毎時{minute}分",
+  "Every {n} hours at :{minute}": "{n}時間ごと、{minute}分",
   "{from} to {to}": "{from}〜{to}",
   "Every {day}": "毎週{day}",
   "Every {days} and {last}": "毎週{days}と{last}",

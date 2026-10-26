@@ -366,6 +366,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -717,11 +718,6 @@ msgstr "Yanıtla"
 msgid "Answered"
 msgstr "Yanıtlandı"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "Yanıtlandı: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "Yanıtlandı: {answer}"
@@ -896,6 +892,7 @@ msgstr "Avatar Stüdyosu"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1112,6 +1109,10 @@ msgstr "{name} değiştir"
 msgid "Change {title}"
 msgstr "{title} değiştir"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Modeli değiştir"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Parolayı değiştir"
@@ -1235,6 +1236,7 @@ msgid "Choose folder"
 msgstr "Klasör seç"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2777,6 +2779,10 @@ msgstr "Parolanızı mı unuttunuz?"
 msgid "Free"
 msgstr ""
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Ücretsiz plan {day} tarihinde bitiyor"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "Cuma"
@@ -2945,6 +2951,15 @@ msgstr "Bunu duyduysan ses hazır."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Bu model için görüntü girişi yapılandırılmamış."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4761,6 +4776,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "Kapsamlar (isteğe bağlı)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Ekran bağlı değil"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4842,6 +4861,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Yanıtı gönder"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Dosya olarak gönder"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Silme kodu gönder"
@@ -4865,6 +4888,10 @@ msgstr "Enter ile gönder"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Gönderiliyor…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5213,7 +5240,12 @@ msgstr "Gönder"
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
-msgstr ""
+msgstr "Abone ol"
+
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Aylık ${0} ile abone ol"
 
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
@@ -5307,6 +5339,10 @@ msgstr "Test ediliyor…"
 msgid "The bot and what its import added will be removed."
 msgstr "Bot ve içe aktarmanın eklediği her şey kaldırılacak."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "Bot dosyayı kullanabilir ama resmi göremez."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Bağlantı zaman aşımına uğradı."
@@ -5324,6 +5360,18 @@ msgstr "Model kullanılamaz bir yanıt döndürdü. Tekrar deneyin."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "Sağlayıcı istek hızını sınırlıyor."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "Ekran bağlantısı kapandı."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Ekran yanıt vermedi."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "Ekran bağlantısının süresi doldu."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5419,6 +5467,15 @@ msgstr "Bu içe aktarma zaten kullanıldı. Dosyaları yeniden seç."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "bu Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Bu model görüntüleri okuyamıyor. Görüntüleri destekleyen bir model seçin."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5693,6 +5750,10 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Yükselt"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5789,6 +5850,10 @@ msgstr "{selectedProviderName} erişimi için bu sunucunun kendi {hostCredential
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Kendi API anahtarın kullanılıyor. Ücretsiz plan {freeUntil} tarihinde bitiyor."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

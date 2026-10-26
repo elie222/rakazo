@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { NavLink } from "@rakazo/contracts";
 import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
@@ -13,6 +14,7 @@ import {
   Download,
   FolderOpen,
   Gauge,
+  Link2,
   LogOut,
   Plug,
   Settings,
@@ -35,6 +37,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onIntegrations: () => void;
   onBoard?: () => void;
+  links?: NavLink[];
+  onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
   onSettings: () => void;
   onUsage: () => void;
@@ -59,6 +63,8 @@ export function SidebarFooter({
   onOpenChange,
   onIntegrations,
   onBoard,
+  links = [],
+  onLink,
   onArtifacts,
   onSettings,
   onUsage,
@@ -178,6 +184,17 @@ export function SidebarFooter({
                 <Trans>Board</Trans>
               </Button>
             ) : null}
+            {links.map((link) => (
+              <Button
+                key={link.id}
+                variant="ghost"
+                className="h-9 w-full justify-start gap-2.5 font-normal"
+                onClick={() => onLink?.(link)}
+              >
+                <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                {link.label}
+              </Button>
+            ))}
             <Button
               variant="ghost"
               className="h-9 w-full justify-start gap-2.5 font-normal"

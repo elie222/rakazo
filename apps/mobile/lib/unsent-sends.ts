@@ -82,7 +82,7 @@ configureUnsentSends({
         { text: t("Not Now"), style: "cancel" },
         { text: t("Add Model"), onPress: openModelSettings, isPreferred: true },
       ]);
-    } else {
+    } else if (!attempt.imageConfirmation) {
       Alert.alert(t("Failed to send message"), attempt.error);
     }
   },

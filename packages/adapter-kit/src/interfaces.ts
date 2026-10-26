@@ -450,6 +450,12 @@ export interface BillingProvider {
   createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
+  /** Flat monthly own-key plan: access without credits. */
+  createByokCheckout?(
+    input: Omit<BillingCreditCheckoutRequest, "monthly">,
+  ): Promise<{ url: string }>;
+  /** Ends every live own-key plan at its period end. */
+  endByokPlans?(customerId: string): Promise<void>;
   describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;

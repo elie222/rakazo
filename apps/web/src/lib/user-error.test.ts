@@ -1,5 +1,6 @@
+import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { authErrorText } from "./user-error";
+import { authErrorText, errorText } from "./user-error";
 
 describe("authErrorText", () => {
   it("maps PASSWORD_AUTH_DISABLED before the server message", () => {
@@ -30,4 +31,9 @@ describe("authErrorText", () => {
       "Registration is closed",
     );
   });
+});
+
+it("recognizes image compatibility errors from old clients and new servers", () => {
+  expect(errorText(new Error(MODEL_IMAGE_INPUT_ERROR))).toBe(MODEL_IMAGE_INPUT_ERROR);
+  expect(errorText(`  ${MODEL_IMAGE_INPUT_ERROR}  `)).toBe(MODEL_IMAGE_INPUT_ERROR);
 });

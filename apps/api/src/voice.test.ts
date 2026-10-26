@@ -754,14 +754,19 @@ describe("voiceCredentialPlaintext", () => {
   });
 
   it("rejects a public server address as a bad request", () => {
-    expect(() =>
-      voiceCredentialPlaintext({
-        provider: "openai-compatible",
-        allowPrivateEndpoint: true,
-        plaintext: "",
-        baseUrl: "https://speech.example.com",
-      }),
-    ).toThrow(/Public model endpoints are blocked/);
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "0");
+    try {
+      expect(() =>
+        voiceCredentialPlaintext({
+          provider: "openai-compatible",
+          allowPrivateEndpoint: true,
+          plaintext: "",
+          baseUrl: "https://speech.example.com",
+        }),
+      ).toThrow(/Public model endpoints are disabled/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

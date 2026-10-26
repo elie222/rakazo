@@ -17,6 +17,7 @@ describe("split view", () => {
     "/artifacts",
     "/artifact",
     "/routine",
+    "/routines",
     "/bot-profile",
   ])("closes %s when a heading selects a different or unknown space", (pathname) => {
     expect(closesSplitPane(pathname, "space-a", "space-b")).toBe(true);
