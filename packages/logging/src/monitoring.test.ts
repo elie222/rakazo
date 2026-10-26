@@ -20,6 +20,28 @@ describe("client monitoring contract", () => {
     expect(scrubMonitoringText(input)).toBe(expected);
   });
 
+  it.each([
+    ["C:\\Users\\Example -> C:\\Users\\Other\\app.js", "[user][user]\\app.js"],
+    ["C:\\Users\\Example User -> d:\\users\\Other User\\app.js", "[user][user]\\app.js"],
+    [
+      "C:\\Users\\Example -> D:\\Users\\Other -> e:\\users\\Third User\\app.js",
+      "[user][user][user]\\app.js",
+    ],
+    [
+      "C:\\Users\\Example User\\first.js -> D:\\Users\\Other User\\second.js",
+      "[user]\\first.js -> [user]\\second.js",
+    ],
+    ["C:\\Users\\Example User -> D:\\build\\app.js", "[user]D:\\build\\app.js"],
+  ])("keeps later drive prefixes available for redaction in %j", (input, expected) => {
+    expect(scrubMonitoringText(input)).toBe(expected);
+  });
+
+  it("scrubs every Windows profile in same-line error and monitoring messages", () => {
+    const message = "C:\\Users\\Example -> C:\\Users\\Other\\app.js";
+    expect(sanitizedError(message).message).toBe("[user][user]\\app.js");
+    expect(sanitizeMonitoringEvent({ message }).message).toBe("[user][user]\\app.js");
+  });
+
   it("scrubs spaced Windows profiles in errors without changing the original", () => {
     const path = "C:\\Users\\Example User\\app.js:12:3";
     const source = new Error(`Failed at ${path}`, { cause: new Error(path) });
