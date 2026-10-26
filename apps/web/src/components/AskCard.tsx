@@ -3,7 +3,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
-import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
+import {
+  isApprovalAskBlock,
+  isSecretAskBlock,
+  resolveAskChoice,
+  selectedAskActionLabel,
+} from "@rakazo/core";
 import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
@@ -88,18 +93,28 @@ export function AskCard({
       )
     : askActions;
   const secretInput = isSecretAskBlock(block);
-  // A reply written in "Edit first" lives only on this card, so show it in the user's words.
+  const optionQuestion =
+    !approvalActions && !block.instructionUpdate && !secretInput && Boolean(askActions?.length);
+  const chosenOption =
+    answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
+  // A reply typed instead of picked is shown in the user's words, so the card reads as answered.
   const typedAnswer =
     answered &&
     !approvalActions &&
     !secretInput &&
     !block.instructionUpdate &&
-    !askActions?.length &&
+    !chosenOption &&
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  const optionQuestion =
-    !approvalActions && !block.instructionUpdate && !secretInput && Boolean(askActions?.length);
+  const answerQuote = typedAnswer ? (
+    <blockquote
+      data-testid="ask-answer"
+      className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-[15px] leading-[1.5] text-muted-foreground"
+    >
+      {typedAnswer}
+    </blockquote>
+  ) : null;
   // A login or credential is saved for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
   const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
@@ -254,21 +269,17 @@ export function AskCard({
             <OptionRow
               key={action.id}
               letter={optionLetter(index)}
-              selected={answered && displayedAnswer === action.id}
+              selected={chosenOption?.id === action.id}
               disabled={answered || !canAnswer || submitting}
               onClick={() => void submitAnswer(action.id)}
             >
               {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
             </OptionRow>
           ))}
+          {answerQuote}
         </div>
       ) : typedAnswer ? (
-        <blockquote
-          data-testid="ask-answer"
-          className="mt-3 whitespace-pre-wrap break-words border-s-2 border-border ps-3 text-[15px] leading-[1.5] text-muted-foreground"
-        >
-          {typedAnswer}
-        </blockquote>
+        answerQuote
       ) : answered ? (
         <div className="mt-3.5 flex items-center gap-1.5 text-[13.5px] font-medium text-muted-foreground">
           {displayedAnswer === "deny" ||

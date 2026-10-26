@@ -162,7 +162,10 @@ test("a typed reply answers the latest question and resumes its run", async ({
   await composer.fill("Paris");
   await page.keyboard.press("Enter");
 
-  await expect(seoul).toBeDisabled({ timeout: 30_000 });
+  await expect(page.getByTestId("ask-answer").filter({ hasText: "Paris" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(seoul).toBeDisabled();
   await expect(seoul).not.toHaveAttribute("aria-pressed");
   await expect
     .poll(async () => {

@@ -400,3 +400,28 @@ it("quotes an edited reply and marks a sent draft", async () => {
   expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
   expect(container.textContent).toContain("Sent");
 });
+
+it("quotes a typed answer under the options it did not match", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "Paris",
+    actions: [
+      { id: "berlin", label: "Berlin" },
+      { id: "seoul", label: "Seoul" },
+    ],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe("Paris");
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "seoul",
+    actions: [{ id: "seoul", label: "Seoul" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
+  expect(button("ASeoul")!.getAttribute("aria-pressed")).toBe("true");
+});
