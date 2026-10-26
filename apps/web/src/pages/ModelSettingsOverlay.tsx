@@ -395,11 +395,7 @@ export function ModelSettingsOverlay({
   );
 
   if (embedded) {
-    return (
-      <div data-testid="model-settings" className="max-w-[600px]">
-        {content}
-      </div>
-    );
+    return <div data-testid="model-settings">{content}</div>;
   }
 
   return (

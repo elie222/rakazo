@@ -572,6 +572,10 @@ msgstr "Add Treg"
 msgid "Add trigger"
 msgstr "Add trigger"
 
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Add workspace"
+msgstr "Add workspace"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"
 msgstr "Added"
@@ -767,7 +771,7 @@ msgstr "Approval model"
 msgid "Approvals"
 msgstr "Approvals"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "Approve"
@@ -884,6 +888,7 @@ msgstr "Avatar Studio"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "Back"
@@ -938,7 +943,7 @@ msgstr "bot"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1057,7 +1062,6 @@ msgstr "Can't read images"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -1113,6 +1117,10 @@ msgstr "Chart failed to render: {error}"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "Chat Settings"
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Chat with your bot from Slack."
+msgstr "Chat with your bot from Slack."
 
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
@@ -1247,7 +1255,7 @@ msgstr "Clearing…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1280,10 +1288,6 @@ msgstr "Close MCP servers"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "Close memory settings"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "Close messaging settings"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1446,6 +1450,7 @@ msgstr "Confirm the URL is reachable from this browser session, then test again.
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
@@ -1455,7 +1460,7 @@ msgstr "Connect"
 msgid "Connect {selectedProviderName}"
 msgstr "Connect {selectedProviderName}"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr "Connect a chat app"
 
@@ -1490,10 +1495,6 @@ msgstr "Connect my own"
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "Connect OAuth"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Connect Slack"
-msgstr "Connect Slack"
 
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
@@ -1573,7 +1574,7 @@ msgstr "Continue with {0}"
 msgid "Continue with credits"
 msgstr "Continue with credits"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "Conversations"
 
@@ -2061,11 +2062,11 @@ msgstr "Could not update the default memory scope"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "Couldn't load messaging settings"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
 
@@ -2193,7 +2194,7 @@ msgid "days"
 msgstr "days"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Decline"
 
@@ -2331,7 +2332,7 @@ msgstr "Discard recording"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2456,7 +2457,6 @@ msgstr "Each name can be used once."
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "Edit"
 
@@ -2642,7 +2642,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "Export this week's list from the CRM and drop it in the shared folder"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "External conversation"
 
@@ -2794,7 +2794,7 @@ msgid "Git event"
 msgstr "Git event"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "Group"
@@ -3129,7 +3129,7 @@ msgstr "Last check {0}: no changes"
 msgid "Later"
 msgstr "Later"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "Leave"
 
@@ -3145,7 +3145,7 @@ msgstr "Light"
 msgid "Linear issue"
 msgstr "Linear issue"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "Link DMs"
 
@@ -3257,13 +3257,15 @@ msgstr "Lowercase letters, numbers, hyphens and underscores, starting with a let
 msgid "Main model"
 msgstr "Main model"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage"
 msgstr "Manage"
 
+#. placeholder {0}: option.name
 #. placeholder {0}: providerName(choice)
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "Manage {0}"
 
@@ -3431,8 +3433,7 @@ msgstr "Message…"
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
 
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "Messaging"
 
@@ -4089,7 +4090,7 @@ msgstr "Paste your API key, then test again."
 msgid "Paused"
 msgstr "Paused"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr "Pending"
 
@@ -4442,10 +4443,6 @@ msgstr "Rename"
 msgid "Rename section"
 msgstr "Rename section"
 
-#: src/pages/SpaceSettingsPanel.tsx
-msgid "Rename space"
-msgstr "Rename space"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Renews {day}"
 msgstr "Renews {day}"
@@ -4488,7 +4485,7 @@ msgstr "Replying to {0}"
 msgid "Request a new code"
 msgstr "Request a new code"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr "Requests"
 
@@ -4563,7 +4560,6 @@ msgstr "Restoring your workspace"
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -4590,7 +4586,7 @@ msgstr "Return to Rakazo"
 msgid "Review provider settings and test again."
 msgstr "Review provider settings and test again."
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "Revoke"
 
@@ -4675,7 +4671,6 @@ msgstr "Saturday"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "Save"
 
@@ -4811,11 +4806,11 @@ msgstr "Self-hosted"
 msgid "Send"
 msgstr "Send"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 
@@ -4869,7 +4864,7 @@ msgstr "Server URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Settings"
@@ -5085,6 +5080,10 @@ msgstr "Space"
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "Space default"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Spaces"
+msgstr "Spaces"
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -5600,7 +5599,7 @@ msgstr "Undo import?"
 msgid "Uninstall"
 msgstr "Uninstall"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "Unlink"
 

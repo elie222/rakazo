@@ -76,8 +76,6 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string) => Promise<void>;
-  messagingEnabled?: boolean;
-  onOpenMessaging?: () => void;
 };
 
 export function GeneralSettingsPanels({
@@ -86,8 +84,6 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
-  messagingEnabled = false,
-  onOpenMessaging,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
   const account = accountDisplay({ name, email }, t`You`);
@@ -269,16 +265,6 @@ export function GeneralSettingsPanels({
             }
           />
         )}
-        {messagingEnabled && onOpenMessaging ? (
-          <SettingsRow
-            label={<Trans>Messaging</Trans>}
-            control={
-              <Button variant="secondary" size="sm" onClick={onOpenMessaging}>
-                <Trans>Manage</Trans>
-              </Button>
-            }
-          />
-        ) : null}
       </SettingsGroup>
 
       <SettingsGroup title={<Trans>Preferences</Trans>}>

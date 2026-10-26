@@ -3,6 +3,7 @@ import type { FileUrlResponse, SandboxStateEnum } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { ComputerRef } from "@rakazo/adapter-kit";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -92,8 +93,10 @@ describe("BoatSandboxProvider", () => {
         { operation: "resume", outcome: "rate_limited" },
       ]);
       for (const event of sink.events) {
+        const failed = event.outcome !== "accepted";
         expect(Object.keys(event).sort()).toEqual([
           "durationMs",
+          ...(failed ? ["error"] : []),
           "level",
           "message",
           "operation",
@@ -103,6 +106,7 @@ describe("BoatSandboxProvider", () => {
           "timestamp",
         ]);
         expect(event.message).toBe("sandbox.start");
+        if (failed) expect(event.error).toMatchObject({ name: "SandboxRateLimitError" });
       }
     } finally {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
@@ -720,6 +724,54 @@ describe("BoatSandboxProvider", () => {
       message: "could not prepare computer desktop tools",
       cause: { message: "exit 100: E: Could not get lock /var/lib/dpkg/lock-frontend" },
     });
+  });
+
+  it.each([
+    'Executable not found in $PATH: "systemd-run"',
+    "ENOENT: no such file or directory, posix_spawn 'systemd-run'",
+    "environment: line 7: /usr/bin/grep: cannot execute: required file not found\nenvironment: line 8: /usr/bin/grep: cannot execute: required file not found",
+  ])("reports a machine that cannot start programs as damaged: %s", async (stderr) => {
+    vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
+      ok: true,
+      type: "command.finished",
+      success: false,
+      exitCode: 1,
+      stdout: "",
+      stderr,
+      timedOut: false,
+    });
+    const { provider, computer } = await boat();
+
+    await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(SandboxDamagedError);
+    const events = [];
+    const run = provider.execute(computer, { argv: ["ls"] }, context);
+    await expect(
+      (async () => {
+        for await (const event of run) events.push(event);
+      })(),
+    ).rejects.toBeInstanceOf(SandboxDamagedError);
+  });
+
+  it("leaves a command's own failure to start a program to the command", async () => {
+    vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
+      ok: true,
+      type: "command.finished",
+      success: false,
+      exitCode: 126,
+      stdout: "",
+      stderr: "bash: ./run.sh: cannot execute: required file not found\n",
+      timedOut: false,
+    });
+    const { provider, computer } = await boat();
+
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["./run.sh"] }, context)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stderr", data: "bash: ./run.sh: cannot execute: required file not found\n" },
+      { type: "exit", code: 126 },
+    ]);
   });
 
   it("replaces a sandbox whose data expires between the lookup and the resume", async () => {

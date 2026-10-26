@@ -18,7 +18,7 @@ import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace, deletedTeamBotFolders } from "./computer-workspace.js";
-import { isSandboxGoneError } from "./sandbox-errors.js";
+import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -449,13 +449,24 @@ export async function sleepComputerIfIdle(
       if (cleared.count === 1) await recordComputerRunEnd(deps.prisma, computer, "gone");
       return;
     }
-    await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
-      data: { state: "running" },
-    });
-    scheduleComputerSleep(deps.jobs, computerId);
-    if (deferSleep(error, computer)) return;
-    throw error;
+    if (isSandboxDamagedError(error)) {
+      // Nothing on it can run, so no checkpoint can be taken, now or later. Stop it anyway with
+      // its disk kept, rather than resume and fail on it every idle window; Recover rebuilds it.
+      getLogger().warn("computer.checkpoint_skipped", {
+        "computer.id": computerId,
+        provider: computer.kind,
+        reason: "damaged",
+        error,
+      });
+    } else {
+      await deps.prisma.computer.updateMany({
+        where: suspensionClaim,
+        data: { state: "running" },
+      });
+      scheduleComputerSleep(deps.jobs, computerId);
+      if (deferSleep(error, computer)) return;
+      throw error;
+    }
   }
 
   const [current, activeAfterCheckpoint, takeoverAfterCheckpoint, backgroundAfterCheckpoint] =
@@ -574,6 +585,7 @@ function deferSleep(error: unknown, computer: { id: string; kind: string }): boo
     "computer.id": computer.id,
     provider: computer.kind,
     reason,
+    error,
   });
   return true;
 }
@@ -684,8 +696,8 @@ async function hasActiveBackgroundWork(
     try {
       return (await sandbox.inspectBackgroundWork(computer, computerId, context)) !== "idle";
     } catch (error) {
-      // A gone sandbox runs nothing; the checkpoint below then stops the computer.
-      return !isSandboxGoneError(error);
+      // A gone or damaged sandbox runs nothing; the checkpoint below then stops the computer.
+      return !isSandboxGoneError(error) && !isSandboxDamagedError(error);
     }
   }
   let exitCode: number | undefined;
@@ -703,7 +715,7 @@ async function hasActiveBackgroundWork(
       if (event.type === "exit") exitCode = event.code;
     }
   } catch (error) {
-    return !isSandboxGoneError(error);
+    return !isSandboxGoneError(error) && !isSandboxDamagedError(error);
   }
   // Only the probe's explicit idle result permits suspension; unsupported or failed probes retry.
   return exitCode !== 1 || stdout.trim() !== BACKGROUND_WORK_IDLE_SENTINEL;

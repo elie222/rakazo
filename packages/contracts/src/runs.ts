@@ -23,6 +23,23 @@ export const RUN_TRIGGERS = [
 export const RunTriggerSchema = z.enum(RUN_TRIGGERS);
 export type RunTrigger = z.infer<typeof RunTriggerSchema>;
 
+/**
+ * Whose problem a failed run is. Every kind except "output" is the user's provider account,
+ * key, plan or model choice; "output" is a model that returned nothing usable.
+ */
+export const RUN_ERROR_KINDS = [
+  "key",
+  "credit",
+  "spending",
+  "rate",
+  "auth",
+  "access",
+  "model",
+  "context",
+  "output",
+] as const;
+export type RunErrorKind = (typeof RUN_ERROR_KINDS)[number];
+
 export const RoutineRunSchema = z.object({
   id: Id,
   botId: Id,

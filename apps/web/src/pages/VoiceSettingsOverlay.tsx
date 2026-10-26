@@ -544,11 +544,7 @@ export function VoiceSettingsOverlay({
   );
 
   if (embedded) {
-    return (
-      <div data-testid="voice-settings" className="max-w-xl">
-        {content}
-      </div>
-    );
+    return <div data-testid="voice-settings">{content}</div>;
   }
 
   return (

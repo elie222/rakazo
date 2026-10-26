@@ -1518,7 +1518,7 @@ describe("sendThreadMessage", () => {
           botId: null,
           replyToMessageId: null,
           runId: null,
-          createdAt: new Date(),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
         }),
         findMany: vi.fn().mockResolvedValue([
           {
@@ -1558,6 +1558,7 @@ describe("sendThreadMessage", () => {
       bot: { computer: null },
     } as ThreadTarget;
     const enqueue = vi.fn().mockResolvedValue(undefined);
+    const analytics = { capture: vi.fn(), flush: async () => undefined };
 
     await expect(
       sendThreadMessage(
@@ -1565,6 +1566,7 @@ describe("sendThreadMessage", () => {
           prisma,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
+          analytics,
         },
         actor,
         target,
@@ -1592,6 +1594,13 @@ describe("sendThreadMessage", () => {
     expect(tx.steeringMessage.create).not.toHaveBeenCalled();
     expect(tx.task.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+    // The composer send is the main way users talk to a bot; it must count as a message.
+    expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
+      "user-1",
+      { name: "message_sent", trigger: "user" },
+      { id: "msg-1", at: new Date("2026-01-01T00:00:00Z") },
+    );
+    expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("Paris");
     expect(tx.event.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         type: "thread.message.created",
@@ -1754,6 +1763,7 @@ describe("sendThreadMessage", () => {
       threadId: "thread-1",
       bot: { computer: null },
     } as ThreadTarget;
+    const analytics = { capture: vi.fn(), flush: async () => undefined };
 
     await expect(
       sendThreadMessage(
@@ -1761,6 +1771,7 @@ describe("sendThreadMessage", () => {
           prisma,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
+          analytics,
         },
         actor,
         target,
@@ -1776,6 +1787,8 @@ describe("sendThreadMessage", () => {
       runIds: ["run-waiting-1", "run-waiting-2"],
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    // The original send already counted this message.
+    expect(analytics.capture).not.toHaveBeenCalled();
     expect(prisma.run.findMany).toHaveBeenCalledWith({
       where: { id: { in: ["run-waiting-1", "run-waiting-2"] } },
     });

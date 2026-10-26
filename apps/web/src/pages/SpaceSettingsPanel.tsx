@@ -1,15 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
-import { useId, useState } from "react";
+import { Button, Input } from "@rakazo/ui-web";
+import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 import type { SettingsSpace } from "./shell/dialogs";
 import { DeleteSpaceDialog } from "./shell/dialogs";
 
-/**
- * The space the space-scoped sections act on: its name, the account settings it customizes,
- * and deletion for its owner.
- */
+/** One space's page: its name, the account settings it customizes, and deletion for its owner. */
 export function SpaceSettingsPanel({
   space,
   onRename,
@@ -25,24 +22,31 @@ export function SpaceSettingsPanel({
 }) {
   const { t } = useLingui();
   const nameId = useId();
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState(space.name);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const trimmed = draft?.trim() ?? "";
+  const [overridesBusy, setOverridesBusy] = useState(false);
+  // A rename in flight holds the dialog open, so a failure is shown instead of lost on leaving.
+  const busy = pending || overridesBusy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
 
   async function save() {
-    if (pending || !trimmed) return;
-    // Nothing to save, so close without a request.
-    if (trimmed === space.name) {
-      setDraft(null);
+    const trimmed = draft.trim();
+    if (pending) return;
+    // An empty or unchanged name keeps the current one without a request.
+    if (!trimmed || trimmed === space.name) {
+      setDraft(space.name);
+      setError(null);
       return;
     }
     setPending(true);
     setError(null);
     try {
       await onRename(trimmed);
-      setDraft(null);
+      setDraft(trimmed);
     } catch (err) {
       setError(
         err instanceof Error && err.message.trim() ? err.message : t`Could not rename space`,
@@ -54,28 +58,18 @@ export function SpaceSettingsPanel({
 
   return (
     <div className="space-y-8" data-testid="space-settings">
-      <SettingsGroup>
-        {draft !== null ? (
-          <form
-            className="space-y-3 px-4 py-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                if (!pending) setDraft(null);
-              }
-            }}
-          >
-            <Field>
-              <FieldLabel htmlFor={nameId}>
+      {space.canRename ? (
+        <SettingsGroup>
+          <SettingsRow
+            label={
+              <label htmlFor={nameId}>
                 <Trans>Name</Trans>
-              </FieldLabel>
+              </label>
+            }
+            control={
               <Input
                 id={nameId}
-                autoFocus
+                className="w-56"
                 maxLength={60}
                 value={draft}
                 disabled={pending}
@@ -83,51 +77,30 @@ export function SpaceSettingsPanel({
                   setDraft(event.target.value);
                   setError(null);
                 }}
+                onBlur={() => void save()}
+                onKeyDown={(event) => {
+                  // Enter that confirms an IME composition is not a commit.
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    event.stopPropagation();
+                    setDraft(space.name);
+                    setError(null);
+                  }
+                }}
               />
-            </Field>
+            }
+          >
             {error ? (
-              <p role="alert" className="text-[12.5px] text-destructive">
+              <p role="alert" className="pt-2 text-[12.5px] text-destructive">
                 {error}
               </p>
             ) : null}
-            <div className="flex items-center gap-3">
-              <Button type="submit" className="rounded-full" disabled={pending || !trimmed}>
-                <Trans>Save</Trans>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="rounded-full"
-                disabled={pending}
-                onClick={() => setDraft(null)}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <SettingsRow
-            label={<p className="break-words">{space.name}</p>}
-            control={
-              space.canRename ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="rounded-full"
-                  aria-label={t`Rename space`}
-                  onClick={() => {
-                    setError(null);
-                    setDraft(space.name);
-                  }}
-                >
-                  <Trans>Edit</Trans>
-                </Button>
-              ) : null
-            }
-          />
-        )}
-      </SettingsGroup>
-      <SpaceSettingOverrides onClose={onClose} onBusyChange={onBusyChange} />
+          </SettingsRow>
+        </SettingsGroup>
+      ) : null}
+      <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
       {space.canDelete ? (
         <Button
           variant="destructive"

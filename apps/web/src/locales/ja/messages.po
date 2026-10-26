@@ -572,6 +572,10 @@ msgstr "Tregを追加"
 msgid "Add trigger"
 msgstr "トリガーを追加"
 
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Add workspace"
+msgstr "ワークスペースを追加"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"
 msgstr "追加済み"
@@ -767,7 +771,7 @@ msgstr "承認モデル"
 msgid "Approvals"
 msgstr "承認"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "承認"
@@ -884,6 +888,7 @@ msgstr "Avatar Studio"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "戻る"
@@ -938,7 +943,7 @@ msgstr "ボット"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1057,7 +1062,6 @@ msgstr "画像を読み取れません"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "キャンセル"
 
@@ -1113,6 +1117,10 @@ msgstr "チャートを表示できませんでした: {error}"
 #: src/pages/shell/composer-mentions.tsx
 msgid "Chat Settings"
 msgstr "チャット設定"
+
+#: src/pages/MessagingSettingsPanel.tsx
+msgid "Chat with your bot from Slack."
+msgstr "Slackからボットとチャットできます。"
 
 #: src/lib/localized-provider-hint.ts
 msgid "ChatGPT subscription"
@@ -1247,7 +1255,7 @@ msgstr "クリア中…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1280,10 +1288,6 @@ msgstr "MCPサーバーを閉じる"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "メモリ設定を閉じる"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "メッセージ設定を閉じる"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1446,6 +1450,7 @@ msgstr "このブラウザセッションからURLにアクセスできること
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connect"
@@ -1455,7 +1460,7 @@ msgstr "接続"
 msgid "Connect {selectedProviderName}"
 msgstr "{selectedProviderName} に接続"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr ""
 
@@ -1490,10 +1495,6 @@ msgstr "自分のキーを接続"
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "OAuthを接続"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Connect Slack"
-msgstr "Slackを接続"
 
 #: src/lib/agent-import-errors.ts
 msgid "Connect this model's provider first."
@@ -1573,7 +1574,7 @@ msgstr "{0}で続行"
 msgid "Continue with credits"
 msgstr "クレジットで続行"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr ""
 
@@ -2061,11 +2062,11 @@ msgstr "デフォルトのメモリ範囲を更新できませんでした"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "コンピューターのセットアップを確認できませんでした（{failureMessage}）。接続を修正してから、もう一度確認してください。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "メッセージ設定を読み込めませんでした"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "メッセージ設定を更新できませんでした"
 
@@ -2193,7 +2194,7 @@ msgid "days"
 msgstr "日"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒否"
 
@@ -2331,7 +2332,7 @@ msgstr "録音を破棄"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2456,7 +2457,6 @@ msgstr "各名前は一度だけ使用できます。"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "編集"
 
@@ -2642,7 +2642,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "今週のリストをCRMからエクスポートして共有フォルダに入れる"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "外部の会話"
 
@@ -2794,7 +2794,7 @@ msgid "Git event"
 msgstr "Gitイベント"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "グループ"
@@ -3129,7 +3129,7 @@ msgstr "前回の確認 {0}: 変更なし"
 msgid "Later"
 msgstr "後で"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
 
@@ -3145,7 +3145,7 @@ msgstr "ライト"
 msgid "Linear issue"
 msgstr "Linear課題"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "DMを連携"
 
@@ -3257,13 +3257,15 @@ msgstr "小文字、数字、ハイフン、アンダースコアのみ使用で
 msgid "Main model"
 msgstr "メインモデル"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage"
 msgstr "管理"
 
+#. placeholder {0}: option.name
 #. placeholder {0}: providerName(choice)
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "{0} を管理"
 
@@ -3431,8 +3433,7 @@ msgstr "メッセージ…"
 msgid "Messaged {peer}"
 msgstr "{peer}にメッセージを送信しました"
 
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "メッセージ"
 
@@ -4089,7 +4090,7 @@ msgstr "APIキーを貼り付けてから、もう一度テストしてくださ
 msgid "Paused"
 msgstr "一時停止中"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr ""
 
@@ -4442,10 +4443,6 @@ msgstr "名前を変更"
 msgid "Rename section"
 msgstr "セクション名を変更"
 
-#: src/pages/SpaceSettingsPanel.tsx
-msgid "Rename space"
-msgstr "スペース名を変更"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Renews {day}"
 msgstr "{day}に更新"
@@ -4488,7 +4485,7 @@ msgstr "{0}に返信中"
 msgid "Request a new code"
 msgstr "新しいコードをリクエスト"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr ""
 
@@ -4563,7 +4560,6 @@ msgstr "ワークスペースを復元中"
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "再試行"
@@ -4590,7 +4586,7 @@ msgstr "Rakazoに戻る"
 msgid "Review provider settings and test again."
 msgstr "プロバイダー設定を確認して、もう一度テストしてください。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "取り消す"
 
@@ -4675,7 +4671,6 @@ msgstr "土曜日"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "保存"
 
@@ -4811,11 +4806,11 @@ msgstr "セルフホスト"
 msgid "Send"
 msgstr "送信"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr ""
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr ""
 
@@ -4869,7 +4864,7 @@ msgstr "サーバーURL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Settings"
@@ -5085,6 +5080,10 @@ msgstr "スペース"
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "スペースのデフォルト"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Spaces"
+msgstr "スペース"
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -5600,7 +5599,7 @@ msgstr "インポートを元に戻しますか？"
 msgid "Uninstall"
 msgstr "アンインストール"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "リンクを解除"
 

@@ -11,6 +11,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import {
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  MODEL_KEY_REJECTED_ERROR,
   parseModelHeaders,
 } from "@rakazo/contracts";
 import { Agent } from "undici";
@@ -477,7 +478,7 @@ export async function verifyOpenAiCompatibleApiKey(
   signal?: AbortSignal,
 ): Promise<void> {
   if (new URL(input.baseUrl).hostname !== "ollama.com") return;
-  if (!input.apiKey?.trim()) throw new Error("API key was rejected by the provider.");
+  if (!input.apiKey?.trim()) throw new Error(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
@@ -494,7 +495,7 @@ export async function verifyOpenAiCompatibleApiKey(
   }
   await response.body?.cancel().catch(() => undefined);
   if (response.status === 401 || response.status === 403) {
-    throw new Error("API key was rejected by the provider.");
+    throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }

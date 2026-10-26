@@ -92,11 +92,16 @@ async function type(value: string) {
   });
 }
 
-async function submit() {
-  const form = container.querySelector("form");
-  if (!form) throw new Error("Missing form");
+async function commit(key?: string) {
+  const input = container.querySelector("input");
+  if (!input) throw new Error("Missing name field");
+  if (key) {
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+  }
   await act(async () => {
-    form.requestSubmit();
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -116,15 +121,58 @@ afterEach(async () => {
 });
 
 describe("SpaceSettingsPanel", () => {
-  it("renames the space in place", async () => {
+  it("renames the space when its name field is left", async () => {
     const onRename = vi.fn(async () => undefined);
     await render({ onRename });
-    await click("Rename space");
     expect(container.querySelector("input")?.value).toBe("Support");
     await type("  Help desk  ");
-    await submit();
+    await commit();
     expect(onRename).toHaveBeenCalledWith("Help desk");
-    expect(container.querySelector("input")).toBeNull();
+    expect(container.querySelector("input")?.value).toBe("Help desk");
+  });
+
+  it("keeps the name without a request when the field is cleared, unchanged, or escaped", async () => {
+    const onRename = vi.fn(async () => undefined);
+    await render({ onRename });
+    await type("   ");
+    await commit();
+    expect(container.querySelector("input")?.value).toBe("Support");
+    await commit();
+    await type("Help desk");
+    await commit("Escape");
+    expect(container.querySelector("input")?.value).toBe("Support");
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("holds the dialog busy while a rename is saving", async () => {
+    let finish: () => void = () => undefined;
+    const onRename = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onBusyChange = vi.fn();
+    await render({ onRename, onBusyChange });
+    await type("Help desk");
+    await commit();
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => finish());
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not save on the Enter that confirms an IME composition", async () => {
+    const onRename = vi.fn(async () => undefined);
+    await render({ onRename });
+    await type("Help desk");
+    const input = container.querySelector("input");
+    const blur = vi.spyOn(input as HTMLInputElement, "blur");
+    await act(async () => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }),
+      );
+    });
+    expect(blur).not.toHaveBeenCalled();
   });
 
   it("falls back to the generic error when the failure message is blank", async () => {
@@ -133,9 +181,8 @@ describe("SpaceSettingsPanel", () => {
         throw new Error("   ");
       },
     });
-    await click("Rename space");
     await type("Help desk");
-    await submit();
+    await commit();
     expect(container.textContent).toContain("Could not rename space");
   });
 
@@ -143,10 +190,9 @@ describe("SpaceSettingsPanel", () => {
     await render({
       space: { id: "space-a", name: "Personal", canRename: false, canDelete: false },
     });
-    expect(container.textContent).toContain("Personal");
+    expect(container.querySelector("input")).toBeNull();
     // Every member can still customize their own settings for the space.
     expect(container.querySelector('[data-testid="space-setting-overrides"]')).not.toBeNull();
-    expect(button("Rename space")).toBeUndefined();
     expect(button("Delete space")).toBeUndefined();
   });
 

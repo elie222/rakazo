@@ -1,7 +1,7 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, MODEL_KEY_REJECTED_ERROR } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
@@ -131,7 +131,7 @@ export async function verifyCatalogProviderApiKey(
       : response.status === 401 || response.status === 403;
   void response.body?.cancel().catch(() => undefined);
   if (rejected) {
-    throw new Error("API key was rejected by the provider.");
+    throw new Error(MODEL_KEY_REJECTED_ERROR);
   }
   if (!response.ok) throw new Error("Could not verify the API key. Try again.");
 }

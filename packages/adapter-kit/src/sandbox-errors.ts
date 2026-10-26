@@ -28,3 +28,15 @@ export class SandboxUnavailableError extends Error {
     this.name = "SandboxUnavailableError";
   }
 }
+
+/**
+ * The computer is up but its system can no longer start programs, so nothing on it can run or
+ * be saved. Waiting does not fix it; Recover rebuilds the computer from its last save.
+ */
+export class SandboxDamagedError extends Error {
+  readonly code = "SANDBOX_DAMAGED";
+  constructor(options?: { cause?: unknown }) {
+    super("This computer's system is damaged. Recover the computer to rebuild it.", options);
+    this.name = "SandboxDamagedError";
+  }
+}

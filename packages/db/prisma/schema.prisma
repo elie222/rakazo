@@ -905,6 +905,8 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
+  accountFailures Int      @default(0)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]

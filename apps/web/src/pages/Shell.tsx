@@ -270,9 +270,6 @@ function readAloud(text: string, opts: { botId: string; messageId: string }) {
 const BotContextMenu = lazyOverlay(() =>
   import("./BotContextMenu").then((module) => module.BotContextMenu),
 );
-const MessagingSettingsOverlay = lazyOverlay(() =>
-  import("./MessagingSettingsOverlay").then((module) => module.MessagingSettingsOverlay),
-);
 const SettingsOverlay = lazyOverlay(() =>
   import("./SettingsOverlay").then((module) => module.SettingsOverlay),
 );
@@ -4338,9 +4335,6 @@ function SpaceShell() {
             onClose={() => setOverlay(null)}
           />
         ) : null}
-        {overlay?.kind === "messaging" ? (
-          <MessagingSettingsOverlay onClose={() => setOverlay(null)} />
-        ) : null}
       </Suspense>
 
       <Suspense fallback={null}>
@@ -4353,8 +4347,7 @@ function SpaceShell() {
               await removeSpace(spaceId);
               if (alive.current) setOverlay(null);
             }}
-            currentSpaceId={currentSpaceId}
-            onSpaceChange={(spaceId) => setOverlay({ ...overlay, spaceId })}
+            onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
             name={session.data?.user.name ?? ""}
             onNameSaved={async () => {
               await session.refetch({ query: { disableCookieCache: true } });
@@ -4370,7 +4363,6 @@ function SpaceShell() {
               setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
             }
             messagingEnabled={messagingSurfaceEnabled}
-            onOpenMessaging={() => setOverlay({ kind: "messaging" })}
             timezone={bootstrapMe?.timezone ?? null}
             onTimezoneChange={async (timezone) => {
               const nextMe = await rpc.preferences.update({ timezone });

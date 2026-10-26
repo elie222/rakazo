@@ -328,7 +328,8 @@ export type PiOAuthConnected = {
 export type PiOAuthComplete =
   | { status: "pending" }
   | PiOAuthConnected
-  | { status: "error"; error: string };
+  /** The provider is known once a session existed, so the failure can be attributed. */
+  | { status: "error"; error: string; provider?: string };
 
 export type PiOAuthFinish<T> =
   | { status: "pending" }
@@ -1224,7 +1225,7 @@ export class PiOAuthLogins {
     }
     if (session.error) {
       this.removeSession(session);
-      return { status: "error", error: session.error };
+      return { status: "error", error: session.error, provider: session.provider };
     }
     if (session.state === "finalizing") return { status: "pending" };
     if (session.credential) {

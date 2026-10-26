@@ -16,12 +16,13 @@ test("the only space is named in the sidebar and chat creation requires approval
   await page.getByRole("menuitem", { name: "Settings" }).click();
   const onlySpaceSettings = page.getByTestId("user-settings");
   await expect(onlySpaceSettings).toHaveAttribute("data-settings-section", "space");
-  await onlySpaceSettings.getByRole("button", { name: "Rename space" }).click();
   await expect(onlySpaceSettings.getByLabel("Name")).toHaveValue("Personal");
   // The default space is never deletable, so the action is absent.
   await expect(onlySpaceSettings.getByRole("button", { name: "Delete space" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "space-settings-only-space");
-  await onlySpaceSettings.getByRole("button", { name: "Cancel" }).click();
+  // A lone space is the whole app, so General lists no spaces.
+  await onlySpaceSettings.getByRole("button", { name: "Back" }).click();
+  await expect(onlySpaceSettings.getByTestId("settings-spaces")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(onlySpaceSettings).toHaveCount(0);
   await captureScreenshot(page, testInfo, "single-space-sidebar");
@@ -113,14 +114,12 @@ test("a new space auto-completes onboarding, is renamed in its settings, and is 
   await page.getByRole("menuitem", { name: "Settings" }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "space");
-  await settings.getByRole("button", { name: "Rename space" }).click();
-  await expect(settings.getByLabel("Name")).toHaveValue("Typo space");
-  await settings.getByLabel("Name").fill("Temporary");
+  const spaceName = settings.getByTestId("space-settings").getByLabel("Name");
+  await expect(spaceName).toHaveValue("Typo space");
+  await spaceName.fill("Temporary");
   await captureScreenshot(page, testInfo, "space-settings-rename");
-  await settings.getByRole("button", { name: "Save" }).click();
-  await expect(
-    settings.getByTestId("space-settings").getByText("Temporary", { exact: true }),
-  ).toBeVisible();
+  await spaceName.press("Enter");
+  await expect(settings.getByRole("heading", { name: "Temporary" })).toBeVisible();
   await expect(sidebar.getByText("Temporary", { exact: true })).toBeVisible();
   await expect(sidebar.getByText("Typo space", { exact: true })).toHaveCount(0);
 
@@ -195,7 +194,7 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
 });
 
-test("a space's menu opens its settings in place, and settings can switch space", async ({
+test("a space's menu opens its settings in place, and General lists every space", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -226,18 +225,20 @@ test("a space's menu opens its settings in place, and settings can switch space"
   await page.getByRole("menuitem", { name: "Settings" }).click();
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "space");
-  const picker = settings.getByTestId("settings-space");
-  await expect(picker).toHaveText("Personal");
+  await expect(settings.getByRole("heading", { name: "Personal" })).toBeVisible();
   onChat();
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
   await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
   await captureScreenshot(page, testInfo, "space-settings-from-menu");
 
-  await picker.click();
-  await expect(page.getByRole("option", { name: "Support", exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "space-settings-switcher");
-  await page.getByRole("option", { name: "Support", exact: true }).click();
-  await expect(picker).toHaveText("Support");
+  // Back leads to General, whose Spaces list opens any space's page.
+  await settings.getByRole("button", { name: "Back" }).click();
+  await expect(settings).toHaveAttribute("data-settings-section", "general");
+  const spaceList = settings.getByTestId("settings-spaces");
+  await expect(spaceList.getByText("Personal", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-general-spaces");
+  await spaceList.getByRole("button", { name: "Manage Support" }).click();
+  await expect(settings.getByRole("heading", { name: "Support" })).toBeVisible();
   await expect(settings).toHaveAttribute("data-settings-section", "space");
   onChat();
   expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
@@ -262,21 +263,15 @@ test("a space's menu opens its settings in place, and settings can switch space"
 
   // The account's own approvals stay as they were.
   await settings.getByTestId("settings-nav-confirmations").click();
-  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Never ask", exact: true })).toHaveAttribute(
     "aria-pressed",
     "false",
   );
 
-  await settings.getByTestId("settings-nav-space").click();
-  await expect(picker).toHaveText("Support");
+  await settings.getByTestId("settings-nav-general").click();
+  await spaceList.getByRole("button", { name: "Manage Support" }).click();
+  await expect(settings.getByRole("heading", { name: "Support" })).toBeVisible();
   await overrides.getByRole("button", { name: "Use defaults for Approvals" }).click();
   await expect(approvals.getByTestId("approval-mode")).toHaveCount(0);
   await expect(overrides.getByRole("button", { name: "Customize Approvals" })).toBeVisible();
-
-  // Sections that are not per space show no picker.
-  await settings.getByTestId("settings-nav-general").click();
-  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
-  await settings.getByTestId("settings-nav-models").click();
-  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
 });

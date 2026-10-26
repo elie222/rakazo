@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { FetchError } from "@boatdev/sdk";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError, SandboxUnavailableError } from "@rakazo/adapter-kit";
+import {
+  SandboxDamagedError,
+  SandboxRateLimitError,
+  SandboxUnavailableError,
+} from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -282,6 +287,65 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
     expect(sink.events).toContainEqual(
       expect.objectContaining({ level: "warn", message: "computer.sleep_deferred" }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("defers sleep when the connection to the provider drops", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    vi.spyOn(FakeBoatApi.prototype, "command").mockRejectedValue(
+      new FetchError(
+        new TypeError("fetch failed"),
+        "The request failed and the interceptors did not return an alternative response",
+      ),
+    );
+    const boat = fakeBoatProvider();
+    const boatComputer = await boat.provision(
+      { botId: "bot", homePath: "/unused" },
+      {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    );
+    const harness = idleHarness();
+    harness.deps.sandbox.exportWorkspace = (_computer, context) =>
+      boat.exportWorkspace(boatComputer, context);
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.sleep_deferred",
+        reason: "unresponsive",
+        error: expect.objectContaining({ name: "SandboxUnresponsiveError" }),
+      }),
+    );
+  });
+
+  it("stops a computer whose system cannot start programs without a checkpoint", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const damaged = new SandboxDamagedError();
+    const harness = idleHarness({ probeError: damaged, exportError: damaged });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.computer.providerRef).not.toBeNull();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.checkpoint_skipped",
+        reason: "damaged",
+      }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });

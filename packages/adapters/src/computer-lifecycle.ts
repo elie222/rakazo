@@ -433,6 +433,7 @@ export async function provisionComputer(
     log.warn("computer.provision_failed", {
       provider: existing.kind,
       durationMs: Math.round(performance.now() - started),
+      error,
     });
     // A failed reconnect never owns an existing workspace, even if setup failed.
     const rollbackError =

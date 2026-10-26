@@ -27,6 +27,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -1089,6 +1090,9 @@ export class BoatSandboxProvider implements SandboxProvider {
       const result = isFinishedCommand(response)
         ? commandResponse(response)
         : await this.pollCommand(id, response.processId, timeoutMs + 10_000, signal);
+      if (result.exitCode !== 0 && systemDamaged(result.stderr)) {
+        throw new SandboxDamagedError({ cause: new Error(commandFailure(result)) });
+      }
       if (result.exitCode !== 124 || result.timedOut) return result;
       const completed = await this.rawCommand(id, `test -f ${shellQuote(marker)}`, 10);
       if (completed.exitCode === 0) {
@@ -1180,6 +1184,18 @@ function commandFailure(result: BoatCommandResult): string {
   return last ? `exit ${result.exitCode}: ${last}` : `exit ${result.exitCode}`;
 }
 
+/**
+ * Boat's runner starts each command with `systemd-run` and sources the machine's environment
+ * before our command line runs. These failures come from that, so the machine's system files are
+ * missing or broken; the command itself never started.
+ */
+const BOAT_SYSTEM_DAMAGED =
+  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found)$/m;
+
+function systemDamaged(stderr: string): boolean {
+  return BOAT_SYSTEM_DAMAGED.test(stderr);
+}
+
 /** How a listing command ended. Its output is file names, never an error message. */
 function commandStatus(result: BoatCommandResult): string {
   if (result.timedOut) return "timed out";
@@ -1254,6 +1270,7 @@ function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
           operation,
           outcome: error instanceof SandboxRateLimitError ? "rate_limited" : "failed",
           durationMs: Math.round(performance.now() - started),
+          error,
         });
         throw error;
       }

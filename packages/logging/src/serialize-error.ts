@@ -26,8 +26,11 @@ export function serializeError(error: unknown, seen = new Set<unknown>()): Seria
   if (typeof error.stack === "string" && error.stack.length > 0) {
     serialized.stack = redactSensitiveText(error.stack);
   }
-  if (error.cause !== undefined && seen.size < MAX_CAUSE_DEPTH) {
-    serialized.cause = serializeError(error.cause, seen);
+  // An AggregateError holds the failure it reports in `errors`; the first is why it was thrown.
+  const cause =
+    error.cause ?? (error instanceof AggregateError ? (error.errors as unknown[])[0] : undefined);
+  if (cause !== undefined && seen.size < MAX_CAUSE_DEPTH) {
+    serialized.cause = serializeError(cause, seen);
   }
   return serialized;
 }

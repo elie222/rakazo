@@ -104,6 +104,9 @@ export function defaultCatalogModelId(
   return usableModelId(entry?.id);
 }
 
+/** A run pinned to a provider the user has no connection for. */
+export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
+
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
     super(message);
@@ -570,7 +573,7 @@ export async function validateBotModelChange(
           return { ok: false, error: "Unsupported thinking level" };
         return { ok: true, provider, model, thinkingLevel: input.thinkingLevel ?? null };
       }
-      return { ok: false, error: "Connect that model provider first" };
+      return { ok: false, error: PINNED_PROVIDER_NOT_CONNECTED };
     }
     const inCatalog =
       isCatalogModelChoice(provider, model) ||
@@ -737,7 +740,7 @@ export async function validateConnectedModelChoice(
     modelId,
     resolution,
   );
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
@@ -841,7 +844,7 @@ export function pinnedModelCredentialError(
   credential: { defaultModel: string | null } | null,
 ): string | undefined {
   if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
-  if (!credential) return "Connect that model provider first";
+  if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
   // The enabled list lives in the secret, so the run path checks openai-compatible ids.
   if (choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
   const modelId = usableModelId(choice.modelId);

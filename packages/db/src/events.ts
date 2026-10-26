@@ -19,6 +19,7 @@ import {
   isSecretAskBlock,
   messageReaction,
   messagingChannelId,
+  normalizeRunError,
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
@@ -2073,6 +2074,7 @@ async function captureRunAnalytics(
       select: {
         userId: true,
         trigger: true,
+        error: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,
@@ -2086,7 +2088,16 @@ async function captureRunAnalytics(
       at: (type === "run.started" ? run.startedAt : run.completedAt) ?? run.createdAt,
     };
     if (type === "run.failed")
-      analytics.capture(run.userId, { name: "run_failed", trigger: trigger.data }, identity);
+      analytics.capture(
+        run.userId,
+        {
+          name: "run_failed",
+          trigger: trigger.data,
+          // Only the coarse kind leaves the database; the error text itself never does.
+          errorKind: normalizeRunError(run.error ?? "").kind ?? "other",
+        },
+        identity,
+      );
     else
       analytics.capture(
         run.userId,

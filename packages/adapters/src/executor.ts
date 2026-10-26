@@ -351,6 +351,7 @@ import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
   hasHostedModelCredits,
+  PINNED_PROVIDER_NOT_CONNECTED,
   pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
@@ -396,6 +397,11 @@ import {
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  backOffRoutineAfterAccountError,
+  clearRoutineBackoff,
+  isModelAccountRefusal,
+} from "./routine-backoff.js";
 import { findPendingRoutineTick, routineTimerNonce } from "./routine-coalescing.js";
 import { lateRoutineRunInstruction } from "./routine-lateness.js";
 import { routineTaskInstructions, tickRoutineWatch } from "./routine-watch.js";
@@ -3178,7 +3184,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       !credential &&
       !((await modelCreditBillingEnabled(deps)) && provider === resolveDeploymentModel().provider)
     )
-      throw new Error("Connect that model provider first");
+      throw new Error(PINNED_PROVIDER_NOT_CONNECTED);
     const resolved = await resolveModelKey(
       deps,
       scope.userId,
@@ -4181,27 +4187,32 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const { credential, thinkingLevel } = selected;
         const runModelProvider = selected.provider ?? runtimeFallback?.provider;
         const runModelId = selected.id ?? runtimeFallback?.id;
-        const failRunBeforeModel = (message: string) =>
-          failRunBeforeTurn(
+        // A missing or refused connection of the user's own fails every scheduled run alike.
+        const failRunBeforeModel = async (message: string, accountFailure = false) => {
+          const failed = await failRunBeforeTurn(
             deps,
             run,
             bot.name,
             { attemptId: attempt.id, workerId, fence },
             message,
           );
+          if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
+            await backOffRoutineAfterAccountError(deps, run.routineId);
+          }
+        };
         if (pinError) {
-          await failRunBeforeModel(pinError);
+          await failRunBeforeModel(pinError, pinError === PINNED_PROVIDER_NOT_CONNECTED);
           return;
         }
         if (
           run.modelPinned &&
           (selected.provider !== modelChoice.modelProvider || selected.id !== modelChoice.modelId)
         ) {
-          await failRunBeforeModel("Connect that model provider first");
+          await failRunBeforeModel(PINNED_PROVIDER_NOT_CONNECTED, true);
           return;
         }
         if (!runModelProvider || !runModelId) {
-          await failRunBeforeModel(MISSING_MODEL_MESSAGE);
+          await failRunBeforeModel(MISSING_MODEL_MESSAGE, true);
           return;
         }
         // An incompatible saved model is a configuration error. Record it on the run.
@@ -4223,6 +4234,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!isTerminalModelSetupError(error)) throw error;
           await failRunBeforeModel(
             error instanceof Error ? error.message : "Connect the provider again.",
+            error instanceof HostedModelCreditsRequiredError ||
+              isRetiredModelCredentialError(error),
           );
           return;
         }
@@ -8537,6 +8550,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
                 if (!stopped) return;
                 stopHeartbeatAfterCompletion();
+                if (run.trigger === "routine" && run.routineId) {
+                  await clearRoutineBackoff(deps, run.routineId);
+                }
                 if (stopped.continuationRunId) {
                   await deps.jobs
                     .enqueue(runContinueJob(stopped.continuationRunId))
@@ -8809,6 +8825,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           });
           if (!completed) return;
           stopHeartbeatAfterCompletion();
+          if (run.trigger === "routine" && run.routineId) {
+            await clearRoutineBackoff(deps, run.routineId);
+          }
           if (screenRelease) screenRelease.keepWarm = true;
           if (completed.continuationRunId) {
             await deps.jobs
@@ -8949,6 +8968,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
               "status",
               { forceUnread: true },
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
+          }
+          // A refusal of the deployment's own key is the operator's problem, not the user's.
+          if (
+            run.trigger === "routine" &&
+            run.routineId &&
+            resolved.ownCredential &&
+            isModelAccountRefusal(error)
+          ) {
+            await backOffRoutineAfterAccountError(deps, run.routineId);
           }
           const retrying =
             !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
@@ -9182,7 +9210,7 @@ async function failRunBeforeTurn(
   botName: string,
   lease: { attemptId: string; workerId: string; fence: number },
   message: string,
-): Promise<void> {
+): Promise<boolean> {
   const failed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
     threadId: run.threadId,
@@ -9195,7 +9223,7 @@ async function failRunBeforeTurn(
     outcome: "failed",
     error: message,
   });
-  if (!failed) return;
+  if (!failed) return false;
   if (failed.continuationRunId) {
     await deps.jobs
       .enqueue(runContinueJob(failed.continuationRunId))
@@ -9220,6 +9248,7 @@ async function failRunBeforeTurn(
       threadId: run.threadId,
     });
   }
+  return true;
 }
 
 async function notifyRun(
@@ -10607,6 +10636,8 @@ async function resolveModelKeyMaterial(
     detail?: string,
     failed?: ModelCredentialFailedState,
   ) => Promise<boolean | undefined>;
+  /** The key is the user's own stored connection, not the deployment's. */
+  ownCredential?: true;
   redact: string[];
 }> {
   if (credential) {
@@ -10757,6 +10788,7 @@ async function resolveModelKeyMaterial(
             }
           : undefined,
         retireOAuth: retire,
+        ownCredential: true,
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
           (value): value is string => Boolean(value),
         ),

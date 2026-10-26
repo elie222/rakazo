@@ -790,7 +790,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           c.req.query("state") ?? "",
           c.req.query("code") ?? "",
         );
-        return c.redirect(new URL("/app?messaging", env.webOrigin).toString());
+        return c.redirect(new URL("/app?settings=messaging", env.webOrigin).toString());
       } catch {
         return c.text("Slack connection failed. Return to Rakazo and try again.", 400);
       }

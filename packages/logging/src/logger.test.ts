@@ -36,6 +36,31 @@ describe("logger", () => {
     });
   });
 
+  it("serializes a warning's error binding like an error log's error", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    const cause = new Error("could not prepare the workspace");
+    logger.warn("computer.provision_failed", {
+      provider: "fake",
+      error: new AggregateError([cause, new Error("rollback failed")], "provisioning failed"),
+    });
+    expect(sink.events[0]).toMatchObject({
+      provider: "fake",
+      error: {
+        name: "AggregateError",
+        message: "provisioning failed",
+        cause: { name: "Error", message: "could not prepare the workspace" },
+      },
+    });
+  });
+
+  it("serializes an error bound on a child logger", () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    logger.child({ error: new TypeError("bound failure") }).warn("child");
+    expect(sink.events[0]?.error).toMatchObject({ name: "TypeError", message: "bound failure" });
+  });
+
   it("keeps the configured service name when bindings try to overwrite it", () => {
     const sink = createTestSink();
     const logger = createLogger({ service: "rakazo-api", sinks: [sink] });

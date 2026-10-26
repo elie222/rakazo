@@ -1,3 +1,4 @@
+import type { RunErrorKind } from "@rakazo/contracts";
 import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { stuckWorkStatusMessages } from "./stuck-work.js";
 
@@ -139,21 +140,6 @@ export function parseModelFallbackFailure(
   }
   return { primaryError: record.primaryError, backups: record.backups as ModelBackupOutcome[] };
 }
-
-/**
- * Whose problem a failed run is. Every kind except "output" is the user's provider account,
- * key, plan or model choice; "output" is a model that returned nothing usable.
- */
-export type RunErrorKind =
-  | "key"
-  | "credit"
-  | "spending"
-  | "rate"
-  | "auth"
-  | "access"
-  | "model"
-  | "context"
-  | "output";
 
 /**
  * Fixed failure strings from the model runtime's stop-reason mapping (including a stop reason

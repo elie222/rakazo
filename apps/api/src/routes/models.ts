@@ -42,6 +42,7 @@ import {
   writeModelRole,
 } from "@rakazo/db";
 import { mayUsePrivateEndpoint } from "../mcp-servers.js";
+import { firstModelConnectAnalytics } from "../model-connect-analytics.js";
 import {
   modelConnectionTarget,
   persistModelCredential,
@@ -191,9 +192,18 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
-      connect: authed.models.connect.handler(async ({ context, input }) =>
-        connectModelCredential(context.actor, input, context.signal),
-      ),
+      connect: authed.models.connect.handler(async ({ context, input }) => {
+        const record = await firstModelConnectAnalytics(deps, context.actor, "api_key");
+        record(input.provider, { name: "model_connect_started" });
+        try {
+          const saved = await connectModelCredential(context.actor, input, context.signal);
+          record(input.provider, { name: "model_connected" });
+          return saved;
+        } catch (error) {
+          record(input.provider, { name: "model_connect_failed", error });
+          throw error;
+        }
+      }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           let apiKey = input.apiKey;
@@ -285,19 +295,26 @@ export function modelsRoutes(ctx: RouterContext) {
           input.provider,
           input.credentialId,
         );
-        return deps.oauthLogins.begin({
-          userId: context.actor.userId,
-          spaceId: context.actor.spaceId,
-          provider: input.provider,
-          credentialId: target?.id ?? null,
-          modelId: input.modelId,
-          thinkingLevel: input.thinkingLevel,
-          makeDefault: input.makeDefault,
-          settingsScope: input.scope,
-          label: input.label,
-          codePage: input.codePage,
-          signal: context.signal,
-        });
+        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+        record(input.provider, { name: "model_connect_started" });
+        return deps.oauthLogins
+          .begin({
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            provider: input.provider,
+            credentialId: target?.id ?? null,
+            modelId: input.modelId,
+            thinkingLevel: input.thinkingLevel,
+            makeDefault: input.makeDefault,
+            settingsScope: input.scope,
+            label: input.label,
+            codePage: input.codePage,
+            signal: context.signal,
+          })
+          .catch((error: unknown) => {
+            record(input.provider, { name: "model_connect_failed", error });
+            throw error;
+          });
       }),
       submitOAuthCode: authed.models.submitOAuthCode.handler(async ({ context, input }) => {
         return deps.oauthLogins.submit(input.loginId, context.actor, input.code);
@@ -307,14 +324,20 @@ export function modelsRoutes(ctx: RouterContext) {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
         });
+        if (result.status === "error") {
+          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
+          return { status: "error" as const, error: result.error };
+        }
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
         throwIfAborted(context.signal);
-        const result = await deps.oauthLogins.finish(
-          input.loginId,
-          context.actor,
-          async (login) => {
+        let provider: string | undefined;
+        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+        const result = await deps.oauthLogins
+          .finish(input.loginId, context.actor, async (login) => {
+            provider = login.provider;
             const target = await modelConnectionTarget(
               deps,
               context.actor,
@@ -341,14 +364,19 @@ export function modelsRoutes(ctx: RouterContext) {
               },
               codexCatalog,
             );
-          },
-        );
+          })
+          .catch((error: unknown) => {
+            record(provider, { name: "model_connect_failed", error });
+            throw error;
+          });
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
+          record(provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
+        record(provider, { name: "model_connected" });
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
