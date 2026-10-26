@@ -334,10 +334,38 @@ describe("serialization", () => {
     expect(tableToTsv(["A"], [["\t=cmd"]])).toBe("A\n' =cmd");
   });
 
+  it.each([
+    ['"draft"', '"""draft"""'],
+    ['"draft', '"""draft"'],
+    ['say "hi"', '"say ""hi"""'],
+    ['a""b', '"a""""b"'],
+    ['"', '""""'],
+  ])("preserves quotes in TSV headers and cells: %s", (value, encoded) => {
+    expect(tableToTsv([value], [[value]])).toBe(`${encoded}\n${encoded}`);
+  });
+
+  it("closes quoted TSV cells before subsequent columns and rows", () => {
+    expect(
+      tableToTsv(
+        ["Name", "Note"],
+        [
+          ['"draft', "pending"],
+          ["next", "done"],
+        ],
+      ),
+    ).toBe('Name\tNote\n"""draft"\tpending\nnext\tdone');
+  });
+
+  it("keeps TSV whitespace normalization and formula neutralization when quoting", () => {
+    expect(tableToTsv(["Note"], [['say\t"hi"\r\nthere'], ['\t="draft"']])).toBe(
+      'Note\n"say ""hi""  there"\n"\' =""draft"""',
+    );
+  });
+
   it("strips tabs/newlines in TSV and neutralizes formulas", () => {
     const tsv = tableToTsv(columns, rows);
     expect(tsv.split("\n")).toHaveLength(3);
-    expect(tsv).toContain('a,b\tsay "hi"');
+    expect(tsv).toContain('a,b\t"say ""hi"""');
     expect(tsv).toContain("'=cmd\tline break");
     expect(tableToTsv(["=A", "+B"], [["@x", "-9"]])).toBe("'=A\t'+B\n'@x\t'-9");
   });

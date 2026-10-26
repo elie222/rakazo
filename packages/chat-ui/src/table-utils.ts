@@ -233,7 +233,10 @@ export function tableToCsv(columns: string[], rows: string[][]): string {
 }
 
 export function tableToTsv(columns: string[], rows: string[][]): string {
-  const clean = (value: string) => neutralizeFormula(value).replace(/[\t\r\n]/g, " ");
+  const clean = (value: string) => {
+    const safe = neutralizeFormula(value).replace(/[\t\r\n]/g, " ");
+    return safe.includes('"') ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
   const line = (cells: string[]) => cells.map(clean).join("\t");
   return [line(columns), ...rows.map((row) => line(columns.map((_, i) => row[i] ?? "")))].join(
     "\n",
