@@ -708,11 +708,6 @@ msgstr "Answer"
 msgid "Answered"
 msgstr "Answered"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "Answered: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "Answered: {answer}"
@@ -4860,6 +4855,10 @@ msgstr "Send with Enter"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Sending…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr "Sent"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"

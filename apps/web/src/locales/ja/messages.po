@@ -708,11 +708,6 @@ msgstr "応答"
 msgid "Answered"
 msgstr "回答済み"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "回答済み: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "回答済み: {answer}"
@@ -4860,6 +4855,10 @@ msgstr "Enterで送信"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "送信中…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"

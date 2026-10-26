@@ -708,11 +708,6 @@ msgstr "תשובה"
 msgid "Answered"
 msgstr "נענה"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "נענה: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "נענה: {answer}"
@@ -4860,6 +4855,10 @@ msgstr "שליחה ב-Enter"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "שולח…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
