@@ -69,6 +69,65 @@ async function expectRailAtRest(page: Page, row: Locator) {
   await expect(rail).toHaveCSS("pointer-events", "none");
 }
 
+async function expectHeaderAboveHoveredRow(page: Page, row: Locator) {
+  const placement = await row.evaluate((element) => {
+    const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
+    const header = document.querySelector<HTMLElement>('[data-testid="bot-settings-trigger"]');
+    if (!transcript || !header) throw new Error("missing transcript or chat header");
+
+    // Make even a short thread scrollable so the row can sit underneath the header.
+    const originalScrollTop = transcript.scrollTop;
+    const spacer = document.createElement("div");
+    spacer.dataset.layerTestSpacer = "";
+    spacer.style.height = `${transcript.clientHeight}px`;
+    spacer.style.flexShrink = "0";
+    transcript.append(spacer);
+
+    const transcriptBox = transcript.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    const headerPoint = {
+      x: headerBox.left + headerBox.width / 2,
+      y: headerBox.top + headerBox.height / 2,
+    };
+    const rowBox = element.getBoundingClientRect();
+    const rowCenterContentY =
+      rowBox.top - transcriptBox.top + transcript.scrollTop + rowBox.height / 2;
+    transcript.scrollTop = rowCenterContentY - (headerPoint.y - transcriptBox.top);
+    const movedRowBox = element.getBoundingClientRect();
+
+    return {
+      originalScrollTop,
+      headerPoint,
+      hoverPoint: { x: movedRowBox.left + 1, y: headerPoint.y },
+      overlapsHeader:
+        movedRowBox.left < headerPoint.x &&
+        movedRowBox.right > headerPoint.x &&
+        movedRowBox.top < headerPoint.y &&
+        movedRowBox.bottom > headerPoint.y,
+    };
+  });
+
+  try {
+    expect(placement.overlapsHeader).toBe(true);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    // The header's empty gutter passes pointer events through to keep the row hovered.
+    await page.mouse.move(placement.hoverPoint.x, placement.hoverPoint.y);
+    await expect(row.getByTestId("message-hover-rail")).toHaveCSS("opacity", "1");
+    const headerReceivesHit = await page.evaluate(({ x, y }) => {
+      const header = document.querySelector<HTMLElement>('[data-testid="bot-settings-trigger"]');
+      const topmost = document.elementFromPoint(x, y);
+      return Boolean(header && topmost && header.contains(topmost));
+    }, placement.headerPoint);
+    expect(headerReceivesHit).toBe(true);
+  } finally {
+    await row.evaluate((element, originalScrollTop) => {
+      const transcript = element.closest<HTMLElement>('[data-testid="transcript"]');
+      transcript?.querySelector("[data-layer-test-spacer]")?.remove();
+      if (transcript) transcript.scrollTop = originalScrollTop;
+    }, placement.originalScrollTop);
+  }
+}
+
 test("message hover shows beside-bubble actions; reply links to parent", async ({
   page,
 }, testInfo) => {
@@ -292,6 +351,8 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await parentRow.scrollIntoViewIfNeeded();
   await revealHoverRail(parentRow);
   await captureScreenshot(page, testInfo, "message-user-actions-mobile");
+  await page.setViewportSize({ width: 1280, height: 812 });
+  await expectHeaderAboveHoveredRow(page, parentRow);
 });
 
 test("a message with an attachment centers hover actions on its text bubble", async ({
