@@ -888,7 +888,13 @@ async function executeApiOperation(
     consumed.add(key);
     if (value != null) headers[key] = String(value);
   }
-  if (operation.method === "GET" || operation.method === "DELETE") {
+  const declaredJsonBody =
+    !consumed.has("body") &&
+    !operation.queryParameters.includes("body") &&
+    Object.hasOwn(asRecord(operation.inputSchema.properties) ?? {}, "body");
+  const declaredDeleteBody =
+    operation.method === "DELETE" && args.body !== undefined && declaredJsonBody;
+  if (operation.method === "GET" || (operation.method === "DELETE" && !declaredDeleteBody)) {
     for (const [key, value] of Object.entries(args)) {
       if (consumed.has(key) || value == null) continue;
       if (Array.isArray(value)) {
@@ -909,7 +915,10 @@ async function executeApiOperation(
       }
     }
     const payload =
-      args.body ?? Object.fromEntries(Object.entries(args).filter(([key]) => !consumed.has(key)));
+      declaredJsonBody && args.body === null
+        ? null
+        : (args.body ??
+          Object.fromEntries(Object.entries(args).filter(([key]) => !consumed.has(key))));
     body = JSON.stringify(payload);
     headers["content-type"] = "application/json";
   }
