@@ -681,3 +681,26 @@ function replacedSubagent(message: ThreadMessage, agentIds: ReadonlySet<string>)
   if (agentIds.size === 0) return false;
   return message.blocks.some((block) => block.kind === "subagent" && agentIds.has(block.agentId));
 }
+
+export function screenMissing(options: {
+  state: ComputerStatus["state"] | undefined;
+  kind: ComputerStatus["kind"] | undefined;
+  booting: boolean;
+  screenUrlLoaded: boolean;
+  embeddedUrl: string | null;
+}): boolean {
+  return (
+    options.state === "running" &&
+    options.kind !== "desktop" &&
+    !options.booting &&
+    options.screenUrlLoaded &&
+    !options.embeddedUrl
+  );
+}
+
+export function screenReadLoaded(
+  issued: ComputerStatus["state"] | undefined,
+  current: ComputerStatus["state"] | undefined,
+): boolean {
+  return issued === "running" && current === "running";
+}

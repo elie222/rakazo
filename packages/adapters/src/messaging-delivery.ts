@@ -434,6 +434,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
     });
     if (claim.count === 0) continue;
     let attachmentName: string | null = null;
+    let accepted = false;
     try {
       if (row.kind === "group" || row.kind === "intro") {
         if (!row.threadId) {
@@ -447,6 +448,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           { threadId: row.threadId, body: row.body },
           context,
         );
+        accepted = true;
         await deps.prisma.messagingOutbound.update({
           where: { id: row.id },
           data: { providerHandle: sent.handle },
@@ -488,6 +490,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           context,
         );
         if (result === "delivered") {
+          accepted = true;
           await deps.prisma.messagingIdentity.update({
             where: { id: identity.id },
             data: { outboundSinceInbound: { increment: 1 } },
@@ -523,6 +526,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         { threadId, body: row.body, ...(attachment ? { attachment } : {}) },
         context,
       );
+      accepted = true;
       await deps.prisma.messagingOutbound.updateMany({
         where: { id: row.id },
         data: { providerHandle: sent.handle },
@@ -532,6 +536,11 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         data: { outboundSinceInbound: { increment: 1 } },
       });
     } catch (error) {
+      if (accepted) {
+        // Keep the sent claim even if saving the handle or counter fails.
+        getLogger().error("messaging outbound bookkeeping error", error);
+        continue;
+      }
       // Transient provider errors go back to pending with a backed-off
       // retry (no sooner than the provider's retry-after); a permanent error
       // or an exhausted budget is terminal.

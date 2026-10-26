@@ -291,7 +291,11 @@ export function classifyDockerFailure(output: string): DockerFailureKind {
   if (matches(DAEMON_DOWN)) return "daemon-down";
   if (matches(COMPOSE_MISSING)) return "compose-missing";
   if (matches(PORT_IN_USE)) return "port-in-use";
-  if (matches(IMAGE_NOT_FOUND)) return "image-not-found";
+  if (
+    matches(IMAGE_NOT_FOUND) ||
+    (text.includes("failed to resolve reference") && text.includes(": not found"))
+  )
+    return "image-not-found";
   if (matches(ADDRESS_POOL_EXHAUSTED)) return "address-pool-exhausted";
   if (matches(NETWORK)) return "network";
   return "other";

@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "${0} / month"
@@ -707,11 +708,6 @@ msgstr "Answer"
 msgid "Answered"
 msgstr "Answered"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "Answered: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "Answered: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatar Studio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1102,6 +1099,10 @@ msgstr "Change {name}"
 msgid "Change {title}"
 msgstr "Change {title}"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Change model"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "Change password"
@@ -1225,6 +1226,7 @@ msgid "Choose folder"
 msgstr "Choose folder"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "Choose how to use Rakazo"
 
@@ -2768,6 +2770,10 @@ msgstr "Forgot password?"
 msgid "Free"
 msgstr "Free"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Free plan ends {day}"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "Friday"
@@ -2936,6 +2942,15 @@ msgstr "If you heard that, voice is ready."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "Ignore"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Image input is not configured for this model."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4752,6 +4767,10 @@ msgstr "Scheduled routines"
 msgid "Scopes (optional)"
 msgstr "Scopes (optional)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Screen not connected"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4833,6 +4852,10 @@ msgstr "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 
 msgid "Send answer"
 msgstr "Send answer"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Send as file"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "Send deletion code"
@@ -4856,6 +4879,10 @@ msgstr "Send with Enter"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Sending…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr "Sent"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5206,6 +5233,11 @@ msgstr "Submit"
 msgid "Subscribe"
 msgstr "Subscribe"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Subscribe for ${0} / month"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Subscription required"
@@ -5298,6 +5330,10 @@ msgstr "Testing…"
 msgid "The bot and what its import added will be removed."
 msgstr "The bot and what its import added will be removed."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "The bot can use the file but won't see the picture."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "The connection timed out."
@@ -5315,6 +5351,18 @@ msgstr "The model returned an unusable response. Try again."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "The provider is rate-limiting requests."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "The screen connection closed."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "The screen did not respond."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "The screen link expired."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5410,6 +5458,15 @@ msgstr "This import was already used. Choose the files again."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "this Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "This model cannot read images. Choose a model that supports images."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5684,6 +5741,10 @@ msgstr "Updating Team Computer"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Upgrade"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr "Upgrade now"
@@ -5780,6 +5841,10 @@ msgstr "Uses this server's own {hostCredentialSource} credentials to access {sel
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr "Using your API key"
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Using your API key. Free plan ends {freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

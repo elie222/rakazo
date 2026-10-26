@@ -1,4 +1,14 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "Не отправлено. Нажмите для выбора действий",
+  "Image input is not configured for this model.": "Ввод изображений не настроен для этой модели.",
+  "Send as file": "Отправить как файл",
+  "The bot can use the file but won't see the picture.":
+    "Бот сможет использовать файл, но не увидит изображение.",
+  "This model cannot read images. Choose a model that supports images.":
+    "Эта модель не может читать изображения. Выберите модель с поддержкой изображений.",
+  "Could not connect to the computer screen": "Не удалось подключиться к экрану компьютера",
+  "Retry screen": "Повторить подключение экрана",
+  "The screen connection closed.": "Соединение с экраном закрыто.",
   Approvals: "Одобрения",
   "Never ask": "Не спрашивать",
   Auto: "Авто",
@@ -372,6 +382,17 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not load model settings": "Не удалось загрузить настройки модели.",
   "Could not load routine": "Не удалось загрузить программу",
   "Could not load routines": "Не удалось загрузить задачи",
+  "{count} on": "Вкл.: {count}",
+  "Ask this Bot in chat to set up a routine.": "Попросите этого бота в чате настроить задачу.",
+  "{name}, On": "{name}, вкл.",
+  "{name}, Off": "{name}, выкл.",
+  "Active: {name}": "Активна: {name}",
+  "Delete {name}": "Удалить {name}",
+  "Delete this routine?": "Удалить эту задачу?",
+  "This permanently deletes the routine and its run history.":
+    "Задача и история её запусков будут удалены безвозвратно.",
+  "Could not delete routine": "Не удалось удалить задачу",
+  "Could not update routine": "Не удалось обновить задачу",
   "Get notified when this Bot finishes or needs input":
     "Получать уведомления, когда этот бот завершает работу или ждёт ввода",
   "Could not load the desktop. This device cannot reach the screen URL.":
@@ -1005,6 +1026,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "Ваша подписка или API-ключ",
   "Free. ChatGPT, Claude, or any model provider.":
     "Бесплатно. ChatGPT, Claude или любой провайдер моделей.",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "{price} в месяц. ChatGPT, Claude или любой провайдер моделей.",
+  "Free plan ends": "Бесплатный тариф до",
+  Subscribe: "Оформить подписку",
   "Use my subscription or API key": "Использовать свою подписку или API-ключ",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Ежемесячные кредиты истекают при продлении. Разовые пополнения не сгорают.",
@@ -1085,6 +1110,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "1-го числа в {time}",
   "on day {day} at {time}": "{day}-го числа в {time}",
   "Every hour at :{minute}": "Каждый час на {minute}-й минуте",
+  "Every {n} hours at :{minute}": "Раз в {n} ч, на {minute}-й минуте",
   "{from} to {to}": "{from} — {to}",
   "Every {day}": "Каждую неделю: {day}",
   "Every {days} and {last}": "Каждую неделю: {days} и {last}",

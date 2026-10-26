@@ -18,6 +18,7 @@ const folds = vi.hoisted(() => ({
 }));
 const screens = vi.hoisted(() => ({
   mounts: 0,
+  error: undefined as undefined | (() => void),
   onMessage: undefined as
     | ((event: { nativeEvent: { data: string; url?: string } }) => void)
     | undefined,
@@ -122,10 +123,12 @@ vi.mock("react-native-webview", () => {
       accessibilityElementsHidden?: boolean;
       importantForAccessibility?: string;
       onMessage?: (event: { nativeEvent: { data: string; url?: string } }) => void;
+      onError?: () => void;
       source?: { uri: string };
       onLoadStart?: () => void;
     }) => {
       screens.onMessage = props.onMessage;
+      screens.error = props.onError;
       screens.source = props.source?.uri ?? "";
       screens.onLoadStart = props.onLoadStart;
       useEffect(() => {
@@ -319,6 +322,108 @@ describe("computer screen", () => {
       (button) => button.textContent === "Take control",
     );
   }
+
+  it("offers Retry screen when the full-window page fails to load", async () => {
+    respond(botWorking);
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    expect(view.querySelector("section iframe")).not.toBeNull();
+    expect(screens.error).toBeTypeOf("function");
+    act(() => screens.error?.());
+    const window = view.querySelector("section");
+    expect(window?.textContent).toContain("Could not load the desktop.");
+    expect(window?.textContent).toContain("Retry screen");
+  });
+
+  it("shows a fixed screen failure when the page stalls", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) =>
+      method === "computer/screenUrl"
+        ? { url: "https://screen.example.test/novnc/session/view/1.first/vnc.html" }
+        : original(method, ...args),
+    );
+    const view = await render();
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    expect(view.textContent).toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("does not rearm a connected retained page on token rotation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    respond(botWorking);
+    const original = rpc.getMockImplementation()!;
+    let token = "first";
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) =>
+      method === "computer/screenUrl"
+        ? { url: "https://screen.example.test/novnc/session/view/1." + token + "/vnc.html" }
+        : original(method, ...args),
+    );
+    const view = await render();
+    act(() =>
+      screens.onMessage?.({
+        nativeEvent: { data: JSON.stringify({ rakazoScreen: "connected" }), url: screens.source },
+      }),
+    );
+    token = "second";
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await settle();
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(view.textContent).not.toContain("Retry screen");
+    vi.useRealTimers();
+  });
+
+  it("does not offer screen retry for a release error", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const original = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (method: string, ...args: unknown[]) => {
+      if (method === "computer/release") throw new Error("unavailable");
+      return original(method, ...args);
+    });
+    const view = await render();
+    const release = Array.from(view.querySelectorAll("button")).find(
+      (button) => button.textContent === "Release",
+    );
+    expect(release).toBeDefined();
+    await act(async () => release?.click());
+    await settle();
+    expect(view.textContent).toContain("Could not continue");
+    expect(view.textContent).not.toContain("Retry screen");
+  });
+
+  it("shows a fixed reason for a failed report and retries a healthy screen", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    respond(botWorking);
+    const view = await render();
+    const report = (data: Record<string, string>) =>
+      act(() =>
+        screens.onMessage?.({ nativeEvent: { data: JSON.stringify(data), url: screens.source } }),
+      );
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    expect(screens.onMessage).toBeTypeOf("function");
+    report({ rakazoScreen: "failed" });
+    expect(view.textContent).toContain("Could not connect to the computer screen");
+    const mounted = screens.mounts;
+    const retry = Array.from(view.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry screen",
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    await settle();
+    expect(screens.mounts).toBeGreaterThan(mounted);
+    report({ rakazoScreen: "connected" });
+    expect(view.textContent).not.toContain("Could not connect to the computer screen");
+    // The first drop after connecting reconnects by itself; only a drop it can't ride out shows.
+    report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).not.toContain("The screen connection closed.");
+    report({ rakazoScreen: "disconnected" });
+    expect(view.textContent).toContain("The screen connection closed.");
+    vi.useRealTimers();
+  });
 
   it("opens the full window from the preview without taking control from the bot", async () => {
     respond(botWorking);

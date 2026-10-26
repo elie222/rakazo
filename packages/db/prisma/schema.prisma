@@ -1698,6 +1698,7 @@ model ModelCreditAccount {
   mode                  String?
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
+  byokFreeUntil         DateTime?
   entries               ModelCreditEntry[]
   lots                  ModelCreditLot[]
   createdAt             DateTime           @default(now())

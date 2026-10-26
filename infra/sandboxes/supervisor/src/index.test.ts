@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -17,6 +17,7 @@ import {
 } from "./index.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
+  AIMED_SCROLL_CONTROL_LABEL,
   assertRequestIdentity,
   attemptComputerControl,
   browserProfilePathForScreen,
@@ -28,6 +29,7 @@ import {
   computerControlTimeoutMs,
   containerActionStep,
   containerActionSteps,
+  controlHandlesActions,
   createDockerStreamDemuxer,
   currentComputerScreens,
   DOCKER_BROWSER_ALIASES,
@@ -348,6 +350,58 @@ describe("sandbox supervisor input containment", () => {
     expect(containerActionStep({ kind: "wait", ms: -1 })).toEqual({ waitMs: 0 });
     expect(containerActionStep({ kind: "scroll", direction: "up", amount: 99 })).toEqual({
       argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "20", "4"],
+    });
+  });
+
+  it("sends aimed and sideways scrolls to a computer's control service only when it takes them", () => {
+    const plain = [
+      { kind: "scroll" as const, direction: "down" as const, amount: 3 },
+      { kind: "pointer" as const, x: 10, y: 20, type: "click" as const },
+    ];
+    const aimed = [{ kind: "scroll" as const, direction: "down" as const, x: 600, y: 420 }];
+    const sideways = [{ kind: "scroll" as const, direction: "left" as const }];
+    const current = { [AIMED_SCROLL_CONTROL_LABEL]: "1", "rakazo.botId": "bot" };
+    const older = { "rakazo.botId": "bot" };
+    expect(controlHandlesActions(older, plain)).toBe(true);
+    expect(controlHandlesActions(older, aimed)).toBe(false);
+    expect(controlHandlesActions(older, sideways)).toBe(false);
+    expect(controlHandlesActions(undefined, [...plain, ...aimed])).toBe(false);
+    expect(controlHandlesActions(current, [...plain, ...aimed, ...sideways])).toBe(true);
+    // The computer image built with this control service carries the label.
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    expect(dockerfile).toContain(`LABEL ${AIMED_SCROLL_CONTROL_LABEL}="1"`);
+  });
+
+  it("moves the pointer to a scroll's point before turning the wheel", () => {
+    expect(
+      containerActionStep({ kind: "scroll", direction: "down", amount: 4, x: 600.4, y: 420 }),
+    ).toEqual({
+      argv: [
+        "env",
+        "DISPLAY=:1",
+        "xdotool",
+        "mousemove",
+        "--",
+        "600",
+        "420",
+        "click",
+        "--repeat",
+        "4",
+        "5",
+      ],
+    });
+    expect(containerActionStep({ kind: "scroll", direction: "left", amount: 2 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "2", "6"],
+    });
+    expect(containerActionStep({ kind: "scroll", direction: "right", amount: 2 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "2", "7"],
+    });
+    // Both coordinates or neither: a lone x scrolls where the pointer is.
+    expect(containerActionStep({ kind: "scroll", direction: "down", x: 600 })).toEqual({
+      argv: ["env", "DISPLAY=:1", "xdotool", "click", "--repeat", "3", "5"],
     });
   });
 

@@ -186,6 +186,8 @@ export type CronLabels = {
   onThe1stAt(time: string): string;
   onDayAt(day: number, time: string): string;
   hourAtMinute(minute: number): string;
+  /** Every few hours at a fixed minute; without it such schedules keep the cron fallback. */
+  hoursAtMinute?(hours: number, minute: number): string;
   daySpan(fromName: string, toName: string): string;
   everyDays(names: string[]): string;
 };
@@ -208,6 +210,7 @@ export const ENGLISH_CRON_LABELS: CronLabels = {
   onThe1stAt: (time) => `on the 1st at ${time}`,
   onDayAt: (day, time) => `on the ${ordinal(day)} at ${time}`,
   hourAtMinute: (minute) => `Every hour at :${String(minute).padStart(2, "0")}`,
+  hoursAtMinute: (hours, minute) => `Every ${hours} hours at :${String(minute).padStart(2, "0")}`,
   daySpan: (fromName, toName) => `${fromName} to ${toName}`,
   everyDays: (names) =>
     names.length === 1
@@ -299,6 +302,14 @@ function describeCronFields(cron: string, labels: CronLabels): string | null {
   if (hour === "*" && day === "*" && dow === "*" && isInt(minute)) {
     const m = Number(minute);
     return m >= 1 && m <= 59 ? labels.hourAtMinute(m) : null;
+  }
+  // Only steps that divide the day repeat evenly; "*/5" restarts at midnight after four hours.
+  const hours = stepValue(hour);
+  if (hours && day === "*" && dow === "*" && isInt(minute)) {
+    const m = Number(minute);
+    return labels.hoursAtMinute && hours >= 2 && hours < 24 && 24 % hours === 0 && m >= 1 && m <= 59
+      ? labels.hoursAtMinute(hours, m)
+      : null;
   }
   if (!isCronClock(minute, hour)) return null;
   const time = formatClock(Number(hour), Number(minute));

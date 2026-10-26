@@ -33,4 +33,12 @@ describe("passkeyRelyingParty", () => {
       `android:apk-key-hash:${Buffer.alloc(32, 0xab).toString("base64url")}`,
     ]);
   });
+
+  it("accepts both encodings Android devices report for the same signer", () => {
+    const fingerprint = Array.from({ length: 32 }, () => "FF").join(":");
+    expect(androidApkKeyHashOrigin(fingerprint)).toEqual([
+      `android:apk-key-hash:${"_".repeat(42)}8`,
+      `android:apk-key-hash:${"/".repeat(42)}8`,
+    ]);
+  });
 });

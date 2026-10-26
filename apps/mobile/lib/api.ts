@@ -893,7 +893,9 @@ async function request(
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
-      const error = parsed.json as { message?: unknown; code?: unknown } | undefined;
+      const error = parsed.json as
+        | { message?: unknown; code?: unknown; data?: unknown }
+        | undefined;
       const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the
@@ -976,7 +978,10 @@ async function request(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
+      throw Object.assign(
+        httpError(message, res, typeof error?.code === "string" ? error.code : undefined),
+        { data: error?.data },
+      );
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (

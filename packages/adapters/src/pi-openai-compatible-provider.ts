@@ -78,6 +78,8 @@ export function openAiCompatibleModel(
     baseUrl,
     reasoning,
     compat: {
+      // `store: false` is already the default, and Google's endpoint rejects the field.
+      supportsStore: false,
       supportsDeveloperRole: false,
       supportsReasoningEffort: reasoning,
       thinkingFormat: "openai",

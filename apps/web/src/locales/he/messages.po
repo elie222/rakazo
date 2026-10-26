@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -707,11 +708,6 @@ msgstr "תשובה"
 msgid "Answered"
 msgstr "נענה"
 
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "נענה: {0}"
-
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
 msgstr "נענה: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatar Studio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1102,6 +1099,10 @@ msgstr "שינוי {name}"
 msgid "Change {title}"
 msgstr "שינוי {title}"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "החלפת מודל"
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
 msgstr "שינוי סיסמה"
@@ -1225,6 +1226,7 @@ msgid "Choose folder"
 msgstr "בחירת תיקייה"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2768,6 +2770,10 @@ msgstr "שכחת סיסמה?"
 msgid "Free"
 msgstr "חינם"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "התוכנית החינמית מסתיימת ב-{day}"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "יום שישי"
@@ -2936,6 +2942,15 @@ msgstr "אם שמעת את זה, הקול מוכן."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "התעלמות"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -4752,6 +4767,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "המסך אינו מחובר"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -4833,6 +4852,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "שליחת תשובה"
 
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "שליחה כקובץ"
+
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
 msgstr "שליחת קוד מחיקה"
@@ -4856,6 +4879,10 @@ msgstr "שליחה ב-Enter"
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "שולח…"
+
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
@@ -5206,6 +5233,11 @@ msgstr "שליחה"
 msgid "Subscribe"
 msgstr "הרשמה למנוי"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "הרשמה במחיר ${0} לחודש"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "נדרש מנוי"
@@ -5298,6 +5330,10 @@ msgstr "בודק…"
 msgid "The bot and what its import added will be removed."
 msgstr "הבוט ומה שהייבוא שלו הוסיף יוסרו."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "הבוט יוכל להשתמש בקובץ, אבל לא יראה את התמונה."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "תם הזמן הקצוב לחיבור."
@@ -5315,6 +5351,18 @@ msgstr "המודל החזיר תשובה שאי אפשר להשתמש בה. אפ
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "הספק מגביל את קצב הבקשות."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "החיבור למסך נסגר."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "המסך לא הגיב."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "קישור המסך פג."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5410,6 +5458,15 @@ msgstr "הייבוא הזה כבר נוצל. יש לבחור את הקבצים �
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "ה-Mac הזה"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5684,6 +5741,10 @@ msgstr "מעדכן את מחשב הצוות"
 msgid "Updating…"
 msgstr "מעדכן…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "שדרוג"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5780,6 +5841,10 @@ msgstr "משתמש בפרטי הגישה של {hostCredentialSource} של השר
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "נעשה שימוש במפתח ה-API שלך. התוכנית החינמית מסתיימת ב-{freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

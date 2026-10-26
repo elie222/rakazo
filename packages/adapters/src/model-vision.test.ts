@@ -3,6 +3,7 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
+  knownModelImageInput,
   modelAcceptsImageInput,
   modelIdSupportsImages,
   resolveModelRefForVisionCheck,
@@ -97,5 +98,14 @@ describe("model vision gating for computer tools", () => {
     expect(names).toEqual(builtinAgentTools.map((tool) => tool.name));
     expect(names).toContain("computer_observe");
     expect(names).toContain("computer_act");
+  });
+});
+
+describe("known attachment input capability", () => {
+  it("keeps catalogue misses distinct from known text-only and image models", () => {
+    expect(knownModelImageInput("openrouter", "fixture/future-model")).toBeUndefined();
+    expect(knownModelImageInput("openrouter", "deepseek/deepseek-v4-pro")).toBe(false);
+    expect(knownModelImageInput("openrouter", "openai/gpt-4o")).toBe(true);
+    expect(knownModelImageInput("openai-compatible", "openai/gpt-4o")).toBeUndefined();
   });
 });

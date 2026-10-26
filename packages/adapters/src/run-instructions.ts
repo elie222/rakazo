@@ -1,5 +1,5 @@
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
-import { toolRequiresExplicitApproval } from "@rakazo/core";
+import { runReadsThreadHistory, toolRequiresExplicitApproval } from "@rakazo/core";
 import { MODEL_CANNOT_SEE_MESSAGE } from "./model-vision.js";
 import { replyGuidanceForOfferedTools } from "./run-replies.js";
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
@@ -386,7 +386,7 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   }
   // Routine runs stay isolated from thread history. The creation intro does
   // too: a message that arrives during it waits and is answered afterward.
-  if (trigger === "created" || trigger === "routine") {
+  if (!runReadsThreadHistory(trigger)) {
     return {
       messages: [] as T[],
       summary: null,

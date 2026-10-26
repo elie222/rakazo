@@ -10,7 +10,7 @@ import { useCallback, useState } from "react";
 import { Alert, AppState, Linking, ScrollView } from "react-native";
 import { SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
+import { dateLocaleForUi, useI18n } from "../../lib/i18n";
 import { useSideInsets } from "../../lib/side-insets";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -68,6 +68,13 @@ export default function BillingScreen() {
       setPending(false);
     }
   }
+  const freeUntil = status?.byokFreeUntil
+    ? new Date(status.byokFreeUntil).toLocaleDateString(dateLocaleForUi(), {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
   const recurring = Boolean(
     status?.monthlyAmountCents && !["none", "canceled", "incomplete"].includes(status.state),
   );
@@ -180,18 +187,39 @@ export default function BillingScreen() {
               />
             </SettingsGroup>
           ) : null}
-          {!recurring || status.cancelAtPeriodEnd ? (
+          {freeUntil ? (
+            <SettingsGroup label={t("Your subscription or API key")}>
+              <SettingsRow title={t("Free plan ends")} value={freeUntil} />
+              <SettingsRow
+                title={t("Subscribe")}
+                disabled={pending}
+                onPress={() =>
+                  void action(async () => {
+                    const result = await rpc("billing/checkout");
+                    await Linking.openURL(result.url);
+                  })
+                }
+              />
+            </SettingsGroup>
+          ) : !recurring || status.cancelAtPeriodEnd ? (
             <SettingsGroup
               label={t("Your subscription or API key")}
-              footer={t("Free. ChatGPT, Claude, or any model provider.")}
+              footer={
+                status.byokPriceCents
+                  ? t("{price} / month. ChatGPT, Claude, or any model provider.", {
+                      price: `$${status.byokPriceCents / 100}`,
+                    })
+                  : t("Free. ChatGPT, Claude, or any model provider.")
+              }
             >
               <SettingsRow
                 title={t("Use my subscription or API key")}
                 disabled={pending}
                 onPress={() =>
                   void action(async () => {
-                    await rpc("billing/selectFunding", { funding: "byok" });
-                    router.replace("/models");
+                    const result = await rpc("billing/selectFunding", { funding: "byok" });
+                    if (result.url) await Linking.openURL(result.url);
+                    else router.replace("/models");
                   })
                 }
               />

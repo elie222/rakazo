@@ -9,6 +9,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -114,4 +115,17 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
 ): T[] {
   if (acceptsImages) return tools;
   return tools.filter((tool) => !IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name));
+}
+
+/** Attachment admission needs proof, unlike conservative screenshot tool gating. */
+export function knownModelImageInput(provider: string, modelId: string): boolean | undefined {
+  const resolved = resolveModelRefForVisionCheck(provider, modelId);
+  if (resolved.provider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
+  const model = catalogModels().getModel(resolved.provider, resolved.id);
+  return model ? model.input.includes("image") : undefined;
+}
+
+/** Whether the model the runtime would call for this choice declares image input. */
+export function runtimeModelAcceptsImages(provider: string, modelId: string): boolean {
+  return Boolean(resolveRuntimeModel({ provider, id: modelId }).model?.input.includes("image"));
 }
