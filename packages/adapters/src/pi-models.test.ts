@@ -378,7 +378,7 @@ describe("Pi model catalog", () => {
     ).toBeUndefined();
 
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
-    delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "0";
     try {
       await expect(
         probeOpenAiCompatibleModels(
@@ -387,7 +387,7 @@ describe("Pi model catalog", () => {
             throw new Error("user-supplied probe should be rejected before fetch");
           },
         ),
-      ).rejects.toThrow(/Public model endpoints are blocked/);
+      ).rejects.toThrow(/Public model endpoints are disabled/);
 
       for (const [provider, baseUrl] of Object.entries(expected)) {
         let requestedUrl = "";

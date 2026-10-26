@@ -1623,6 +1623,8 @@ export const MeSchema = z.object({
 export type Me = z.infer<typeof MeSchema>;
 
 export const MODEL_CREDIT_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000] as const;
+/** Monthly price in cents of running bots on your own model connection; `null` makes it free. */
+export const BYOK_MONTHLY_PRICE_CENTS: number | null = 1000;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 2000;
 export const ModelCreditAmountSchema = z.union(
   MODEL_CREDIT_AMOUNTS.map((amount) => z.literal(amount)),
@@ -1655,6 +1657,10 @@ export const BillingStatusSchema = z.object({
   balanceUsd: z.number().optional(),
   monthlyAmountCents: z.number().int().positive().nullable().optional(),
   creditPurchasesEnabled: z.boolean().optional(),
+  /** Monthly price of the own-key plan; `null` when it is free. */
+  byokPriceCents: z.number().int().positive().nullable().optional(),
+  /** End of an unpaid own-key organization's free period. */
+  byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),
   /** Only organization owners start checkout or open the billing portal. */
   canManage: z.boolean(),

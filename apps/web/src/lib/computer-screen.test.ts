@@ -236,10 +236,12 @@ describe("screen frame reports", () => {
     expect(screenFrameError({ rakazoScreen: "connecting" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "connected" }, "fallback")).toBeNull();
     expect(screenFrameError({ rakazoScreen: "failed", detail: "Refused" }, "fallback")).toBe(
-      "Refused",
+      "fallback",
     );
     expect(screenFrameError({ rakazoScreen: "failed" }, "fallback")).toBe("fallback");
-    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe("fallback");
+    expect(screenFrameError({ rakazoScreen: "disconnected" }, "fallback")).toBe(
+      "The screen connection closed.",
+    );
   });
 
   it("only treats the proxy's own pages as reporting frames", () => {
@@ -270,12 +272,12 @@ describe("probeScreen", () => {
       probeScreen(url, "fallback", async () =>
         response(403, "Invalid or expired screen capability"),
       ),
-    ).resolves.toBe("Invalid or expired screen capability");
+    ).resolves.toBe("The screen link expired.");
     await expect(
       probeScreen(url, "fallback", async () =>
         response(502, "Screen unavailable (upstream_timeout)"),
       ),
-    ).resolves.toBe("Screen unavailable (upstream_timeout)");
+    ).resolves.toBe("The screen did not respond.");
   });
 
   it("reads an access check that couldn't reach the API as a connection problem", async () => {
@@ -285,19 +287,23 @@ describe("probeScreen", () => {
     await expect(probeScreen(url, "fallback", async () => response(503))).resolves.toBe("fallback");
   });
 
+  it("never shows untrusted plain text", async () => {
+    await expect(
+      probeScreen(url, "fallback", async () => response(500, "private token")),
+    ).resolves.toBe("fallback");
+  });
+
   it("never shows an upstream HTML error page as the reason", async () => {
     await expect(
       probeScreen(url, "fallback", async () =>
         response(502, "<!DOCTYPE html><html><body><h1>Bad gateway</h1></body></html>"),
       ),
-    ).resolves.toBe("fallback (HTTP 502)");
+    ).resolves.toBe("fallback");
     const html = {
       ...response(500, "Bad gateway"),
       headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
     } as Response;
-    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe(
-      "fallback (HTTP 500)",
-    );
+    await expect(probeScreen(url, "fallback", async () => html)).resolves.toBe("fallback");
   });
 
   it("falls back when the page cannot be fetched or would leave the app", async () => {

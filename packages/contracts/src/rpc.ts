@@ -223,7 +223,8 @@ export const appContract = {
     status: oc.output(BillingStatusSchema),
     selectFunding: oc
       .input(z.object({ funding: z.enum(["byok", "credits"]) }))
-      .output(z.object({ ok: z.literal(true) })),
+      /** `url` is the checkout to pay for the own-key plan before it has access. */
+      .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
     purchaseCredits: oc
       .input(z.object({ amountCents: ModelCreditAmountSchema, monthly: z.boolean() }))
       .output(z.object({ url: z.string().url() })),

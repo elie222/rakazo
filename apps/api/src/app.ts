@@ -15,6 +15,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   VoiceAccountError,
@@ -1411,6 +1412,11 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
       reason: error.cause instanceof Error ? error.cause.message : undefined,
     });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
+  }
+  // A retry cannot fix a damaged computer; its message tells the user to Recover it.
+  if (error instanceof SandboxDamagedError) {
+    getLogger().warn(`rpc ${path.join("/")} computer damaged`);
+    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
   }
   logUnexpectedRpcError(error, path);
 }

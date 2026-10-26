@@ -1,3 +1,4 @@
+export * from "./adapter-context.js";
 export * from "./analytics.js";
 export * from "./background-jobs.js";
 export * from "./billing-errors.js";

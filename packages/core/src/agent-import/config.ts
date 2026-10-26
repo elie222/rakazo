@@ -99,15 +99,27 @@ export function normalizeImportProvider(provider: string): string {
 }
 
 export function parseDotEnv(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
+  return Object.fromEntries(
+    Object.entries(readDotEnv(content)).map(([name, entry]) => [name, entry.value]),
+  );
+}
+
+function readDotEnv(content: string): Record<string, { value: string; literal: string }> {
+  const values: Record<string, { value: string; literal: string }> = {};
   for (const line of content.split(/\r?\n/)) {
     if (line.trimStart().startsWith("#")) continue;
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
     if (!match) continue;
     let value = match[2]!;
-    const quoted = /^(['"])(.*)\1$/.exec(value);
-    value = quoted ? quoted[2]! : value.replace(/\s+#.*$/, "");
-    values[match[1]!] = value;
+    const quote = value[0];
+    const quoted =
+      quote === "'"
+        ? /^'(.*?)'(?:\s*#.*)?$/.exec(value)
+        : /^"((?:\\.|[^\\])*?)"(?:\s*#.*)?$/.exec(value);
+    value = quoted ? quoted[1]! : value.replace(/\s+#.*$/, "");
+    // Preserve the source quoting so preparation cannot turn a value's contents into a comment.
+    const literal = quoted ? `${quote}${value}${quote}` : value;
+    values[match[1]!] = { value, literal };
   }
   return values;
 }
@@ -138,11 +150,11 @@ export function prepareAgentImportFiles(
   if (!options.includeSecrets) return out;
   const env = files.get(".env");
   if (env !== undefined) {
-    const values = parseDotEnv(env);
+    const values = readDotEnv(env);
     const keys = new Set(providerKeyVars(values).map(([name]) => name));
     const lines = Object.entries(values)
       .filter(([name]) => keys.has(name) || referenced.has(name))
-      .map(([name, value]) => `${name}="${value}"`);
+      .map(([name, entry]) => `${name}=${entry.literal}`);
     out.set(".env", lines.length ? `${lines.join("\n")}\n` : "");
   }
   const auth = files.get("auth.json");

@@ -23,6 +23,9 @@ export const MISSING_MODEL_RUN_ERROR = "Connect a model in Settings before runni
 export const HOSTED_MODEL_CREDITS_REQUIRED_ERROR =
   "Connect your own API key in Models or choose Rakazo credits in Billing.";
 
+/** A run in a billing organization without a paid plan, credits, or free period. */
+export const MODEL_ACCESS_REQUIRED_RUN_ERROR = "Subscribe in Billing to keep running bots.";
+
 /** The API rejects a send with this message until the user can reach a model. */
 export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
 
@@ -96,6 +99,7 @@ const MODEL_CONNECTION_RUN_ERRORS = new Set([
 const APP_RUN_ERRORS = new Set([
   ...MODEL_OUTPUT_RUN_ERRORS,
   ...MODEL_CONNECTION_RUN_ERRORS,
+  MODEL_ACCESS_REQUIRED_RUN_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
   ...stuckWorkStatusMessages(),
 ]);

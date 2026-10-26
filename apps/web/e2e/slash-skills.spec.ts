@@ -8,10 +8,12 @@ test("composer / picker lists skills above actions", async ({ page }, testInfo) 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
+  // The emoji follows 70 BMP characters, crossing the old UTF-16 truncation boundary.
+  const descriptionPrefix =
+    "Prepare a concise standup update from recent work and active blockers.";
   await rpc(page, "agentSkills/create", {
     name: "Daily standup",
-    description:
-      "Prepare a concise standup update from recent work. Use when the user asks for standup notes.",
+    description: `${descriptionPrefix}😀 Use when the user asks for standup notes.`,
     body: "1. Summarize wins.\n2. List blockers.",
   });
 
@@ -35,7 +37,7 @@ test("composer / picker lists skills above actions", async ({ page }, testInfo) 
   expect(actionBox).toBeTruthy();
   expect(skillBox!.y).toBeLessThan(actionBox!.y);
 
-  await expect(skillButton).toContainText("Prepare a concise standup");
+  await expect(skillButton).toContainText(`${descriptionPrefix}😀…`);
   const interrogate = picker.getByRole("button", { name: "Skill Interrogate", exact: true });
   await expect(interrogate).toBeVisible();
   await expect(interrogate).toContainText("Review only; never applies fixes.");

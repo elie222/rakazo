@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -1229,6 +1230,7 @@ msgid "Choose folder"
 msgstr "选择文件夹"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2770,6 +2772,10 @@ msgstr "忘记密码？"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "免费"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "免费方案将于 {day} 结束"
 
 #: src/lib/cron.ts
 msgid "Friday"
@@ -4764,6 +4770,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "范围（可选）"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "屏幕未连接"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5220,7 +5230,12 @@ msgstr "提交"
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
-msgstr ""
+msgstr "订阅"
+
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "以每月 ${0} 订阅"
 
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
@@ -5335,6 +5350,18 @@ msgstr "模型返回了无法使用的回复。请重试。"
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "提供方正在限制请求频率。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "屏幕连接已关闭。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "屏幕未响应。"
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "屏幕链接已过期。"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5713,6 +5740,10 @@ msgstr ""
 msgid "Updating…"
 msgstr "正在更新…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "升级"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5809,6 +5840,10 @@ msgstr "使用此服务器自己的 {hostCredentialSource} 凭据访问 {selecte
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "正在使用你的 API 密钥。免费方案将于 {freeUntil} 结束。"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

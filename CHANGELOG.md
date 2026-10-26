@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Mobile threads now show work started by another client as soon as the run starts, without hiding waiting runs or another group member's error.
+- Hovering a message no longer places its entire row above the floating chat header and other higher-priority controls.
 - Mobile chat and call subscriptions reject oversized event frames and release their readers after cancellation or connection failure.
 - Thread snapshot recovery replays durable events instead of retaining their payloads in memory, without repeating notifications already delivered. Late voice-call snapshots no longer replace newer work or a replacement call.
 - The offline installer now rejects missing local inputs without downloading files or starting services.

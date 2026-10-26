@@ -6,6 +6,9 @@ export const JA_MESSAGES: Record<string, string> = {
     "ボットはファイルを利用できますが、画像の内容は見えません。",
   "This model cannot read images. Choose a model that supports images.":
     "このモデルは画像を読み取れません。画像に対応したモデルを選択してください。",
+  "Could not connect to the computer screen": "コンピューター画面に接続できませんでした",
+  "Retry screen": "画面を再接続",
+  "The screen connection closed.": "画面の接続が閉じられました。",
   Approvals: "承認",
   "Never ask": "確認しない",
   Auto: "自動",
@@ -959,6 +962,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "ご自身のサブスクリプションまたはAPIキー",
   "Free. ChatGPT, Claude, or any model provider.":
     "無料。ChatGPT、Claude、または任意のモデルプロバイダー。",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "月額 {price}。ChatGPT、Claude、または任意のモデルプロバイダー。",
+  "Free plan ends": "無料プランの終了日",
+  Subscribe: "登録する",
   "Use my subscription or API key": "自分のサブスクリプションまたはAPIキーを使用",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "月間クレジットは更新時に失効します。追加購入分は失効しません。",

@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr "${0} / month"
@@ -1229,6 +1230,7 @@ msgid "Choose folder"
 msgstr "Choose folder"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "Choose how to use Rakazo"
 
@@ -2770,6 +2772,10 @@ msgstr "Forgot password?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Free"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Free plan ends {day}"
 
 #: src/lib/cron.ts
 msgid "Friday"
@@ -4764,6 +4770,10 @@ msgstr "Scheduled routines"
 msgid "Scopes (optional)"
 msgstr "Scopes (optional)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Screen not connected"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5222,6 +5232,11 @@ msgstr "Submit"
 msgid "Subscribe"
 msgstr "Subscribe"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Subscribe for ${0} / month"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Subscription required"
@@ -5335,6 +5350,18 @@ msgstr "The model returned an unusable response. Try again."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "The provider is rate-limiting requests."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "The screen connection closed."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "The screen did not respond."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "The screen link expired."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5713,6 +5740,10 @@ msgstr "Updating Team Computer"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Upgrade"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr "Upgrade now"
@@ -5809,6 +5840,10 @@ msgstr "Uses this server's own {hostCredentialSource} credentials to access {sel
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr "Using your API key"
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Using your API key. Free plan ends {freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

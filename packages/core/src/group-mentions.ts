@@ -50,11 +50,23 @@ export function resolveGroupTargetBotIds(input: {
     if (membersById.has(mentionId)) targetIds.add(mentionId);
   }
 
-  if (hasMentionToken(input.text, "everyone")) {
+  const names = ["everyone", ...input.members.map((member) => member.name.trim())]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  // Consume each mention once so a full name cannot also wake its prefix.
+  const alternatives = names.map(escapeRegExp).join("|");
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_-])@(${alternatives})(?![\\p{L}\\p{N}_-])`, "giu");
+  const mentions = [...input.text.matchAll(pattern)].map((match) => match[1]!);
+  const isMentioned = (name: string) => {
+    const exactName = new RegExp(`^${escapeRegExp(name.trim())}$`, "iu");
+    return mentions.some((mention) => exactName.test(mention));
+  };
+
+  if (isMentioned("everyone")) {
     for (const member of input.members) targetIds.add(member.id);
   } else {
     for (const member of input.members) {
-      if (hasMentionToken(input.text, member.name)) targetIds.add(member.id);
+      if (isMentioned(member.name)) targetIds.add(member.id);
     }
   }
 

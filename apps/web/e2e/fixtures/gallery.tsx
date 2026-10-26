@@ -519,6 +519,19 @@ const calls: Scenario = {
     bot(
       [
         {
+          kind: "voice_call",
+          callId: "call-paginated",
+          title: "Deploy check",
+          farewell: "Bye",
+          durationSeconds: 125,
+        },
+      ],
+      { callId: "call-paginated", runId: "run-paginated" },
+    ),
+    say("Here is the deployment checklist.", { runId: "run-paginated" }),
+    bot(
+      [
+        {
           kind: "call_request",
           callId: "call-1",
           reason: "The venue needs an answer today",

@@ -5,7 +5,7 @@ import type { getBotSecretMetadata } from "@rakazo/adapters";
 import {
   archiveBot,
   cancelComputerRunWork,
-  checkpointAndRecordComputerWorkspace,
+  checkpointAndStopComputer,
   forgetBotSecret,
   hasActiveComputerControl,
   listBotSecretMetadata,
@@ -431,8 +431,7 @@ export function botsRoutes(ctx: RouterContext) {
             const ctx = computerContext(context.actor, bot.id, "computer.switch");
             const ref = toComputerRef(bot.computer);
             if (bot.computer.state === "running") {
-              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-              await deps.sandbox.stop(ref, ctx);
+              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             }
             await deps.prisma.computerExecutionLease.deleteMany({
               where: { computerId: bot.computer.id, botId: bot.id },

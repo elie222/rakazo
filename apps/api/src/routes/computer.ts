@@ -6,8 +6,9 @@ import type { ComputerExecutionLease } from "@rakazo/adapters";
 import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
+  COMPUTER_SCREEN_UNAVAILABLE,
   ComputerBusyError,
-  checkpointAndRecordComputerWorkspace,
+  checkpointAndStopComputer,
   clearInactiveUserComputerControl,
   computerSupportsTerminal,
   computerSupportsUpdate,
@@ -170,8 +171,7 @@ export function computerRoutes(ctx: RouterContext) {
             const ctx = computerContext(context.actor, bot.id, "stop");
             const ref = toComputerRef(bot.computer);
             try {
-              await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
-              await deps.sandbox.stop(ref, ctx);
+              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
             } catch (error) {
               // The sandbox is already gone: nothing left to checkpoint or stop.
               if (!isSandboxGoneError(error)) throw error;
@@ -721,7 +721,7 @@ export function computerRoutes(ctx: RouterContext) {
           )
           .catch(async (error: unknown) => {
             if (isComputerScreenUnavailable(error)) {
-              throw new ORPCError("CONFLICT", { message: error.message });
+              throw new ORPCError("CONFLICT", { message: COMPUTER_SCREEN_UNAVAILABLE });
             }
             return clearGoneSandbox(deps, computer, error);
           });

@@ -487,8 +487,8 @@ export function nextCronDateAcrossStrict(
   return earliest;
 }
 
-const OFFSET_SUFFIX = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
-const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/;
+const ISO_DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
 
 /**
  * An ISO date or datetime as an instant. One with an offset (or Z) is taken as written; a date
@@ -497,19 +497,15 @@ const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:
  */
 export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
   const text = value.trim();
-  const wall = WALL_CLOCK.exec(text);
-  if (!wall) {
-    if (!OFFSET_SUFFIX.test(text) || !/\d{2}:\d{2}/.test(text)) return null;
-    const instant = new Date(text);
-    return Number.isFinite(instant.getTime()) ? instant : null;
-  }
+  const wall = ISO_DATE_TIME.exec(text);
+  if (!wall) return null;
   const [year, month, day, hour, minute, second] = wall
     .slice(1, 7)
     .map((part) => (part === undefined ? 0 : Number(part)));
   const ms = wall[7] ? Math.floor(Number(`0.${wall[7]}`) * 1000) : 0;
-  const check = new Date(
-    Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, second ?? 0),
-  );
+  const check = new Date(0);
+  check.setUTCFullYear(year ?? 0, (month ?? 1) - 1, day ?? 1);
+  check.setUTCHours(hour ?? 0, minute ?? 0, second ?? 0);
   if (
     check.getUTCFullYear() !== year ||
     check.getUTCMonth() !== (month ?? 1) - 1 ||
@@ -519,6 +515,10 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
     check.getUTCSeconds() !== second
   ) {
     return null;
+  }
+  if (wall[8]) {
+    const instant = new Date(text);
+    return Number.isFinite(instant.getTime()) ? instant : null;
   }
   const local = new CronDate(new Date(), validTimezoneOrUtc(timezone));
   local.year = check.getUTCFullYear();

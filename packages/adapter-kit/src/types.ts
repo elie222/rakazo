@@ -1196,6 +1196,8 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** The flat own-key plan, which grants access without credits. */
+  byokPlan?: boolean;
 }
 
 export interface BillingCheckoutRequest {

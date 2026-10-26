@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -1229,6 +1230,7 @@ msgid "Choose folder"
 msgstr "Ordner wählen"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2770,6 +2772,10 @@ msgstr "Passwort vergessen?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr "Kostenlos"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Kostenloser Tarif endet am {day}"
 
 #: src/lib/cron.ts
 msgid "Friday"
@@ -4764,6 +4770,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "Bereiche (optional)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Bildschirm nicht verbunden"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5220,7 +5230,12 @@ msgstr "Absenden"
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
-msgstr ""
+msgstr "Abonnieren"
+
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Für ${0} / Monat abonnieren"
 
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
@@ -5335,6 +5350,18 @@ msgstr "Das Modell hat eine unbrauchbare Antwort geliefert. Versuche es erneut."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "Der Anbieter drosselt die Anfragen."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "Die Bildschirmverbindung wurde geschlossen."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Der Bildschirm hat nicht geantwortet."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "Der Bildschirmlink ist abgelaufen."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5713,6 +5740,10 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Upgraden"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5809,6 +5840,10 @@ msgstr "Verwendet die eigenen {hostCredentialSource}-Zugangsdaten dieses Servers
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Dein API-Schlüssel wird verwendet. Kostenloser Tarif endet am {freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

@@ -438,10 +438,14 @@ is unreachable or takes longer than three seconds, the password is accepted and 
 ### Billing
 
 Billing stays off unless `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are both set (see
-`.env.example`). Enabling billing offers free use with a personal model connection or monthly
-model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-ups use the same amounts.
-Monthly credits expire at the end of their service period; one-time top-ups do not expire.
-The hosted computer is included in both paths.
+`.env.example`). Enabling billing offers a monthly own-key plan for a personal model connection or
+monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-ups use the same
+amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
+The hosted computer is included in both paths, and monthly credits include the own-key plan.
+
+`BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price; `null` makes it
+free and ends paid own-key subscriptions at their period end. Runs check access on the server, so a
+lapsed organization's bots and routines stop until it subscribes.
 
 Configure the managed default model through the existing model connection settings. The default
 OpenRouter model is Luna 6; customers can choose another available model, with its usage deducted
@@ -671,22 +675,24 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ### Ollama Cloud
 
-In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration. `ollama.com` is the only public host allowed without `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`.
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
 Add optional request headers under **Advanced**; values are stored encrypted, and only their names
 are shown afterwards.
-Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Public hosts and ordinary hostnames need HTTPS when they receive an API key or custom headers,
+and must resolve only to public addresses. Set `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` on the API
+and worker to block them.
 Literal private IP, loopback, and `host.docker.internal` targets do not, but only the deployment
 owner can use them, checked on save, on model discovery, and on every run. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow them for every user.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
-(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts do not
-need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
+(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts ignore
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you

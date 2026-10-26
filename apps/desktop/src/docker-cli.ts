@@ -196,10 +196,10 @@ export function runDocker(
       if (line !== "") options.onLine?.(line);
     };
     for (const stream of ["stdout", "stderr"] as const) {
-      child[stream]?.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf8");
+      child[stream]?.setEncoding("utf8");
+      child[stream]?.on("data", (text: string) => {
         captured[stream] += text;
-        const parts = (pending[stream] + text).split("\n");
+        const parts = (pending[stream] + text).split(/\r?\n/);
         pending[stream] = parts.pop() ?? "";
         for (const part of parts) emit(part);
       });
@@ -291,7 +291,11 @@ export function classifyDockerFailure(output: string): DockerFailureKind {
   if (matches(DAEMON_DOWN)) return "daemon-down";
   if (matches(COMPOSE_MISSING)) return "compose-missing";
   if (matches(PORT_IN_USE)) return "port-in-use";
-  if (matches(IMAGE_NOT_FOUND)) return "image-not-found";
+  if (
+    matches(IMAGE_NOT_FOUND) ||
+    (text.includes("failed to resolve reference") && text.includes(": not found"))
+  )
+    return "image-not-found";
   if (matches(ADDRESS_POOL_EXHAUSTED)) return "address-pool-exhausted";
   if (matches(NETWORK)) return "network";
   return "other";

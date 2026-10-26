@@ -1,4 +1,3 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   deploymentModelRole,
   hasHostedModelCredits,
@@ -10,16 +9,7 @@ import type { Actor, Me } from "@rakazo/contracts";
 import { attachmentMaxBytes, canonicalPiProviderId } from "@rakazo/contracts";
 import type { RouterDeps } from "../router.js";
 
-export function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
-  return {
-    operationId,
-    traceId: operationId,
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId,
-    signal: new AbortController().signal,
-  };
-}
+export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
 
 function hostCredentials(active: boolean, provider: string) {
   return active

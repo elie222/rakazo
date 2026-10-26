@@ -5,6 +5,9 @@ export const ZH_MESSAGES: Record<string, string> = {
   "The bot can use the file but won't see the picture.": "Bot 可以使用该文件，但看不到图片内容。",
   "This model cannot read images. Choose a model that supports images.":
     "此模型无法读取图片。请选择支持图片的模型。",
+  "Could not connect to the computer screen": "无法连接到计算机屏幕",
+  "Retry screen": "重试屏幕连接",
+  "The screen connection closed.": "屏幕连接已关闭。",
   Approvals: "审批",
   "Never ask": "从不询问",
   Auto: "自动",
@@ -974,6 +977,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Manage billing": "管理账单",
   "Your subscription or API key": "你的订阅或 API 密钥",
   "Free. ChatGPT, Claude, or any model provider.": "免费。ChatGPT、Claude 或任意模型提供商。",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "每月 {price}。ChatGPT、Claude 或任意模型提供商。",
+  "Free plan ends": "免费方案结束于",
+  Subscribe: "订阅",
   "Use my subscription or API key": "使用我的订阅或 API 密钥",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "每月额度在续费时到期。单次充值额度不会过期。",

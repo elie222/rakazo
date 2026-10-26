@@ -7,6 +7,9 @@ export const NL_MESSAGES: Record<string, string> = {
     "De bot kan het bestand gebruiken, maar ziet de afbeelding niet.",
   "This model cannot read images. Choose a model that supports images.":
     "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt.",
+  "Could not connect to the computer screen": "Kan geen verbinding maken met het computerscherm",
+  "Retry screen": "Scherm opnieuw verbinden",
+  "The screen connection closed.": "De schermverbinding is gesloten.",
   Approvals: "Goedkeuringen",
   "Never ask": "Nooit vragen",
   Auto: "Auto",
@@ -970,6 +973,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your subscription or API key": "Je abonnement of API-sleutel",
   "Free. ChatGPT, Claude, or any model provider.":
     "Gratis. ChatGPT, Claude of elke modelaanbieder.",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "{price} per maand. ChatGPT, Claude of elke modelaanbieder.",
+  "Free plan ends": "Gratis abonnement eindigt",
+  Subscribe: "Abonneren",
   "Use my subscription or API key": "Mijn abonnement of API-sleutel gebruiken",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "Maandelijks tegoed vervalt bij verlenging. Los gekocht tegoed verloopt niet.",

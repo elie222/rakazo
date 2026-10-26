@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -1229,6 +1230,7 @@ msgid "Choose folder"
 msgstr "Klasör seç"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -2770,6 +2772,10 @@ msgstr "Parolanızı mı unuttunuz?"
 #: src/pages/model-settings/model-picker.tsx
 msgid "Free"
 msgstr ""
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Ücretsiz plan {day} tarihinde bitiyor"
 
 #: src/lib/cron.ts
 msgid "Friday"
@@ -4764,6 +4770,10 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "Kapsamlar (isteğe bağlı)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Ekran bağlı değil"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
@@ -5220,7 +5230,12 @@ msgstr "Gönder"
 #: src/components/ModelCredits.tsx
 #: src/pages/Paywall.tsx
 msgid "Subscribe"
-msgstr ""
+msgstr "Abone ol"
+
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Aylık ${0} ile abone ol"
 
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
@@ -5335,6 +5350,18 @@ msgstr "Model kullanılamaz bir yanıt döndürdü. Tekrar deneyin."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "Sağlayıcı istek hızını sınırlıyor."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "Ekran bağlantısı kapandı."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Ekran yanıt vermedi."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "Ekran bağlantısının süresi doldu."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5713,6 +5740,10 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Yükselt"
+
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
 msgstr ""
@@ -5809,6 +5840,10 @@ msgstr "{selectedProviderName} erişimi için bu sunucunun kendi {hostCredential
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Kendi API anahtarın kullanılıyor. Ücretsiz plan {freeUntil} tarihinde bitiyor."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx

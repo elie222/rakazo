@@ -117,7 +117,8 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await groupName.fill("Unsaved Draft team name");
   const sidebar = page.locator("aside").first();
   await sidebar.getByRole("button", { name: /^Review team/ }).click();
-  await expect(groupName).toHaveValue("Review team");
+  await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
+  await expect(desktopSettings).toHaveAttribute("data-panel", "closed");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
   await expect(groupName).toHaveValue("Draft team");
   await page.route("**/rpc/groups/update", async (route) => route.abort("failed"));

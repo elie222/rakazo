@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
+import { createAdapterContext } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -18,17 +19,6 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
-
-function adapterContext(actor: ArtifactOwner, botId: string, operationId: string) {
-  return {
-    operationId,
-    traceId: operationId,
-    spaceId: actor.spaceId,
-    userId: actor.userId,
-    botId,
-    signal: new AbortController().signal,
-  };
-}
 
 export async function createOwnedArtifact(
   deps: {
@@ -124,7 +114,7 @@ async function storeOwnedArtifact(
   },
 ) {
   const { mimeType, bytes } = input;
-  const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
+  const context = createAdapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
   const { row, replay } = await withResolvedArtifactVersion(
@@ -282,7 +272,7 @@ async function readArtifact(
 ) {
   const bytes = await artifacts.get(
     row.storageKey,
-    adapterContext(actor, contextBotId, `artifact-get:${row.id}`),
+    createAdapterContext(actor, contextBotId, `artifact-get:${row.id}`),
   );
   return {
     id: row.id,
@@ -560,7 +550,7 @@ async function removeArtifactBlob(
   try {
     await artifacts.remove(
       member.storageKey,
-      adapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
+      createAdapterContext(actor, member.botId ?? member.id, `artifact-delete:${member.id}`),
     );
   } catch (error) {
     if (isAlreadyRemoved(error)) return;

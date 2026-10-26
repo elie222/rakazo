@@ -1712,6 +1712,22 @@ describe("outbound destinations", () => {
     });
   });
 
+  it.each(["ada.li@example.org", "ada.li+tag@example.org", "ada.li@例子.测试"])(
+    "asks before fetching a site found only in the email local part of %s",
+    async (email) => {
+      const f = fixture({ builtin: true, sourceRole: "user", prompt: email });
+      f.setCalls([{ name: "web_fetch", args: { url: "https://ada.li/" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.fetchedUrls).toEqual([]);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(pausedCard(f)).toMatchObject({
+        site: "ada.li",
+        detail: "url: https://ada.li/",
+      });
+    },
+  );
+
   it("does not take sites from a message the owner did not write", async () => {
     const f = fixture({
       builtin: true,

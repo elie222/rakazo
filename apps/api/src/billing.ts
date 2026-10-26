@@ -1,14 +1,21 @@
 import { ORPCError } from "@orpc/server";
-import type { BillingPrice, BillingProvider } from "@rakazo/adapter-kit";
+import type {
+  BillingPrice,
+  BillingProvider,
+  BillingSubscriptionSnapshot,
+} from "@rakazo/adapter-kit";
 import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
+import { BYOK_MONTHLY_PRICE_CENTS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
+  byokFreeUntil,
   createBillingAccount,
   creditAccount,
   expireModelCredits,
   hasBillingAccess,
+  hasModelAccess,
   MICROS_PER_DOLLAR,
   needsBillingPortal,
   organizationForMember,
@@ -29,7 +36,7 @@ export const BILLING_RETURN_PATH = "/api/v1/billing/return";
 export interface BillingService {
   readonly modelCreditsEnabled: boolean;
   status(actor: Actor): Promise<BillingStatus>;
-  selectFunding(actor: Actor, funding: "byok" | "credits"): Promise<{ ok: true }>;
+  selectFunding(actor: Actor, funding: "byok" | "credits"): Promise<{ ok: true; url?: string }>;
   purchaseCredits(
     actor: Actor,
     input: { amountCents: number; monthly: boolean },
@@ -104,11 +111,42 @@ export function createBillingService(deps: {
         });
       }
     }
-    const written = await syncBillingSnapshot(prisma, customerId, () =>
-      provider.getCustomerSubscription(customerId),
-    );
-    if (!written)
+    const previous = await prisma.billingAccount.findUnique({ where: { customerId } });
+    // Assigned in the callback, which control-flow narrowing does not follow.
+    let snapshot = null as BillingSubscriptionSnapshot | null;
+    const written = await syncBillingSnapshot(prisma, customerId, async () => {
+      snapshot = await provider.getCustomerSubscription(customerId);
+      return snapshot;
+    });
+    if (!written || !previous) {
       getLogger().warn("billing sync for unknown customer", { "billing.customer_id": customerId });
+      return;
+    }
+    const live = snapshot;
+    if (!modelCredits || !live) return;
+    // A newly paid own-key plan becomes the funding, wherever its checkout returned.
+    if (
+      live.byokPlan &&
+      hasBillingAccess(live.status) &&
+      live.subscriptionId !== previous.subscriptionId
+    )
+      // Only while this snapshot is still the stored one: a newer sync's write wins.
+      await prisma.modelCreditAccount.updateMany({
+        where: {
+          organizationId: previous.organizationId,
+          organization: { billing: { subscriptionId: live.subscriptionId } },
+        },
+        data: { mode: "byok", pendingCreditCheckout: false },
+      });
+    // Monthly credits include the own-key plan, even when they will not renew, and a free plan
+    // bills nothing.
+    if (
+      provider.endByokPlans &&
+      hasBillingAccess(live.status) &&
+      (live.creditAmountCents ||
+        (BYOK_MONTHLY_PRICE_CENTS === null && live.byokPlan && !live.cancelAtPeriodEnd))
+    )
+      await provider.endByokPlans(customerId);
   }
 
   async function newCustomer(actor: Actor, organizationId: string) {
@@ -134,22 +172,75 @@ export function createBillingService(deps: {
     }
   }
 
+  /** Opens a checkout; with `serialize`, one per organization at a time across API instances. */
+  async function openCheckout(
+    actor: Actor,
+    account: BillingAccount,
+    serialize: boolean,
+    call: (customerId: string) => Promise<{ url: string }>,
+  ) {
+    return prisma.$transaction(
+      async (tx) => {
+        // Opening another recurring checkout expires the old one.
+        if (serialize)
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`model-credit-checkout:${account.organizationId}`}, 0))`;
+        return withLiveCustomer(actor, account, call);
+      },
+      { timeout: 120_000 },
+    );
+  }
+
+  async function billingAccountFor(actor: Actor, organizationId: string) {
+    return (
+      (await billingAccountForOrganization(prisma, organizationId)) ??
+      createBillingAccount(prisma, {
+        organizationId,
+        customerId: await newCustomer(actor, organizationId),
+      })
+    );
+  }
+
+  async function byokCheckout(actor: Actor, organizationId: string) {
+    const amountCents = BYOK_MONTHLY_PRICE_CENTS;
+    if (amountCents === null || !provider.createByokCheckout) throw new ORPCError("NOT_FOUND");
+    const account = await billingAccountFor(actor, organizationId);
+    try {
+      return await openCheckout(actor, account, true, (customerId) =>
+        provider.createByokCheckout!({
+          customerId,
+          amountCents,
+          successUrl: `${deps.webOrigin}${BILLING_RETURN_PATH}`,
+          cancelUrl: appUrl,
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof BillingCheckoutCompletedError)) throw error;
+      await sync(account.customerId);
+      throw new ORPCError("CONFLICT", { message: "Manage your existing subscription in Billing" });
+    }
+  }
+
   return {
     modelCreditsEnabled: modelCredits,
     async selectFunding(actor, funding) {
       const { organizationId } = await managedOrganization(actor);
       const account = await creditAccount(prisma, organizationId);
-      if (funding === "byok") {
-        const subscription = await billingAccountForOrganization(prisma, organizationId);
-        if (
-          subscription?.creditAmountCents &&
-          !subscription.cancelAtPeriodEnd &&
-          !["canceled", "incomplete_expired"].includes(subscription.status ?? "")
-        )
-          throw new ORPCError("CONFLICT", {
-            message: "Cancel monthly credits in Billing before switching to your API key.",
-          });
-      }
+      const subscription = await billingAccountForOrganization(prisma, organizationId);
+      if (
+        funding === "byok" &&
+        subscription?.creditAmountCents &&
+        !subscription.cancelAtPeriodEnd &&
+        !["canceled", "incomplete_expired"].includes(subscription.status ?? "")
+      )
+        throw new ORPCError("CONFLICT", {
+          message: "Cancel monthly credits in Billing before switching to your API key.",
+        });
+      // An unpaid own-key choice keeps the current funding until checkout completes.
+      if (
+        funding === "byok" &&
+        !hasModelAccess({ ...account, mode: "byok" }, subscription?.status ?? null)
+      )
+        return { ok: true, ...(await byokCheckout(actor, organizationId)) };
       await prisma.modelCreditAccount.update({
         where: { organizationId },
         data: {
@@ -164,29 +255,16 @@ export function createBillingService(deps: {
       if (!modelCredits || !provider.createCreditCheckout) throw new ORPCError("NOT_FOUND");
       if (deps.managedModelsAvailable === false) throw new ORPCError("PRECONDITION_FAILED");
       const { organizationId } = await managedOrganization(actor);
-      let account = await billingAccountForOrganization(prisma, organizationId);
-      if (!account)
-        account = await createBillingAccount(prisma, {
-          organizationId,
-          customerId: await newCustomer(actor, organizationId),
-        });
+      const account = await billingAccountFor(actor, organizationId);
       await creditAccount(prisma, organizationId);
       try {
-        const checkout = await prisma.$transaction(
-          async (tx) => {
-            // Serialize recurring checkout across API instances: opening another expires the old one.
-            if (input.monthly)
-              await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`model-credit-checkout:${organizationId}`}, 0))`;
-            return withLiveCustomer(actor, account, (customerId) =>
-              provider.createCreditCheckout!({
-                customerId,
-                ...input,
-                successUrl: `${deps.webOrigin}${BILLING_RETURN_PATH}`,
-                cancelUrl: `${appUrl}?billing=canceled`,
-              }),
-            );
-          },
-          { timeout: 120_000 },
+        const checkout = await openCheckout(actor, account, input.monthly, (customerId) =>
+          provider.createCreditCheckout!({
+            customerId,
+            ...input,
+            successUrl: `${deps.webOrigin}${BILLING_RETURN_PATH}`,
+            cancelUrl: `${appUrl}?billing=canceled`,
+          }),
         );
         await prisma.modelCreditAccount.update({
           where: { organizationId },
@@ -220,8 +298,14 @@ export function createBillingService(deps: {
           creditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
         ]);
+        const freeUntil =
+          credits.mode === "byok" &&
+          BYOK_MONTHLY_PRICE_CENTS !== null &&
+          !hasBillingAccess(account?.status ?? null)
+            ? byokFreeUntil(credits)
+            : null;
         return {
-          access: credits.mode !== null || credits.balanceMicros > 0n,
+          access: hasModelAccess(credits, account?.status ?? null),
           funding:
             credits.mode === "byok"
               ? "byok"
@@ -231,6 +315,8 @@ export function createBillingService(deps: {
           balanceUsd: Number(credits.balanceMicros) / MICROS_PER_DOLLAR,
           monthlyAmountCents: account?.creditAmountCents ?? null,
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
+          byokPriceCents: BYOK_MONTHLY_PRICE_CENTS,
+          byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable: false,
           trialDays: 0,
@@ -273,6 +359,7 @@ export function createBillingService(deps: {
 
     async checkout(actor) {
       const { organizationId } = await managedOrganization(actor);
+      if (modelCredits) return byokCheckout(actor, organizationId);
       let account = await billingAccountForOrganization(prisma, organizationId);
       if (account) {
         // Decide from the provider, not a snapshot a missed webhook may have left stale.
