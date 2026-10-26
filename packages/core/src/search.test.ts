@@ -19,6 +19,42 @@ describe("search helpers", () => {
     ]);
   });
 
+  it.each([
+    "https://[2001:db8::1]/guide",
+    "http://[::1]:8080/guide?q=search#part",
+    "https://[::ffff:192.0.2.1]:8443/guide",
+    "https://[2001:db8::1]",
+  ])("keeps the complete IPv6 URL %s", (url) => {
+    expect(extractLinksFromText(`see ${url}.`)).toEqual([url]);
+  });
+
+  it.each([
+    "[https://[2001:db8::1]/guide]",
+    "[docs](https://[2001:db8::1]/guide)",
+    "([docs](https://[2001:db8::1]/guide)).",
+  ])("keeps IPv6 brackets inside a wrapped link: %s", (text) => {
+    expect(extractLinksFromText(text)).toEqual(["https://[2001:db8::1]/guide"]);
+  });
+
+  it("stops at unmatched closing square brackets and keeps adjacent links", () => {
+    expect(
+      extractLinksFromText("[https://example.com/guide],[https://[2001:db8::1]/guide]"),
+    ).toEqual(["https://example.com/guide", "https://[2001:db8::1]/guide"]);
+  });
+
+  it("keeps balanced parentheses and square brackets in the same URL", () => {
+    expect(extractLinksFromText("[docs](https://[2001:db8::1]/a_(b))")).toEqual([
+      "https://[2001:db8::1]/a_(b)",
+    ]);
+  });
+
+  it("ignores a bare scheme before an unmatched closing square bracket", () => {
+    expect(extractLinksFromText("https://]")).toEqual([]);
+    expect(extractLinksFromText("[https://example.com/guide]https://]")).toEqual([
+      "https://example.com/guide",
+    ]);
+  });
+
   it("keeps balanced parentheses inside a link", () => {
     expect(
       extractLinksFromText(
@@ -49,9 +85,11 @@ describe("search helpers", () => {
     ]);
   });
 
-  it("handles thousands of adjacent wrapped links without recursing", () => {
-    const text = "(https://x.test/),".repeat(50_000);
-    expect(extractLinksFromText(text)).toEqual(["https://x.test/"]);
+  it.each([
+    ["(https://x.test/),", "https://x.test/"],
+    ["[https://[2001:db8::1]/guide],", "https://[2001:db8::1]/guide"],
+  ])("handles thousands of adjacent wrapped links without recursing: %s", (wrapped, url) => {
+    expect(extractLinksFromText(wrapped.repeat(50_000))).toEqual([url]);
   });
 
   it("matches case-insensitive substrings", () => {

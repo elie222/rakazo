@@ -1,14 +1,17 @@
 import type { SearchHit } from "@rakazo/contracts";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'\]]+/gi;
+const URL_PATTERN = /https?:\/\/[^\s<>"'\]][^\s<>"']*/gi;
 
 const URL_START = /https?:\/\/[^\s<>"'\]]/gi;
 
 function linkEnd(text: string, start: number, limit: number): number {
-  let depth = 0;
+  let parentheses = 0;
+  let brackets = 0;
   for (let i = start; i < limit; i++) {
-    if (text[i] === "(") depth += 1;
-    else if (text[i] === ")" && --depth < 0) return i;
+    if (text[i] === "(") parentheses += 1;
+    else if (text[i] === ")" && --parentheses < 0) return i;
+    else if (text[i] === "[") brackets += 1;
+    else if (text[i] === "]" && --brackets < 0) return i;
   }
   return limit;
 }
