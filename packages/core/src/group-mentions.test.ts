@@ -157,6 +157,22 @@ describe("resolveGroupTargetBotIds", () => {
     ).toEqual(["review1", "review2"]);
   });
 
+  it.each([
+    ["@Équipe (UX)@Writer please review", ["ux", "writer"]],
+    ["@Équipe (UX)@everyone please review", ["default", "ux", "writer"]],
+  ])("keeps adjacent mentions in %s", (text, expected) => {
+    expect(
+      resolveGroupTargetBotIds({
+        text,
+        members: [
+          { id: "default", name: "Default" },
+          { id: "ux", name: "Équipe (UX)" },
+          { id: "writer", name: "Writer" },
+        ],
+      }),
+    ).toEqual(expected);
+  });
+
   it("preserves reserved everyone precedence over an identically named member", () => {
     expect(
       resolveGroupTargetBotIds({

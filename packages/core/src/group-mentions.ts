@@ -55,10 +55,7 @@ export function resolveGroupTargetBotIds(input: {
     .sort((a, b) => b.length - a.length);
   // Consume each mention once so a full name cannot also wake its prefix.
   const alternatives = names.map(escapeRegExp).join("|");
-  const pattern = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}_-])@(${alternatives})(?![\\p{L}\\p{N}_-])`,
-    "giu",
-  );
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_-])@(${alternatives})(?![\\p{L}\\p{N}_-])`, "giu");
   const mentions = [...input.text.matchAll(pattern)].map((match) => match[1]!);
   const isMentioned = (name: string) => {
     const exactName = new RegExp(`^${escapeRegExp(name.trim())}$`, "iu");
