@@ -2,7 +2,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Not sent. Tap for options": "未傳送。點一下查看選項",
   "Image input is not configured for this model.": "此模型尚未設定圖片輸入。",
   "Send as file": "以檔案傳送",
-  "The bot can use the file but won't see the picture.": "機器人可以使用這個檔案，但看不到圖片內容。",
+  "The bot can use the file but won't see the picture.":
+    "機器人可以使用這個檔案，但看不到圖片內容。",
   "This model cannot read images. Choose a model that supports images.":
     "此模型無法讀取圖片。請選擇支援圖片的模型。",
   "Approval model": "核准模型",
