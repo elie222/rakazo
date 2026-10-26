@@ -1974,6 +1974,7 @@ msgstr "無法儲存例行任務"
 msgid "Could not save rule"
 msgstr "無法儲存規則"
 
+#: src/components/teach/SkillDraftCard.tsx
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not save skill"
 msgstr "無法儲存技能"

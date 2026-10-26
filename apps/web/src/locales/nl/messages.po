@@ -1973,6 +1973,7 @@ msgstr "Routine opslaan mislukt"
 msgid "Could not save rule"
 msgstr "Regel opslaan mislukt"
 
+#: src/components/teach/SkillDraftCard.tsx
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not save skill"
 msgstr "Skill opslaan mislukt"

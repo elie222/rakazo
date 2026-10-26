@@ -1973,6 +1973,7 @@ msgstr "לא ניתן לשמור את הרוטינה"
 msgid "Could not save rule"
 msgstr "לא ניתן לשמור את הכלל"
 
+#: src/components/teach/SkillDraftCard.tsx
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not save skill"
 msgstr "לא ניתן לשמור את המיומנות"
