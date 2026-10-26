@@ -41,8 +41,9 @@ export function normalizedHttpUrl(input: string): string | undefined {
 }
 
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+// Delimit email-shaped text instead of requiring ASCII-only addresses or a public suffix.
 const EMAIL_IN_TEXT =
-  /(?<![a-z0-9.!#$%&'*+/=?^_`{|}~-])(?:"(?:[^"\\\r\n]|\\.)*"|[a-z0-9.!#$%&'*+/=?^_`{|}~-]+)@(?:\[[^\]\r\n]+\]|[a-z0-9.-]+)/gi;
+  /(?:"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>()[\]\\,;:"@，；、！？])[^\s<>()[\]\\,;:"@，；、！？]+)@(?:\[[^\]\r\n]+\]|[^\s<>()[\]\\,;:"@，；、！？]+)/g;
 const DOMAIN_IN_TEXT =
   /(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}[a-z0-9](?![\w-])/gi;
 

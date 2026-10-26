@@ -1712,7 +1712,7 @@ describe("outbound destinations", () => {
     });
   });
 
-  it.each(["ada.li@example.org", "ada.li+tag@example.org"])(
+  it.each(["ada.li@example.org", "ada.li+tag@example.org", "ada.li@例子.测试"])(
     "asks before fetching a site found only in the email local part of %s",
     async (email) => {
       const f = fixture({ builtin: true, sourceRole: "user", prompt: email });

@@ -64,7 +64,11 @@ describe("sitesInText", () => {
 
   it.each([
     "ada.li@example.org",
+    "ada.li@例子.测试",
+    "ada.li@💩.la",
     "ada.li+tag@example.org",
+    "ada.li+标签@example.org",
+    "ada.li+📬@example.org",
     "ada.li/part@example.org",
     '"ada.li"@example.org',
     '"ada.li\\" contact"@example.org',
@@ -80,6 +84,21 @@ describe("sitesInText", () => {
     expect([
       ...sitesInText("Email ada.li@example.org, then visit ada.li and example.org."),
     ]).toEqual(["ada.li", "example.org"]);
+  });
+
+  it("keeps sites separated from internationalized email by punctuation or whitespace", () => {
+    expect([...sitesInText("ada.li@例子.测试,example.com;example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com\u00a0ada.li+标签@例子.测试\u00a0example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com，ada.li@例子.测试；example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
   });
 
   it("extracts explicit URL hosts before excluding email addresses", () => {
