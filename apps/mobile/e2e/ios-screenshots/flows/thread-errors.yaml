@@ -9,8 +9,8 @@ name: Thread error recovery
 - extendedWaitUntil:
     visible: ".*weekly limit.*"
     timeout: 20000
-- assertVisible: "Set your own key"
-- assertVisible: "Change model"
+- assertVisible: "Add Model"
+- assertNotVisible: "Change model"
 - takeScreenshot: 01-limit-banner
 - tapOn: "Details"
 - extendedWaitUntil:

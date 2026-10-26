@@ -20,7 +20,7 @@ import {
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { liveCatalogEntry, providerLiveListsModel } from "./pi-live-catalog.js";
-import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import { listPiCatalog, offeredCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
@@ -98,10 +98,10 @@ export function defaultCatalogModelId(
     : "disconnected";
   const authByProvider: Partial<Record<string, ModelCredentialAuthKind>> =
     authKind === "disconnected" ? {} : { [provider]: authKind };
-  const entry = listAvailablePiCatalog(authByProvider).find(
+  const entries = offeredCatalog(listAvailablePiCatalog(authByProvider)).filter(
     (item) => item.provider === canonicalPiProviderId(provider),
   );
-  return usableModelId(entry?.id);
+  return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
 }
 
 /** A run pinned to a provider the user has no connection for. */

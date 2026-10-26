@@ -1,4 +1,13 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Not sent. Tap for options": "未发送。轻点查看选项",
+  "Image input is not configured for this model.": "此模型尚未配置图片输入。",
+  "Send as file": "作为文件发送",
+  "The bot can use the file but won't see the picture.": "Bot 可以使用该文件，但看不到图片内容。",
+  "This model cannot read images. Choose a model that supports images.":
+    "此模型无法读取图片。请选择支持图片的模型。",
+  "Could not connect to the computer screen": "无法连接到计算机屏幕",
+  "Retry screen": "重试屏幕连接",
+  "The screen connection closed.": "屏幕连接已关闭。",
   Approvals: "审批",
   "Never ask": "从不询问",
   Auto: "自动",
@@ -60,9 +69,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   Limit: "限额",
   "Provider message": "提供商消息",
   Status: "状态",
-  "Set your own key": "设置自己的密钥",
-  "Add your own key or pick another model.": "添加自己的密钥或选择其他模型。",
-  "Choose another model to keep chatting.": "选择其他模型以继续聊天。",
   "Resets {date}.": "将于 {date} 重置。",
 
   "Model provider": "模型提供商",
@@ -88,13 +94,16 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Your OpenAI": "你的 OpenAI",
   "Your Anthropic": "你的 Anthropic",
   "Your model provider": "你的模型提供商",
+  "Connect a model in Settings before running bots.": "运行机器人前，请先在设置中连接模型。",
+  "Connect your own API key in Models or choose Rakazo credits in Billing.":
+    "请在“模型”中连接你自己的 API 密钥，或在“账单”中选择 Rakazo 额度。",
   "The model provider returned an error.": "模型提供商返回了错误。",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider}正在限制请求频率。请稍后重试。",
   "{summary} Resets {date}.": "{summary} 将于{date}重置。",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider}拒绝了 API 密钥。请检查连接设置。",
-  "{provider} could not find the requested model.": "{provider}找不到请求的模型。",
+  "{provider} can't run this model.": "{provider}无法运行此模型。",
   "{provider} denied access to this model.": "{provider}拒绝了对此模型的访问。",
   "The model returned an unusable response. Try again.": "模型返回了无法使用的回复。请重试。",
   "This model's context window is too small. Choose another model.":
@@ -346,6 +355,17 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load model settings": "无法加载模型设置",
   "Could not load routine": "无法加载例行任务",
   "Could not load routines": "无法加载例行任务",
+  "{count} on": "{count} 个已开启",
+  "Ask this Bot in chat to set up a routine.": "在聊天中让此 Bot 设置一个例行任务。",
+  "{name}, On": "{name}，开启",
+  "{name}, Off": "{name}，关闭",
+  "Active: {name}": "启用：{name}",
+  "Delete {name}": "删除 {name}",
+  "Delete this routine?": "要删除此例行任务吗？",
+  "This permanently deletes the routine and its run history.":
+    "这将永久删除该例行任务及其运行记录。",
+  "Could not delete routine": "无法删除例行任务",
+  "Could not update routine": "无法更新例行任务",
   "Get notified when this Bot finishes or needs input": "在此机器人完成或需要输入时收到通知",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "无法加载桌面。此设备无法访问屏幕地址。",
@@ -968,6 +988,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Manage billing": "管理账单",
   "Your subscription or API key": "你的订阅或 API 密钥",
   "Free. ChatGPT, Claude, or any model provider.": "免费。ChatGPT、Claude 或任意模型提供商。",
+  "{price} / month. ChatGPT, Claude, or any model provider.":
+    "每月 {price}。ChatGPT、Claude 或任意模型提供商。",
+  "Free plan ends": "免费方案结束于",
+  Subscribe: "订阅",
   "Use my subscription or API key": "使用我的订阅或 API 密钥",
   "Monthly credits expire at renewal. Top-ups do not expire.":
     "每月额度在续费时到期。单次充值额度不会过期。",
@@ -1045,6 +1069,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "on the 1st at {time}": "1日 {time}",
   "on day {day} at {time}": "{day}日 {time}",
   "Every hour at :{minute}": "每小时{minute}分",
+  "Every {n} hours at :{minute}": "每{n}小时{minute}分",
   "{from} to {to}": "{from}至{to}",
   "Every {day}": "每{day}",
   "Every {days} and {last}": "每{days}和{last}",

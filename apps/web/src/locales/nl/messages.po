@@ -40,13 +40,13 @@ msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minu
 msgstr "{0, plural, one {Wachten op aanmelding — de link verloopt over ongeveer # minuut.} other {Wachten op aanmelding — de link verloopt over ongeveer # minuten.}}"
 
 #. placeholder {0}: file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (max. {ATTACHMENT_MAX_COUNT} bijlagen)"
 
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "{0} (over {1})"
 msgstr "{0} (meer dan {1})"
 
@@ -211,8 +211,8 @@ msgstr "{name} is gestopt"
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
-msgid "{provider} could not find the requested model."
-msgstr "{provider} kon het gevraagde model niet vinden."
+msgid "{provider} can't run this model."
+msgstr "{provider} kan dit model niet uitvoeren."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -356,6 +356,7 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: amount / 100
+#. placeholder {0}: status.byokPriceCents / 100
 #: src/components/ModelCredits.tsx
 msgid "${0} / month"
 msgstr ""
@@ -420,7 +421,7 @@ msgstr "Accountmenu voor {name}"
 msgid "Actions for {0}"
 msgstr "Acties voor {0}"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Actions for space"
 msgstr "Acties voor space"
 
@@ -601,7 +602,7 @@ msgstr "Geavanceerd"
 msgid "Advanced..."
 msgstr "Geavanceerd..."
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Agent computer"
 msgstr "Agentcomputer"
 
@@ -706,11 +707,6 @@ msgstr "Antwoorden"
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "Beantwoord"
-
-#. placeholder {0}: selectedAskActionLabel(answer, actions)
-#: src/components/AskCard.tsx
-msgid "Answered: {0}"
-msgstr "Beantwoord: {0}"
 
 #: src/components/AskCard.tsx
 msgid "Answered: {answer}"
@@ -886,6 +882,7 @@ msgstr "Avatarstudio"
 
 #: src/pages/Auth.tsx
 #: src/pages/Board.tsx
+#: src/pages/NavLinkPage.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -932,8 +929,8 @@ msgstr "Geblokkeerd"
 msgid "Board"
 msgstr "Bord"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Booting live desktop…"
 msgstr "Live desktop opstarten…"
 
@@ -1005,7 +1002,7 @@ msgstr "MCP-servers doorzoeken"
 msgid "Built-in"
 msgstr "Ingebouwd"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Call"
 msgstr "Bellen"
 
@@ -1101,6 +1098,10 @@ msgstr "{name} wijzigen"
 #: src/pages/ModelRoleSettings.tsx
 msgid "Change {title}"
 msgstr "{title} wijzigen"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Change model"
+msgstr "Model wijzigen"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Change password"
@@ -1199,6 +1200,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "Kies een botvorm, kleur of upload een afbeelding"
 
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Choose a model"
 msgstr "Kies een model"
 
@@ -1224,6 +1226,7 @@ msgid "Choose folder"
 msgstr "Map kiezen"
 
 #: src/components/ModelCredits.tsx
+#: src/components/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr ""
 
@@ -1295,12 +1298,12 @@ msgstr "Geheugeninstellingen sluiten"
 msgid "Close model settings"
 msgstr "Modelinstellingen sluiten"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Close navigation"
 msgstr "Navigatie sluiten"
 
 #: src/pages/GroupPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Close panel"
 msgstr "Paneel sluiten"
 
@@ -1395,8 +1398,8 @@ msgstr "Voltooid"
 msgid "Computer"
 msgstr "Computer"
 
-#: src/pages/Shell.tsx
 #: src/pages/shell/computer-view.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Computer failed to boot"
 msgstr "De computer kon niet opstarten"
 
@@ -1466,8 +1469,14 @@ msgid "Connect a chat app"
 msgstr ""
 
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/composer-error.tsx
 msgid "Connect a model"
 msgstr "Een model koppelen"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect a model in Settings before running bots."
+msgstr "Verbind een model in Instellingen voordat je bots uitvoert."
 
 #: src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -1504,6 +1513,11 @@ msgstr "Verbind eerst de aanbieder van dit model."
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg koppelen"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
+msgstr "Verbind je eigen API-sleutel bij Modellen of kies Rakazo-tegoed bij Facturatie."
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpOAuthCallback.tsx
@@ -1679,7 +1693,7 @@ msgstr "Deze aanbieder koppelen mislukt"
 msgid "Could not connect this voice provider"
 msgstr "Deze spraakaanbieder koppelen mislukt"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not connect to the computer screen"
 msgstr "Verbinden met het computerscherm mislukt"
 
@@ -1690,7 +1704,7 @@ msgstr "Verbinden met het computerscherm mislukt"
 #: src/lib/sso-flow.ts
 #: src/lib/user-error.ts
 #: src/pages/Auth.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not continue"
 msgstr "Doorgaan mislukt"
 
@@ -1937,8 +1951,8 @@ msgstr "Routine uitvoeren mislukt"
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/use-space-roster.ts
 msgid "Could not save"
 msgstr "Opslaan mislukt"
 
@@ -2019,7 +2033,7 @@ msgstr "Dit antwoord insturen mislukt"
 msgid "Could not switch {failedNames}. Try again."
 msgstr ""
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Could not take control"
 msgstr "Overnemen mislukt"
 
@@ -2051,7 +2065,7 @@ msgstr "Computer bijwerken mislukt"
 msgid "Could not update name"
 msgstr "Naam kon niet worden bijgewerkt"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Could not update reaction"
 msgstr "Reactie bijwerken mislukt"
 
@@ -2273,7 +2287,7 @@ msgstr "Herinneringen ook verwijderen"
 msgid "Delete section"
 msgstr "Sectie verwijderen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 #: src/pages/SpaceSettingsPanel.tsx
 msgid "Delete space"
 msgstr "Space verwijderen"
@@ -2666,11 +2680,11 @@ msgstr "mislukt"
 msgid "Failed"
 msgstr "Mislukt"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to send message"
 msgstr "Bericht verzenden mislukt"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Failed to stop"
 msgstr "Stoppen mislukt"
 
@@ -2712,7 +2726,7 @@ msgid "Filter by date"
 msgstr "Filteren op datum"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Filters"
 msgstr "Filters"
 
@@ -2756,6 +2770,10 @@ msgstr "Wachtwoord vergeten?"
 msgid "Free"
 msgstr "Gratis"
 
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Free plan ends {day}"
+msgstr "Gratis abonnement eindigt op {day}"
+
 #: src/lib/cron.ts
 msgid "Friday"
 msgstr "vrijdag"
@@ -2796,7 +2814,8 @@ msgstr "Git-gebeurtenis"
 
 #: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsPanel.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Group"
 msgstr "Groep"
 
@@ -2923,6 +2942,15 @@ msgstr "Als je dat hoorde, is de stem klaar."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr "Negeren"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
+
+#: src/lib/user-error.ts
+msgid "Image input is not configured for this model."
+msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -3056,7 +3084,7 @@ msgstr "Geïsoleerd"
 msgid "Isolated preview — no access to your account"
 msgstr "Geïsoleerd voorbeeld — geen toegang tot je account"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Its bots and groups are kept and leave the section."
 msgstr "De bots en groepen blijven behouden en verlaten de sectie."
 
@@ -3936,7 +3964,7 @@ msgstr "{name} openen"
 msgid "Open <0>{0}</0> and enter this code:"
 msgstr "Open <0>{0}</0> en voer deze code in:"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open call"
 msgstr "Gesprek openen"
 
@@ -3957,7 +3985,7 @@ msgstr "Externe link openen?"
 msgid "Open in full window"
 msgstr "In volledig venster openen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Open navigation"
 msgstr "Navigatie openen"
 
@@ -4460,6 +4488,7 @@ msgstr "API-sleutel vervangen"
 msgid "Replace its instructions"
 msgstr "Instructies vervangen"
 
+#: src/pages/shell/composer-error.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Replace key"
 msgstr "Sleutel vervangen"
@@ -4570,7 +4599,7 @@ msgstr "Opnieuw proberen"
 msgid "Retry now"
 msgstr "Nu opnieuw proberen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-computer.tsx
 msgid "Retry screen"
 msgstr "Scherm opnieuw proberen"
 
@@ -4738,14 +4767,18 @@ msgstr ""
 msgid "Scopes (optional)"
 msgstr "Scopes (optioneel)"
 
+#: src/pages/shell/use-computer.tsx
+msgid "Screen not connected"
+msgstr "Scherm niet verbonden"
+
 #: src/pages/model-settings/model-picker.tsx
 #: src/pages/model-settings/providers-section.tsx
 #: src/pages/model-settings/role-model-picker.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-picker.tsx
 #: src/pages/shell/chat-model-picker.tsx
 #: src/pages/shell/command-palette.tsx
+#: src/pages/shell/shell-sidebar.tsx
 #: src/pages/shell/sidebar-header.tsx
 msgid "Search"
 msgstr "Zoeken"
@@ -4777,7 +4810,7 @@ msgstr "integrations.sh doorzoeken"
 msgid "Search models"
 msgstr "Modellen zoeken"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "Search runs"
 msgstr "Runs zoeken"
 
@@ -4795,7 +4828,7 @@ msgstr "Bezig met zoeken…"
 msgid "Security"
 msgstr "Beveiliging"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/chat-header.tsx
 msgid "Select a bot"
 msgstr "Selecteer een bot"
 
@@ -4818,6 +4851,10 @@ msgstr ""
 #: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "Antwoord verzenden"
+
+#: src/pages/shell/composer-error.tsx
+msgid "Send as file"
+msgstr "Als bestand verzenden"
 
 #: src/components/AccountAccess.tsx
 msgid "Send deletion code"
@@ -4843,6 +4880,10 @@ msgstr "Verzenden met Enter"
 msgid "Sending…"
 msgstr "Bezig met verzenden…"
 
+#: src/components/AskCard.tsx
+msgid "Sent"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Sentry alert"
 msgstr "Sentry-melding"
@@ -4867,7 +4908,7 @@ msgstr "Server-URL"
 #: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
+#: src/pages/shell/shell-dialogs.tsx
 msgid "Settings"
 msgstr "Instellingen"
 
@@ -4913,7 +4954,7 @@ msgstr "Alles tonen"
 msgid "Show bots"
 msgstr "Bots tonen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show computer"
 msgstr "Computer tonen"
 
@@ -4935,7 +4976,7 @@ msgstr "Wachtwoord tonen"
 msgid "Show selected"
 msgstr "Selectie tonen"
 
-#: src/pages/Shell.tsx
+#: src/pages/shell/side-panel.tsx
 msgid "Show settings"
 msgstr "Instellingen tonen"
 
@@ -5024,7 +5065,7 @@ msgid "Skip or deploy key"
 msgstr "Overslaan of deploysleutel"
 
 #. placeholder {0}: skipped.join(", ")
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Skipped {0}"
 msgstr "{0} overgeslagen"
 
@@ -5192,6 +5233,11 @@ msgstr "Versturen"
 msgid "Subscribe"
 msgstr "Abonneren"
 
+#. placeholder {0}: status.byokPriceCents / 100
+#: src/components/ModelCredits.tsx
+msgid "Subscribe for ${0} / month"
+msgstr "Abonneren voor ${0} / maand"
+
 #: src/pages/Paywall.tsx
 msgid "Subscription required"
 msgstr "Abonnement vereist"
@@ -5284,6 +5330,10 @@ msgstr "Bezig met testen…"
 msgid "The bot and what its import added will be removed."
 msgstr "De bot en wat de import heeft toegevoegd worden verwijderd."
 
+#: src/pages/shell/composer-error.tsx
+msgid "The bot can use the file but won't see the picture."
+msgstr "De bot kan het bestand gebruiken, maar ziet de afbeelding niet."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "De verbinding is verlopen."
@@ -5301,6 +5351,18 @@ msgstr "Het model gaf een onbruikbaar antwoord. Probeer het opnieuw."
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "De aanbieder beperkt het aantal verzoeken."
+
+#: src/lib/computer-screen.ts
+msgid "The screen connection closed."
+msgstr "De schermverbinding is gesloten."
+
+#: src/lib/computer-screen.ts
+msgid "The screen did not respond."
+msgstr "Het scherm reageerde niet."
+
+#: src/lib/computer-screen.ts
+msgid "The screen link expired."
+msgstr "De schermlink is verlopen."
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "The selected memory provider is not available in this build."
@@ -5396,6 +5458,15 @@ msgstr "Deze import is al gebruikt. Kies de bestanden opnieuw."
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "deze Mac"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
+
+#: src/lib/user-error.ts
+msgid "This model cannot read images. Choose a model that supports images."
+msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen ondersteunt."
 
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
@@ -5613,7 +5684,7 @@ msgid "Unpin"
 msgstr "Vastzetten opheffen"
 
 #. placeholder {0}: pending.file.name
-#: src/pages/Shell.tsx
+#: src/pages/shell/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "Niet-ondersteund bestandstype: {0}"
 
@@ -5669,6 +5740,10 @@ msgstr "Teamcomputer bijwerken"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Updating…"
 msgstr "Bezig met bijwerken…"
+
+#: src/pages/shell/shell-sidebar.tsx
+msgid "Upgrade"
+msgstr "Upgraden"
 
 #: src/components/ModelCredits.tsx
 msgid "Upgrade now"
@@ -5766,6 +5841,10 @@ msgstr "Gebruikt de eigen {hostCredentialSource}-gegevens van deze server om toe
 #: src/components/ModelCredits.tsx
 msgid "Using your API key"
 msgstr ""
+
+#: src/components/ModelCredits.tsx
+msgid "Using your API key. Free plan ends {freeUntil}."
+msgstr "Je eigen API-sleutel wordt gebruikt. Gratis abonnement eindigt op {freeUntil}."
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
@@ -5944,6 +6023,7 @@ msgstr "Gisteren"
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/message-view.tsx
+#: src/pages/shell/shell-sidebar.tsx
 msgid "You"
 msgstr "Jij"
 

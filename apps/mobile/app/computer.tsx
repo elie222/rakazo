@@ -85,6 +85,7 @@ export default function Computer() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [screenOriginError, setScreenOriginError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [readyBotId, setReadyBotId] = useState<string | null>(null);
   const [bootingCount, setBootingCount] = useState(0);
@@ -157,9 +158,9 @@ export default function Computer() {
   const refreshController = useMemo(
     () =>
       createComputerRefresh({
-        readStatus: () => rpc<ComputerStatus>("computer/status", { botId }),
+        readStatus: () => rpc("computer/status", { botId: botId ?? "" }),
         readScreen: (attempts) =>
-          readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
+          readScreenUrl(() => rpc("computer/screenUrl", { botId: botId ?? "" }), {
             attempts,
           }),
         onStatus: (status) => {
@@ -182,6 +183,7 @@ export default function Computer() {
     setComputer(null);
     setScreenUrl(null);
     setScreenError(null);
+    setScreenOriginError(false);
     setError(null);
     setReadyBotId(null);
     setBootingCount(0);
@@ -289,7 +291,20 @@ export default function Computer() {
   currentScreenUrl.current = loadedScreenUrl ?? embeddedScreenUrl;
   const onScreenState = useCallback(
     (state: ScreenPageState) => {
-      if (screenReconnect.current.report(state) !== "reconnect") return;
+      const next = screenReconnect.current.report(state);
+      if (next !== "reconnect") {
+        // A drop that won't reconnect by itself shows why, with Retry.
+        const failed = next === "error";
+        setScreenOriginError(failed);
+        setScreenError(
+          !failed
+            ? null
+            : state === "failed"
+              ? t("Could not connect to the computer screen")
+              : t("The screen connection closed."),
+        );
+        return;
+      }
       clearTimeout(screenReconnectTimer.current);
       screenReconnectWait.current?.abort();
       const wait = new AbortController();
@@ -308,7 +323,7 @@ export default function Computer() {
         });
       }, SCREEN_RECONNECT_DELAY_MS);
     },
-    [reloadScreen],
+    [reloadScreen, t],
   );
   const onScreenLoadStart = useCallback(() => screenReconnect.current.loaded(), []);
   // Closing the screen, leaving the app or a new screen URL (taking or releasing control)
@@ -374,7 +389,10 @@ export default function Computer() {
       setComputerOpen(false);
       await action.refresh().catch(() => undefined);
     } catch {
-      if (action.isActive()) setScreenError(t("Could not continue"));
+      if (action.isActive()) {
+        setScreenOriginError(false);
+        setScreenError(t("Could not continue"));
+      }
     } finally {
       setReleasing(false);
       action.finish();
@@ -422,6 +440,16 @@ export default function Computer() {
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   const canRetry = !bootPending && (bootFailed || computer?.state === "error");
+  const screenRetry = computer?.state === "running" && screenOriginError && Boolean(screenError);
+  const retryScreenAction = screenRetry ? (
+    <NativeActionButton
+      style={{ marginBottom: 16 }}
+      label={t("Retry screen")}
+      prominence="primary"
+      size="default"
+      onPress={() => void reloadScreen()}
+    />
+  ) : null;
 
   return (
     // The full window's Modal is a child of this scroll view. A tap there, on Close or on the
@@ -449,6 +477,7 @@ export default function Computer() {
           {error ?? t("Something went wrong while it was starting. Try again in a moment.")}
         </Text>
       ) : null}
+      {retryScreenAction}
       {canRetry ? (
         <NativeActionButton
           label={t("Try again")}
@@ -485,6 +514,7 @@ export default function Computer() {
             onRendererLost={() => void reloadScreen()}
             onError={() => {
               refreshController.invalidateScreen();
+              setScreenOriginError(true);
               setScreenError(
                 t("Could not load the desktop. This device cannot reach the screen URL."),
               );
@@ -671,6 +701,7 @@ export default function Computer() {
                   onRendererLost={() => void reloadScreen()}
                   onError={() => {
                     refreshController.invalidateScreen();
+                    setScreenOriginError(true);
                     setScreenError(
                       t("Could not load the desktop. This device cannot reach the screen URL."),
                     );
@@ -683,6 +714,7 @@ export default function Computer() {
                   <Text style={{ color: tokens.mutedForeground, textAlign: "center" }}>
                     {placeholder}
                   </Text>
+                  {retryScreenAction}
                 </View>
               )}
             </View>
@@ -763,6 +795,19 @@ function ScreenWebView({
   const tokens = useMobileTokens();
   const sourceUrl = useRef(url);
   sourceUrl.current = retainScreenSource(sourceUrl.current, url);
+  const loadedSource = sourceUrl.current;
+  const reportStarted = useRef(false);
+  const reportCallback = useRef(onScreenState);
+  reportCallback.current = onScreenState;
+  useEffect(() => {
+    reportStarted.current = false;
+    // Only proxy pages report their state; one that never starts shows as failed.
+    if (!isProxiedScreenPage(loadedSource)) return;
+    const timer = setTimeout(() => {
+      if (!reportStarted.current) reportCallback.current?.("failed");
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [loadedSource, nativeKeyboard]);
   return (
     <WebView
       ref={webViewRef}
@@ -780,8 +825,10 @@ function ScreenWebView({
         const state = fromScreenPage(event.nativeEvent.url, sourceUrl.current)
           ? screenPageState(event.nativeEvent.data)
           : null;
-        if (state) onScreenState?.(state);
-        else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
+        if (state) {
+          if (state !== "loading") reportStarted.current = true;
+          onScreenState?.(state);
+        } else if (nativeKeyboard) onKeyboardMessage?.(event.nativeEvent.data);
       }}
       onLoadStart={onLoadStart}
       style={{ flex: 1, backgroundColor: tokens.background }}

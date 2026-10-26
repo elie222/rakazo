@@ -1,7 +1,9 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  DEFAULT_MODEL_MAX_TOKENS,
   normalizeOpenAiCompatibleBaseUrl,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -18,6 +20,17 @@ export const COMPATIBLE_THINKING_LEVELS = [
 ] as const;
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
+
+/**
+ * The max-tokens field for a connection. An OpenAI-compatible endpoint always sends a limit, so
+ * an unsaved one shows the default it would get; catalog providers leave it blank to use theirs.
+ */
+export function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return String(stored ?? DEFAULT_MODEL_MAX_TOKENS);
+  }
+  return stored !== undefined ? String(stored) : "";
+}
 
 /**
  * Map a staged effort onto the levels a model actually supports.

@@ -61,4 +61,51 @@ describe("sitesInText", () => {
   it("skips email addresses, file names and words without a public suffix", () => {
     expect([...sitesInText("Email bob@mail.example.com about notes.txt and index.ts")]).toEqual([]);
   });
+
+  it.each([
+    "ada.li@example.org",
+    "ada.li@例子.测试",
+    "ada.li@💩.la",
+    "ada.li+tag@example.org",
+    "ada.li+标签@example.org",
+    "ada.li+📬@example.org",
+    "ada.li/part@example.org",
+    '"ada.li"@example.org',
+    '"ada.li\\" contact"@example.org',
+    "mailto:ada.li@example.org",
+    "<ada.li@example.org>",
+    "ada.li@localhost",
+    "ada.li@[203.0.113.7]",
+  ])("does not trust a domain in the email %s", (email) => {
+    expect([...sitesInText(`Email ${email}`)]).toEqual([]);
+  });
+
+  it("keeps separately named sites alongside email addresses", () => {
+    expect([
+      ...sitesInText("Email ada.li@example.org, then visit ada.li and example.org."),
+    ]).toEqual(["ada.li", "example.org"]);
+  });
+
+  it("keeps sites separated from internationalized email by punctuation or whitespace", () => {
+    expect([...sitesInText("ada.li@例子.测试,example.com;example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com\u00a0ada.li+标签@例子.测试\u00a0example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+    expect([...sitesInText("example.com，ada.li@例子.测试；example.org")]).toEqual([
+      "example.com",
+      "example.org",
+    ]);
+  });
+
+  it("extracts explicit URL hosts before excluding email addresses", () => {
+    expect([
+      ...sitesInText(
+        "Read https://ada.li@example.org/path and https://example.com/?email=ada.li@example.net",
+      ),
+    ]).toEqual(["example.org", "example.com"]);
+  });
 });

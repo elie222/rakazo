@@ -1,6 +1,7 @@
 import type { Notification } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PostgresRealtimeFanout, type RealtimeListenerClient } from "./realtime.js";
+import type { RealtimeListenerClient } from "./realtime.js";
+import { PostgresRealtimeFanout } from "./realtime.js";
 
 class FakeClient implements RealtimeListenerClient {
   readonly queries: string[] = [];

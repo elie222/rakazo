@@ -1,47 +1,37 @@
-import { isIP } from "node:net";
-import { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
-import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
+import {
+  ipVersion,
+  isCloudMetadataHost,
+  isLinkLocalAddress,
+  isLoopbackHost,
+  isNonPublicAddress,
+  normalizeHost,
+  normalizeOpenAiCompatibleBaseUrl,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "@rakazo/contracts";
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
 
-const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog"]);
-
 export function openAiCompatAllowPublicHosts(): boolean {
-  return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC === "1";
-}
-
-function normalizeHostname(hostname: string): string {
-  return hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
+  return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";
 }
 
 export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {
-  const normalized = normalizeHostname(hostname);
-  if (
-    normalized === "localhost" ||
-    normalized.endsWith(".localhost") ||
-    normalized === "host.docker.internal"
-  ) {
-    return true;
-  }
-  if (METADATA_HOSTS.has(normalized)) return false;
-  const ipKind = isIP(normalized);
-  if (ipKind === 4 || ipKind === 6) return isPrivateAddress(normalized);
+  const normalized = normalizeHost(hostname);
+  if (isLoopbackHost(normalized) || normalized === "host.docker.internal") return true;
+  if (isCloudMetadataHost(normalized)) return false;
+  if (ipVersion(normalized) !== 0) return isNonPublicAddress(normalized);
   return (process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS ?? "")
     .split(",")
-    .some((entry) => entry.trim() !== "" && normalizeHostname(entry.trim()) === normalized);
+    .some((entry) => entry.trim() !== "" && normalizeHost(entry.trim()) === normalized);
 }
 
 function isBlockedHostname(hostname: string): boolean {
-  const normalized = normalizeHostname(hostname);
+  const normalized = normalizeHost(hostname);
   return (
-    METADATA_HOSTS.has(normalized) ||
-    (isIP(normalized) !== 0 &&
-      (isCloudMetadataAddress(normalized) || isLinkLocalAddress(normalized)))
+    isCloudMetadataHost(normalized) ||
+    (ipVersion(normalized) !== 0 && isLinkLocalAddress(normalized))
   );
 }
 
@@ -74,7 +64,7 @@ export function assertHttpsForKeyedOpenAiCompatibleUrl(
 ): void {
   if (!apiKey?.trim() && !hasHeaders) return;
   if (url.protocol === "https:") return;
-  const hostname = normalizeHostname(url.hostname);
+  const hostname = normalizeHost(url.hostname);
   if (isPrivateOpenAiCompatibleHostname(hostname)) return;
   throw new Error(
     hasHeaders
@@ -99,7 +89,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   if (url.username || url.password) {
     throw new Error("Model server URL must not contain credentials");
   }
-  const hostname = normalizeHostname(url.hostname);
+  const hostname = normalizeHost(url.hostname);
   if (isBlockedHostname(hostname)) {
     throw new Error("Base URL targets a blocked metadata or link-local host");
   }
@@ -111,9 +101,7 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   const builtInPublicHost =
     url.protocol === "https:" && url.port === "" && BUILT_IN_PUBLIC_MODEL_HOSTS.has(url.hostname);
   if (!allowPublic && !builtInPublicHost) {
-    throw new Error(
-      "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them. A private reverse proxy on localhost or an RFC1918 address does not need that gate.",
-    );
+    throw new Error("Public model endpoints are disabled on this server.");
   }
   return url;
 }

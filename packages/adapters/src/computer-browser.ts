@@ -13,7 +13,8 @@ import type {
   PageBrowserResult,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
+import type { FakeBrowserProviderOptions } from "./fake-browser.js";
+import { FakeBrowserProvider } from "./fake-browser.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 

@@ -5,6 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { popularModelProvidersFirst } from "@rakazo/core";
+import { fetchFresh } from "@rakazo/core/query";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -14,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api";
+import type { MobileModel, MobileModelCredential } from "../../lib/api";
 // Connections belong to the account, so renaming and removing them go to the selected Space.
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
@@ -24,7 +25,7 @@ import { closeModelConnection, openModelConnection } from "../../lib/model-conne
 import type { ModelPickerRequest } from "../../lib/model-picker-selection";
 import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
 import { native, useThemedStyles } from "../../lib/native";
-import { fetchFresh, queryClient, rpcQuery } from "../../lib/query";
+import { queryClient, rpcQuery } from "../../lib/query";
 import { settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
@@ -46,17 +47,14 @@ export default function Models() {
   const router = useRouter();
   const { t } = useI18n();
   const me =
-    useQuery({ ...rpcQuery<MobileMe>("me", undefined, spaceId), enabled: false }, queryClient)
-      .data ?? null;
+    useQuery({ ...rpcQuery("me", undefined, spaceId), enabled: false }, queryClient).data ?? null;
   const catalog =
-    useQuery(
-      { ...rpcQuery<MobileModel[]>("models/list", undefined, spaceId), enabled: false },
-      queryClient,
-    ).data ?? noModels;
+    useQuery({ ...rpcQuery("models/list", undefined, spaceId), enabled: false }, queryClient)
+      .data ?? noModels;
   const credentials =
     useQuery(
       {
-        ...rpcQuery<MobileModelCredential[]>("models/credentials", undefined, spaceId),
+        ...rpcQuery("models/credentials", undefined, spaceId),
         enabled: false,
       },
       queryClient,
@@ -80,9 +78,11 @@ export default function Models() {
     async (reuse = false) => {
       try {
         await Promise.all([
-          fetchFresh(rpcQuery<MobileMe>("me", undefined, spaceId), { reuse }),
-          fetchFresh(rpcQuery<MobileModel[]>("models/list", undefined, spaceId), { reuse }),
-          fetchFresh(rpcQuery<MobileModelCredential[]>("models/credentials", undefined, spaceId), {
+          fetchFresh(queryClient, rpcQuery("me", undefined, spaceId), { reuse }),
+          fetchFresh(queryClient, rpcQuery("models/list", undefined, spaceId), {
+            reuse,
+          }),
+          fetchFresh(queryClient, rpcQuery("models/credentials", undefined, spaceId), {
             reuse,
           }),
         ]);

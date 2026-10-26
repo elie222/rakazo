@@ -11,11 +11,11 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
   composioToolkitDirectory,
   createToolkitDirectoryCache,
   mergeCatalogWithConnected,
-  type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
 import { isVitestRuntime } from "./test-runtime.js";
 

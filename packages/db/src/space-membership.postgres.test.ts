@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { createDb, type PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { createDb } from "./client.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =

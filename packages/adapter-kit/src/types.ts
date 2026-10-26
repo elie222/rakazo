@@ -78,6 +78,22 @@ export interface PortableFile {
   executable?: boolean;
 }
 
+/**
+ * A workspace file too large to hold in memory. Read `body` to the end before asking the export
+ * for its next file.
+ */
+export interface StreamedPortableFile {
+  path: string;
+  body: AsyncIterable<Uint8Array>;
+  executable?: boolean;
+}
+
+/** Bounds a workspace export may enforce up front, before copying anything. */
+export interface WorkspaceExportLimits {
+  maxBytes: number;
+  maxFiles: number;
+}
+
 export interface ComputerRef {
   id: string;
   botId: string;
@@ -146,7 +162,14 @@ export type ComputerInput =
 
 export type ComputerAction =
   | ComputerInput
-  | { kind: "scroll"; direction: "up" | "down"; amount?: number }
+  /** With x and y, the wheel turns there, so it scrolls what is under that point. */
+  | {
+      kind: "scroll";
+      direction: "up" | "down" | "left" | "right";
+      amount?: number;
+      x?: number;
+      y?: number;
+    }
   | { kind: "wait"; ms: number }
   | { kind: "open"; path: string }
   | { kind: "launch"; application: string; uri?: string }
@@ -418,6 +441,8 @@ export interface AgentSteeringMessage {
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  imageFileFallback?: boolean;
 }
 
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
@@ -490,6 +515,10 @@ export interface AgentRunRequest {
     images?: AgentInputImage[];
   }>;
   currentTurnImages?: AgentInputImage[];
+  /** A confirmed image belongs to this run, including a resumed waiting-input reply. */
+  currentRunRequiresImageInput?: boolean;
+  /** Server verified legacy attachment bytes remain available to file tools. */
+  currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
   model: AgentRunModel;
   /** Ordered, user-selected models eligible after provider unavailability. */
@@ -1174,6 +1203,8 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** The flat own-key plan, which grants access without credits. */
+  byokPlan?: boolean;
 }
 
 export interface BillingCheckoutRequest {

@@ -30,6 +30,51 @@ describe("computer tool bridge", () => {
     ]);
   });
 
+  it("aims a scroll at a point when it has one, in whole screen pixels", () => {
+    expect(
+      parseComputerActions([
+        { kind: "scroll", direction: "down", amount: 4, x: 600.4, y: 419.6 },
+        { kind: "scroll", direction: "up" },
+      ]),
+    ).toEqual([
+      { kind: "scroll", direction: "down", amount: 4, x: 600, y: 420 },
+      { kind: "scroll", direction: "up", amount: 3 },
+    ]);
+  });
+
+  it("scrolls in all four directions, in 1 to 20 notches, three by default", () => {
+    expect(
+      parseComputerActions([
+        { kind: "scroll", direction: "left", amount: 0 },
+        { kind: "scroll", direction: "right", amount: 25 },
+        { kind: "scroll", direction: "sideways", amount: 2.6 },
+      ]),
+    ).toEqual([
+      { kind: "scroll", direction: "left", amount: 3 },
+      { kind: "scroll", direction: "right", amount: 20 },
+      { kind: "scroll", direction: "down", amount: 3 },
+    ]);
+  });
+
+  it("rejects a scroll point that is partial or negative", () => {
+    expect(() => parseComputerActions([{ kind: "scroll", direction: "down", x: 600 }])).toThrow(
+      /y must be a non-negative coordinate/,
+    );
+    expect(() =>
+      parseComputerActions([{ kind: "scroll", direction: "down", x: -1, y: 420 }]),
+    ).toThrow(/x must be a non-negative coordinate/);
+  });
+
+  it("tells repeated scrolls at different points apart", () => {
+    const here = computerVisualActionKey(
+      parseComputerActions([{ kind: "scroll", direction: "down", x: 100, y: 200 }]),
+    );
+    const there = computerVisualActionKey(
+      parseComputerActions([{ kind: "scroll", direction: "down", x: 900, y: 200 }]),
+    );
+    expect(here).not.toBe(there);
+  });
+
   it("keeps an optional URI on focus actions and rejects a missing application", () => {
     expect(
       parseComputerActions([

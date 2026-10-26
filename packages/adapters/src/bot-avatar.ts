@@ -11,6 +11,7 @@ export function attachedImageArtifactIds(blocks: MessageBlock[] | undefined): st
 }
 
 export async function encodeBotAvatarImage(bytes: Uint8Array): Promise<string> {
+  // sharp is a native addon; load it only when an image is processed.
   const { default: sharp } = await import("sharp");
   const webp = await sharp(bytes)
     .rotate()

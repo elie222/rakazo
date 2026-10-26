@@ -21,6 +21,7 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { createRepos, PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -2112,6 +2113,31 @@ describe("archiveBot", () => {
       where: { id: "computer-1", state: "running", providerRef: "provider-1" },
       data: { state: "stopped" },
     });
+  });
+
+  it("archives a bot whose dedicated computer is damaged", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const updates = { updateMany: vi.fn().mockResolvedValue({ count: 1 }), update: vi.fn() };
+    const computer = { id: "c-1", homeKey: "bot-1", providerRef: "p-1", state: "running" };
+    const tx = { ...noGroupMemberships(), run: updates, task: updates, routine: updates };
+    Object.assign(tx, { computerExecutionLease: updates, computer: updates, bot: updates });
+    const prisma = {
+      computer: { findUnique: vi.fn().mockResolvedValue(computer), ...updates },
+      run: { findMany: vi.fn().mockResolvedValue([]) },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
+    const exportWorkspace = async function* () {
+      throw new SandboxDamagedError();
+    };
+    const sandbox = { exportWorkspace, stop } as unknown as SandboxProvider;
+    const jobs = { cancel: vi.fn() } as unknown as JobPublisher;
+    const bot = { id: "bot-1", spaceId: "s-1", userId: "u-1", name: "R", archivedAt: null };
+
+    await archiveBot({ prisma, sandbox, home: {} as AgentHomeStore, jobs }, bot, context);
+
+    expect(stop).toHaveBeenCalledWith(expect.anything(), context, { discardUnsaved: true });
   });
 
   it("releases the archived bot's screen and keeps its browser profile", async () => {

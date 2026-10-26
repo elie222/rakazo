@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type AxiomIngestClient, createAxiomSink, createAxiomSinkFromEnv } from "./axiom.js";
+import type { AxiomIngestClient } from "./axiom.js";
+import { createAxiomSink, createAxiomSinkFromEnv } from "./axiom.js";
 import { createLogger } from "./logger.js";
 import type { LogEvent } from "./types.js";
 

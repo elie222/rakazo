@@ -1,8 +1,10 @@
+import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -30,35 +32,13 @@ import {
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
 import { useI18n } from "../../lib/i18n";
 import { native, useThemedStyles } from "../../lib/native";
-import { fetchFresh, queryClient, rpcQuery, writeSaved } from "../../lib/query";
+import { queryClient, rpcQuery } from "../../lib/query";
 import type { SettingsTarget } from "../../lib/settings-target";
 import { settingsRpc, settingsTarget } from "../../lib/settings-target";
 import { useSideInsets } from "../../lib/side-insets";
 import { errorText } from "../../lib/user-error";
 import { speakText } from "../../lib/voice";
 
-type VoiceCatalogEntry = {
-  id: string;
-  name: string;
-  description: string;
-  transcribe: boolean;
-};
-type VoiceCredential = {
-  id: string;
-  provider: string;
-  voiceId: string;
-  speechModel?: string;
-  endpoint?: string;
-  ttsModel?: string;
-  sttModel?: string;
-};
-type VoiceStatus = {
-  configured: boolean;
-  ready: boolean;
-  provider: string | null;
-  voiceId: string;
-};
-type VoiceInfo = { id: string; label: string; description?: string };
 type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
 
 /** A Space's override is read from that Space even when another one is selected. */
@@ -68,13 +48,13 @@ const voiceReads = (target: SettingsTarget) => {
   const input = { scope: target.scope };
   const spaceId = targetSpace(target);
   return {
-    catalog: rpcQuery<VoiceCatalogEntry[]>("voice/catalog", undefined, spaceId),
-    credentials: rpcQuery<VoiceCredential[]>("voice/credentials", input, spaceId),
-    status: rpcQuery<VoiceStatus>("voice/status", input, spaceId),
+    catalog: rpcQuery("voice/catalog", undefined, spaceId),
+    credentials: rpcQuery("voice/credentials", input, spaceId),
+    status: rpcQuery("voice/status", input, spaceId),
   };
 };
 const voicesRead = (target: SettingsTarget, provider: string) =>
-  rpcQuery<VoiceInfo[]>("voice/voices", { provider, scope: target.scope }, targetSpace(target));
+  rpcQuery("voice/voices", { provider, scope: target.scope }, targetSpace(target));
 
 function pickProvider(catalog: VoiceCatalogEntry[], status: VoiceStatus, preferred?: string) {
   return (
@@ -154,9 +134,9 @@ export default function VoiceSettings() {
       const reads = voiceReads(target);
       const reuse = { reuse: opening };
       const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
-        fetchFresh(reads.catalog, reuse),
-        fetchFresh(reads.credentials, reuse),
-        fetchFresh(reads.status, reuse),
+        fetchFresh(queryClient, reads.catalog, reuse),
+        fetchFresh(queryClient, reads.credentials, reuse),
+        fetchFresh(queryClient, reads.status, reuse),
       ]);
       if (revision !== loadRevision.current) return;
       const selected = pickProvider(nextCatalog, nextStatus, nextProvider);
@@ -174,7 +154,7 @@ export default function VoiceSettings() {
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
       if (cred) {
-        const nextVoices = await fetchFresh(voicesRead(target, selected), reuse);
+        const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), reuse);
         if (revision === loadRevision.current) setVoices(nextVoices);
       } else {
         setVoices([]);
@@ -302,13 +282,13 @@ export default function VoiceSettings() {
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
         try {
-          const saved = await rpc<VoiceStatus>("voice/setVoice", {
+          const saved = await rpc("voice/setVoice", {
             voiceId: cred.voiceId,
             provider: nextProvider,
             scope,
           });
           setStatus(saved);
-          await writeSaved(voiceReads(target).status.queryKey, () => saved);
+          await writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved);
         } catch (err) {
           setProvider(previousProvider);
           if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
@@ -394,7 +374,7 @@ export default function VoiceSettings() {
     setPending("speech");
     setError(null);
     try {
-      const saved = await rpc<VoiceCredential>("voice/setSpeechModel", {
+      const saved = await rpc("voice/setSpeechModel", {
         provider: selected.id,
         scope,
         speechModel: next,
@@ -406,7 +386,7 @@ export default function VoiceSettings() {
       edited.current.delete("speechModel");
       setSpeechModel(saved.speechModel ?? "");
       setCredentials(merge);
-      await writeSaved(voiceReads(target).credentials.queryKey, merge);
+      await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
       void load(selected.id, true).catch(() => undefined);
     } catch (err) {
       setError(errorText(err, t("Could not save that speech model")));

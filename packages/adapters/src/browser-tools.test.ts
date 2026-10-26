@@ -7,8 +7,8 @@ import {
   browserSnapshotFromTool,
   parseBrowserActions,
 } from "./browser-tools.js";
-import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./executor.js";
 import { FakeBrowserProvider } from "./fake-browser.js";
+import { filterPageBrowserTools, PAGE_BROWSER_TOOL_NAMES } from "./run-tool-selection.js";
 
 const context: AdapterContext = {
   operationId: "1",

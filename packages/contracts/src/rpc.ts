@@ -1,3 +1,8 @@
+import type {
+  AnyContractProcedure,
+  InferContractRouterInputs,
+  InferContractRouterOutputs,
+} from "@orpc/contract";
 import { eventIterator, oc } from "@orpc/contract";
 import * as z from "zod";
 import {
@@ -162,6 +167,7 @@ const structuredMentionTarget = z.discriminatedUnion("kind", [
 
 const threadSendInput = threadTarget
   .safeExtend({
+    imageHandling: z.enum(["confirm", "file"]).optional(),
     text: z.string().optional(),
     artifactIds: z.array(Id).max(ATTACHMENT_MAX_COUNT).optional(),
     /** Bare bot ids (legacy) or typed mention chips from the composer. */
@@ -217,7 +223,8 @@ export const appContract = {
     status: oc.output(BillingStatusSchema),
     selectFunding: oc
       .input(z.object({ funding: z.enum(["byok", "credits"]) }))
-      .output(z.object({ ok: z.literal(true) })),
+      /** `url` is the checkout to pay for the own-key plan before it has access. */
+      .output(z.object({ ok: z.literal(true), url: z.string().url().optional() })),
     purchaseCredits: oc
       .input(z.object({ amountCents: ModelCreditAmountSchema, monthly: z.boolean() }))
       .output(z.object({ url: z.string().url() })),
@@ -1180,3 +1187,24 @@ export const appContract = {
 };
 
 export type AppContract = typeof appContract;
+
+type ProcedurePaths<Router, Prefix extends string = ""> = {
+  [Key in keyof Router & string]: Router[Key] extends AnyContractProcedure
+    ? `${Prefix}${Key}`
+    : ProcedurePaths<Router[Key], `${Prefix}${Key}/`>;
+}[keyof Router & string];
+
+type AtPath<Tree, Path extends string> = Path extends `${infer Head}/${infer Rest}`
+  ? Head extends keyof Tree
+    ? AtPath<Tree[Head], Rest>
+    : never
+  : Path extends keyof Tree
+    ? Tree[Path]
+    : never;
+
+/** A procedure's URL path under `/rpc/`, such as `bots/list`. */
+export type RpcPath = ProcedurePaths<AppContract>;
+type RpcInputs = { [Path in RpcPath]: AtPath<InferContractRouterInputs<AppContract>, Path> };
+type RpcOutputs = { [Path in RpcPath]: AtPath<InferContractRouterOutputs<AppContract>, Path> };
+export type RpcInput<Path extends RpcPath> = RpcInputs[Path];
+export type RpcOutput<Path extends RpcPath> = RpcOutputs[Path];

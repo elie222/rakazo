@@ -3,6 +3,7 @@ import {
   buildPlaybookFromRecording,
   promptInvokesSkill,
   sanitizeTeachRecordingEvent,
+  scrollDirection,
 } from "./teach-playbook.js";
 
 describe("promptInvokesSkill", () => {
@@ -157,6 +158,17 @@ describe("buildPlaybookFromRecording", () => {
     ]);
     expect(playbook.steps).toEqual(["Scroll down 3 times."]);
   });
+
+  it("says where a demo scrolled, when the recording has the point", () => {
+    const playbook = buildPlaybookFromRecording("Scroll the list", [
+      { at: "2026-01-01T00:00:00.000Z", kind: "scroll", type: "down", text: "3", x: 600, y: 420 },
+      { at: "2026-01-01T00:00:01.000Z", kind: "scroll", type: "left", text: "1", x: 40, y: 300 },
+    ]);
+    expect(playbook.steps).toEqual([
+      "Scroll down 3 times at (600, 420).",
+      "Scroll left at (40, 300).",
+    ]);
+  });
 });
 
 describe("sanitizeTeachRecordingEvent", () => {
@@ -186,5 +198,18 @@ describe("sanitizeTeachRecordingEvent", () => {
       text: "weekly-export.csv",
     };
     expect(sanitizeTeachRecordingEvent(event)).toEqual(event);
+  });
+});
+
+describe("scrollDirection", () => {
+  it("scrolls up, down, left or right, and down for anything else", () => {
+    expect(["up", "down", "left", "right", "sideways", undefined].map(scrollDirection)).toEqual([
+      "up",
+      "down",
+      "left",
+      "right",
+      "down",
+      "down",
+    ]);
   });
 });

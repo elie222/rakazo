@@ -7,6 +7,7 @@ import {
   SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -350,6 +351,99 @@ describe("sandbox idle", () => {
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
+  it("forces the stop of a damaged computer its provider refuses to stop", async () => {
+    const boatApi = new FakeBoatApi();
+    const boat = fakeBoatProvider(boatApi);
+    const boatComputer = await boat.provision(
+      { botId: "bot", homePath: "/unused" },
+      {
+        operationId: "test",
+        traceId: "test",
+        spaceId: "workspace",
+        userId: "user",
+        signal: new AbortController().signal,
+      },
+    );
+    boatApi.saveSnapshot(boatComputer.id);
+    boatApi.damage(boatComputer.id);
+    const harness = idleHarness();
+    Object.assign(harness.computer, { kind: "boat", providerRef: boatComputer.providerRef });
+    harness.deps.sandbox = boat;
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(boatApi.state(boatComputer.id)).toBe("archived");
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.computer).toMatchObject({
+      state: "suspended",
+      providerRef: boatComputer.providerRef,
+    });
+  });
+
+  it("never discards unsaved work when stopping a computer it could save", async () => {
+    const harness = idleHarness();
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.sandbox.stop).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      undefined,
+    );
+  });
+
+  describe("a computer its provider already stopped", () => {
+    const savedAt = new Date("2026-01-01T00:00:00.000Z");
+
+    it("is marked suspended without being started when nothing changed since its save", async () => {
+      const harness = idleHarness({ stoppedAtProvider: true, homeRevisionAt: savedAt });
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.computer.state).toBe("suspended");
+      expect(harness.sandbox.execute).not.toHaveBeenCalled();
+      expect(harness.sandbox.exportWorkspace).not.toHaveBeenCalled();
+      expect(harness.sandbox.stop).not.toHaveBeenCalled();
+      expect(harness.home.commit).not.toHaveBeenCalled();
+      expect(harness.computer.providerRef).toBe("computer");
+      expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ endReason: "gone" }) }),
+      );
+      expect(harness.events.append).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "computer.status", payload: { status: "suspended" } }),
+      );
+    });
+
+    it.each([
+      ["a run", { runSinceSave: true }],
+      ["a takeover", { takeoverSinceSave: true }],
+      ["no save time", { homeRevisionAt: null }],
+    ] as const)("is started and saved when %s may have changed it", async (_case, change) => {
+      const harness = idleHarness({
+        stoppedAtProvider: true,
+        homeRevisionAt: savedAt,
+        ...change,
+      });
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.home.commit).toHaveBeenCalledOnce();
+      expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+      expect(harness.computer.state).toBe("suspended");
+    });
+
+    it("is left to the run that holds it", async () => {
+      const harness = idleHarness({ stoppedAtProvider: true, homeRevisionAt: savedAt });
+      harness.prisma.run.findFirst.mockResolvedValue({ id: "active-run" });
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.sandbox.isStopped).not.toHaveBeenCalled();
+      expect(harness.computer.state).toBe("running");
+    });
+  });
+
   it("keeps a computer only its provider's snapshot can bring back for the next use", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
@@ -389,6 +483,26 @@ describe("sandbox idle", () => {
         reason: "rate_limited",
       }),
     );
+  });
+
+  it("keeps a computer whose files are too large to save running, with a warning", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ exportError: new WorkspaceTooLargeError("bytes") });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "too_large",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
   it("schedules the next idle check when stopping fails", async () => {
@@ -1248,6 +1362,10 @@ function idleHarness(
     runningSince?: Date | null;
     billsWhileRunning?: boolean;
     takeoverRequestedAt?: Date;
+    stoppedAtProvider?: boolean;
+    homeRevisionAt?: Date | null;
+    runSinceSave?: boolean;
+    takeoverSinceSave?: boolean;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -1266,6 +1384,7 @@ function idleHarness(
     controlBotId: null,
     executionBotId: null,
     runningSince: options.runningSince ?? null,
+    homeRevisionAt: options.homeRevisionAt ?? null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
   const prisma = {
@@ -1279,17 +1398,23 @@ function idleHarness(
       }),
     },
     run: {
-      findFirst: vi.fn().mockResolvedValue(null),
+      // Only the check for changes since the last save asks for runs updated after a time.
+      findFirst: vi.fn(async ({ where }) =>
+        options.runSinceSave && where.updatedAt ? { id: "later-run" } : null,
+      ),
       findMany: vi
         .fn()
         .mockResolvedValue(options.takeoverRequestedAt ? [{ id: "waiting-for-user" }] : []),
     },
     event: {
-      findFirst: vi.fn(async ({ where }) =>
-        options.takeoverRequestedAt && options.takeoverRequestedAt > where.createdAt.gt
+      findFirst: vi.fn(async ({ where }) => {
+        if (where.type === "computer.takeover.granted") {
+          return options.takeoverSinceSave ? { id: "later-takeover" } : null;
+        }
+        return options.takeoverRequestedAt && options.takeoverRequestedAt > where.createdAt.gt
           ? { createdAt: options.takeoverRequestedAt }
-          : null,
-      ),
+          : null;
+      }),
     },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -1314,6 +1439,7 @@ function idleHarness(
       yield { path: "notes/result.txt", content: new TextEncoder().encode("durable") };
     }),
     stop: vi.fn().mockResolvedValue(undefined),
+    ...(options.stoppedAtProvider ? { isStopped: vi.fn().mockResolvedValue(true) } : {}),
     ...(options.providerBackgroundWorkStatus
       ? {
           inspectBackgroundWork: vi.fn().mockResolvedValue(options.providerBackgroundWorkStatus),

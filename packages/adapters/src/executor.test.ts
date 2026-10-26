@@ -11,33 +11,36 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import {
-  appendToolCompletionAudit,
-  createRunExecutor as createExecutor,
-  createRunWorkspaceCheckpoint,
-  dockerComputerToolInstruction,
-  isTerminalModelSetupError,
-  loadCurrentTurnImages,
-  missingTurnImagesInstruction,
-  offeredFleetTools,
-  persistentComputerInstruction,
-  REACTION_SILENT_REPLY_GUIDANCE,
-  runNotificationsEnabled,
-  selectBuiltinToolsForRun,
-  settleSteeringAttachmentLoads,
-  threadContextForRun,
-  toolCompletionAuditPayload,
-  toolCompletionFromResult,
-  userTurnInstructions,
-  VOICE_CALL_INSTRUCTION,
-  voiceCallInstruction,
-  withRecentTurnImages,
-} from "./executor.js";
+import { createRunExecutor as createExecutor } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
-import { modelsForRequest } from "./pi-runtime.js";
+import { modelsForRequest } from "./pi-runtime-models.js";
+import {
+  dockerComputerToolInstruction,
+  persistentComputerInstruction,
+  threadContextForRun,
+  userTurnInstructions,
+  VOICE_CALL_INSTRUCTION,
+  voiceCallInstruction,
+} from "./run-instructions.js";
+import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { isTerminalModelSetupError } from "./run-model.js";
+import { runNotificationsEnabled } from "./run-notifications.js";
+import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
+import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import {
+  loadCurrentTurnImages,
+  missingTurnImagesInstruction,
+  settleSteeringAttachmentLoads,
+  withRecentTurnImages,
+} from "./run-turn-images.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
+import {
+  appendToolCompletionAudit,
+  toolCompletionAuditPayload,
+  toolCompletionFromResult,
+} from "./tool-completion-audit.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>
@@ -3030,6 +3033,125 @@ description: Prepare standup notes
       expect.objectContaining({
         outcome: "failed",
         error: "Connect that model provider first",
+      }),
+    );
+    expect(runtimeRun).not.toHaveBeenCalled();
+  });
+
+  it("fails a run once the organization's own-key plan has no access", async () => {
+    const runtimeRun = vi.fn();
+    const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+    const run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      userId: "user-1",
+      spaceId: "ws-1",
+      status: "queued",
+      trigger: "user",
+      routineId: null,
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      modelPinned: false,
+      sourceMessageId: null,
+      checkpoint: null,
+      leaseFence: 0,
+    };
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => run),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
+          args.select?.computerId
+            ? { computerId: "computer-1", computerSwitching: false }
+            : {
+                id: "bot-1",
+                name: "Assistant",
+                modelProvider: null,
+                modelId: null,
+                thinkingLevel: null,
+                memoryScope: "isolated",
+                computer: { id: "computer-1", scope: "private" },
+              },
+        ),
+      },
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })),
+      },
+      attempt: {
+        create: vi.fn(async () => ({ id: "attempt-1" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      thread: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          id: "thread-1",
+          groupId: null,
+          historyCompactionSummary: null,
+          historyCompactedUpToSeq: null,
+          historyCompactionGeneration: 0,
+        })),
+      },
+      message: { findMany: vi.fn(async () => []) },
+      task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
+      connection: { findMany: vi.fn(async () => []) },
+      space: {
+        findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "byok" } } })),
+        findUnique: vi.fn(async () => ({
+          organization: {
+            modelCredits: {
+              mode: "byok",
+              balanceMicros: 0n,
+              byokFreeUntil: new Date(Date.now() - 1000),
+            },
+            billing: null,
+          },
+        })),
+      },
+      userModelPreference: {
+        findFirst: vi.fn(async (args: { where: { isDefault?: boolean } }) =>
+          args.where.isDefault
+            ? modelPreference({
+                provider: "openrouter",
+                secretId: "secret-or",
+                modelId: "deepseek/deepseek-v4-flash-0731",
+              })
+            : null,
+        ),
+      },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      taughtSkill: { findMany: vi.fn(async () => []) },
+      botSecret: { findMany: vi.fn(async () => []) },
+      agentSecret: { findMany: vi.fn(async () => []) },
+      agentSkill: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
+    const executor = createRunExecutor({
+      prisma,
+      billingEnabled: true,
+      runtime: {
+        describe: () => ({ capabilities: { scripted: false } }),
+        run: runtimeRun,
+      },
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      memory: { read: vi.fn(async () => ({ documents: [] })) },
+      events: { append: vi.fn(async () => undefined), finalizeRun },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+      secrets: [],
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error: "Subscribe in Billing to keep running bots.",
       }),
     );
     expect(runtimeRun).not.toHaveBeenCalled();

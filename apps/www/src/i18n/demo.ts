@@ -1,4 +1,5 @@
-import { DEMO_BOTS, type DemoBot } from "../demo";
+import type { DemoBot } from "../demo";
+import { DEMO_BOTS } from "../demo";
 import type { Locale } from "./locales";
 
 type DemoValues = Record<string, string | number>;

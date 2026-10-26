@@ -1,3 +1,4 @@
+import { agentImportUpload, readAgentImportFolder } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   intervalCron,
@@ -487,6 +488,31 @@ describe("keys with a base URL", () => {
 });
 
 describe("helpers", () => {
+  it.each([
+    ['"placeholder-key" # comment', "placeholder-key"],
+    ["'placeholder-key' # comment", "placeholder-key"],
+    ['"placeholder # key" # "quoted comment"', "placeholder # key"],
+    ["'placeholder\"#suffix' # comment", 'placeholder"#suffix'],
+    [String.raw`"placeholder\"#suffix'" # comment`, String.raw`placeholder\"#suffix'`],
+    ['placeholder"#suffix', 'placeholder"#suffix'],
+  ])("preserves .env key %s through upload and server preparation", (value, expected) => {
+    const upload = agentImportUpload(
+      [
+        { path: ".hermes/SOUL.md", home: "SOUL.md", content: "Direct.\n" },
+        {
+          path: ".hermes/.env",
+          home: ".env",
+          content: `OPENAI_API_KEY=${value}\n`,
+        },
+      ],
+      { includeSecrets: true },
+    );
+    const folder = readAgentImportFolder(upload, { includeSecrets: true })!;
+    const settings = readAgentImportSettings(folder, { includeSecrets: true });
+
+    expect(settings.keyValues.get("openai")).toBe(expected);
+  });
+
   it("converts intervals only when a cron fires at exactly that interval", () => {
     expect([1, 15, 30, 60, 120, 180, 360, 1440].map(intervalCron)).toEqual([
       "*/1 * * * *",

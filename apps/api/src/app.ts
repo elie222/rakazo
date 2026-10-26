@@ -15,6 +15,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   VoiceAccountError,
@@ -80,11 +81,12 @@ import {
   sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   toTeamChatInbound,
+  verifyModelServesAgents,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
-import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -150,6 +152,7 @@ import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
 import { createAuthResponseAudit } from "./security-audit.js";
+import { createSpeechSummarizer } from "./speech-summary.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
@@ -356,6 +359,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins(undefined, { prisma, secrets });
   const home = createAgentHomeStore(env.dataDir, prisma);
+  void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
   const mcp = new McpConnector(
@@ -402,7 +406,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           });
         })
       : undefined;
-  if (localEmailEmulator && !isLoopbackHost(env.apiHost)) {
+  if (localEmailEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
@@ -626,6 +630,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   reconciler?.start();
 
   const router = createRouter({
+    speechSummary:
+      env.voiceSummaryMinChars === undefined
+        ? undefined
+        : {
+            minChars: env.voiceSummaryMinChars,
+            summarize: createSpeechSummarizer({
+              prisma,
+              runtime,
+              resolveModel: executor.resolveModel,
+            }),
+          },
     analytics,
     cloudAgent,
     codexCatalog,
@@ -649,6 +664,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
+    // The scripted runtime never calls a provider, so neither does its connect.
+    modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
     dataDir: env.dataDir,
     billing,
@@ -667,6 +684,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       ticketBoardEnabled,
+      navLinks: env.navLinks,
       agentRuntime: env.agentRuntime,
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,
@@ -1299,10 +1317,6 @@ export function isTrustedOrigin(
   return allowed.has(origin);
 }
 
-function isLoopbackHost(host: string): boolean {
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
-}
-
 function originVariants(origin: string): string[] {
   if (!origin || origin === "rakazo://") return [];
   const variants = [origin, ...loopbackTwinOrigins(origin)];
@@ -1399,6 +1413,11 @@ export function handleRpcError(error: unknown, path: readonly string[]): void {
       reason: error.cause instanceof Error ? error.cause.message : undefined,
     });
     throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
+  }
+  // A retry cannot fix a damaged computer; its message tells the user to Recover it.
+  if (error instanceof SandboxDamagedError) {
+    getLogger().warn(`rpc ${path.join("/")} computer damaged`);
+    throw new ORPCError("CONFLICT", { message: error.message, cause: error });
   }
   logUnexpectedRpcError(error, path);
 }

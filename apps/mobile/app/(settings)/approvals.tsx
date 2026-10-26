@@ -41,10 +41,7 @@ export default function Approvals() {
     useCallback(() => {
       let current = true;
       const savesAtRead = saves.current;
-      void Promise.all([
-        rpc<ActionAutoReviewSettings>("autoReview/get", { scope }),
-        rpc<ActionApprovalRule[]>("approvalRules/list", { scope }),
-      ])
+      void Promise.all([rpc("autoReview/get", { scope }), rpc("approvalRules/list", { scope })])
         .then(([nextSettings, nextRules]) => {
           if (!current || saves.current !== savesAtRead) return;
           setSettings(nextSettings);
@@ -73,9 +70,7 @@ export default function Approvals() {
   }
 
   const setMode = (mode: ApprovalMode) =>
-    save(async () =>
-      setSettings(await rpc<ActionAutoReviewSettings>("autoReview/set", { scope, mode })),
-    );
+    save(async () => setSettings(await rpc("autoReview/set", { scope, mode })));
 
   const applyRuleAction = (rule: ActionApprovalRule, action: RuleAction) =>
     save(async () => {
@@ -85,7 +80,7 @@ export default function Approvals() {
         return;
       }
       if (action === rule.effect || rule.matchKind === "category") return;
-      const saved = await rpc<ActionApprovalRule>("approvalRules/set", {
+      const saved = await rpc("approvalRules/set", {
         scope,
         effect: action,
         matchKind: rule.matchKind,

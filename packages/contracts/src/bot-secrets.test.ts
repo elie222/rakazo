@@ -7,8 +7,6 @@ import {
   commandVariableProblem,
   decodeLoginSecret,
   encodeLoginSecret,
-  isCloudMetadataHost,
-  isPrivateNetworkHost,
   SecretHttpRequest,
 } from "./bot-secrets.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./domain.js";
@@ -132,24 +130,13 @@ describe("private HTTP credential origins", () => {
   ])("relaxed schema still rejects non-origin URLs %s", (origin) => {
     expect(relaxed.safeParse({ ...destination, origin }).success).toBe(false);
   });
-  it.each(["100.100.100.200", "169.254.170.2", "169.254.169.254", "metadata.google.internal"])(
-    "classifies metadata host %s",
-    (host) => {
-      expect(isCloudMetadataHost(host)).toBe(true);
-    },
-  );
   it.each([
-    ["100.63.0.1", false],
-    ["100.64.0.1", true],
-    ["100.127.255.254", true],
-    ["100.128.0.1", false],
-    ["172.15.0.1", false],
-    ["172.16.0.1", true],
-    ["172.32.0.1", false],
-    ["192.169.0.1", false],
-    ["example.test", false],
-  ])("classifies private host %s", (host, expected) => {
-    expect(isPrivateNetworkHost(host)).toBe(expected);
+    "https://[::ffff:169.254.169.254]",
+    "https://[fd00:ec2::254]",
+    "https://metadata.goog.",
+  ])("rejects a metadata origin in any form %s", (origin) => {
+    expect(relaxed.safeParse({ ...destination, origin }).success).toBe(false);
+    expect(BotSecretDestination.safeParse({ ...destination, origin }).success).toBe(false);
   });
 });
 

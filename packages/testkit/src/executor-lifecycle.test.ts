@@ -8,6 +8,7 @@ import {
   DestinationEmulator,
   releaseComputerExecutionLease,
 } from "@rakazo/adapters";
+import type { createApp } from "@rakazo/api/app";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import {
   createThreadEvents,
@@ -17,7 +18,6 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { createApp } from "../../../apps/api/src/app.ts";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { asSystem } from "./system-db.js";
 
@@ -36,7 +36,7 @@ describeIntegration("run executor lifecycle", () => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,

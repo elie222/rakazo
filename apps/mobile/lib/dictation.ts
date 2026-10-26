@@ -69,6 +69,7 @@ export function setSpeechRecognizer(recognizer: SpeechRecognizer | null): void {
 
 async function load(): Promise<SpeechRecognizer> {
   if (injected) return injected;
+  // The native recognizer loads on first dictation, not with every screen that imports this.
   const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
   return ExpoSpeechRecognitionModule as unknown as SpeechRecognizer;
 }

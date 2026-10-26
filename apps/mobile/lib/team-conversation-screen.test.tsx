@@ -116,7 +116,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.mocked(rpc).mockImplementation(async (path: string) => {
+  vi.mocked(rpc).mockImplementation((async (path: string) => {
     if (path === "bots/list") {
       return [{ id: "bot-1", name: "Chief", teamChatAmbientEnabled: false, teamChatRules: "" }];
     }
@@ -139,7 +139,7 @@ beforeEach(() => {
       };
     }
     return { ok: true };
-  });
+  }) as never);
   container = document.createElement("div");
   root = createRoot(container);
 });

@@ -4,12 +4,8 @@ import type {
   ManagedConnectorProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import {
-  type IntegrationProviderConfig,
-  IntegrationProviderConfigSchema,
-  type IntegrationProviderId,
-  IntegrationProviderIdSchema,
-} from "@rakazo/contracts";
+import type { IntegrationProviderConfig, IntegrationProviderId } from "@rakazo/contracts";
+import { IntegrationProviderConfigSchema, IntegrationProviderIdSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { ComposioConnector } from "./composio-connector.js";
 import { credentialDigest } from "./credential-digest.js";

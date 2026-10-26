@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { infisicalFake } from "../../../packages/adapters/src/secret-store-fake.js";
 import { readBoundedBody } from "./http-body.js";
+import type { WebhookDeps } from "./webhook.js";
 import {
   formatGithubEventPrompt,
   formatUntrustedDeliveryPayload,
@@ -18,7 +19,6 @@ import {
   mountWebhookHttpRoutes,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
-  type WebhookDeps,
 } from "./webhook.js";
 import { loadWebhookTarget } from "./webhook-inbound.js";
 

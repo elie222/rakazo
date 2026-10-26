@@ -242,16 +242,13 @@ function LayoutContent() {
   useNotificationResponses(ready);
   const screen = analyticsScreen(usePathname());
   useEffect(() => {
-    if (!ready || !screen || (Platform.OS !== "ios" && Platform.OS !== "android")) return;
+    const surface = Platform.OS;
+    if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;
     let active = true;
     void loadSessionToken()
       .then((token) => {
         if (active && token)
-          return rpc(
-            "analytics/screen",
-            { screen, surface: Platform.OS },
-            { skipSpaceAuthRecovery: true },
-          );
+          return rpc("analytics/screen", { screen, surface }, { skipSpaceAuthRecovery: true });
       })
       .catch(() => undefined);
     return () => {
@@ -439,6 +436,7 @@ function LayoutContent() {
                         ...chatRouteHeader(route, t, { split, inboxHidden, foldActive }),
                       })}
                     />
+                    <Stack.Screen name="routines" options={glassHeaderOptions(t("Routines"))} />
                     <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen

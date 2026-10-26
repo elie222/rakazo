@@ -73,6 +73,7 @@ function renderComposer(
     attachmentNotice: null,
     sendError: null,
     onOpenModels: () => {},
+    onOpenConnections: () => {},
     runError: null,
     runErrorId: null,
     onRunErrorPresented: () => {},
@@ -117,6 +118,41 @@ it("shows a readable run error with raw details, while preserving send errors", 
   rerenderComposer({ sendError: "Could not send the message." });
   expect(error?.textContent).toBe("Could not send the message.");
   expect(error?.querySelector("details")).toBeNull();
+});
+
+it.each([
+  ['402: {"message":"You have no credits remaining."}', "Choose a model", "models"],
+  [
+    '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',
+    "Choose a model",
+    "models",
+  ],
+  ['404: {"message":"Model example-model does not exist"}', "Choose a model", "models"],
+  ['401: {"message":"Invalid API key"}', "Replace key", "connections"],
+  ["Connect a model in Settings before running bots.", "Connect a model", "connections"],
+  ["Request timed out.", null, null],
+  ['429: {"message":"Too many requests"}', null, null],
+] as const)("offers the one action that fixes %s", (runError, label, opens) => {
+  const onOpenModels = vi.fn();
+  const onOpenConnections = vi.fn();
+  renderComposer(async () => true, {
+    runError,
+    runErrorId: "failed-run",
+    onOpenModels,
+    onOpenConnections,
+  });
+  const actions = container?.querySelectorAll<HTMLButtonElement>(
+    '[data-testid="composer-error-action"]',
+  );
+  expect(actions?.length).toBe(label ? 1 : 0);
+  if (!label) return;
+  expect(actions?.[0]?.textContent).toBe(label);
+  act(() => actions?.[0]?.click());
+  expect(onOpenModels).toHaveBeenCalledTimes(opens === "models" ? 1 : 0);
+  expect(onOpenConnections).toHaveBeenCalledTimes(opens === "connections" ? 1 : 0);
+
+  rerenderComposer({ sendError: "Could not send the message." });
+  expect(container?.querySelector('[data-testid="composer-error-action"]')).toBeNull();
 });
 
 it.each([MODEL_REQUIRED_SEND_ERROR, `  ${MODEL_REQUIRED_SEND_ERROR}  `])(
@@ -624,6 +660,95 @@ it.each([false, true])(
 it("hides call dictation until the server enables it", () => {
   renderComposer(vi.fn().mockResolvedValue(true));
   expect(container?.querySelector('button[aria-label="Hold to talk"]')).toBeNull();
+});
+
+it("shows file confirmation only for a recognized server response", () => {
+  renderComposer(async () => false, {
+    sendError: "This model cannot read images. Choose a model that supports images.",
+  });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(false);
+  rerenderComposer({ imageConfirmation: true });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(true);
+});
+
+it("never carries file confirmation into a later run error after send error dismissal", () => {
+  renderComposer(async () => false, {
+    sendError: "Image input is not configured for this model.",
+    imageConfirmation: true,
+  });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(true);
+  rerenderComposer({ sendError: null, runError: "Another failure", runErrorId: "later-run" });
+  expect(
+    Array.from(container!.querySelectorAll("button")).some(
+      (button) => button.textContent === "Send as file",
+    ),
+  ).toBe(false);
+});
+
+it("invalidates confirmation on user text, attachment removal and replacement only", async () => {
+  const onDraftEdited = vi.fn();
+  const attachment = { id: "attachment", file: new File(["old"], "old.txt"), threadKey: "bot-1" };
+  const textarea = renderComposer(async () => false, {
+    onDraftEdited,
+    pendingAttachments: [attachment],
+  });
+  type(textarea, "edited");
+  expect(onDraftEdited).toHaveBeenCalledTimes(1);
+  act(() => container!.querySelector<HTMLButtonElement>('[aria-label="Remove old.txt"]')!.click());
+  expect(onDraftEdited).toHaveBeenCalledTimes(2);
+  pickAttachment();
+  expect(onDraftEdited).toHaveBeenCalledTimes(3);
+  onDraftEdited.mockClear();
+  await act(async () => pressEnter(textarea));
+  expect(textarea.value).toBe("edited");
+  expect(onDraftEdited).not.toHaveBeenCalled();
+});
+
+it("shows an image confirmation as a warning with file and model actions", () => {
+  const onOpenModels = vi.fn();
+  renderComposer(async () => false, {
+    sendError: "This model cannot read images. Choose a model that supports images.",
+    imageConfirmation: true,
+    onOpenModels,
+  });
+  const error = container!.querySelector('[data-testid="composer-error"]')!;
+  expect(error.className).toContain("text-warning");
+  expect(error.className).not.toContain("text-destructive");
+  const buttons = Array.from(error.querySelectorAll("button"));
+  expect(buttons.map((button) => button.textContent)).toEqual(
+    expect.arrayContaining(["Send as file", "Change model"]),
+  );
+  const note = Array.from(error.querySelectorAll("p")).find(
+    (element) => element.textContent === "The bot can use the file but won't see the picture.",
+  );
+  expect(note).toBeDefined();
+  const sendAsFile = buttons.find((button) => button.textContent === "Send as file")!;
+  expect(sendAsFile.getAttribute("aria-describedby")).toBe(note!.id);
+  act(() => buttons.find((button) => button.textContent === "Change model")!.click());
+  expect(onOpenModels).toHaveBeenCalledOnce();
+  expect(container!.querySelector('[aria-label="Dismiss error"]')).not.toBeNull();
+
+  rerenderComposer({ sendError: "Could not send the message.", imageConfirmation: false });
+  expect(error.className).toContain("text-destructive");
+  expect(error.className).not.toContain("text-warning");
+  expect(error.textContent).not.toContain("The bot can use the file but won't see the picture.");
+  expect(
+    Array.from(error.querySelectorAll("button")).some(
+      (button) => button.textContent === "Change model",
+    ),
+  ).toBe(false);
 });
 
 describe("a dropped folder or archive", () => {

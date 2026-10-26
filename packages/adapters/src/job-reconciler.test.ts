@@ -3,11 +3,8 @@ import { stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { returnBotMessageOutcome } from "./bot-messages.js";
-import {
-  createJobReconciler,
-  createPostgresReconciliationLeadership,
-  type ReconciliationLeadership,
-} from "./job-reconciler.js";
+import type { ReconciliationLeadership } from "./job-reconciler.js";
+import { createJobReconciler, createPostgresReconciliationLeadership } from "./job-reconciler.js";
 import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));

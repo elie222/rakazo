@@ -438,10 +438,14 @@ is unreachable or takes longer than three seconds, the password is accepted and 
 ### Billing
 
 Billing stays off unless `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are both set (see
-`.env.example`). Enabling billing offers free use with a personal model connection or monthly
-model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-ups use the same amounts.
-Monthly credits expire at the end of their service period; one-time top-ups do not expire.
-The hosted computer is included in both paths.
+`.env.example`). Enabling billing offers a monthly own-key plan for a personal model connection or
+monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-ups use the same
+amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
+The hosted computer is included in both paths, and monthly credits include the own-key plan.
+
+`BYOK_MONTHLY_PRICE_CENTS` in `@rakazo/contracts` sets the own-key plan's price; `null` makes it
+free and ends paid own-key subscriptions at their period end. Runs check access on the server, so a
+lapsed organization's bots and routines stop until it subscribes.
 
 Configure the managed default model through the existing model connection settings. The default
 OpenRouter model is Luna 6; customers can choose another available model, with its usage deducted
@@ -671,22 +675,24 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ### Ollama Cloud
 
-In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration. `ollama.com` is the only public host allowed without `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1`.
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
 Add optional request headers under **Advanced**; values are stored encrypted, and only their names
 are shown afterwards.
-Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
+Public hosts and ordinary hostnames need HTTPS when they receive an API key or custom headers,
+and must resolve only to public addresses. Set `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` on the API
+and worker to block them.
 Literal private IP, loopback, and `host.docker.internal` targets do not, but only the deployment
 owner can use them, checked on save, on model discovery, and on every run. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow them for every user.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
-(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts do not
-need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
+(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts ignore
+`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you
@@ -756,6 +762,26 @@ Add only origins you trust: a script these settings allow runs with the signed-i
 Browsers report what the policy blocks to `/api/csp-report`. The API writes one `csp.violation`
 warning per violation, with the directive, the blocked origin and the page path, so search your logs
 for it to find the origins to add.
+
+### Menu links
+
+`RAKAZO_NAV_LINKS` adds items to the account menu that open a page from the same domain inside the
+web app, such as an internal tool your reverse proxy serves next to Rakazo. Set it on the API:
+
+```bash
+RAKAZO_NAV_LINKS='[{"id":"clients","label":"Clients","path":"/ext/clients/"}]'
+```
+
+Each `id` is lowercase letters, digits and dashes, and becomes `/app/x/<id>`. `path` must start with a
+single `/` and must not be under `/app`, `/api`, `/rpc`, `/novnc` or `/health`. Route it before the
+catch-all in your proxy, for example `handle /ext/* { reverse_proxy office:8080 }` in
+`Caddyfile.prod`. A malformed value stops the API from starting.
+
+Pages open sandboxed with an opaque origin, so they cannot read Rakazo's pages or act with the
+signed-in user's session; that also blocks their own cookies and storage. Add `"trusted": true` to a
+link only for a service you control: a trusted page runs with the signed-in user's access, like a
+script allowed by `RAKAZO_CSP_SCRIPT_SRC`. The page must allow framing by the app
+(`frame-ancestors 'self'`). Links appear in the web app only; the desktop and mobile apps hide them.
 
 ### Security events
 
@@ -1180,7 +1206,14 @@ objects within the hour, along with any revision an interrupted save left behind
 **The cache.** `DATA_DIR/homes` holds a copy of homes in use. A copy whose revision matches the
 bucket is downloaded again whenever it is missing, so you can remove it. Docker computers work
 directly in their copy until their next save, so only remove the copy of a Docker computer that
-is stopped. Remote computers' copies always match the bucket once saved.
+is stopped. Remote computers save straight from their files to the bucket; the worker removes
+their copies after an hour unread. Homes never saved to the bucket keep their only copy.
+
+**Saving large homes.** A save streams files through `DATA_DIR/staging` on the data volume,
+so memory use does not grow with file or home size. A computer with more than 20 GiB or a
+million files, or more than the volume has free, is not saved and keeps running; the worker logs
+`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Staging left by a killed
+process is removed at startup and by the worker within minutes.
 
 ### Moving existing homes
 
@@ -2052,6 +2085,10 @@ PASSKEY_ANDROID_CERT_SHA256=AA:BB:...:FF
 Until a platform's setting is set, the native app on that platform hides passkeys for this
 server. Both files are served through the web origin, so a reverse proxy in front of the web container
 must pass `/.well-known/` through to it.
+
+## Spoken summaries
+
+Off by default. Set `VOICE_SUMMARY_MIN_CHARS` (for example `600`) to have a voice read a bot reply longer than that many characters as a short summary written by that bot's own model. Each summary is an extra model call billed to the bot. The chat keeps the full reply, and if the summary call fails the full reply is read.
 
 ## Upload size
 

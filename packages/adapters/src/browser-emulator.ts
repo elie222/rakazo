@@ -1,4 +1,5 @@
-import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
+import type { FakeBrowserProviderOptions } from "./fake-browser.js";
+import { FakeBrowserProvider } from "./fake-browser.js";
 
 /**
  * Offline emulator for the page-browser adapter slot. Same behavior as fake;

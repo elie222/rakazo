@@ -344,6 +344,22 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           deps.modelConnectionFetch,
           signal,
         );
+        const saved = parseModelSecret(plaintext);
+        const modelId =
+          usableModelId(input.modelId) ?? defaultCatalogModelId(input.provider, plaintext);
+        if (saved.kind === "api_key" && modelId && deps.modelConnectionCheck) {
+          await deps.modelConnectionCheck(
+            {
+              provider: input.provider,
+              id: modelId,
+              apiKey: saved.key,
+              accountId: saved.accountId,
+              gatewayId: saved.gatewayId,
+              maxTokens: saved.maxTokens,
+            },
+            { fetch: deps.modelConnectionFetch, signal },
+          );
+        }
       }
     } catch (error) {
       throw new ORPCError("BAD_REQUEST", {

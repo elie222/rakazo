@@ -469,7 +469,7 @@ async function main() {
       timeout: 120_000,
     });
     // Import runtime modules only after generation; their barrel exports load Prisma.
-    const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const { runTrial } = await import("../evals/runner.js");
     const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");

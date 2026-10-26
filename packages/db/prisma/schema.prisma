@@ -1128,6 +1128,9 @@ model Computer {
   homeRevision            String                   @default("empty")
   /// When the sandbox was read for `homeRevision`; null when an older release saved it.
   homeRevisionAt          DateTime?
+  /// When a damaged system last made Rakazo stop and start the computer by itself. Tried once
+  /// until a later save shows the computer works again.
+  autoRecoveredAt         DateTime?
   /// Object storage only: random id naming the home's objects, its data key (wrapped by the
   /// space key) and the revision stored there. Deleting the computer deletes the key.
   homeStorageId           String?                  @unique
@@ -1695,6 +1698,7 @@ model ModelCreditAccount {
   mode                  String?
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
+  byokFreeUntil         DateTime?
   entries               ModelCreditEntry[]
   lots                  ModelCreditLot[]
   createdAt             DateTime           @default(now())

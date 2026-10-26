@@ -1,7 +1,7 @@
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
-import { isLanOrLocalHost } from "./endpoint";
 import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
@@ -19,15 +19,6 @@ export const SCREEN_URL_RETRY_DELAY_MS = 400;
 export const SCREEN_URL_RENEW_MS = 50 * 60_000;
 
 export type ComputerStatus = ContractComputerStatus;
-
-function isLocalHostname(hostname: string) {
-  return (
-    hostname === "127.0.0.1" ||
-    hostname === "localhost" ||
-    hostname === "[::1]" ||
-    hostname === "::1"
-  );
-}
 
 export async function readScreenUrl(
   request: () => Promise<{ url: string | null }>,
@@ -65,10 +56,10 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
     const api = new URL(apiBase);
-    if (isLocalHostname(parsed.hostname) && !isLocalHostname(api.hostname)) {
+    if (isLocalhostOrLoopbackIp(parsed.hostname) && !isLocalhostOrLoopbackIp(api.hostname)) {
       parsed.hostname = api.hostname;
     }
-    if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) return null;
+    if (parsed.protocol === "http:" && !isPrivateNetworkHost(parsed.hostname)) return null;
     return parsed.toString();
   } catch {
     return null;

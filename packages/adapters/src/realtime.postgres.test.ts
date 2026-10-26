@@ -1,6 +1,7 @@
 import { Client, Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { PostgresRealtimeFanout, type RealtimeListenerClient } from "./realtime.js";
+import type { RealtimeListenerClient } from "./realtime.js";
+import { PostgresRealtimeFanout } from "./realtime.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;

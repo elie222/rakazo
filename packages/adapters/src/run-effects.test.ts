@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { legacyPiToolCallId, recordEffect, runScopedToolExecutionId } from "./executor.js";
+import { legacyPiToolCallId, recordEffect, runScopedToolExecutionId } from "./run-effects.js";
 
 type Effect = {
   id: string;

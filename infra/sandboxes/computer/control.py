@@ -133,6 +133,14 @@ def allowed_xdotool_argv(argv):
     if op == "mousemove":
         if len(argv) == 7 and argv[4] == "--" and _is_int_string(argv[5]) and _is_int_string(argv[6]):
             return True
+        if (
+            len(argv) == 11
+            and argv[4] == "--"
+            and ASCII_INT.fullmatch(argv[5])
+            and ASCII_INT.fullmatch(argv[6])
+            and _allowed_wheel(argv[7:])
+        ):
+            return True
         return (
             len(argv) == 9
             and argv[4] == "--"
@@ -146,14 +154,25 @@ def allowed_xdotool_argv(argv):
     if op == "type":
         return len(argv) == 7 and argv[4] == "--clearmodifiers" and argv[5] == "--"
     if op == "click":
-        return (
-            len(argv) == 7
-            and argv[4] == "--repeat"
-            and argv[5].isdigit()
-            and 1 <= int(argv[5]) <= 20
-            and argv[6] in ("4", "5")
-        )
+        return len(argv) == 7 and _allowed_wheel(argv[3:])
     return False
+
+
+# ASCII digits only: str.isdigit() also accepts characters such as "²" that int() rejects.
+ASCII_INT = re.compile(r"-?[0-9]+")
+ASCII_COUNT = re.compile(r"[0-9]+")
+
+
+def _allowed_wheel(argv):
+    """A wheel scroll: click --repeat N with the up (4), down (5), left (6) or right (7) button."""
+    return (
+        len(argv) == 4
+        and argv[0] == "click"
+        and argv[1] == "--repeat"
+        and ASCII_COUNT.fullmatch(argv[2]) is not None
+        and 1 <= int(argv[2]) <= 20
+        and argv[3] in ("4", "5", "6", "7")
+    )
 
 
 def control_command_index(argv):

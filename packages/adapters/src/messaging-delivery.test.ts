@@ -2,12 +2,12 @@ import type { AdapterContext, MessagingSurface } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { MessagingSendError } from "./chat-sdk-surface.js";
+import type { MessagingDeliveryDeps } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
   deliverMessagingOutbound,
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_OUTBOUND_MAX_ATTEMPTS,
-  type MessagingDeliveryDeps,
 } from "./messaging-delivery.js";
 
 const context: AdapterContext = {
@@ -1453,4 +1453,100 @@ it("drops a queued connection invite after opt-out", async () => {
   });
   await deliverMessagingOutbound(deps, {}, context);
   expect(deps.sendToThread).not.toHaveBeenCalled();
+});
+
+describe("accepted outbound bookkeeping failures", () => {
+  const cases = [
+    ["group", "handle"],
+    ["intro", "handle"],
+    ["invite", "counter"],
+    ["text", "handle"],
+    ["text", "counter"],
+    ["attachment", "handle"],
+    ["attachment", "counter"],
+  ] as const;
+
+  function pending(kind: string) {
+    return createDeps({
+      identity: { provider: "telegram", dmThreadId: "telegram:123" },
+      outboundRows: [
+        {
+          id: "out-accepted",
+          idempotencyKey:
+            kind === "invite"
+              ? "connect:bot-1:bot-9"
+              : kind === "attachment"
+                ? "msg:m-1:file:art-1"
+                : "msg:m-1",
+          sourceMessageId: "m-1",
+          kind: kind === "group" || kind === "intro" ? kind : "dm",
+          identityId: kind === "group" || kind === "intro" ? null : "mi-1",
+          threadId: kind === "group" || kind === "intro" ? "telegram:group" : null,
+          body: kind === "attachment" ? "" : "Hello",
+          status: "pending",
+          attempts: 0,
+          providerHandle: null,
+          nextAttemptAt: null,
+          createdAt: new Date(1_000),
+        },
+      ],
+      artifacts: [
+        {
+          id: "art-1",
+          spaceId: "ws-1",
+          userId: "user-1",
+          name: "chart.png",
+          mimeType: "image/png",
+          storageKey: "chart",
+        },
+      ],
+    });
+  }
+
+  it.each(cases)("does not resend accepted %s after a %s save failure", async (kind, failure) => {
+    const deps = pending(kind);
+    const error = new Error("bookkeeping unavailable");
+    if (failure === "counter") {
+      deps.prisma.messagingIdentity.update.mockRejectedValueOnce(error);
+    } else if (kind === "group" || kind === "intro") {
+      deps.prisma.messagingOutbound.update.mockRejectedValueOnce(error);
+    } else {
+      const update = deps.prisma.messagingOutbound.updateMany.getMockImplementation()!;
+      deps.prisma.messagingOutbound.updateMany
+        .mockImplementationOnce(update)
+        .mockRejectedValueOnce(error);
+    }
+    await deliverMessagingOutbound(deps, {}, context);
+    // Past every send retry and abandoned-part deadline, the accepted row stays claimed.
+    deps.rows[0]!.nextAttemptAt = new Date(0);
+    deps.rows[0]!.updatedAt = new Date(0);
+    await deliverMessagingOutbound(deps, {}, context);
+    expect(deps.sendToThread).toHaveBeenCalledTimes(1);
+    expect(deps.rows[0]!.status).toBe("sent");
+    expect(deps.rows[0]!.attempts).toBe(0);
+    expect(deps.rows[0]!.providerHandle).toBe(failure === "counter" ? "handle-out-1" : null);
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+    expect(deps.rows).toHaveLength(1);
+  });
+
+  it.each(["group", "intro", "text", "attachment"])(
+    "still retries %s when the provider fails before acceptance",
+    async (kind) => {
+      const deps = pending(kind);
+      deps.sendToThread.mockRejectedValueOnce(new Error("provider unavailable"));
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.rows[0]!.status).toBe("pending");
+      expect(deps.rows[0]!.attempts).toBe(1);
+      expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          name: "messaging.deliver",
+          availableAt: deps.rows[0]!.nextAttemptAt,
+        }),
+      );
+      deps.rows[0]!.nextAttemptAt = new Date(0);
+      await deliverMessagingOutbound(deps, {}, context);
+      expect(deps.sendToThread).toHaveBeenCalledTimes(2);
+      expect(deps.rows[0]!.status).toBe("sent");
+    },
+  );
 });

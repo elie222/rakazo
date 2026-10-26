@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertVolumeSubpathSupport,
   COMPUTER_IMAGE,
+  COMPUTER_IMAGE_CONTEXT_FILES,
   computerBridgeNameFor,
   computerDnsMatches,
   computerHomeStorage,
@@ -254,6 +256,13 @@ describe("graphical computer spec", () => {
     expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", undefined])).toBe(false);
     expect(legacyNetworkOwnedSolelyBy("a/b", ["a/b", "ab"])).toBe(false);
     expect(legacyNetworkOwnedSolelyBy("ab", [undefined, undefined])).toBe(false);
+  });
+
+  it("builds the local image from files that exist in the computer context", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    for (const file of COMPUTER_IMAGE_CONTEXT_FILES) {
+      expect(existsSync(path.join(root, file)), file).toBe(true);
+    }
   });
 
   it("ships a browser desktop, not a fullscreen terminal", () => {

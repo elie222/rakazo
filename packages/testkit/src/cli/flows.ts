@@ -118,7 +118,7 @@ async function main() {
     });
     if (sandbox.provider === "docker") {
       // An isolated supervisor, never a dev one another checkout may be running.
-      const { supervisorApp } = await import("../../../../infra/sandboxes/supervisor/src/index.js");
+      const { supervisorApp } = await import("@rakazo/sandbox-supervisor");
       const server = serve({ fetch: supervisorApp.fetch, hostname: "127.0.0.1", port: 0 });
       await new Promise<void>((resolve, reject) => {
         if (server.listening) return resolve();
@@ -129,7 +129,7 @@ async function main() {
       process.env.SANDBOX_SUPERVISOR_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     }
     // Import after generation; the app's barrel exports load Prisma.
-    const { createApp } = await import("../../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const { runFlow } = await import("../flows/runner.js");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,

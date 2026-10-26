@@ -6,13 +6,14 @@ import {
   commandVariableProblem,
   encodeLoginSecret,
 } from "@rakazo/contracts";
+import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RotateCcw, X } from "lucide-react";
 import { useId, useState } from "react";
 import { InfoTooltip } from "../../components/InfoTooltip";
-import { fetchFresh, useSpaceQueries, writeSaved } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query";
 import { useSpaceRpc } from "../../lib/space-rpc";
 import { errorText } from "../../lib/user-error";
 

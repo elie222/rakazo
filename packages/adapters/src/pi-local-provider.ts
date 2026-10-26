@@ -1,9 +1,5 @@
-import {
-  createProvider,
-  type Model,
-  type MutableModels,
-  type Provider,
-} from "@earendil-works/pi-ai";
+import type { Model, MutableModels, Provider } from "@earendil-works/pi-ai";
+import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 
 import { declaredVisionModelIds, inputModalities } from "./model-modalities.js";

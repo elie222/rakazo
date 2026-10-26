@@ -1,15 +1,16 @@
 import { ORPCError } from "@orpc/server";
 import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
 import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import type { SkillSource } from "@rakazo/core";
 import {
   buildSkillMd,
   findSkillByName,
   isSkillReadOnly,
   mergeBuiltinSkills,
   parseSkillMd,
-  type SkillSource,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 
 type AgentSkillRow = {
   id: string;

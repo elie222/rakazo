@@ -86,7 +86,7 @@ const scheduleCreateProperties = {
   prompt: {
     type: "string",
     description:
-      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. This prompt is all a future run knows: state the user\'s full standing request, and keep each standing item and write anything decided only for this time as a rule ("2 oat milk, or 2 almond milk if oat milk is out of stock", not "2 almond milk"; "cheddar, skipped if out of stock", not "omit cheddar").',
+      'Concrete steps for when the schedule fires: what to use, what to extract, and how to report. Name the connected plugin tools to call when one covers the data (e.g. GITHUB_LIST_RELEASES for owner/repo), preferring them over the computer browser or web search; for a website without one, describe the pages and actions to take in the computer\'s browser. This prompt is all a future run knows, and it runs in new circumstances: write the user\'s lasting request in full, keeping every standing item and preference, including their swap and skip rules. A decision that only fit this time, such as an item swapped or skipped because it was out of stock or anything the user said "this week" or "this time" about, becomes a condition, never a permanent change ("skip sourdough if it is out of stock", not "skip sourdough").',
   },
   timezone: { type: "string", description: "IANA timezone (default: the user's timezone)." },
 };
@@ -252,7 +252,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent).",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent). Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
     inputSchema: {
       type: "object",
       properties: {
@@ -283,7 +283,7 @@ export const builtinAgentTools: ConnectorTool[] = [
                   text: { type: "string" },
                   key: { type: "string" },
                   modifiers: { type: "array", items: { type: "string" } },
-                  direction: { type: "string", enum: ["up", "down"] },
+                  direction: { type: "string", enum: ["up", "down", "left", "right"] },
                   amount: { type: "number" },
                   ms: { type: "number" },
                   application: { type: "string" },
@@ -1017,7 +1017,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds.',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today.',
     inputSchema: scheduleCreateInputSchema,
   },
   {

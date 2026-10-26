@@ -67,8 +67,8 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { isSubagentToolExecution } from "./executor.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
+import { isSubagentToolExecution } from "./run-effects.js";
 
 describe("helpers know who they are talking to", () => {
   beforeEach(async () => {

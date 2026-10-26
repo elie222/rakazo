@@ -284,7 +284,7 @@ export function accountRoutes(ctx: RouterContext) {
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
-        prepareVoice(deps, context.actor, input),
+        prepareVoice(deps, context.actor, { ...input, signal: context.signal }),
       ),
     },
   };
