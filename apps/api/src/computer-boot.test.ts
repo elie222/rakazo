@@ -1,4 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
+import { SandboxDamagedError } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
 import { ComputerBusyError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -137,5 +138,84 @@ describe("computer boot", () => {
     expect(response?.status).toBe(404);
     expect(lifecycle.provisionComputer).toHaveBeenCalledOnce();
     expect(lifecycle.releaseComputerExecutionLease).toHaveBeenCalledOnce();
+  });
+});
+
+describe("computer stop", () => {
+  async function stopDamaged(stop: ReturnType<typeof vi.fn>) {
+    const computer = {
+      id: "computer-1",
+      state: "running",
+      providerRef: "boat-1",
+      kind: "boat",
+      homeKey: "home-1",
+      scope: "dedicated",
+      controlLeaseId: null,
+    };
+    const prisma = {
+      bot: { findFirst: vi.fn().mockResolvedValue({ ...stoppedBot, computer }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn().mockResolvedValue(computer),
+      },
+      run: { findFirst: vi.fn().mockResolvedValue(null) },
+      computerExecutionLease: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+      computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      // biome-ignore lint/correctness/useYield: the damaged computer fails before its first file
+      exportWorkspace: async function* () {
+        throw new SandboxDamagedError();
+      },
+      stop,
+    };
+    const deps = {
+      ...routerDeps(prisma),
+      sandbox,
+      home: {},
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as RouterDeps;
+    const { response } = await new RPCHandler(createRouter(deps)).handle(
+      new Request("https://api.example.test/rpc/computer/stop", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1" } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return { response, prisma };
+  }
+
+  it("stops a damaged computer and records it stopped", async () => {
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const { response, prisma } = await stopDamaged(stop);
+
+    expect(response?.status).toBe(200);
+    expect(stop).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      discardUnsaved: true,
+    });
+    expect(prisma.computer.update).toHaveBeenCalledWith({
+      where: { id: "computer-1" },
+      data: expect.objectContaining({ state: "stopped" }),
+    });
+    expect(prisma.computerRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endReason: "stopped" }) }),
+    );
+  });
+
+  it("marks a damaged computer whose stop fails as errored", async () => {
+    const stop = vi.fn().mockRejectedValue(new Error("Boat refused the stop"));
+    const { response, prisma } = await stopDamaged(stop);
+
+    expect(response?.status).toBe(500);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(prisma.computer.updateMany).toHaveBeenLastCalledWith({
+      where: { id: "computer-1", state: "suspending" },
+      data: { state: "error" },
+    });
+    expect(prisma.computer.update).not.toHaveBeenCalled();
   });
 });
