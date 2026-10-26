@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { judgeFlow, mcpApprovalAsk, mcpCardRequest, mcpPendingCard, wakeIsDue } from "./runner.js";
+import {
+  answeredToolApproval,
+  askPendingCard,
+  judgeFlow,
+  mcpApprovalAsk,
+  mcpCardRequest,
+  mcpPendingCard,
+  wakeIsDue,
+} from "./runner.js";
 
 const now = Date.parse("2026-10-25T12:00:00Z");
 const day = 24 * 60 * 60 * 1000;
@@ -17,6 +25,38 @@ describe("forcing a routine wake", () => {
   it("never wakes a routine with no next run, and always wakes without a horizon", () => {
     expect(wakeIsDue(null, now, 3 * day)).toBe(false);
     expect(wakeIsDue(new Date(now + 30 * day), now)).toBe(true);
+  });
+});
+
+describe("a question card", () => {
+  const message = { id: "message", runId: "run" };
+  const toolCard = {
+    kind: "ask" as const,
+    text: "Run add_task on Tasklog?",
+    approvalEffectId: "effect",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  };
+  const question = { kind: "ask" as const, text: "Add it now?" };
+
+  it("marks a card approving one of the bot's tool calls", () => {
+    expect(askPendingCard(message, toolCard)).toMatchObject({ kind: "ask", toolApproval: true });
+    expect(askPendingCard(message, question)).toMatchObject({ kind: "ask", toolApproval: false });
+  });
+
+  it("skips answered cards and cards outside a run", () => {
+    expect(askPendingCard(message, { ...toolCard, status: "answered" })).toBeUndefined();
+    expect(askPendingCard({ id: "message", runId: null }, toolCard)).toBeUndefined();
+  });
+
+  it("records only a button press on a tool approval card as answering it", () => {
+    const tool = askPendingCard(message, toolCard)!;
+    const plain = askPendingCard(message, question)!;
+    expect(answeredToolApproval(tool, { kind: "choose", actionId: "allow" })).toBe(true);
+    expect(answeredToolApproval(tool, { kind: "say", text: "go on" })).toBe(false);
+    expect(answeredToolApproval(plain, { kind: "choose", actionId: "yes" })).toBe(false);
   });
 });
 

@@ -171,23 +171,8 @@ export async function runFlow<World>(
           pending = mcp;
           continue;
         }
-        if (block.kind !== "ask" || block.status === "answered" || block.dismissed) continue;
-        if (!message.runId) continue;
-        pending = {
-          kind: "ask",
-          runId: message.runId,
-          messageId: message.id,
-          toolApproval: Boolean(block.approvalEffectId),
-          ask: {
-            text: block.text,
-            ...(block.detail ? { detail: block.detail } : {}),
-            ...(block.actions?.length
-              ? { actions: block.actions.map(({ id, label }) => ({ id, label })) }
-              : {}),
-            ...(block.input ? { input: block.input } : {}),
-            ...(block.purpose ? { purpose: String(block.purpose) } : {}),
-          },
-        };
+        const ask = askPendingCard(message, block);
+        if (ask) pending = ask;
       }
       if (seenMessages.has(message.id)) continue;
       const text = message.blocks
@@ -437,7 +422,7 @@ export async function runFlow<World>(
               : move.kind === "choose"
                 ? `[pressed ${card?.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId}]`
                 : "[filled secret]",
-          ...(state.kind === "ask" && state.toolApproval ? { toolApproval: true } : {}),
+          ...(answeredToolApproval(state, move) ? { toolApproval: true } : {}),
           ...(wake ? { wake } : {}),
         });
         state = await settle(wake);
@@ -617,6 +602,38 @@ export async function judgeFlow(
       reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+/** The open question card in this block, as the person can answer it. */
+export function askPendingCard(
+  message: { id: string; runId?: string | null },
+  block: MessageBlock,
+) {
+  if (block.kind !== "ask" || block.status === "answered" || block.dismissed) return undefined;
+  if (!message.runId) return undefined;
+  return {
+    kind: "ask" as const,
+    runId: message.runId,
+    messageId: message.id,
+    toolApproval: Boolean(block.approvalEffectId),
+    ask: {
+      text: block.text,
+      ...(block.detail ? { detail: block.detail } : {}),
+      ...(block.actions?.length
+        ? { actions: block.actions.map(({ id, label }) => ({ id, label })) }
+        : {}),
+      ...(block.input ? { input: block.input } : {}),
+      ...(block.purpose ? { purpose: String(block.purpose) } : {}),
+    } satisfies PendingAsk,
+  };
+}
+
+/** Whether the person's move was a button press on a card approving one of the bot's tool calls. */
+export function answeredToolApproval(
+  state: { kind: string; toolApproval?: boolean },
+  move: UserMove,
+): boolean {
+  return state.kind === "ask" && state.toolApproval === true && move.kind === "choose";
 }
 
 /** The pending MCP approval card in this block, as the person can answer it. */
