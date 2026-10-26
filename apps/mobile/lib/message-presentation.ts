@@ -1,5 +1,4 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
@@ -132,11 +131,4 @@ export function quotableMessageSegments(
   }
   byRole.set(role, segments);
   return segments;
-}
-
-/** Cap a selection at the contract limit without splitting a surrogate pair. */
-export function truncateQuoteExcerpt(value: string): string {
-  const truncated = value.slice(0, REPLY_QUOTE_MAX_LENGTH);
-  const last = truncated.charCodeAt(truncated.length - 1);
-  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
 }

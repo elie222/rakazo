@@ -1,10 +1,11 @@
+import { truncateReplyQuote } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useMemo, useState } from "react";
 import { Modal, Platform, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileMessage } from "../../lib/api";
 import { t } from "../../lib/i18n";
-import { quotableMessageSegments, truncateQuoteExcerpt } from "../../lib/message-presentation";
+import { quotableMessageSegments } from "../../lib/message-presentation";
 import { useMobileTokens } from "../../lib/native";
 import { NativeActionButton } from "../native-action-button";
 
@@ -30,7 +31,7 @@ export function QuoteSheet({
   const start = selection ? Math.min(selection.start, selection.end) : 0;
   const end = selection ? Math.max(selection.start, selection.end) : 0;
   const excerpt =
-    selectedText === undefined ? "" : truncateQuoteExcerpt(selectedText.slice(start, end).trim());
+    selectedText === undefined ? "" : truncateReplyQuote(selectedText.slice(start, end).trim());
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onCancel}>
