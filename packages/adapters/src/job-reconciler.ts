@@ -322,11 +322,10 @@ export function createJobReconciler(
       // Scheduled work drains several pages per tick, yielding between pages.
       let routinesDone = false;
       let controlsDone = false;
-      for (let page = 0; page < maxPagesPerPass && !stopping; page += 1) {
-        if (page > 0) {
-          await setImmediate();
-          if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
-        }
+      for (let page = 0; page < maxPagesPerPass; page += 1) {
+        if (page > 0) await setImmediate();
+        if (stopping) return;
+        if (page > 0 && deps.leadership && !(await deps.leadership.tryAcquire())) return;
         controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
         const routineCursorFilter = routineCursor
           ? {
