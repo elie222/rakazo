@@ -257,14 +257,30 @@ describe("runDocker", () => {
     expect(lines.sort()).toEqual(["a", "b", "err"]);
   });
 
-  it("keeps the last rendering of carriage-return progress lines", async () => {
+  it.each(["stdout", "stderr"] as const)("emits CRLF-delimited %s lines", async (stream) => {
     const lines: string[] = [];
-    await runDocker(node, ["-e", 'process.stdout.write("10%\\r50%\\r100%\\n")'], {
-      ...options,
-      onLine: (line) => lines.push(line),
-    });
-    expect(lines).toEqual(["100%"]);
+    const output = "a\r\nb\r\n";
+    const result = await runDocker(
+      node,
+      ["-e", `process.${stream}.write(${JSON.stringify(output)})`],
+      { ...options, onLine: (line) => lines.push(line) },
+    );
+    expect(result).toEqual({ code: 0, stdout: "", stderr: "", [stream]: output });
+    expect(lines).toEqual(["a", "b"]);
   });
+
+  it.each(["\n", "\r\n"])(
+    "keeps the last rendering of progress lines ending in %j",
+    async (eol) => {
+      const lines: string[] = [];
+      await runDocker(
+        node,
+        ["-e", `process.stdout.write(${JSON.stringify(`10%\r50%\r100%${eol}`)})`],
+        { ...options, onLine: (line) => lines.push(line) },
+      );
+      expect(lines).toEqual(["100%"]);
+    },
+  );
 
   it("kills a command that exceeds its timeout", async () => {
     const started = Date.now();

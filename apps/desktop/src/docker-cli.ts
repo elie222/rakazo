@@ -199,7 +199,7 @@ export function runDocker(
       child[stream]?.on("data", (chunk: Buffer) => {
         const text = chunk.toString("utf8");
         captured[stream] += text;
-        const parts = (pending[stream] + text).split("\n");
+        const parts = (pending[stream] + text).split(/\r?\n/);
         pending[stream] = parts.pop() ?? "";
         for (const part of parts) emit(part);
       });
