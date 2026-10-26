@@ -181,6 +181,7 @@ export async function querySpaceSearch(
   }
 
   const contentBudget = Math.max(0, SEARCH_LIMIT - conversationHits.length);
+  const full = () => contentHits.length >= contentBudget;
 
   const artifacts = await prisma.artifact.findMany({
     where: {
@@ -222,7 +223,7 @@ export async function querySpaceSearch(
     );
   }
 
-  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
+  if (full()) return [...conversationHits, ...contentHits];
 
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
@@ -262,7 +263,7 @@ export async function querySpaceSearch(
     );
   }
 
-  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
+  if (full()) return [...conversationHits, ...contentHits];
 
   const routines = await prisma.routine.findMany({
     where: {
@@ -292,10 +293,9 @@ export async function querySpaceSearch(
     );
   }
 
-  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
+  if (full()) return [...conversationHits, ...contentHits];
 
   const match = await messageMatch(prisma, actor.spaceId, query);
-  const full = () => contentHits.length >= contentBudget;
   for (let page = 0; page < match.pages && !full(); page += 1) {
     const messageRows = await openMessages(
       prisma,
