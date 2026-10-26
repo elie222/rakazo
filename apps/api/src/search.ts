@@ -222,6 +222,8 @@ export async function querySpaceSearch(
     );
   }
 
+  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
+
   const groupArtifacts = await prisma.artifact.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -260,6 +262,8 @@ export async function querySpaceSearch(
     );
   }
 
+  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
+
   const routines = await prisma.routine.findMany({
     where: {
       spaceId: actor.spaceId,
@@ -287,6 +291,8 @@ export async function querySpaceSearch(
       contentBudget,
     );
   }
+
+  if (contentHits.length >= contentBudget) return [...conversationHits, ...contentHits];
 
   const match = await messageMatch(prisma, actor.spaceId, query);
   const full = () => contentHits.length >= contentBudget;
