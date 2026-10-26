@@ -285,6 +285,52 @@ describe("skill prompt helpers", () => {
     expect(extractRoutineSkillMentions("@garden", [" ", ""])).toEqual([]);
   });
 
+  it.each(["，", "。", "、", "；", "：", "！", "？", "）", "】", "」", "』", "》"])(
+    "loads a Chinese skill before %s without leaving its mention behind",
+    (punctuation) => {
+      const prompt = `@日报${punctuation}发送结果`;
+      const skills = [
+        {
+          name: "日报",
+          description: "Daily report",
+          source: "user" as const,
+          readOnly: false,
+          content: "Report instructions.",
+        },
+      ];
+      expect(extractRoutineSkillMentions(prompt, ["日", "日报"])).toEqual(["日报"]);
+      const expanded = expandSkillReferencesInPrompt(prompt, skills);
+      expect(expanded).toBe(`Use skill: 日报\n\nReport instructions.\n\n${punctuation}发送结果`);
+      expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(
+        `@日报 2${punctuation}发送结果`,
+      );
+    },
+  );
+
+  it.each(["，", "。", "、", "；", "：", "！", "？", "（", "【", "「", "『", "《"])(
+    "recognizes and renames a skill after %s",
+    (punctuation) => {
+      const prompt = `执行${punctuation}@日报。`;
+      expect(extractRoutineSkillMentions(prompt, ["日报"])).toEqual(["日报"]);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(
+        `执行${punctuation}@日报 2。`,
+      );
+      expect(extractRoutineSkillMentions(`Run${punctuation}@Report。`)).toEqual(["Report"]);
+    },
+  );
+
+  it("keeps adjacent CJK mentions distinct and does not match inside words or email addresses", () => {
+    expect(extractRoutineSkillMentions("@日报，@周报。", ["日报", "周报"])).toEqual([
+      "日报",
+      "周报",
+    ]);
+    for (const prompt of ["邮箱@日报。", "Email@日报。", "@日报扩展。", "@日报_扩展。"]) {
+      expect(extractRoutineSkillMentions(prompt, ["日报"])).toEqual([]);
+      expect(renameRoutineSkillMentions(prompt, new Map([["日报", "日报 2"]]))).toBe(prompt);
+    }
+  });
+
   it("keeps the catalog name when regex case matching differs from lowercasing", () => {
     expect(extractRoutineSkillMentions("@ς", ["Σ"])).toEqual(["Σ"]);
     expect(extractRoutineSkillMentions("@ς tools", ["Σ", "Σ tools"])).toEqual(["Σ tools"]);
