@@ -347,15 +347,31 @@ const SLACK_PERMANENT_ERRORS = new Set([
 /** Meta 131047: outside the 24-hour window only a template can reach the user. */
 const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
 
+/** WhatsApp and Telegram both cap a text message at 4096 UTF-16 units. */
+const MESSAGE_PART_LIMIT = 4096;
+
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
-  if (provider === "whatsapp") return splitMessage(body);
+  if (provider === "whatsapp") return splitKeepingPairs(body);
   if (provider !== "telegram" && !provider.startsWith("telegram-")) return [body];
 
   return splitTelegramPart(body);
 }
 
-const TELEGRAM_MESSAGE_LIMIT = 4096;
+/** Split like the SDK, which counts UTF-16 units, but never end a part on half an emoji. */
+function splitKeepingPairs(body: string): string[] {
+  const parts: string[] = [];
+  let rest = body;
+  while (rest.length > MESSAGE_PART_LIMIT) {
+    // The SDK's first part only depends on the first MESSAGE_PART_LIMIT units.
+    const [first = ""] = splitMessage(rest.slice(0, MESSAGE_PART_LIMIT + 1));
+    const part = first.length > 1 && /[\uD800-\uDBFF]$/.test(first) ? first.slice(0, -1) : first;
+    parts.push(part);
+    rest = rest.slice(part.length).trimStart();
+  }
+  return rest || parts.length === 0 ? [...parts, rest] : parts;
+}
+
 const telegramFormat = new TelegramFormatConverter();
 
 function splitTelegramPart(body: string, literal = false): string[] {
@@ -365,10 +381,8 @@ function splitTelegramPart(body: string, literal = false): string[] {
   // its plain-text fallback. Measure both payloads in UTF-16 units as it does.
   const payloads = [telegramFormat.fromMarkdown(markdown), plainText.trim() ? plainText : markdown];
   if (
-    markdown.length <= TELEGRAM_MESSAGE_LIMIT &&
-    payloads.every(
-      (text) => convertEmojiPlaceholders(text, "gchat").length <= TELEGRAM_MESSAGE_LIMIT,
-    )
+    markdown.length <= MESSAGE_PART_LIMIT &&
+    payloads.every((text) => convertEmojiPlaceholders(text, "gchat").length <= MESSAGE_PART_LIMIT)
   ) {
     return [markdown];
   }
@@ -377,15 +391,7 @@ function splitTelegramPart(body: string, literal = false): string[] {
   // consume literal backslashes. Oversized formatted replies use escaped text.
   if (!literal && plainText !== body) return splitTelegramPart(plainText, true);
 
-  const parts = splitMessage(body);
-  // The shared helper counts UTF-16 units but can cut between surrogate pairs.
-  for (let index = 0; index < parts.length - 1; index++) {
-    const part = parts[index]!;
-    if (/[\uD800-\uDBFF]$/.test(part)) {
-      parts[index] = part.slice(0, -1);
-      parts[index + 1] = part.slice(-1) + parts[index + 1]!;
-    }
-  }
+  const parts = splitKeepingPairs(body);
   if (parts.length > 1) return parts.flatMap((part) => splitTelegramPart(part, literal));
 
   // Refine only chunks that grow beyond the limit during rendering.
