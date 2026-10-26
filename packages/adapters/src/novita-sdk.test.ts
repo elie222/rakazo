@@ -119,6 +119,15 @@ describe("Novita SDK translation", () => {
     expect(handle.disconnect).toHaveBeenCalledOnce();
   });
 
+  it("terminates a command after a broken stream without replaying it", async () => {
+    const { desktop, handle, source } = fixture();
+    const failure = new Error("connection reset");
+    handle.wait.mockRejectedValueOnce(failure);
+    await expect(desktop.commands.run("side-effect", {})).rejects.toBe(failure);
+    expect(handle.kill).toHaveBeenCalledOnce();
+    expect(source.commands.run).toHaveBeenCalledOnce();
+  });
+
   it("retries a failed command kill without waiting for a stuck stream", async () => {
     const { desktop, handle, pause } = fixture();
     const controller = new AbortController();

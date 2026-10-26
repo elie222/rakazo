@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { DesktopSandbox } from "novita-sandbox";
-import { Novita, SandboxNotFoundError, TimeoutError } from "novita-sandbox";
+import { CommandExitError, Novita, SandboxNotFoundError, TimeoutError } from "novita-sandbox";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
 import type {
   CommandStartOpts,
@@ -148,10 +148,9 @@ async function runNovitaCommand(
     signal?.throwIfAborted();
     return result;
   } catch (error) {
-    const commandDeadline =
-      error instanceof TimeoutError &&
-      /^deadline_exceeded|exceeding 'timeoutMs'/.test(error.message);
-    if (!signal?.aborted && !commandDeadline) throw error;
+    // A non-zero command exit is complete. A broken stream or deadline says nothing
+    // about the remote process, so terminate it before reporting that failure.
+    if (!signal?.aborted && error instanceof CommandExitError) throw error;
     let killError: unknown;
     let killed = false;
     for (let attempt = 0; attempt < 3; attempt++) {
