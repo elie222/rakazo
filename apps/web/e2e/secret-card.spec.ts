@@ -197,7 +197,7 @@ test("keeps the line breaks of a pasted multi-line secret", async ({ page, conte
   await expect(secretField).toHaveValue("");
   await expect(secretField).toHaveAttribute("type", "password");
 
-  expect(answers).toEqual(["sk-single-line", key]);
+  await expect.poll(() => answers).toEqual(["sk-single-line", key]);
 });
 
 test("dismisses a secret card, resumes the bot and frees the composer", async ({
