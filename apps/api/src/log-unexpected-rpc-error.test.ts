@@ -1,6 +1,7 @@
 import { ORPCError, onError, os } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import {
+  SandboxDamagedError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   VoiceAccountError,
@@ -90,6 +91,25 @@ describe("logUnexpectedRpcError", () => {
         message: "rpc computer/boot computer unavailable",
         reason: "sandbox did not become ready",
       }),
+    ]);
+  });
+
+  it("returns a damaged computer's Recover message as a conflict without an error report", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const error = new SandboxDamagedError();
+
+    let thrown: unknown;
+    try {
+      handleRpcError(error, ["computer", "boot"]);
+    } catch (failure) {
+      thrown = failure;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect(thrown).toMatchObject({ code: "CONFLICT", status: 409, message: error.message });
+    expect(sink.events.map((event) => [event.level, event.message])).toEqual([
+      ["warn", "rpc computer/boot computer damaged"],
     ]);
   });
 
