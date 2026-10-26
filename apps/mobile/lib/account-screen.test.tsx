@@ -75,7 +75,34 @@ vi.mock("react-native", () => ({
     }),
   View: element("div"),
 }));
-vi.mock("@expo/ui/community/menu", () => ({ MenuView: element("div") }));
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    children,
+    actions,
+    onPressAction,
+  }: {
+    children?: ReactNode;
+    actions: Array<{ id: string; title: string }>;
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+  }) =>
+    createElement(
+      "div",
+      null,
+      children,
+      actions.map((action) =>
+        createElement(
+          "button",
+          {
+            key: action.id,
+            type: "button",
+            "data-menu-action": action.id,
+            onClick: () => onPressAction({ nativeEvent: { event: action.id } }),
+          },
+          action.title,
+        ),
+      ),
+    ),
+}));
 vi.mock("expo-router", () => {
   const router = { push: account.push, back: () => undefined };
   return {
@@ -201,6 +228,15 @@ vi.mock("./response-streaming", () => ({
 }));
 vi.mock("./section-name-prompt", () => ({ promptSectionName: vi.fn() }));
 vi.mock("./sso", () => ({ continueWithSso: vi.fn() }));
+const trusted = vi.hoisted(() => ({
+  sites: [] as string[],
+  remove: vi.fn(async (_site: string) => undefined),
+}));
+vi.mock("./trusted-link-sites", () => ({
+  loadTrustedLinkSites: vi.fn(async () => undefined),
+  removeTrustedLinkSite: trusted.remove,
+  useTrustedLinkSites: () => trusted.sites,
+}));
 vi.mock("./ui-locale", () => ({ UI_LOCALE_LABELS: { en: "English" } }));
 vi.mock("./user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 
@@ -435,3 +471,23 @@ it.each([false, true])(
     }
   },
 );
+
+it("lists trusted link sites only when there is one, each with a remove action", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(<Account />));
+  expect(container.querySelector('[aria-label="Trusted sites"]')).toBeNull();
+
+  trusted.sites = ["alice.github.io", "example.com"];
+  await act(async () => root?.render(<Account />));
+  const group = container.querySelector('[aria-label="Trusted sites"]');
+  expect(group?.textContent).toContain("alice.github.io");
+  expect(group?.textContent).toContain("example.com");
+  const removes = group?.querySelectorAll<HTMLButtonElement>('[data-menu-action="remove"]');
+  expect(removes).toHaveLength(2);
+  await act(async () => removes?.[1]?.click());
+  expect(trusted.remove).toHaveBeenCalledWith("example.com");
+  trusted.sites = [];
+});

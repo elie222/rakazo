@@ -65,7 +65,11 @@ import {
 } from "../lib/remote-images-preference";
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
-import { registerSessionDiskCache } from "../lib/session";
+import {
+  currentSessionGeneration,
+  registerSessionDiskCache,
+  subscribeSessionGeneration,
+} from "../lib/session";
 import { InboxBesideContext } from "../lib/side-insets";
 import {
   chooseInboxWidth,
@@ -81,6 +85,11 @@ import {
   trackMobileStartup,
 } from "../lib/startup";
 import { capTextScaling } from "../lib/text-scale";
+import {
+  loadTrustedLinkSites,
+  trustLinkSite,
+  useTrustedLinkSites,
+} from "../lib/trusted-link-sites";
 import { startUnsentSends } from "../lib/unsent-sends";
 import { InboxPane } from "./index";
 
@@ -214,10 +223,22 @@ function ChatContentProviders({
     () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
     [endpoint],
   );
+  const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  const trustedSites = useTrustedLinkSites();
+  useEffect(() => {
+    void loadTrustedLinkSites().catch(() => undefined);
+  }, [endpoint, session]);
   return (
     <MarkdownLinkPromptProvider
       appOrigin={endpoint}
-      copy={{ title: t("Open external link?"), cancel: t("Cancel"), open: t("Open") }}
+      copy={{
+        title: t("Open external link?"),
+        cancel: t("Cancel"),
+        open: t("Open"),
+        alwaysOpen: (site) => t("Always open {site}", { site }),
+      }}
+      trustedSites={trustedSites}
+      trustSite={trustLinkSite}
     >
       <RemoteImagesContext.Provider value={loadRemoteImages}>
         <LinkFaviconsContext.Provider value={linkFavicons}>

@@ -793,6 +793,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@rakazo/core':
+        specifier: workspace:*
+        version: link:../core
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../ui-tokens

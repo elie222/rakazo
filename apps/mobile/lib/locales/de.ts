@@ -1091,4 +1091,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "{from} to {to}": "{from} bis {to}",
   "Every {day}": "Jeden {day}",
   "Every {days} and {last}": "Jeden {days} und {last}",
+  "Always open {site}": "Immer {site} öffnen",
+  "Trusted sites": "Vertrauenswürdige Websites",
 };
