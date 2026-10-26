@@ -48,6 +48,24 @@ describe("disabled ticket board", () => {
   );
 });
 
+it("rejects an out-of-range ticket reference before querying tickets", async () => {
+  const findFirst = vi.fn(async () => null);
+  const prisma = {
+    board: { findUnique: vi.fn(async () => ({ id: "board-1", ticketPrefix: "RAK" })) },
+    ticket: { findFirst },
+  };
+  const client = createRouterClient(
+    createRouter({ prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps),
+    { context: { actor } },
+  );
+
+  await expect(client.tickets.get({ ref: `RAK-${"9".repeat(115)}` })).rejects.toMatchObject({
+    code: "BAD_REQUEST",
+    message: "Invalid ticket reference.",
+  });
+  expect(findFirst).not.toHaveBeenCalled();
+});
+
 it.each([false, true])("includes the board capability in me (%s)", async (ticketBoardEnabled) => {
   const prisma = {
     user: {
