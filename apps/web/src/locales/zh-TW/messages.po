@@ -768,7 +768,7 @@ msgstr "核准模型"
 msgid "Approvals"
 msgstr "核准"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Approve"
 msgstr "核准"
@@ -885,6 +885,7 @@ msgstr "頭像工作室"
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
+#: src/pages/SettingsOverlay.tsx
 #: src/pages/shell/agent-import.tsx
 msgid "Back"
 msgstr "返回"
@@ -939,7 +940,7 @@ msgstr "機器人"
 
 #: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/agent-import.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -1058,7 +1059,6 @@ msgstr "無法讀取影像"
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/create-bot-dialog.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Cancel"
 msgstr "取消"
 
@@ -1248,7 +1248,7 @@ msgstr "正在清空…"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -1281,10 +1281,6 @@ msgstr "關閉 MCP 伺服器"
 #: src/pages/SettingsOverlay.tsx
 msgid "Close memory settings"
 msgstr "關閉記憶設定"
-
-#: src/pages/MessagingSettingsOverlay.tsx
-msgid "Close messaging settings"
-msgstr "關閉訊息設定"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -1456,7 +1452,7 @@ msgstr "連線"
 msgid "Connect {selectedProviderName}"
 msgstr "連線 {selectedProviderName}"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect a chat app"
 msgstr "連結聊天應用程式"
 
@@ -1492,7 +1488,7 @@ msgstr "連接自己的服務"
 msgid "Connect OAuth"
 msgstr "連線 OAuth"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Connect Slack"
 msgstr "連結 Slack"
 
@@ -1574,7 +1570,7 @@ msgstr "透過 {0} 繼續"
 msgid "Continue with credits"
 msgstr "使用額度繼續"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "對話"
 
@@ -2062,11 +2058,11 @@ msgstr "無法更新預設記憶範圍"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "無法驗證電腦設定（{failureMessage}）。請修復連線後再次檢查。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't load messaging settings"
 msgstr "無法載入訊息設定"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "無法更新訊息設定"
 
@@ -2194,7 +2190,7 @@ msgid "days"
 msgstr "天"
 
 #: src/components/call/IncomingCall.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒絕"
 
@@ -2332,7 +2328,7 @@ msgstr "捨棄錄製內容"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
@@ -2457,7 +2453,6 @@ msgstr "每個名稱只能使用一次。"
 #: src/components/AskCard.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Edit"
 msgstr "編輯"
 
@@ -2643,7 +2638,7 @@ msgid "Export this week's list from the CRM and drop it in the shared folder"
 msgstr "從 CRM 匯出本週名單並放到共享資料夾"
 
 #: src/pages/ExternalConversationSettings.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "External conversation"
 msgstr "外部對話"
 
@@ -2795,7 +2790,7 @@ msgid "Git event"
 msgstr "Git 事件"
 
 #: src/lib/identity-display.ts
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "群組"
@@ -3130,7 +3125,7 @@ msgstr "上次檢查 {0}：無變化"
 msgid "Later"
 msgstr "稍後"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Leave"
 msgstr "退出"
 
@@ -3146,7 +3141,7 @@ msgstr "淺色"
 msgid "Linear issue"
 msgstr "Linear 工單"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Link DMs"
 msgstr "連結私訊"
 
@@ -3258,13 +3253,15 @@ msgstr "使用小寫英文字母、數字、連字號與底線，並以字母開
 msgid "Main model"
 msgstr "主模型"
 
-#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/BillingSettingsPanel.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage"
 msgstr "管理"
 
+#. placeholder {0}: option.name
 #. placeholder {0}: providerName(choice)
 #: src/pages/ModelRoleSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Manage {0}"
 msgstr "管理 {0}"
 
@@ -3432,8 +3429,7 @@ msgstr "訊息…"
 msgid "Messaged {peer}"
 msgstr "已發給 {peer}"
 
-#: src/pages/AccountSettingsOverlay.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Messaging"
 msgstr "訊息"
 
@@ -4090,7 +4086,7 @@ msgstr "請貼上你的 API 金鑰，然後重新測試。"
 msgid "Paused"
 msgstr "已暫停"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Pending"
 msgstr "待處理"
 
@@ -4443,10 +4439,6 @@ msgstr "重新命名"
 msgid "Rename section"
 msgstr "重新命名分組"
 
-#: src/pages/SpaceSettingsPanel.tsx
-msgid "Rename space"
-msgstr "重新命名空間"
-
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Renews {day}"
 msgstr "於 {day} 續訂"
@@ -4489,7 +4481,7 @@ msgstr "正在回覆 {0}"
 msgid "Request a new code"
 msgstr "請重新獲取驗證碼"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Requests"
 msgstr "請求"
 
@@ -4564,7 +4556,6 @@ msgstr "正在還原工作空間"
 #: src/pages/Auth.tsx
 #: src/pages/ModelRoleSettings.tsx
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/SettingsOverlay.tsx
 #: src/pages/SpaceSettingOverrides.tsx
 msgid "Retry"
 msgstr "重試"
@@ -4591,7 +4582,7 @@ msgstr "返回 Rakazo"
 msgid "Review provider settings and test again."
 msgstr "請檢查供應商設定並重新測試。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "撤銷授權"
 
@@ -4676,7 +4667,6 @@ msgstr "週六"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
-#: src/pages/SpaceSettingsPanel.tsx
 msgid "Save"
 msgstr "儲存"
 
@@ -4812,11 +4802,11 @@ msgstr "自行託管"
 msgid "Send"
 msgstr "傳送"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
 msgstr "請在 10 分鐘內從 {linkApp} 傳送 <0>{linkCode}</0>。"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
 msgstr "請在 10 分鐘內從 {linkApp} 將 <0>{linkCode}</0> 傳送到 <1>{linkAddress}</1>。"
 
@@ -4870,7 +4860,7 @@ msgstr "伺服器 URL"
 
 #: src/components/call/CallCard.tsx
 #: src/components/SidebarFooter.tsx
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Settings"
@@ -5086,6 +5076,10 @@ msgstr "空間"
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "空間預設"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Spaces"
+msgstr "空間"
 
 #: src/pages/shell/message-view.tsx
 msgid "Speak"
@@ -5601,7 +5595,7 @@ msgstr "要復原匯入嗎？"
 msgid "Uninstall"
 msgstr "解除安裝"
 
-#: src/pages/MessagingSettingsOverlay.tsx
+#: src/pages/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "取消關聯"
 

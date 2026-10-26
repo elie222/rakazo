@@ -251,7 +251,12 @@ it("edits the account's models, voice, and confirmations", async () => {
 it("edits the memory of the space the app is showing, even after another space's page", async () => {
   memoryConfigs.length = 0;
   providerConfig.mockReset();
-  const shown = { provider: "mem0", defaultMemoryScope: "shared" };
+  const shown = {
+    provider: "mem0",
+    settings: {},
+    defaultMemoryScope: "shared" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
   const onMemoryConfigChange = vi.fn();
   const { cleanup } = await render({
     space: spaces[1],
