@@ -25,7 +25,10 @@ async function connect(endpoint: string, headers: Record<string, string>) {
 
 describe("the task tracker's MCP server", () => {
   let close: (() => Promise<void>) | undefined;
-  afterEach(() => close?.());
+  afterEach(async () => {
+    await close?.();
+    close = undefined;
+  });
 
   it("serves the product's MCP session with the bearer token", async () => {
     const tracker = await startTaskTracker("tl_secret");
@@ -55,7 +58,9 @@ describe("the task tracker's MCP server", () => {
   ])("refuses %s token", async (_name, headers: Record<string, string>) => {
     const tracker = await startTaskTracker("tl_secret");
     close = tracker.close;
-    await expect(connect(tracker.endpoint, headers)).rejects.toThrow();
+    const session = await connect(tracker.endpoint, headers).catch(() => undefined);
+    await session?.close();
+    expect(session).toBeUndefined();
     expect(tracker.state.calls).toEqual([]);
   });
 });
@@ -130,8 +135,21 @@ describe("grading connect-mcp", () => {
       text: "[card] Review before mcp__tasklog__add_task → Renew passport",
       at: at(2),
     };
-    const allowed: TranscriptEntry = { from: "user", text: "[pressed Allow once]", at: at(2) };
+    const allowed: TranscriptEntry = {
+      from: "user",
+      text: "[pressed Allow once]",
+      at: at(2),
+      toolApproval: true,
+    };
     expect(failed([card, approved, toolCard, allowed], done)).toEqual([]);
+  });
+
+  it.each([
+    ["pressing a button on the bot's question", "[pressed Yes]"],
+    ["typing a bracketed message", "[please continue]"],
+  ])("fails carrying on after %s", (_name, text) => {
+    const nudge: TranscriptEntry = { from: "user", text, at: at(2) };
+    expect(failed([card, approved, nudge], done)).toEqual(["carried-on-after-approval"]);
   });
 
   it("fails carrying on when the tracker was only used after the person nudged", () => {

@@ -15,6 +15,8 @@ export type TranscriptEntry = {
   text: string;
   /** The routine wake that produced this bot message, counted from 1. */
   wake?: number;
+  /** Set on the person's answer to a card asking to approve one of the bot's tool calls. */
+  toolApproval?: boolean;
   at: string;
 };
 

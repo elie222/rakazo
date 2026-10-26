@@ -14,7 +14,7 @@ import type {
 import type { MessageBlock } from "@rakazo/contracts";
 import { WORKING_RUN_STATUSES } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import type { EvalJudge, Judgment } from "../evals/judge.js";
+import type { EvalJudge, JudgeInput, Judgment } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -74,7 +74,7 @@ export type FlowResult = {
 
 type Settled =
   | { kind: "idle" }
-  | { kind: "ask"; runId: string; messageId: string; ask: PendingAsk }
+  | { kind: "ask"; runId: string; messageId: string; toolApproval: boolean; ask: PendingAsk }
   | { kind: "mcp"; threadId: string; serverId: string; needsOAuth: boolean; ask: PendingAsk }
   | { kind: "takeover" };
 
@@ -166,14 +166,9 @@ export async function runFlow<World>(
     for (const message of snapshot.messages) {
       if (message.role !== "bot") continue;
       for (const block of message.blocks) {
-        if (block.kind === "mcp_approval" && block.status === "pending") {
-          pending = {
-            kind: "mcp",
-            threadId: snapshot.threadId,
-            serverId: block.serverId,
-            needsOAuth: block.needsOAuth,
-            ask: mcpApprovalAsk(block),
-          };
+        const mcp = mcpPendingCard(snapshot.threadId, block);
+        if (mcp) {
+          pending = mcp;
           continue;
         }
         if (block.kind !== "ask" || block.status === "answered" || block.dismissed) continue;
@@ -182,6 +177,7 @@ export async function runFlow<World>(
           kind: "ask",
           runId: message.runId,
           messageId: message.id,
+          toolApproval: Boolean(block.approvalEffectId),
           ask: {
             text: block.text,
             ...(block.detail ? { detail: block.detail } : {}),
@@ -222,12 +218,15 @@ export async function runFlow<World>(
   };
 
   /** Checked before every paid step, the bot's or the harness's. */
-  const withinLimits = async () => {
-    if (Date.now() > deadline) throw new FlowStop("deadline");
+  const withinSpend = async () => {
     if ((await botCost()) + harnessCostUsd > options.spendCapUsd) {
       await rpc("threads/stop", { botId }).catch(() => undefined);
       throw new FlowStop("spend-cap");
     }
+  };
+  const withinLimits = async () => {
+    if (Date.now() > deadline) throw new FlowStop("deadline");
+    await withinSpend();
   };
 
   /** Waits until the bot stops working: idle, waiting on a card, or asking for the screen. */
@@ -416,17 +415,13 @@ export async function runFlow<World>(
             ...(move.kind === "secret" && move.username ? { username: move.username } : {}),
           });
         } else if (state.kind === "mcp" && move.kind === "choose") {
-          // The web card makes these same calls; an OAuth card first needs a browser popup.
-          // Stopping still grades the run: the bot most likely dropped the token it was given.
-          if (move.actionId === "approve" && state.needsOAuth) {
+          const request = mcpCardRequest(state, move.actionId, botId);
+          // Stopping still grades the run.
+          if (!request) {
             options.log("cannot complete an MCP OAuth popup");
             throw new FlowStop("error");
           }
-          await rpc(`mcp/assignments/${move.actionId}`, {
-            botId,
-            serverId: state.serverId,
-            threadId: state.threadId,
-          });
+          await rpc(request.procedure, request.body);
         } else if (move.kind === "say") {
           await rpc("threads/send", { botId, text: move.text });
         } else {
@@ -442,6 +437,7 @@ export async function runFlow<World>(
               : move.kind === "choose"
                 ? `[pressed ${card?.actions?.find((action) => action.id === move.actionId)?.label ?? move.actionId}]`
                 : "[filled secret]",
+          ...(state.kind === "ask" && state.toolApproval ? { toolApproval: true } : {}),
           ...(wake ? { wake } : {}),
         });
         state = await settle(wake);
@@ -557,15 +553,12 @@ export async function runFlow<World>(
     const deterministicPass = result.criteria.every((criterion) => criterion.pass);
     if (flow.judge) {
       const judge = createEvalJudge(handles.runtime, options.judgeModel, onUsage);
-      // A judge failure is an unqualified result, never a pass.
-      // The judge runs after the flow's deadline checks, so it gets its own bound.
-      const input = flow.judge(evidence);
-      result.judgment = await calibrateJudge(judge, flow.judgeCalibration ?? [])
-        .then(() => judge(input, AbortSignal.timeout(JUDGE_TIMEOUT_MS)))
-        .catch((error: unknown) => ({
-          pass: false,
-          reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
-        }));
+      // Grading runs past the deadline, so it gets its own bound, but not past the spend cap.
+      const capped: EvalJudge = async (input, signal) => {
+        await withinSpend();
+        return judge(input, signal);
+      };
+      result.judgment = await judgeFlow(capped, flow.judge(evidence), flow.judgeCalibration ?? []);
     }
     result.status = deterministicPass && (result.judgment?.pass ?? true) ? "passed" : "failed";
   } catch (error) {
@@ -602,16 +595,56 @@ const MAX_SCREEN_STEPS = 30;
 const FRAME_INTERVAL_MS = 2_500;
 const JUDGE_TIMEOUT_MS = 180_000;
 
-/** A judge that disagrees with any reviewed label cannot grade the run. */
-export async function calibrateJudge(
+/**
+ * The flow's judgment. The judge must first agree with every reviewed label; a disagreement or
+ * any judge failure is an unqualified result, never a pass.
+ */
+export async function judgeFlow(
   judge: EvalJudge,
+  input: JudgeInput,
   labels: NonNullable<Flow["judgeCalibration"]>,
-) {
-  for (const [index, label] of labels.entries()) {
-    const verdict = await judge(label.input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
-    if (verdict.pass !== label.pass)
-      throw new Error(`judge disagreed with calibration label ${index + 1}: ${verdict.reason}`);
+): Promise<Judgment> {
+  try {
+    for (const [index, label] of labels.entries()) {
+      const verdict = await judge(label.input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
+      if (verdict.pass !== label.pass)
+        throw new Error(`judge disagreed with calibration label ${index + 1}: ${verdict.reason}`);
+    }
+    return await judge(input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
+  } catch (error) {
+    return {
+      pass: false,
+      reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
+}
+
+/** The pending MCP approval card in this block, as the person can answer it. */
+export function mcpPendingCard(threadId: string, block: MessageBlock) {
+  if (block.kind !== "mcp_approval" || block.status !== "pending") return undefined;
+  return {
+    kind: "mcp" as const,
+    threadId,
+    serverId: block.serverId,
+    needsOAuth: block.needsOAuth,
+    ask: mcpApprovalAsk(block),
+  };
+}
+
+/**
+ * The call the web card makes for a button. None for Authorize on an OAuth card, which first
+ * needs a browser popup.
+ */
+export function mcpCardRequest(
+  card: { serverId: string; threadId: string; needsOAuth: boolean },
+  actionId: string,
+  botId: string,
+) {
+  if (actionId === "approve" && card.needsOAuth) return undefined;
+  return {
+    procedure: `mcp/assignments/${actionId}`,
+    body: { botId, serverId: card.serverId, threadId: card.threadId },
+  };
 }
 
 /** An MCP approval card as the web shows it: the server, its address and two buttons. */

@@ -146,9 +146,9 @@ function approval(evidence: FlowEvidence<World>): {
     (entry, index) => index > cardAt && entry.from === "user" && entry.text === "[pressed Approve]",
   );
   if (pressed < 0) return { shown: true };
-  // Answering a card the bot raises while it carries on, such as a tool approval, is not a nudge.
+  // Allowing a tool call the bot asks about while it carries on is not a nudge; anything else is.
   const next = evidence.transcript.find(
-    (entry, index) => index > pressed && entry.from === "user" && !entry.text.startsWith("["),
+    (entry, index) => index > pressed && entry.from === "user" && !entry.toolApproval,
   );
   return { shown: true, approved: true, ...(next ? { nextUserAt: next.at } : {}) };
 }
