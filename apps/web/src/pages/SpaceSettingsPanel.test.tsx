@@ -144,6 +144,37 @@ describe("SpaceSettingsPanel", () => {
     expect(onRename).not.toHaveBeenCalled();
   });
 
+  it("holds the dialog busy while a rename is saving", async () => {
+    let finish: () => void = () => undefined;
+    const onRename = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onBusyChange = vi.fn();
+    await render({ onRename, onBusyChange });
+    await type("Help desk");
+    await commit();
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+    await act(async () => finish());
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not save on the Enter that confirms an IME composition", async () => {
+    const onRename = vi.fn(async () => undefined);
+    await render({ onRename });
+    await type("Help desk");
+    const input = container.querySelector("input");
+    const blur = vi.spyOn(input as HTMLInputElement, "blur");
+    await act(async () => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }),
+      );
+    });
+    expect(blur).not.toHaveBeenCalled();
+  });
+
   it("falls back to the generic error when the failure message is blank", async () => {
     await render({
       onRename: async () => {

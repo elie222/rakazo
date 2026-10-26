@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRows";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 import type { SettingsSpace } from "./shell/dialogs";
@@ -26,6 +26,12 @@ export function SpaceSettingsPanel({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [overridesBusy, setOverridesBusy] = useState(false);
+  // A rename in flight holds the dialog open, so a failure is shown instead of lost on leaving.
+  const busy = pending || overridesBusy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
 
   async function save() {
     const trimmed = draft.trim();
@@ -73,7 +79,10 @@ export function SpaceSettingsPanel({
                 }}
                 onBlur={() => void save()}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.blur();
+                  // Enter that confirms an IME composition is not a commit.
+                  if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                    event.currentTarget.blur();
+                  }
                   if (event.key === "Escape") {
                     event.stopPropagation();
                     setDraft(space.name);
@@ -91,7 +100,7 @@ export function SpaceSettingsPanel({
           </SettingsRow>
         </SettingsGroup>
       ) : null}
-      <SpaceSettingOverrides onClose={onClose} onBusyChange={onBusyChange} />
+      <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
       {space.canDelete ? (
         <Button
           variant="destructive"
