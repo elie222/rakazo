@@ -777,6 +777,8 @@ model Run {
   @@index([taskId])
   @@index([sourceMessageId])
   @@index([threadId, status, createdAt])
+  // Partial runs_recent_activity_idx is created concurrently in SQL:
+  // (spaceId, userId, completedAt DESC, updatedAt DESC, id DESC), terminal statuses excluding ticket work.
   @@index([routineId])
   @@map("runs")
 }
