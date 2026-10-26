@@ -37,8 +37,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Export: "Экспорт",
   "Edit avatar": "Изменить аватар",
   "Add open work": "Добавить задачу",
-  "Can edit and organise bots it creates": "Может редактировать и упорядочивать созданных ботов",
-  "How other bots see it": "Как его видят другие боты",
   Permissions: "Разрешения",
   "Open work": "Открытые задачи",
   "When it finishes or needs input": "Когда работа завершена или нужен ответ",
