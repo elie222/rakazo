@@ -47,6 +47,33 @@ describe("zonedDateTime", () => {
     );
   });
 
+  it.each([
+    ["0099-03-01T10:00Z", "0099-03-01T10:00:00.000Z"],
+    ["2028-02-29T10:00Z", "2028-02-29T10:00:00.000Z"],
+    ["2030-03-01t10:00z", "2030-03-01T10:00:00.000Z"],
+    ["2030-03-01T00:30:15.125+05:30", "2030-02-28T19:00:15.125Z"],
+    ["2030-02-28T23:30-04:00", "2030-03-01T03:30:00.000Z"],
+    ["2030-03-01T00:30+0530", "2030-02-28T19:00:00.000Z"],
+  ])("preserves the valid offset datetime %s", (value, expected) => {
+    expect(zonedDateTime(value, "America/New_York")?.toISOString()).toBe(expected);
+  });
+
+  it.each([
+    "2030-02-30T10:00Z",
+    "2030-02-30T10:00:30.125Z",
+    "2030-02-29T10:00+05:30",
+    "2100-02-29T10:00Z",
+    "2030-04-31T10:00-04:00",
+    "2030-02-30T10:00+0530",
+    "2030-02-30T10:00-0400",
+    "2030-01-01T24:00Z",
+    "2030-01-01T24:00+05:30",
+    "2030-01-01T10:00+24:00",
+    "2030-01-01T10:00+05:60",
+  ])("rejects the impossible offset datetime %s", (value) => {
+    expect(zonedDateTime(value, "UTC")).toBeNull();
+  });
+
   it("moves a time skipped by daylight saving forward and keeps the first of a repeated hour", () => {
     expect(zonedDateTime("2026-03-29T02:30", "Europe/Berlin")?.toISOString()).toBe(
       "2026-03-29T01:30:00.000Z",
