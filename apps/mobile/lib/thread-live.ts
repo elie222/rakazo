@@ -77,9 +77,9 @@ export function useThreadLiveSubscription({
     const abort = new AbortController();
     const subscriptionGeneration = ++liveSubscriptionGeneration.current;
     const sessionGeneration = currentSessionGeneration();
+    // Guards are checked when the queued read starts, not when it was requested.
     const snapshotRefresh = createRefreshCoalescer(async () => {
       if (
-        !abort.signal.aborted &&
         sessionGeneration === currentSessionGeneration() &&
         !jumpScrollTarget.current &&
         !expandedHistoryThread.current
@@ -143,9 +143,7 @@ export function useThreadLiveSubscription({
               }
               if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
                 // Reconcile run ownership for ask cards first seen through live events.
-                if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-                  void snapshotRefresh.invalidate().catch(() => undefined);
-                }
+                void snapshotRefresh.invalidate().catch(() => undefined);
               }
             },
             abort.signal,
