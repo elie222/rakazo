@@ -16,6 +16,15 @@ const SEEDED: Array<Pick<Task, "title" | "due">> = [
   { title: "Return library books", due: null },
 ];
 
+/** The tracker's tasks before the bot touches it. */
+const seededTasks = (): Task[] =>
+  SEEDED.map((task, index) => ({
+    ...task,
+    id: `T-${index + 1}`,
+    done: false,
+    createdAt: new Date(0).toISOString(),
+  }));
+
 const TOOLS = [
   {
     name: "list_tasks",
@@ -43,15 +52,7 @@ const TOOLS = [
  * MCP client connects from, rather than inside the bot's computer.
  */
 export async function startTaskTracker(token: string) {
-  const state: TrackerState = {
-    tasks: SEEDED.map((task, index) => ({
-      ...task,
-      id: `T-${index + 1}`,
-      done: false,
-      createdAt: new Date(0).toISOString(),
-    })),
-    calls: [],
-  };
+  const state: TrackerState = { tasks: seededTasks(), calls: [] };
   const call = (name: unknown, args: Record<string, unknown>) => {
     state.calls.push({ name: String(name), arguments: args, at: new Date().toISOString() });
     if (name === "list_tasks") {
@@ -178,12 +179,6 @@ function referenceRun(
   const at = (minute: number) => new Date(Date.parse(start) + minute * 60_000).toISOString();
   // The tools run between the approval (minute 2) and the reply (minute 3).
   const { added, calls } = work(at);
-  const tasks = SEEDED.map((task, index) => ({
-    ...task,
-    id: `T-${index + 1}`,
-    done: false,
-    createdAt: new Date(0).toISOString(),
-  }));
   return {
     rubric: RUBRIC,
     evidence: {
@@ -201,7 +196,7 @@ function referenceRun(
         { from: "user", text: "[pressed Approve]", at: at(2) },
         { from: "bot", text: reply, at: at(3) },
       ],
-      tracker: { tasks: [...tasks, ...added], calls },
+      tracker: { tasks: [...seededTasks(), ...added], calls },
       endedBy: "user-done",
       timezone: TIMEZONE,
     },
