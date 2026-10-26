@@ -539,11 +539,11 @@ export async function runFlow<World>(
     if (flow.judge) {
       const judge = createEvalJudge(handles.runtime, options.judgeModel, onUsage);
       // Grading runs past the deadline, so it gets its own bound, but not past the spend cap.
-      const capped: EvalJudge = async (input, signal) => {
-        await withinSpend();
-        return judge(input, signal);
-      };
-      result.judgment = await judgeFlow(capped, flow.judge(evidence), flow.judgeCalibration ?? []);
+      result.judgment = await judgeFlow(
+        spendCappedJudge(judge, withinSpend),
+        flow.judge(evidence),
+        flow.judgeCalibration ?? [],
+      );
     }
     result.status = deterministicPass && (result.judgment?.pass ?? true) ? "passed" : "failed";
   } catch (error) {
@@ -579,6 +579,16 @@ export function wakeIsDue(nextRunAt: Date | null, now: number, horizonMs?: numbe
 const MAX_SCREEN_STEPS = 30;
 const FRAME_INTERVAL_MS = 2_500;
 const JUDGE_TIMEOUT_MS = 180_000;
+
+/** Checks the spend cap before each judge call and again after it: an over-cap verdict doesn't count. */
+export function spendCappedJudge(judge: EvalJudge, withinSpend: () => Promise<void>): EvalJudge {
+  return async (input, signal) => {
+    await withinSpend();
+    const verdict = await judge(input, signal);
+    await withinSpend();
+    return verdict;
+  };
+}
 
 /**
  * The flow's judgment. The judge must first agree with every reviewed label; a disagreement or

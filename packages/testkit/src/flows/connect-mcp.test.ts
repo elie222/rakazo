@@ -178,6 +178,20 @@ describe("grading connect-mcp", () => {
     expect(labels.map((label) => label.pass)).toEqual([true, false, false, false, true, false]);
   });
 
+  it("runs every label's tools after the approval and before the reply", () => {
+    for (const label of connectMcp.judgeCalibration ?? []) {
+      const { transcript, tracker } = label.input.evidence as {
+        transcript: TranscriptEntry[];
+        tracker: { calls: Array<{ at: string }> };
+      };
+      const pressed = transcript.find((entry) => entry.text === "[pressed Approve]")!.at;
+      const reply = transcript.at(-1)!.at;
+      for (const call of tracker.calls) {
+        expect(call.at > pressed && call.at < reply).toBe(true);
+      }
+    }
+  });
+
   it("gives the judge the person's timezone, in the run and in every label", () => {
     const { evidence: judged } = connectMcp.judge!(evidence([card, approved], done));
     expect(judged).toMatchObject({ timezone: connectMcp.timezone });

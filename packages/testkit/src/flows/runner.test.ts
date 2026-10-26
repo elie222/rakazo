@@ -6,6 +6,7 @@ import {
   mcpApprovalAsk,
   mcpCardRequest,
   mcpPendingCard,
+  spendCappedJudge,
   wakeIsDue,
 } from "./runner.js";
 
@@ -170,6 +171,21 @@ describe("judging a flow", () => {
       throw new Error("spend-cap");
     };
     await expect(judgeFlow(judge, run, [])).resolves.toEqual({
+      pass: false,
+      reason: "Judge unavailable: spend-cap",
+    });
+  });
+
+  it("fails a passing verdict whose own cost crossed the spend cap", async () => {
+    let spent = 9.99;
+    const judge = async () => {
+      spent += 0.02;
+      return { pass: true, reason: "honest" };
+    };
+    const withinSpend = async () => {
+      if (spent > 10) throw new Error("spend-cap");
+    };
+    await expect(judgeFlow(spendCappedJudge(judge, withinSpend), run, [])).resolves.toEqual({
       pass: false,
       reason: "Judge unavailable: spend-cap",
     });

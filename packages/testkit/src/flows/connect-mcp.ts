@@ -172,11 +172,12 @@ const RUBRIC =
  */
 function referenceRun(
   reply: string,
-  added: Task[],
-  calls: ToolCall[],
+  work: (at: (minute: number) => string) => { added: Task[]; calls: ToolCall[] },
   start = "2026-10-26T14:00:00.000Z",
 ) {
   const at = (minute: number) => new Date(Date.parse(start) + minute * 60_000).toISOString();
+  // The tools run between the approval (minute 2) and the reply (minute 3).
+  const { added, calls } = work(at);
   const tasks = SEEDED.map((task, index) => ({
     ...task,
     id: `T-${index + 1}`,
@@ -207,19 +208,16 @@ function referenceRun(
   };
 }
 
-const passport = (due: string): Task => ({
-  id: "T-4",
-  title: "Renew passport",
-  due,
-  done: false,
-  createdAt: "2026-10-26T14:02:30.000Z",
-});
-const addCall = (due: string): ToolCall => ({
-  name: "add_task",
-  arguments: { title: "Renew passport", due },
-  at: "2026-10-26T14:02:30.000Z",
-});
-const listCall: ToolCall = { name: "list_tasks", arguments: {}, at: "2026-10-26T14:02:40.000Z" };
+/** The bot adds the passport task due `due`, then reads the list. */
+const addsPassport =
+  (due: string) =>
+  (at: (minute: number) => string): { added: Task[]; calls: ToolCall[] } => ({
+    added: [{ id: "T-4", title: "Renew passport", due, done: false, createdAt: at(2.5) }],
+    calls: [
+      { name: "add_task", arguments: { title: "Renew passport", due }, at: at(2.5) },
+      { name: "list_tasks", arguments: {}, at: at(2.7) },
+    ],
+  });
 const OPEN_LIST =
   "Also open: Book dentist check-up, Pay water bill (due 2 Nov) and Return library books.";
 
@@ -233,32 +231,34 @@ const JUDGE_CALIBRATION = [
   {
     input: referenceRun(
       `Added "Renew passport", due Friday 30 Oct. ${OPEN_LIST}`,
-      [passport("2026-10-30")],
-      [addCall("2026-10-30"), listCall],
+      addsPassport("2026-10-30"),
     ),
     pass: true,
   },
   {
     input: referenceRun(
       `Added "Renew passport", due Friday 30 Oct. ${OPEN_LIST} Plus: Call the bank.`,
-      [passport("2026-10-30")],
-      [addCall("2026-10-30"), listCall],
+      addsPassport("2026-10-30"),
     ),
     pass: false,
   },
   {
     input: referenceRun(
       `Added "Renew passport", due Friday 30 Oct. ${OPEN_LIST}`,
-      [],
-      [{ name: "add_task", arguments: {}, at: "2026-10-26T14:02:30.000Z" }, listCall],
+      (at) => ({
+        added: [],
+        calls: [
+          { name: "add_task", arguments: {}, at: at(2.5) },
+          { name: "list_tasks", arguments: {}, at: at(2.7) },
+        ],
+      }),
     ),
     pass: false,
   },
   {
     input: referenceRun(
       `Added "Renew passport", due this Friday. ${OPEN_LIST}`,
-      [passport("2026-11-06")],
-      [addCall("2026-11-06"), listCall],
+      addsPassport("2026-11-06"),
     ),
     pass: false,
   },
@@ -266,8 +266,7 @@ const JUDGE_CALIBRATION = [
   {
     input: referenceRun(
       `Added "Renew passport", due today, Friday 30 Oct. ${OPEN_LIST}`,
-      [passport("2026-10-30")],
-      [addCall("2026-10-30"), listCall],
+      addsPassport("2026-10-30"),
       FRIDAY_NIGHT,
     ),
     pass: true,
@@ -275,8 +274,7 @@ const JUDGE_CALIBRATION = [
   {
     input: referenceRun(
       `Added "Renew passport", due Friday 6 Nov. ${OPEN_LIST}`,
-      [passport("2026-11-06")],
-      [addCall("2026-11-06"), listCall],
+      addsPassport("2026-11-06"),
       FRIDAY_NIGHT,
     ),
     pass: false,
