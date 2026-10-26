@@ -65,7 +65,20 @@ export function snippetAroundMatch(text: string, query: string, maxLen = 120): s
   const lower = text.toLowerCase();
   const index = lower.indexOf(q);
   if (index < 0) return text.slice(0, maxLen);
-  const start = Math.max(0, index - 40);
+  let originalIndex = index;
+  if (lower.length !== text.length) {
+    // Lowercasing can expand a character (İ → i + combining dot).
+    // Map the match back to the original UTF-16 offset before slicing.
+    let lowerOffset = 0;
+    originalIndex = 0;
+    for (const character of text) {
+      const lowerLength = character.toLowerCase().length;
+      if (lowerOffset + lowerLength > index) break;
+      lowerOffset += lowerLength;
+      originalIndex += character.length;
+    }
+  }
+  const start = Math.max(0, originalIndex - 40);
   const end = Math.min(text.length, start + maxLen);
   const prefix = start > 0 ? "…" : "";
   const suffix = end < text.length ? "…" : "";
