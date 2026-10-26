@@ -220,7 +220,7 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   expect(opted.includeSecrets).toBe(true);
   // Only the model-provider key leaves the browser; no other secret or setting does.
   expect(opted.files.find((file) => file.path === "openclaw-home/.env")?.content).toBe(
-    'DEEPSEEK_API_KEY="placeholder-deepseek-key"\n',
+    "DEEPSEEK_API_KEY=placeholder-deepseek-key\n",
   );
   for (const secret of [
     "placeholder-gateway-token",
