@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
@@ -168,14 +169,18 @@ export default function VoiceSettings() {
     set(value);
   };
 
+  const open = useCallback(() => {
+    void load(undefined, true)
+      .catch((err: unknown) => {
+        // A newer read replaced this one and reports for both.
+        if (!isCancelledError(err)) setError(errorText(err, t("Could not load voice settings")));
+      })
+      .finally(() => setLoading(false));
+  }, [load, t]);
+
   useFocusEffect(
     useCallback(() => {
-      void load(undefined, true)
-        .catch((err: unknown) => {
-          // A newer read replaced this one and reports for both.
-          if (!isCancelledError(err)) setError(errorText(err, t("Could not load voice settings")));
-        })
-        .finally(() => setLoading(false));
+      open();
       if (!deviceSettings) return;
       const revision = ++deviceVoiceRevision.current;
       void loadDeviceVoiceEnabled()
@@ -203,7 +208,7 @@ export default function VoiceSettings() {
           }
         },
       );
-    }, [deviceSettings, load, t]),
+    }, [deviceSettings, open, t]),
   );
 
   /** One sound-switch save at a time; a failed save rolls back only that switch. */
@@ -435,7 +440,18 @@ export default function VoiceSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error && !status ? (
+          <LoadFailure
+            message={error}
+            onRetry={() => {
+              setError(null);
+              setLoading(true);
+              open();
+            }}
+          />
+        ) : error ? (
+          <Text style={styles.error}>{error}</Text>
+        ) : null}
         {deviceSettings ? (
           <View style={styles.group}>
             <Pressable

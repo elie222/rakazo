@@ -5,6 +5,7 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { NativeSegmentedControl } from "../../components/native-segmented-control";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../../components/settings-group";
 import { mobileTokens } from "../../lib/appearance";
@@ -34,6 +35,7 @@ export default function Approvals() {
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   // Counts saves, so a read that started before one never shows what it replaced.
   const saves = useRef(0);
 
@@ -46,6 +48,7 @@ export default function Approvals() {
           if (!current || saves.current !== savesAtRead) return;
           setSettings(nextSettings);
           setRules(nextRules);
+          setError(null);
         })
         .catch((err: unknown) => {
           if (current) setError(errorText(err, t("Something went wrong. Try again.")));
@@ -53,7 +56,7 @@ export default function Approvals() {
       return () => {
         current = false;
       };
-    }, [rpc, scope, t]),
+    }, [attempt, rpc, scope, t]),
   );
 
   async function save(change: () => Promise<void>) {
@@ -115,7 +118,15 @@ export default function Approvals() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error ? (
+        {error && !settings ? (
+          <LoadFailure
+            message={error}
+            onRetry={() => {
+              setError(null);
+              setAttempt((count) => count + 1);
+            }}
+          />
+        ) : error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
           </Text>

@@ -56,10 +56,15 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("react-native", () => ({
   ScrollView: element("div"),
+  View: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: element("span"),
 }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: toggle }));
 vi.mock("../components/settings-group", () => ({
   SettingsGroup: element("section"),
@@ -164,4 +169,26 @@ it("opens the Approvals screen for the Space once approvals are customized", asy
     pathname: "/approvals",
     params: { spaceId: "space-other" },
   });
+});
+
+function retry() {
+  return [...container.querySelectorAll("button")].find((node) => node.textContent === "Retry");
+}
+
+it("offers a retry when the overrides fail to load, then enables the switches", async () => {
+  state.overrides = ["voice"];
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  state.rpc.mockImplementationOnce(async () => {
+    throw new Error("offline");
+  });
+  await act(async () => root.render(createElement(SpaceSettings)));
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(control("Customize Voice")?.disabled).toBe(true);
+
+  await act(async () => retry()!.click());
+  expect(control("Customize Voice")?.disabled).toBe(false);
+  expect(control("Customize Voice")?.checked).toBe(true);
+  expect(retry()).toBeUndefined();
+  expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });

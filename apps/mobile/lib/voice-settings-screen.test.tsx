@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   saveWaiting: vi.fn(),
   cue: vi.fn(),
   focused: true,
+  failStatus: false,
+  reads: [] as string[],
   t: (text: string) => text,
 }));
 vi.mock("./side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -36,8 +38,13 @@ vi.mock("./api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
   captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
-  rpc: async (method: string) =>
-    method === "voice/status" ? { configured: false, ready: false, provider: null } : [],
+  rpc: async (method: string) => {
+    if (mocks.failStatus && method === "voice/status") throw new Error("offline");
+    mocks.reads.push(method);
+    if (method === "voice/catalog")
+      return [{ id: "elevenlabs", name: "ElevenLabs", description: "", transcribe: true }];
+    return method === "voice/status" ? { configured: false, ready: false, provider: null } : [];
+  },
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./device-voice", () => ({
@@ -49,7 +56,13 @@ vi.mock("./i18n", () => ({ t: mocks.t, useI18n: () => ({ t: mocks.t }) }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({ destructive: "red" }) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
 vi.mock("../components/row-accessories", () => ({ Checkmark: () => null, Chevron: () => null }));
-vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
+    <button type="button" onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
@@ -94,6 +107,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
   mocks.focused = true;
+  mocks.failStatus = false;
+  mocks.reads.length = 0;
   mocks.calls.mockResolvedValue(true);
   mocks.waiting.mockResolvedValue(true);
   mocks.saveCalls.mockResolvedValue(undefined);
@@ -159,4 +174,22 @@ it("rolls a failed save back without playing a preview", async () => {
   expect(toggle("Call sounds").checked).toBe(false);
   expect(mocks.cue).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Could not save that preference");
+});
+
+it("offers a retry when the first load fails, then loads the providers again", async () => {
+  mocks.failStatus = true;
+  await render();
+  const retry = () =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "Retry");
+  expect(container.textContent).toContain("offline");
+  expect(container.textContent).not.toContain("ElevenLabs");
+  const statusReads = () => mocks.reads.filter((method) => method === "voice/status").length;
+  expect(statusReads()).toBe(0);
+
+  mocks.failStatus = false;
+  await act(async () => retry()!.click());
+  expect(statusReads()).toBe(1);
+  expect(container.textContent).toContain("ElevenLabs");
+  expect(container.textContent).not.toContain("offline");
+  expect(retry()).toBeUndefined();
 });

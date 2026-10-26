@@ -12,6 +12,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LoadFailure } from "../../components/load-failure";
 import { ModelProviders } from "../../components/model-providers";
 import type { ConnectableProvider, ModelConnectIntent } from "../../components/model-role-settings";
 import { ModelRoleSettings } from "../../components/model-role-settings";
@@ -244,7 +245,15 @@ export default function Models() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error ? (
+        {error && !me ? (
+          <LoadFailure
+            message={error}
+            onRetry={() => {
+              setError(null);
+              void load();
+            }}
+          />
+        ) : error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
           </Text>

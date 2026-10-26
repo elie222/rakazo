@@ -10,6 +10,7 @@ import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { LoadFailure } from "../../components/load-failure";
 import { MenuPicker, MenuPickerMenu } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
 import { NativeSymbol } from "../../components/native-symbol";
@@ -61,6 +62,7 @@ export default function MessagingSettings() {
     setChannels(nextChannels);
     setConnections(nextConnections);
     setRooms(navigation.current.externalConversations);
+    setError(null);
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -205,7 +207,17 @@ export default function MessagingSettings() {
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error && !status ? (
+        <LoadFailure
+          message={error}
+          onRetry={() => {
+            setError(null);
+            void refresh().catch((err) => setError(errorText(err)));
+          }}
+        />
+      ) : error ? (
+        <Text style={styles.error}>{error}</Text>
+      ) : null}
       <SettingsGroup label={t("Requests")}>
         {invitedChannels.map((channel) => (
           <SettingsRow
