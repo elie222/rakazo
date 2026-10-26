@@ -264,6 +264,8 @@ export function botsRoutes(ctx: RouterContext) {
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
+            // A duplicate must keep the saved profile verbatim, even empty fields.
+            seedRoleFromName: false,
             title: source.title,
             description: source.description,
             instructions: source.instructions,

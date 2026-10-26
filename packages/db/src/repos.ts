@@ -518,6 +518,8 @@ export function createRepos(
           blocks: MessageBlock[];
           runId?: string;
         };
+        /** Duplication/imports must preserve the source profile, including deliberate blanks. */
+        seedRoleFromName?: boolean;
         /** Adds content in the creation transaction, after the bot and its MEMORY.md exist. */
         seed?: (tx: Prisma.TransactionClient, botId: string) => Promise<void>;
         isolationLevel?: Prisma.TransactionIsolationLevel;
@@ -554,7 +556,9 @@ export function createRepos(
           ? prisma.$transaction(run, { isolationLevel: input.isolationLevel })
           : prisma.$transaction(run);
       const inferredRole =
-        process.env.RAKAZO_BOT_ROLE_AUTOFILL === "true" ? inferBotRoleFromName(input.name) : null;
+        process.env.RAKAZO_BOT_ROLE_AUTOFILL === "true" && input.seedRoleFromName !== false
+          ? inferBotRoleFromName(displayName(input.name, ""))
+          : null;
       const insertBot = () =>
         inTransaction(async (tx) => {
           await lockSpaceForContentCreation(tx, {

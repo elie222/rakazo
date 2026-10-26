@@ -50,6 +50,8 @@ export function createAgentImportServices({
       withSerializableRetry(() =>
         repos.createBot(actor, {
           ...input,
+          // Imported profiles may intentionally omit instructions; keep them intact.
+          seedRoleFromName: false,
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         }),
       ),

@@ -1,3 +1,5 @@
+import { displayName } from "./display-name.js";
+
 /**
  * Deterministic, opt-in first-run role bootstrap from a descriptive bot name.
  * No network or model call, no user data and no permissions granted. These
@@ -122,7 +124,9 @@ const GENERIC_ROLES: ReadonlyArray<{
 ];
 
 export function inferBotRoleFromName(name: string): BotRoleSeed | null {
-  const normalized = name.trim().normalize("NFKC");
+  // Match the same public name normalization used when persisting a Bot.
+  // Opaque machine identifiers must never receive inferred instructions.
+  const normalized = displayName(name, "").normalize("NFKC");
   if (!normalized || normalized.length > 80) return null;
   const spec = [...ROLE_SEEDS, ...GENERIC_ROLES].find((role) =>
     role.matches.some((regex) => regex.test(normalized)),

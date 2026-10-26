@@ -51,6 +51,12 @@ describe("commitBotUpdate", () => {
         },
         appendEvent,
       );
+      // This lock must happen before reading generated fields: an approved
+      // instruction change from another thread cannot race a name-only rename.
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(tx.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(
+        tx.bot.findUnique.mock.invocationCallOrder[0] ?? 0,
+      );
       expect(tx.bot.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ name: "出典監査", title: "出典・根拠監査" }),

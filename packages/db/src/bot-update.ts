@@ -61,6 +61,10 @@ export async function commitBotUpdate(
       typeof data.name === "string" &&
       !options.instructionRestore
     ) {
+      // The thread lock protects direct chat writes, but instruction approval
+      // can originate in another thread. Serialize every inference read with
+      // all instruction writers by locking the bot row before observing it.
+      await tx.$queryRaw`SELECT id FROM bots WHERE id = ${options.botId} FOR UPDATE`;
       const current = await tx.bot.findUnique({
         where: { id: options.botId },
         select: { name: true, title: true, description: true, instructions: true },
