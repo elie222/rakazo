@@ -47,6 +47,7 @@ export default function TeamConversationSettings() {
   const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -62,10 +63,10 @@ export default function TeamConversationSettings() {
         setMode(listenMode(conversation.teamChatAmbientEnabled));
         setRules(conversation.teamChatRules);
         setPolicies(conversation.automatedSenderPolicies);
-        setError(null);
+        setLoadError(null);
       })
       .catch((err) => {
-        if (active) setError(errorText(err));
+        if (active) setLoadError(errorText(err));
       });
     return () => {
       active = false;
@@ -73,12 +74,12 @@ export default function TeamConversationSettings() {
   }, [attempt, conversationId]);
 
   if (!loaded) {
-    return error ? (
+    return loadError ? (
       <View style={styles.content}>
         <LoadFailure
-          message={error}
+          message={loadError}
           onRetry={() => {
-            setError(null);
+            setLoadError(null);
             setAttempt((count) => count + 1);
           }}
         />

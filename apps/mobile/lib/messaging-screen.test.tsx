@@ -400,3 +400,25 @@ it("clears an old load error once a later load succeeds", async () => {
   expect(container.textContent).toContain("Family");
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
 });
+
+it("keeps a failed action's error when a refresh that was pending then succeeds", async () => {
+  await act(async () => root.render(<MessagingSettings />));
+  const answer = async (path: string) => (responses[path] ?? { ok: true }) as never;
+  let finishRefresh!: () => void;
+  vi.mocked(rpc).mockImplementation(async (path: string) => {
+    if (path === "messaging/channels/respond") throw new Error("offline");
+    if (path === "bots/list") {
+      await new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      });
+    }
+    return answer(path);
+  });
+  await act(async () => appState.change?.("active"));
+
+  await press("Family", "Approve");
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+
+  await act(async () => finishRefresh());
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+});

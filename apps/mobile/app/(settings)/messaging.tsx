@@ -45,6 +45,7 @@ export default function MessagingSettings() {
     knownIdentityBots: Record<string, string>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(async () => {
     const [nextBots, nextStatus, nextInstallations, nextChannels, nextConnections, navigation] =
@@ -62,17 +63,17 @@ export default function MessagingSettings() {
     setChannels(nextChannels);
     setConnections(nextConnections);
     setRooms(navigation.current.externalConversations);
-    setError(null);
+    setLoadError(null);
   }, []);
   useFocusEffect(
     useCallback(() => {
-      void refresh().catch((err) => setError(errorText(err)));
+      void refresh().catch((err) => setLoadError(errorText(err)));
     }, [refresh]),
   );
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh().catch((err) => setError(errorText(err)));
+      if (state === "active") void refresh().catch((err) => setLoadError(errorText(err)));
     });
     return () => subscription.remove();
   }, [refresh]);
@@ -100,6 +101,7 @@ export default function MessagingSettings() {
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
+    setLoadError(null);
     setLink(null);
     try {
       await action();
@@ -205,18 +207,20 @@ export default function MessagingSettings() {
     </View>
   );
 
+  const shownError = error ?? (status ? loadError : null);
+
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      {error && !status ? (
+      {loadError && !status ? (
         <LoadFailure
-          message={error}
+          message={loadError}
           onRetry={() => {
-            setError(null);
-            void refresh().catch((err) => setError(errorText(err)));
+            setLoadError(null);
+            void refresh().catch((err) => setLoadError(errorText(err)));
           }}
         />
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
+      ) : shownError ? (
+        <Text style={styles.error}>{shownError}</Text>
       ) : null}
       <SettingsGroup label={t("Requests")}>
         {invitedChannels.map((channel) => (

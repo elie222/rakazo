@@ -28,6 +28,7 @@ export default function SpaceSettings() {
   const [overrides, setOverrides] = useState<SpaceSetting[] | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useFocusEffect(
@@ -38,10 +39,10 @@ export default function SpaceSettings() {
         .then((next) => {
           if (!current) return;
           setOverrides(next);
-          setError(null);
+          setLoadError(null);
         })
         .catch((err: unknown) => {
-          if (current) setError(errorText(err, t("Something went wrong. Try again.")));
+          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
       return () => {
         current = false;
@@ -61,6 +62,7 @@ export default function SpaceSettings() {
   async function customize(setting: SpaceSetting, enabled: boolean) {
     setPending(true);
     setError(null);
+    setLoadError(null);
     try {
       setOverrides(await rpc("spaceSettings/setOverride", { setting, enabled }));
       if (enabled) open(setting);
@@ -92,6 +94,8 @@ export default function SpaceSettings() {
     );
   };
 
+  const shownError = error ?? (overrides ? loadError : null);
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -99,17 +103,17 @@ export default function SpaceSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error && !overrides ? (
+        {loadError && !overrides ? (
           <LoadFailure
-            message={error}
+            message={loadError}
             onRetry={() => {
-              setError(null);
+              setLoadError(null);
               setAttempt((count) => count + 1);
             }}
           />
-        ) : error ? (
+        ) : shownError ? (
           <Text accessibilityRole="alert" style={styles.error}>
-            {error}
+            {shownError}
           </Text>
         ) : null}
         <SettingsGroup accessibilityLabel={t("Customize")} label={t("Customize")}>

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   push: vi.fn(),
   rpc: vi.fn(),
   overrides: [] as string[],
+  focusCount: 0,
 }));
 type SwitchProps = {
   accessibilityLabel?: string;
@@ -50,7 +51,8 @@ vi.mock("./api", () => ({
   }),
 }));
 vi.mock("expo-router", () => ({
-  useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => undefined | (() => void)) =>
+    useEffect(effect, [effect, state.focusCount]),
   useLocalSearchParams: () => ({ spaceId: "space-other", name: "Work" }),
   useRouter: () => ({ push: state.push }),
 }));
@@ -99,6 +101,7 @@ const control = (label: string) =>
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.overrides = [];
+  state.focusCount = 0;
   state.push.mockReset();
   state.rpc
     .mockReset()
@@ -191,4 +194,26 @@ it("offers a retry when the overrides fail to load, then enables the switches", 
   expect(control("Customize Voice")?.checked).toBe(true);
   expect(retry()).toBeUndefined();
   expect(container.textContent).not.toContain("Something went wrong. Try again.");
+});
+
+it("keeps a failed save's error when a read that was pending then succeeds", async () => {
+  const base = state.rpc.getMockImplementation()!;
+  let finishRead!: () => void;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc === "spaceSettings/setOverride") throw new Error("offline");
+    if (proc === "spaceSettings/overrides") {
+      await new Promise<void>((resolve) => {
+        finishRead = resolve;
+      });
+    }
+    return base(proc, input);
+  });
+  state.focusCount += 1;
+  await act(async () => root.render(createElement(SpaceSettings)));
+
+  await act(async () => control("Customize Models")!.click());
+  expect(container.textContent).toContain("Could not save that preference");
+
+  await act(async () => finishRead());
+  expect(container.textContent).toContain("Could not save that preference");
 });

@@ -35,6 +35,7 @@ export default function Approvals() {
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   // Counts saves, so a read that started before one never shows what it replaced.
   const saves = useRef(0);
@@ -48,10 +49,10 @@ export default function Approvals() {
           if (!current || saves.current !== savesAtRead) return;
           setSettings(nextSettings);
           setRules(nextRules);
-          setError(null);
+          setLoadError(null);
         })
         .catch((err: unknown) => {
-          if (current) setError(errorText(err, t("Something went wrong. Try again.")));
+          if (current) setLoadError(errorText(err, t("Something went wrong. Try again.")));
         });
       return () => {
         current = false;
@@ -63,6 +64,7 @@ export default function Approvals() {
     saves.current += 1;
     setPending(true);
     setError(null);
+    setLoadError(null);
     try {
       await change();
     } catch (err) {
@@ -111,6 +113,8 @@ export default function Approvals() {
     { value: "ask", label: t("Ask") },
   ];
 
+  const shownError = error ?? (settings ? loadError : null);
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -118,17 +122,17 @@ export default function Approvals() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error && !settings ? (
+        {loadError && !settings ? (
           <LoadFailure
-            message={error}
+            message={loadError}
             onRetry={() => {
-              setError(null);
+              setLoadError(null);
               setAttempt((count) => count + 1);
             }}
           />
-        ) : error ? (
+        ) : shownError ? (
           <Text accessibilityRole="alert" style={styles.error}>
-            {error}
+            {shownError}
           </Text>
         ) : null}
         <View style={styles.section}>

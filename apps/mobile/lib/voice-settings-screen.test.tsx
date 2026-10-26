@@ -193,3 +193,21 @@ it("offers a retry when the first load fails, then loads the providers again", a
   expect(container.textContent).not.toContain("offline");
   expect(retry()).toBeUndefined();
 });
+
+it("clears a failed refresh's banner once a provider choice succeeds", async () => {
+  await render();
+  expect(container.textContent).toContain("ElevenLabs");
+  mocks.focused = false;
+  await render();
+  mocks.failStatus = true;
+  mocks.focused = true;
+  await render();
+  expect(container.textContent).toContain("offline");
+
+  mocks.failStatus = false;
+  const provider = [...container.querySelectorAll("button")].find((node) =>
+    node.textContent?.includes("ElevenLabs"),
+  );
+  await act(async () => provider!.click());
+  expect(container.textContent).not.toContain("offline");
+});

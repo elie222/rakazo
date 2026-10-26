@@ -61,6 +61,7 @@ export default function Models() {
       queryClient,
     ).data ?? noCredentials;
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const openedRef = useRef(false);
   const pickerRequestRef = useRef<string | null>(null);
   const connectionRequestRef = useRef<string | null>(null);
@@ -87,10 +88,11 @@ export default function Models() {
             reuse,
           }),
         ]);
-        setError(null);
+        setLoadError(null);
       } catch (err) {
         // A newer read replaced this one and reports for both.
-        if (!isCancelledError(err)) setError(errorText(err, t("Could not load model settings")));
+        if (!isCancelledError(err))
+          setLoadError(errorText(err, t("Could not load model settings")));
       }
     },
     [spaceId, t],
@@ -219,7 +221,7 @@ export default function Models() {
   }
 
   // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
-  if (!me && !error) {
+  if (!me && !loadError) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
         <ActivityIndicator color={native.secondaryLabel} />
@@ -227,6 +229,7 @@ export default function Models() {
     );
   }
 
+  const shownError = error ?? (me ? loadError : null);
   const shared = {
     credentials,
     providers,
@@ -245,17 +248,17 @@ export default function Models() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {error && !me ? (
+        {loadError && !me ? (
           <LoadFailure
-            message={error}
+            message={loadError}
             onRetry={() => {
-              setError(null);
+              setLoadError(null);
               void load();
             }}
           />
-        ) : error ? (
+        ) : shownError ? (
           <Text accessibilityRole="alert" style={styles.error}>
-            {error}
+            {shownError}
           </Text>
         ) : null}
         {me ? (
