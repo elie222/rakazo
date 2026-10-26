@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { BuiCard } from "../ai/primitives";
@@ -16,10 +16,12 @@ type SkillDraftBlock = {
   status: "draft" | "saved";
 };
 
+function fieldsOf(block: SkillDraftBlock): string {
+  return JSON.stringify({ name: block.name, playbook: block.playbook });
+}
+
 function savedSnapshot(block: SkillDraftBlock): string | null {
-  return block.status === "saved"
-    ? JSON.stringify({ name: block.name, playbook: block.playbook })
-    : null;
+  return block.status === "saved" ? fieldsOf(block) : null;
 }
 
 function fieldLabel(id: string, title: React.ReactNode) {
@@ -49,10 +51,19 @@ export function SkillDraftCard({
   const [error, setError] = useState<string | null>(null);
   const saved = savedFields === JSON.stringify({ name, playbook });
 
+  // The fields last loaded from or written to the server. A later update to the same skill
+  // replaces the fields only while they are unedited, so a late saved status keeps new edits.
+  const synced = useRef({ skillId: block.skillId, fields: fieldsOf(block) });
+
   useEffect(() => {
+    setSavedFields(savedSnapshot(block));
+    const edited =
+      synced.current.skillId === block.skillId &&
+      synced.current.fields !== JSON.stringify({ name, playbook });
+    if (edited) return;
+    synced.current = { skillId: block.skillId, fields: fieldsOf(block) };
     setName(block.name);
     setPlaybook(block.playbook);
-    setSavedFields(savedSnapshot(block));
   }, [block.skillId, block.status]);
 
   async function persist(then: (sent: string) => Promise<unknown>, failure?: string) {
@@ -61,6 +72,7 @@ export function SkillDraftCard({
     setError(null);
     try {
       await rpc.skills.updateDraft({ skillId: block.skillId, name, playbook });
+      synced.current.fields = sent;
       // A saved skill stays saved with the fields just written.
       if (savedFields !== null) setSavedFields(sent);
       await then(sent);
