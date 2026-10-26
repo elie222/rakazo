@@ -51,17 +51,20 @@ export function SkillDraftCard({
   const [error, setError] = useState<string | null>(null);
   const saved = savedFields === JSON.stringify({ name, playbook });
 
-  // The fields last loaded from or written to the server. A later update to the same skill
-  // replaces the fields only while they are unedited, so a late saved status keeps new edits.
-  const synced = useRef({ skillId: block.skillId, fields: fieldsOf(block) });
+  // The fields last loaded from the server, and whether this card has written since. A later
+  // update to the same skill never replaces fields this card wrote or the user edited, so a
+  // late or out-of-order saved status cannot bring back older values.
+  const synced = useRef({ skillId: block.skillId, fields: fieldsOf(block), wrote: false });
 
   useEffect(() => {
+    const sameSkill = synced.current.skillId === block.skillId;
+    if (sameSkill && synced.current.wrote) {
+      if (block.status === "saved") setSavedFields((current) => current ?? fieldsOf(block));
+      return;
+    }
     setSavedFields(savedSnapshot(block));
-    const edited =
-      synced.current.skillId === block.skillId &&
-      synced.current.fields !== JSON.stringify({ name, playbook });
-    if (edited) return;
-    synced.current = { skillId: block.skillId, fields: fieldsOf(block) };
+    if (sameSkill && synced.current.fields !== JSON.stringify({ name, playbook })) return;
+    synced.current = { skillId: block.skillId, fields: fieldsOf(block), wrote: false };
     setName(block.name);
     setPlaybook(block.playbook);
   }, [block.skillId, block.status]);
@@ -72,7 +75,7 @@ export function SkillDraftCard({
     setError(null);
     try {
       await rpc.skills.updateDraft({ skillId: block.skillId, name, playbook });
-      synced.current.fields = sent;
+      synced.current.wrote = true;
       // A saved skill stays saved with the fields just written.
       if (savedFields !== null) setSavedFields(sent);
       await then(sent);

@@ -210,13 +210,12 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   expect(button().textContent).toBe("Saved");
 
   const input = card.querySelector("input")!;
-  act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      input,
-      "Edited",
-    );
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const type = (value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  type("Edited");
   act(() => render({ ...draft, status: "saved" }));
 
   expect(input.value).toBe("Edited");
@@ -225,4 +224,12 @@ it("keeps an edit made after a save when the saved status arrives late", async (
   // A different skill always loads its own fields.
   act(() => render({ ...draft, skillId: "other", name: "Other" }));
   expect(card.querySelector("input")!.value).toBe("Other");
+
+  // A second save is not undone when the first save's status arrives after it.
+  await act(async () => button().click());
+  type("Newer");
+  await act(async () => button().click());
+  act(() => render({ ...draft, skillId: "other", name: "Other", status: "saved" }));
+  expect(input.value).toBe("Newer");
+  expect(button().textContent).toBe("Saved");
 });
