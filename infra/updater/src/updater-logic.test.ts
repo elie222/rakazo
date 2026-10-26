@@ -159,6 +159,31 @@ describe("readEnvAssignment", () => {
     expect(readEnvAssignment("A='v1.0.0'", "A")).toBe("v1.0.0");
   });
 
+  it.each([
+    "A=v1.2.3 # pinned",
+    "A=v1.2.3\t# pinned",
+    'A="v1.2.3" # pinned',
+    "A='v1.2.3' # pinned",
+    'A="v1.2.3"# pinned',
+    'A="v1.2.3" # "pinned"',
+    "A='v1.2.3' # 'pinned'",
+  ])("ignores Compose inline comments in %s", (contents) => {
+    expect(readEnvAssignment(contents, "A")).toBe("v1.2.3");
+  });
+
+  it.each([
+    ["A=value#literal", "value#literal"],
+    ["A=#literal", "#literal"],
+    ['A="value # literal" # comment', "value # literal"],
+    ["A='value # literal' # comment", "value # literal"],
+    ['A="value \\" # literal" # comment', 'value \\" # literal'],
+    ["A= # comment", ""],
+    ['A="" # comment', ""],
+    ["A='' # comment", ""],
+  ])("preserves the value in %s", (contents, expected) => {
+    expect(readEnvAssignment(contents, "A")).toBe(expected);
+  });
+
   it("does not match a key that merely shares a prefix", () => {
     expect(readEnvAssignment("RAKAZO_IMAGE_TAG_PREVIOUS=v1", "RAKAZO_IMAGE_TAG")).toBeNull();
   });
@@ -180,6 +205,19 @@ describe("missingSecretAssignments", () => {
     expect(missingSecretAssignments("POSTGRES_APP_PASSWORD='kept'\n", generate)).toEqual({});
   });
 
+  it.each(["kept#literal", "'kept # literal' # comment", '"kept # literal" # comment'])(
+    "keeps an existing password containing a hash: %s",
+    (value) => {
+      expect(missingSecretAssignments(`POSTGRES_APP_PASSWORD=${value}\n`, generate)).toEqual({});
+    },
+  );
+
+  it("generates a password when the assignment contains only a comment", () => {
+    expect(missingSecretAssignments("POSTGRES_APP_PASSWORD= # comment\n", generate)).toEqual({
+      POSTGRES_APP_PASSWORD: generate(),
+    });
+  });
+
   it("generates a URI-safe value by default", () => {
     expect(missingSecretAssignments("").POSTGRES_APP_PASSWORD).toMatch(/^[0-9a-f]{32}$/);
   });
@@ -189,6 +227,14 @@ describe("readTagState", () => {
   it("reads the pinned tag and the rollback tag", () => {
     const contents = "RAKAZO_IMAGE_TAG=v1.1.0\nRAKAZO_IMAGE_TAG_PREVIOUS=v1.0.0\n";
     expect(readTagState(contents)).toEqual({ currentTag: "v1.1.0", previousTag: "v1.0.0" });
+  });
+
+  it.each(["", '"', "'"])("reads tags with inline comments and %j quoting", (quote) => {
+    const contents = [
+      `RAKAZO_IMAGE_TAG=${quote}v1.2.3${quote} # pinned`,
+      `RAKAZO_IMAGE_TAG_PREVIOUS=${quote}v1.2.2${quote} # rollback`,
+    ].join("\n");
+    expect(readTagState(contents)).toEqual({ currentTag: "v1.2.3", previousTag: "v1.2.2" });
   });
 
   it("falls back to the locally built tag when nothing is pinned yet", () => {
