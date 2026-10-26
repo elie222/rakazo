@@ -270,7 +270,7 @@ export default function VoiceSettings() {
     if (pending !== null || !deviceVoiceReady) return;
     setPending("device-voice");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       await saveDeviceVoice(!deviceVoice);
     } finally {
@@ -285,7 +285,7 @@ export default function VoiceSettings() {
     loadRevision.current++;
     setPending("voice");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
       setProvider(nextProvider);
@@ -335,7 +335,7 @@ export default function VoiceSettings() {
     if (!selected || !canConnect) return;
     setPending("connect");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/connect", {
         provider: selected.id,
@@ -365,7 +365,7 @@ export default function VoiceSettings() {
     if (!providerId) return;
     setPending("disconnect");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       await rpc("voice/disconnect", { provider: providerId });
       setApiKey("");
@@ -385,7 +385,7 @@ export default function VoiceSettings() {
     speechModelSave.current = next;
     setPending("speech");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       const saved = await rpc("voice/setSpeechModel", {
         provider: selected.id,
@@ -426,7 +426,7 @@ export default function VoiceSettings() {
   async function testVoice() {
     setPending("test");
     setError(null);
-    setLoadError(null);
+    if (status) setLoadError(null);
     try {
       const ready = await speakText(t("Hi, this is how I'll sound when I read replies out loud."), {
         scope,
@@ -441,6 +441,7 @@ export default function VoiceSettings() {
     }
   }
 
+  const failure = error ?? loadError;
   const shownError = error ?? (status ? loadError : null);
 
   return (
@@ -451,9 +452,9 @@ export default function VoiceSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
-        {loadError && !status ? (
+        {failure && !status ? (
           <LoadFailure
-            message={loadError}
+            message={failure}
             onRetry={() => {
               setLoadError(null);
               setLoading(true);

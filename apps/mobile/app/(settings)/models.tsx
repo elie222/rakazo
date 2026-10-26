@@ -229,6 +229,7 @@ export default function Models() {
     );
   }
 
+  const failure = error ?? loadError;
   const shownError = error ?? (me ? loadError : null);
   const shared = {
     credentials,
@@ -248,10 +249,11 @@ export default function Models() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loadError && !me ? (
+        {failure && !me ? (
           <LoadFailure
-            message={loadError}
+            message={failure}
             onRetry={() => {
+              setError(null);
               setLoadError(null);
               void load();
             }}

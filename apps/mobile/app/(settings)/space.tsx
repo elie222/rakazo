@@ -94,6 +94,7 @@ export default function SpaceSettings() {
     );
   };
 
+  const failure = error ?? loadError;
   const shownError = error ?? (overrides ? loadError : null);
 
   return (
@@ -103,10 +104,11 @@ export default function SpaceSettings() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loadError && !overrides ? (
+        {failure && !overrides ? (
           <LoadFailure
-            message={loadError}
+            message={failure}
             onRetry={() => {
+              setError(null);
               setLoadError(null);
               setAttempt((count) => count + 1);
             }}

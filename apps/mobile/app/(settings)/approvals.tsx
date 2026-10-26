@@ -113,6 +113,7 @@ export default function Approvals() {
     { value: "ask", label: t("Ask") },
   ];
 
+  const failure = error ?? loadError;
   const shownError = error ?? (settings ? loadError : null);
 
   return (
@@ -122,10 +123,11 @@ export default function Approvals() {
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loadError && !settings ? (
+        {failure && !settings ? (
           <LoadFailure
-            message={loadError}
+            message={failure}
             onRetry={() => {
+              setError(null);
               setLoadError(null);
               setAttempt((count) => count + 1);
             }}

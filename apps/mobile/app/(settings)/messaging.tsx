@@ -207,14 +207,16 @@ export default function MessagingSettings() {
     </View>
   );
 
+  const failure = error ?? loadError;
   const shownError = error ?? (status ? loadError : null);
 
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
-      {loadError && !status ? (
+      {failure && !status ? (
         <LoadFailure
-          message={loadError}
+          message={failure}
           onRetry={() => {
+            setError(null);
             setLoadError(null);
             void refresh().catch((err) => setLoadError(errorText(err)));
           }}

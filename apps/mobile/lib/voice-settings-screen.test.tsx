@@ -5,6 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import VoiceSettings from "../app/(settings)/voice";
+import { saveDeviceVoiceEnabled } from "./device-voice";
 import { queryClient } from "./query";
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   cue: vi.fn(),
   focused: true,
   failStatus: false,
+  loadDevice: vi.fn(),
   reads: [] as string[],
   t: (text: string) => text,
 }));
@@ -48,7 +50,7 @@ vi.mock("./api", () => ({
 }));
 vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("./device-voice", () => ({
-  loadDeviceVoiceEnabled: async () => false,
+  loadDeviceVoiceEnabled: mocks.loadDevice,
   saveDeviceVoiceEnabled: vi.fn(),
 }));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
@@ -108,6 +110,7 @@ beforeEach(() => {
   queryClient.clear();
   mocks.focused = true;
   mocks.failStatus = false;
+  mocks.loadDevice.mockReset().mockResolvedValue(false);
   mocks.reads.length = 0;
   mocks.calls.mockResolvedValue(true);
   mocks.waiting.mockResolvedValue(true);
@@ -210,4 +213,51 @@ it("clears a failed refresh's banner once a provider choice succeeds", async () 
   );
   await act(async () => provider!.click());
   expect(container.textContent).not.toContain("offline");
+});
+
+it("keeps Retry when saving 'This device' fails before the first load succeeds", async () => {
+  mocks.failStatus = true;
+  await render();
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent?.includes(label));
+  expect(button("Retry")).toBeDefined();
+
+  vi.mocked(saveDeviceVoiceEnabled).mockRejectedValueOnce(new Error("write failed"));
+  await act(async () => button("This device")!.click());
+  expect(container.textContent).toContain("write failed");
+  expect(button("Retry")).toBeDefined();
+
+  mocks.failStatus = false;
+  await act(async () => button("Retry")!.click());
+  expect(container.textContent).toContain("ElevenLabs");
+  expect(button("Retry")).toBeUndefined();
+});
+
+it("keeps Retry when saving 'This device' succeeds before the first load does", async () => {
+  mocks.failStatus = true;
+  await render();
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent?.includes(label));
+  await act(async () => button("This device")!.click());
+  expect(saveDeviceVoiceEnabled).toHaveBeenCalledWith(true);
+  expect(button("Retry")).toBeDefined();
+
+  mocks.failStatus = false;
+  await act(async () => button("Retry")!.click());
+  expect(container.textContent).toContain("ElevenLabs");
+  expect(button("Retry")).toBeUndefined();
+});
+
+it("keeps a device-voice read error after Retry reloads the providers", async () => {
+  mocks.failStatus = true;
+  mocks.loadDevice.mockRejectedValueOnce(new Error("device read failed"));
+  await render();
+  const retry = () =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "Retry");
+  expect(container.textContent).toContain("device read failed");
+
+  mocks.failStatus = false;
+  await act(async () => retry()!.click());
+  expect(container.textContent).toContain("ElevenLabs");
+  expect(container.textContent).toContain("device read failed");
 });
