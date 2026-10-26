@@ -220,6 +220,49 @@ describe("any other agent document", () => {
     expect(result.memory.map((item) => item.path)).toEqual(["MEMORY.md"]);
   });
 
+  it.each([
+    ["C#", "C#"],
+    ["F#", "F#"],
+    ["C##", "C##"],
+    ["C#   ", "C#"],
+    ["C# ##", "C#"],
+    ["C#\t###\t", "C#"],
+    ["Projects ###", "Projects"],
+    ["Ticket #123", "Ticket #123"],
+    ["Projects ###x", "Projects ###x"],
+  ])("preserves literal hashes in memory heading %j", (heading, title) => {
+    const result = plan([
+      { path: "agent.md", content: `# Memory\n## ${heading}\nSynthetic notes.\n` },
+    ]);
+    expect(result.memory).toHaveLength(1);
+    expect(result.memory[0]).toMatchObject({
+      title,
+      content: `# ${title}\n\nSynthetic notes.\n`,
+    });
+  });
+
+  it("preserves literal trailing hashes in skill names", () => {
+    const result = plan([
+      {
+        path: "agent.md",
+        content: "# Skills\n## c#\nDescribe a task.\n1. Do the task.\n",
+      },
+    ]);
+    expect(result.skills.map((item) => item.name)).toEqual(["c#"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("accepts whitespace-separated closing hashes in skill headings", () => {
+    const result = plan([
+      {
+        path: "agent.md",
+        content: "# Skills\n## trip-planner ###\nPlan a trip.\n1. Ask for dates.\n",
+      },
+    ]);
+    expect(result.skills.map((item) => item.name)).toEqual(["trip-planner"]);
+    expect(result.skipped).toEqual([]);
+  });
+
   it("asks for the same sections the parser reads", () => {
     for (const heading of ["# Name", "# Instructions", "# Memory", "# Skills"]) {
       expect(AGENT_IMPORT_PROMPT).toContain(`\n${heading}\n`);
