@@ -153,6 +153,13 @@ describe("grading connect-mcp", () => {
     ]);
   });
 
+  it("calibrates the judge on its own rubric with passing and failing labels", () => {
+    const { rubric } = connectMcp.judge!(evidence([card, approved], done));
+    const labels = connectMcp.judgeCalibration ?? [];
+    expect(labels.every((label) => label.input.rubric === rubric)).toBe(true);
+    expect(labels.map((label) => label.pass)).toEqual([true, false, false, false]);
+  });
+
   it("fails a duplicated task, an unread list and a repeated token", () => {
     const twice: TrackerState = {
       ...done,

@@ -62,6 +62,8 @@ export type Flow<World = unknown> = {
   observe(computer: FlowComputer, world: World): Promise<unknown>;
   grade(evidence: FlowEvidence<World>): Criterion[];
   judge?(evidence: FlowEvidence<World>): JudgeInput;
+  /** Reviewed judge inputs with the expected verdict; the judge must agree before it grades. */
+  judgeCalibration?: Array<{ input: JudgeInput; pass: boolean }>;
 };
 
 export const check = (id: string, pass: boolean, detail?: string): Criterion => ({

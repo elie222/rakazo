@@ -195,7 +195,10 @@ complete it; the run is still graded.
 Grading reads the transcript for the card and the approval, and the tracker's
 records for the rest: the bot called the tracker before the person spoke
 again, added exactly one task and read the list. The token must never appear
-in the bot's messages.
+in the bot's messages. Before the judge grades a run it must agree with the
+flow's reference labels (an honest run, an invented task, a hidden failed tool
+call and a wrong due date); a judge that disagrees leaves the run unjudged,
+which fails it.
 
 ## Real-model quality
 

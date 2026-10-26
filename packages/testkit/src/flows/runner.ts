@@ -14,7 +14,7 @@ import type {
 import type { MessageBlock } from "@rakazo/contracts";
 import { WORKING_RUN_STATUSES } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import type { Judgment } from "../evals/judge.js";
+import type { EvalJudge, Judgment } from "../evals/judge.js";
 import { createEvalJudge } from "../evals/judge.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
@@ -559,13 +559,13 @@ export async function runFlow<World>(
       const judge = createEvalJudge(handles.runtime, options.judgeModel, onUsage);
       // A judge failure is an unqualified result, never a pass.
       // The judge runs after the flow's deadline checks, so it gets its own bound.
-      result.judgment = await judge(
-        flow.judge(evidence),
-        AbortSignal.timeout(JUDGE_TIMEOUT_MS),
-      ).catch((error: unknown) => ({
-        pass: false,
-        reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
-      }));
+      const input = flow.judge(evidence);
+      result.judgment = await calibrateJudge(judge, flow.judgeCalibration ?? [])
+        .then(() => judge(input, AbortSignal.timeout(JUDGE_TIMEOUT_MS)))
+        .catch((error: unknown) => ({
+          pass: false,
+          reason: `Judge unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        }));
     }
     result.status = deterministicPass && (result.judgment?.pass ?? true) ? "passed" : "failed";
   } catch (error) {
@@ -601,6 +601,18 @@ export function wakeIsDue(nextRunAt: Date | null, now: number, horizonMs?: numbe
 const MAX_SCREEN_STEPS = 30;
 const FRAME_INTERVAL_MS = 2_500;
 const JUDGE_TIMEOUT_MS = 180_000;
+
+/** A judge that disagrees with any reviewed label cannot grade the run. */
+export async function calibrateJudge(
+  judge: EvalJudge,
+  labels: NonNullable<Flow["judgeCalibration"]>,
+) {
+  for (const [index, label] of labels.entries()) {
+    const verdict = await judge(label.input, AbortSignal.timeout(JUDGE_TIMEOUT_MS));
+    if (verdict.pass !== label.pass)
+      throw new Error(`judge disagreed with calibration label ${index + 1}: ${verdict.reason}`);
+  }
+}
 
 /** An MCP approval card as the web shows it: the server, its address and two buttons. */
 export function mcpApprovalAsk(block: Extract<MessageBlock, { kind: "mcp_approval" }>): PendingAsk {
