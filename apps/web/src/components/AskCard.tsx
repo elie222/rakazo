@@ -5,7 +5,7 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
 import { Button, Input, Textarea } from "@rakazo/ui-web";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
@@ -72,6 +72,8 @@ export function AskCard({
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
   const [username, setUsername] = useState("");
+  const [multilineSecret, setMultilineSecret] = useState(false);
+  const secretTextarea = useRef<HTMLTextAreaElement>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
@@ -92,6 +94,13 @@ export function AskCard({
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
 
+  useEffect(() => {
+    const field = secretTextarea.current;
+    if (!multilineSecret || !field) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [multilineSecret]);
+
   async function submitAnswer(value: string) {
     if (submitting) return;
     if (secretInput ? value.length === 0 : !value.trim()) return;
@@ -103,6 +112,7 @@ export function AskCard({
     if (secretInput) {
       setAnswer("");
       setUsername("");
+      setMultilineSecret(false);
     }
     try {
       await onAnswer(submitValue, submitUsername);
@@ -125,6 +135,7 @@ export function AskCard({
     setError(null);
     setAnswer("");
     setUsername("");
+    setMultilineSecret(false);
     try {
       await onDismiss();
       setDismissed(true);
@@ -308,17 +319,44 @@ export function AskCard({
               placeholder={t`Username`}
             />
           ) : null}
-          <Input
-            className="w-full"
-            aria-label={secretLabel}
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={submitting}
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder={secretLabel}
-          />
+          {multilineSecret ? (
+            <Textarea
+              ref={secretTextarea}
+              className="max-h-40 w-full [-webkit-text-security:disc]"
+              aria-label={secretLabel}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={submitting}
+              value={answer}
+              onChange={(event) => setAnswer(event.target.value)}
+            />
+          ) : (
+            <Input
+              className="w-full"
+              aria-label={secretLabel}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={submitting}
+              value={answer}
+              onChange={(event) => setAnswer(event.target.value)}
+              onPaste={(event) => {
+                const pasted = event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
+                // A password field can't hold line breaks, so a multi-line secret such as an
+                // SSH private key would be flattened; it moves to a masked text area instead.
+                if (!pasted.trim().includes("\n")) return;
+                event.preventDefault();
+                const { selectionStart, selectionEnd } = event.currentTarget;
+                setAnswer(
+                  answer.slice(0, selectionStart ?? answer.length) +
+                    pasted +
+                    answer.slice(selectionEnd ?? answer.length),
+                );
+                setMultilineSecret(true);
+              }}
+              placeholder={secretLabel}
+            />
+          )}
           <div className="flex gap-2">
             <Button
               type="submit"

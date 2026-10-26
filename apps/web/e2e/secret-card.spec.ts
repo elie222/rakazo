@@ -130,6 +130,76 @@ test("renders masked secret card and saves without putting the value in chat", a
   await captureScreenshot(page, testInfo, "secret-card-saved");
 });
 
+test("keeps the line breaks of a pasted multi-line secret", async ({ page, context }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `secret-multiline-${stamp}@rakazo.test`, "password12", "Secret Multiline");
+  await completeOnboarding(page);
+
+  const botId = activeBotId(page);
+  await page.getByPlaceholder(/Message/).fill("show a secret card for a masked api key");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe("waiting_input");
+  const card = page.getByTestId("secret-ask-card");
+  if ((await card.count()) === 0) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
+  }
+  await expect(card).toBeVisible({ timeout: 15_000 });
+
+  const answers: string[] = [];
+  await page.route("**/rpc/threads/answer", async (route) => {
+    answers.push(route.request().postDataJSON().json.answer);
+    await route.fulfill({
+      status: 400,
+      json: { json: { defined: false, code: "BAD_REQUEST", status: 400, message: "rejected" } },
+    });
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const secretField = card.getByLabel("API key");
+  const save = card.getByRole("button", { name: "Save", exact: true });
+
+  // A single-line value copied with a trailing line break stays in the password field.
+  await page.evaluate(() => navigator.clipboard.writeText("sk-single-line\n"));
+  await secretField.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(secretField).toHaveAttribute("type", "password");
+  await save.click();
+  await expect(card.getByText("Could not submit this answer", { exact: true })).toBeVisible();
+
+  const key = `-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA${stamp}\nQyNTUxOQAAACBmYWtl\n-----END OPENSSH PRIVATE KEY-----\n`;
+  await page.evaluate((value) => navigator.clipboard.writeText(value), key);
+  await secretField.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(secretField).toHaveValue(key);
+  await expect(secretField).toHaveCSS("-webkit-text-security", "disc");
+  await expect(secretField).toBeFocused();
+  expect(await secretField.evaluate((field: HTMLTextAreaElement) => field.selectionStart)).toBe(
+    key.length,
+  );
+  // Clearing the pasted key keeps the text area, so a corrected key can be pasted straight in.
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Backspace");
+  await expect(secretField).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(secretField).toHaveValue(key);
+  await captureScreenshot(page, testInfo, "secret-card-multiline");
+  await save.click();
+  await expect(secretField).toHaveValue("");
+  await expect(secretField).toHaveAttribute("type", "password");
+
+  expect(answers).toEqual(["sk-single-line", key]);
+});
+
 test("dismisses a secret card, resumes the bot and frees the composer", async ({
   page,
 }, testInfo) => {
