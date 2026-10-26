@@ -907,6 +907,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "OAuth connected": "OAuth 已連線",
   "OAuth expired": "OAuth 已過期",
   "Credential saved": "憑證已儲存",
+  Authentication: "驗證方式",
   "No auth": "無驗證",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "機器人無法回覆，因為已達到其供應商的每日限額。",

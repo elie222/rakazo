@@ -902,6 +902,7 @@ export const JA_MESSAGES: Record<string, string> = {
   "OAuth connected": "OAuth接続済み",
   "OAuth expired": "OAuthの有効期限切れ",
   "Credential saved": "認証情報を保存済み",
+  Authentication: "認証方式",
   "No auth": "認証なし",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "プロバイダーの1日の上限に達したため、ボットは返信できませんでした。",

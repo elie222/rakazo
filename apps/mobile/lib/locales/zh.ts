@@ -918,6 +918,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "OAuth connected": "OAuth 已连接",
   "OAuth expired": "OAuth 已过期",
   "Credential saved": "凭据已保存",
+  Authentication: "身份验证方式",
   "No auth": "无需身份验证",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "机器人无法回复，因为已达到其提供商的每日限额。",

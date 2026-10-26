@@ -959,6 +959,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "OAuth connected": "OAuth verbunden",
   "OAuth expired": "OAuth abgelaufen",
   "Credential saved": "Zugangsdaten gespeichert",
+  Authentication: "Authentifizierungsmethode",
   "No auth": "Keine Authentifizierung",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "Der Bot konnte nicht antworten, weil das Tageslimit seines Anbieters erreicht wurde.",
