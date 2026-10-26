@@ -237,7 +237,11 @@ keep their original template and resources.
 
 Computers pause on idle timeout and on stop, preserving files, browser profiles, and
 running-process memory. Reconnecting resumes the same computer. Destruction deletes
-it without resuming it. Paused storage remains subject to Novita's storage billing
+it without resuming it. Stop retries pause requests and checks the remote state. Command
+cancellation and deadlines retry termination; if termination cannot be confirmed, the
+adapter attempts to pause the computer and reports that the command may remain suspended.
+An outage can prevent both operations; the configured idle timeout remains the final
+auto-pause boundary. This recovery does not delete the saved computer. Paused storage remains subject to Novita's storage billing
 and retention terms. This provider uses the shared Linux desktop runtime for screens,
 takeover, terminal, and portable workspace transfer.
 

@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { signupRequiresEmailVerification } from "@rakazo/core";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
-  return provider === "e2b" || provider === "daytona" || provider === "boat";
+  return (
+    provider === "e2b" || provider === "novita" || provider === "daytona" || provider === "boat"
+  );
 }
 
 export function realSandboxTimeout(real: number, emulated: number) {

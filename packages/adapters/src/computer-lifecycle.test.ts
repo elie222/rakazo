@@ -16,6 +16,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  computerSupportsTerminal,
   computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
@@ -3443,3 +3444,10 @@ function replaceDeps(
     events: { append: vi.fn() } as unknown as ThreadEvents,
   };
 }
+
+describe("computer terminal capability", () => {
+  it("allows Novita terminals through the product capability gate", () => {
+    expect(computerSupportsTerminal("novita")).toBe(true);
+    expect(computerSupportsTerminal("unknown")).toBe(false);
+  });
+});

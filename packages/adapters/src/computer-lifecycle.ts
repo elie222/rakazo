@@ -818,6 +818,7 @@ export function computerSupportsTerminal(kind: string): boolean {
   return (
     kind === "docker" ||
     kind === "e2b" ||
+    kind === "novita" ||
     kind === "daytona" ||
     kind === "boat" ||
     kind === "kubernetes" ||
