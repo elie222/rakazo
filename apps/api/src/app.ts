@@ -342,6 +342,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
       e2bApiKey: env.e2bApiKey,
+      novitaApiKey: env.novitaApiKey,
+      sandboxTemplate: env.sandboxTemplate,
       daytonaApiKey: env.daytonaApiKey,
       daytonaApiUrl: env.daytonaApiUrl,
       daytonaTarget: env.daytonaTarget,

@@ -45,6 +45,7 @@
     "jsdom": "30.1.3",
     "koffi": "3.3.4",
     "nodemailer": "10.1.7",
+    "novita-sandbox": "2.1.1",
     "pg": "8.23.1",
     "railway": "3.16.0",
     "sendblue": "3.20.1",

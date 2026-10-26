@@ -9,6 +9,7 @@ import { FakeSandboxProvider } from "./fake-sandbox.js";
 import type { KubernetesSandboxOptions } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
+import { NovitaSandboxProvider } from "./novita-sandbox.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 export interface SandboxProviderOptions {
@@ -17,6 +18,8 @@ export interface SandboxProviderOptions {
   supervisorUrl?: string;
   supervisorToken?: string;
   e2bApiKey?: string;
+  novitaApiKey?: string;
+  sandboxTemplate?: string;
   daytonaApiKey?: string;
   daytonaApiUrl?: string;
   daytonaTarget?: string;
@@ -45,7 +48,7 @@ export interface SandboxProviderOptions {
 }
 
 function missingRemoteKey(
-  provider: "e2b" | "daytona" | "createos" | "boat" | "railway",
+  provider: "novita" | "e2b" | "daytona" | "createos" | "boat" | "railway",
   envName: string,
 ): SandboxProvider {
   return new NoneSandboxProvider(
@@ -61,6 +64,12 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
     case "e2b":
       if (!opts.e2bApiKey?.trim()) return missingRemoteKey("e2b", "E2B_API_KEY");
       return new E2BSandboxProvider(opts.e2bApiKey);
+    case "novita":
+      if (!opts.novitaApiKey?.trim()) return missingRemoteKey("novita", "NOVITA_API_KEY");
+      return new NovitaSandboxProvider({
+        apiKey: opts.novitaApiKey,
+        template: opts.sandboxTemplate,
+      });
     case "daytona":
       if (!opts.daytonaApiKey?.trim()) return missingRemoteKey("daytona", "DAYTONA_API_KEY");
       return new DaytonaSandboxProvider({
@@ -118,7 +127,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | kubernetes | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | novita | daytona | createos | boat | railway | kubernetes | desktop | fake.`,
       );
   }
 }

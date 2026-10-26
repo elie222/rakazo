@@ -31,7 +31,7 @@ run `bash install-images.sh`. Flags may be combined in either order: `--prepare-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
+`SANDBOX_PROVIDER` to `e2b`, `novita`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
@@ -632,7 +632,7 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, boat. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
@@ -644,6 +644,7 @@ MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
 BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
+NOVITA_API_KEY=           # when SANDBOX_PROVIDER=novita; build its template first
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
 BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
@@ -1062,7 +1063,7 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
+  Optional: set `e2b`, `novita`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -1291,7 +1292,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
-# e2b, daytona, or boat
+# e2b, novita, daytona, or boat
 SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile

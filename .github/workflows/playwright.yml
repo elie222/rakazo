@@ -10,6 +10,7 @@ on:
         options:
           - fake
           - e2b
+          - novita
           - daytona
           - boat
         default: fake
@@ -39,6 +40,9 @@ on:
         required: false
       E2B_API_KEY:
         description: E2B API key used only when the E2B sandbox is selected
+        required: false
+      NOVITA_API_KEY:
+        description: Novita API key used only when the Novita sandbox is selected
         required: false
       DAYTONA_API_KEY:
         description: Daytona API key used only when the Daytona sandbox is selected
@@ -81,6 +85,11 @@ jobs:
         env:
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
         run: test -n "$E2B_API_KEY"
+      - name: Validate Novita credentials
+        if: inputs.sandbox_provider == 'novita'
+        env:
+          NOVITA_API_KEY: ${{ secrets.NOVITA_API_KEY }}
+        run: test -n "$NOVITA_API_KEY"
       - name: Validate Daytona credentials
         if: inputs.sandbox_provider == 'daytona'
         env:
@@ -96,6 +105,7 @@ jobs:
         env:
           SANDBOX_TEST_PROVIDER: ${{ inputs.sandbox_provider }}
           E2B_API_KEY: ${{ inputs.sandbox_provider == 'e2b' && secrets.E2B_API_KEY || '' }}
+          NOVITA_API_KEY: ${{ inputs.sandbox_provider == 'novita' && secrets.NOVITA_API_KEY || '' }}
           DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
           BOAT_API_KEY: ${{ inputs.sandbox_provider == 'boat' && secrets.BOAT_API_KEY || '' }}
           SHARD: ${{ matrix.shard }}

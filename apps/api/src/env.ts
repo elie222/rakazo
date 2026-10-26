@@ -79,6 +79,8 @@ export interface AppEnv {
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
   e2bApiKey: string | undefined;
+  novitaApiKey: string | undefined;
+  sandboxTemplate: string | undefined;
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
   daytonaTarget: string | undefined;
@@ -243,6 +245,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
     e2bApiKey: source.E2B_API_KEY,
+    novitaApiKey: source.NOVITA_API_KEY,
+    sandboxTemplate: source.SANDBOX_TEMPLATE,
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,

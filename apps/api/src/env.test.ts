@@ -133,6 +133,24 @@ describe("loadEnv", () => {
     });
   });
 
+  it("loads Novita credentials and the shared sandbox template", () => {
+    expect(
+      loadEnv({
+        ...base,
+        SANDBOX_PROVIDER: "novita",
+        NOVITA_API_KEY: "test-novita-key",
+        SANDBOX_TEMPLATE: "custom-desktop",
+      }),
+    ).toMatchObject({
+      sandboxProvider: "novita",
+      novitaApiKey: "test-novita-key",
+      sandboxTemplate: "custom-desktop",
+    });
+    expect(
+      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
+    ).toBe("none");
+  });
+
   it("loads provider-specific Boat configuration", () => {
     const env = loadEnv({
       ...base,

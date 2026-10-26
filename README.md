@@ -69,7 +69,7 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, `boat`, or `railway`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `novita`, `daytona`, `createos`, `boat`, or `railway`
 with the matching API key.
 
 Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:

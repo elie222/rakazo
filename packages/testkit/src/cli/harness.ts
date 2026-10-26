@@ -26,8 +26,8 @@ const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "daytona", "boat"].includes(sandboxProvider)) {
-  throw new Error('Sandbox must be "fake", "e2b", "daytona", or "boat"');
+if (!["fake", "e2b", "novita", "daytona", "boat"].includes(sandboxProvider)) {
+  throw new Error('Sandbox must be "fake", "e2b", "novita", "daytona", or "boat"');
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
@@ -37,6 +37,9 @@ if (agentRuntime !== "pi" && agentRuntime !== "scripted") {
 }
 if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
   throw new Error("E2B_API_KEY is required when --sandbox=e2b");
+}
+if (sandboxProvider === "novita" && !process.env.NOVITA_API_KEY) {
+  throw new Error("NOVITA_API_KEY is required when --sandbox=novita");
 }
 if (sandboxProvider === "daytona" && !process.env.DAYTONA_API_KEY) {
   throw new Error("DAYTONA_API_KEY is required when --sandbox=daytona");
@@ -310,7 +313,7 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "daytona" | "boat",
+                kind: computer.kind as "e2b" | "novita" | "daytona" | "boat",
                 providerRef: computer.providerRef!,
               },
               {
@@ -342,7 +345,7 @@ async function main() {
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
 async function managedComputers(handles: AppHandles) {
-  if (!["e2b", "daytona", "boat"].includes(sandboxProvider)) return [];
+  if (!["e2b", "novita", "daytona", "boat"].includes(sandboxProvider)) return [];
   return handles.prisma.computer.findMany({
     where: { providerRef: { not: null } },
     select: { homeKey: true, kind: true, providerRef: true, userId: true, spaceId: true },
