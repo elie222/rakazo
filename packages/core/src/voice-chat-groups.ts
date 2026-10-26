@@ -78,6 +78,10 @@ export function groupVoiceChats<T extends VoiceChatMessage>(messages: T[]): Thre
         message.runId && message.blocks[0]?.kind !== "call_request" ? [message.runId] : [],
       );
       items.push(open);
+      if (isCallMarker(message)) {
+        open.marker = message;
+        open = undefined;
+      }
       continue;
     }
     items.push({ kind: "message", message });

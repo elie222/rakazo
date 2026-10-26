@@ -4,6 +4,18 @@ import { captureScreenshot } from "./helpers";
 // Tall enough that each scenario's transcript fits without scrolling inside the chat pane.
 test.use({ viewport: { width: 1280, height: 2200 } });
 
+test("gallery keeps a paginated call closed and its follow-up visible", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=calls&theme=light");
+  const call = page.getByTestId("voice-chat-card").first();
+  await expect(call.getByText("Deploy check", { exact: true })).toBeVisible();
+  await expect(call.getByText("2:05", { exact: true })).toBeVisible();
+  await expect(page.getByText("Here is the deployment checklist.", { exact: true })).toBeVisible();
+  await expect(call.getByText("Here is the deployment checklist.")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "paginated-call-marker");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
