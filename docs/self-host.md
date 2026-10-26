@@ -404,7 +404,9 @@ EMAIL_FROM=Rakazo <no-reply@example.com>
 is specified. `EMAIL_PROVIDER=none` disables external sending. Explicit provider settings take
 precedence over an old `SMTP_URL`; incomplete or unknown provider configurations fail at startup.
 
-Resend also supports SMTP: use `smtp.resend.com`, username `resend`, and an API key as the password. For Amazon
+Resend also supports SMTP: use `smtp.resend.com`, username `resend`, and an API key as the password. For
+Groundmail, use `smtp://groundmail:<SMTP credential>@smtp.groundmail.dev:587` (port 2525 if 587 is blocked);
+the credential starts with `gmsmtp_`. For Amazon
 SES, use the regional SMTP endpoint and SES SMTP credentials; these are different from ordinary AWS
 access keys. Verify the sender/domain with the provider before testing delivery. Keep credentials in
 `.env`, never in tracked files. `smtps://` uses implicit TLS; `smtp://` is also supported but requires
