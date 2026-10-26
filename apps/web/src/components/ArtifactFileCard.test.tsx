@@ -194,3 +194,26 @@ it("keeps controls when automatic playback is rejected", async () => {
   expect(container.querySelector("audio")?.hasAttribute("controls")).toBe(true);
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
+
+it("rolls sizes up to the next unit instead of 1,024.0 KB or 1,536.0 MB", async () => {
+  await act(async () =>
+    root?.render(
+      <>
+        {[1048575, 1610612736, 1024].map((size) => (
+          <ArtifactFileCard
+            key={size}
+            target={{ botId: "b" }}
+            artifactId={`a${size}`}
+            name={`f${size}.zip`}
+            mimeType="application/zip"
+            size={size}
+          />
+        ))}
+      </>,
+    ),
+  );
+  const sizes = [...container.querySelectorAll("button span:last-child")].map(
+    (el) => el.textContent,
+  );
+  expect(sizes).toEqual(["1 MB", "1.5 GB", "1 KB"]);
+});
