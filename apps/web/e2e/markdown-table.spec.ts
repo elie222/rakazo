@@ -124,7 +124,9 @@ test("table image descriptions survive HTML attributes and copying", async ({ pa
   await expect(card.locator("img")).toHaveCount(0);
   await card.getByRole("button", { name: "Copy rows" }).click();
   await expect
-    .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+    .poll(async () =>
+      (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n"),
+    )
     .toBe("Description\nChart\nGraph");
   await captureScreenshot(page, testInfo, "markdown-table-image-descriptions");
 });
