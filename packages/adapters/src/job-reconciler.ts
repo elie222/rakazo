@@ -179,22 +179,155 @@ export function createJobReconciler(
       } catch (error) {
         getLogger().error("stuck work reconciliation", error);
       }
-      // Direct run dispatch has its own recovery scan. Keep the legacy run scan,
-      // auxiliary work and outcome delivery at their once-per-tick cadence.
-      // Drain scheduled work with a bounded budget and a yield between pages.
+      const runCursorFilter = runCursor
+        ? {
+            OR: [
+              { updatedAt: { gt: runCursor.at } },
+              { updatedAt: runCursor.at, id: { gt: runCursor.id } },
+            ],
+          }
+        : undefined;
+      const [runs, dueOutbound, unmirroredMessagingRuns] = await Promise.all([
+        deps.prisma.run.findMany({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { status: "queued" },
+                  {
+                    status: { in: ["leased", "running"] },
+                    leaseExpiresAt: { lte: now },
+                  },
+                ],
+              },
+              ...(runCursorFilter ? [runCursorFilter] : []),
+            ],
+          },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: { id: true, status: true, updatedAt: true },
+        }),
+        deps.prisma.messagingOutbound.findFirst({
+          where: {
+            status: "pending",
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
+          select: { id: true },
+        }),
+        deps.prisma.run.findMany({
+          where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: { id: true },
+        }),
+      ]);
+
+      const events = deps.events;
+      if (events) {
+        const outcomes = await deps.prisma.run.findMany({
+          where: {
+            trigger: "bot_message",
+            botOutcomeReturnedAt: null,
+            OR: [
+              { status: { in: ["completed", "failed"] } },
+              { status: "cancelled", error: { in: [...stuckWorkStatusMessages()] } },
+            ],
+          },
+          orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: {
+            id: true,
+            spaceId: true,
+            threadId: true,
+            botId: true,
+            userId: true,
+            sourceMessageId: true,
+            status: true,
+            error: true,
+            bot: { select: { name: true } },
+          },
+        });
+        await Promise.all(
+          outcomes.map(async (run) => {
+            const stuckCancel = run.status === "cancelled";
+            const transcript =
+              run.status === "failed" || stuckCancel
+                ? { text: "", progressOnly: false }
+                : await botRunOutcomeText(deps.prisma, run.id);
+            const text = stuckCancel
+              ? (run.error ?? "")
+              : run.status === "failed"
+                ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
+                : transcript.text ||
+                  "The delegated bot completed its turn without a written summary.";
+            // Loop-guard stops complete without an error; their persisted final text
+            // is the only marker available when the executor's outcome delivery fails.
+            const loopGuardStop = isLoopGuardStopText(transcript.text);
+            // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
+            // concurrent or earlier return is replayed instead of double-posted. Progress-only
+            // transcripts (all mid-turn user-progress messages) return as status.
+            const intent =
+              run.status === "failed" ||
+              stuckCancel ||
+              !transcript.text.trim() ||
+              transcript.progressOnly
+                ? "status"
+                : ("result" as const);
+            const returned = await returnBotMessageOutcome(
+              { prisma: deps.prisma, jobs: deps.jobs, events },
+              run,
+              { id: run.botId, name: run.bot.name },
+              text,
+              intent,
+              { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
+            ).catch((error) => {
+              getLogger().error("bot message outcome reconciliation", error);
+              return false;
+            });
+            if (!returned) {
+              await deps.prisma.run.updateMany({
+                where: { id: run.id, botOutcomeReturnedAt: null },
+                data: { updatedAt: new Date() },
+              });
+            }
+          }),
+        );
+      }
+
+      // A queued run already has a job while it waits out failure backoff.
+      // Default replace would zero that job's attempts and run it now. keepExisting
+      // leaves the job while attempts remain, and still replaces one that is exhausted.
+      // A locked job whose worker died is never unlocked, so it is replaced: any lock
+      // for a run whose lease expired, and for a queued run only a lock older than
+      // a lease, since a live worker finishing a failed attempt still holds it.
+      const abandonedQueuedLockAt = new Date(now.getTime() - ABANDONED_QUEUED_LOCK_MS);
+      await publishAll([
+        ...runs.map((run) =>
+          deps.jobs.enqueue({
+            ...runContinueJob(run.id),
+            keepExisting: true,
+            replaceLockedBefore: run.status === "queued" ? abandonedQueuedLockAt : now,
+          }),
+        ),
+        ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
+        ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
+      ]);
+
+      const lastRun = runs.at(-1);
+      runCursor =
+        runs.length === batchSize && lastRun
+          ? { at: lastRun.updatedAt, id: lastRun.id }
+          : undefined;
+
+      // Scheduled work drains several pages per tick, yielding between pages.
       let routinesDone = false;
       let controlsDone = false;
       for (let page = 0; page < maxPagesPerPass && !stopping; page += 1) {
-        if (page > 0 && deps.leadership && !(await deps.leadership.tryAcquire())) return;
+        if (page > 0) {
+          await setImmediate();
+          if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
+        }
         controlScanDeadline ??= new Date(now.getTime() + CONTROL_LOOKAHEAD_MS);
-        const runCursorFilter = runCursor
-          ? {
-              OR: [
-                { updatedAt: { gt: runCursor.at } },
-                { updatedAt: runCursor.at, id: { gt: runCursor.id } },
-              ],
-            }
-          : undefined;
         const routineCursorFilter = routineCursor
           ? {
               OR: [
@@ -217,8 +350,8 @@ export function createJobReconciler(
               }
             : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
           : undefined;
-        const [runs, routines, controls, dueOutbound, unmirroredMessagingRuns]: [
-          Array<{ id: string; status: string; updatedAt: Date }>,
+        // Annotated because the cursors carried across pages make inference circular.
+        const [routines, controls]: [
           Array<{ id: string; nextRunAt: Date | null }>,
           Array<{
             id: string;
@@ -226,30 +359,7 @@ export function createJobReconciler(
             controlLeaseId: string | null;
             controlLeaseExpiresAt: Date | null;
           }>,
-          { id: string } | null,
-          Array<{ id: string }>,
         ] = await Promise.all([
-          page > 0
-            ? []
-            : deps.prisma.run.findMany({
-                where: {
-                  AND: [
-                    {
-                      OR: [
-                        { status: "queued" },
-                        {
-                          status: { in: ["leased", "running"] },
-                          leaseExpiresAt: { lte: now },
-                        },
-                      ],
-                    },
-                    ...(runCursorFilter ? [runCursorFilter] : []),
-                  ],
-                },
-                orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-                take: batchSize,
-                select: { id: true, status: true, updatedAt: true },
-              }),
           routinesDone
             ? []
             : deps.prisma.routine.findMany({
@@ -275,11 +385,7 @@ export function createJobReconciler(
                     {
                       OR: [
                         { controlLeaseExpiresAt: null },
-                        {
-                          controlLeaseExpiresAt: {
-                            lte: controlScanDeadline,
-                          },
-                        },
+                        { controlLeaseExpiresAt: { lte: controlScanDeadline } },
                       ],
                     },
                     ...(controlCursorFilter ? [controlCursorFilter] : []),
@@ -294,112 +400,8 @@ export function createJobReconciler(
                   controlLeaseExpiresAt: true,
                 },
               }),
-          page > 0
-            ? null
-            : deps.prisma.messagingOutbound.findFirst({
-                where: {
-                  status: "pending",
-                  OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-                },
-                select: { id: true },
-              }),
-          page > 0
-            ? []
-            : deps.prisma.run.findMany({
-                where: { trigger: "messaging", status: "completed", messagingMirroredAt: null },
-                orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-                take: batchSize,
-                select: { id: true },
-              }),
         ]);
-
-        const events = deps.events;
-        if (events && page === 0) {
-          const outcomes = await deps.prisma.run.findMany({
-            where: {
-              trigger: "bot_message",
-              botOutcomeReturnedAt: null,
-              OR: [
-                { status: { in: ["completed", "failed"] } },
-                { status: "cancelled", error: { in: [...stuckWorkStatusMessages()] } },
-              ],
-            },
-            orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-            take: batchSize,
-            select: {
-              id: true,
-              spaceId: true,
-              threadId: true,
-              botId: true,
-              userId: true,
-              sourceMessageId: true,
-              status: true,
-              error: true,
-              bot: { select: { name: true } },
-            },
-          });
-          await Promise.all(
-            outcomes.map(async (run) => {
-              const stuckCancel = run.status === "cancelled";
-              const transcript =
-                run.status === "failed" || stuckCancel
-                  ? { text: "", progressOnly: false }
-                  : await botRunOutcomeText(deps.prisma, run.id);
-              const text = stuckCancel
-                ? (run.error ?? "")
-                : run.status === "failed"
-                  ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
-                  : transcript.text ||
-                    "The delegated bot completed its turn without a written summary.";
-              // Loop-guard stops complete without an error; their persisted final text
-              // is the only marker available when the executor's outcome delivery fails.
-              const loopGuardStop = isLoopGuardStopText(transcript.text);
-              // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
-              // concurrent or earlier return is replayed instead of double-posted. Progress-only
-              // transcripts (all mid-turn user-progress messages) return as status.
-              const intent =
-                run.status === "failed" ||
-                stuckCancel ||
-                !transcript.text.trim() ||
-                transcript.progressOnly
-                  ? "status"
-                  : ("result" as const);
-              const returned = await returnBotMessageOutcome(
-                { prisma: deps.prisma, jobs: deps.jobs, events },
-                run,
-                { id: run.botId, name: run.bot.name },
-                text,
-                intent,
-                { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
-              ).catch((error) => {
-                getLogger().error("bot message outcome reconciliation", error);
-                return false;
-              });
-              if (!returned) {
-                await deps.prisma.run.updateMany({
-                  where: { id: run.id, botOutcomeReturnedAt: null },
-                  data: { updatedAt: new Date() },
-                });
-              }
-            }),
-          );
-        }
-
-        // A queued run already has a job while it waits out failure backoff.
-        // Default replace would zero that job's attempts and run it now. keepExisting
-        // leaves the job while attempts remain, and still replaces one that is exhausted.
-        // A locked job whose worker died is never unlocked, so it is replaced: any lock
-        // for a run whose lease expired, and for a queued run only a lock older than
-        // a lease, since a live worker finishing a failed attempt still holds it.
-        const abandonedQueuedLockAt = new Date(now.getTime() - ABANDONED_QUEUED_LOCK_MS);
-        const publications = await Promise.allSettled([
-          ...runs.map((run) =>
-            deps.jobs.enqueue({
-              ...runContinueJob(run.id),
-              keepExisting: true,
-              replaceLockedBefore: run.status === "queued" ? abandonedQueuedLockAt : now,
-            }),
-          ),
+        await publishAll([
           ...routines.flatMap((routine) =>
             routine.nextRunAt
               ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
@@ -417,21 +419,8 @@ export function createJobReconciler(
                 ]
               : [],
           ),
-          ...(dueOutbound ? [deps.jobs.enqueue(messagingDeliverJob())] : []),
-          ...unmirroredMessagingRuns.map((run) => deps.jobs.enqueue(messagingDeliverJob(run.id))),
         ]);
 
-        // Do not advance or retry a page until every attempted publication settles.
-        const failed = publications.find((result) => result.status === "rejected");
-        if (failed?.status === "rejected") throw failed.reason;
-
-        if (page === 0) {
-          const lastRun = runs.at(-1);
-          runCursor =
-            runs.length === batchSize && lastRun
-              ? { at: lastRun.updatedAt, id: lastRun.id }
-              : undefined;
-        }
         const lastRoutine = routines.at(-1);
         routineCursor =
           routines.length === batchSize && lastRoutine?.nextRunAt
@@ -446,7 +435,6 @@ export function createJobReconciler(
         routinesDone ||= !routineCursor;
         controlsDone ||= !controlCursor;
         if (routinesDone && controlsDone) break;
-        if (page + 1 < maxPagesPerPass) await setImmediate();
       }
     })()
       .then(() => {
@@ -481,6 +469,14 @@ export function createJobReconciler(
       await deps.leadership?.release();
     },
   };
+}
+
+/** Settles every publication before failing, so a retried page never overlaps one in flight. */
+async function publishAll(publications: Array<Promise<unknown>>) {
+  const failed = (await Promise.allSettled(publications)).find(
+    (result) => result.status === "rejected",
+  );
+  if (failed) throw failed.reason;
 }
 
 /** Prefer the full bot transcript for a run so interim progress is not mistaken for the sole result. */

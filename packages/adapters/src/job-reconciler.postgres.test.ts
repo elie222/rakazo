@@ -48,13 +48,14 @@ describePostgres("bounded routine reconciliation (PostgreSQL contract)", () => {
         ),
       );
       const nextRunAt = new Date(Date.now() - 1_000);
+      const prefix = `routine-${randomUUID()}-`;
       await system.routine.createMany({
         data: Array.from({ length: 250 }, (_, i) => ({
           spaceId: identity!.spaceId,
           userId: identity!.userId,
           botId: identity!.botId,
           threadId: identity!.threadId,
-          id: `routine-${String(i).padStart(4, "0")}`,
+          id: `${prefix}${String(i).padStart(4, "0")}`,
           name: "Recovery fixture",
           prompt: "fixture",
           crons: ["* * * * *"],
@@ -74,11 +75,13 @@ describePostgres("bounded routine reconciliation (PostgreSQL contract)", () => {
         runAsSystem("reconcile jobs", () =>
           createJobReconciler({ prisma: db.prisma, jobs }, { maxPagesPerPass }).reconcileOnce(),
         );
+      // Other due routines in a shared database can join a page, so only one page's
+      // size is asserted globally and the drained set is checked for this fixture.
       await run(1);
       expect(published.filter((job) => job.name === "routine.wakeup")).toHaveLength(100);
       published.length = 0;
       await run(10);
-      const routines = published.filter((job) => job.name === "routine.wakeup");
+      const routines = published.filter((job) => job.replaceKey?.startsWith(`routine:${prefix}`));
       expect(routines).toHaveLength(250);
       expect(new Set(routines.map((job) => job.replaceKey)).size).toBe(250);
       expect(routines.every((job) => job.availableAt?.getTime() === nextRunAt.getTime())).toBe(
