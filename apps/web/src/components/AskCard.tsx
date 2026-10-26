@@ -5,7 +5,7 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
 import { Button, Input, Textarea } from "@rakazo/ui-web";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 import { BuiCard } from "./ai/primitives";
@@ -72,8 +72,8 @@ export function AskCard({
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
   const [username, setUsername] = useState("");
-  const [multilineSecret, setMultilineSecret] = useState(false);
-  const secretTextarea = useRef<HTMLTextAreaElement>(null);
+  const [secretField, setSecretField] = useState<HTMLInputElement | null>(null);
+  const [pastedLines, setPastedLines] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
@@ -93,13 +93,29 @@ export function AskCard({
   const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
+  const commandInput = secretInput && block.credential?.auth.type === "command";
 
+  // A password field can't hold line breaks, so it would flatten a multi-line command variable
+  // such as an SSH private key. That text is kept as is and the field turns read-only, so what
+  // is saved is exactly what was pasted; Clear makes it editable again.
   useEffect(() => {
-    const field = secretTextarea.current;
-    if (!multilineSecret || !field) return;
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
-  }, [multilineSecret]);
+    if (!commandInput || !secretField) return;
+    const field = secretField;
+    const keepLineBreaks = (event: InputEvent) => {
+      const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(
+        /\r\n?/g,
+        "\n",
+      );
+      if (field.readOnly || !event.cancelable || !text.trim().includes("\n")) return;
+      event.preventDefault();
+      const start = field.selectionStart ?? field.value.length;
+      const end = field.selectionEnd ?? start;
+      setAnswer(field.value.slice(0, start) + text + field.value.slice(end));
+      setPastedLines(true);
+    };
+    field.addEventListener("beforeinput", keepLineBreaks);
+    return () => field.removeEventListener("beforeinput", keepLineBreaks);
+  }, [commandInput, secretField]);
 
   async function submitAnswer(value: string) {
     if (submitting) return;
@@ -112,7 +128,7 @@ export function AskCard({
     if (secretInput) {
       setAnswer("");
       setUsername("");
-      setMultilineSecret(false);
+      setPastedLines(false);
     }
     try {
       await onAnswer(submitValue, submitUsername);
@@ -135,7 +151,7 @@ export function AskCard({
     setError(null);
     setAnswer("");
     setUsername("");
-    setMultilineSecret(false);
+    setPastedLines(false);
     try {
       await onDismiss();
       setDismissed(true);
@@ -319,44 +335,34 @@ export function AskCard({
               placeholder={t`Username`}
             />
           ) : null}
-          {multilineSecret ? (
-            <Textarea
-              ref={secretTextarea}
-              className="max-h-40 w-full [-webkit-text-security:disc]"
-              aria-label={secretLabel}
-              autoComplete="off"
-              spellCheck={false}
+          <Input
+            ref={setSecretField}
+            className="w-full"
+            aria-label={secretLabel}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={submitting}
+            readOnly={pastedLines}
+            value={pastedLines ? answer.replaceAll("\n", " ") : answer}
+            onChange={(event) => setAnswer(event.target.value)}
+            placeholder={secretLabel}
+          />
+          {pastedLines ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
               disabled={submitting}
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-            />
-          ) : (
-            <Input
-              className="w-full"
-              aria-label={secretLabel}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              onPaste={(event) => {
-                const pasted = event.clipboardData.getData("text/plain").replace(/\r\n?/g, "\n");
-                // A password field can't hold line breaks, so a multi-line secret such as an
-                // SSH private key would be flattened; it moves to a masked text area instead.
-                if (!pasted.trim().includes("\n")) return;
-                event.preventDefault();
-                const { selectionStart, selectionEnd } = event.currentTarget;
-                setAnswer(
-                  answer.slice(0, selectionStart ?? answer.length) +
-                    pasted +
-                    answer.slice(selectionEnd ?? answer.length),
-                );
-                setMultilineSecret(true);
+              onClick={() => {
+                setAnswer("");
+                setPastedLines(false);
+                secretField?.focus();
               }}
-              placeholder={secretLabel}
-            />
-          )}
+            >
+              <Trans>Clear</Trans>
+            </Button>
+          ) : null}
           <div className="flex gap-2">
             <Button
               type="submit"

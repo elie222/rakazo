@@ -1231,6 +1231,7 @@ msgstr "Choose how to use Rakazo"
 msgid "Claude subscription"
 msgstr "Claude subscription"
 
+#: src/components/AskCard.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "Clear"

@@ -157,6 +157,26 @@ describe("inferScript request_secret", () => {
   });
 });
 
+describe("inferScript command variable request_secret", () => {
+  it("opens a command variable card via request_secret", () => {
+    expect(inferScript("show a command variable secret card")).toEqual([
+      {
+        assistant: "i need that key in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "Deploy key",
+              purpose: "api_key",
+              credential: { name: "deploy-key", auth: { type: "command" } },
+            },
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe("inferScript login request_secret", () => {
   it("opens a login card via request_secret", () => {
     expect(inferScript("show a login card")).toEqual([

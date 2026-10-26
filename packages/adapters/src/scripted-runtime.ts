@@ -290,6 +290,23 @@ export function inferScript(
       },
     ];
   }
+  if (lower.includes("command variable secret card")) {
+    return [
+      {
+        assistant: "i need that key in a protected field.",
+        toolCalls: [
+          {
+            name: "request_secret",
+            args: {
+              label: "Deploy key",
+              purpose: "api_key",
+              credential: { name: "deploy-key", auth: { type: "command" } },
+            },
+          },
+        ],
+      },
+    ];
+  }
   if (
     lower.includes("masked secret card") ||
     lower.includes("show a secret card") ||
