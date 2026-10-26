@@ -9,7 +9,7 @@ import {
   updateModelImageCapabilities,
 } from "./model-vision.js";
 import { liveCatalogEntry } from "./pi-live-catalog.js";
-import { resolveRuntimeModel } from "./pi-runtime.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
 
 describe("model vision gating for computer tools", () => {
   afterEach(() => {

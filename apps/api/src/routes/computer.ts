@@ -42,6 +42,7 @@ import {
   foldComputerCommands,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { addScreenProxyCapability } from "@rakazo/core/node/screen-capability";
 import type { ComputerRunEnd, PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, parseComputerMode, recordComputerRunEnd } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -51,7 +52,6 @@ import {
   toComputerStatus,
 } from "../computer-status.js";
 import type { RouterDeps } from "../router.js";
-import { addScreenProxyCapability } from "../screen-proxy.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, isRecordNotFound } from "./shared.js";
 

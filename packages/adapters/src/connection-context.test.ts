@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { mergeConnectedPlugins } from "./composio-connector.js";
-import { persistLivePluginConnections, selectRunConnections } from "./executor.js";
+import { persistLivePluginConnections, selectRunConnections } from "./connection-context.js";
 
 describe("run connection selection", () => {
   it("uses synchronized account statuses in the current run", async () => {

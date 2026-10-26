@@ -2,7 +2,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { listPiCatalog } from "./pi-models.js";
-import { modelsForRequest } from "./pi-runtime.js";
+import { modelsForRequest } from "./pi-runtime-models.js";
 
 describe("current model compatibility", () => {
   it("disables strict tools for Bedrock Haiku in India", () => {

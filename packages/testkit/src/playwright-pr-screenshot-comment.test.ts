@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { PlaywrightPrCommentScreenshot } from "./playwright-pr-screenshot-comment.js";
 import {
   buildPlaywrightPrScreenshotComment,
   PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,
-  type PlaywrightPrCommentScreenshot,
   screenshotMatchesSpecStem,
   selectPlaywrightPrFeatureFrames,
   specStemsFromChangedPaths,

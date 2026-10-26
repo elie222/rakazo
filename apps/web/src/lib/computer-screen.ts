@@ -1,3 +1,4 @@
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { errorText } from "./user-error";
 
 export interface ComputerScreenResult {
@@ -37,7 +38,7 @@ export function embeddableScreenUrl(url: string | null): string | null {
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    const local = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
       return null;

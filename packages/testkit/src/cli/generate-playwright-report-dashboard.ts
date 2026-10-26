@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { PlaywrightScreenshot } from "../playwright-report-dashboard.js";
 import {
   classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
-  type PlaywrightScreenshot,
   renderPlaywrightDashboard,
   renderScreenshotGallery,
   screenshotTitleFromFileName,

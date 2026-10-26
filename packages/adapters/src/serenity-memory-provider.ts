@@ -10,6 +10,7 @@ import type {
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
 import { egressRefused } from "./network-address.js";
+import type { SerenityConnectionConfig, SerenityNetworkDependencies } from "./serenity-client.js";
 import {
   classifySerenityEndpointTrust,
   forgetSerenity,
@@ -18,8 +19,6 @@ import {
   probeSerenity,
   recallSerenity,
   rememberSerenity,
-  type SerenityConnectionConfig,
-  type SerenityNetworkDependencies,
   serenityEndpointRequiresPrivateEndpoint,
 } from "./serenity-client.js";
 

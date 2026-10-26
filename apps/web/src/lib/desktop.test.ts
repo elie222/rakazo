@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { RakazoDesktop, RakazoDesktopOAuthCallback } from "./desktop.js";
 import {
   desktopOAuthCode,
   oauthStateOf,
   onDesktopOAuthCallback,
-  type RakazoDesktop,
-  type RakazoDesktopOAuthCallback,
   windowChromeKind,
 } from "./desktop.js";
 

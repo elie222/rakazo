@@ -2,9 +2,9 @@ import { execSync } from "node:child_process";
 import { globSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import type { createApp } from "../../../../apps/api/src/app.ts";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { runProcess } from "./process.js";
 
@@ -191,7 +191,7 @@ async function main() {
       { drainUnscopedDatabaseAccess },
     ] = await Promise.all([
       import("@rakazo/adapters"),
-      import("../../../../apps/api/src/app.ts"),
+      import("@rakazo/api/app"),
       import("@rakazo/db"),
     ]);
     const { serve } = await import("@hono/node-server");

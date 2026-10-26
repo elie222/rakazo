@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { fileURLToPath } from "node:url";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -18,16 +16,22 @@ import {
 const TOKEN = "serenity_test_token";
 
 describe("serenity endpoint helpers", () => {
-  it("requires an explicit endpoint and does not assume a hosted URL", () => {
+  it("requires an explicit endpoint and does not assume a hosted URL", async () => {
     expect(() => parseSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
     expect(() => parseSerenityEndpoint("   ")).toThrow("Serenity endpoint is required.");
     expect(() => normalizeSerenityEndpoint("")).toThrow("Serenity endpoint is required.");
-    const source = readFileSync(
-      fileURLToPath(new URL("./serenity-client.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(source).not.toContain("serenity.sire.run");
-    expect(source).not.toContain("DEFAULT_ENDPOINT");
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    const resolveHostname = vi.fn(async () => [{ address: "93.184.216.34", family: 4 as const }]);
+    const result = await probeSerenity({ endpoint: "", token: TOKEN }, undefined, {
+      fetch: fetchMock,
+      resolveHostname,
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "Serenity is unreachable: Serenity endpoint is required.",
+    });
+    expect(resolveHostname).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("appends /mcp when missing", () => {

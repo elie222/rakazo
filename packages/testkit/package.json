@@ -22,6 +22,8 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "@rakazo/api": "workspace:*",
+    "@rakazo/sandbox-supervisor": "workspace:*",
     "@types/pngjs": "6.0.5",
     "typescript": "7.0.2",
     "vitest": "4.1.12"

@@ -864,6 +864,9 @@ importers:
       '@rakazo/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@tanstack/query-core':
+        specifier: 5.104.5
+        version: 5.104.5
       croner:
         specifier: 10.0.1
         version: 10.0.1
@@ -1019,6 +1022,12 @@ importers:
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      '@rakazo/api':
+        specifier: workspace:*
+        version: link:../../apps/api
+      '@rakazo/sandbox-supervisor':
+        specifier: workspace:*
+        version: link:../../infra/sandboxes/supervisor
       '@types/pngjs':
         specifier: 6.0.5
         version: 6.0.5

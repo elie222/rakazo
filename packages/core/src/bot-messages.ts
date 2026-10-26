@@ -1,8 +1,5 @@
-import {
-  BOT_DESCRIPTION_MAX_LENGTH,
-  type BotMessageIntent,
-  type MessageBlock,
-} from "@rakazo/contracts";
+import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
+import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { escapePromptData } from "./prompt-data.js";
 
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;

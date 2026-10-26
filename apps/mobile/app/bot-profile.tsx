@@ -43,7 +43,7 @@ export default function BotProfile() {
       if (!botId) return;
       let current = true;
       const saves = notifySaves.current;
-      void rpc<MobileBot>("bots/get", { botId })
+      void rpc("bots/get", { botId })
         .then((next) => {
           if (!current) return;
           // A read that overlapped a save may predate it; keep the switch as the user left it.
@@ -65,7 +65,7 @@ export default function BotProfile() {
   const loadRoutines = useCallback(() => {
     if (!botId) return;
     const request = ++routinesRequest.current;
-    void rpc<Routine[]>("routines/list", { botId })
+    void rpc("routines/list", { botId })
       .then((next) => {
         if (request !== routinesRequest.current) return;
         setRoutines(sortRoutinesByNextRun(next));

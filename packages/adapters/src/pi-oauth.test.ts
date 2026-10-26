@@ -3,6 +3,7 @@ import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@r
 import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PiOAuthBegin } from "./pi-oauth.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
@@ -13,7 +14,6 @@ import {
   OAUTH_ACCOUNT_CHANGED_ERROR,
   oauthCredentialAccountId,
   oauthCredentialEmail,
-  type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
   RetiredModelCredentialError,

@@ -1,3 +1,5 @@
+import type { RpcPath } from "@rakazo/contracts";
+import type { RpcArgs } from "./api";
 import { captureApiRequestContext, rpc } from "./api";
 
 /** Which copy a settings screen edits: the account's, or one Space's override. */
@@ -17,6 +19,8 @@ export function settingsTarget(spaceId: string | string[] | undefined): Settings
 export function settingsRpc(target: SettingsTarget): typeof rpc {
   if (target.scope === "account") return rpc;
   const { spaceId } = target;
-  return async (proc, body, options) =>
-    rpc(proc, body, { ...options, requestContext: await captureApiRequestContext(spaceId) });
+  return async <P extends RpcPath>(proc: P, ...[body, options]: RpcArgs<P>) => {
+    const requestContext = await captureApiRequestContext(spaceId);
+    return rpc(proc, ...([body, { ...options, requestContext }] as RpcArgs<P>));
+  };
 }

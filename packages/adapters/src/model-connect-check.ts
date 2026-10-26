@@ -4,7 +4,8 @@ import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { normalizeRunError } from "@rakazo/core";
 import { withChatCompletionsCompatibility } from "./chat-completions-compat.js";
 import { withCloudflareAuth } from "./cloudflare-ai-gateway.js";
-import { reliableModelStream, resolveRuntimeModel } from "./pi-runtime.js";
+import { resolveRuntimeModel } from "./pi-runtime-models.js";
+import { reliableModelStream } from "./pi-runtime-stream.js";
 
 /** Long enough for a cold provider to answer headers, short enough to keep Connect snappy. */
 export const MODEL_CONNECT_CHECK_TIMEOUT_MS = 15_000;

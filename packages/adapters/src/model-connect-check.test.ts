@@ -76,7 +76,7 @@ describe("connect-time model check", () => {
           code: "model_not_found",
         },
       }),
-      error: "could not find the requested model",
+      error: "can't run this model",
     },
     {
       name: "a model without tool support",
@@ -84,7 +84,7 @@ describe("connect-time model check", () => {
       fetch: rejection(404, {
         error: { message: "No endpoints found that support tool use.", code: 404 },
       }),
-      error: "could not find the requested model",
+      error: "can't run this model",
     },
     {
       name: "a key without credit",
@@ -141,7 +141,7 @@ describe("connect-time model check", () => {
     );
     await expect(
       verifyModelServesAgents({ provider: "google", id: "gemini-2.5-flash", apiKey }),
-    ).rejects.toThrow("could not find the requested model");
+    ).rejects.toThrow("can't run this model");
   });
 
   it("skips a model the catalog cannot resolve", async () => {

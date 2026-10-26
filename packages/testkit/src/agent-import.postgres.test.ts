@@ -120,7 +120,7 @@ describeIntegration("agent import", () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-agent-import-"));
 
   beforeAll(async () => {
-    const { createApp } = await import("../../../apps/api/src/app.ts");
+    const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
       dataDir,

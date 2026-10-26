@@ -23,6 +23,7 @@ import type {
 } from "@rakazo/contracts";
 import { SettingsScopeSchema } from "@rakazo/contracts";
 import { speakable, toUtterances } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
@@ -32,7 +33,6 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
-  type PrismaClient,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,

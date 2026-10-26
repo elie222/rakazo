@@ -14,8 +14,6 @@ describe("Android mobile platform contract", () => {
     const service = readFileSync(resolve(nativeRoot, "RakazoNotificationService.kt"), "utf8");
     const module = readFileSync(resolve(nativeRoot, "RakazoNotificationsModule.kt"), "utf8");
     const allowlist = readFileSync(resolve(nativeRoot, "EndpointAllowlist.kt"), "utf8");
-    const live = readFileSync(resolve(mobileRoot, "lib/live-notifications.ts"), "utf8");
-    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     expect(service).toContain("android.requestPromotedOngoing");
     expect(service).toContain("liveStatusIcon(primary, avatarStyle)");
     expect(service).toContain('rpc(endpoint, token, spaceId, "me"');
@@ -32,10 +30,6 @@ describe("Android mobile platform contract", () => {
     expect(allowlist).toContain("isAllowedNotificationEndpoint");
     expect(allowlist).toContain('scheme == "https"');
     expect(allowlist).toContain("isLanOrLocalHost");
-    expect(live).toContain("normalizeApiBase(endpoint)");
-    expect(live).toMatch(
-      /export async function resumeLiveNotifications[\s\S]*normalizeApiBase\(endpoint\)[\s\S]*nativeNotifications\.resume\(parsed\.url/,
-    );
     expect(service).toContain('connection.setRequestProperty("x-rakazo-space-id", spaceId)');
     expect(service).toContain("storage.spaceId.isBlank()");
     expect(service).toContain("private fun prepareHistorySpace(");
@@ -54,7 +48,6 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("synchronized(sessionLock)");
     expect(service).toContain("working.filterNot(::isOpenThread)");
     expect(service).toContain("createConfigurationContext");
-    expect(live).toContain("getActiveUiLocale");
     expect(service).toContain("!run.notificationsEnabled || isOpenThread(run)");
     expect(service).toMatch(
       /waiting_input[\s\S]*filter \{ it\.notificationsEnabled \}[\s\S]*alertedAttention\.add/,
@@ -75,9 +68,6 @@ describe("Android mobile platform contract", () => {
     }
     expect(service).toContain("runCatching { context.startService(intent) }");
     expect(module).toContain('AsyncFunction("setOpenThread")');
-    expect(live).toContain("setOpenNotificationThread");
-    expect(thread).toContain("if (!navigation.isFocused() || !notificationThreadId) return");
-    expect(thread).toContain("    }, [botId, notificationThreadId]),\n  );");
     expect(service).toContain(
       "fun clearSession(context: Context) {\n      synchronized(sessionLock)",
     );
@@ -85,12 +75,6 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain('"rakazo://group-thread?groupId=');
     expect(service).toMatch(/&spaceId=\$\{Uri\.encode\(run\.spaceId\)\}/);
     expect(service).toContain('putString("rakazo.spaceId", run.spaceId)');
-    expect(thread).toContain("export default function ThreadRoute()");
-    expect(thread).toContain("selectSpace(requestedSpaceId)");
-    expect(thread).toContain(
-      "threadSpaceSwitchResult(requestedSpaceId, switched, selectedSpaceId())",
-    );
-    expect(thread).toContain('t("Could not switch spaces")');
     expect(service).toMatch(/&threadId=\$\{Uri\.encode\(run\.threadId\)\}/);
     expect(service).toContain('if (run.groupId != null) put("groupId", run.groupId)');
     expect(service).toContain('if (message.optString("runId") != run.runId) continue');

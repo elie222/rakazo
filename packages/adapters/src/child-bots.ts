@@ -14,6 +14,7 @@ import {
   GROUP_MEMBER_MIN,
 } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   cancelRunsInTransaction,
   clearEndedRunState,
@@ -22,8 +23,6 @@ import {
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
-  type Prisma,
-  type PrismaClient,
   recordComputerRunEnd,
   withTransactionRetry,
 } from "@rakazo/db";

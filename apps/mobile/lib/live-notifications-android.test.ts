@@ -1,12 +1,41 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { native } = vi.hoisted(() => ({
-  native: { setOpenThread: vi.fn(async (): Promise<void> => undefined) },
+  native: {
+    setOpenThread: vi.fn(async (): Promise<void> => undefined),
+    resume: vi.fn(async (): Promise<void> => undefined),
+  },
 }));
 
 vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
+vi.mock("./i18n", () => ({ getActiveUiLocale: () => "de", t: (text: string) => text }));
+
+import { resumeLiveNotifications } from "./live-notifications";
+
+describe("Android live notification resume", () => {
+  beforeEach(() => {
+    native.resume.mockReset();
+  });
+
+  it("resumes the native poller with the normalized server and the active UI locale", async () => {
+    await resumeLiveNotifications(" app.example.test/api/ ", "token-1", "space-1");
+    expect(native.resume).toHaveBeenCalledWith(
+      "https://app.example.test",
+      "token-1",
+      "space-1",
+      "de",
+    );
+  });
+
+  it("does not resume for a public http server, an invalid URL, or no token", async () => {
+    await resumeLiveNotifications("http://app.example.test", "token-1", "space-1");
+    await resumeLiveNotifications("not a url", "token-1", "space-1");
+    await resumeLiveNotifications("https://app.example.test", "", "space-1");
+    expect(native.resume).not.toHaveBeenCalled();
+  });
+});
 
 describe("Android open thread", () => {
   beforeEach(() => {

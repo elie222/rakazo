@@ -2,7 +2,7 @@ import { createCipheriv, createHash } from "node:crypto";
 import { BUILTIN_TOOL_NAMES, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { agentConnectionTools, builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
-import { selectBuiltinToolsForRun } from "./executor.js";
+import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
 

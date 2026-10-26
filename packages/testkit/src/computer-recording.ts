@@ -22,11 +22,8 @@ import {
   EXPORT_FIXTURE_URL,
   EXPORT_RECEIPT_PATH,
 } from "./computer-replay-fixture.js";
-import {
-  type ModelEmulatorRequest,
-  type ModelEmulatorStep,
-  startModelEmulator,
-} from "./model-emulator.js";
+import type { ModelEmulatorRequest, ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
 
 const targets = ["Export contacts", "Download CSV", "Cancel"] as const;
 type Target = (typeof targets)[number];

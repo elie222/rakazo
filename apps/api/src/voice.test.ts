@@ -6,6 +6,7 @@ import * as db from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
   fishSpeechModelValue,
@@ -18,7 +19,6 @@ import {
   toVoiceCredential,
   toVoiceStatus,
   updateVoiceSpeechModel,
-  type VoiceDeps,
   voiceChoicesChanged,
   voiceCredentialPlaintext,
   voiceCredentialServer,

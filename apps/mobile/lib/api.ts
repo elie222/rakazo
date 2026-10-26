@@ -3,16 +3,21 @@ import type {
   AuthCapabilities,
   Bot,
   BotSection,
-  ComputerMode,
+  ComputerStatus,
   Group,
   Me,
   MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
-  ReplyPreview,
+  RpcInput,
+  RpcOutput,
+  RpcPath,
+  Run,
   RunStatus,
   Space,
   SpaceNavigation,
+  ThreadMessage,
+  ThreadSnapshot,
 } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
@@ -50,6 +55,7 @@ import {
   takeLiveMessage,
   updateCloudAgentMessages,
   upsertMessageById,
+  withAbort,
 } from "@rakazo/core";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
@@ -682,6 +688,7 @@ export async function fetchMobileJson<T>(
     const response = await withAbort(
       fetch(input, { ...init, signal: controller.signal }),
       controller.signal,
+      "Request timed out",
     ).catch((error: unknown) => {
       throw requestError(error, controller.signal);
     });
@@ -717,6 +724,7 @@ export async function signOut() {
         signal: controller.signal,
       }),
       controller.signal,
+      "Request timed out",
     ).catch(() => undefined);
   } finally {
     clearTimeout(timer);
@@ -724,24 +732,6 @@ export async function signOut() {
   const sessionCleared = await clearSessionToken();
   const spaceCleared = await clearSpace();
   if (!sessionCleared || !spaceCleared) throw new Error(t("Could not clear the local session"));
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("Request timed out"));
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("Request timed out"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
 }
 
 export async function deleteAccount(password?: string, token?: string) {
@@ -783,16 +773,32 @@ async function rejectSession() {
   for (const listener of sessionRejectedListeners) listener();
 }
 
-export async function rpc<T>(
-  proc: string,
+export type RpcOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number | null;
+  requestContext?: ApiRequestContext;
+  skipSpaceAuthRecovery?: boolean;
+};
+
+/** The body may be left out when the procedure takes none or every field is optional. */
+export type RpcArgs<P extends RpcPath> =
+  undefined extends RpcInput<P>
+    ? [body?: RpcInput<P>, options?: RpcOptions]
+    : // biome-ignore lint/complexity/noBannedTypes: an input whose fields are all optional
+      {} extends RpcInput<P>
+      ? [body?: RpcInput<P>, options?: RpcOptions]
+      : [body: RpcInput<P>, options?: RpcOptions];
+
+/** Calls a procedure from the shared contract; its path picks the body and result types. */
+export function rpc<P extends RpcPath>(proc: P, ...[body, options]: RpcArgs<P>) {
+  return request(proc, body, options) as Promise<RpcOutput<P>>;
+}
+
+async function request(
+  proc: RpcPath,
   body: unknown = {},
-  options: {
-    signal?: AbortSignal;
-    timeoutMs?: number | null;
-    requestContext?: ApiRequestContext;
-    skipSpaceAuthRecovery?: boolean;
-  } = {},
-): Promise<T> {
+  options: RpcOptions = {},
+): Promise<unknown> {
   const requestSpaceGeneration = spaceSelectionGeneration;
   const requestSessionGeneration = currentSessionGeneration();
   const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
@@ -875,7 +881,7 @@ export async function rpc<T>(
       cancelResponseBody(res);
       throw new Error(t("Update your server to use AI data sharing in this mobile version."));
     }
-    const parsed: { json?: T } = await readBoundedJsonResponse<{ json?: T }>(
+    const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
@@ -945,12 +951,7 @@ export async function rpc<T>(
         const retrySameProc = SPACE_AUTH_RECOVERY_SAFE_PROCS.has(proc);
         // Share the original deadline/cancellation with recovery calls instead
         // of starting a second full timeout behind the first request.
-        const recoveryOptions: {
-          signal?: AbortSignal;
-          timeoutMs?: number | null;
-          requestContext?: ApiRequestContext;
-          skipSpaceAuthRecovery?: boolean;
-        } = {
+        const recoveryOptions: RpcOptions = {
           ...options,
           timeoutMs: null,
           signal: controller.signal,
@@ -958,13 +959,13 @@ export async function rpc<T>(
         };
         try {
           if (retrySameProc) {
-            const result = await rpc<T>(proc, body, recoveryOptions);
+            const result = await request(proc, body, recoveryOptions);
             // A Space selected while the retry was in flight already owns both
             // the in-memory and durable selection; leave it alone.
             if (!selectedSpaceId()) await clearStaleSpaceSelection();
             return result;
           }
-          await rpc("spaces/list", {}, recoveryOptions);
+          await request("spaces/list", {}, recoveryOptions);
         } catch (retryError) {
           if (!selectedSpaceId()) {
             cachedSpaceId = previousSpaceId;
@@ -990,7 +991,7 @@ export async function rpc<T>(
         selectionId: requestSpaceId ?? null,
       });
     }
-    return displayIdentityResult(proc.split("/"), parsed.json, identityLabels()) as T;
+    return displayIdentityResult(proc.split("/"), parsed.json, identityLabels());
   } catch (error) {
     if (
       requestSessionGeneration === currentSessionGeneration() &&
@@ -1047,28 +1048,17 @@ export type MobileMe = Pick<
   | "needsModel"
   | "isDeploymentOwner"
   | "needsSignupSurvey"
-> & { billingEnabled?: boolean };
+  | "billingEnabled"
+>;
 
 export type MobileModel = ModelCatalogEntry;
 
 /** Shared DTO includes headerNames only; header values remain in the server secret. */
 export type MobileModelCredential = ModelCredential;
 
-export type MobileMessage = {
-  id: string;
-  threadId?: string;
-  seq?: number;
-  runId?: string;
-  role: "user" | "bot" | "system";
-  /** Set when the message was sent from a live voice call; groups one call's transcript. */
-  callId?: string;
-  botId?: string;
-  replyToMessageId?: string;
-  replyQuote?: string;
-  replyPreview?: ReplyPreview | null;
-  createdAt?: string;
-  blocks: MessageBlock[];
-};
+/** Live progress and streaming rows are shown before they have a seq, thread, or time. */
+export type MobileMessage = Omit<ThreadMessage, "threadId" | "seq" | "createdAt"> &
+  Partial<Pick<ThreadMessage, "threadId" | "seq" | "createdAt">>;
 
 export type MobileGroup = Pick<
   Group,
@@ -1087,24 +1077,25 @@ export type MobileGroup = Pick<
 export type MobileSpace = Space;
 export type MobileSpaceNavigation = SpaceNavigation;
 
-export type MobileSnapshot = {
-  botId?: string;
-  groupId?: string;
-  groupName?: string;
-  threadId: string;
-  cursor?: number;
+/** A run as live events report it, before a refresh brings the full record. */
+type MobileRun = Pick<Run, "id"> & Partial<Pick<Run, "botId">> & { status: string };
+
+/**
+ * A thread as the screen holds it: live events patch it between refreshes, and a saved chat
+ * reopens without its cursor, runs, or computer.
+ */
+export type MobileSnapshot = Omit<
+  ThreadSnapshot,
+  "cursor" | "messages" | "run" | "activeRuns" | "computer"
+> & {
+  cursor?: ThreadSnapshot["cursor"];
   messages: MobileMessage[];
-  olderCursor: number | null;
-  run: { id: string; botId?: string; status: string; error?: string | null } | null;
-  activeRuns?: Array<{ id: string; botId?: string; status: string }>;
-  members?: MobileGroup["members"];
-  computer?: {
-    state: string;
-    controlHolder: string;
-    screenAvailable: boolean;
-    mode: ComputerMode;
-    busyBotName: string | null;
-  };
+  run: (MobileRun & Partial<Pick<Run, "error">>) | null;
+  activeRuns?: MobileRun[];
+  computer?: Pick<
+    ComputerStatus,
+    "state" | "controlHolder" | "screenAvailable" | "mode" | "busyBotName"
+  >;
 };
 
 export function shouldApplyMobileThreadRefresh(input: {

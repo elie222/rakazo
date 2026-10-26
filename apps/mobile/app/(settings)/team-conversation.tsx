@@ -3,7 +3,6 @@ import type {
   AutomatedSenderPolicyMode,
   Bot,
   ExternalConversation,
-  SpaceNavigation,
 } from "@rakazo/contracts";
 import type { ListenMode } from "@rakazo/core";
 import {
@@ -50,7 +49,7 @@ export default function TeamConversationSettings() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([rpc<SpaceNavigation>("spaces/list"), rpc<Bot[]>("bots/list")])
+    void Promise.all([rpc("spaces/list"), rpc("bots/list")])
       .then(([navigation, bots]) => {
         const conversation = navigation.current.externalConversations.find(
           (candidate) => candidate.id === conversationId,

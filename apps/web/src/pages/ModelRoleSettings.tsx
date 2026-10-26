@@ -14,7 +14,7 @@ import {
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
 } from "@rakazo/contracts";
-import { createModelRoleSettings } from "@rakazo/core";
+import { createModelRoleSettings, modelRoleListPatch } from "@rakazo/core";
 import {
   Button,
   DropdownMenu,
@@ -199,7 +199,7 @@ export function ModelRoleSettings({
   }
   // The first row is the primary; moving a fallback there promotes it. When the primary
   // goes, the next fallback takes over, or the deployment's default runs.
-  const commit = (next: ModelRoleChoice[]) => save((current) => listPatch(current, next));
+  const commit = (next: ModelRoleChoice[]) => save((current) => modelRoleListPatch(current, next));
   const canMove = (index: number, target: number) =>
     target >= 0 && target < rows.length && target !== index;
   // A replaced row is found by its model in the loaded list, since a reload may reorder it.
@@ -210,7 +210,7 @@ export function ModelRoleSettings({
       // list; it keeps its place rather than moving and displacing the main model.
       if (list.some((item) => sameChoice(item, choice))) return {};
       const at = slot === "add" ? -1 : list.findIndex((item) => sameChoice(item, slot));
-      return listPatch(
+      return modelRoleListPatch(
         current,
         at < 0 ? [...list, choice] : list.map((item, index) => (index === at ? choice : item)),
       );
@@ -459,11 +459,4 @@ export function ModelRoleSettings({
       ) : null}
     </section>
   );
-}
-
-function listPatch(
-  current: ModelRoleSettingsValue,
-  list: ModelRoleChoice[],
-): Partial<ModelRoleSettingsValue> {
-  return current.primary ? { primary: list[0] ?? null, backups: list.slice(1) } : { backups: list };
 }

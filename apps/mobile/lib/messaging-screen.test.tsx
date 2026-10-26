@@ -156,7 +156,9 @@ beforeEach(() => {
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     },
   });
-  vi.mocked(rpc).mockImplementation(async (path: string) => responses[path] ?? { ok: true });
+  vi.mocked(rpc).mockImplementation(
+    async (path: string) => (responses[path] ?? { ok: true }) as never,
+  );
   container = document.createElement("div");
   root = createRoot(container);
 });

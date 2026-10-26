@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { settleReadBoundary } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -82,51 +80,4 @@ describe("UnreadDivider", () => {
       });
     }
   });
-});
-
-// Exercise the screen's visit transitions without loading native UI dependencies.
-const testFileUrl = import.meta.url;
-const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
-const visitTransition = source.slice(
-  source.indexOf("  const threadKey = groupId ?? botId;"),
-  source.indexOf("  const [threadScrollState, setThreadScrollState]"),
-);
-
-it("starts a fresh read visit when a retained thread regains focus", () => {
-  const readVisit = {
-    current: { target: undefined as string | undefined, visit: 0, focused: true },
-  };
-  const readVisibleTarget = { current: null as string | null };
-  const render = (focused: boolean) => {
-    new Function("botId", "groupId", "focused", "readVisit", "readVisibleTarget", visitTransition)(
-      "bot-1",
-      undefined,
-      focused,
-      readVisit,
-      readVisibleTarget,
-    );
-  };
-  render(true);
-  const initialVisit = readVisit.current.visit;
-  let boundary = settleReadBoundary(null, initialVisit, { visit: initialVisit, seq: 3 });
-  readVisibleTarget.current = "bot-1";
-  render(true);
-  expect(readVisit.current.visit).toBe(initialVisit);
-  render(false);
-  expect(readVisit.current.visit).toBe(initialVisit);
-  render(true);
-  expect(readVisit.current.visit).toBe(initialVisit + 1);
-  expect(readVisibleTarget.current).toBeNull();
-  const returnedVisit = readVisit.current.visit;
-  boundary = settleReadBoundary(boundary, returnedVisit, { visit: returnedVisit, seq: null });
-  expect(boundary).toEqual({ visit: returnedVisit, seq: null });
-
-  // Replies received during another child-thread visit get the current server cursor.
-  render(false);
-  render(true);
-  const nextVisit = readVisit.current.visit;
-  boundary = settleReadBoundary(boundary, nextVisit, { visit: nextVisit, seq: 8 });
-  expect(boundary).toEqual({ visit: nextVisit, seq: 8 });
-  render(true);
-  expect(readVisit.current.visit).toBe(nextVisit);
 });

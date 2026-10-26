@@ -3,7 +3,7 @@ import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
-import { prepareRequestSecretArguments } from "./pi-runtime.js";
+import { prepareRequestSecretArguments } from "./pi-runtime-tools.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const COMPUTER: ComputerRef = {

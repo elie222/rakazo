@@ -543,16 +543,15 @@ it("connects a provider from Add fallback without replacing the main model, then
     expect(pickerOptions()).toEqual([openrouterEntry.label]);
     await choose(openrouterEntry.label);
     expect(models.setRole).toHaveBeenCalledTimes(1);
-    expect(models.setRole).toHaveBeenCalledWith(
-      expect.objectContaining({
-        role: "main",
-        primary: { provider: "deepseek", modelId: "deepseek-chat" },
-        backups: [
-          { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
-        ],
-      }),
-      expect.anything(),
-    );
+    // The unchanged main model is left out, so the save cannot rewrite it.
+    const [saved] = vi.mocked(models.setRole).mock.calls[0]!;
+    expect(saved).toMatchObject({
+      role: "main",
+      backups: [
+        { provider: "openrouter", modelId: openrouterEntry.id, credentialId: "cred-openrouter" },
+      ],
+    });
+    expect(saved).not.toHaveProperty("primary");
   } finally {
     await view.unmount();
   }

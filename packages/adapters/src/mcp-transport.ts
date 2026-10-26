@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
 
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
@@ -121,7 +121,7 @@ function validateUrl(raw: string | URL, policy: McpUrlPolicy = {}): URL {
   if (url.toString().length > max) throw new Error(`MCP URL exceeds ${max} characters`);
   if (url.username || url.password || url.hash)
     throw new Error("MCP URL must not contain credentials or a fragment");
-  const local = isLocalMcpHost(url.hostname);
+  const local = isLocalhostOrLoopbackIp(url.hostname);
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && policy.allowHttpLocalhost === true && local) &&
@@ -147,7 +147,7 @@ export function secureFetch(
     urlPolicy.allowHttpLocalhost === true &&
     urlPolicy.allowPrivateEndpoint === true &&
     resourceUrl.protocol === "http:" &&
-    isLocalMcpHost(resourceUrl.hostname)
+    isLocalhostOrLoopbackIp(resourceUrl.hostname)
       ? resourceUrl.origin
       : undefined;
   const allowed = new Set(
@@ -191,7 +191,7 @@ export function secureFetch(
       if (url.origin !== resourceUrl.origin && configuredCredentialValues.has(value)) continue;
       headers.set(name, value);
     }
-    const localHttp = url.protocol === "http:" && isLocalMcpHost(url.hostname);
+    const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
     if (localHttp && urlPolicy.allowLocalHttpCredentials !== true) {
       for (const name of [...headers.keys()]) {
         if (localCredentialHeaders.has(name.toLowerCase())) headers.delete(name);

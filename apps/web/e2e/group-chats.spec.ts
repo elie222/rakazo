@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   captureScreenshot,

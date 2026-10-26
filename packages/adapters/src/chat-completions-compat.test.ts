@@ -8,7 +8,7 @@ import {
   withChatCompletionsCompatibility,
   withoutUnsupportedKeywords,
 } from "./chat-completions-compat.js";
-import { parametersFor } from "./pi-runtime.js";
+import { parametersFor } from "./pi-runtime-tool-parameters.js";
 import { observedPiStream } from "./pi-usage.js";
 
 const image = { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } };

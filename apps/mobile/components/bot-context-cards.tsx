@@ -20,14 +20,14 @@ export function BotContextCards({ botId }: { botId: string }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    void rpc<ScratchpadItem[]>("scratchpad/list", { botId })
+    void rpc("scratchpad/list", { botId })
       .then((items) => {
         if (current) setWork(items);
       })
       .catch((err) => {
         if (current) setError(errorText(err));
       });
-    void rpc<MemoryDocument[]>("memory/list", { botId, scope: "bot" })
+    void rpc("memory/list", { botId, scope: "bot" })
       .then((documents) => {
         if (current) setDocs(documents.filter((doc) => !isEmptyBotMemory(doc)));
       })
@@ -66,7 +66,7 @@ export function BotContextCards({ botId }: { botId: string }) {
                 if (!title || busy) return;
                 setBusy(true);
                 try {
-                  const item = await rpc<ScratchpadItem>("scratchpad/create", { botId, title });
+                  const item = await rpc("scratchpad/create", { botId, title });
                   setWork((items) => [item, ...items]);
                 } catch (err) {
                   setError(errorText(err));

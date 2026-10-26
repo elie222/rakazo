@@ -1,10 +1,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { CronFreq, CronPreset, CronUnit } from "@rakazo/core";
 import {
   CRON_FREQS,
-  type CronFreq,
-  type CronPreset,
-  type CronUnit,
   clampIntervalAmount,
   cronFromPreset,
   cronIntervalAmounts,

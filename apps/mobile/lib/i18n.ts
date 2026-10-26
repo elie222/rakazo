@@ -5,12 +5,8 @@ import { NL_MESSAGES } from "./locales/nl";
 import { RU_MESSAGES } from "./locales/ru";
 import { ZH_MESSAGES } from "./locales/zh";
 import { ZH_TW_MESSAGES } from "./locales/zh-TW";
-import {
-  htmlLangForLocale,
-  resolveUiLocale,
-  UI_LOCALE_STORAGE_KEY,
-  type UiLocale,
-} from "./ui-locale";
+import type { UiLocale } from "./ui-locale";
+import { htmlLangForLocale, resolveUiLocale, UI_LOCALE_STORAGE_KEY } from "./ui-locale";
 
 const catalogs: Partial<Record<UiLocale, Record<string, string>>> = {
   "zh-CN": ZH_MESSAGES,
@@ -85,6 +81,7 @@ async function applyDirection(locale: UiLocale): Promise<void> {
 export async function bootstrapI18n(): Promise<UiLocale> {
   let stored: string | null = null;
   let deviceLanguage: string | null = readDeviceLanguage();
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
   try {
     const SecureStore = await import("expo-secure-store");
     stored = await SecureStore.getItemAsync(UI_LOCALE_STORAGE_KEY);

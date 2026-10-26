@@ -4,6 +4,7 @@ import type { AgentImportReader, ComposerMention, SlashActionId } from "@rakazo/
 import {
   clampMentionHighlightIndex,
   mentionChipKey,
+  newClientId,
   replyAttachment,
   resolveMentionPickerKey,
   SLASH_ACTIONS,
@@ -23,7 +24,6 @@ import { captureDrop, droppedAgent, mightBeAgent } from "../../lib/agent-drop";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { attachmentPickerAccept } from "../../lib/attachment-picker-accept";
 import { useCallSession } from "../../lib/call-session";
-import { newClientId } from "../../lib/client-id";
 import {
   beginComposerDraftSubmission,
   readComposerDraft,

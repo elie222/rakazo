@@ -10,11 +10,8 @@ import {
   View,
 } from "react-native";
 import { mobileTokens } from "../lib/appearance";
-import {
-  type MobileArtifactTarget,
-  openMobileArtifact,
-  readMobileArtifactText,
-} from "../lib/artifact-open";
+import type { MobileArtifactTarget } from "../lib/artifact-open";
+import { openMobileArtifact, readMobileArtifactText } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";

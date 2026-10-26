@@ -83,6 +83,26 @@ export function ThreadErrorNotice({
   );
 }
 
+/** A failed fetch, kept above the composer and outside both message lists. */
+export function ThreadFetchErrorNotice({
+  error,
+  showingSaved,
+}: {
+  error: string | null;
+  showingSaved: boolean;
+}) {
+  const { t } = useI18n();
+  if (!error) return null;
+  return (
+    <View style={{ paddingBottom: 24 }}>
+      <ThreadErrorNotice
+        error={showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
+        summary={null}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // Fill only: cards in the thread read by tone, without an outline.
   card: { borderRadius: 12, padding: 16, marginTop: 12, gap: 6 },

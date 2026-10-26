@@ -5,7 +5,6 @@ import type {
   MessagingChannelMembership,
   MessagingInstallationsStatus,
   MessagingStatus,
-  SpaceNavigation,
 } from "@rakazo/contracts";
 import { messagingConnectOptions, messagingProviderName } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -49,12 +48,12 @@ export default function MessagingSettings() {
   const refresh = useCallback(async () => {
     const [nextBots, nextStatus, nextInstallations, nextChannels, nextConnections, navigation] =
       await Promise.all([
-        rpc<Bot[]>("bots/list"),
-        rpc<MessagingStatus>("messaging/status"),
-        rpc<MessagingInstallationsStatus>("messaging/installations/list"),
-        rpc<MessagingChannelMembership[]>("messaging/channels/list"),
-        rpc<MessagingAgentConnection[]>("messaging/connections/list"),
-        rpc<SpaceNavigation>("spaces/list"),
+        rpc("bots/list"),
+        rpc("messaging/status"),
+        rpc("messaging/installations/list"),
+        rpc("messaging/channels/list"),
+        rpc("messaging/connections/list"),
+        rpc("spaces/list"),
       ]);
     setBots(nextBots);
     setStatus(nextStatus);
@@ -150,14 +149,14 @@ export default function MessagingSettings() {
 
   function installSlack() {
     void act(async () => {
-      const { url } = await rpc<{ url: string }>("messaging/installations/start", {});
+      const { url } = await rpc("messaging/installations/start", {});
       await Linking.openURL(url);
     });
   }
 
   function startLink(provider: string, linkBotId = botId) {
     void act(async () => {
-      const issued = await rpc<{ code: string; expiresAt: string }>("messaging/link/start", {
+      const issued = await rpc("messaging/link/start", {
         botId: linkBotId,
       });
       setLink({

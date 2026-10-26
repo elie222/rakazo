@@ -7,8 +7,8 @@ export async function fetchSpaceActivity(): Promise<{
   recent: RunActivityRow[];
 }> {
   const [active, recent] = await Promise.all([
-    rpc<{ runs: RunActivityRow[] }>("runs/list", { filter: "active" }),
-    rpc<{ runs: RunActivityRow[] }>("runs/list", { filter: "recent" }),
+    rpc("runs/list", { filter: "active" }),
+    rpc("runs/list", { filter: "recent" }),
   ]);
   return { active: active.runs, recent: recent.runs };
 }

@@ -157,9 +157,9 @@ export default function Computer() {
   const refreshController = useMemo(
     () =>
       createComputerRefresh({
-        readStatus: () => rpc<ComputerStatus>("computer/status", { botId }),
+        readStatus: () => rpc("computer/status", { botId: botId ?? "" }),
         readScreen: (attempts) =>
-          readScreenUrl(() => rpc<{ url: string | null }>("computer/screenUrl", { botId }), {
+          readScreenUrl(() => rpc("computer/screenUrl", { botId: botId ?? "" }), {
             attempts,
           }),
         onStatus: (status) => {

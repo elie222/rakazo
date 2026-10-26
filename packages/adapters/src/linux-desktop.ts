@@ -9,11 +9,11 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
   BROWSER_APPLICATIONS,
   browserLauncherPath,
   browserProfilePathForScreen,
-  type DesktopEnvironment,
   desktopControlCommand,
   desktopTerminalCommand,
   desktopUrl,

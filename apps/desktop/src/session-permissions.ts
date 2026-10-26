@@ -1,5 +1,5 @@
+import { isLoopbackHost } from "@rakazo/contracts/network-host";
 import type { Session, WebContents } from "electron";
-import { isLoopbackHost } from "./setup-config.js";
 
 type AppPermissionTarget = {
   webContents: WebContents;

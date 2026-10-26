@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { StyleSheet, Text, View, type ViewStyle } from "react-native";
+import type { ViewStyle } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { native, useThemedStyles } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
 

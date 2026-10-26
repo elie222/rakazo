@@ -24,11 +24,8 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
-import {
-  callRemoteMcpTool,
-  listRemoteMcpTools,
-  type RemoteTransportDependencies,
-} from "./remote-mcp.js";
+import type { RemoteTransportDependencies } from "./remote-mcp.js";
+import { callRemoteMcpTool, listRemoteMcpTools } from "./remote-mcp.js";
 import { isVitestRuntime } from "./test-runtime.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 

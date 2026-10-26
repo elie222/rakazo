@@ -11,33 +11,36 @@ import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import {
-  appendToolCompletionAudit,
-  createRunExecutor as createExecutor,
-  createRunWorkspaceCheckpoint,
-  dockerComputerToolInstruction,
-  isTerminalModelSetupError,
-  loadCurrentTurnImages,
-  missingTurnImagesInstruction,
-  offeredFleetTools,
-  persistentComputerInstruction,
-  REACTION_SILENT_REPLY_GUIDANCE,
-  runNotificationsEnabled,
-  selectBuiltinToolsForRun,
-  settleSteeringAttachmentLoads,
-  threadContextForRun,
-  toolCompletionAuditPayload,
-  toolCompletionFromResult,
-  userTurnInstructions,
-  VOICE_CALL_INSTRUCTION,
-  voiceCallInstruction,
-  withRecentTurnImages,
-} from "./executor.js";
+import { createRunExecutor as createExecutor } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
-import { modelsForRequest } from "./pi-runtime.js";
+import { modelsForRequest } from "./pi-runtime-models.js";
+import {
+  dockerComputerToolInstruction,
+  persistentComputerInstruction,
+  threadContextForRun,
+  userTurnInstructions,
+  VOICE_CALL_INSTRUCTION,
+  voiceCallInstruction,
+} from "./run-instructions.js";
+import { createRunWorkspaceCheckpoint } from "./run-lifecycle.js";
+import { isTerminalModelSetupError } from "./run-model.js";
+import { runNotificationsEnabled } from "./run-notifications.js";
+import { REACTION_SILENT_REPLY_GUIDANCE } from "./run-replies.js";
+import { offeredFleetTools, selectBuiltinToolsForRun } from "./run-tool-selection.js";
+import {
+  loadCurrentTurnImages,
+  missingTurnImagesInstruction,
+  settleSteeringAttachmentLoads,
+  withRecentTurnImages,
+} from "./run-turn-images.js";
 import { mainRole, withModelRoles } from "./testing/model-roles.js";
+import {
+  appendToolCompletionAudit,
+  toolCompletionAuditPayload,
+  toolCompletionFromResult,
+} from "./tool-completion-audit.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 const createRunExecutor = (deps: Parameters<typeof createExecutor>[0]) =>

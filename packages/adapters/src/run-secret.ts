@@ -9,7 +9,8 @@ import {
 import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
 import { runSecretKind, withTransactionRetry } from "@rakazo/db";
-import { type ApprovalPausedToolResult, resolveDuplicateEffectGate } from "./approval-effect.js";
+import type { ApprovalPausedToolResult } from "./approval-effect.js";
+import { resolveDuplicateEffectGate } from "./approval-effect.js";
 import { prepareBotSecret } from "./bot-secrets.js";
 import { persistPreparedSecret } from "./secret-persistence.js";
 
