@@ -20,6 +20,10 @@ vi.mock("@lingui/react/macro", () => {
     strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
+vi.mock("@lingui/core/macro", () => ({
+  t: (strings: TemplateStringsArray, ...values: unknown[]) =>
+    `«${strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "")}»`,
+}));
 vi.mock("./PdfViewer", () => ({ PdfViewer: () => null }));
 vi.mock("@rakazo/chat-ui/web", () => ({ ChatMarkdown: () => null }));
 
@@ -195,11 +199,11 @@ it("keeps controls when automatic playback is rejected", async () => {
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-it("rolls sizes up to the next unit instead of 1,024.0 KB or 1,536.0 MB", async () => {
+it("translates every size unit and rolls up instead of 1,024.0 KB or 1,536.0 MB", async () => {
   await act(async () =>
     root?.render(
       <>
-        {[1048575, 1610612736, 1024].map((size) => (
+        {[512, 1024, 1048575, 1610612736, 1.5 * 1024 ** 4].map((size) => (
           <ArtifactFileCard
             key={size}
             target={{ botId: "b" }}
@@ -215,5 +219,5 @@ it("rolls sizes up to the next unit instead of 1,024.0 KB or 1,536.0 MB", async 
   const sizes = [...container.querySelectorAll("button span:last-child")].map(
     (el) => el.textContent,
   );
-  expect(sizes).toEqual(["1 MB", "1.5 GB", "1 KB"]);
+  expect(sizes).toEqual(["«512 B»", "«1 KB»", "«1 MB»", "«1.5 GB»", "«1.5 TB»"]);
 });

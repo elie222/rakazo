@@ -105,6 +105,11 @@ msgstr "{0} MB"
 msgid "{0} rollup hours"
 msgstr "{0} rollup-uren"
 
+#. placeholder {0}: parts.amount
+#: src/components/ArtifactFileCard.tsx
+msgid "{0} TB"
+msgstr "{0} TB"
+
 #. placeholder {0}: bot.name
 #: src/pages/ExternalConversationSettings.tsx
 msgid "{0} will still respond to direct mentions."

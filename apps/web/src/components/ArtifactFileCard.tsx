@@ -379,7 +379,7 @@ function formatSize(bytes: number): string {
       return translate`${parts.amount} MB`;
     case "GB":
       return translate`${parts.amount} GB`;
-    default:
-      return `${parts.amount} ${parts.unit}`;
+    case "TB":
+      return translate`${parts.amount} TB`;
   }
 }
