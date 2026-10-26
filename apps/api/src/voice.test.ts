@@ -442,6 +442,10 @@ describe("updateVoiceSpeechModel", () => {
 describe("prepareVoice", () => {
   const long = "The deploy finished and every check passed. ".repeat(20);
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   function depsWith(summarize?: ReturnType<typeof vi.fn>) {
     const prisma = {
       bot: { findFirst: vi.fn().mockResolvedValue({ voiceId: "voice-1" }) },
@@ -478,6 +482,38 @@ describe("prepareVoice", () => {
       ready: true,
       utterances: ["Deploy done.", "Next, the release notes."],
     });
+  });
+
+  it.each([
+    ["Chinese", "中".repeat(2400)],
+    ["Japanese", "あ".repeat(2400)],
+  ])("synthesizes long %s replies in full without a summary", async (_name, text) => {
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" });
+    vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({ synthesize } as never);
+
+    for (const summarize of [undefined, vi.fn().mockResolvedValue(null)]) {
+      const deps = depsWith(summarize);
+      const result = await prepareVoice(deps, actor, { text, botId: "bot-1" });
+      expect(result.ready).toBe(true);
+      const app = new Hono();
+      mountVoiceHttpRoutes(app, deps, async () => actor);
+      synthesize.mockClear();
+
+      for (const utterance of result.utterances) {
+        const response = await app.request("/api/voice/speak", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: utterance, botId: "bot-1" }),
+        });
+        expect(response.status).toBe(200);
+      }
+
+      expect(result.utterances.length).toBeGreaterThan(1);
+      expect(result.utterances.join("")).toBe(text);
+      expect(synthesize.mock.calls.map(([request]) => request.text)).toEqual(result.utterances);
+    }
   });
 
   it("reads short replies, and replies when summarizing fails or is not enabled, in full", async () => {
